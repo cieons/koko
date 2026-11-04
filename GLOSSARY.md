@@ -74,7 +74,7 @@ A User who can do everything on the koko server and sees every Space.
 _Avoid_: admin, root, superuser
 
 **Member**:
-A User who can do everything inside the Spaces they belong to, and sees nothing outside them.
+A User who can see and act on every Host, Service and Secret in the Spaces they belong to, and sees nothing outside them.
 _Avoid_: operator, viewer, guest
 
 **Space**:
