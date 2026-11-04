@@ -4,20 +4,20 @@
 
 [中文](README.zh-CN.md)
 
-koko is a self-hosted asset gateway for the servers you rent across
-providers. It keeps the inventory, holds every credential, and is the one
-door people and AI agents use to reach your machines.
+koko is self-hosted. It keeps the record of the servers you rent across
+providers, and it is the one door people and AI agents use to reach them.
 
 **Status:** early design. Nothing is usable yet.
 
 ## Planned
 
-- An asset inventory: providers, hosts, services, domains, renewal dates.
-- Credentials that never leave the server; hosts trust short-lived SSH
-  certificates.
-- A terminating SSH gateway behind a single HTTPS port, so `ssh`, `scp`,
-  `rsync` and Ansible work unchanged.
-- A dynamic Ansible inventory and runbooks.
+- A record of your hosts and the services on them, described by typed
+  attributes such as provider, region and renewal date.
+- Spaces that decide who can see and reach which hosts.
+- A gateway that ends every SSH session, so only koko holds a key your
+  hosts trust.
+- Enrolling a host adds one public key to it and changes nothing else.
+- One HTTPS port; `ssh`, `scp` and `rsync` work unchanged through it.
 - CLI first, with a built-in skill for coding agents (`koko skill`).
 
 ## License

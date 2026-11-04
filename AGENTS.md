@@ -1,8 +1,8 @@
 # Notes for coding agents
 
-koko is a self-hosted asset gateway for a fleet of rented servers. It keeps
-the inventory, holds every credential, and is the one door people and agents
-use to reach the machines. Agents write most of its code.
+koko keeps the record of a fleet of rented servers and is the one door people
+and agents use to reach them. Agents write most of its code. Its vocabulary is
+in [GLOSSARY.md](GLOSSARY.md); its decisions are in [docs/adr/](docs/adr/).
 
 ## Before changing code
 
