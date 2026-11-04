@@ -31,3 +31,17 @@ commit language. `README.zh-CN.md` is the one Chinese file; it mirrors
 A session running beside others works in a worktree of its own
 (`git worktree add ../koko-<topic>`) and commits only its own files. After
 committing, `git show --stat HEAD` lists those files and nothing else.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues on `cieons/koko`, driven with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default triage roles, each label named after its role. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
