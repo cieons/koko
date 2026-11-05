@@ -63,7 +63,7 @@ upgrade test, in turn, read the koko server's start from its log once
 install returned, though the koko server logs it just after its socket
 accepts: 3 failures under load.
 **Seen:** 1 (2026-11-06)
-**Evidence:** 3cae7b1 (#38); 4232f09 (#43); #77
+**Evidence:** 3cae7b1 (#38); 4232f09 (#43); #77; ecff11b (#49); #78
 
 ## Moved to the code standards
 

@@ -1,6 +1,7 @@
 package devicemux_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -11,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -48,10 +50,11 @@ func TestACommandGetsTheReportOfTheNextDeviceConnection(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	socket := filepath.Join(dir, "mux.sock")
+	muxLog := &syncBuffer{}
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- devicemux.Run(ctx, devicemux.Config{Home: home, Socket: socket, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		done <- devicemux.Run(ctx, devicemux.Config{Home: home, Socket: socket, Log: slog.New(slog.NewTextHandler(muxLog, nil))})
 	}()
 	t.Cleanup(func() {
 		stop()
@@ -63,9 +66,13 @@ func TestACommandGetsTheReportOfTheNextDeviceConnection(t *testing.T) {
 	conn := dial(t, socket, home)
 	waitReport(t, conn, "v0.0.1")
 	srv.drop()
+	// An open sent on the Device Connection as it drops is refused, not sent
+	// again, so the channel is opened only once the Device Mux has let go of
+	// that one: the open then goes on the next.
+	waitLog(t, muxLog, `msg="device connection dropped"`)
 	ch, err := conn.OpenChannel(t.Context(), wire.ChannelAPI, nil)
 	if err != nil {
-		t.Fatalf("open a channel after the drop: %v", err)
+		t.Fatalf("open a channel after the drop: %v; the Device Mux logged:\n%s", err, muxLog)
 	}
 	_ = ch.Close()
 	waitReport(t, conn, "v0.0.2")
@@ -116,6 +123,37 @@ func waitReport(t *testing.T, conn interface {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+// waitLog waits until the Device Mux has logged substr, at most 10 s.
+func waitLog(t *testing.T, muxLog *syncBuffer, substr string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(muxLog.String(), substr) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the Device Mux did not log %q within 10 s; it logged:\n%s", substr, muxLog)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// syncBuffer holds what a Device Mux logs, for the test to read while it
+// logs.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // reporter stands in for a koko server: it takes any device key, reports
