@@ -20,8 +20,10 @@ changes how it is reached.
 
 - A Member who records or renames a Host to a name a Host in a Space they
   cannot see already holds is refused, and so learns that the name exists.
-  The name is all they learn. This is the one place where something outside
-  a Member's Spaces shows through (ADR 0011).
+  The name is all they learn. Besides it, only the Relay rules show through
+  (ADR 0011): retiring a Host, or giving it a Relay, is refused while a Host
+  the Member cannot see uses it as its Relay, so the Member learns that such
+  a Host exists, and nothing about it.
 - `web1.koko` reaches a Host through the `Host *.koko` block of koko's own
   `~/.ssh/koko/ssh_config`. Bare `web1` works because koko also writes there
   the names of the Hosts the caller can see, and refreshes that list. A Host

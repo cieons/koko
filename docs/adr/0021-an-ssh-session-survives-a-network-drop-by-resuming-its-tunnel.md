@@ -45,7 +45,10 @@ translated from it line by line.
 - API calls do not resume. Every write carries an `Idempotency-Key`, whose
   result the koko server stores in the write's own transaction for ten
   minutes, so the CLI retries any call once after a drop and never reports
-  an unknown outcome. `koko web`'s browser connections reopen.
+  an unknown outcome. The stored result is sealed under the Root Key
+  (ADR 0018), because some results are credentials: `koko device add` and
+  `koko user invite` return a Join Code, which the database otherwise holds
+  only as a hash. `koko web`'s browser connections reopen.
 - Every timing is a constant in P0, the grace included. koko's `Host *.koko`
   block sets `ServerAliveInterval 30` and `ServerAliveCountMax 4`, so ssh
   waits 150 s: it never ends an SSH Session that its Tunnel could still

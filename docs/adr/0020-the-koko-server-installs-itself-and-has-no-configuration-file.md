@@ -31,10 +31,12 @@ API over the Unix socket, where the CLI validates them.
 
 - To change a flag, such as the port, re-run `koko server install` with it
   or add a systemd drop-in.
-- The Server Address is fixed at initialisation, and its port defaults to
-  the listen port. When that default port changes, joined devices must be
-  told the new address by hand (`koko connect <host:port>`), because nothing
-  moves a device to a new address by itself.
+- The Server Address is set at initialisation, and its port defaults to the
+  listen port. The Owner can change it over the Unix socket, and the change
+  reaches only Join Codes issued afterwards. When the address changes, or
+  the default port does, joined devices must be told the new address by
+  hand (`koko connect <host:port>`), because nothing moves a device to a new
+  address by itself.
 - The unit hands the Root Key (ADR 0018) to the service from
   `/etc/koko/root.key` with `LoadCredential=`, so `koko server install`
   refuses systemd older than 247.

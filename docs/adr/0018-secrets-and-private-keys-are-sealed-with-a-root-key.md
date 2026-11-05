@@ -43,7 +43,8 @@ which controls the machine.
   koko server is stopped, plus the Root Key, restores the koko server on
   another machine, and the copy alone reveals nothing wherever it is kept.
 - Credentials belong in Secrets only: a Note or an Attribute is stored plain.
-- The Root Key is made at initialisation, before the koko key and the host
-  key it seals.
+- `koko server install` writes the Root Key, as root, before it starts the
+  service (ADR 0020), so it exists before initialisation makes the koko key
+  and the host key it seals.
 - Rotating the Root Key is P1, with backup and export. The key id in every
   ciphertext leaves room for it.
