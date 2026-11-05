@@ -62,7 +62,20 @@ var (
 	// CodeOwnerOnly: only the Owner may do what the call asks, such as
 	// issuing a Join Code for another User's device.
 	CodeOwnerOnly = Code{"owner_only", http.StatusForbidden}
+	// CodeIdempotencyKeyReused: the caller's Idempotency-Key came with
+	// another request within the last 10 minutes; a retry sends the same
+	// request with the same key, and a new write a new key.
+	CodeIdempotencyKeyReused = Code{"idempotency_key_reused", http.StatusUnprocessableEntity}
+	// CodeRequestTooLarge: the request body is over the koko server's limit
+	// (MaxRequestBody).
+	CodeRequestTooLarge = Code{"request_too_large", http.StatusRequestEntityTooLarge}
 )
+
+// MaxRequestBody is the largest request body the koko server reads, in
+// bytes. The largest a call needs is a batch host add, whose Notes may each
+// hold 64 KiB; 16 MiB carries hundreds of such Hosts, and bounds what one
+// call makes the koko server hold in memory.
+const MaxRequestBody = 16 << 20
 
 var commonCodes = []Code{
 	CodeInvalidRequest,
@@ -76,6 +89,8 @@ var commonCodes = []Code{
 	CodeNotInitialised,
 	CodeLocalOnly,
 	CodeOwnerOnly,
+	CodeIdempotencyKeyReused,
+	CodeRequestTooLarge,
 }
 
 // codes lists every area's error codes after the common ones; an area that

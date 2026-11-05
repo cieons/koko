@@ -73,7 +73,7 @@ func startTCP(t *testing.T, h http.Handler, devices transport.Devices) (string, 
 // serveTCP is startTCP that also returns the transport.
 func serveTCP(t *testing.T, h http.Handler, devices transport.Devices) (*transport.Server, string, [sha256.Size]byte) {
 	t.Helper()
-	s := transport.New(h, h, slog.New(slog.DiscardHandler))
+	s := transport.New(h, h, testReporter, slog.New(slog.DiscardHandler))
 	t.Cleanup(func() {
 		if err := s.Close(); err != nil {
 			t.Errorf("close transport: %v", err)
@@ -236,6 +236,26 @@ func TestARevokedKeyIsToldByNameOnlyAfterItsSignature(t *testing.T) {
 	if e, ok := errors.AsType[*serverconn.RefusedError](err); !ok || e.Banner != "" {
 		t.Errorf("a Device Connection offering the Revoked key without signing = %v, want a refusal with no banner", err)
 	}
+}
+
+// A Device Connection gets the version and operations report too, as soon
+// as it has authenticated, and the CLI's connection reads it.
+func TestDeviceConnectionIsSentTheReport(t *testing.T) {
+	key := sshhost.NewKey(t, ssh.KeyAlgoED25519)
+	devices := &fakeDevices{sessions: map[string]string{string(key.PublicKey().Marshal()): "device_3f9k2m7q"}}
+	addr, _ := startTCP(t, whoAmI, devices)
+	conn, err := serverconn.DialDevice(t.Context(), serverconn.Device{Address: addr, HostKeys: hostKeysAt(t, addr), Key: key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	r, err := conn.Report(ctx)
+	if err != nil {
+		t.Fatalf("read the report: %v", err)
+	}
+	wantTestReport(t, r)
 }
 
 // A Device Connection carries the same channels as the socket: api@koko,

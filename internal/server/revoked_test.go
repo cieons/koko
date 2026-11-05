@@ -58,6 +58,7 @@ func TestARevokedDeviceSessionIsRefusedByEveryOperation(t *testing.T) {
 		t.Helper()
 		req := httptest.NewRequestWithContext(op.WithCaller(t.Context(), caller), http.MethodPost, api.PathPrefix+name, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(api.IdempotencyKeyHeader, api.NewIdempotencyKey())
 		rec := httptest.NewRecorder()
 		srv.api.ServeHTTP(rec, req)
 		return rec.Code, rec.Body.String()

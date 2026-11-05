@@ -14,7 +14,7 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
-| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the channel adapter and how a join carries its secret (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`); later Attribute values | server, client |
+| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the version and operations report, the channel adapter and how a join carries its secret (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`); later Attribute values | server, client |
 | server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `web`: the web front), the embedded web UI (`webui`), the Host connector (`hostconn`), the installer (`installer`); later the Gateway | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join (`devicefiles`); later the Device Mux, tunnel and ssh_config | server |
 
@@ -104,8 +104,9 @@ its own only when an agent would act on it differently.
    ([what a Space holds](access.md#what-a-space-holds)).
 8. **Transactions.** The operation framework ([`op`](../../internal/server/op/op.go))
    opens and commits each call's transaction; an operation gets a `store.Tx`,
-   which cannot commit. The `Idempotency-Key` store (#41) joins every write
-   there, without touching any operation.
+   which cannot commit. The `Idempotency-Key` store
+   ([`op/idempotency.go`](../../internal/server/op/idempotency.go)) joins
+   every write there, without touching any operation.
 9. **The CLI's channel interface.** All CLI traffic opens its channels through
    [`serverconn.Conn`](../../internal/client/serverconn/serverconn.go): over
    the socket and over a direct Device Connection now, and through the Device
@@ -204,6 +205,10 @@ loopback TCP forwarder whose target `f.To(addr)` changes and whose
 `f.Conns()` counts its connections: initialised with its address as the
 Server Address, a koko server issues codes that lead first to an impostor and
 then to itself, and a refusal can be shown to make no connection.
+`f.CutWhen(cut)` is its fault injection: the first bytes the koko server
+sends once `cut` returns true are dropped with their connection, so a test
+cuts a call after the koko server has logged its answer and before the
+answer arrives.
 
 ## The in-process Host
 

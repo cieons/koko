@@ -36,6 +36,9 @@ const (
 	codeUnsupportedPlatform = "unsupported_platform"
 	// codePortTaken: another process holds the port the command listens on.
 	codePortTaken = "port_taken"
+	// codeServerTooOld: the koko server does not serve the command's
+	// operation, so it is older than the CLI; nothing was sent.
+	codeServerTooOld = "server_too_old"
 )
 
 // cliCodes lists the CLI's own codes, for `koko skill` and for the test that
@@ -49,6 +52,7 @@ var cliCodes = []string{
 	codeInvalidJoinCode,
 	codeUnsupportedPlatform,
 	codePortTaken,
+	codeServerTooOld,
 }
 
 // The exit statuses, part of the CLI's contract: new ones may be added, and

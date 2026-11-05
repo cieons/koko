@@ -17,6 +17,7 @@ import (
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/server/transport"
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/wire"
 )
 
 // server.init answers only the Local caller, over the Unix socket: any other
@@ -39,8 +40,8 @@ func TestInitAnswersOnlyTheLocalCaller(t *testing.T) {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.DiscardHandler)
-	a := op.New(st, log, deployment.Initialised, time.Now)
-	tr := transport.New(a, http.NotFoundHandler(), log)
+	a := op.New(st, rootKey, log, deployment.Initialised, time.Now)
+	tr := transport.New(a, http.NotFoundHandler(), func() wire.Report { return wire.Report{Version: "test"} }, log)
 	tcp := &tcpListener{addr: "127.0.0.1:0", transport: tr, devices: device.NewAuthenticator(st, time.Now, log)}
 	t.Cleanup(func() {
 		_ = tr.Close()
@@ -52,6 +53,7 @@ func TestInitAnswersOnlyTheLocalCaller(t *testing.T) {
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, api.ServerInit.Path(),
 			strings.NewReader(`{"owner": "alice", "address": "koko.test"}`))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(api.IdempotencyKeyHeader, api.NewIdempotencyKey())
 		rec := httptest.NewRecorder()
 		a.ServeHTTP(rec, req.WithContext(op.WithCaller(req.Context(), caller)))
 		return rec

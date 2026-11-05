@@ -23,6 +23,7 @@ import (
 
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/server/webui"
+	"github.com/cieons/koko/internal/shared/api"
 )
 
 // freePort returns a TCP port on 127.0.0.1 that nothing listens on.
@@ -226,11 +227,13 @@ func wantRefusedPage(t *testing.T, a *answer, status int, says string) {
 	}
 }
 
-// postJSON sends an API call as the web UI does: a JSON POST.
+// postJSON sends an API call as the web UI does: a JSON POST, carrying an
+// Idempotency-Key of its own, which a write needs and a read ignores.
 func (b *browser) postJSON(path, body string) *answer {
 	b.t.Helper()
 	req := b.request(http.MethodPost, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(api.IdempotencyKeyHeader, api.NewIdempotencyKey())
 	a, err := b.do(req)
 	if err != nil {
 		b.t.Fatalf("POST %s: %v", path, err)

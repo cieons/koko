@@ -2,7 +2,8 @@
 
 The Seal, in [`internal/server/seal`](../../internal/server/seal), owns the
 Root Key and every value the koko server stores sealed: Secret values, the
-koko key, the koko server's host key and the other keys it makes for itself
+koko key, the koko server's host key and the other keys it makes for itself,
+and the responses it keeps for Idempotency-Keys ([the API](api.md#idempotency-key))
 ([ADR 0018](../adr/0018-secrets-and-private-keys-are-sealed-with-a-root-key.md)).
 Every module that stores a secret value calls it, and none touches AES-GCM
 itself. It is server-only.

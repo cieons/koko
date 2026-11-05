@@ -114,11 +114,14 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	if clock == nil {
 		clock = time.Now
 	}
-	a := op.New(st, log, deployment.Initialised, clock)
+	a := op.New(st, key, log, deployment.Initialised, clock)
 	// The web area's front holds the runs of koko web, so it registers its
 	// operation itself, below.
 	front := web.New(a, st, key, clock, log)
-	t := transport.New(a, front, log)
+	version := build.Read().Version
+	// Each connection is reported every operation registered below.
+	report := func() wire.Report { return wire.Report{Version: version, Operations: a.Names()} }
+	t := transport.New(a, front, report, log)
 	tcp := &tcpListener{addr: cfg.Listen, transport: t, devices: device.NewAuthenticator(st, clock, log)}
 	srv := &Server{store: st, transport: t, tcp: tcp, api: a}
 	for _, register := range areas {

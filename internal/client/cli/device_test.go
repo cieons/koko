@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/joincode"
 )
@@ -169,7 +170,8 @@ func TestDeviceAddRefusesAnUnknownUser(t *testing.T) {
 // The koko server keeps only a hash of each Join Code's secret: after
 // issuing and joining, neither koko.db and its -wal and -shm, while it runs
 // or once it stops, nor its log holds a code or its secret in any common
-// encoding.
+// encoding. The responses of server.init, user.invite and device.add, kept
+// for their Idempotency-Keys, hold the codes sealed.
 func TestNoJoinCodeIsStoredOrLogged(t *testing.T) {
 	dataDir := t.TempDir()
 	h := harness.Start(t, harness.NoInit(), harness.DataDir(dataDir))
@@ -215,6 +217,13 @@ func TestNoJoinCodeIsStoredOrLogged(t *testing.T) {
 	running := readDir(t, dataDir)
 	h.Stop()
 	stopped := readDir(t, dataDir)
+	var kept int
+	err = store.Peek(t.Context(), dataDir, func(tx store.Tx) error {
+		return tx.QueryRowContext(t.Context(), "SELECT count(*) FROM idempotency_keys").Scan(&kept)
+	})
+	if err != nil || kept != 4 {
+		t.Fatalf("the database keeps %d responses for Idempotency-Keys (%v), want the 4 of the writes that issued codes", kept, err)
+	}
 	places := map[string][]byte{"the log": []byte(h.Log())}
 	for file, content := range running {
 		places[file+" while running"] = content

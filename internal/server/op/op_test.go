@@ -11,11 +11,14 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/server/op"
+	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
 )
@@ -40,26 +43,40 @@ type noteListResponse struct {
 	Local bool     `json:"local"`
 }
 
+// noteCountResponse is what note.count answers: how many notes there are
+// once it has added its own, which differs each time it runs.
+type noteCountResponse struct {
+	Text  string `json:"text"`
+	Notes int    `json:"notes"`
+}
+
 // Test operations over a table of their own, so these tests depend on no area.
 var (
-	noteAdd  = api.Op[noteAddRequest, noteAddResponse]{Name: "note.add", Write: true}
-	noteList = api.Op[noteListRequest, noteListResponse]{Name: "note.list"}
-	noteTime = api.Op[noteListRequest, noteTimeResponse]{Name: "note.time"}
+	noteAdd   = api.Op[noteAddRequest, noteAddResponse]{Name: "note.add", Write: true}
+	noteList  = api.Op[noteListRequest, noteListResponse]{Name: "note.list"}
+	noteTime  = api.Op[noteListRequest, noteTimeResponse]{Name: "note.time"}
+	noteCount = api.Op[noteAddRequest, noteCountResponse]{Name: "note.count", Write: true}
 )
 
 type fixture struct {
-	api   *op.API
-	store *store.Store
-	log   *bytes.Buffer
+	api     *op.API
+	store   *store.Store
+	dataDir string
+	rootKey *seal.RootKey
+	log     *syncBuffer
 	// uninitialised plays a koko server not initialised yet.
 	uninitialised atomic.Bool
 	// clock is the koko server's clock.
 	clock atomic.Pointer[time.Time]
+	// refuse makes note.count fail with name_taken once it has added its
+	// note.
+	refuse atomic.Bool
 }
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	s, err := store.Open(t.Context(), t.TempDir())
+	f := &fixture{dataDir: t.TempDir(), log: &syncBuffer{}}
+	s, err := store.Open(t.Context(), f.dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,9 +88,19 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fixture{store: s, log: &bytes.Buffer{}}
+	if f.rootKey, err = seal.Load(harness.NewRootKeyFile(t)); err != nil {
+		t.Fatal(err)
+	}
 	f.clock.Store(new(time.Now()))
-	a := op.New(s, slog.New(slog.NewTextHandler(f.log, &slog.HandlerOptions{Level: slog.LevelDebug})),
+	f.serve(s)
+	return f
+}
+
+// serve makes the fixture's API anew over s, with its test operations, as a
+// koko server that starts on s does.
+func (f *fixture) serve(s *store.Store) {
+	f.store = s
+	a := op.New(s, f.rootKey, slog.New(slog.NewTextHandler(f.log, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		func(context.Context, store.Tx) (bool, error) { return !f.uninitialised.Load(), nil },
 		func() time.Time { return *f.clock.Load() })
 	f.api = a
@@ -113,7 +140,16 @@ func newFixture(t *testing.T) *fixture {
 		}
 		return noteTimeResponse{Time: first.Format(time.RFC3339Nano)}, nil
 	})
-	return f
+	a.Handle(noteCount, func(ctx context.Context, tx store.Tx, _ op.Caller, req noteAddRequest) (noteCountResponse, error) {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO notes (text) VALUES (?)", req.Text); err != nil {
+			return noteCountResponse{}, err
+		}
+		if f.refuse.Load() {
+			return noteCountResponse{}, api.CodeNameTaken.Errorf("the note %q is taken", req.Text)
+		}
+		resp := noteCountResponse{Text: req.Text}
+		return resp, tx.QueryRowContext(ctx, "SELECT count(*) FROM notes").Scan(&resp.Notes)
+	})
 }
 
 // call sends one request as the Local caller and returns the status and body.
@@ -122,21 +158,44 @@ func (f *fixture) call(t *testing.T, method, path, contentType, body string) (in
 	return f.callAs(t, op.Caller{Local: true}, method, path, contentType, body)
 }
 
-// callAs sends one request as caller and returns the status and body.
+// callAs sends one request as caller, with an Idempotency-Key of its own,
+// and returns the status and body.
 func (f *fixture) callAs(t *testing.T, caller op.Caller, method, path, contentType, body string) (int, string) {
 	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), method, path, strings.NewReader(body))
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+	req.Header.Set(api.IdempotencyKeyHeader, api.NewIdempotencyKey())
+	return f.serveRequest(t, caller, req)
+}
+
+// serveRequest has the API answer req as caller, and returns the status and
+// body. It never fails the test, so a goroutine may call it.
+func (f *fixture) serveRequest(t *testing.T, caller op.Caller, req *http.Request) (int, string) {
+	t.Helper()
 	req = req.WithContext(op.WithCaller(req.Context(), caller))
 	rec := httptest.NewRecorder()
 	f.api.ServeHTTP(rec, req)
-	b, err := io.ReadAll(rec.Result().Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return rec.Code, string(b)
+	return rec.Code, rec.Body.String()
+}
+
+// syncBuffer is a log the API writes while a test reads it.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func (f *fixture) post(t *testing.T, path, body string) (int, string) {
@@ -218,6 +277,21 @@ func TestMalformedRequestsAreRefused(t *testing.T) {
 			status, body := f.call(t, tc.method, tc.path, tc.ctype, tc.body)
 			wantError(t, status, body, tc.code)
 		})
+	}
+}
+
+// The koko server reads a request body of up to 16 MiB, and refuses a
+// longer one with request_too_large.
+func TestARequestBodyOverTheLimitIsRefused(t *testing.T) {
+	f := newFixture(t)
+	const limit = 16 << 20
+	padded := func(n int) string { return "{" + strings.Repeat(" ", n-2) + "}" }
+	if status, body := f.post(t, noteList.Path(), padded(limit)); status != http.StatusOK {
+		t.Errorf("note.list with a body of 16 MiB = %d %s, want it read", status, body)
+	}
+	status, body := f.post(t, noteList.Path(), padded(limit+1))
+	if e := wantError(t, status, body, api.CodeRequestTooLarge); !strings.Contains(e.Message, "16 MiB") {
+		t.Errorf("message %q does not name the limit", e.Message)
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/harness/sshhost"
+	"github.com/cieons/koko/internal/shared/wire"
 )
 
 // With no socket at its path, and no koko server joined, a command that calls
@@ -50,8 +51,9 @@ func TestCallThatCannotBeCarriedIsServerUnreachable(t *testing.T) {
 	r.WantError(t, 1, "server_unreachable")
 }
 
-// refuseChannels serves SSH with none authentication on path and refuses
-// every channel, until the test ends.
+// refuseChannels serves SSH with none authentication on path, sends the
+// report a koko server sends, and refuses every channel, until the test
+// ends.
 func refuseChannels(t *testing.T, path string) {
 	t.Helper()
 	_, key, err := ed25519.GenerateKey(rand.Reader)
@@ -87,6 +89,8 @@ func refuseChannels(t *testing.T, path string) {
 				continue
 			}
 			go ssh.DiscardRequests(reqs)
+			report := wire.Report{Version: "v0.1.0", Operations: []string{"space.list"}}
+			_, _, _ = conn.SendRequest(wire.RequestReport, false, report.Marshal())
 			for nch := range chans {
 				_ = nch.Reject(ssh.Prohibited, "no channels here")
 			}

@@ -13,12 +13,41 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"reflect"
 	"slices"
 )
 
 // PathPrefix comes before an operation's name in its URL path.
 const PathPrefix = "/v1/"
+
+// IdempotencyKeyHeader is the HTTP header every write carries: its
+// Idempotency-Key, which NewIdempotencyKey makes, new for each write and the
+// same on its retry. The koko server keeps a write's response for 10 minutes
+// per caller and answers a retry with it, so a retried write applies once.
+// A write without a valid key is refused with CodeInvalidRequest; a read's
+// key is ignored.
+const IdempotencyKeyHeader = "Idempotency-Key"
+
+// idempotencyKeySize is an Idempotency-Key's length in bytes: 128 random
+// bits.
+const idempotencyKeySize = 16
+
+// NewIdempotencyKey returns a new Idempotency-Key: 128 random bits in 32
+// lowercase hex characters.
+func NewIdempotencyKey() string {
+	var b [idempotencyKeySize]byte
+	_, _ = rand.Read(b[:]) // crypto/rand.Read never fails
+	return hex.EncodeToString(b[:])
+}
+
+// ValidIdempotencyKey tells whether k is an Idempotency-Key as
+// NewIdempotencyKey writes one.
+func ValidIdempotencyKey(k string) bool {
+	b, err := hex.DecodeString(k)
+	return err == nil && len(b) == idempotencyKeySize && hex.EncodeToString(b) == k
+}
 
 // Op is one API operation, with its request and response types.
 type Op[Req, Resp any] struct {

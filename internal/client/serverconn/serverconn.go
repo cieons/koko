@@ -27,6 +27,11 @@ import (
 
 // Conn is one way to the koko server.
 type Conn interface {
+	// Report returns the koko server's version and operations report, which
+	// it sends unasked once the connection has authenticated
+	// (wire.RequestReport), waiting for it if it has not arrived yet. It
+	// fails when the connection ends without one, or ctx ends first.
+	Report(ctx context.Context) (wire.Report, error)
 	// OpenChannel opens a channel of the given type, such as wire.ChannelAPI,
 	// with its open payload, nil for none.
 	OpenChannel(ctx context.Context, kind string, payload []byte) (io.ReadWriteCloser, error)
@@ -60,7 +65,7 @@ func DialSocket(ctx context.Context, path string) (Conn, error) {
 		_ = nc.Close()
 		return nil, fmt.Errorf("SSH handshake: %w", err)
 	}
-	return sshConn{ssh.NewClient(conn, chans, reqs)}, nil
+	return newSSHConn(conn, chans, reqs), nil
 }
 
 // Device is what a direct Device Connection needs: where the koko server
@@ -163,7 +168,7 @@ func DialDevice(ctx context.Context, d Device) (Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return sshConn{client}, nil
+	return client, nil
 }
 
 // Join opens a Device Connection to the koko server at address that makes
@@ -210,13 +215,13 @@ func Join(ctx context.Context, address string, fingerprint [sha256.Size]byte, ke
 	if err != nil {
 		return nil, nil, err
 	}
-	return sshConn{client}, hostKey, nil
+	return client, hostKey, nil
 }
 
 // dialTCP connects to the koko server at address and runs the SSH
 // handshake with cfg, as user koko with koko's version string, or gives up
 // when ctx ends.
-func dialTCP(ctx context.Context, address string, cfg *ssh.ClientConfig) (*ssh.Client, error) {
+func dialTCP(ctx context.Context, address string, cfg *ssh.ClientConfig) (*sshConn, error) {
 	var d net.Dialer
 	nc, err := d.DialContext(ctx, "tcp", address)
 	if err != nil {
@@ -230,7 +235,7 @@ func dialTCP(ctx context.Context, address string, cfg *ssh.ClientConfig) (*ssh.C
 		_ = nc.Close()
 		return nil, err
 	}
-	return ssh.NewClient(conn, chans, reqs), nil
+	return newSSHConn(conn, chans, reqs), nil
 }
 
 // trimBanner turns a koko server's banner, such as "koko: the Join Code is
@@ -242,11 +247,56 @@ func trimBanner(banner string) string {
 // sshConn is a Conn over one SSH connection.
 type sshConn struct {
 	client *ssh.Client
+	// reported is closed once report and reportErr hold the koko server's
+	// report, or why there is none.
+	reported  chan struct{}
+	report    wire.Report
+	reportErr error
+}
+
+// newSSHConn returns a Conn over an SSH connection that has authenticated.
+// It takes the koko server's global requests itself: it keeps the first
+// report and refuses every other request, as ssh.Client does.
+func newSSHConn(conn ssh.Conn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request) *sshConn {
+	none := make(chan *ssh.Request)
+	close(none)
+	c := &sshConn{client: ssh.NewClient(conn, chans, none), reported: make(chan struct{})}
+	go c.takeRequests(reqs)
+	return c
+}
+
+// takeRequests answers the koko server's global requests until the
+// connection ends, keeping the first report.
+func (c *sshConn) takeRequests(reqs <-chan *ssh.Request) {
+	got := false
+	for r := range reqs {
+		if !got && r.Type == wire.RequestReport {
+			c.report, c.reportErr = wire.ParseReport(r.Payload)
+			got = true
+			close(c.reported)
+		}
+		if r.WantReply {
+			_ = r.Reply(false, nil)
+		}
+	}
+	if !got {
+		c.reportErr = errors.New("the connection to the koko server ended before it reported its version")
+		close(c.reported)
+	}
+}
+
+func (c *sshConn) Report(ctx context.Context) (wire.Report, error) {
+	select {
+	case <-c.reported:
+		return c.report, c.reportErr
+	case <-ctx.Done():
+		return wire.Report{}, fmt.Errorf("wait for the koko server's report: %w", ctx.Err())
+	}
 }
 
 // OpenChannel opens a channel, or gives up when ctx ends; a channel the koko
 // server grants after that is closed at once.
-func (c sshConn) OpenChannel(ctx context.Context, kind string, payload []byte) (io.ReadWriteCloser, error) {
+func (c *sshConn) OpenChannel(ctx context.Context, kind string, payload []byte) (io.ReadWriteCloser, error) {
 	type opened struct {
 		ch   ssh.Channel
 		reqs <-chan *ssh.Request
@@ -275,10 +325,10 @@ func (c sshConn) OpenChannel(ctx context.Context, kind string, payload []byte) (
 	}
 }
 
-func (c sshConn) Wait() error {
+func (c *sshConn) Wait() error {
 	return c.client.Wait()
 }
 
-func (c sshConn) Close() error {
+func (c *sshConn) Close() error {
 	return c.client.Close()
 }

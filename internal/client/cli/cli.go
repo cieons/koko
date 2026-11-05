@@ -130,8 +130,9 @@ type Input struct {
 	runner *Runner
 	line   *parsed
 
-	conn serverconn.Conn
-	api  *apiclient.Client
+	// api calls the koko server, dialling it on the first call; nil until
+	// then.
+	api *apiclient.Client
 	// joined is the client config of this device, when the connection is
 	// its Device Connection.
 	joined *devicefiles.Config
@@ -180,49 +181,48 @@ func (in *Input) Unset() []string {
 }
 
 // Call calls an operation on the koko server, connecting on the first call.
+// A call the connection drops is sent once more on a new connection
+// (package apiclient).
 func (in *Input) Call[Req, Resp any](ctx context.Context, op api.Op[Req, Resp], req Req) (Resp, error) {
-	if in.api == nil {
-		if err := in.connect(ctx); err != nil {
-			var zero Resp
-			return zero, err
-		}
-	}
-	resp, err := in.api.Call(ctx, op, req)
+	resp, err := in.client().Call(ctx, op, req)
 	if errors.Is(err, apiclient.ErrUnreachable) {
 		return resp, &cliError{code: codeServerUnreachable, message: err.Error()}
+	}
+	if e, ok := errors.AsType[*apiclient.MissingOperationError](err); ok {
+		return resp, &cliError{code: codeServerTooOld, message: fmt.Sprintf(
+			"%v, so koko %s needs a newer koko server: upgrade the koko server", e, in.line.cmd.Path())}
 	}
 	return resp, err
 }
 
-// server returns the connection to the koko server, connecting on first
-// use, for a command that opens channels of its own, such as koko web's
-// web@koko.
+// server returns the connection the command's calls go through, connecting
+// on first use, for a command that opens channels of its own, such as koko
+// web's web@koko.
 func (in *Input) server(ctx context.Context) (serverconn.Conn, error) {
-	if in.conn == nil {
-		if err := in.connect(ctx); err != nil {
-			return nil, err
-		}
+	return in.client().Conn(ctx)
+}
+
+func (in *Input) client() *apiclient.Client {
+	if in.api == nil {
+		in.api = apiclient.New(in.connect)
 	}
-	return in.conn, nil
+	return in.api
 }
 
 // connect reaches the koko server: over its Unix socket when the socket is
 // at its fixed path, and otherwise the koko server this device joined, over
 // a direct Device Connection.
-func (in *Input) connect(ctx context.Context) error {
+func (in *Input) connect(ctx context.Context) (serverconn.Conn, error) {
 	path := cmp.Or(in.runner.SocketPath, wire.SocketPath)
 	conn, err := serverconn.DialSocket(ctx, path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		if conn, err = in.dialJoined(ctx, path); err != nil {
-			return err
-		}
+		return in.dialJoined(ctx, path)
 	case err != nil:
-		return &cliError{code: codeServerUnreachable, message: fmt.Sprintf(
+		return nil, &cliError{code: codeServerUnreachable, message: fmt.Sprintf(
 			"cannot reach the koko server on its Unix socket %s: %v", path, err)}
 	}
-	in.conn, in.api = conn, apiclient.New(conn)
-	return nil
+	return conn, nil
 }
 
 // dialJoined opens a direct Device Connection to the koko server this
@@ -295,6 +295,5 @@ func deviceConnError(address string, err error) error {
 func (in *Input) close() {
 	if in.api != nil {
 		in.api.Close()
-		_ = in.conn.Close()
 	}
 }

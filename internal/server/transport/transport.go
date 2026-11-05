@@ -2,7 +2,9 @@
 // connection carrying the same channels (ADR 0015): an api@koko channel is
 // handed to the API's HTTP handler and a web@koko channel to the web front's,
 // each request with the connection's caller and the connection itself, and
-// any other channel type is refused.
+// any other channel type is refused. Each connection is sent the koko
+// server's version and operations report once it has authenticated, before
+// any channel is served (wire.RequestReport).
 //
 // The Unix socket speaks SSH with "none" authentication and a host key made in
 // memory at each start; every connection on it is the Local caller.
@@ -83,6 +85,9 @@ type Server struct {
 	log *slog.Logger
 	api *channelServer
 	web *channelServer
+	// report returns the version and operations report each connection is
+	// sent.
+	report func() wire.Report
 
 	mu        sync.Mutex
 	closed    bool
@@ -96,12 +101,15 @@ type Server struct {
 }
 
 // New returns a Server that hands every api@koko channel to api and every
-// web@koko channel to web.
-func New(api, web http.Handler, log *slog.Logger) *Server {
+// web@koko channel to web, and sends each connection the report report
+// returns, which it asks for once per connection, so that the report lists
+// the operations registered after New.
+func New(api, web http.Handler, report func() wire.Report, log *slog.Logger) *Server {
 	s := &Server{
 		log:     log,
 		api:     newChannelServer(api, wire.ChannelAPI, log),
 		web:     newChannelServer(web, wire.ChannelWeb, log),
+		report:  report,
 		conns:   map[*Connection]struct{}{},
 		revoked: map[string]bool{},
 	}
@@ -321,6 +329,13 @@ func (s *Server) serve(nc net.Conn, w wayIn) {
 		return
 	}
 	defer s.untrackConn(connection)
+	// Before any channel is served, so the report reaches the client before
+	// the answer to its first channel open.
+	if _, _, err := conn.SendRequest(wire.RequestReport, false, s.report().Marshal()); err != nil {
+		s.log.Debug("send the report", "addr", nc.RemoteAddr(), "err", err)
+		_ = conn.Close()
+		return
+	}
 	s.wg.Go(func() { ssh.DiscardRequests(reqs) })
 	for nch := range chans {
 		cc := &callerConn{caller: caller, conn: connection}

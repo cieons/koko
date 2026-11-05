@@ -4,7 +4,9 @@
 // and finishes itself (IMMEDIATE for a write, read-only for a read), and
 // writes the response or the error object. Until the koko server is
 // initialised, it refuses every operation but the ones registered with
-// BeforeInit.
+// BeforeInit. Every write carries an Idempotency-Key, whose response it
+// stores in the write's own transaction (idempotency.go), and no write is
+// cancelled because its caller dropped.
 //
 // An operation never begins, commits or rolls back: it gets a store.Tx, and
 // the transaction commits only when the operation returns no error. It reads
@@ -25,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
 )
@@ -117,20 +120,27 @@ var (
 // API serves the registered operations.
 type API struct {
 	store *store.Store
-	log   *slog.Logger
+	// rootKey seals the responses stored for Idempotency-Keys.
+	rootKey *seal.RootKey
+	log     *slog.Logger
 	// initialised tells, inside a call's transaction, whether the koko
 	// server is initialised.
 	initialised func(context.Context, store.Tx) (bool, error)
 	// clock is the koko server's clock, which Now reads once per call.
-	clock func() time.Time
-	ops   map[string]operation
+	clock    func() time.Time
+	ops      map[string]operation
+	inflight inflight
 }
 
 // New returns an API with no operations, whose calls run against s, which
-// asks initialised, inside each call's transaction, whether the koko server
-// is initialised, and which reads the time of each call from clock.
-func New(s *store.Store, log *slog.Logger, initialised func(context.Context, store.Tx) (bool, error), clock func() time.Time) *API {
-	return &API{store: s, log: log, initialised: initialised, clock: clock, ops: map[string]operation{}}
+// seals the responses it stores for Idempotency-Keys with rootKey, asks
+// initialised, inside each call's transaction, whether the koko server is
+// initialised, and reads the time of each call from clock.
+func New(s *store.Store, rootKey *seal.RootKey, log *slog.Logger, initialised func(context.Context, store.Tx) (bool, error), clock func() time.Time) *API {
+	return &API{
+		store: s, rootKey: rootKey, log: log, initialised: initialised, clock: clock,
+		ops: map[string]operation{}, inflight: inflight{running: map[idempotencyKey]chan struct{}{}},
+	}
 }
 
 // Handle registers fn as the operation o, changed by opts. Each area
@@ -158,52 +168,78 @@ func (a *API) Handle[Req, Resp any](o api.Op[Req, Resp], fn Func[Req, Resp], opt
 	a.ops[o.Name] = entry
 }
 
-// Names returns the names of the registered operations, sorted.
+// Names returns the names of the registered operations, sorted: what the
+// koko server reports it serves (wire.Report).
 func (a *API) Names() []string {
 	return slices.Sorted(maps.Keys(a.ops))
 }
 
 // ServeHTTP answers one call.
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	resp, err := a.serve(r)
+	body, replayed, err := a.serve(r)
 	if err != nil {
 		a.writeError(w, r, err)
 		return
 	}
-	a.log.Debug("api call", "path", r.URL.Path, "status", http.StatusOK)
-	a.writeJSON(w, http.StatusOK, resp)
+	attrs := []any{"path", r.URL.Path, "status", http.StatusOK}
+	if replayed {
+		attrs = append(attrs, "replayed", true)
+	}
+	a.log.Debug("api call", attrs...)
+	writeBody(w, http.StatusOK, body)
 }
 
-func (a *API) serve(r *http.Request) (any, error) {
+// serve runs one call and returns its encoded response, which replayed says
+// was stored for the write's Idempotency-Key by an earlier attempt.
+func (a *API) serve(r *http.Request) (body []byte, replayed bool, err error) {
 	ctx := r.Context()
 	caller, ok := CallerFrom(ctx)
 	if !ok {
-		return nil, errors.New("a call reached the API without a caller")
+		return nil, false, errors.New("a call reached the API without a caller")
 	}
 	name, versioned := strings.CutPrefix(r.URL.Path, api.PathPrefix)
 	o, known := a.ops[name]
 	if !versioned || !known {
-		return nil, api.CodeUnknownOperation.Errorf("no operation is served at %s", r.URL.Path)
+		return nil, false, api.CodeUnknownOperation.Errorf("no operation is served at %s", r.URL.Path)
 	}
 	if r.Method != http.MethodPost {
-		return nil, api.CodeMethodNotAllowed.Errorf("%s is not allowed: every operation is a POST", r.Method)
+		return nil, false, api.CodeMethodNotAllowed.Errorf("%s is not allowed: every operation is a POST", r.Method)
 	}
 	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
-		return nil, api.CodeUnsupportedMediaType.Errorf("the request body must be application/json")
+		return nil, false, api.CodeUnsupportedMediaType.Errorf("the request body must be application/json")
 	}
-	body, err := io.ReadAll(r.Body)
+	reqBody, err := io.ReadAll(io.LimitReader(r.Body, api.MaxRequestBody+1))
 	if err != nil {
-		return nil, api.CodeInvalidRequest.Errorf("read the request body: %v", err)
+		return nil, false, api.CodeInvalidRequest.Errorf("read the request body: %v", err)
 	}
-	c, err := o.bind(body)
+	if len(reqBody) > api.MaxRequestBody {
+		return nil, false, api.CodeRequestTooLarge.Errorf("the request body is over the koko server's limit of %d MiB", api.MaxRequestBody>>20)
+	}
+	c, err := o.bind(reqBody)
 	if err != nil {
-		return nil, decodeError(name, err)
+		return nil, false, decodeError(name, err)
 	}
 	if o.localOnly && !caller.Local {
-		return nil, api.CodeLocalOnly.Errorf("%s answers only over the koko server's Unix socket: run it on the koko server's machine", name)
+		return nil, false, api.CodeLocalOnly.Errorf("%s answers only over the koko server's Unix socket: run it on the koko server's machine", name)
+	}
+	var write keyedWrite
+	if o.write {
+		k := r.Header.Get(api.IdempotencyKeyHeader)
+		if !api.ValidIdempotencyKey(k) {
+			return nil, false, api.CodeInvalidRequest.Errorf("%s is a write, and every write carries an %s header: 128 random bits in 32 lowercase hex characters", name, api.IdempotencyKeyHeader)
+		}
+		write = newKeyedWrite(caller, k, name, reqBody)
+		// A write runs to its end even when its caller drops, and stores
+		// its response for the caller's retry.
+		ctx = context.WithoutCancel(ctx)
+		leave := a.inflight.enter(write.key, func() {
+			a.log.Debug("api call waits for its first attempt", "path", r.URL.Path)
+		})
+		defer leave()
 	}
 
-	ctx = context.WithValue(ctx, nowKey{}, a.clock().UTC().Truncate(time.Second))
+	now := a.clock().UTC().Truncate(time.Second)
+	ctx = context.WithValue(ctx, nowKey{}, now)
 	var hooks []func(bool)
 	ctx = context.WithValue(ctx, afterTxKey{}, &hooks)
 	committed := false
@@ -217,7 +253,6 @@ func (a *API) serve(r *http.Request) (any, error) {
 	if o.write {
 		run = a.store.Write
 	}
-	var resp any
 	err = run(ctx, func(tx store.Tx) error {
 		if !o.beforeInit {
 			ok, err := a.initialised(ctx, tx)
@@ -228,12 +263,29 @@ func (a *API) serve(r *http.Request) (any, error) {
 				return api.CodeNotInitialised.Errorf("the koko server is not initialised yet: koko server install --owner <owner> initialises it")
 			}
 		}
-		var err error
-		resp, err = c(ctx, tx, caller)
-		return err
+		if o.write {
+			stored, found, err := a.findResponse(ctx, tx, write, now)
+			if err != nil || found {
+				body, replayed = stored, found
+				return err
+			}
+		}
+		resp, err := c(ctx, tx, caller)
+		if err != nil {
+			return err
+		}
+		// Encoded inside the transaction, so a response that cannot be
+		// written rolls the write back.
+		if body, err = json.Marshal(resp); err != nil {
+			return fmt.Errorf("encode the %s response: %w", name, err)
+		}
+		if o.write {
+			return a.keepResponse(ctx, tx, write, body, now)
+		}
+		return nil
 	})
 	committed = err == nil
-	return resp, err
+	return body, replayed, err
 }
 
 // decodeError turns a request that does not decode into its coded error.
@@ -258,16 +310,12 @@ func (a *API) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		code, e = api.CodeInternal, internalError()
 	}
 	a.log.Debug("api call", "path", r.URL.Path, "status", code.Status, "code", code.Name)
-	a.writeJSON(w, code.Status, api.ErrorResponse{Error: *e})
+	body, _ := json.Marshal(api.ErrorResponse{Error: *e}) // two strings: never fails
+	writeBody(w, code.Status, body)
 }
 
-func (a *API) writeJSON(w http.ResponseWriter, status int, v any) {
-	body, err := json.Marshal(v)
-	if err != nil {
-		a.log.Error("encode api response", "err", err)
-		status = api.CodeInternal.Status
-		body, _ = json.Marshal(api.ErrorResponse{Error: *internalError()})
-	}
+// writeBody answers with status and body, a JSON object.
+func writeBody(w http.ResponseWriter, status int, body []byte) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write(body)

@@ -1,13 +1,16 @@
 // Package wire holds what both ends of a connection to the koko server agree
-// on: where the Unix socket is, the SSH version string, the channel types,
-// how an HTTP/1.1 exchange runs inside a channel (ADR 0015), how a join
-// carries a Join Code's secret, and how a Revoked device is told so.
+// on: where the Unix socket is, the SSH version string, the version and
+// operations report, the channel types, how an HTTP/1.1 exchange runs inside
+// a channel (ADR 0015), how a join carries a Join Code's secret, and how a
+// Revoked device is told so.
 package wire
 
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -25,6 +28,47 @@ const SocketPath = "/run/koko/koko.sock"
 // Version is the SSH version string of the koko server and the CLI. It carries
 // no version number; the koko server reports its version after authentication.
 const Version = "SSH-2.0-koko"
+
+// RequestReport is the SSH global request that carries the koko server's
+// version and operations report, its payload Report in JSON. The koko server
+// sends it on every connection, wanting no reply, as soon as the connection
+// has authenticated and before it serves any channel (ADR 0027); so the
+// report reaches the CLI before the answer to its first channel open, and
+// costs no round trip.
+const RequestReport = "report@koko"
+
+// Report is the koko server's version and operations report. Within /v1 a
+// koko server only adds operations, so a CLI calls an operation only when
+// the report lists it, and otherwise says the koko server is too old.
+type Report struct {
+	// Version is the koko server's build version, as koko version prints it.
+	Version string `json:"version"`
+	// Operations names every operation the koko server serves, such as
+	// "space.add".
+	Operations []string `json:"operations"`
+}
+
+// Marshal encodes the report as RequestReport's payload.
+func (r Report) Marshal() []byte {
+	b, err := json.Marshal(r)
+	if err != nil {
+		panic(fmt.Sprintf("wire: encode the report: %v", err)) // strings only: never fails
+	}
+	return b
+}
+
+// ParseReport reads RequestReport's payload, ignoring fields a later koko
+// server adds.
+func ParseReport(b []byte) (Report, error) {
+	var r Report
+	if err := json.Unmarshal(b, &r); err != nil {
+		return Report{}, fmt.Errorf("read the koko server's report: %w", err)
+	}
+	if r.Version == "" {
+		return Report{}, errors.New("read the koko server's report: it names no version")
+	}
+	return r, nil
+}
 
 // ChannelAPI is the channel type that carries API calls: HTTP/1.1 requests in
 // turn, kept alive between calls, so one channel serves a command's calls.

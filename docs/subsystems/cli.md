@@ -122,7 +122,14 @@ status. A command reaches the koko server only on its first `in.Call`, so
   or never issued alike), `unsupported_platform` (`koko server run`,
   `install` or `uninstall` outside Linux, or a machine install cannot use),
   `port_taken` (another process holds the port `koko web` or `koko server
-  install` listens on), and `internal_error` for a failure it did not expect.
+  install` listens on), `server_too_old` (the koko server's report does not
+  list the command's operation; the message names the koko server's version
+  and the command, and nothing was sent), and `internal_error` for a failure
+  it did not expect.
+- **A drop:** a call the connection drops is sent once more on a new
+  connection, a write with the same `Idempotency-Key`, so it applies once
+  ([the API client](api.md#the-api-client)); only when that one drops too
+  does the command fail, with `server_unreachable`.
 - **Which koko server:** the Unix socket when it is at its path, and
   otherwise the koko server this device joined, over a direct Device
   Connection ([the Device Connection](device-connection.md#which-koko-server-the-cli-reaches)).

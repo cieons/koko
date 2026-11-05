@@ -85,7 +85,10 @@ one-time code ([`join`](../../internal/client/cli/join.go)):
    ([`serverconn.Join`](../../internal/client/serverconn/serverconn.go)); the
    banner of a refusal is the error, with `invalid_join_code`.
 6. On that connection it calls `user.current`, which names the User and the
-   device name the code bound, and the Device Session's id.
+   device name the code bound, and the Device Session's id. When the
+   connection drops the call, the call is sent again, once, on a new Device
+   Connection with the key, now a Device Session
+   ([the API client](api.md#the-api-client)).
 7. It puts the key in place and writes the client config, which marks the
    device joined, removes any revocation record, then prints the Server
    Address and the Device Session: `{"server_address", "device_session"}`
@@ -94,9 +97,9 @@ one-time code ([`join`](../../internal/client/cli/join.go)):
 **A failed join leaves nothing it wrote:** the staged key is removed, and so
 are `~/.ssh` and `~/.ssh/koko/` when the join made them and they are empty
 (a `~/.ssh/koko/` that was there stays, made private). A join that fails
-after the koko server accepted the code (a lost connection before step 7)
-says that the code is spent and which Device Session to revoke, when it
-knows.
+after the koko server accepted the code (`user.current` lost on both
+connections, before step 7) says that the code is spent and which Device
+Session to revoke, when it knows.
 
 ## The device's files
 
@@ -215,6 +218,9 @@ key logs `revoked device refused` with the Device Session and the address.
   files, `koko join -`, a damaged code with no connection made, a mismatch
   and the same code joining the right koko server, used, expired and wrong
   codes alike, a second join refused, the log lines.
+- [`retry_test.go`](../../internal/client/cli/retry_test.go)
+  `TestAJoinWhoseCallIsCutStillJoins`: `user.current` cut mid-flight and sent
+  again on a Device Connection of the new key.
 - [`connect_test.go`](../../internal/client/cli/connect_test.go): the pinned
   list of one and of several keys, an unknown key, `server_unreachable` with
   its hint, and the socket winning over the joined koko server.

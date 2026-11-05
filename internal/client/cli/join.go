@@ -87,8 +87,21 @@ func join(ctx context.Context, in *Input) (joined, error) {
 		staged.Abort()
 		return joined{}, joinError(code.Address, err)
 	}
-	defer func() { _ = conn.Close() }()
-	c := apiclient.New(conn)
+	// The call goes on the connection that joined, which the client then
+	// owns; sent again after a drop, on a Device Connection of the key the
+	// join made a Device Session.
+	joining := conn
+	c := apiclient.New(func(ctx context.Context) (serverconn.Conn, error) {
+		if first := joining; first != nil {
+			joining = nil
+			return first, nil
+		}
+		again, err := serverconn.DialDevice(ctx, serverconn.Device{Address: code.Address, HostKeys: []ssh.PublicKey{hostKey}, Key: signer})
+		if err != nil {
+			return nil, deviceConnError(code.Address, err)
+		}
+		return again, nil
+	})
 	defer c.Close()
 	who, err := c.Call(ctx, api.UserCurrent, api.UserCurrentRequest{})
 	if err == nil && who.DeviceSession == nil {

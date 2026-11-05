@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/server/op"
+	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/space"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/server/user"
@@ -26,7 +28,11 @@ func TestUserInviteIsOneTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	a := op.New(st, slog.New(slog.DiscardHandler),
+	rootKey, err := seal.Load(harness.NewRootKeyFile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := op.New(st, rootKey, slog.New(slog.DiscardHandler),
 		func(context.Context, store.Tx) (bool, error) { return true, nil }, time.Now)
 	space.Register(a, user.ByName, nil)
 	// Only the Owner invites, so the Local caller needs an Owner to act as.
@@ -44,6 +50,7 @@ func TestUserInviteIsOneTransaction(t *testing.T) {
 	call := func(path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequestWithContext(op.WithCaller(t.Context(), op.Caller{Local: true}), http.MethodPost, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(api.IdempotencyKeyHeader, api.NewIdempotencyKey())
 		rec := httptest.NewRecorder()
 		a.ServeHTTP(rec, req)
 		return rec

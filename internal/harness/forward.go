@@ -13,7 +13,8 @@ import (
 // counts them. A koko server initialised with the forwarder's address as its
 // Server Address issues Join Codes that lead wherever the test points it:
 // first to an impostor, then to the koko server itself; and a test sees that
-// a refusal made no connection.
+// a refusal made no connection. It also cuts a connection when the test
+// arms it to (CutWhen), as a network drop does.
 type Forwarder struct {
 	ln net.Listener
 	// stop ends the dials in progress when the forwarder stops.
@@ -23,7 +24,10 @@ type Forwarder struct {
 	target string
 	conns  int
 	open   map[net.Conn]struct{}
-	wg     sync.WaitGroup
+	// cut, when armed, says when to cut the next connection whose target
+	// sends anything.
+	cut func() bool
+	wg  sync.WaitGroup
 }
 
 // Forward starts a Forwarder to target, a host:port, which stops when the
@@ -61,6 +65,35 @@ func (f *Forwarder) Conns() int {
 	return f.conns
 }
 
+// CutWhen arms one cut: the first bytes the target sends, on any
+// connection, once cut returns true, are dropped with that connection, both
+// ways, and the cut is spent. A test cuts a call mid-flight with it: cut
+// turns true once the koko server has logged the call's answer, and the
+// answer, which it sends after, never reaches the device.
+func (f *Forwarder) CutWhen(cut func() bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cut = cut
+}
+
+// cutNow tells whether an armed cut falls now, and spends it if so. It asks
+// cut without holding the lock, so cut may call the forwarder.
+func (f *Forwarder) cutNow() bool {
+	f.mu.Lock()
+	cut := f.cut
+	f.mu.Unlock()
+	if cut == nil || !cut() {
+		return false
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.cut == nil {
+		return false // another connection spent it meanwhile
+	}
+	f.cut = nil
+	return true
+}
+
 func (f *Forwarder) accept(ctx context.Context) {
 	for {
 		in, err := f.ln.Accept()
@@ -91,8 +124,28 @@ func (f *Forwarder) pass(ctx context.Context, in net.Conn, target string) {
 	defer f.forget(out)
 	done := make(chan struct{}, 2)
 	f.wg.Go(func() { _, _ = io.Copy(out, in); done <- struct{}{} })
-	f.wg.Go(func() { _, _ = io.Copy(in, out); done <- struct{}{} })
+	f.wg.Go(func() { f.back(in, out); done <- struct{}{} })
 	<-done
+}
+
+// back copies what the target sends on out to in, until either side ends or
+// an armed cut falls on it.
+func (f *Forwarder) back(in, out net.Conn) {
+	buf := make([]byte, 32<<10)
+	for {
+		n, err := out.Read(buf)
+		if n > 0 {
+			if f.cutNow() {
+				return
+			}
+			if _, err := in.Write(buf[:n]); err != nil {
+				return
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
 }
 
 func (f *Forwarder) forget(c net.Conn) {

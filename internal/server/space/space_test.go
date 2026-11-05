@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/server/op"
+	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/space"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/server/user"
@@ -49,12 +51,13 @@ func (h *holdings) countSecrets(_ context.Context, _ store.Tx, spaceID string, c
 	return nil
 }
 
-// call calls the operation at path with body as the Local caller and
-// returns the status and the response body.
+// call calls the operation at path with body as the Local caller, with an
+// Idempotency-Key of its own, and returns the status and the response body.
 func call(t *testing.T, a *op.API, path, body string) (int, string) {
 	t.Helper()
 	req := httptest.NewRequestWithContext(op.WithCaller(t.Context(), op.Caller{Local: true}), http.MethodPost, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(api.IdempotencyKeyHeader, api.NewIdempotencyKey())
 	rec := httptest.NewRecorder()
 	a.ServeHTTP(rec, req)
 	return rec.Code, rec.Body.String()
@@ -69,7 +72,11 @@ func TestASpaceThatHoldsRecordsIsNotRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	a := op.New(st, slog.New(slog.DiscardHandler),
+	rootKey, err := seal.Load(harness.NewRootKeyFile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := op.New(st, rootKey, slog.New(slog.DiscardHandler),
 		func(context.Context, store.Tx) (bool, error) { return true, nil }, time.Now)
 	h := &holdings{hosts: map[string]int{}, secrets: map[string]int{}}
 	space.Register(a, user.ByName, []space.Holding{h.countHosts, h.countSecrets})

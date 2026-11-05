@@ -93,9 +93,11 @@ User or any Space holds, then issues their first code, in one transaction.
 
 The koko server keeps neither the code nor its secret, only
 `SHA-256("koko Join Code secret\0" ‖ secret)`, unique per row, which joining
-looks up. The secret's 128 random bits make a slow hash needless. Nothing
-logs a code: the API logs a call's path and status only, and a join its Join
-Code's id.
+looks up. The secret's 128 random bits make a slow hash needless. The one
+other place a code is kept is the response of the call that issued it,
+stored for 10 minutes for the call's `Idempotency-Key`, and sealed under the
+Root Key ([the API](api.md#idempotency-key)). Nothing logs a code: the API
+logs a call's path and status only, and a join its Join Code's id.
 
 ## Verifying
 
@@ -110,7 +112,8 @@ Code's id.
   names held by live Device Sessions, the refusals, a joined Member issuing
   for themselves only (`owner_only`), and that after issuing and joining
   neither `koko.db` and its `-wal` and `-shm`, while running and once
-  stopped, nor the log holds a code or its secret in any common encoding.
+  stopped, nor the log holds a code or its secret in any common encoding,
+  the responses stored for the issuing calls' `Idempotency-Key`s included.
 - [`user_test.go`](../../internal/client/cli/user_test.go): `koko user
   invite`, its refusals, names per User, and an expired Invite that leaves
   its User to join with a new code; the one transaction is

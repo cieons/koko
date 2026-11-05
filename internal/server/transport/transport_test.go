@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -37,6 +38,21 @@ var whoAmI = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	}
 })
 
+// testReport is the version and operations report of the transports these
+// tests start.
+var testReport = wire.Report{Version: "v0.3.0", Operations: []string{"space.add", "space.list"}}
+
+// testReporter returns testReport, for transport.New.
+func testReporter() wire.Report { return testReport }
+
+// wantTestReport fails the test unless r is testReport.
+func wantTestReport(t *testing.T, r wire.Report) {
+	t.Helper()
+	if r.Version != testReport.Version || !slices.Equal(r.Operations, testReport.Operations) {
+		t.Errorf("report = %+v, want %+v", r, testReport)
+	}
+}
+
 // startSocket serves h on a fresh socket, for api@koko and web@koko
 // channels alike, and returns its path.
 func startSocket(t *testing.T, h http.Handler) string {
@@ -49,7 +65,7 @@ func startSocket(t *testing.T, h http.Handler) string {
 func startTransport(t *testing.T, api, web http.Handler) string {
 	t.Helper()
 	path := filepath.Join(harness.ShortTempDir(t), "koko.sock")
-	s := transport.New(api, web, slog.New(slog.DiscardHandler))
+	s := transport.New(api, web, testReporter, slog.New(slog.DiscardHandler))
 	if err := s.ListenSocket(t.Context(), path); err != nil {
 		t.Fatalf("listen on socket: %v", err)
 	}
@@ -129,6 +145,48 @@ func TestAPIChannelCarriesHTTPAsTheLocalCaller(t *testing.T) {
 	}
 }
 
+// Once a connection has authenticated, and before any channel opens, the
+// koko server sends its version and operations report unasked, as a global
+// request that wants no reply: the report costs the CLI no round trip.
+func TestEachConnectionIsSentTheReportUnasked(t *testing.T) {
+	path := startSocket(t, whoAmI)
+	var d net.Dialer
+	nc, err := d.DialContext(t.Context(), "unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, chans, reqs, err := ssh.NewClientConn(nc, "unix", &ssh.ClientConfig{User: "koko", HostKeyCallback: ssh.InsecureIgnoreHostKey()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	go func() {
+		for nch := range chans {
+			_ = nch.Reject(ssh.Prohibited, "none")
+		}
+	}()
+	select {
+	case r := <-reqs:
+		wantReport(t, r.Type, r.WantReply, r.Payload)
+	case <-time.After(5 * time.Second):
+		t.Fatal("no report within 5 s of authenticating")
+	}
+}
+
+// wantReport fails the test unless a global request is the report of the
+// transports these tests start, wanting no reply.
+func wantReport(t *testing.T, kind string, wantReply bool, payload []byte) {
+	t.Helper()
+	if kind != wire.RequestReport || wantReply {
+		t.Fatalf("got the global request %q (want reply %t), want %q wanting no reply", kind, wantReply, wire.RequestReport)
+	}
+	r, err := wire.ParseReport(payload)
+	if err != nil {
+		t.Fatalf("the report %q does not parse: %v", payload, err)
+	}
+	wantTestReport(t, r)
+}
+
 func TestOtherChannelTypesAreRefused(t *testing.T) {
 	c, _ := dial(t, startSocket(t, whoAmI))
 	for _, kind := range []string{"session", "direct-tcpip", "web@koko-not"} {
@@ -164,7 +222,7 @@ func TestSocketIsOpenToEveryLocalUser(t *testing.T) {
 // Closing stops listening and removes the socket file.
 func TestCloseRemovesTheSocket(t *testing.T) {
 	path := filepath.Join(harness.ShortTempDir(t), "koko.sock")
-	s := transport.New(whoAmI, whoAmI, slog.New(slog.DiscardHandler))
+	s := transport.New(whoAmI, whoAmI, testReporter, slog.New(slog.DiscardHandler))
 	if err := s.ListenSocket(t.Context(), path); err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +249,7 @@ func TestCloseWaitsForCallsInFlight(t *testing.T) {
 		_, _ = io.WriteString(w, "done")
 	})
 	path := filepath.Join(harness.ShortTempDir(t), "koko.sock")
-	s := transport.New(slow, slow, slog.New(slog.DiscardHandler))
+	s := transport.New(slow, slow, testReporter, slog.New(slog.DiscardHandler))
 	if err := s.ListenSocket(t.Context(), path); err != nil {
 		t.Fatal(err)
 	}

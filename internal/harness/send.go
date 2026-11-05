@@ -45,7 +45,8 @@ func (d *Device) Send(o api.Operation, body []byte) (int, []byte) {
 	return send(d.t, conn, o, body)
 }
 
-// send posts body to the operation o in one api@koko channel of conn.
+// send posts body to the operation o in one api@koko channel of conn, a
+// write with an Idempotency-Key of its own, as the CLI sends it.
 func send(t testing.TB, conn serverconn.Conn, o api.Operation, body []byte) (int, []byte) {
 	t.Helper()
 	name := o.Info().Name
@@ -65,6 +66,9 @@ func send(t testing.TB, conn serverconn.Conn, o api.Operation, body []byte) (int
 		t.Fatalf("call %s: %v", name, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if o.Info().Write {
+		req.Header.Set(api.IdempotencyKeyHeader, api.NewIdempotencyKey())
+	}
 	resp, err := (&http.Client{Transport: tr}).Do(req)
 	if err != nil {
 		t.Fatalf("call %s: %v", name, err)

@@ -175,13 +175,9 @@ func (h *Harness) Stop() {
 // server answered is an *api.Error.
 func (h *Harness) Call[Req, Resp any](o api.Op[Req, Resp], req Req) (Resp, error) {
 	h.t.Helper()
-	conn, err := serverconn.DialSocket(h.t.Context(), h.socket)
-	if err != nil {
-		var zero Resp
-		return zero, err
-	}
-	defer func() { _ = conn.Close() }()
-	c := apiclient.New(conn)
+	c := apiclient.New(func(ctx context.Context) (serverconn.Conn, error) {
+		return serverconn.DialSocket(ctx, h.socket)
+	})
 	defer c.Close()
 	return c.Call(h.t.Context(), o, req)
 }
