@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "name_taken",
+    "message": "a User named \"bob\" was Removed, and a Removed User's name is never used again"
+  }
+}

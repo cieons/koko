@@ -53,8 +53,9 @@ call it inside their own transaction. It:
    [`access.Who`](../../internal/server/access/access.go)). Only the Owner
    names another User: anyone else is refused with `owner_only` (403) before
    the name is looked up, so the refusal says nothing of who exists. A name
-   that is not a User name is refused with `invalid_name`, and one no User
-   holds with `unknown_user` (404);
+   that is not a User name is refused with `invalid_name`, one no User
+   holds with `unknown_user` (404), and a Removed User with `user_removed`
+   (409, [Users](users.md#removing));
 2. binds the device name given, or `device-<n>`, where n counts up from one
    past the number of Device Sessions the User has ever had, Revoked ones
    included, past every name taken. A name is taken while one of that
@@ -89,7 +90,7 @@ User or any Space holds, then issues their first code, in one transaction.
 
 | Table | What it holds |
 | --- | --- |
-| `join_codes` | One row per code issued: its id (`joincode_...`), its User, the hash of its secret, its device name, its issuer (NULL for the Unix socket, else the issuing Device Session's id), its expiry, and the times it was used or voided. A code is valid while it is neither used nor voided and has not expired; a join marks it used, and revoking its issuer voids it while it is valid ([revoking](device-connection.md#revoking)). Spent codes are kept, for the P1 audit log. |
+| `join_codes` | One row per code issued: its id (`joincode_...`), its User, the hash of its secret, its device name, its issuer (NULL for the Unix socket, else the issuing Device Session's id), its expiry, and the times it was used or voided. A code is valid while it is neither used nor voided and has not expired; a join marks it used, and revoking its issuer, or Removing its User or its issuer's User, voids it while it is valid ([revoking](device-connection.md#revoking), [Users](users.md#removing)). Spent codes are kept, for the P1 audit log, but go with a User who never joined when that User is deleted. |
 
 The koko server keeps neither the code nor its secret, only
 `SHA-256("koko Join Code secret\0" ‖ secret)`, unique per row, which joining

@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "owner_not_removable",
+    "message": "alice is the Owner, who is never deleted or Removed"
+  }
+}

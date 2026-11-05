@@ -152,7 +152,9 @@ status. A command reaches the koko server only on its first `in.Call`, so
   API's. A list prints a bare array of every item (`[]` when empty), and a
   write prints the record it made or changed. An `rm` prints the record it
   removed, as it was, in the shape its `ls` prints, so a script keeps the
-  id of what is gone.
+  id of what is gone. `user remove`, which deletes a User or Removes them,
+  prints `{"outcome", "user"}`: which it did, and the User in `user ls`'s
+  shape as it left them.
 - Indented by two spaces, one value, ending in a newline. The members of a
   map, such as a Host's `attributes`, are sorted by key, so one record always
   prints the same.
@@ -186,7 +188,9 @@ fields one per line (`Server Address:`, `User:`, `Device:`, `Unix socket:`,
 `koko server:`, `This CLI:`, `Revoked:`), then any Include warning. `koko device ls` names who
 added each device as `<user>/<device>` or `unix socket`, and adds a REVOKED
 column when it lists a Revoked one; `koko device revoke` says which device it
-revoked, and when it was this device, that koko deleted its files.
+revoked, and when it was this device, that koko deleted its files. `koko
+user ls` adds a REMOVED column when it lists a Removed User, and `koko user
+remove` says whether it deleted the User, freeing the name, or Removed them.
 
 ## The commands so far
 
@@ -199,7 +203,9 @@ revoked, and when it was this device, that koko deleted its files.
 | `koko space rm <space>` (Owner) | irreversible | `space.remove` | the Space it removed, as it was |
 | `koko space member add <space> <user>...` (Owner) | reversible | `space.member.add` | the Space with its Members after the change, as `space show` prints it |
 | `koko space member rm <space> <user>...` (Owner) | reversible | `space.member.remove` | the same |
-| `koko user invite <user>` (Owner) | irreversible | `user.invite` | `{"user": {"id", "name", "role", "created_at"}, "join_code": ...}`, the Join Code as `device add` prints it |
+| `koko user invite <user>` (Owner) | irreversible | `user.invite` | `{"user": {"id", "name", "role", "created_at", "removed_at"}, "join_code": ...}`, the User as `user ls` prints one and the Join Code as `device add` prints it |
+| `koko user ls [--all]` (Owner) | read | `user.list` | an array of the Users by name, `--all` adding the Removed ones: `{"id", "name", "role", "created_at", "removed_at"}`, `removed_at` `null` while the User is not Removed ([Users](users.md#listing)) |
+| `koko user remove <user>` (Owner) | irreversible | `user.remove` | `{"outcome", "user"}`: `"deleted"` for a User who never joined, `"removed"` for anyone else, and the User as the call left them ([Users](users.md#removing)) |
 | `koko device add [<device>] [--user <user>]` | irreversible | `device.add` | the Join Code: `{"id", "code", "user", "device", "expires_at"}` |
 | `koko device ls [--user <user>] [--all]` | read | `device.list` | an array of Device Sessions, by User and then in the order they joined: `{"id", "user", "device", "added_by", "created_at", "last_used_at", "revoked_at"}`, where `added_by` is `{"id", "user", "device"}` of the Device Session that issued its Join Code, or `null` for the Unix socket; a Device Session's id is `device_...` |
 | `koko device revoke <device>` or `<user>/<device>` `[--last]` | irreversible | `device.revoke` | the Device Session it Revoked, as `device ls` prints one ([revoking](device-connection.md#revoking)) |

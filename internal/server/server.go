@@ -145,7 +145,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	// the koko server in them.
 	issuer := device.NewIssuer(joinTarget(key, tcp.port))
 	device.Register(a, issuer, &changes, log)
-	user.Register(a, issuer.Issue)
+	user.Register(a, issuer.Issue, holdings, &changes, log)
 	registerServer(a, key, issuer, tcp, log)
 	registerSettings(a, &settings{
 		rootKey:     key,

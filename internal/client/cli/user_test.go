@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"encoding/json/v2"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -10,15 +11,32 @@ import (
 	"github.com/cieons/koko/internal/shared/joincode"
 )
 
+// userOut is a User as the CLI's --json prints it.
+type userOut struct {
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	Role      string  `json:"role"`
+	CreatedAt string  `json:"created_at"`
+	RemovedAt *string `json:"removed_at"`
+}
+
 // invitation is what user invite --json prints.
 type invitation struct {
-	User struct {
-		ID        string `json:"id"`
-		Name      string `json:"name"`
-		Role      string `json:"role"`
-		CreatedAt string `json:"created_at"`
-	} `json:"user"`
+	User     userOut     `json:"user"`
 	JoinCode joinCodeOut `json:"join_code"`
+}
+
+// userInvite runs user invite --json for the User named user, and returns
+// what it printed.
+func userInvite(t *testing.T, h *harness.Harness, user string) invitation {
+	t.Helper()
+	r := h.Koko("user", "invite", user, "--json")
+	r.WantSuccess(t)
+	var inv invitation
+	if err := json.Unmarshal([]byte(r.Stdout), &inv); err != nil {
+		t.Fatalf("user invite --json printed %q: %v", r.Stdout, err)
+	}
+	return inv
 }
 
 // user invite creates the User as a Member, with their Personal Space, and
@@ -121,6 +139,107 @@ func TestUserInviteRefusesAnInvalidName(t *testing.T) {
 	}
 	if r := h.Koko("space", "ls", "--json"); strings.Count(r.Stdout, `"name"`) != 1 {
 		t.Errorf("space ls = %s, want only the Owner's Personal Space", r.Stdout)
+	}
+}
+
+// userLs runs user ls --json with args through run, and returns the Users
+// it listed, and what it printed, for a golden file.
+func userLs(t *testing.T, run func(...string) harness.Result, args ...string) ([]userOut, string) {
+	t.Helper()
+	r := run(append([]string{"user", "ls", "--json"}, args...)...)
+	r.WantSuccess(t)
+	var l []userOut
+	if err := json.Unmarshal([]byte(r.Stdout), &l); err != nil {
+		t.Fatalf("user ls --json printed %q: %v", r.Stdout, err)
+	}
+	return l, r.Stdout
+}
+
+// names returns the names of the Users in l, in order.
+func names(l []userOut) []string {
+	var n []string
+	for _, u := range l {
+		n = append(n, u.Name)
+	}
+	return n
+}
+
+// koko user ls lists the Users by name, each with their role and when they
+// were created; --all adds the Removed ones, with when they were Removed. A
+// User deleted is in neither.
+func TestUserLsListsTheUsers(t *testing.T) {
+	h := harness.Start(t)
+	for _, u := range []string{"dave", "bob", "carol"} {
+		userInvite(t, h, u)
+	}
+	h.Join("dave")
+	h.Advance(time.Minute)
+	userRemove(t, h.Koko, "dave")
+	userRemove(t, h.Koko, "carol")
+
+	l, out := userLs(t, h.Koko)
+	harness.Golden(t, "user-ls.json", out)
+	if got, want := names(l), []string{harness.Owner, "bob"}; !slices.Equal(got, want) {
+		t.Errorf("user ls listed %v, want %v", got, want)
+	}
+
+	all, out := userLs(t, h.Koko, "--all")
+	harness.Golden(t, "user-ls-all.json", out)
+	if got, want := names(all), []string{harness.Owner, "bob", "dave"}; !slices.Equal(got, want) {
+		t.Fatalf("user ls --all listed %v, want %v", got, want)
+	}
+	if now := h.Now().Format(time.RFC3339); all[2].RemovedAt == nil || *all[2].RemovedAt != now || all[1].RemovedAt != nil {
+		t.Errorf("user ls --all = %+v, want dave Removed at %s and bob not Removed", all, now)
+	}
+}
+
+// For people, user ls is a table of the Users, with a REMOVED column when
+// it lists a Removed one.
+func TestUserLsForPeople(t *testing.T) {
+	h := harness.Start(t)
+	userInvite(t, h, "bob")
+	h.Join("bob")
+	r := h.Koko("user", "ls")
+	r.WantSuccess(t)
+	lines := strings.Split(strings.TrimSuffix(r.Stdout, "\n"), "\n")
+	if len(lines) != 3 || strings.Fields(lines[0])[0] != "NAME" || strings.Contains(lines[0], "REMOVED") ||
+		!strings.HasPrefix(lines[1], harness.Owner+" ") || !strings.HasPrefix(lines[2], "bob ") {
+		t.Errorf("user ls printed %q, want a table of alice and bob without a REMOVED column", r.Stdout)
+	}
+
+	userRemove(t, h.Koko, "bob")
+	r = h.Koko("user", "ls", "--all")
+	r.WantSuccess(t)
+	lines = strings.Split(strings.TrimSuffix(r.Stdout, "\n"), "\n")
+	if len(lines) != 3 || !strings.HasSuffix(lines[0], "REMOVED") ||
+		!strings.HasSuffix(lines[1], " -") || !strings.HasSuffix(lines[2], h.Now().Format(time.RFC3339)) {
+		t.Errorf("user ls --all printed %q, want a REMOVED column saying when bob was Removed", r.Stdout)
+	}
+}
+
+// Only the Owner lists and removes Users. A Member is refused with
+// owner_only before koko reads the name, so the refusal is the same for
+// any name and changes nothing.
+func TestOnlyTheOwnerListsAndRemovesUsers(t *testing.T) {
+	h := harness.Start(t)
+	userInvite(t, h, "bob")
+	userInvite(t, h, "carol")
+	bob := h.Join("bob")
+
+	r := bob.Koko("user", "ls", "--json")
+	r.WantError(t, 1, "owner_only")
+	harness.Golden(t, "user-ls-owner-only.json", r.Stderr)
+	r = bob.Koko("user", "remove", "carol", "--json")
+	r.WantError(t, 1, "owner_only")
+	harness.Golden(t, "user-remove-owner-only.json", r.Stderr)
+	for _, other := range []string{"bob", harness.Owner, "nobody"} {
+		if got := bob.Koko("user", "remove", other, "--json"); got != r {
+			t.Errorf("a Member's user remove %s = %+v, want the same refusal as for carol: %+v", other, got, r)
+		}
+	}
+	l, _ := userLs(t, h.Koko)
+	if got, want := names(l), []string{harness.Owner, "bob", "carol"}; !slices.Equal(got, want) {
+		t.Errorf("user ls after the refusals listed %v, want %v", got, want)
 	}
 }
 

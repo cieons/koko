@@ -18,7 +18,7 @@ make, such as `server.show`, so a Revoked Device Session is refused
 
 | Question | Answer |
 | --- | --- |
-| Who is calling | `access.Who(ctx, tx, caller)`: an `Identity`, the User and the Device Session the call came on, or the Owner with no Device Session for the Local caller |
+| Who is calling | `access.Who(ctx, tx, caller)`: an `Identity`, the User and the Device Session the call came on, or the Owner with no Device Session for the Local caller. A Revoked Device Session is refused with `revoked`; so is a Removed User's, since Removing revokes each of theirs ([Users](users.md#removing)) |
 | Is this caller the Owner | `Identity.IsOwner()`; `access.OwnerOnly(ctx, tx, caller, does)` also refuses anyone else with `owner_only`, "only the Owner `<does>`" |
 | Which Spaces can this caller act in | `Identity.Spaces(ctx, tx)`, the one place the rule is written: every Space for the Owner; for any other User their own Personal Space and each Space they are a Member of. A `Scope` whose `Has(spaceID)` filters lists and counts |
 | Can this caller act in this Space | `Identity.CanAct(ctx, tx, spaceID)`, by that rule |
@@ -39,8 +39,8 @@ membership.
   asks `access.OwnerOnly` before it reads anything the call names, so a Member
   gets the same `owner_only` for a name that is taken, free, unseen or
   unknown, and learns nothing about the records. `space.add`, `space.rename`,
-  `space.remove`, `space.member.add`, `space.member.remove` and `user.invite`
-  do so. `device.add` is anyone's for their own User; naming another User is
+  `space.remove`, `space.member.add`, `space.member.remove`, `user.invite`,
+  `user.list` and `user.remove` do so. `device.add` is anyone's for their own User; naming another User is
   refused with `owner_only` before that User is looked up.
 
 ## Spaces and memberships
@@ -48,9 +48,9 @@ membership.
 - A Space is shared, or a User's Personal Space, which `spaces.user_id`
   names; that is not a membership. `api.Space.personal` and the CLI's
   `personal` say which: a Space is Personal exactly while `user_id` is set.
-  Removing a User (#50) turns their Personal Space into an ordinary shared
-  Space by clearing it, so the Owner can then rename it, give it Members and
-  remove it once empty.
+  Removing a User turns their Personal Space into an ordinary shared Space
+  with no Members by clearing it ([Users](users.md#removing)), so only the
+  Owner sees it, and can rename it, give it Members and remove it once empty.
 - A membership is a row of `memberships` (a Space and a User, no role). It
   goes with its Space when the Space is removed, and with its User when a
   User who never joined is deleted (`ON DELETE CASCADE`).
@@ -63,8 +63,10 @@ membership.
   User exists, the Owner's included: `personal_space`. `space.member.remove`
   on one changes nothing, as it has no Members.
 - **Members.** `space.member.add` and `space.member.remove` take one User or
-  more, all or none: a name no User holds is refused with `unknown_user` and
-  changes nobody. A User already a Member stays one, and a User who is not a
+  more, all or none: a name no User holds is refused with `unknown_user`, and
+  `space.member.add` refuses a Removed User with `user_removed`; either
+  refusal changes nobody. A Removed User is a Member of no Space, so
+  `space.member.remove` leaves them out like any User who is not a Member. A User already a Member stays one, and a User who is not a
   Member stays out, so the call states the Members after it and a retry is
   harmless. Both answer the Space with its Members, in `space.show`'s shape.
   An invited User who has not joined can be made a Member.
@@ -126,11 +128,14 @@ states.
   [`TestARevokedDeviceSessionIsRefusedByEveryOperation`](../../internal/server/revoked_test.go)
   therefore calls every registered operation as that caller beneath the
   transport, so a new operation that does not ask who is calling fails it.
-  A Removed User's Device Session joins with #50.
+- **A Removed User's Device Session** gets the same answers, since Removing
+  revoked it ([Users](users.md#removing)), and for the same reason is called
+  beneath the transport, by
+  [`TestARemovedUsersDeviceSessionIsRefusedByEveryOperation`](../../internal/server/revoked_test.go).
 
 ## Verifying
 
-- The matrix above, and its Revoked Device Session in
+- The matrix above, and its Revoked and Removed User's Device Sessions in
   [`revoked_test.go`](../../internal/server/revoked_test.go).
 - [`internal/client/cli/space_test.go`](../../internal/client/cli/space_test.go):
   every `space` command over the CLI, with its goldens; what a Member lists

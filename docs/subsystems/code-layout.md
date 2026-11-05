@@ -61,7 +61,9 @@ registers them ([`init.go`](../../internal/server/init.go),
 package of its own. An area whose operations need what the process
 loaded takes it in its `Register`, which [`server.Start`](../../internal/server/server.go)
 calls after the `areas` list: `device` and `user` take the Join Code issuer,
-which reads the host key with the Root Key ([Join Codes](join-codes.md#issuing)).
+which reads the host key with the Root Key ([Join Codes](join-codes.md#issuing));
+`user` also takes the `holdings` list, to refuse deleting a User whose
+Personal Space holds a record ([Users](users.md#removing)).
 `space` takes `user.ByName`, since `user` imports `space` (every User gets a
 Personal Space), and the `holdings` list. `secret` takes the Root Key, which
 seals and opens every value ([Secrets](secrets.md#sealing)).
@@ -74,7 +76,7 @@ The device area also answers the TCP listener's join step
 `server.Start` also makes the access-change signal
 ([`access.Signal`](../../internal/server/access/signal.go)) and subscribes
 the transport to it: an area whose operations withdraw access takes the
-signal in its `Register`, as `device` does, and publishes on it; a later
+signal in its `Register`, as `device` and `user` do, and publishes on it; a later
 consumer subscribes in `server.Start` (rule 12).
 
 Error codes every area shares (`invalid_request`, `unknown_field`,

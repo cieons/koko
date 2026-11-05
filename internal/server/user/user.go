@@ -4,10 +4,13 @@
 package user
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/cieons/koko/internal/server/access"
@@ -26,10 +29,14 @@ const idPrefix = "user"
 type IssueFunc func(ctx context.Context, tx store.Tx, caller op.Caller, req api.DeviceAddRequest) (api.JoinCode, error)
 
 // Register adds the user operations to the API; issue issues an invited
-// User's first Join Code.
-func Register(a *op.API, issue IssueFunc) {
+// User's first Join Code, and holdings count what the areas record in the
+// Personal Space of a User being deleted, which must hold nothing. Each
+// User Removed is announced on changes and logged to log once it commits.
+func Register(a *op.API, issue IssueFunc, holdings []space.Holding, changes *access.Signal, log *slog.Logger) {
 	a.Handle(api.UserInvite, invite(issue))
 	a.Handle(api.UserCurrent, current)
+	a.Handle(api.UserList, list)
+	a.Handle(api.UserRemove, remover{holdings: holdings, changes: changes, log: log}.remove)
 }
 
 // current is user.current: who the call acts as.
@@ -39,6 +46,32 @@ func current(ctx context.Context, tx store.Tx, caller op.Caller, _ api.UserCurre
 		return api.UserCurrentResponse{}, err
 	}
 	return api.UserCurrentResponse{User: who.User, DeviceSession: who.DeviceSession}, nil
+}
+
+// list is user.list: the Users by name, the Removed ones only with req.All.
+// Only the Owner lists Users.
+func list(ctx context.Context, tx store.Tx, caller op.Caller, req api.UserListRequest) (api.UserListResponse, error) {
+	if _, err := access.OwnerOnly(ctx, tx, caller, "lists Users"); err != nil {
+		return api.UserListResponse{}, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id, name, role, created_at, removed_at FROM users
+		WHERE ? OR removed_at IS NULL ORDER BY name`, req.All)
+	if err != nil {
+		return api.UserListResponse{}, fmt.Errorf("list the Users: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var resp api.UserListResponse
+	for rows.Next() {
+		u, err := scan(rows)
+		if err != nil {
+			return api.UserListResponse{}, fmt.Errorf("list the Users: %w", err)
+		}
+		resp.Users = append(resp.Users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return api.UserListResponse{}, fmt.Errorf("list the Users: %w", err)
+	}
+	return resp, nil
 }
 
 // invite is user.invite: in one transaction it creates the Member with their
@@ -82,12 +115,15 @@ func add(ctx context.Context, tx store.Tx, userName, role string) (api.User, err
 	if err := name.Check(userName); err != nil {
 		return api.User{}, api.CodeInvalidName.Errorf("invalid %s name: %v", kind, err)
 	}
-	var heldByUser, heldBySpace bool
+	var heldByUser, heldByRemoved, heldBySpace bool
 	err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE name = ?1),
-		EXISTS (SELECT 1 FROM spaces WHERE name = ?1)`, userName).Scan(&heldByUser, &heldBySpace)
+		EXISTS (SELECT 1 FROM users WHERE name = ?1 AND removed_at IS NOT NULL),
+		EXISTS (SELECT 1 FROM spaces WHERE name = ?1)`, userName).Scan(&heldByUser, &heldByRemoved, &heldBySpace)
 	switch {
 	case err != nil:
 		return api.User{}, fmt.Errorf("check whether the name %q is taken: %w", userName, err)
+	case heldByRemoved:
+		return api.User{}, api.CodeNameTaken.Errorf("a User named %q was Removed, and a Removed User's name is never used again", userName)
 	case heldByUser:
 		return api.User{}, api.CodeNameTaken.Errorf("a User named %q already exists", userName)
 	case heldBySpace:
@@ -104,13 +140,178 @@ func add(ctx context.Context, tx store.Tx, userName, role string) (api.User, err
 	return u, nil
 }
 
-// ByName returns the User named userName. A name that is not a User name is
-// refused with CodeInvalidName, and one no User holds with CodeUnknownUser.
+// unixSocket stands in the log for the Unix socket where the Device Session
+// that removed a User would, as in the device area's lines.
+const unixSocket = "unix socket"
+
+// remover answers user.remove, announcing each User Removed on changes and
+// logging what it did to log once it commits.
+type remover struct {
+	holdings []space.Holding
+	changes  *access.Signal
+	log      *slog.Logger
+}
+
+// remove is user.remove: it deletes a User who never joined and Removes
+// anyone else, the least permanent outcome the records allow, and says
+// which. Only the Owner removes Users, and a Member is refused before the
+// name is read. The Owner is never removed, and a Removed User is not
+// removed again.
+func (r remover) remove(ctx context.Context, tx store.Tx, caller op.Caller, req api.UserRemoveRequest) (api.UserRemoveResponse, error) {
+	who, err := access.OwnerOnly(ctx, tx, caller, "removes Users")
+	if err != nil {
+		return api.UserRemoveResponse{}, err
+	}
+	u, err := ByName(ctx, tx, req.Name)
+	if err != nil {
+		return api.UserRemoveResponse{}, err
+	}
+	switch {
+	case u.Role == api.RoleOwner:
+		return api.UserRemoveResponse{}, api.CodeOwnerNotRemovable.Errorf("%s is the Owner, who is never deleted or Removed", u.Name)
+	case u.RemovedAt != "":
+		return api.UserRemoveResponse{}, api.CodeUserRemoved.Errorf("%s was Removed already, at %s", u.Name, u.RemovedAt)
+	}
+	// A User who never joined has never had a Device Session, Revoked ones
+	// included.
+	var joined bool
+	err = tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM device_sessions WHERE user_id = ?)", u.ID).Scan(&joined)
+	if err != nil {
+		return api.UserRemoveResponse{}, fmt.Errorf("tell whether %s ever joined: %w", u.Name, err)
+	}
+	by := unixSocket
+	if who.DeviceSession != nil {
+		by = who.DeviceSession.ID
+	}
+	if !joined {
+		if err := r.delete(ctx, tx, u, by); err != nil {
+			return api.UserRemoveResponse{}, err
+		}
+		return api.UserRemoveResponse{Outcome: api.OutcomeDeleted, User: u}, nil
+	}
+	removed, err := r.removeJoined(ctx, tx, u, by)
+	if err != nil {
+		return api.UserRemoveResponse{}, err
+	}
+	return api.UserRemoveResponse{Outcome: api.OutcomeRemoved, User: removed}, nil
+}
+
+// removeJoined Removes u, a User who joined, and returns them Removed. In
+// the call's transaction it revokes every Device Session they hold, voids
+// their valid Join Codes and those their Device Sessions issued, takes them
+// out of every Space, passes their Personal Space to the Owner, and marks
+// them Removed, keeping the record so their name is never used again. Once
+// it commits, each revocation and the removal are logged, by being what
+// removed them, and the access-change signal names the Device Sessions it
+// Revoked, so their Device Connections close.
+func (r remover) removeJoined(ctx context.Context, tx store.Tx, u api.User, by string) (api.User, error) {
+	now := op.Now(ctx).Format(time.RFC3339)
+	revoked, err := revokeAll(ctx, tx, u, now)
+	if err != nil {
+		return api.User{}, err
+	}
+	voided, err := tx.ExecContext(ctx, `UPDATE join_codes SET voided_at = ?1
+		WHERE (user_id = ?2 OR issued_by IN (SELECT id FROM device_sessions WHERE user_id = ?2))
+		AND used_at IS NULL AND voided_at IS NULL AND expires_at > ?1`, now, u.ID)
+	if err != nil {
+		return api.User{}, fmt.Errorf("void the Join Codes of %s: %w", u.Name, err)
+	}
+	codes, err := voided.RowsAffected()
+	if err != nil {
+		return api.User{}, fmt.Errorf("count the Join Codes of %s: %w", u.Name, err)
+	}
+	if err := space.PassToOwner(ctx, tx, u); err != nil {
+		return api.User{}, err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE users SET removed_at = ? WHERE id = ?", now, u.ID); err != nil {
+		return api.User{}, fmt.Errorf("mark %s Removed: %w", u.Name, err)
+	}
+	ids := make([]string, 0, len(revoked))
+	for _, d := range revoked {
+		ids = append(ids, d.ID)
+		r.afterCommit(ctx, "device revoked", "user", d.User, "device", d.Device, "device_session", d.ID, "revoked_by", by)
+	}
+	r.afterCommit(ctx, "user removed", "user", u.Name, "user_id", u.ID, "device_sessions_revoked", len(revoked),
+		"join_codes_voided", codes, "removed_by", by)
+	r.changes.Publish(ctx, access.Change{Revoked: ids})
+	u.RemovedAt = now
+	return u, nil
+}
+
+// revokeAll revokes, at now, every live Device Session of u, and returns
+// them by device name.
+func revokeAll(ctx context.Context, tx store.Tx, u api.User, now string) ([]api.DeviceSessionRef, error) {
+	rows, err := tx.QueryContext(ctx, `UPDATE device_sessions SET revoked_at = ?1
+		WHERE user_id = ?2 AND revoked_at IS NULL RETURNING id, device`, now, u.ID)
+	if err != nil {
+		return nil, fmt.Errorf("revoke the Device Sessions of %s: %w", u.Name, err)
+	}
+	defer func() { _ = rows.Close() }()
+	var revoked []api.DeviceSessionRef
+	for rows.Next() {
+		d := api.DeviceSessionRef{User: u.Name}
+		if err := rows.Scan(&d.ID, &d.Device); err != nil {
+			return nil, fmt.Errorf("revoke the Device Sessions of %s: %w", u.Name, err)
+		}
+		revoked = append(revoked, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("revoke the Device Sessions of %s: %w", u.Name, err)
+	}
+	slices.SortFunc(revoked, func(a, b api.DeviceSessionRef) int { return cmp.Compare(a.Device, b.Device) })
+	return revoked, nil
+}
+
+// afterCommit logs msg with attrs once the call's transaction has committed,
+// and never when it rolls back.
+func (r remover) afterCommit(ctx context.Context, msg string, attrs ...any) {
+	op.AfterTx(ctx, func(committed bool) {
+		if committed {
+			r.log.Info(msg, attrs...)
+		}
+	})
+}
+
+// delete deletes u, a User who never joined, with their Personal Space,
+// which must hold nothing, and their Join Codes, which are all unused; their
+// memberships go with them (ON DELETE CASCADE). Their name is free again.
+// Once it commits, the deletion is logged, by being what deleted them.
+func (r remover) delete(ctx context.Context, tx store.Tx, u api.User, by string) error {
+	if err := space.DeletePersonal(ctx, tx, r.holdings, u); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM join_codes WHERE user_id = ?", u.ID); err != nil {
+		return fmt.Errorf("delete the Join Codes of %s: %w", u.Name, err)
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM users WHERE id = ?", u.ID); err != nil {
+		return fmt.Errorf("delete the User %s: %w", u.Name, err)
+	}
+	r.afterCommit(ctx, "user deleted", "user", u.Name, "user_id", u.ID, "deleted_by", by)
+	return nil
+}
+
+// Active returns the User named userName, as ByName does, for a call that
+// acts on them, such as issuing them a Join Code: a Removed User is refused
+// with CodeUserRemoved.
+func Active(ctx context.Context, tx store.Tx, userName string) (api.User, error) {
+	u, err := ByName(ctx, tx, userName)
+	if err != nil {
+		return api.User{}, err
+	}
+	if u.RemovedAt != "" {
+		return api.User{}, api.CodeUserRemoved.Errorf("%s was Removed, at %s", u.Name, u.RemovedAt)
+	}
+	return u, nil
+}
+
+// ByName returns the User named userName, Removed or not. A name that is
+// not a User name is refused with CodeInvalidName, and one no User holds
+// with CodeUnknownUser.
 func ByName(ctx context.Context, tx store.Tx, userName string) (api.User, error) {
 	if err := name.Check(userName); err != nil {
 		return api.User{}, api.CodeInvalidName.Errorf("invalid User name: %v", err)
 	}
-	u, err := scan(tx.QueryRowContext(ctx, "SELECT id, name, role, created_at FROM users WHERE name = ?", userName))
+	u, err := scan(tx.QueryRowContext(ctx, "SELECT id, name, role, created_at, removed_at FROM users WHERE name = ?", userName))
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return api.User{}, api.CodeUnknownUser.Errorf("no User is named %q", userName)
@@ -120,8 +321,17 @@ func ByName(ctx context.Context, tx store.Tx, userName string) (api.User, error)
 	return u, nil
 }
 
-func scan(row *sql.Row) (api.User, error) {
+// scanner is a *sql.Row or *sql.Rows.
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+// scan reads a User from the columns id, name, role, created_at and
+// removed_at.
+func scan(row scanner) (api.User, error) {
 	var u api.User
-	err := row.Scan(&u.ID, &u.Name, &u.Role, &u.CreatedAt)
+	var removed sql.NullString
+	err := row.Scan(&u.ID, &u.Name, &u.Role, &u.CreatedAt, &removed)
+	u.RemovedAt = removed.String
 	return u, err
 }

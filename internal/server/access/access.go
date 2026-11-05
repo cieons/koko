@@ -40,7 +40,8 @@ func (i Identity) IsOwner() bool {
 
 // Who answers who is calling: it turns a Device Connection's Device Session
 // into its User, and the Local caller into the Owner. A Revoked Device
-// Session is refused with api.CodeRevoked. A caller that is neither, or a
+// Session is refused with api.CodeRevoked, and so is a Removed User's, since
+// Removing a User revokes each of theirs. A caller that is neither, or a
 // Device Session no record holds, is a bug in the transport, and fails.
 func Who(ctx context.Context, tx store.Tx, c op.Caller) (Identity, error) {
 	switch {

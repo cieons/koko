@@ -1,0 +1,11 @@
+{
+  "id": "space_<1>",
+  "name": "bob",
+  "personal": false,
+  "members": [],
+  "counts": {
+    "hosts": 1,
+    "retired_hosts": 0,
+    "secrets": 0
+  }
+}

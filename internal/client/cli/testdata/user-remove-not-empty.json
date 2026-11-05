@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "space_not_empty",
+    "message": "bob never joined, so removing them deletes their Personal Space, which still holds 1 Host: move or remove them first"
+  }
+}

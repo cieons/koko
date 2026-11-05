@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "user_removed",
+    "message": "bob was Removed already, at <time>"
+  }
+}

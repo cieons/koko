@@ -229,10 +229,12 @@ subscribes the transport, which closes their Device Connections
 ([`transport.Server.CloseDeviceSessions`](../../internal/server/transport/transport.go)):
 each one once the calls in flight on it have answered (so a device that
 revoked itself gets its answer), at most 5 s later, and any connection of
-theirs that authenticated while the revocation committed is refused. Later
-changes that withdraw access (a User Removed, a Member taken out of a Space,
-a Host's access withdrawn) add fields to `access.Change`; later consumers
-(the Gateway, the web front's cookies) subscribe.
+theirs that authenticated while the revocation committed is refused.
+Removing a User revokes each of their live Device Sessions in the same way,
+and names them all as Revoked on the signal ([Users](users.md#removing)).
+Later changes that withdraw access (a Member taken out of a Space, a Host's
+access withdrawn) add fields to `access.Change`; later consumers (the
+Gateway, the web front's cookies) subscribe.
 
 ## On the device
 

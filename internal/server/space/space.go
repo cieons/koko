@@ -31,9 +31,9 @@ const idPrefix = "space"
 // should count apart, such as Retired Hosts, take a field of their own.
 type Holding func(ctx context.Context, tx store.Tx, spaceID string, c *api.SpaceCounts) error
 
-// UserFunc returns the User named userName, refusing a name no User holds
-// with CodeUnknownUser: the user area's user.ByName, which the space area
-// cannot import, since every User gets a Personal Space.
+// UserFunc returns the User named userName, Removed or not, refusing a name
+// no User holds with CodeUnknownUser: the user area's user.ByName, which the
+// space area cannot import, since every User gets a Personal Space.
 type UserFunc func(ctx context.Context, tx store.Tx, userName string) (api.User, error)
 
 // area serves the space operations.
@@ -126,7 +126,7 @@ func (s *area) remove(ctx context.Context, tx store.Tx, caller op.Caller, req ap
 		return api.SpaceRemoveResponse{}, api.CodePersonalSpace.Errorf(
 			"%s is a Personal Space, which stays while its User exists", sp.Name)
 	}
-	c, err := s.count(ctx, tx, sp)
+	c, err := count(ctx, tx, s.holdings, sp)
 	if err != nil {
 		return api.SpaceRemoveResponse{}, err
 	}
@@ -260,7 +260,8 @@ func Personal(ctx context.Context, tx store.Tx, who access.Identity) (api.Space,
 }
 
 // memberAdd is space.member.add: it makes the Users Members of a shared
-// Space, all or none, leaving a User who is a Member already as they are.
+// Space, all or none, leaving a User who is a Member already as they are. A
+// Removed User is made a Member of no Space.
 func (s *area) memberAdd(ctx context.Context, tx store.Tx, caller op.Caller, req api.SpaceMemberAddRequest) (api.SpaceMemberAddResponse, error) {
 	sp, users, err := s.members(ctx, tx, caller, req.Space, req.Users)
 	if err != nil {
@@ -269,6 +270,11 @@ func (s *area) memberAdd(ctx context.Context, tx store.Tx, caller op.Caller, req
 	if sp.Personal {
 		return api.SpaceMemberAddResponse{}, api.CodePersonalSpace.Errorf(
 			"%s is a Personal Space, which is never given Members while its User exists", sp.Name)
+	}
+	for _, u := range users {
+		if u.RemovedAt != "" {
+			return api.SpaceMemberAddResponse{}, api.CodeUserRemoved.Errorf("%s was Removed, at %s", u.Name, u.RemovedAt)
+		}
 	}
 	for _, u := range users {
 		_, err := tx.ExecContext(ctx, "INSERT INTO memberships (space_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING", sp.ID, u.ID)
@@ -281,7 +287,8 @@ func (s *area) memberAdd(ctx context.Context, tx store.Tx, caller op.Caller, req
 }
 
 // memberRemove is space.member.remove: it takes the Users out of a Space,
-// all or none, leaving a User who is not a Member as they are.
+// all or none, leaving a User who is not a Member as they are, as a Removed
+// User never is.
 func (s *area) memberRemove(ctx context.Context, tx store.Tx, caller op.Caller, req api.SpaceMemberRemoveRequest) (api.SpaceMemberRemoveResponse, error) {
 	sp, users, err := s.members(ctx, tx, caller, req.Space, req.Users)
 	if err != nil {
@@ -346,19 +353,56 @@ func (s *area) detail(ctx context.Context, tx store.Tx, sp api.Space) (api.Space
 	if err := rows.Err(); err != nil {
 		return api.SpaceDetail{}, fmt.Errorf("read the Members of %s: %w", sp.Name, err)
 	}
-	if d.Counts, err = s.count(ctx, tx, sp); err != nil {
+	if d.Counts, err = count(ctx, tx, s.holdings, sp); err != nil {
 		return api.SpaceDetail{}, err
 	}
 	return d, nil
 }
 
-// count asks each area how many of its records the Space sp holds.
-func (s *area) count(ctx context.Context, tx store.Tx, sp api.Space) (api.SpaceCounts, error) {
+// count asks each of holdings how many of its records the Space sp holds.
+func count(ctx context.Context, tx store.Tx, holdings []Holding, sp api.Space) (api.SpaceCounts, error) {
 	var c api.SpaceCounts
-	for _, h := range s.holdings {
+	for _, h := range holdings {
 		if err := h(ctx, tx, sp.ID, &c); err != nil {
 			return api.SpaceCounts{}, fmt.Errorf("count what the Space %s holds: %w", sp.Name, err)
 		}
 	}
 	return c, nil
+}
+
+// DeletePersonal deletes the Personal Space of u, a User who never joined
+// and is being deleted, refusing with CodeSpaceNotEmpty while it holds any
+// record that holdings count, since deleting the User must lose nothing.
+func DeletePersonal(ctx context.Context, tx store.Tx, holdings []Holding, u api.User) error {
+	sp := api.Space{Name: u.Name, Personal: true}
+	if err := tx.QueryRowContext(ctx, "SELECT id FROM spaces WHERE user_id = ?", u.ID).Scan(&sp.ID); err != nil {
+		return fmt.Errorf("read the Personal Space of %s: %w", u.Name, err)
+	}
+	c, err := count(ctx, tx, holdings, sp)
+	if err != nil {
+		return err
+	}
+	if c != (api.SpaceCounts{}) {
+		return api.CodeSpaceNotEmpty.Errorf(
+			"%s never joined, so removing them deletes their Personal Space, which still holds %s: move or remove them first",
+			u.Name, held(c))
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM spaces WHERE id = ?", sp.ID); err != nil {
+		return fmt.Errorf("delete the Personal Space of %s: %w", u.Name, err)
+	}
+	return nil
+}
+
+// PassToOwner takes u, a User being Removed, out of every Space, and turns
+// their Personal Space into an ordinary shared Space with no Members, which
+// only the Owner sees: it keeps its name and what it holds, and the Owner
+// can rename it, give it Members and remove it once it is empty.
+func PassToOwner(ctx context.Context, tx store.Tx, u api.User) error {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM memberships WHERE user_id = ?", u.ID); err != nil {
+		return fmt.Errorf("take %s out of every Space: %w", u.Name, err)
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE spaces SET user_id = NULL WHERE user_id = ?", u.ID); err != nil {
+		return fmt.Errorf("pass the Personal Space of %s to the Owner: %w", u.Name, err)
+	}
+	return nil
 }

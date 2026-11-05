@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/server/access"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/space"
@@ -46,7 +47,7 @@ func TestUserInviteIsOneTransaction(t *testing.T) {
 			return api.JoinCode{}, errors.New("no Join Code today")
 		}
 		return api.JoinCode{Device: "device-1"}, nil
-	})
+	}, nil, &access.Signal{}, slog.New(slog.DiscardHandler))
 	call := func(path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequestWithContext(op.WithCaller(t.Context(), op.Caller{Local: true}), http.MethodPost, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")

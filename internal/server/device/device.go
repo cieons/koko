@@ -89,7 +89,7 @@ func (i *Issuer) Issue(ctx context.Context, tx store.Tx, caller op.Caller, req a
 		if !who.IsOwner() {
 			return api.JoinCode{}, api.CodeOwnerOnly.Errorf("only the Owner issues a Join Code for another User's device; name no User to issue one for your own")
 		}
-		if u, err = user.ByName(ctx, tx, req.User); err != nil {
+		if u, err = user.Active(ctx, tx, req.User); err != nil {
 			return api.JoinCode{}, err
 		}
 	}

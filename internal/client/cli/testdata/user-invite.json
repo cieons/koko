@@ -3,7 +3,8 @@
     "id": "user_<1>",
     "name": "bob",
     "role": "member",
-    "created_at": "<time>"
+    "created_at": "<time>",
+    "removed_at": null
   },
   "join_code": {
     "id": "joincode_<2>",

@@ -10,11 +10,12 @@ import (
 
 // Change is a committed change to the record that can withdraw access, as
 // the access-change signal carries it: the Device Sessions it affects. A
-// later kind of change (a User Removed, a Member taken out of a Space, a
-// Host's access withdrawn) adds a field of its own.
+// later kind of change (a Member taken out of a Space, a Host's access
+// withdrawn) adds a field of its own.
 type Change struct {
-	// Revoked are the ids of the Device Sessions the change Revoked: their
-	// Device Connections close.
+	// Revoked are the ids of the Device Sessions the change Revoked: one
+	// revoked by itself, or every one of a User Removed. Their Device
+	// Connections close.
 	Revoked []string
 }
 

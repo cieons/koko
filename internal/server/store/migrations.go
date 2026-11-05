@@ -25,6 +25,7 @@ var steps = []string{
 	"idempotency_keys.sql",
 	"hosts.sql",
 	"secrets.sql",
+	"users_removed.sql",
 }
 
 //go:embed migrations/*.sql

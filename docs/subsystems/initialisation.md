@@ -65,7 +65,7 @@ Owner's name can never be taken before it is given. Nothing listens on TCP.
 | --- | --- |
 | `deployment` | One row: the Server Address. The koko server is initialised once it exists. |
 | `own_keys` | One row per key the koko server makes for itself, sealed for the row's id: `koko` and `host`, each PKCS #8, made at initialisation; and `cookie`, the web front's 32-byte cookie key, made on first use ([`koko web` and the web front](web-front.md#runs-tokens-and-the-cookie)). |
-| `users` | The Owner, with the role `owner`; a partial unique index allows one. Invited Users have the role `member`. |
+| `users` | The Owner, with the role `owner`; a partial unique index allows one. Invited Users have the role `member` ([Users](users.md#the-record)). |
 | `spaces.user_id` | The User a Personal Space belongs to, which is not a membership; empty for a shared Space. |
 | `join_codes` | The Owner's first Join Code, kept as the hash of its secret ([Join Codes](join-codes.md#the-record)). |
 

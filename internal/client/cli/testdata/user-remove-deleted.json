@@ -1,0 +1,10 @@
+{
+  "outcome": "deleted",
+  "user": {
+    "id": "user_<1>",
+    "name": "bob",
+    "role": "member",
+    "created_at": "<time>",
+    "removed_at": null
+  }
+}
