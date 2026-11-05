@@ -51,8 +51,8 @@ refused with `owner_only` before the name is read.
      ordinary shared Space with no Members by clearing `spaces.user_id`
      ([`space.PassToOwner`](../../internal/server/space/space.go)): it keeps
      its name and what it holds, only the Owner sees it, and the Owner can
-     rename it, give it Members, move its Hosts out and remove it once it is
-     empty;
+     rename it, give it Members, move its Hosts and Secrets out and remove
+     it once it is empty;
   4. marks them Removed, keeping the row.
 
   Once it commits, the access-change signal names the Device Sessions it

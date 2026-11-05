@@ -44,6 +44,48 @@ var secretCommands = []Command{
 		Op:          api.SecretAdd,
 		Run:         action(secretAdd),
 	},
+	{
+		Noun:    "secret",
+		Verb:    "set",
+		Summary: "Replace a Secret's value, read as secret add reads one; the old value is gone",
+		Args:    []Arg{{Name: "secret", Qualifier: "space"}},
+		Flags: []Flag{
+			{Name: "from-file", Value: "file", Summary: "read the value from this file, byte for byte"},
+		},
+		ReadsSecret: true,
+		// Reversible by the verb rule of ADR 0019, though P0 keeps no value
+		// history (P0 spec: Secrets).
+		Tier: Reversible,
+		Op:   api.SecretSet,
+		Run:  action(secretSet),
+	},
+	{
+		Noun:    "secret",
+		Verb:    "rename",
+		Summary: "Give a Secret a new name within its Space",
+		Args:    []Arg{{Name: "secret", Qualifier: "space"}, {Name: "new-name"}},
+		Tier:    Reversible,
+		Op:      api.SecretRename,
+		Run:     action(secretRename),
+	},
+	{
+		Noun:    "secret",
+		Verb:    "move",
+		Summary: "Move a Secret to another Space under the same name; you must be able to act in both",
+		Args:    []Arg{{Name: "secret", Qualifier: "space"}, {Name: "space"}},
+		Tier:    Reversible,
+		Op:      api.SecretMove,
+		Run:     action(secretMove),
+	},
+	{
+		Noun:    "secret",
+		Verb:    "rm",
+		Summary: "Delete a Secret and its value, for good",
+		Args:    []Arg{{Name: "secret", Qualifier: "space"}},
+		Tier:    Irreversible,
+		Op:      api.SecretRemove,
+		Run:     action(secretRm),
+	},
 }
 
 // secretJSON is a Secret in the CLI's own --json: its name in its Space,
@@ -69,6 +111,10 @@ var secretMappings = []mapping{
 	{api: reflect.TypeFor[api.SecretListResponse]()},
 	{api: reflect.TypeFor[api.SecretShowResponse]()},
 	{api: reflect.TypeFor[api.SecretAddResponse]()},
+	{api: reflect.TypeFor[api.SecretSetResponse]()},
+	{api: reflect.TypeFor[api.SecretRenameResponse]()},
+	{api: reflect.TypeFor[api.SecretMoveResponse]()},
+	{api: reflect.TypeFor[api.SecretRemoveResponse]()},
 	{api: reflect.TypeFor[api.Secret](), cli: reflect.TypeFor[secretJSON]()},
 }
 
@@ -153,4 +199,89 @@ func secretAdd(ctx context.Context, in *Input) (addedSecret, error) {
 		return addedSecret{}, err
 	}
 	return addedSecret(secretFromAPI(resp.Secret)), nil
+}
+
+// setSecret is what secret set prints: the Secret it changed, without its
+// value.
+type setSecret secretJSON
+
+func (s setSecret) Human(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "Set the value of Secret %s (%s).\n", secretJSON(s).qualified(), s.ID)
+	return err
+}
+
+func secretSet(ctx context.Context, in *Input) (setSecret, error) {
+	value, err := in.ReadSecret(ctx, secretValueInput(in.Arg("secret")))
+	if err != nil {
+		return setSecret{}, err
+	}
+	space, name := in.Qualified("secret")
+	resp, err := in.Call(ctx, api.SecretSet, api.SecretSetRequest{Space: space, Name: name, Value: value})
+	if err != nil {
+		return setSecret{}, err
+	}
+	return setSecret(secretFromAPI(resp.Secret)), nil
+}
+
+// renamedSecret is what secret rename prints: the Secret under its new
+// name, without its value.
+type renamedSecret struct {
+	secretJSON
+	// from is the name it was called by, <space>/<secret>, for people only.
+	from string
+}
+
+func (s renamedSecret) Human(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "Renamed Secret %s to %s (%s).\n", s.from, s.qualified(), s.ID)
+	return err
+}
+
+func secretRename(ctx context.Context, in *Input) (renamedSecret, error) {
+	space, name := in.Qualified("secret")
+	resp, err := in.Call(ctx, api.SecretRename, api.SecretRenameRequest{Space: space, Name: name, NewName: in.Arg("new-name")})
+	if err != nil {
+		return renamedSecret{}, err
+	}
+	return renamedSecret{secretJSON: secretFromAPI(resp.Secret), from: in.Arg("secret")}, nil
+}
+
+// movedSecret is what secret move prints: the Secret in its new Space,
+// without its value.
+type movedSecret struct {
+	secretJSON
+	// from is the name it was called by, <space>/<secret>, for people only.
+	from string
+}
+
+func (s movedSecret) Human(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "Moved Secret %s to %s (%s).\n", s.from, s.qualified(), s.ID)
+	return err
+}
+
+func secretMove(ctx context.Context, in *Input) (movedSecret, error) {
+	space, name := in.Qualified("secret")
+	resp, err := in.Call(ctx, api.SecretMove, api.SecretMoveRequest{Space: space, Name: name, NewSpace: in.Arg("space")})
+	if err != nil {
+		return movedSecret{}, err
+	}
+	return movedSecret{secretJSON: secretFromAPI(resp.Secret), from: in.Arg("secret")}, nil
+}
+
+// removedSecret is what secret rm prints: the Secret it deleted, as it was,
+// in secret ls's shape and without its value, so a script keeps the id of
+// what is gone.
+type removedSecret secretJSON
+
+func (s removedSecret) Human(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "Removed Secret %s (%s).\n", secretJSON(s).qualified(), s.ID)
+	return err
+}
+
+func secretRm(ctx context.Context, in *Input) (removedSecret, error) {
+	space, name := in.Qualified("secret")
+	resp, err := in.Call(ctx, api.SecretRemove, api.SecretRemoveRequest{Space: space, Name: name})
+	if err != nil {
+		return removedSecret{}, err
+	}
+	return removedSecret(secretFromAPI(resp.Secret)), nil
 }

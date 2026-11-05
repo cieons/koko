@@ -73,6 +73,62 @@ export interface SecretAddResponse {
   secret: Secret;
 }
 
+/** SecretSetRequest replaces the value of a Secret its Space holds. */
+export interface SecretSetRequest {
+  space: string;
+  name: string;
+  /**
+   * Value is the new value, 1 byte to 64 KiB, in standard base64
+   * (RFC 4648, padded).
+   */
+  value_base64: string;
+}
+
+/** SecretSetResponse is the Secret secret.set changed, without its value. */
+export interface SecretSetResponse {
+  secret: Secret;
+}
+
+/** SecretRenameRequest gives a Secret a new name within its Space. */
+export interface SecretRenameRequest {
+  space: string;
+  name: string;
+  /** NewName is a name the Space does not hold. */
+  new_name: string;
+}
+
+/** SecretRenameResponse is the Secret under its new name, without its value. */
+export interface SecretRenameResponse {
+  secret: Secret;
+}
+
+/** SecretMoveRequest moves a Secret, keeping its name, to another Space. */
+export interface SecretMoveRequest {
+  space: string;
+  name: string;
+  /** NewSpace names the Space to move it to, which must not hold its name. */
+  new_space: string;
+}
+
+/** SecretMoveResponse is the Secret in its new Space, without its value. */
+export interface SecretMoveResponse {
+  secret: Secret;
+}
+
+/** SecretRemoveRequest names a Secret to delete. */
+export interface SecretRemoveRequest {
+  space: string;
+  name: string;
+}
+
+/**
+ * SecretRemoveResponse is the Secret secret.remove deleted, as it was,
+ * without its value.
+ */
+export interface SecretRemoveResponse {
+  secret: Secret;
+}
+
 /**
  * SecretList lists Secrets without their values: those of one Space, or
  * of every Space the caller can act in.
@@ -103,6 +159,49 @@ export const SecretShow: Op<SecretShowRequest, SecretShowResponse> = {
 export const SecretAdd: Op<SecretAddRequest, SecretAddResponse> = {
   name: "secret.add",
   path: "/v1/secret.add",
+  write: true,
+};
+
+/**
+ * SecretSet replaces a Secret's value, sealed afresh; the last call
+ * wins. A name the Space does not hold is refused with
+ * CodeUnknownSecret, never added, and the value is checked as
+ * SecretAdd checks it.
+ */
+export const SecretSet: Op<SecretSetRequest, SecretSetResponse> = {
+  name: "secret.set",
+  path: "/v1/secret.set",
+  write: true,
+};
+
+/**
+ * SecretRename gives a Secret a new name within its Space, leaving its
+ * sealed value as it is. A name the Space holds, its own included, is
+ * refused with CodeNameTaken.
+ */
+export const SecretRename: Op<SecretRenameRequest, SecretRenameResponse> = {
+  name: "secret.rename",
+  path: "/v1/secret.rename",
+  write: true,
+};
+
+/**
+ * SecretMove moves a Secret, keeping its name and its sealed value, to
+ * another Space; the caller must be able to act in both, and a NewSpace
+ * they cannot act in is refused with CodeUnknownSpace too. A NewSpace
+ * that holds the name is refused with CodeNameTaken; moving a Secret to
+ * its own Space changes nothing.
+ */
+export const SecretMove: Op<SecretMoveRequest, SecretMoveResponse> = {
+  name: "secret.move",
+  path: "/v1/secret.move",
+  write: true,
+};
+
+/** SecretRemove deletes a Secret and its value, for good. */
+export const SecretRemove: Op<SecretRemoveRequest, SecretRemoveResponse> = {
+  name: "secret.remove",
+  path: "/v1/secret.remove",
   write: true,
 };
 

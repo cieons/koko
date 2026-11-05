@@ -50,7 +50,8 @@ membership.
   `personal` say which: a Space is Personal exactly while `user_id` is set.
   Removing a User turns their Personal Space into an ordinary shared Space
   with no Members by clearing it ([Users](users.md#removing)), so only the
-  Owner sees it, and can rename it, give it Members and remove it once empty.
+  Owner sees it, and can rename it, give it Members, move its records out
+  and remove it once empty.
 - A membership is a row of `memberships` (a Space and a User, no role). It
   goes with its Space when the Space is removed, and with its User when a
   User who never joined is deleted (`ON DELETE CASCADE`).

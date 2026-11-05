@@ -40,18 +40,27 @@ directory shows it.
 | `koko secret ls [<space>]` | read | `secret.list` | a bare array of Secrets, `{"id", "space", "name", "created_at", "updated_at"}`, sorted by Space, then name: of one Space, or of every Space the caller can act in |
 | `koko secret show <space>/<secret>` | irreversible | `secret.show` | the Secret with `"value_base64"`; without `--json`, the value's bytes on stdout and nothing else |
 | `koko secret add <space>/<secret> [--from-file <file>]` | reversible | `secret.add` | the Secret it stored, without its value |
+| `koko secret set <space>/<secret> [--from-file <file>]` | reversible | `secret.set` | the Secret it changed, without its value |
+| `koko secret rename <space>/<secret> <new-name>` | reversible | `secret.rename` | the Secret under its new name |
+| `koko secret move <space>/<secret> <space>` | reversible | `secret.move` | the Secret in its new Space |
+| `koko secret rm <space>/<secret>` | irreversible | `secret.remove` | the Secret it deleted, as it was, without its value |
 
 - **Only `secret show` prints a value.** It sits in the tier that prints a
   credential (ADR 0019), so one harness rule asks before any value is
-  shown. `secret.show` is the one response, and `secret.add` the one
-  request, that holds a value; no flag of any other command adds one, and
-  `koko --json secret show` is refused like any flag before the path.
+  shown. `secret.show` is the one response, and `secret.add` and
+  `secret.set` the only requests, that hold a value; no flag of any other
+  command adds one, and `koko --json secret show` is refused like any flag
+  before the path.
   [`TestOnlySecretShowAnswersWithAValue`](../../internal/client/cli/secret_tier_test.go)
   fails when another response or command shape can hold an `api.SecretValue`.
 - **A value in JSON** is standard base64 of its bytes, under `value_base64`
   ([ADR 0028](../adr/0028-a-secret-value-travels-in-json-as-base64.md)).
 - **No upsert.** `secret add` under a name the Space holds fails with
-  `name_taken` and leaves the value as it was.
+  `name_taken` and leaves the value as it was; `secret set` on a name the
+  Space does not hold fails with `unknown_secret` and adds nothing.
+- **The last writer wins.** `secret set` replaces the value with no
+  revision check, and P0 keeps no value history, so the old value is gone
+  (it sits in the reversible tier by the verb rule of ADR 0019 all the same).
 - **Errors** name the Secret as `<space>/<secret>` and never hold a value.
   `api.SecretValue` prints as its length through `fmt`, and logs as its
   length through slog's text handler, the koko server's, so an error or a
@@ -69,9 +78,27 @@ An empty value is refused with `invalid_request`. A name the Space holds is
 caller cannot act in `unknown_space`, as for every operation that names a
 Space.
 
+## Renaming, moving and deleting
+
+- **Rename** gives a Secret a new name in its Space; **move** takes it to
+  another Space under its name. Each keeps its id, its `created_at` and
+  its sealed value, and moves `updated_at` to the call. Each refuses a name
+  the Space it lands in holds with `name_taken`, a rename to its own name
+  included, and never overwrites a Secret. A move to the Space it is in
+  changes nothing.
+- **A move needs both Spaces.** It looks up the source, then the target,
+  through `space.ByName`, so a caller who cannot act in either is answered
+  as for a Space that does not exist, naming that Space; the Owner, and
+  the Local caller, may move between any two.
+- **Delete** (`secret rm`, `secret.remove`) removes the Secret's row, its
+  sealed value with it. A Secret has no Retired state and P0 keeps no value
+  history, so nothing brings it back. Its `--json` is the Secret as it was,
+  in `secret ls`'s shape, without its value, as every `rm` prints the record
+  it removed ([`--json`](cli.md#--json)).
+
 ## Reading a value in
 
-`secret add` reads the value through the
+`secret add` and `secret set` read the value through the
 [secret-input reader](cli.md#the-secret-input-reader): `--from-file`, else
 stdin when it is not a terminal, else a prompt with echo off on a terminal,
 asked once. Without a terminal and with nothing on stdin it exits 2 at once,
@@ -93,6 +120,10 @@ without a Space leaves out the Secrets of every Space outside the caller's
 scope. Membership is read on every call, so a Member taken out of a Space
 loses its Secrets on their next call.
 
+A Removed User's former Personal Space is an ordinary shared Space with no
+Members ([Users](users.md#removing)), so its Secrets stay there, sealed,
+and only the Owner sees them and moves them out or deletes them.
+
 `space show` counts a Space's Secrets, and `space rm` refuses a Space that
 holds one, through [`secret.Holding`](../../internal/server/secret/secret.go)
 ([what a Space holds](access.md#what-a-space-holds)).
@@ -100,21 +131,33 @@ holds one, through [`secret.Holding`](../../internal/server/secret/secret.go)
 ## Sealing
 
 `secret.add` seals the value with `RootKey.Seal` for the new Secret's id,
-and `secret.show` opens it with `RootKey.Open` for the same id
+`secret.set` seals the new value afresh, with a fresh nonce, for the same
+id, and `secret.show` opens it with `RootKey.Open` for that id
 ([the Seal](seal.md)). The secret area gets the Root Key the koko server
 loaded through its `Register`, which `server.Start` calls. A sealed value
 copied onto another Secret's row, or with any byte changed, does not open:
 `secret.show` fails with `secret_unreadable`, naming the Secret, and prints
-no value. The id never changes, so a rename or a move (#56) never reseals.
+no value. The id never changes, so a rename or a move never reseals.
+
+A Secret write's response holds no value, so the response the koko server
+keeps for its [`Idempotency-Key`](api.md#idempotency-key) holds none
+either: a `secret.add` retried with its key adds one Secret and answers the
+kept response, and the same key with another value is refused with
+`idempotency_key_reused`.
 
 ## Verifying
 
 - [`internal/client/cli/secret_test.go`](../../internal/client/cli/secret_test.go)
+  and [`secret_change_test.go`](../../internal/client/cli/secret_change_test.go)
   (S1): each command with its goldens; values of any bytes up to exactly
   64 KiB from stdin and a file, and one byte more refused; the prompt on the
   fake terminal and the refusal without one; the name rule and a name without
   its Space; `koko --json secret show`; access over Device Connections and a
-  membership change; `space show` and `space rm`; and the marker test, which
+  membership change; `set` on a missing Secret and the last writer winning;
+  `rename` and `move` onto a taken name, and a move with access to the
+  source only, the target only and both; `rm`; the Secrets of a Removed
+  User's former Personal Space in the Owner's hands; `space show` and
+  `space rm`; and the marker test, which
   finds a unique value only on `secret show`'s stdout, never on any stderr,
   in the koko server's log or in a file under a temporary HOME, the value
   written as an argument included.
@@ -124,6 +167,10 @@ no value. The id never changes, so a rename or a move (#56) never reseals.
   writes one, and finds no value, private key or Root Key.
 - [`internal/server/secret/secret_test.go`](../../internal/server/secret/secret_test.go):
   the binding test, which edits the `secrets` table of a stopped koko server;
-  the koko server's own value checks; unknown request fields.
+  `TestOnlySecretSetReseals`, which reads that table to find a rename and a
+  move leaving the sealed value as it was and `secret set` sealing it
+  afresh; the koko server's own value checks, on `secret.add` and
+  `secret.set`; unknown request fields; and, beneath HTTP, a `secret.add`
+  retried with its `Idempotency-Key`.
 - [`internal/server/access/matrix_secret_test.go`](../../internal/server/access/matrix_secret_test.go):
   every Secret operation in the access matrix.

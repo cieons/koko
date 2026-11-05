@@ -30,6 +30,9 @@ func TestACopyOfTheDataDirectoryRevealsNoSecret(t *testing.T) {
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	h.KokoStdin(copyMarker, "secret", "add", "ops/db-password").WantSuccess(t)
 	h.KokoStdin(copyMarker+"\n", "secret", "add", harness.Owner+"/db-password").WantSuccess(t)
+	// A value secret set wrote is sealed as one secret add wrote.
+	h.KokoStdin("a first value", "secret", "add", "ops/token").WantSuccess(t)
+	h.KokoStdin(copyMarker, "secret", "set", "ops/token").WantSuccess(t)
 	running := readFiles(t, dataDir)
 	if len(running[store.FileName+"-wal"]) == 0 {
 		t.Fatalf("the running koko server's data directory holds no -wal to check: %v", running)

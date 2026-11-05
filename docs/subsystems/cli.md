@@ -221,6 +221,10 @@ remove` says whether it deleted the User, freeing the name, or Removed them.
 | `koko secret ls [<space>]` | read | `secret.list` | an array of Secrets, never a value: `{"id", "space", "name", "created_at", "updated_at"}` ([Secrets](secrets.md)) |
 | `koko secret show <space>/<secret>` | irreversible | `secret.show` | the Secret with its value, `"value_base64"`, the one `--json` that holds a value; without `--json`, the value's bytes alone |
 | `koko secret add <space>/<secret> [--from-file <file>]` | reversible | `secret.add` | the Secret it stored, without its value |
+| `koko secret set <space>/<secret> [--from-file <file>]` | reversible | `secret.set` | the Secret it changed, without its value |
+| `koko secret rename <space>/<secret> <new-name>` | reversible | `secret.rename` | the Secret under its new name |
+| `koko secret move <space>/<secret> <space>` | reversible | `secret.move` | the Secret in its new Space |
+| `koko secret rm <space>/<secret>` | irreversible | `secret.remove` | the Secret it deleted, as it was, without its value |
 | `koko status` | read | none: the koko server's version comes from its report | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_error", "revocation", "include_warning"}`, below |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |

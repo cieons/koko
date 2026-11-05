@@ -11,9 +11,13 @@ import (
 // agent's harness can allow secret ls by prefix and ask before secret show.
 func TestSecretCommandsSitInTheirTiers(t *testing.T) {
 	want := map[string]Tier{
-		"secret ls":   Read,
-		"secret add":  Reversible,
-		"secret show": Irreversible,
+		"secret ls":     Read,
+		"secret add":    Reversible,
+		"secret set":    Reversible,
+		"secret rename": Reversible,
+		"secret move":   Reversible,
+		"secret show":   Irreversible,
+		"secret rm":     Irreversible,
 	}
 	for _, c := range Tree() {
 		if c.Noun != "secret" {

@@ -212,7 +212,8 @@ func TestSecretNamesFollowTheNameRule(t *testing.T) {
 }
 
 // A Secret is always named with its Space: a name without one, or with an
-// empty part, is refused with exit 2 before any call.
+// empty part, is refused with exit 2 before any call, as is a command line
+// missing an argument or holding one too many.
 func TestASecretNameWithoutItsSpaceIsRefused(t *testing.T) {
 	h := startWithOps(t)
 	calls := h.Calls()
@@ -224,6 +225,13 @@ func TestASecretNameWithoutItsSpaceIsRefused(t *testing.T) {
 		{"secret", "add", "ops/"},
 		{"secret", "show", "/db-password"},
 		{"secret", "show", "ops/db/password"},
+		{"secret", "set", "db-password"},
+		{"secret", "rename", "db-password", "db-pass"},
+		{"secret", "rename", "ops/db-password"},
+		{"secret", "move", "db-password", "data"},
+		{"secret", "move", "ops/db-password"},
+		{"secret", "rm", "db-password"},
+		{"secret", "rm", "ops/db-password", "data/db-password"},
 	} {
 		h.KokoStdin("v", append(args, "--json")...).WantError(t, 2, "invalid_usage")
 	}
@@ -463,6 +471,29 @@ func TestASecretValueShowsOnlyOnSecretShowsStdout(t *testing.T) {
 		local(tooLong, "secret", "add", "ops/too-long")
 		device(marker, "secret", "add", "alice/stdin")
 		local(marker, "--json", "secret", "add", "ops/before")
+		local(marker, "secret", "set", "ops/stdin"+suffix)
+		local("", "secret", "set", "ops/file"+suffix, "--from-file", file)
+		runs = append(runs, ran{line: "terminal: secret set", r: h.KokoTerminal(harness.NewTerminal(marker),
+			append([]string{"secret", "set", "ops/typed" + suffix}, flags...)...)})
+		device(marker, "secret", "set", "ops/device"+suffix)
+		local(marker, "secret", "set", "ops/missing")
+		local("", "secret", "set", "ops/stdin", marker)
+		local("", "secret", "set", "ops/stdin", "-"+marker)
+		local(marker, "secret", "set", "ops/Bad-name")
+		local(marker, "secret", "set", "stdin")
+		local(tooLong, "secret", "set", "ops/stdin"+suffix)
+		device(marker, "secret", "set", "alice/stdin"+suffix)
+		local(marker, "--json", "secret", "set", "ops/stdin")
+		local("", "secret", "rename", "ops/typed"+suffix, "renamed"+suffix)
+		local("", "secret", "rename", "ops/file"+suffix, "stdin"+suffix)
+		local("", "secret", "move", "ops/renamed"+suffix, "alice")
+		local("", "secret", "move", "ops/file"+suffix, "nowhere")
+		local("", "secret", "rm", "alice/renamed"+suffix)
+		device("", "secret", "rename", "ops/device"+suffix, "moved"+suffix)
+		device("", "secret", "move", "ops/moved"+suffix, "bob")
+		device("", "secret", "move", "ops/file"+suffix, "alice")
+		device("", "secret", "rm", "bob/moved"+suffix)
+		device("", "secret", "rm", "alice/stdin"+suffix)
 		// The reads, and their failures.
 		local("", "secret", "ls")
 		local("", "secret", "ls", "ops")

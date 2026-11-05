@@ -14,8 +14,9 @@ const SecretMaxSize = 64 << 10
 // SecretValue is a Secret's value: opaque bytes, 1 to SecretMaxSize of them,
 // which koko stores sealed and never decodes. JSON carries one as standard
 // base64 (RFC 4648, section 4, padded), whatever its bytes, under a name
-// ending in _base64, so text and binary travel alike (ADR 0028). Only
-// secret.add's request and secret.show's response hold one.
+// ending in _base64, so text and binary travel alike (ADR 0028). Only the
+// requests of secret.add and secret.set, and secret.show's response, hold
+// one.
 //
 // It prints as its length through fmt, and logs as its length through slog's
 // text handler, the koko server's, so an error or a log line that formats
@@ -90,6 +91,58 @@ type SecretAddResponse struct {
 	Secret Secret `json:"secret"`
 }
 
+// SecretSetRequest replaces the value of a Secret its Space holds.
+type SecretSetRequest struct {
+	Space string `json:"space"`
+	Name  string `json:"name"`
+	// Value is the new value, 1 byte to 64 KiB, in standard base64
+	// (RFC 4648, padded).
+	Value SecretValue `json:"value_base64"`
+}
+
+// SecretSetResponse is the Secret secret.set changed, without its value.
+type SecretSetResponse struct {
+	Secret Secret `json:"secret"`
+}
+
+// SecretRenameRequest gives a Secret a new name within its Space.
+type SecretRenameRequest struct {
+	Space string `json:"space"`
+	Name  string `json:"name"`
+	// NewName is a name the Space does not hold.
+	NewName string `json:"new_name"`
+}
+
+// SecretRenameResponse is the Secret under its new name, without its value.
+type SecretRenameResponse struct {
+	Secret Secret `json:"secret"`
+}
+
+// SecretMoveRequest moves a Secret, keeping its name, to another Space.
+type SecretMoveRequest struct {
+	Space string `json:"space"`
+	Name  string `json:"name"`
+	// NewSpace names the Space to move it to, which must not hold its name.
+	NewSpace string `json:"new_space"`
+}
+
+// SecretMoveResponse is the Secret in its new Space, without its value.
+type SecretMoveResponse struct {
+	Secret Secret `json:"secret"`
+}
+
+// SecretRemoveRequest names a Secret to delete.
+type SecretRemoveRequest struct {
+	Space string `json:"space"`
+	Name  string `json:"name"`
+}
+
+// SecretRemoveResponse is the Secret secret.remove deleted, as it was,
+// without its value.
+type SecretRemoveResponse struct {
+	Secret Secret `json:"secret"`
+}
+
 // The secret operations. Each names its Space as space.show does: a Space
 // the caller cannot act in is refused exactly as one that does not exist,
 // with CodeUnknownSpace.
@@ -106,12 +159,33 @@ var (
 	// CodeInvalidRequest, and one over SecretMaxSize with
 	// CodeValueTooLarge.
 	SecretAdd = Op[SecretAddRequest, SecretAddResponse]{Name: "secret.add", Write: true}
+	// SecretSet replaces a Secret's value, sealed afresh; the last call
+	// wins. A name the Space does not hold is refused with
+	// CodeUnknownSecret, never added, and the value is checked as
+	// SecretAdd checks it.
+	SecretSet = Op[SecretSetRequest, SecretSetResponse]{Name: "secret.set", Write: true}
+	// SecretRename gives a Secret a new name within its Space, leaving its
+	// sealed value as it is. A name the Space holds, its own included, is
+	// refused with CodeNameTaken.
+	SecretRename = Op[SecretRenameRequest, SecretRenameResponse]{Name: "secret.rename", Write: true}
+	// SecretMove moves a Secret, keeping its name and its sealed value, to
+	// another Space; the caller must be able to act in both, and a NewSpace
+	// they cannot act in is refused with CodeUnknownSpace too. A NewSpace
+	// that holds the name is refused with CodeNameTaken; moving a Secret to
+	// its own Space changes nothing.
+	SecretMove = Op[SecretMoveRequest, SecretMoveResponse]{Name: "secret.move", Write: true}
+	// SecretRemove deletes a Secret and its value, for good.
+	SecretRemove = Op[SecretRemoveRequest, SecretRemoveResponse]{Name: "secret.remove", Write: true}
 )
 
 var secretOperations = []Operation{
 	SecretList,
 	SecretShow,
 	SecretAdd,
+	SecretSet,
+	SecretRename,
+	SecretMove,
+	SecretRemove,
 }
 
 // The secret area's codes.
