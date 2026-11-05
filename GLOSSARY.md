@@ -103,13 +103,25 @@ _Avoid_: deleted, deactivated, banned
 
 ### Access
 
+**Join**:
+To register a device's own key with a koko server by using a Join Code, which makes that key a Device Session.
+_Avoid_: sign in, log in, pair, register, enroll
+
 **Join Code**:
-A one-time code that lets one device join a koko server for a User; it names the koko server and pins its host key.
+A one-time, short-lived code that lets one device join a koko server for a User; it names the koko server and pins its host key.
 _Avoid_: token, pairing code, invite code, enrollment code
 
 **Device Session**:
-The key one device registered when it joined a koko server: the revocable identity that device acts as.
+The key one device registered when it joined a koko server, under a name that never changes: the identity that device acts as until it is Revoked.
 _Avoid_: session (alone), login, token
+
+**Revoked**:
+A Device Session that can never connect again, kept as history; its key can never join again.
+_Avoid_: logged out, expired, deleted
+
+**Local caller**:
+Anything on the koko server's own machine that calls it over its Unix socket; it acts as the Owner.
+_Avoid_: admin, root, console
 
 **Device Connection**:
 An SSH connection from a device to the koko server, authenticated by that device's Device Session.

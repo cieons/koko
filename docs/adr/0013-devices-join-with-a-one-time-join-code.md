@@ -23,3 +23,6 @@ because its Device Connection already says who is on it. This supersedes ADR
   each device's key.
 - An Owner who loses every device logs in to the koko server's machine with
   their own existing access and issues a Join Code over the Unix socket.
+- A fresh koko server is given its Owner's name when it is initialised, and
+  the Owner's first device joins the same way as recovery: with a Join Code
+  issued over the Unix socket.
