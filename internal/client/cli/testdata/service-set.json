@@ -1,0 +1,16 @@
+{
+  "id": "service_<1>",
+  "name": "nginx",
+  "host": "web1",
+  "ports": [
+    "443/tcp",
+    "8443/udp"
+  ],
+  "attributes": {
+    "kind": "tls",
+    "team": "web"
+  },
+  "note": "Kept.",
+  "created_at": "<time>",
+  "updated_at": "<time>"
+}

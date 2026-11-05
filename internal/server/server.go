@@ -27,6 +27,7 @@ import (
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/secret"
+	"github.com/cieons/koko/internal/server/service"
 	"github.com/cieons/koko/internal/server/space"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/server/transport"
@@ -41,7 +42,7 @@ import (
 // areas registers each area's operations; an area's first ticket adds its
 // line.
 var areas = []func(*op.API){
-	host.Register,
+	service.Register,
 }
 
 // holdings counts what each area records in a Space, for space show's
@@ -57,6 +58,7 @@ var holdings = []space.Holding{
 // Services, adds its line.
 var attrKeys = []attr.Keys{
 	host.AttributeKeys,
+	service.AttributeKeys,
 }
 
 // Config is what the koko server starts with.
@@ -149,6 +151,9 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 		register(a)
 	}
 	space.Register(a, user.ByName, holdings)
+	// host show lists a Host's Services, which the service area reads,
+	// since it imports the host area.
+	host.Register(a, service.OfHost)
 	attr.Register(a, attrKeys)
 	// The access-change signal: once a change that withdraws access
 	// commits, the transport closes the Device Connections it Revoked.

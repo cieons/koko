@@ -176,9 +176,9 @@ status. A command reaches the koko server only on its first `in.Call`, so
 - Timestamps, when a record has them, are RFC 3339 in UTC to the second, as
   `2026-11-05T14:03:07Z`.
 - Every field of a record is always there: one with no value is `null`, as
-  a Device Session's `revoked_at` while it is live. The one exception is a
-  Host's `note` in `host ls`, left out unless `--with-note` asks for it, so
-  that lists stay small.
+  a Device Session's `revoked_at` while it is live. The one exception is the
+  `note` of a Host in `host ls` and of a Service in `service ls`, left out
+  unless `--with-note` asks for it, so that lists stay small.
 - **The mapping test**
   ([`mapping_test.go`](../../internal/client/cli/mapping_test.go)) fails when a
   field of an API response a command reads is neither in the CLI's type under
@@ -239,12 +239,18 @@ remove` says whether it deleted the User, freeing the name, or Removed them.
 | `koko host add <host> address=<address> account=<account> [port=<port>] [space=<space>] [<key>=<value>...] [--note-file <file\|->]` | reversible | `host.add` | the Host: `{"id", "name", "space", "address", "port", "account", "state", "host_key", "attributes": {...}, "note", "created_at", "updated_at"}` ([the record](record.md)) |
 | `koko host add`, with Hosts as JSON on stdin | reversible | `host.add` | the Host, for one object on stdin, or an array of the Hosts, for an array, in the order given ([Hosts as JSON on stdin](record.md#hosts-as-json-on-stdin)) |
 | `koko host ls [<filter>...] [--sort <key>[.desc]]... [--with-note]` | read | `host.list` | an array of the Hosts the caller can see that match every filter term, by the sort keys and then by name, without `"note"` unless `--with-note` ([filtering and sorting](record.md#filtering-and-sorting)) |
-| `koko host show <host>` | read | `host.show` | the Host |
+| `koko host show <host>` | read | `host.show` | the Host; its Services print for people only |
 | `koko host set <host> [<key>=<value>...] [--unset <key>]... [--note-file <file\|->]` | reversible | `host.set` | the Host as the change left it |
 | `koko host rename <host> <new-name>` | reversible | `host.rename` | the Host under its new name |
 | `koko host move <host> <space>` | reversible | `host.move` | the Host in its new Space |
-| `koko host rm <host>` | irreversible | `host.remove` | the Host it deleted, as it was |
+| `koko host rm <host>` | irreversible | `host.remove` | the Host it deleted, as it was, its Services deleted with it |
 | `koko host enroll <host> [--password-stdin \| --key <file> \| --secret <space>/<secret>] [--host-key <fingerprint> \| --replace-host-key]` | irreversible | `host.enroll` | the Host, Managed, with its pinned `host_key` ([Enroll](enroll.md)) |
+| `koko service add <host>/<service> [ports=<port>[/<protocol>],...] [<key>=<value>...] [--note-file <file\|->]` | reversible | `service.add` | the Service: `{"id", "name", "host", "ports": ["443/tcp", ...], "attributes": {...}, "note", "created_at", "updated_at"}` ([the record](record.md#a-service)) |
+| `koko service ls [<filter>...] [--sort <key>[.desc]]... [--with-note]` | read | `service.list` | an array of the Services on the Hosts the caller can see that match every filter term, by the sort keys and then by Host and name, without `"note"` unless `--with-note` |
+| `koko service show <host>/<service>` | read | `service.show` | the Service |
+| `koko service set <host>/<service> [<key>=<value>...] [--unset <key>]... [--note-file <file\|->]` | reversible | `service.set` | the Service as the change left it |
+| `koko service rename <host>/<service> <new-name>` | reversible | `service.rename` | the Service under its new name, on the same Host |
+| `koko service rm <host>/<service>` | irreversible | `service.remove` | the Service it deleted, as it was |
 | `koko attr ls` | read | `attr.list` | an array of every Preset, then every other key in use on what the caller can see: `{"key", "type", "values", "min", "preset", "in_use"}` ([the record](record.md#attributes-and-the-preset-attributes)) |
 
 `koko server run` takes `--data-dir` (`KOKO_DATA_DIR`, default

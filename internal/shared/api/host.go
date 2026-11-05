@@ -119,9 +119,12 @@ type HostShowRequest struct {
 	Host string `json:"host"`
 }
 
-// HostShowResponse is the Host host.show names.
+// HostShowResponse is the Host host.show names, with its Services.
 type HostShowResponse struct {
 	Host Host `json:"host"`
+	// Services are the Services on the Host, by name in natural order,
+	// without their Notes, as service.list answers them.
+	Services []Service `json:"services"`
 }
 
 // HostSetRequest changes the fields and Attributes of a Host that it names,
@@ -197,7 +200,7 @@ var (
 	HostAdd = Op[HostAddRequest, HostAddResponse]{Name: "host.add", Write: true}
 	// HostList lists the Hosts the caller can see.
 	HostList = Op[HostListRequest, HostListResponse]{Name: "host.list"}
-	// HostShow shows a Host with its Note.
+	// HostShow shows a Host with its Note and its Services.
 	HostShow = Op[HostShowRequest, HostShowResponse]{Name: "host.show"}
 	// HostSet changes the fields, Attributes and Note it names, and only
 	// those, so two callers changing different keys never undo each other.
@@ -205,10 +208,10 @@ var (
 	// HostRename gives a Host a new name, refused with CodeNameTaken as
 	// host.add refuses one.
 	HostRename = Op[HostRenameRequest, HostRenameResponse]{Name: "host.rename", Write: true}
-	// HostMove moves a Host, with its Attributes and Note, to another Space;
-	// the caller must be able to act in both. Its name stays.
+	// HostMove moves a Host, with its Attributes, Note and Services, to
+	// another Space; the caller must be able to act in both. Its name stays.
 	HostMove = Op[HostMoveRequest, HostMoveResponse]{Name: "host.move", Write: true}
-	// HostRemove deletes a Host, with its Attributes and Note.
+	// HostRemove deletes a Host, with its Attributes, Note and Services.
 	HostRemove = Op[HostRemoveRequest, HostRemoveResponse]{Name: "host.remove", Write: true}
 )
 

@@ -2,6 +2,7 @@
 
 import type { Op } from "./api";
 import type { Filter, SortKey } from "./attr";
+import type { Service } from "./service";
 
 /** Host is a Host as the API returns it. */
 export interface Host {
@@ -109,9 +110,14 @@ export interface HostShowRequest {
   host: string;
 }
 
-/** HostShowResponse is the Host host.show names. */
+/** HostShowResponse is the Host host.show names, with its Services. */
 export interface HostShowResponse {
   host: Host;
+  /**
+   * Services are the Services on the Host, by name in natural order,
+   * without their Notes, as service.list answers them.
+   */
+  services: Service[];
 }
 
 /**
@@ -198,7 +204,7 @@ export const HostList: Op<HostListRequest, HostListResponse> = {
   write: false,
 };
 
-/** HostShow shows a Host with its Note. */
+/** HostShow shows a Host with its Note and its Services. */
 export const HostShow: Op<HostShowRequest, HostShowResponse> = {
   name: "host.show",
   path: "/v1/host.show",
@@ -226,8 +232,8 @@ export const HostRename: Op<HostRenameRequest, HostRenameResponse> = {
 };
 
 /**
- * HostMove moves a Host, with its Attributes and Note, to another Space;
- * the caller must be able to act in both. Its name stays.
+ * HostMove moves a Host, with its Attributes, Note and Services, to
+ * another Space; the caller must be able to act in both. Its name stays.
  */
 export const HostMove: Op<HostMoveRequest, HostMoveResponse> = {
   name: "host.move",
@@ -235,7 +241,7 @@ export const HostMove: Op<HostMoveRequest, HostMoveResponse> = {
   write: true,
 };
 
-/** HostRemove deletes a Host, with its Attributes and Note. */
+/** HostRemove deletes a Host, with its Attributes, Note and Services. */
 export const HostRemove: Op<HostRemoveRequest, HostRemoveResponse> = {
   name: "host.remove",
   path: "/v1/host.remove",

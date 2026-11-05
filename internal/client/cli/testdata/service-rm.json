@@ -1,0 +1,14 @@
+{
+  "id": "service_<1>",
+  "name": "nginx",
+  "host": "web1",
+  "ports": [
+    "443/tcp"
+  ],
+  "attributes": {
+    "kind": "proxy"
+  },
+  "note": "Gone soon.",
+  "created_at": "<time>",
+  "updated_at": "<time>"
+}

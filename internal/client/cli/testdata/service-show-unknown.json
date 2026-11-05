@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "unknown_service",
+    "message": "the Host carol-box has no Service named \"nginx\""
+  }
+}

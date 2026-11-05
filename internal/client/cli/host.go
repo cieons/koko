@@ -88,7 +88,7 @@ var hostCommands = []Command{
 	{
 		Noun:    "host",
 		Verb:    "rm",
-		Summary: "Delete a Host that was never Managed, with its Attributes and Note",
+		Summary: "Delete a Host that was never Managed, with its Attributes, Note and Services",
 		Args:    []Arg{{Name: "host"}},
 		Tier:    Irreversible,
 		Op:      api.HostRemove,
@@ -161,7 +161,10 @@ func (h hostJSON) note() (string, bool) {
 var hostMappings = []mapping{
 	{api: reflect.TypeFor[api.HostAddResponse]()},
 	{api: reflect.TypeFor[api.HostListResponse]()},
-	{api: reflect.TypeFor[api.HostShowResponse]()},
+	{api: reflect.TypeFor[api.HostShowResponse](), omitted: map[string]string{
+		"services": "host show prints a Host's Services for people only: its --json is the Host as host ls prints one, " +
+			"and service ls host=<host> --json lists them",
+	}},
 	{api: reflect.TypeFor[api.HostSetResponse]()},
 	{api: reflect.TypeFor[api.HostRenameResponse]()},
 	{api: reflect.TypeFor[api.HostMoveResponse]()},
@@ -419,8 +422,12 @@ func hostLs(ctx context.Context, in *Input) (hostList, error) {
 }
 
 // shownHost is what host show prints: the Host with its Attributes and
-// Note.
-type shownHost hostJSON
+// Note, and, for people only, its Services. Its --json is the Host as host
+// ls prints one, which host add reads back.
+type shownHost struct {
+	hostJSON
+	services []serviceJSON
+}
 
 func (h shownHost) Human(w io.Writer) error {
 	var b strings.Builder
@@ -431,7 +438,8 @@ func (h shownHost) Human(w io.Writer) error {
 	fmt.Fprintf(&b, "Host %s (%s)\nSpace:       %s\nState:       %s\nAddress:     %s\nPort:        %d\nAccount:     %s\nHost key:    %s\nCreated:     %s\nUpdated:     %s\n",
 		h.Name, h.ID, h.Space, h.State, h.Address, h.Port, h.Account, hostKey, h.CreatedAt, h.UpdatedAt)
 	writeAttributes(&b, h.Attributes)
-	if note, ok := hostJSON(h).note(); ok {
+	writeServices(&b, h.services)
+	if note, ok := h.note(); ok {
 		b.WriteString("Note:\n" + withNewline(note))
 	} else {
 		b.WriteString("Note:        none\n")
@@ -469,7 +477,11 @@ func hostShow(ctx context.Context, in *Input) (shownHost, error) {
 	if err != nil {
 		return shownHost{}, err
 	}
-	return shownHost(hostFromAPI(resp.Host)), nil
+	h := shownHost{hostJSON: hostFromAPI(resp.Host)}
+	for _, s := range resp.Services {
+		h.services = append(h.services, serviceFromAPI(s))
+	}
+	return h, nil
 }
 
 // changedHost is what host set prints: the Host as it left it.

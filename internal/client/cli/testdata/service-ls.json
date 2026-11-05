@@ -1,0 +1,38 @@
+[
+  {
+    "id": "service_<1>",
+    "name": "api",
+    "host": "web2",
+    "ports": [
+      "8080/tcp"
+    ],
+    "attributes": {},
+    "created_at": "<time>",
+    "updated_at": "<time>"
+  },
+  {
+    "id": "service_<2>",
+    "name": "nginx",
+    "host": "web2",
+    "ports": [
+      "80/tcp",
+      "443/tcp"
+    ],
+    "attributes": {
+      "kind": "proxy"
+    },
+    "created_at": "<time>",
+    "updated_at": "<time>"
+  },
+  {
+    "id": "service_<3>",
+    "name": "nginx",
+    "host": "web10",
+    "ports": [
+      "443/tcp"
+    ],
+    "attributes": {},
+    "created_at": "<time>",
+    "updated_at": "<time>"
+  }
+]

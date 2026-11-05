@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "invalid_usage",
+    "message": "host=: a Service never moves to another Host; record it on the new Host with koko service add <host>/<service>"
+  }
+}

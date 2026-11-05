@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "name_taken",
+    "message": "the Host web1 already has a Service named \"nginx\""
+  }
+}

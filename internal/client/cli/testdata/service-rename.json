@@ -1,0 +1,14 @@
+{
+  "id": "service_<1>",
+  "name": "web",
+  "host": "web1",
+  "ports": [
+    "443/tcp"
+  ],
+  "attributes": {
+    "kind": "proxy"
+  },
+  "note": null,
+  "created_at": "<time>",
+  "updated_at": "<time>"
+}

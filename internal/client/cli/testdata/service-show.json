@@ -1,0 +1,17 @@
+{
+  "id": "service_<1>",
+  "name": "nginx",
+  "host": "web1",
+  "ports": [
+    "80/tcp",
+    "443/tcp",
+    "51820/udp"
+  ],
+  "attributes": {
+    "kind": "proxy",
+    "price": 0
+  },
+  "note": "Terminates TLS for the shop.\nConfig in /etc/nginx.\n",
+  "created_at": "<time>",
+  "updated_at": "<time>"
+}

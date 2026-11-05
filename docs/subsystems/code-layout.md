@@ -14,8 +14,8 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
-| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the version and operations report, the channel adapter and how a join carries its secret (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`), the record's value rules: a Host's fields, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`) | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `host`, `attr`, `secret`, `web`: the web front), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`); later the Gateway | client |
+| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the version and operations report, the channel adapter and how a join carries its secret (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`), the record's value rules: a Host's fields, a Service's ports, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`) | server, client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `host`, `service`, `attr`, `secret`, `web`: the web front), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`); later the Gateway | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join, koko's ssh_config and known_hosts, and the Include line (`devicefiles`); later the Device Mux and tunnel | server |
 
 Only [`cmd/koko`](../../cmd/koko) and the S1 harness
@@ -68,7 +68,9 @@ which reads the host key with the Root Key ([Join Codes](join-codes.md#issuing))
 `user` also takes the `holdings` list, to refuse deleting a User whose
 Personal Space holds a record ([Users](users.md#removing)).
 `space` takes `user.ByName`, since `user` imports `space` (every User gets a
-Personal Space), and the `holdings` list. `secret` takes the Root Key, which
+Personal Space), and the `holdings` list. `host` takes `service.OfHost`,
+since `service` imports `host` (a Service lives in its Host's Space), so
+that `host show` lists a Host's Services. `secret` takes the Root Key, which
 seals and opens every value ([Secrets](secrets.md#sealing)). `enroll` takes
 the Root Key, which opens the koko key, and the timing-constants hook
 ([Enroll](enroll.md)).

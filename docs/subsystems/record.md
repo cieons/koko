@@ -1,15 +1,19 @@
-# The record: Hosts
+# The record: Hosts and Services
 
-The Hosts koko records, each in one Space, with their Attributes and Notes,
-and the filters and sorting of their lists.
+The Hosts koko records, each in one Space, and the Services that run on
+them, with their Attributes and Notes, and the filters and sorting of their
+lists.
 The rules are [P0 spec: the record](https://github.com/cieons/koko/issues/22),
-[ADR 0014](../adr/0014-host-names-are-unique-across-the-koko-server.md) and
-[ADR 0029](../adr/0029-a-number-attribute-is-a-decimal-a-javascript-number-holds.md);
-the operations are [`internal/server/host`](../../internal/server/host/host.go)
+[ADR 0014](../adr/0014-host-names-are-unique-across-the-koko-server.md),
+[ADR 0029](../adr/0029-a-number-attribute-is-a-decimal-a-javascript-number-holds.md) and
+[ADR 0031](../adr/0031-a-services-port-is-written-as-one-string.md);
+the operations are [`internal/server/host`](../../internal/server/host/host.go),
+[`internal/server/service`](../../internal/server/service/service.go)
 and [`internal/server/attr`](../../internal/server/attr/attr.go), the
 filtering and sorting [`internal/server/query`](../../internal/server/query/query.go),
 the value rules [`internal/shared/record`](../../internal/shared/record/record.go),
 and the commands [`internal/client/cli/host.go`](../../internal/client/cli/host.go),
+[`service.go`](../../internal/client/cli/service.go),
 [`attr.go`](../../internal/client/cli/attr.go) and
 [`filter.go`](../../internal/client/cli/filter.go).
 
@@ -37,6 +41,24 @@ exit 2 and `invalid_usage`; the koko server checks them again on every
 write, whichever client sent it, and refuses with `invalid_value`, or
 `invalid_name` for a name ([the codes](api.md#calls)). An empty value and an
 empty Note are refused, so clearing is always `--unset`.
+
+## A Service
+
+What runs on one Host, stored in `services`, with its ports in
+`service_ports` and its Attributes in `service_attributes`
+([`services.sql`](../../internal/server/store/migrations/services.sql)). A
+Service is keyed by its Host's id, so it lives in its Host's Space, moves and
+renames with it, and goes when `host rm` deletes it (`ON DELETE CASCADE`). It
+never moves to another Host: to change Host, record it again. People and
+agents record Services; koko discovers nothing itself.
+
+| Field | Rule |
+| --- | --- |
+| `id` | `service_` and 8 characters, set by koko. |
+| `name` | A lowercase DNS label ([`name.Check`](../../internal/shared/name/name.go)), unique on its Host, so `nginx` can run on many Hosts; the unique index on `(host_id, name)` backs the check, which runs inside the write's transaction. Written with its Host as `<host>/<service>`, where a Host id stands for the Host's name. |
+| `host` | The name of the Host it runs on. |
+| `ports` | A set, which may be empty, of `<port>/<protocol>` strings: a port 1 to 65535, then `tcp` or `udp` in lowercase; `443` alone is `443/tcp` ([`record.ParseServicePorts`](../../internal/shared/record/ports.go), [ADR 0031](../adr/0031-a-services-port-is-written-as-one-string.md)). Answered by port and then protocol, `[]` for none. A port given twice, as `443` and `443/tcp`, is refused; other Services' ports, on the Host or elsewhere, are not checked. |
+| `attributes`, `note`, `created_at`, `updated_at` | As on a Host. |
 
 ## Attributes and the Preset Attributes
 
@@ -91,20 +113,30 @@ others a value of the key's type in its JSON type. A sort key is `{"key",
   type or text. The Note, `created_at` and `updated_at` are not keys to
   filter or sort on: a timestamp is no date, and comparing one with a date
   would need the caller's time zone, which the API never sees.
+- **The keys of `service.list`** are the fields of
+  [`api.ServiceListFields`](../../internal/shared/api/service.go), `id`,
+  `name` and `host` (its Host's name), all text, and the Services' own
+  Attribute keys. A Host's fields (`space`, `state`, ...) and a Host's
+  Attributes are no keys of a Service's: one key would otherwise mean a
+  Host's value or a Service's, a Preset being the same on both. To find the
+  Services of some Hosts, list the Hosts and then each one's with `host=`.
+  The ports, a set, have no comparison.
 - **A Host that lacks the key** (an Attribute it does not have, or
   `host_key` without a pin) matches `ne` and `lacks` and no other term, and
   sorts after every Host that has it, in either direction.
 - **Order.** By the sort keys in turn; Hosts that tie stay by name, in
   natural order as `--sort name` gives it (`web2` before `web10`), and then
-  id, the order without `sort`.
+  id, the order without `sort`. Services that tie stay by Host name, then by
+  name, each in natural order, and then id, so each Host's Services come
+  together.
 - **Refusals.** A malformed term, a key the list does not take, and a key
   sorted by twice are refused with `invalid_request`; a value not of its key's
   type with `invalid_value`. The API compares only absolute dates, so
   `"+30d"` is refused too.
 - [`query.New`](../../internal/server/query/query.go) checks the terms and
   sort keys and `Query.Apply` applies them to the Hosts the caller can see,
-  through each Host's values (`hostValues`); Services will take the same
-  query with fields of their own.
+  through each Host's values (`hostLookup`); `service.list` takes the same
+  query with its own fields, through `serviceLookup`.
 
 ### Relative dates
 
@@ -130,13 +162,19 @@ to run too, so the two resolvers cannot drift.
 | --- | --- |
 | `host.add` | Records the Hosts in `hosts`, all or none, each Registered. One Host at fault is refused with its own error; in a batch of several, every Host is checked and the refusal lists each one at fault ([a refused batch](#a-refused-batch)). |
 | `host.list` | Every Host the caller can see that is not Retired and matches the filters, by the sort keys and then by name, in natural order, and id ([filtering and sorting](#filtering-and-sorting)); the Notes only with `with_note`. |
-| `host.show` | One Host. |
+| `host.show` | One Host, with its Services as `services`, by name in natural order, without their Notes, which the service area lists for it ([where an area adds its parts](code-layout.md#where-an-area-adds-its-parts)). |
 | `host.set` | Sets the address, port, Host Account, Attributes and Note it names, and clears the Attribute keys in `unset`, the Note for `note`, and the port back to 22 for `port`; nothing else changes. It refuses a request that changes nothing, a key both set and cleared, and clearing the address or the Host Account ([`record.Required`](../../internal/shared/record/record.go)). It takes no `name`, `space` or `state`. |
 | `host.rename` | A new name, checked as on `host.add`; the id and everything else stay. |
-| `host.move` | Another Space, with the Attributes and Note; the name stays. |
-| `host.remove` | Deletes the Host with its Attributes and Note; answers it as it was. A Host with a pin has been Managed, and is refused with `host_was_managed`: it stays on record. |
+| `host.move` | Another Space, with the Attributes, Note and Services; the name stays. |
+| `host.remove` | Deletes the Host with its Attributes, Note and Services; answers it as it was. A Host with a pin has been Managed, and is refused with `host_was_managed`: it stays on record. |
 | `host.enroll` | Makes the Host Managed with its pinned host key ([Enroll](enroll.md)). |
-| `attr.list` | Every Preset with its type, an enum's values and a number's least value, in the order of the Preset table, then every other key in use on what the caller can see, by key; each says whether it is a Preset and whether something the caller can see has it. A key held only in a Space the caller cannot act in is answered as if nothing held it. Each area whose records hold Attributes lists its keys through an `attr.Keys`, Hosts through `host.AttributeKeys`, Retired ones among them. |
+| `service.add` | Records a Service on a Host, with its ports, none when left out. |
+| `service.list` | Every Service on the Hosts the caller can see that matches the filters, by the sort keys and then by Host name, name and id ([filtering and sorting](#filtering-and-sorting)); the Notes only with `with_note`. |
+| `service.show` | One Service. |
+| `service.set` | Sets the ports (replacing the whole set), Attributes and Note it names, and clears the Attribute keys in `unset`, the Note for `note`, and every port for `ports`; nothing else changes. It refuses a request that changes nothing, a key both set and cleared, and `"ports": []`, since clearing is `unset`. It takes no `new_name` and no Host. |
+| `service.rename` | A new name on the same Host, checked as on `service.add`; the id and everything else stay. |
+| `service.remove` | Deletes the Service with its ports, Attributes and Note; answers it as it was. |
+| `attr.list` | Every Preset with its type, an enum's values and a number's least value, in the order of the Preset table, then every other key in use on what the caller can see, by key; each says whether it is a Preset and whether something the caller can see has it. A key held only in a Space the caller cannot act in is answered as if nothing held it. Each area whose records hold Attributes lists its keys through an `attr.Keys`, Hosts through `host.AttributeKeys`, Retired ones among them, and Services through `service.AttributeKeys`. |
 
 Enroll reads what logging in to a Host needs through
 [`host.ReachOf`](../../internal/server/host/reach.go) (address, port, Host
@@ -152,6 +190,14 @@ logged in to it.
   does not exist, `unknown_host`, by name and by id; `host.move` needs the
   target Space too, looked up through `space.ByName`. The Owner and the
   Local caller act in every Space.
+- **Naming a Service.** A request names a Service by its Host, `host`, named
+  as above, and its `name` on that Host. A Service is seen by whoever sees
+  its Host ([`host.Find`](../../internal/server/host/host.go), and
+  `host.Names` for the lists): on a Host the caller cannot see, every service
+  operation answers `unknown_host`, exactly as for a Host that does not
+  exist, and on one they can see, a name the Host has no Service of answers
+  `unknown_service`. A name another Service on the Host holds is refused
+  with `name_taken`, which tells nothing the caller could not list.
 - **The one leak.** A name a Host holds is refused with `name_taken`, "a Host
   named "web1" already exists", the same whichever Space holds it, one the
   caller can see or not. It names nothing else.
@@ -191,8 +237,11 @@ and `--note-file -` from stdin, which it refuses when stdin is a terminal.
 own object, each in its JSON type, and `note` a string or `null`, which `ls`
 leaves out without `--with-note`. For people, `ls` prints a table (`NAME
 SPACE STATE ADDRESS PORT ACCOUNT ID`) followed, with `--with-note`, by each
-Host's Note. A Preset's value that does not parse, and a relative date that
-does not resolve, are refused with exit 2 before any call.
+Host's Note, and `show` prints the Host's Services, each name with its
+ports, after its Attributes; `show --json` stays the Host as `ls` prints
+one, and `koko service ls host=<host> --json` lists its Services. A Preset's
+value that does not parse, and a relative date that does not resolve, are
+refused with exit 2 before any call.
 
 `koko host ls` takes filter terms that need no quoting in a shell
 ([`readFilters`](../../internal/client/cli/filter.go)): `key=value`,
@@ -202,6 +251,21 @@ repeatable. It checks each term's syntax, key and value as the koko server
 would and refuses a bad one with exit 2 before any call:
 `koko host ls expires_at.le=+30d auto_renew=no --sort expires_at` lists the
 Hosts due for renewal, soonest first.
+
+`koko service add`, `ls`, `show`, `set`, `rename` and `rm` name a Service
+`<host>/<service>`. Its ports are `ports=443/tcp,51820/udp`, comma-separated,
+which `koko service set` replaces whole and `--unset ports` clears; every
+other `key=value` is an Attribute. `name=`, `host=` and `space=` are refused,
+naming `koko service rename` for the first and saying that a Service never
+moves to another Host, nor out of its Host's Space; `koko service rename`
+takes a new name without a Host. `--json` prints the CLI's own Service,
+`serviceJSON`: `{"id", "name", "host", "ports", "attributes", "note",
+"created_at", "updated_at"}`, the Note as on a Host. For people, `ls` prints a
+table (`NAME PORTS ID`, the name as `<host>/<service>` and the ports as
+`ports=` takes them, `-` for none) followed, with `--with-note`, by each
+Service's Note. `koko service ls` takes the filter terms and `--sort` of
+`koko host ls`, on its own keys: `koko service ls host=web1` lists one Host's
+Services, and `koko service ls kind=proxy` every Service of a kind.
 
 `koko attr ls` prints what `attr.list` answers, as a bare array of `{"key",
 "type", "values", "min", "preset", "in_use"}`, `values` an enum's values or
@@ -274,6 +338,21 @@ recorded in one `host.add` call, all or none.
 - [`internal/client/cli/attr_test.go`](../../internal/client/cli/attr_test.go):
   `koko attr ls` with its golden, and the keys in use as each caller sees
   them.
-- [`internal/server/access/matrix_host_test.go`](../../internal/server/access/matrix_host_test.go)
+- [`internal/client/cli/service_test.go`](../../internal/client/cli/service_test.go):
+  every `service` command but `ls` with its goldens, ports by default `tcp`
+  and an empty set, each value rule refused once before any call, names
+  unique on their Host, a Service on a Host the caller cannot see answering
+  as for no Host, a Host id in `<host>/<service>`, a moved or renamed Host
+  keeping its Services, `host rm` deleting them, `koko host show` listing
+  them for people only, and `koko attr ls` listing their keys.
+- [`internal/client/cli/service_ls_test.go`](../../internal/client/cli/service_ls_test.go):
+  `koko service ls` with its goldens, as each caller sees it, its order,
+  `host=` and Attribute filters, and a Host's fields refused.
+- [`internal/server/service/service_test.go`](../../internal/server/service/service_test.go):
+  the koko server's own checks on raw `service.add`, `service.set`,
+  `service.rename` and `service.list` calls, which answers carry the Note,
+  and `host.show` answering the Host's Services.
+- [`internal/server/access/matrix_host_test.go`](../../internal/server/access/matrix_host_test.go),
+  [`matrix_service_test.go`](../../internal/server/access/matrix_service_test.go)
   and [`matrix_attr_test.go`](../../internal/server/access/matrix_attr_test.go):
-  every host operation and `attr.list` as each caller.
+  every host and service operation and `attr.list` as each caller.

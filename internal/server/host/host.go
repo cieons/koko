@@ -33,11 +33,19 @@ import (
 // '_', so a Host id stands wherever a Host name does.
 const idPrefix = "host"
 
-// Register adds the host operations to the API.
-func Register(a *op.API) {
+// ServicesOf lists the Services on the Host h, by name, with their ports and
+// Attributes and without their Notes, for host.show. The service area gives
+// it, since it imports this one.
+type ServicesOf func(ctx context.Context, tx store.Tx, h api.Host) ([]api.Service, error)
+
+// Register adds the host operations to the API; services lists a Host's
+// Services for host.show.
+func Register(a *op.API, services ServicesOf) {
 	a.Handle(api.HostAdd, add)
 	a.Handle(api.HostList, list)
-	a.Handle(api.HostShow, show)
+	a.Handle(api.HostShow, func(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostShowRequest) (api.HostShowResponse, error) {
+		return show(ctx, tx, caller, req, services)
+	})
 	a.Handle(api.HostSet, set)
 	a.Handle(api.HostRename, rename)
 	a.Handle(api.HostMove, move)
@@ -77,6 +85,40 @@ func AttributeKeys(ctx context.Context, tx store.Tx, scope access.Scope) ([]stri
 		return nil, fmt.Errorf("list the Attribute keys of the Hosts: %w", err)
 	}
 	return keys, nil
+}
+
+// Find returns the Host ref names, by its name or its id, as every host
+// operation finds one: a Host in a Space the caller cannot act in is refused
+// exactly as one that does not exist, with CodeUnknownHost. A Service lives
+// in its Host's Space, so the service area finds a Service's Host here.
+func Find(ctx context.Context, tx store.Tx, who access.Identity, ref string) (api.Host, error) {
+	h, err := find(ctx, tx, who, ref)
+	return h.Host, err
+}
+
+// Names returns the name of each Host in the Spaces scope holds, by id,
+// Retired ones among them, for the service area's lists: a Service is seen
+// by whoever sees its Host.
+func Names(ctx context.Context, tx store.Tx, scope access.Scope) (map[string]string, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT id, name, space_id FROM hosts")
+	if err != nil {
+		return nil, fmt.Errorf("list the names of the Hosts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	names := map[string]string{}
+	for rows.Next() {
+		var id, hostName, spaceID string
+		if err := rows.Scan(&id, &hostName, &spaceID); err != nil {
+			return nil, fmt.Errorf("list the names of the Hosts: %w", err)
+		}
+		if scope.Has(spaceID) {
+			names[id] = hostName
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list the names of the Hosts: %w", err)
+	}
+	return names, nil
 }
 
 // stored is a Host as stored: the API's Host, the id of its Space, and its
@@ -462,9 +504,14 @@ func readAttributes(ctx context.Context, tx store.Tx, hosts []api.Host) error {
 	return nil
 }
 
-func show(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostShowRequest) (api.HostShowResponse, error) {
+// show is host.show: the Host, with its Note, and its Services.
+func show(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostShowRequest, services ServicesOf) (api.HostShowResponse, error) {
 	_, h, err := target(ctx, tx, caller, req.Host)
-	return api.HostShowResponse{Host: h.Host}, err
+	if err != nil {
+		return api.HostShowResponse{}, err
+	}
+	s, err := services(ctx, tx, h.Host)
+	return api.HostShowResponse{Host: h.Host, Services: s}, err
 }
 
 // set is host.set: it changes the fields, Attributes and Note the request
@@ -579,8 +626,9 @@ func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRe
 	return api.HostMoveResponse{Host: moved.Host}, err
 }
 
-// remove is host.remove: the Host goes, with its Attributes and Note. A Host
-// that has been Managed, which its pin shows, is kept on record instead.
+// remove is host.remove: the Host goes, with its Attributes, Note and
+// Services. A Host that has been Managed, which its pin shows, is kept on
+// record instead.
 func remove(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRemoveRequest) (api.HostRemoveResponse, error) {
 	_, h, err := target(ctx, tx, caller, req.Host)
 	if err != nil {
@@ -590,7 +638,7 @@ func remove(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRemo
 		return api.HostRemoveResponse{}, api.CodeHostWasManaged.Errorf(
 			"%s has been Managed, so koko keeps its record: a Host that was ever Managed is never deleted", h.Name)
 	}
-	// Its Attributes go with it (ON DELETE CASCADE).
+	// Its Attributes and Services go with it (ON DELETE CASCADE).
 	if _, err := tx.ExecContext(ctx, "DELETE FROM hosts WHERE id = ?", h.ID); err != nil {
 		return api.HostRemoveResponse{}, fmt.Errorf("delete the Host %s: %w", h.Name, err)
 	}

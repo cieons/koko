@@ -1,0 +1,22 @@
+[
+  {
+    "id": "service_<1>",
+    "name": "nginx",
+    "host": "web1",
+    "ports": [],
+    "attributes": {},
+    "note": "First line.\nSecond line.\n",
+    "created_at": "<time>",
+    "updated_at": "<time>"
+  },
+  {
+    "id": "service_<2>",
+    "name": "redis",
+    "host": "web1",
+    "ports": [],
+    "attributes": {},
+    "note": null,
+    "created_at": "<time>",
+    "updated_at": "<time>"
+  }
+]
