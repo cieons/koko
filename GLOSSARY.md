@@ -59,6 +59,10 @@ _Avoid_: built-in field, standard tag
 One running deployment of koko, holding the record, the Secrets and the Gateway.
 _Avoid_: asset server, daemon, backend
 
+**Server Address**:
+The one `host:port` a koko server writes into its Join Codes, which its devices store and connect to.
+_Avoid_: advertised address, public address, endpoint, URL
+
 **Gateway**:
 The part of the koko server that ends every SSH Session and opens its own SSH connection to the Host.
 _Avoid_: bastion, jump host, proxy

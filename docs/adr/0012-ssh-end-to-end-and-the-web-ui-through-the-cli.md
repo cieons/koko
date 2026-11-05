@@ -5,7 +5,8 @@ made a certificate an install step, and a domain with ACME the only way to
 get one without warnings. The koko server listens for SSH on one port, 443 by
 default and configurable, because 443 passes firewalls that filter by port
 and port 22 stays with the machine's own sshd. It generates its host key at
-first start, and every device pins that key from its Join Code (ADR 0013).
+initialisation (ADR 0018), and every device pins that key from its Join Code
+(ADR 0013).
 One Device Connection carries everything a device does: the API, and the
 Tunnels that `ssh`, `scp` and `rsync` open through `koko tunnel` to the
 Gateway, which still ends every SSH Session (ADR 0002). The web UI is not
