@@ -1,7 +1,7 @@
 // Package harness is the S1 test harness: a real koko server in the test
 // process, initialised with an Owner, and koko command lines run in process
-// against it, as the Local caller under a temporary HOME. Everything it
-// starts stops through t.Cleanup.
+// against it, as the Local caller under a temporary HOME. Its clock moves
+// only when the test moves it. Everything it starts stops through t.Cleanup.
 //
 // It is the one package besides cmd/koko that imports both the server and the
 // client groups, and only tests import it. It grows by addition: add helpers
@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cieons/koko/internal/client/apiclient"
 	"github.com/cieons/koko/internal/client/cli"
@@ -42,6 +43,7 @@ type Harness struct {
 	socket string
 	home   string
 	log    *syncBuffer
+	clock  *clock
 	// stop stops the koko server, once.
 	stop func() error
 	// startCalls is how many API calls Start made itself.
@@ -95,6 +97,7 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		socket: filepath.Join(ShortTempDir(t), "koko.sock"),
 		home:   t.TempDir(),
 		log:    &syncBuffer{},
+		clock:  &clock{now: time.Now().UTC().Truncate(time.Second)},
 	}
 	srv, err := server.Start(t.Context(), server.Config{
 		DataDir:     o.dataDir,
@@ -102,6 +105,7 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		LogLevel:    slog.LevelDebug,
 		Log:         h.log,
 		SocketPath:  h.socket,
+		Clock:       h.clock.Now,
 	})
 	if err != nil {
 		t.Fatalf("start the koko server: %v", err)
@@ -197,6 +201,37 @@ func ShortTempDir(t testing.TB) string {
 func (h *Harness) Koko(args ...string) Result {
 	h.t.Helper()
 	return Run(h.t, cli.Runner{SocketPath: h.socket}, []string{"HOME=" + h.home}, args...)
+}
+
+// Now returns the koko server's clock: the second Start began, moved only by
+// Advance.
+func (h *Harness) Now() time.Time {
+	return h.clock.Now()
+}
+
+// Advance moves the koko server's clock forward by d, through the clock
+// hook, so that a test never waits for time to pass.
+func (h *Harness) Advance(d time.Duration) {
+	h.clock.advance(d)
+}
+
+// clock is the koko server's clock in a test, which stands still until the
+// test moves it.
+type clock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *clock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *clock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
 }
 
 // Log returns what the koko server has logged so far.

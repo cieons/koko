@@ -79,6 +79,7 @@ var commonCodes = []Code{
 var codes = [][]Code{
 	commonCodes,
 	serverCodes,
+	userCodes,
 }
 
 // Codes returns every error code the API answers with.

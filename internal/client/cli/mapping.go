@@ -24,6 +24,8 @@ type mapping struct {
 // mappings lists every area's mappings; an area's first ticket adds its line.
 var mappings = [][]mapping{
 	spaceMappings,
+	deviceMappings,
+	userMappings,
 }
 
 // checkMappings returns one error for each API response field, reachable

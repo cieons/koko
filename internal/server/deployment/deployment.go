@@ -115,27 +115,60 @@ func Open(ctx context.Context, tx store.Tx, rootKey *seal.RootKey) (*Keys, error
 	}
 	keys := &Keys{}
 	for kind, key := range keys.byKind() {
-		var id string
-		var sealed []byte
-		err := tx.QueryRowContext(ctx, "SELECT id, sealed FROM own_keys WHERE kind = ?", kind).Scan(&id, &sealed)
+		priv, err := openKey(ctx, tx, rootKey, kind)
 		if err != nil {
-			return nil, fmt.Errorf("read the %s key: %w", kind, err)
-		}
-		der, err := rootKey.Open(id, sealed)
-		if err != nil {
-			return nil, fmt.Errorf("open the %s key (%s): %w", kind, id, err)
-		}
-		parsed, err := x509.ParsePKCS8PrivateKey(der)
-		if err != nil {
-			return nil, fmt.Errorf("parse the %s key (%s): %w", kind, id, err)
-		}
-		priv, ok := parsed.(ed25519.PrivateKey)
-		if !ok {
-			return nil, fmt.Errorf("parse the %s key (%s): it is a %T, not an ed25519 private key", kind, id, parsed)
+			return nil, err
 		}
 		*key = priv
 	}
 	return keys, nil
+}
+
+// Address returns the Server Address, as the Owner gave it.
+func Address(ctx context.Context, tx store.Tx) (string, error) {
+	var address string
+	if err := tx.QueryRowContext(ctx, "SELECT address FROM deployment").Scan(&address); err != nil {
+		return "", fmt.Errorf("read the Server Address: %w", err)
+	}
+	return address, nil
+}
+
+// HostKey opens the host key with rootKey and returns its public key, which
+// devices pin from their Join Codes.
+func HostKey(ctx context.Context, tx store.Tx, rootKey *seal.RootKey) (ssh.PublicKey, error) {
+	priv, err := openKey(ctx, tx, rootKey, kindHost)
+	if err != nil {
+		return nil, err
+	}
+	pub, err := ssh.NewPublicKey(priv.Public())
+	if err != nil {
+		return nil, fmt.Errorf("read the host key's public key: %w", err)
+	}
+	return pub, nil
+}
+
+// openKey opens the koko server's own key of this kind with rootKey. It
+// fails, naming the key, when it is missing or does not open.
+func openKey(ctx context.Context, tx store.Tx, rootKey *seal.RootKey, kind string) (ed25519.PrivateKey, error) {
+	var id string
+	var sealed []byte
+	err := tx.QueryRowContext(ctx, "SELECT id, sealed FROM own_keys WHERE kind = ?", kind).Scan(&id, &sealed)
+	if err != nil {
+		return nil, fmt.Errorf("read the %s key: %w", kind, err)
+	}
+	der, err := rootKey.Open(id, sealed)
+	if err != nil {
+		return nil, fmt.Errorf("open the %s key (%s): %w", kind, id, err)
+	}
+	parsed, err := x509.ParsePKCS8PrivateKey(der)
+	if err != nil {
+		return nil, fmt.Errorf("parse the %s key (%s): %w", kind, id, err)
+	}
+	priv, ok := parsed.(ed25519.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("parse the %s key (%s): it is a %T, not an ed25519 private key", kind, id, parsed)
+	}
+	return priv, nil
 }
 
 // byKind gives each of the keys under the kind own_keys names it by.

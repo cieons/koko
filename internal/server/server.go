@@ -15,13 +15,16 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/cieons/koko/internal/server/deployment"
+	"github.com/cieons/koko/internal/server/device"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/space"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/server/transport"
+	"github.com/cieons/koko/internal/server/user"
 	"github.com/cieons/koko/internal/server/webui"
 	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/wire"
@@ -49,6 +52,10 @@ type Config struct {
 	// SocketPath is the socket-path hook, for tests only: empty means the
 	// fixed wire.SocketPath. No flag or environment variable sets it.
 	SocketPath string
+	// Clock is the clock hook, for tests only: nil means time.Now. Every
+	// time the koko server records or compares, such as a Join Code's
+	// expiry, comes from it. No flag or environment variable sets it.
+	Clock func() time.Time
 }
 
 // Server is a running koko server.
@@ -82,11 +89,20 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, errors.Join(err, st.Close())
 	}
-	a := op.New(st, log, deployment.Initialised)
+	clock := cfg.Clock
+	if clock == nil {
+		clock = time.Now
+	}
+	a := op.New(st, log, deployment.Initialised, clock)
 	for _, register := range areas {
 		register(a)
 	}
-	registerServer(a, key)
+	// The areas that issue Join Codes need what the process loaded to name
+	// the koko server in them.
+	issuer := device.NewIssuer(joinTarget(key))
+	device.Register(a, issuer)
+	user.Register(a, issuer.Issue)
+	registerServer(a, key, issuer)
 	t := transport.New(a, log)
 	socket := cmp.Or(cfg.SocketPath, wire.SocketPath)
 	if err := t.ListenSocket(ctx, socket); err != nil {

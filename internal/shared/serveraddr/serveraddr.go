@@ -33,6 +33,28 @@ func Check(s string) error {
 	return nil
 }
 
+// CheckHostPort reports why s is not a Server Address with its port written,
+// as a Join Code carries it, or nil when it is one.
+func CheckHostPort(s string) error {
+	if err := Check(s); err != nil {
+		return err
+	}
+	if _, hasPort, _ := checkHostPart(s); !hasPort {
+		return fmt.Errorf("%q has no port: write host:port", s)
+	}
+	return nil
+}
+
+// WithPort returns the Server Address s with its port written: s itself when
+// it names a port, else s followed by port, the koko server's listen port.
+// s must be a Server Address (Check).
+func WithPort(s string, port int) string {
+	if _, hasPort, err := checkHostPart(s); err != nil || hasPort {
+		return s
+	}
+	return s + ":" + strconv.Itoa(port)
+}
+
 // checkHostPart checks s's host, an IPv6 address only in brackets and any
 // other host only outside them, and returns what follows it as the port.
 func checkHostPart(s string) (port string, hasPort bool, err error) {

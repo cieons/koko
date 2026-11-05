@@ -20,7 +20,8 @@ type Command struct {
 	Verb string
 	// Summary says in one line what the command does.
 	Summary string
-	// Args are the positional arguments, in order; each is required.
+	// Args are the positional arguments, in order; each is required unless
+	// it is Optional.
 	Args []Arg
 	// Flags are the command's flags. Every command also takes --json, which is
 	// not listed.
@@ -65,6 +66,9 @@ type Arg struct {
 	// Bare lets a qualified argument also be written as <Name> alone, as a
 	// User names their own device.
 	Bare bool
+	// Optional lets the argument be left out, shown as [<Name>]. Only
+	// arguments after every required one may be optional.
+	Optional bool
 }
 
 // Pair is a key=value word, cut at its first '='.
@@ -159,6 +163,8 @@ var commands = [][]Command{
 	serverCommands,
 	spaceCommands,
 	versionCommands,
+	deviceCommands,
+	userCommands,
 }
 
 // Tree returns every command.

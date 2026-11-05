@@ -106,14 +106,14 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 		}
 	}
 
-	if len(positional) < len(cmd.Args) {
+	if len(positional) < len(cmd.Args) && !cmd.Args[len(positional)].Optional {
 		return nil, usagef("koko %s needs %s", cmd.Path(), cmd.Args[len(positional)].usage())
 	}
 	if len(positional) > len(cmd.Args) {
 		return nil, usagef("unexpected argument %q: %s", positional[len(cmd.Args)], usageLine(cmd))
 	}
-	for i, a := range cmd.Args {
-		v := positional[i]
+	for i, v := range positional {
+		a := cmd.Args[i]
 		if v == "" {
 			return nil, usagef("%s cannot be empty in koko %s", a.usage(), cmd.Path())
 		}
@@ -307,16 +307,23 @@ func (a *Arg) split(v string) (qualifiedName, error) {
 	return qualifiedName{qualifier: q, name: n}, nil
 }
 
-// usage shows how the argument is written: <space>, <space>/<secret>, or
-// [<user>/]<device> for one that may be bare.
+// usage shows how the argument is written: <space>, <space>/<secret>,
+// [<user>/]<device> for one that may be bare, and in brackets for an
+// optional one, such as [<device>].
 func (a *Arg) usage() string {
+	var u string
 	switch {
 	case a.Qualifier != "" && a.Bare:
-		return "[<" + a.Qualifier + ">/]<" + a.Name + ">"
+		u = "[<" + a.Qualifier + ">/]<" + a.Name + ">"
 	case a.Qualifier != "":
-		return "<" + a.Qualifier + ">/<" + a.Name + ">"
+		u = "<" + a.Qualifier + ">/<" + a.Name + ">"
+	default:
+		u = "<" + a.Name + ">"
 	}
-	return "<" + a.Name + ">"
+	if a.Optional {
+		return "[" + u + "]"
+	}
+	return u
 }
 
 // usageLine shows how a command is written, such as "koko space add <space>".

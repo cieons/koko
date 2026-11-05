@@ -10,12 +10,14 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/server/deployment"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/joincode"
 )
 
 // wantCode fails the test unless err is an API error with code.
@@ -200,4 +202,52 @@ func openKeys(t *testing.T, dataDir, keyFile string) *deployment.Keys {
 		t.Fatalf("open the koko server's keys: %v, %v", keys, err)
 	}
 	return keys
+}
+
+// Initialisation returns the Owner's first Join Code, issued over the Unix
+// socket as koko device add issues one there: for the Owner's device-1,
+// valid for 15 minutes, naming the Server Address with its port and the host
+// key initialisation made.
+func TestInitialisationIssuesTheOwnersFirstJoinCode(t *testing.T) {
+	for _, tc := range []struct{ address, inCode string }{
+		{"koko.example.com", "koko.example.com:443"},
+		{"koko.example.com:8443", "koko.example.com:8443"},
+		{"[2001:db8::1]", "[2001:db8::1]:443"},
+	} {
+		h := harness.Start(t, harness.NoInit())
+		resp, err := h.Call(api.ServerInit, api.ServerInitRequest{Owner: harness.Owner, Address: tc.address})
+		if err != nil {
+			t.Fatalf("server.init: %v", err)
+		}
+		jc := resp.JoinCode
+		if want := h.Now().Add(15 * time.Minute).Format(time.RFC3339); jc.User != harness.Owner || jc.Device != "device-1" || jc.ExpiresAt != want {
+			t.Errorf("server.init issued %+v, want a Join Code for %s's device-1 that expires at %s", jc, harness.Owner, want)
+		}
+		c, err := joincode.Decode(jc.Code)
+		if err != nil {
+			t.Fatalf("decode the first Join Code: %v", err)
+		}
+		if got := "SHA256:" + base64.RawStdEncoding.EncodeToString(c.Fingerprint[:]); c.Address != tc.inCode || got != resp.HostKeyFingerprint {
+			t.Errorf("with the Server Address %s, the first Join Code names %s with host key %s, want %s with %s",
+				tc.address, c.Address, got, tc.inCode, resp.HostKeyFingerprint)
+		}
+		// The code holds device-1, as one device add issued would.
+		if r := h.Koko("device", "add", "device-1", "--json"); r.Status != 1 || !strings.Contains(r.Stderr, "name_taken") {
+			t.Errorf("device add device-1 after initialisation = %d %s, want name_taken", r.Status, r.Stderr)
+		}
+	}
+}
+
+// A Join Code carries the Server Address, with its port, in at most 255
+// bytes. A Server Address too long for that is refused, and leaves the koko
+// server uninitialised, since initialisation issues the first Join Code.
+func TestInitialisationRefusesAServerAddressNoJoinCodeCarries(t *testing.T) {
+	h := harness.Start(t, harness.NoInit())
+	long := strings.Repeat(strings.Repeat("a", 62)+".", 3) + strings.Repeat("a", 61) // 250 characters
+	_, err := h.Call(api.ServerInit, api.ServerInitRequest{Owner: harness.Owner, Address: long + ":18443"})
+	wantCode(t, err, api.CodeInvalidAddress)
+	h.Koko("space", "ls", "--json").WantError(t, 1, "not_initialised")
+	if _, err := h.Call(api.ServerInit, api.ServerInitRequest{Owner: harness.Owner, Address: long + ":1"}); err != nil {
+		t.Errorf("server.init with a 252-byte Server Address: %v", err)
+	}
 }

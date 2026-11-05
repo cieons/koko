@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "name_taken",
+    "message": "alice already has a device or a valid Join Code named \"laptop\""
+  }
+}

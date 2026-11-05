@@ -44,7 +44,7 @@ UI's TypeScript types are generated from them
 | `local_only` | 403 | The operation answers only the Local caller, over the Unix socket. |
 | `unknown_operation` | 404 | No operation is served at the path. |
 | `method_not_allowed` | 405 | The method is not `POST`. |
-| `name_taken` | 409 | A record of the same kind already holds the name. |
+| `name_taken` | 409 | A record already holds the name where names must differ: a Space or a User for a new User's name, which they share; a Space for a Space's; one of the same User's devices or valid Join Codes for a device's. |
 | `not_initialised` | 409 | The koko server is not initialised, so it answers no operation but `server.init` ([initialisation](initialisation.md#before-initialisation)). |
 | `unsupported_media_type` | 415 | The body is not `application/json`. |
 | `internal_error` | 500 | Anything the server did not expect; the message says to read the log, which holds the cause. |
@@ -71,6 +71,11 @@ request decoded into its Go type, the caller and a `store.Tx`. The framework:
    `not_initialised`;
 4. commits only when `fn` returns no error, so a refused write leaves nothing
    behind, and writes the response or the error object.
+
+An operation reads the time from `op.Now(ctx)`: the koko server's clock
+(`server.Config.Clock`, the clock hook) read once when the call began, in UTC
+to the second as every stored time is, so the times one call records agree
+and a test moves them all.
 
 An operation never begins, commits or rolls back. Each call is logged at debug
 level as `api call` with its path and status; an unexpected error is logged at

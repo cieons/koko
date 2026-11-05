@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cieons/koko/internal/server/deployment"
+	"github.com/cieons/koko/internal/server/device"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/store"
@@ -35,8 +37,8 @@ func TestInitAnswersOnlyTheLocalCaller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := op.New(st, slog.New(slog.DiscardHandler), deployment.Initialised)
-	registerServer(a, rootKey)
+	a := op.New(st, slog.New(slog.DiscardHandler), deployment.Initialised, time.Now)
+	registerServer(a, rootKey, device.NewIssuer(joinTarget(rootKey)))
 
 	call := func(caller op.Caller) *httptest.ResponseRecorder {
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, api.ServerInit.Path(),

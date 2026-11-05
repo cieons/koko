@@ -14,8 +14,8 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
-| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants and channel adapter (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`); later the Join Code codec, Attribute values, the port-owner lookup | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`), the embedded web UI (`webui`), the Host connector (`hostconn`); later the Gateway, installer | client |
+| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants and channel adapter (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`); later Attribute values, the port-owner lookup | server, client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`), the embedded web UI (`webui`), the Host connector (`hostconn`); later the Gateway, installer | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`); later the Device Mux, tunnel, ssh_config and device files | server |
 
 Only [`cmd/koko`](../../cmd/koko) and the S1 harness
@@ -42,7 +42,7 @@ lines.
 | --- | --- | --- |
 | API types, operations (`api.Op`) and error codes (`api.Code`) | `internal/shared/api/<area>.go`, with `<area>Operations` and, if it has codes of its own, `<area>Codes` | `operations` in [`api.go`](../../internal/shared/api/api.go), `codes` in [`errors.go`](../../internal/shared/api/errors.go) |
 | The web UI's TypeScript types | `web/src/api/<area>.ts`, written by `make generate` from `<area>.go` ([web-ui.md](web-ui.md#generated-types)) | none |
-| Server operations | `internal/server/<area>/`, with `Register(*op.API)` | `areas` in [`server.go`](../../internal/server/server.go) |
+| Server operations | `internal/server/<area>/`, with `Register(*op.API)`, or a `Register` that also takes what the process loaded (below) | `areas` in [`server.go`](../../internal/server/server.go), or one call in `server.Start` for a `Register` that takes more |
 | Commands and their `--json` types | `internal/client/cli/<area>.go`, with `<area>Commands` | `commands` in [`tree.go`](../../internal/client/cli/tree.go) |
 | API-to-CLI mappings | `<area>Mappings` in the same file | `mappings` in [`mapping.go`](../../internal/client/cli/mapping.go) |
 | Migration steps | `internal/server/store/migrations/<what-it-adds>.sql` | `steps` in [`migrations.go`](../../internal/server/store/migrations.go) (rule 2) |
@@ -51,7 +51,10 @@ lines.
 The `server` area's operations act on the koko server process itself (the
 Root Key it loaded, its keys, later its listeners), so the process package
 registers them ([`init.go`](../../internal/server/init.go)) rather than an
-area package of its own.
+area package of its own. An area whose operations need what the process
+loaded takes it in its `Register`, which [`server.Start`](../../internal/server/server.go)
+calls after the `areas` list: `device` and `user` take the Join Code issuer,
+which reads the host key with the Root Key ([Join Codes](join-codes.md#issuing)).
 
 Error codes every area shares (`invalid_request`, `unknown_field`,
 `invalid_name`, `name_taken`, ...) are in `commonCodes`; an area adds a code of
@@ -126,7 +129,7 @@ apart.
 | The socket path | `server.Config.SocketPath`, `cli.Runner.SocketPath` | #27 |
 | The fake terminal | `cli.Runner.Terminal` | #28 |
 | The P0 timing constants | `hostconn.Connector.Timings`, a [`timing.Timings`](../../internal/shared/timing/timing.go), where a ticket that uses a new timing adds its constant and field | #32 |
-| The clock | | #36 |
+| The clock | `server.Config.Clock`, which every operation reads once per call through `op.Now`; the harness's `h.Now()` and `h.Advance(d)` | #36 |
 
 ## The S1 harness
 
@@ -135,7 +138,8 @@ in the test process (a temporary data directory, a Root Key file made for the
 test by `harness.NewRootKeyFile`, a temporary socket in a short path for
 macOS's 104-byte limit, logging at debug level) and initialises it over the
 socket, with the Owner `harness.Owner` (`alice`) and the Server Address
-`harness.Address`; so `koko space ls` lists `alice`'s Personal Space.
+`harness.Address`; so `koko space ls` lists `alice`'s Personal Space, and
+initialisation's Join Code holds `alice`'s `device-1`.
 `h.Koko(args...)` runs a command line in process through `cli.Runner` as the
 Local caller under a temporary HOME, and `h.Call(op, req)` calls an operation
 no command calls, such as `server.init`. `h.Calls()` counts the API calls the
@@ -143,9 +147,13 @@ server answered since `Start` returned, so a refusal can be shown to make
 none. The options `harness.NoInit()`, `harness.DataDir(dir)` and
 `harness.RootKeyFile(path)` start it uninitialised or on given files, and
 `h.Stop()` stops it before the test ends, to start another on its data
-directory. [`harness.Golden`](../../internal/harness/golden.go)
+directory. The koko server's clock stands still at the second `Start` began
+until `h.Advance(d)` moves it, so a test moves time, such as past a Join
+Code's 15 minutes, and never waits; `h.Now()` reads it.
+[`harness.Golden`](../../internal/harness/golden.go)
 compares output with `testdata/<name>` after replacing each record id with a
-numbered placeholder (`"space_<1>"`); `go test -update` rewrites the files.
+numbered placeholder (`"space_<1>"`), each Join Code with `koko_<code>` and
+each time with `<time>`; `go test -update` rewrites the files.
 [`harness.ServerStart`](../../internal/harness/harness.go) is a
 `cli.Runner.ServerRun` for S1 tests of `koko server run`: the real start-up on
 a temporary socket, stopped at once if it starts.

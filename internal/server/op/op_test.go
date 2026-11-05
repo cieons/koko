@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/store"
@@ -29,6 +30,10 @@ type noteAddResponse struct {
 
 type noteListRequest struct{}
 
+type noteTimeResponse struct {
+	Time string `json:"time"`
+}
+
 type noteListResponse struct {
 	Notes []string `json:"notes"`
 	Local bool     `json:"local"`
@@ -38,6 +43,7 @@ type noteListResponse struct {
 var (
 	noteAdd  = api.Op[noteAddRequest, noteAddResponse]{Name: "note.add", Write: true}
 	noteList = api.Op[noteListRequest, noteListResponse]{Name: "note.list"}
+	noteTime = api.Op[noteListRequest, noteTimeResponse]{Name: "note.time"}
 )
 
 type fixture struct {
@@ -46,6 +52,8 @@ type fixture struct {
 	log   *bytes.Buffer
 	// uninitialised plays a koko server not initialised yet.
 	uninitialised atomic.Bool
+	// clock is the koko server's clock.
+	clock atomic.Pointer[time.Time]
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -63,8 +71,10 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	f := &fixture{store: s, log: &bytes.Buffer{}}
+	f.clock.Store(new(time.Now()))
 	a := op.New(s, slog.New(slog.NewTextHandler(f.log, &slog.HandlerOptions{Level: slog.LevelDebug})),
-		func(context.Context, store.Tx) (bool, error) { return !f.uninitialised.Load(), nil })
+		func(context.Context, store.Tx) (bool, error) { return !f.uninitialised.Load(), nil },
+		func() time.Time { return *f.clock.Load() })
 	f.api = a
 	a.Handle(noteAdd, func(ctx context.Context, tx store.Tx, _ op.Caller, req noteAddRequest) (noteAddResponse, error) {
 		if _, err := tx.ExecContext(ctx, "INSERT INTO notes (text) VALUES (?)", req.Text); err != nil {
@@ -93,6 +103,14 @@ func newFixture(t *testing.T) *fixture {
 			resp.Notes = append(resp.Notes, text)
 		}
 		return resp, rows.Err()
+	})
+	a.Handle(noteTime, func(ctx context.Context, _ store.Tx, _ op.Caller, _ noteListRequest) (noteTimeResponse, error) {
+		first := op.Now(ctx)
+		f.clock.Store(new(first.Add(time.Hour))) // the clock moves on during the call
+		if !op.Now(ctx).Equal(first) {
+			return noteTimeResponse{}, errors.New("op.Now changed during the call")
+		}
+		return noteTimeResponse{Time: first.Format(time.RFC3339Nano)}, nil
 	})
 	return f
 }
@@ -315,5 +333,16 @@ func TestLocalOnlyOperationRefusesOtherCallers(t *testing.T) {
 	}
 	if status, body := f.post(t, "/v1/note.local", `{}`); status != http.StatusOK || ran != 1 {
 		t.Errorf("note.local as the Local caller = %d %s, ran %d time(s)", status, body, ran)
+	}
+}
+
+// Every call reads the time once, from the koko server's clock, in UTC to
+// the second, so the times an operation records agree.
+func TestNowIsTheClockAtTheStartOfTheCall(t *testing.T) {
+	f := newFixture(t)
+	f.clock.Store(new(time.Date(2026, 11, 5, 16, 3, 7, 900_000_000, time.FixedZone("", 2*60*60))))
+	status, body := f.post(t, noteTime.Path(), `{}`)
+	if status != http.StatusOK || body != `{"time":"2026-11-05T14:03:07Z"}` {
+		t.Errorf("note.time = %d %s, want the clock's time in UTC to the second", status, body)
 	}
 }

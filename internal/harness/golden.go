@@ -14,14 +14,25 @@ var update = flag.Bool("update", false, "rewrite golden files with what the test
 // idPattern matches a record id inside a JSON string, as in "space_3f9k2m7q".
 var idPattern = regexp.MustCompile(`"([a-z]+)_[0-9a-hjkmnp-tv-z]{8}"`)
 
+// codePattern matches a Join Code, which is made at run time and never lands
+// in a fixture.
+var codePattern = regexp.MustCompile(`koko_[a-z2-7]{32,}`)
+
+// timePattern matches a time as koko prints one: RFC 3339 in UTC to the
+// second.
+var timePattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z`)
+
 // Golden checks got against testdata/<name> in the test's package, after
 // replacing each distinct record id with a numbered placeholder in order of
-// first appearance ("space_<1>", "space_<2>"), since ids are random. With
-// -update it rewrites the file instead. Name one file per command and case,
-// such as space-add.json.
+// first appearance ("space_<1>", "space_<2>"), since ids are random, each
+// Join Code with "koko_<code>" and each time with "<time>". With -update it
+// rewrites the file instead. Name one file per command and case, such as
+// space-add.json.
 func Golden(t testing.TB, name, got string) {
 	t.Helper()
 	got = normalizeIDs(got)
+	got = codePattern.ReplaceAllString(got, "koko_<code>")
+	got = timePattern.ReplaceAllString(got, "<time>")
 	path := filepath.Join("testdata", name)
 	if *update {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {

@@ -1,0 +1,7 @@
+{
+  "id": "joincode_<1>",
+  "code": "koko_<code>",
+  "user": "alice",
+  "device": "device-2",
+  "expires_at": "<time>"
+}

@@ -11,7 +11,8 @@ One list of every command, [`cli.Tree`](../../internal/client/cli/tree.go),
 joined from each area's `<area>Commands`. An entry
 ([`cli.Command`](../../internal/client/cli/tree.go)) holds the noun and verb,
 the positional arguments (each plain, qualified, or qualified and allowed
-bare), the flags (each with its `KOKO_*` variable, default and choices),
+bare; each required, or optional after every required one, shown as
+`[<device>]`), the flags (each with its `KOKO_*` variable, default and choices),
 whether it takes `key=value` pairs and `--unset`, the risk tier (required),
 Owner-only, the API operation it calls and its `Run`, made with `action(f)`
 from a function returning the command's `--json` type, which is also its
@@ -36,7 +37,8 @@ arguments and flags, or refuses the command line with exit 2 and the code
   empty one, a value outside the flag's choices (from the flag or its
   variable), and `--json` or a boolean flag given a value;
 - a missing, an empty or an extra argument, so `koko space add "$NAME"` with
-  `NAME` unset never reaches the koko server;
+  `NAME` unset never reaches the koko server; an optional argument may be
+  left out, but given empty it is refused too;
 - a qualified name (`<space>/<secret>`, `<host>/<service>`, `<user>/<device>`)
   with a part missing or empty, or a part that holds `/`; one that may be bare
   (`[<user>/]<device>`) is also taken without its `/`;
@@ -126,7 +128,9 @@ status. A command reaches the koko server only on its first `in.Call`, so
 ## Output for people
 
 Not a contract: a write says what it did (`Added Space ops (space_3f9k2m7q).`),
-and a list is a table with a header (`NAME  ID`), or a sentence when empty.
+and a list is a table with a header (`NAME  ID`), or a sentence when empty. A
+command that issues a Join Code says for whom and until when, then prints the
+one `koko join koko_...` line to paste on the new device.
 
 ## The commands so far
 
@@ -134,6 +138,8 @@ and a list is a table with a header (`NAME  ID`), or a sentence when empty.
 | --- | --- | --- | --- |
 | `koko space add <space>` (Owner; enforced from #39) | reversible | `space.add` | the Space: `{"id", "name"}` |
 | `koko space ls` | read | `space.list` | an array of Spaces |
+| `koko user invite <user>` (Owner; enforced from #39) | irreversible | `user.invite` | `{"user": {"id", "name", "role", "created_at"}, "join_code": ...}`, the Join Code as `device add` prints it |
+| `koko device add [<device>] [--user <user>]` | irreversible | `device.add` | the Join Code: `{"id", "code", "user", "device", "expires_at"}` |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko server run [--data-dir <dir>] [--root-key-file <file>] [--log-level <level>]` | irreversible | none | nothing on success |
 

@@ -15,8 +15,9 @@ other caller gets `local_only`), and is the one operation that answers before
 initialisation (`op.BeforeInit`).
 
 - **In:** `{"owner": "<user name>", "address": "<host[:port]>"}`.
-- **Out:** `{"address": "<as given>", "host_key_fingerprint": "SHA256:..."}`,
-  the fingerprint as OpenSSH prints it.
+- **Out:** `{"address": "<as given>", "host_key_fingerprint": "SHA256:...",
+  "join_code": {...}}`, the fingerprint as OpenSSH prints it, and the Owner's
+  first Join Code as `device.add` returns one.
 
 In one transaction, so that a refusal leaves the koko server as it was, it:
 
@@ -32,7 +33,12 @@ In one transaction, so that a refusal leaves the koko server as it was, it:
    ([`deployment.Create`](../../internal/server/deployment/deployment.go));
 4. creates the Owner and the Owner's Personal Space, which takes the Owner's
    name ([`user.AddOwner`](../../internal/server/user/user.go)); the name is
-   checked as a User name, with no default, and refused with `invalid_name`.
+   checked as a User name, with no default, and refused with `invalid_name`;
+5. issues the Owner's first Join Code, for `device-1`, through the same path
+   as `koko device add` over the socket
+   ([Join Codes](join-codes.md#issuing)), naming the Server Address and the
+   host key made in step 3; a Server Address too long for a Join Code is
+   refused here with `invalid_address`.
 
 No command calls it: `koko server install` (#38) does, and the S1 harness.
 
@@ -51,8 +57,9 @@ Owner's name can never be taken before it is given.
 | --- | --- |
 | `deployment` | One row: the Server Address. The koko server is initialised once it exists. |
 | `own_keys` | One row per private key the koko server makes for itself (`kind` `koko` and `host`), its PKCS #8 sealed for the row's id. Later keys, such as the web UI's cookie key, add rows. |
-| `users` | The Owner, with the role `owner`; a partial unique index allows one. |
+| `users` | The Owner, with the role `owner`; a partial unique index allows one. Invited Users have the role `member`. |
 | `spaces.user_id` | The User a Personal Space belongs to, which is not a membership; empty for a shared Space. |
+| `join_codes` | The Owner's first Join Code, kept as the hash of its secret ([Join Codes](join-codes.md#the-record)). |
 
 ## At every start
 
@@ -67,9 +74,9 @@ Root Key is the one they were sealed under; its refusals are in
 
 - [`init_test.go`](../../internal/server/init_test.go), over the socket: the
   Owner and their Personal Space, the refusals before initialisation and of a
-  second one, the Owner's name and the Server Address checked, and no private
-  key or Root Key in the raw bytes of `koko.db` and its `-wal`, while running
-  and once stopped.
+  second one, the Owner's name and the Server Address checked, the first Join
+  Code and what it names, and no private key or Root Key in the raw bytes of
+  `koko.db` and its `-wal`, while running and once stopped.
 - [`server_rootkey_test.go`](../../internal/client/cli/server_rootkey_test.go),
   through `koko server run`: a restart with the same Root Key logs the host key
   initialisation made; another Root Key, a missing file and one that does not

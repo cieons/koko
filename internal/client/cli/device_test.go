@@ -1,0 +1,244 @@
+package cli_test
+
+import (
+	"bytes"
+	"encoding/base32"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json/v2"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/joincode"
+)
+
+// joinCodeOut is an issued Join Code as the CLI's --json prints it.
+type joinCodeOut struct {
+	ID        string `json:"id"`
+	Code      string `json:"code"`
+	User      string `json:"user"`
+	Device    string `json:"device"`
+	ExpiresAt string `json:"expires_at"`
+}
+
+// deviceAdd runs koko device add with args and --json, and returns the Join
+// Code it issued.
+func deviceAdd(t *testing.T, h *harness.Harness, args ...string) joinCodeOut {
+	t.Helper()
+	r := h.Koko(append([]string{"device", "add", "--json"}, args...)...)
+	r.WantSuccess(t)
+	var jc joinCodeOut
+	if err := json.Unmarshal([]byte(r.Stdout), &jc); err != nil {
+		t.Fatalf("device add --json printed %q: %v", r.Stdout, err)
+	}
+	return jc
+}
+
+// fingerprintOf is a Join Code's host key fingerprint as OpenSSH prints it.
+func fingerprintOf(c joincode.Code) string {
+	return "SHA256:" + base64.RawStdEncoding.EncodeToString(c.Fingerprint[:])
+}
+
+// Over the Unix socket, koko device add issues a Join Code for the Owner,
+// valid for 15 minutes from its issue, naming the koko server's Server
+// Address with its listen port and its host key.
+func TestDeviceAddIssuesAJoinCodeForTheOwner(t *testing.T) {
+	h := harness.Start(t, harness.NoInit())
+	init, err := h.Call(api.ServerInit, api.ServerInitRequest{Owner: harness.Owner, Address: harness.Address})
+	if err != nil {
+		t.Fatalf("server.init: %v", err)
+	}
+	r := h.Koko("device", "add", "--json")
+	r.WantSuccess(t)
+	harness.Golden(t, "device-add.json", r.Stdout)
+
+	var jc joinCodeOut
+	if err := json.Unmarshal([]byte(r.Stdout), &jc); err != nil {
+		t.Fatal(err)
+	}
+	// Initialisation's own Join Code holds device-1.
+	if want := h.Now().Add(15 * time.Minute).Format(time.RFC3339); jc.User != harness.Owner || jc.Device != "device-2" || jc.ExpiresAt != want {
+		t.Errorf("device add = %+v, want a Join Code for %s's device-2 that expires at %s", jc, harness.Owner, want)
+	}
+	c, err := joincode.Decode(jc.Code)
+	if err != nil {
+		t.Fatalf("decode the Join Code: %v", err)
+	}
+	if c.Address != harness.Address+":443" || fingerprintOf(c) != init.HostKeyFingerprint {
+		t.Errorf("the Join Code names %s with host key %s, want %s:443 with %s", c.Address, fingerprintOf(c), harness.Address, init.HostKeyFingerprint)
+	}
+}
+
+// For people, device add says for whom and until when, then prints the one
+// koko join line to paste on the new device.
+func TestDeviceAddForPeople(t *testing.T) {
+	h := harness.Start(t)
+	r := h.Koko("device", "add", "laptop")
+	r.WantSuccess(t)
+	lines := strings.Split(strings.TrimSuffix(r.Stdout, "\n"), "\n")
+	expires := h.Now().Add(15 * time.Minute).Format(time.RFC3339)
+	if len(lines) != 2 || lines[0] != "On alice's new device laptop, before "+expires+", run:" {
+		t.Fatalf("stdout = %q, want a line saying for whom and until when, then the koko join line", r.Stdout)
+	}
+	code, ok := strings.CutPrefix(lines[1], "koko join ")
+	if _, err := joincode.Decode(code); !ok || err != nil {
+		t.Errorf("the last line is %q, want koko join and a Join Code (%v)", lines[1], err)
+	}
+}
+
+// Without a name the device is device-<n>, counting up past the names the
+// User's valid Join Codes hold, so several codes can be valid at once
+// without colliding.
+func TestDeviceAddNamesTheDeviceAfterTheNamesTaken(t *testing.T) {
+	h := harness.Start(t)
+	// Initialisation's Join Code holds device-1.
+	var codes []string
+	for _, want := range []string{"device-2", "device-3"} {
+		jc := deviceAdd(t, h)
+		if jc.Device != want {
+			t.Errorf("device add named the device %q, want %q", jc.Device, want)
+		}
+		codes = append(codes, jc.Code)
+	}
+	if jc := deviceAdd(t, h, "device-5"); jc.Device != "device-5" {
+		t.Errorf("device add device-5 named the device %q", jc.Device)
+	}
+	for _, want := range []string{"device-4", "device-6"} {
+		if jc := deviceAdd(t, h); jc.Device != want {
+			t.Errorf("device add named the device %q, want %q", jc.Device, want)
+		}
+	}
+	if codes[0] == codes[1] {
+		t.Error("two Join Codes are the same")
+	}
+}
+
+// A name a valid Join Code of the User holds is refused; once the code has
+// expired, 15 minutes after its issue, the name is free again.
+func TestDeviceAddRefusesANameAValidJoinCodeHolds(t *testing.T) {
+	h := harness.Start(t)
+	deviceAdd(t, h, "laptop")
+	r := h.Koko("device", "add", "laptop", "--json")
+	r.WantError(t, 1, "name_taken")
+	harness.Golden(t, "device-add-taken.json", r.Stderr)
+
+	h.Advance(15*time.Minute - time.Second)
+	h.Koko("device", "add", "laptop", "--json").WantError(t, 1, "name_taken")
+	h.Advance(time.Second)
+	if jc := deviceAdd(t, h, "laptop"); jc.Device != "laptop" {
+		t.Errorf("device add laptop after the code expired named the device %q", jc.Device)
+	}
+	// Every earlier code has expired: device-1 is free again.
+	if jc := deviceAdd(t, h); jc.Device != "device-1" {
+		t.Errorf("device add after every code expired named the device %q, want device-1", jc.Device)
+	}
+}
+
+// A device name is a lowercase DNS label.
+func TestDeviceAddRefusesAnInvalidName(t *testing.T) {
+	h := harness.Start(t)
+	for _, device := range []string{"Laptop", "lap_top", "laptop-", "a/b", strings.Repeat("a", 64)} {
+		h.Koko("device", "add", device, "--json").WantError(t, 1, "invalid_name")
+	}
+	if jc := deviceAdd(t, h, strings.Repeat("a", 63)); jc.Device != strings.Repeat("a", 63) {
+		t.Errorf("device add with a 63-character name named the device %q", jc.Device)
+	}
+}
+
+// --user names a User who is not there: unknown_user, and nothing issued.
+func TestDeviceAddRefusesAnUnknownUser(t *testing.T) {
+	h := harness.Start(t)
+	r := h.Koko("device", "add", "--user", "bob", "--json")
+	r.WantError(t, 1, "unknown_user")
+	harness.Golden(t, "device-add-unknown-user.json", r.Stderr)
+	h.Koko("device", "add", "--user", "Bob", "--json").WantError(t, 1, "invalid_name")
+	if jc := deviceAdd(t, h); jc.Device != "device-2" {
+		t.Errorf("after the refusals device add named the device %q, want device-2", jc.Device)
+	}
+}
+
+// The koko server keeps only a hash of each Join Code's secret: neither
+// koko.db and its -wal and -shm, while it runs or once it stops, nor its log
+// holds a code or its secret in any common encoding.
+func TestNoJoinCodeIsStoredOrLogged(t *testing.T) {
+	dataDir := t.TempDir()
+	h := harness.Start(t, harness.NoInit(), harness.DataDir(dataDir))
+	init, err := h.Call(api.ServerInit, api.ServerInitRequest{Owner: harness.Owner, Address: harness.Address})
+	if err != nil {
+		t.Fatalf("server.init: %v", err)
+	}
+	codes := []string{init.JoinCode.Code}
+	r := h.Koko("user", "invite", "bob", "--json")
+	r.WantSuccess(t)
+	var inv invitation
+	if err := json.Unmarshal([]byte(r.Stdout), &inv); err != nil {
+		t.Fatal(err)
+	}
+	codes = append(codes, inv.JoinCode.Code, deviceAdd(t, h).Code, deviceAdd(t, h, "laptop", "--user", "bob").Code)
+
+	secrets := map[string][]byte{}
+	for i, code := range codes {
+		c, err := joincode.Decode(code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := c.Secret[:]
+		b32 := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(s)
+		for name, form := range map[string]string{
+			"the code":                    code,
+			"the code without its prefix": strings.TrimPrefix(code, joincode.Prefix),
+			"the secret":                  string(s),
+			"the secret in hex":           hex.EncodeToString(s),
+			"the secret in HEX":           strings.ToUpper(hex.EncodeToString(s)),
+			"the secret in base64":        base64.RawStdEncoding.EncodeToString(s),
+			"the secret in base64url":     base64.RawURLEncoding.EncodeToString(s),
+			"the secret in base32":        b32,
+			"the secret in lower base32":  strings.ToLower(b32),
+		} {
+			secrets[name+" of code "+string(rune('1'+i))] = []byte(form)
+		}
+	}
+	running := readDir(t, dataDir)
+	h.Stop()
+	stopped := readDir(t, dataDir)
+	places := map[string][]byte{"the log": []byte(h.Log())}
+	for file, content := range running {
+		places[file+" while running"] = content
+	}
+	for file, content := range stopped {
+		places[file+" once stopped"] = content
+	}
+	if len(running["koko.db-wal"]) == 0 {
+		t.Fatalf("the running koko server's data directory holds no -wal to check: %v", running)
+	}
+	for place, content := range places {
+		for name, secret := range secrets {
+			if bytes.Contains(content, secret) {
+				t.Errorf("%s holds %s", place, name)
+			}
+		}
+	}
+}
+
+// readDir reads every file in dir, by name.
+func readDir(t *testing.T, dir string) map[string][]byte {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{}
+	for _, e := range entries {
+		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[e.Name()] = b
+	}
+	return files
+}

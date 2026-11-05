@@ -41,10 +41,12 @@ func TestCommandTreeEntries(t *testing.T) {
 			t.Errorf("%s takes --unset but no key=value pairs", path)
 		}
 		var names []string
-		for _, a := range c.Args {
+		for i, a := range c.Args {
 			switch {
 			case slices.Contains(names, a.Name):
 				t.Errorf("%s has two arguments named %s", path, a.Name)
+			case i > 0 && c.Args[i-1].Optional && !a.Optional:
+				t.Errorf("%s <%s> is required but follows an optional argument", path, a.Name)
 			case strings.Contains(a.Name+a.Qualifier, "/"):
 				t.Errorf("%s %s holds /; write a qualified name with Qualifier", path, a.usage())
 			case a.Bare && a.Qualifier == "":

@@ -7,7 +7,8 @@
 // BeforeInit.
 //
 // An operation never begins, commits or rolls back: it gets a store.Tx, and
-// the transaction commits only when the operation returns no error.
+// the transaction commits only when the operation returns no error. It reads
+// the time from Now, which the framework fixes once per call.
 package op
 
 import (
@@ -20,6 +21,7 @@ import (
 	"mime"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
@@ -44,6 +46,21 @@ func WithCaller(ctx context.Context, c Caller) context.Context {
 func CallerFrom(ctx context.Context) (Caller, bool) {
 	c, ok := ctx.Value(callerKey{}).(Caller)
 	return c, ok
+}
+
+type nowKey struct{}
+
+// Now returns the time of the call ctx belongs to: the koko server's clock
+// when the call began, in UTC to the second, as every stored time is. Every
+// time an operation records or compares is this one, so a call that records
+// two times records the same, and the clock hook moves them all. It panics
+// outside a call, which only a bug reaches.
+func Now(ctx context.Context) time.Time {
+	t, ok := ctx.Value(nowKey{}).(time.Time)
+	if !ok {
+		panic("op: Now outside an operation's call")
+	}
+	return t
 }
 
 // Func carries out one operation inside its transaction.
@@ -82,14 +99,16 @@ type API struct {
 	// initialised tells, inside a call's transaction, whether the koko
 	// server is initialised.
 	initialised func(context.Context, store.Tx) (bool, error)
-	ops         map[string]operation
+	// clock is the koko server's clock, which Now reads once per call.
+	clock func() time.Time
+	ops   map[string]operation
 }
 
-// New returns an API with no operations, whose calls run against s, and
-// which asks initialised, inside each call's transaction, whether the koko
-// server is initialised.
-func New(s *store.Store, log *slog.Logger, initialised func(context.Context, store.Tx) (bool, error)) *API {
-	return &API{store: s, log: log, initialised: initialised, ops: map[string]operation{}}
+// New returns an API with no operations, whose calls run against s, which
+// asks initialised, inside each call's transaction, whether the koko server
+// is initialised, and which reads the time of each call from clock.
+func New(s *store.Store, log *slog.Logger, initialised func(context.Context, store.Tx) (bool, error), clock func() time.Time) *API {
+	return &API{store: s, log: log, initialised: initialised, clock: clock, ops: map[string]operation{}}
 }
 
 // Handle registers fn as the operation o, changed by opts. Each area
@@ -157,6 +176,7 @@ func (a *API) serve(r *http.Request) (any, error) {
 		return nil, api.CodeLocalOnly.Errorf("%s answers only over the koko server's Unix socket: run it on the koko server's machine", name)
 	}
 
+	ctx = context.WithValue(ctx, nowKey{}, a.clock().UTC().Truncate(time.Second))
 	run := a.store.Read
 	if o.write {
 		run = a.store.Write

@@ -202,3 +202,41 @@ func TestParseRefusesQualifiedNames(t *testing.T) {
 		wantRefused(t, err, tc.message)
 	}
 }
+
+// A tree with an optional argument after a required one.
+var optionalTree = []Command{
+	{Noun: "device", Verb: "add", Tier: Irreversible, Args: []Arg{{Name: "device", Optional: true}}, Flags: []Flag{{Name: "user", Value: "user"}}},
+	{Noun: "thing", Verb: "copy", Tier: Reversible, Args: []Arg{{Name: "from"}, {Name: "to", Optional: true}}},
+}
+
+// An optional argument may be left out; given, it is checked as any other.
+func TestParseOptionalArguments(t *testing.T) {
+	for _, tc := range []struct {
+		argv []string
+		args map[string]string
+	}{
+		{[]string{"device", "add"}, map[string]string{}},
+		{[]string{"device", "add", "laptop"}, map[string]string{"device": "laptop"}},
+		{[]string{"device", "add", "--user", "bob", "laptop"}, map[string]string{"device": "laptop"}},
+		{[]string{"thing", "copy", "a"}, map[string]string{"from": "a"}},
+		{[]string{"thing", "copy", "a", "b"}, map[string]string{"from": "a", "to": "b"}},
+	} {
+		p, err := parse(optionalTree, tc.argv, noEnv)
+		if err != nil || !maps.Equal(p.args, tc.args) {
+			t.Errorf("parse %q = %v, %v; want %v", tc.argv, p, err, tc.args)
+		}
+	}
+	for _, tc := range []struct {
+		argv    []string
+		message string
+	}{
+		{[]string{"device", "add", ""}, "[<device>] cannot be empty in koko device add"},
+		{[]string{"device", "add", "laptop", "desktop"}, `unexpected argument "desktop": write koko device add [<device>]`},
+		{[]string{"thing", "copy"}, "koko thing copy needs <from>"},
+	} {
+		_, err := parse(optionalTree, tc.argv, noEnv)
+		if err == nil || err.Error() != tc.message {
+			t.Errorf("parse %q = %v, want %q", tc.argv, err, tc.message)
+		}
+	}
+}

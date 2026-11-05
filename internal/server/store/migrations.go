@@ -18,6 +18,7 @@ var steps = []string{
 	"spaces.sql",
 	"users.sql",
 	"deployment.sql",
+	"join_codes.sql",
 }
 
 //go:embed migrations/*.sql

@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "name_taken",
+    "message": "a Space named \"ops\" already exists, and Users and Spaces share their names"
+  }
+}

@@ -68,3 +68,37 @@ func TestCheckRefusesWhatIsNotAServerAddress(t *testing.T) {
 		}
 	}
 }
+
+// A Join Code carries the Server Address with its port written.
+func TestWithPortWritesThePortWhenTheAddressHasNone(t *testing.T) {
+	for _, tc := range []struct{ s, want string }{
+		{"koko.example.com", "koko.example.com:443"},
+		{"koko.example.com:8443", "koko.example.com:8443"},
+		{"203.0.113.7", "203.0.113.7:443"},
+		{"[2001:db8::1]", "[2001:db8::1]:443"},
+		{"[2001:db8::1]:8443", "[2001:db8::1]:8443"},
+	} {
+		if got := serveraddr.WithPort(tc.s, 443); got != tc.want {
+			t.Errorf("WithPort(%q, 443) = %q, want %q", tc.s, got, tc.want)
+		}
+	}
+}
+
+func TestCheckHostPortWantsThePortWritten(t *testing.T) {
+	for _, s := range []string{"koko.example.com:443", "203.0.113.7:1", "[2001:db8::1]:65535"} {
+		if err := serveraddr.CheckHostPort(s); err != nil {
+			t.Errorf("CheckHostPort(%q) = %v, want nil", s, err)
+		}
+	}
+	for _, tc := range []struct{ s, says string }{
+		{"koko.example.com", "no port"},
+		{"[2001:db8::1]", "no port"},
+		{"koko.example.com:0", "port"},
+		{"", "empty"},
+	} {
+		err := serveraddr.CheckHostPort(tc.s)
+		if err == nil || !strings.Contains(err.Error(), tc.says) {
+			t.Errorf("CheckHostPort(%q) = %v, want an error that says %q", tc.s, err, tc.says)
+		}
+	}
+}
