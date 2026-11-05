@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cieons/koko/internal/server/op"
@@ -43,6 +44,8 @@ type fixture struct {
 	api   *op.API
 	store *store.Store
 	log   *bytes.Buffer
+	// uninitialised plays a koko server not initialised yet.
+	uninitialised atomic.Bool
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -59,8 +62,10 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var log bytes.Buffer
-	a := op.New(s, slog.New(slog.NewTextHandler(&log, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	f := &fixture{store: s, log: &bytes.Buffer{}}
+	a := op.New(s, slog.New(slog.NewTextHandler(f.log, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		func(context.Context, store.Tx) (bool, error) { return !f.uninitialised.Load(), nil })
+	f.api = a
 	a.Handle(noteAdd, func(ctx context.Context, tx store.Tx, _ op.Caller, req noteAddRequest) (noteAddResponse, error) {
 		if _, err := tx.ExecContext(ctx, "INSERT INTO notes (text) VALUES (?)", req.Text); err != nil {
 			return noteAddResponse{}, err
@@ -89,17 +94,23 @@ func newFixture(t *testing.T) *fixture {
 		}
 		return resp, rows.Err()
 	})
-	return &fixture{api: a, store: s, log: &log}
+	return f
 }
 
 // call sends one request as the Local caller and returns the status and body.
 func (f *fixture) call(t *testing.T, method, path, contentType, body string) (int, string) {
 	t.Helper()
+	return f.callAs(t, op.Caller{Local: true}, method, path, contentType, body)
+}
+
+// callAs sends one request as caller and returns the status and body.
+func (f *fixture) callAs(t *testing.T, caller op.Caller, method, path, contentType, body string) (int, string) {
+	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), method, path, strings.NewReader(body))
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	req = req.WithContext(op.WithCaller(req.Context(), op.Caller{Local: true}))
+	req = req.WithContext(op.WithCaller(req.Context(), caller))
 	rec := httptest.NewRecorder()
 	f.api.ServeHTTP(rec, req)
 	b, err := io.ReadAll(rec.Result().Body)
@@ -260,4 +271,49 @@ func TestRegisteringAnOperationTwicePanics(t *testing.T) {
 	f.api.Handle(noteList, func(context.Context, store.Tx, op.Caller, noteListRequest) (noteListResponse, error) {
 		return noteListResponse{}, nil
 	})
+}
+
+// Until the koko server is initialised, an operation is refused with
+// not_initialised and does not run, unless it is registered to answer before
+// initialisation.
+func TestOperationsWaitForInitialisation(t *testing.T) {
+	f := newFixture(t)
+	f.uninitialised.Store(true)
+	early := api.Op[noteListRequest, noteListResponse]{Name: "note.early"}
+	f.api.Handle(early, func(context.Context, store.Tx, op.Caller, noteListRequest) (noteListResponse, error) {
+		return noteListResponse{Notes: []string{"early"}}, nil
+	}, op.BeforeInit)
+
+	status, body := f.post(t, "/v1/note.add", `{"text": "hello"}`)
+	wantError(t, status, body, api.CodeNotInitialised)
+	status, body = f.post(t, "/v1/note.early", `{}`)
+	if status != http.StatusOK || body != `{"notes":["early"],"local":false}` {
+		t.Errorf("note.early before initialisation = %d %s", status, body)
+	}
+
+	f.uninitialised.Store(false)
+	if status, body := f.post(t, "/v1/note.list", `{}`); status != http.StatusOK || body != `{"notes":[],"local":true}` {
+		t.Errorf("note.list after initialisation = %d %s, want no note from the refused call", status, body)
+	}
+}
+
+// A Local-caller-only operation refuses every other caller with local_only,
+// and does not run for them.
+func TestLocalOnlyOperationRefusesOtherCallers(t *testing.T) {
+	f := newFixture(t)
+	ran := 0
+	local := api.Op[noteListRequest, noteListResponse]{Name: "note.local", Write: true}
+	f.api.Handle(local, func(context.Context, store.Tx, op.Caller, noteListRequest) (noteListResponse, error) {
+		ran++
+		return noteListResponse{}, nil
+	}, op.LocalOnly)
+
+	status, body := f.callAs(t, op.Caller{}, http.MethodPost, "/v1/note.local", "application/json", `{}`)
+	wantError(t, status, body, api.CodeLocalOnly)
+	if ran != 0 {
+		t.Error("note.local ran for a caller that is not the Local caller")
+	}
+	if status, body := f.post(t, "/v1/note.local", `{}`); status != http.StatusOK || ran != 1 {
+		t.Errorf("note.local as the Local caller = %d %s, ran %d time(s)", status, body, ran)
+	}
 }

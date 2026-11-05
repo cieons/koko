@@ -1,7 +1,7 @@
 // Package harness is the S1 test harness: a real koko server in the test
-// process, and koko command lines run in process against it, as the Local
-// caller under a temporary HOME. Everything it starts stops through
-// t.Cleanup.
+// process, initialised with an Owner, and koko command lines run in process
+// against it, as the Local caller under a temporary HOME. Everything it
+// starts stops through t.Cleanup.
 //
 // It is the one package besides cmd/koko that imports both the server and the
 // client groups, and only tests import it. It grows by addition: add helpers
@@ -20,10 +20,20 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cieons/koko/internal/client/apiclient"
 	"github.com/cieons/koko/internal/client/cli"
+	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/server"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/shared/api"
+)
+
+// What Start initialises its koko server with.
+const (
+	// Owner is the Owner's name, which their Personal Space takes too.
+	Owner = "alice"
+	// Address is the Server Address.
+	Address = "koko.test"
 )
 
 // Harness is one in-process koko server and the CLI that reaches it.
@@ -32,22 +42,53 @@ type Harness struct {
 	socket string
 	home   string
 	log    *syncBuffer
+	// stop stops the koko server, once.
+	stop func() error
+	// startCalls is how many API calls Start made itself.
+	startCalls int
 }
 
-// Option changes how Start sets up the harness. There are none yet; later
-// tickets add them here.
+// Option changes how Start sets up the harness.
 type Option func(*options)
 
-type options struct{}
+type options struct {
+	noInit      bool
+	dataDir     string
+	rootKeyFile string
+}
+
+// NoInit leaves the koko server as Start finds it, without initialising it.
+func NoInit() Option {
+	return func(o *options) { o.noInit = true }
+}
+
+// DataDir starts the koko server on dir, instead of a new temporary data
+// directory.
+func DataDir(dir string) Option {
+	return func(o *options) { o.dataDir = dir }
+}
+
+// RootKeyFile starts the koko server with the Root Key file at path, instead
+// of one made for the test.
+func RootKeyFile(path string) Option {
+	return func(o *options) { o.rootKeyFile = path }
+}
 
 // Start starts a koko server in the test process on a temporary data
 // directory, a Root Key file made for this test outside it, and a temporary
-// Unix socket, logging at debug level. It stops when the test ends.
+// Unix socket, logging at debug level, and initialises it over the socket
+// with Owner and Address. It stops when the test ends.
 func Start(t testing.TB, opts ...Option) *Harness {
 	t.Helper()
 	var o options
 	for _, opt := range opts {
 		opt(&o)
+	}
+	if o.dataDir == "" {
+		o.dataDir = t.TempDir()
+	}
+	if o.rootKeyFile == "" {
+		o.rootKeyFile = NewRootKeyFile(t)
 	}
 	h := &Harness{
 		t:      t,
@@ -56,8 +97,8 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		log:    &syncBuffer{},
 	}
 	srv, err := server.Start(t.Context(), server.Config{
-		DataDir:     t.TempDir(),
-		RootKeyPath: NewRootKeyFile(t),
+		DataDir:     o.dataDir,
+		RootKeyPath: o.rootKeyFile,
 		LogLevel:    slog.LevelDebug,
 		Log:         h.log,
 		SocketPath:  h.socket,
@@ -65,12 +106,44 @@ func Start(t testing.TB, opts ...Option) *Harness {
 	if err != nil {
 		t.Fatalf("start the koko server: %v", err)
 	}
+	h.stop = sync.OnceValue(srv.Close)
 	t.Cleanup(func() {
-		if err := srv.Close(); err != nil {
+		if err := h.stop(); err != nil {
 			t.Errorf("stop the koko server: %v", err)
 		}
 	})
+	if !o.noInit {
+		if _, err := h.Call(api.ServerInit, api.ServerInitRequest{Owner: Owner, Address: Address}); err != nil {
+			t.Fatalf("initialise the koko server: %v", err)
+		}
+	}
+	h.startCalls = h.countCalls()
 	return h
+}
+
+// Stop stops the koko server before the test ends, such as to start another
+// on its data directory.
+func (h *Harness) Stop() {
+	h.t.Helper()
+	if err := h.stop(); err != nil {
+		h.t.Fatalf("stop the koko server: %v", err)
+	}
+}
+
+// Call calls the operation o over the Unix socket as the Local caller, for
+// an operation no command calls, such as server.init. A failure the koko
+// server answered is an *api.Error.
+func (h *Harness) Call[Req, Resp any](o api.Op[Req, Resp], req Req) (Resp, error) {
+	h.t.Helper()
+	conn, err := serverconn.DialSocket(h.t.Context(), h.socket)
+	if err != nil {
+		var zero Resp
+		return zero, err
+	}
+	defer func() { _ = conn.Close() }()
+	c := apiclient.New(conn)
+	defer c.Close()
+	return c.Call(h.t.Context(), o, req)
 }
 
 // NewRootKeyFile makes a new Root Key in a file of its own in a temporary
@@ -131,8 +204,13 @@ func (h *Harness) Log() string {
 	return h.log.String()
 }
 
-// Calls counts the API calls the koko server has answered so far.
+// Calls counts the API calls the koko server has answered since Start
+// returned, leaving out the call that initialised it.
 func (h *Harness) Calls() int {
+	return h.countCalls() - h.startCalls
+}
+
+func (h *Harness) countCalls() int {
 	return strings.Count(h.Log(), `msg="api call"`)
 }
 

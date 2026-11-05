@@ -61,6 +61,7 @@ type OpInfo struct {
 // line.
 var operations = [][]Operation{
 	spaceOperations,
+	serverOperations,
 }
 
 // Operations returns every API operation.

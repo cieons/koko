@@ -1,10 +1,14 @@
 [
   {
     "id": "space_<1>",
-    "name": "data"
+    "name": "alice"
   },
   {
     "id": "space_<2>",
+    "name": "data"
+  },
+  {
+    "id": "space_<3>",
     "name": "ops"
   }
 ]

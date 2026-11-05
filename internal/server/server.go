@@ -1,6 +1,8 @@
 // Package server is the koko server process: what `koko server run`
-// dispatches into. It opens the store, loads the Root Key, registers every
-// area's operations and serves them on the Unix socket.
+// dispatches into. It opens the store, loads the Root Key and opens the
+// koko server's own keys with it, registers every area's operations and
+// serves them on the Unix socket. It also serves the server area's
+// operations, such as initialisation, which act on the process itself.
 //
 // The packages under internal/server are the server-only group: no client
 // package imports them (docs/subsystems/code-layout.md).
@@ -14,6 +16,7 @@ import (
 	"io"
 	"log/slog"
 
+	"github.com/cieons/koko/internal/server/deployment"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/space"
@@ -54,12 +57,14 @@ type Server struct {
 	transport *transport.Server
 }
 
-// Start opens the data directory, loads the Root Key and listens on the Unix
-// socket; the koko server then serves until Close. It refuses to start, and
-// writes no key, when the Root Key file's path is not absolute, the file is
-// inside the data directory, missing or does not parse, naming the file. The
-// store opens before the key loads, as P0 spec: install and run orders it, so
-// that a refusal can name the Root Key the sealed data needs (#34).
+// Start opens the data directory, loads the Root Key, opens the koko
+// server's own keys with it once the koko server is initialised, and listens
+// on the Unix socket; the koko server then serves until Close. It refuses to
+// start, and writes no key, when the Root Key file's path is not absolute, or
+// the file is inside the data directory, missing, does not parse, or is not
+// the Root Key the sealed data needs, naming the file. The store opens before
+// the key loads, as P0 spec: install and run orders it, so that a refusal can
+// name the Root Key the sealed data needs.
 func Start(ctx context.Context, cfg Config) (*Server, error) {
 	log := slog.New(slog.NewTextHandler(cfg.Log, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	// Before anything names the path: a relative one may be the key itself.
@@ -73,21 +78,28 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	key, err := seal.Load(cfg.RootKeyPath)
+	key, keys, err := loadKeys(ctx, st, cfg.RootKeyPath)
 	if err != nil {
 		return nil, errors.Join(err, st.Close())
 	}
-	a := op.New(st, log)
+	a := op.New(st, log, deployment.Initialised)
 	for _, register := range areas {
 		register(a)
 	}
+	registerServer(a, key)
 	t := transport.New(a, log)
 	socket := cmp.Or(cfg.SocketPath, wire.SocketPath)
 	if err := t.ListenSocket(ctx, socket); err != nil {
 		return nil, errors.Join(err, t.Close(), st.Close())
 	}
-	log.Info("koko server started", "version", build.Read().Version, "data_dir", cfg.DataDir,
-		"root_key", key.ID(), "socket", socket, "web_ui_built", webui.Built())
+	attrs := []any{
+		"version", build.Read().Version, "data_dir", cfg.DataDir, "root_key", key.ID(),
+		"socket", socket, "web_ui_built", webui.Built(), "initialised", keys != nil,
+	}
+	if keys != nil {
+		attrs = append(attrs, "host_key", keys.HostKeyFingerprint())
+	}
+	log.Info("koko server started", attrs...)
 	return &Server{store: st, transport: t}, nil
 }
 

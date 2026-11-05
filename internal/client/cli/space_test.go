@@ -24,15 +24,17 @@ func TestSpaceAddForPeople(t *testing.T) {
 	}
 }
 
-// space ls --json is a bare array of every Space, sorted by name, carrying
-// the ids space add printed.
+// space ls --json is a bare array of every Space, the Owner's Personal Space
+// included, sorted by name, carrying the ids space add printed.
 func TestSpaceLsListsEverySpace(t *testing.T) {
 	h := harness.Start(t)
 	var added []string
 	for _, name := range []string{"ops", "data"} {
 		r := h.Koko("space", "add", name, "--json")
 		r.WantSuccess(t)
-		var s struct{ ID string }
+		var s struct {
+			ID string `json:"id"`
+		}
 		if err := json.Unmarshal([]byte(r.Stdout), &s); err != nil {
 			t.Fatal(err)
 		}
@@ -41,20 +43,25 @@ func TestSpaceLsListsEverySpace(t *testing.T) {
 	r := h.Koko("space", "ls", "--json")
 	r.WantSuccess(t)
 	harness.Golden(t, "space-ls.json", r.Stdout)
-	var listed []struct{ ID, Name string }
+	var listed []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
 	if err := json.Unmarshal([]byte(r.Stdout), &listed); err != nil {
 		t.Fatal(err)
 	}
-	if len(listed) != 2 || listed[0].ID != added[1] || listed[1].ID != added[0] {
-		t.Errorf("space ls ids = %+v, want data %s then ops %s", listed, added[1], added[0])
+	if len(listed) != 3 || listed[0].Name != harness.Owner || listed[1].ID != added[1] || listed[2].ID != added[0] {
+		t.Errorf("space ls = %+v, want %s's Personal Space, then data %s and ops %s", listed, harness.Owner, added[1], added[0])
 	}
 }
 
-func TestSpaceLsWithNoSpaces(t *testing.T) {
+// On a koko server just initialised, the one Space is the Owner's Personal
+// Space, named after them.
+func TestSpaceLsOnAFreshKokoServer(t *testing.T) {
 	h := harness.Start(t)
 	r := h.Koko("space", "ls", "--json")
 	r.WantSuccess(t)
-	harness.Golden(t, "space-ls-empty.json", r.Stdout)
+	harness.Golden(t, "space-ls-fresh.json", r.Stdout)
 }
 
 func TestSpaceLsForPeople(t *testing.T) {
@@ -63,8 +70,9 @@ func TestSpaceLsForPeople(t *testing.T) {
 	r := h.Koko("space", "ls")
 	r.WantSuccess(t)
 	lines := strings.Split(strings.TrimSpace(r.Stdout), "\n")
-	if len(lines) != 2 || !strings.HasPrefix(lines[0], "NAME") || !strings.HasPrefix(lines[1], "ops ") {
-		t.Errorf("stdout = %q, want a NAME header and one row for ops", r.Stdout)
+	if len(lines) != 3 || !strings.HasPrefix(lines[0], "NAME") || !strings.HasPrefix(lines[1], harness.Owner+" ") ||
+		!strings.HasPrefix(lines[2], "ops ") {
+		t.Errorf("stdout = %q, want a NAME header, then a row for %s and one for ops", r.Stdout, harness.Owner)
 	}
 }
 
@@ -89,8 +97,8 @@ func TestSpaceAddRefusesAnInvalidName(t *testing.T) {
 		r.WantError(t, 1, "invalid_name")
 	}
 	h.Koko("space", "add", strings.Repeat("a", 63)).WantSuccess(t)
-	if r := h.Koko("space", "ls", "--json"); strings.Count(r.Stdout, `"name"`) != 1 {
-		t.Errorf("space ls = %s, want only the 63-character Space", r.Stdout)
+	if r := h.Koko("space", "ls", "--json"); strings.Count(r.Stdout, `"name"`) != 2 {
+		t.Errorf("space ls = %s, want only the Owner's Personal Space and the 63-character Space", r.Stdout)
 	}
 }
 

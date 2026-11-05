@@ -41,9 +41,11 @@ UI's TypeScript types are generated from them
 | `invalid_request` | 400 | The body is not a JSON object of the operation's request type (malformed, wrong type, duplicate or trailing data). |
 | `unknown_field` | 400 | The body holds a field the operation does not know. |
 | `invalid_name` | 400 | A name is not a lowercase DNS label ([`name.Check`](../../internal/shared/name/name.go)). |
+| `local_only` | 403 | The operation answers only the Local caller, over the Unix socket. |
 | `unknown_operation` | 404 | No operation is served at the path. |
 | `method_not_allowed` | 405 | The method is not `POST`. |
 | `name_taken` | 409 | A record of the same kind already holds the name. |
+| `not_initialised` | 409 | The koko server is not initialised, so it answers no operation but `server.init` ([initialisation](initialisation.md#before-initialisation)). |
 | `unsupported_media_type` | 415 | The body is not `application/json`. |
 | `internal_error` | 500 | Anything the server did not expect; the message says to read the log, which holds the cause. |
 
@@ -60,9 +62,14 @@ request decoded into its Go type, the caller and a `store.Tx`. The framework:
 
 1. refuses a call without a caller, an unknown path, another method, another
    content type, and a body that does not decode;
-2. runs `fn` inside one transaction it opens itself, `IMMEDIATE` for a write
-   (`api.Op.Write`) and read-only for a read;
-3. commits only when `fn` returns no error, so a refused write leaves nothing
+2. refuses every caller but the Local caller, with `local_only`, for an
+   operation registered with `op.LocalOnly`;
+3. runs `fn` inside one transaction it opens itself, `IMMEDIATE` for a write
+   (`api.Op.Write`) and read-only for a read, after asking, in that
+   transaction, whether the koko server is initialised: until it is, an
+   operation not registered with `op.BeforeInit` is refused with
+   `not_initialised`;
+4. commits only when `fn` returns no error, so a refused write leaves nothing
    behind, and writes the response or the error object.
 
 An operation never begins, commits or rolls back. Each call is logged at debug
@@ -77,7 +84,9 @@ store is never closed under a running transaction.
 ## Verifying
 
 - [`internal/server/op/op_test.go`](../../internal/server/op/op_test.go): the
-  refusals, the error object, the list wrapper, rollback of a failed write.
+  refusals, the error object, the list wrapper, rollback of a failed write,
+  the refusals before initialisation and of a caller who is not the Local
+  caller.
 - [`internal/server/transport/transport_test.go`](../../internal/server/transport/transport_test.go):
   SSH on the socket, the version string, the Local caller, refused channel
   types, a new host key at each start, mode 0666.

@@ -1,9 +1,10 @@
 // Package space is the space area of the koko server: the space operations
-// over the spaces table.
+// over the spaces table, and the Personal Space each User gets.
 package space
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/store"
@@ -37,6 +38,17 @@ func add(ctx context.Context, tx store.Tx, _ op.Caller, req api.SpaceAddRequest)
 		return api.SpaceAddResponse{}, err
 	}
 	return api.SpaceAddResponse{Space: s}, nil
+}
+
+// AddPersonal records the Personal Space of the User whose id is userID,
+// named after them. The User's own rules have checked the name, which Users
+// and Spaces share.
+func AddPersonal(ctx context.Context, tx store.Tx, userID, name string) error {
+	_, err := tx.ExecContext(ctx, "INSERT INTO spaces (id, name, user_id) VALUES (?, ?, ?)", store.NewID(idPrefix), name, userID)
+	if err != nil {
+		return fmt.Errorf("record the Personal Space %q: %w", name, err)
+	}
+	return nil
 }
 
 func list(ctx context.Context, tx store.Tx, _ op.Caller, _ api.SpaceListRequest) (api.SpaceListResponse, error) {

@@ -63,6 +63,10 @@ _Avoid_: asset server, daemon, backend
 The one `host:port` a koko server writes into its Join Codes, which its devices store and connect to.
 _Avoid_: advertised address, public address, endpoint, URL
 
+**Initialise**:
+To give a fresh koko server its Owner, its own keys and its Server Address, once and over its Unix socket; until then it answers nothing else.
+_Avoid_: bootstrap, set up, provision
+
 **Gateway**:
 The part of the koko server that ends every SSH Session and opens its own SSH connection to the Host.
 _Avoid_: bastion, jump host, proxy

@@ -15,6 +15,7 @@ ADR; a proposed change lives in its issue or PR.
 | The web UI build: Node, the embedded app and placeholder, the generated types, page tests | [web-ui.md](web-ui.md) |
 | The Host connector: logging in to a Host through its Relay, the pinned host key and connect retries | [host-connector.md](host-connector.md) |
 | The resumable stream: the byte stream beneath a Tunnel, its frames, offset exchange and replay buffer | [resumable-stream.md](resumable-stream.md) |
+| Initialisation: the Owner, the koko server's own keys and the Server Address, and what answers before it | [initialisation.md](initialisation.md) |
 
 ## Maintaining a reference
 

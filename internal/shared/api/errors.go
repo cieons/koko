@@ -53,6 +53,12 @@ var (
 	CodeInvalidName = Code{"invalid_name", http.StatusBadRequest}
 	// CodeNameTaken: a record of this kind already holds the name.
 	CodeNameTaken = Code{"name_taken", http.StatusConflict}
+	// CodeNotInitialised: the koko server is not initialised yet, so it
+	// answers no operation but server.init.
+	CodeNotInitialised = Code{"not_initialised", http.StatusConflict}
+	// CodeLocalOnly: the operation answers only the Local caller, over the
+	// koko server's Unix socket.
+	CodeLocalOnly = Code{"local_only", http.StatusForbidden}
 )
 
 var commonCodes = []Code{
@@ -64,12 +70,15 @@ var commonCodes = []Code{
 	CodeInternal,
 	CodeInvalidName,
 	CodeNameTaken,
+	CodeNotInitialised,
+	CodeLocalOnly,
 }
 
 // codes lists every area's error codes after the common ones; an area that
 // adds codes of its own adds its line.
 var codes = [][]Code{
 	commonCodes,
+	serverCodes,
 }
 
 // Codes returns every error code the API answers with.

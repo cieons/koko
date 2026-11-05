@@ -14,8 +14,8 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
-| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the wire constants and channel adapter (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`); later the Join Code codec, Attribute values, the port-owner lookup | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the Root Key and the Seal (`seal`), one package per area (`space`), the embedded web UI (`webui`), the Host connector (`hostconn`); later the Gateway, installer | client |
+| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants and channel adapter (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`); later the Join Code codec, Attribute values, the port-owner lookup | server, client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`), the embedded web UI (`webui`), the Host connector (`hostconn`); later the Gateway, installer | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`); later the Device Mux, tunnel, ssh_config and device files | server |
 
 Only [`cmd/koko`](../../cmd/koko) and the S1 harness
@@ -47,6 +47,11 @@ lines.
 | API-to-CLI mappings | `<area>Mappings` in the same file | `mappings` in [`mapping.go`](../../internal/client/cli/mapping.go) |
 | Migration steps | `internal/server/store/migrations/<what-it-adds>.sql` | `steps` in [`migrations.go`](../../internal/server/store/migrations.go) (rule 2) |
 | S1 tests and golden files | `internal/client/cli/<area>_test.go`, `testdata/<command>[-<case>].json` | none |
+
+The `server` area's operations act on the koko server process itself (the
+Root Key it loaded, its keys, later its listeners), so the process package
+registers them ([`init.go`](../../internal/server/init.go)) rather than an
+area package of its own.
 
 Error codes every area shares (`invalid_request`, `unknown_field`,
 `invalid_name`, `name_taken`, ...) are in `commonCodes`; an area adds a code of
@@ -128,10 +133,17 @@ apart.
 [`harness.Start`](../../internal/harness/harness.go) starts a real koko server
 in the test process (a temporary data directory, a Root Key file made for the
 test by `harness.NewRootKeyFile`, a temporary socket in a short path for
-macOS's 104-byte limit, logging at debug level), and `h.Koko(args...)`
-runs a command line in process through `cli.Runner` as the Local caller under a
-temporary HOME. `h.Calls()` counts the API calls the server answered, so a
-refusal can be shown to make none. [`harness.Golden`](../../internal/harness/golden.go)
+macOS's 104-byte limit, logging at debug level) and initialises it over the
+socket, with the Owner `harness.Owner` (`alice`) and the Server Address
+`harness.Address`; so `koko space ls` lists `alice`'s Personal Space.
+`h.Koko(args...)` runs a command line in process through `cli.Runner` as the
+Local caller under a temporary HOME, and `h.Call(op, req)` calls an operation
+no command calls, such as `server.init`. `h.Calls()` counts the API calls the
+server answered since `Start` returned, so a refusal can be shown to make
+none. The options `harness.NoInit()`, `harness.DataDir(dir)` and
+`harness.RootKeyFile(path)` start it uninitialised or on given files, and
+`h.Stop()` stops it before the test ends, to start another on its data
+directory. [`harness.Golden`](../../internal/harness/golden.go)
 compares output with `testdata/<name>` after replacing each record id with a
 numbered placeholder (`"space_<1>"`); `go test -update` rewrites the files.
 [`harness.ServerStart`](../../internal/harness/harness.go) is a

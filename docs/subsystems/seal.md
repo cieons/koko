@@ -72,18 +72,24 @@ from `koko server run --root-key-file` ([the CLI](cli.md)), and:
    comparing both after resolving symlinks
    ([`checkRootKeyOutside`](../../internal/server/rootkey.go)), so a copy of
    the data directory never holds the key;
-3. opens the store;
+3. opens the store, and reads which Root Key the sealed data needs, if the
+   koko server is initialised ([`loadKeys`](../../internal/server/rootkey.go):
+   `seal.SealedBy` on the host key);
 4. loads the Root Key, refusing a missing file, one it cannot read and one
    that does not parse;
-5. logs `root_key=<id>` in its `koko server started` line, and serves.
+5. over sealed data, refuses a Root Key whose id is not the one the data
+   needs, then opens the koko server's own keys with it
+   ([initialisation](initialisation.md#at-every-start));
+6. logs `root_key=<id>` in its `koko server started` line, and serves.
 
-Each refusal from step 2 on names the path, and every refusal stops the
-start-up before the socket opens. No refusal writes a key, and a file that
-does not parse is never taken for a missing one. The store opens before the
-key loads, in the order P0 spec: install and run gives, so a refusal at step
-4 may leave a new, empty `koko.db` in a fresh data directory. Checking the
-key's id against the sealed data, and naming the id the sealed data needs,
-come with initialisation (#34).
+Each refusal from step 2 on names the path, and over sealed data the Root Key
+id the data needs, so the Owner knows which copy to put back. Every refusal
+stops the start-up before the socket opens. No refusal writes a key, and a
+file that does not parse is never taken for a missing one. The store opens
+before the key loads, in the order P0 spec: install and run gives, so a
+refusal at step 4 may leave a new, empty `koko.db` in a fresh data directory,
+and on an upgrade the migration and its snapshot run before a refusal. With
+no migration due, a refusal leaves the data directory as it was.
 
 ## Verifying
 
@@ -98,4 +104,5 @@ relative path without printing it, a file inside the data directory (through
 `..` and symlinks too) leaving every file as it was, a missing file writing
 nothing in its place, and a file that does not parse leaving it unchanged.
 The S1 harness gives every koko server it starts a Root Key file made for
-the test (`harness.NewRootKeyFile`).
+the test (`harness.NewRootKeyFile`). The refusals over sealed data are
+verified with [initialisation](initialisation.md#verifying).

@@ -16,6 +16,8 @@ import (
 // version, recorded in PRAGMA user_version.
 var steps = []string{
 	"spaces.sql",
+	"users.sql",
+	"deployment.sql",
 }
 
 //go:embed migrations/*.sql
