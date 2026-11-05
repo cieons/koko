@@ -1,7 +1,9 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/cieons/koko/internal/shared/record"
 )
@@ -233,10 +235,32 @@ var (
 	// its pinned host key shows: such a Host is kept on record, never
 	// deleted.
 	CodeHostWasManaged = Code{"host_was_managed", http.StatusConflict}
+	// CodeInvalidBatch: a batch host.add whose Hosts at fault are at fault
+	// for different reasons; the error's items give each its own code.
+	CodeInvalidBatch = Code{"invalid_batch", http.StatusBadRequest}
 )
 
 var hostCodes = []Code{
 	CodeUnknownHost,
 	CodeInvalidValue,
 	CodeHostWasManaged,
+	CodeInvalidBatch,
+}
+
+// HostBatchError is the refusal of a host.add of n Hosts, n above 1, for the
+// Hosts at fault, items, at least one, in the order of the batch: none of
+// the n is added.
+// Its code is the one every item shares, or CodeInvalidBatch when they
+// differ, and its message names each item by its index.
+func HostBatchError(n int, items []ItemError) *Error {
+	code := items[0].Code
+	var b strings.Builder
+	fmt.Fprintf(&b, "none of the %d Hosts was added, for the %d at fault:", n, len(items))
+	for _, it := range items {
+		if it.Code != code {
+			code = CodeInvalidBatch.Name
+		}
+		fmt.Fprintf(&b, "\n[%d] %s", it.Index, it.Message)
+	}
+	return &Error{Code: code, Message: b.String(), Items: items}
 }

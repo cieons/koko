@@ -1,0 +1,28 @@
+{
+  "error": {
+    "code": "invalid_batch",
+    "message": "none of the 5 Hosts was added, for the 4 at fault:\n[0] a Host named \"web1\" already exists\n[2] invalid Host name: \"Web3\" holds 'W': a name uses only a-z, 0-9 and '-'\n[3] no Space is named \"nowhere\"\n[4] the Host [1] of this batch is named \"web2\" too",
+    "items": [
+      {
+        "index": 0,
+        "code": "name_taken",
+        "message": "a Host named \"web1\" already exists"
+      },
+      {
+        "index": 2,
+        "code": "invalid_name",
+        "message": "invalid Host name: \"Web3\" holds 'W': a name uses only a-z, 0-9 and '-'"
+      },
+      {
+        "index": 3,
+        "code": "unknown_space",
+        "message": "no Space is named \"nowhere\""
+      },
+      {
+        "index": 4,
+        "code": "name_taken",
+        "message": "the Host [1] of this batch is named \"web2\" too"
+      }
+    ]
+  }
+}

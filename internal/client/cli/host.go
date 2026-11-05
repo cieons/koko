@@ -3,6 +3,8 @@ package cli
 import (
 	"cmp"
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -26,8 +28,8 @@ var hostCommands = []Command{
 	{
 		Noun:    "host",
 		Verb:    "add",
-		Summary: "Record a Host: address= and account= are required, and space= defaults to your Personal Space",
-		Args:    []Arg{{Name: "host"}},
+		Summary: "Record a Host: address= and account= are required, and space= defaults to your Personal Space; without <host>, record the Hosts JSON on stdin holds, in the shape host ls --json prints",
+		Args:    []Arg{{Name: "host", Optional: true}},
 		Flags:   []Flag{noteFileFlag},
 		Pairs:   true,
 		Tier:    Reversible,
@@ -289,30 +291,54 @@ func unwrapPath(err error) error {
 	return err
 }
 
-// addedHost is what host add prints: the Host it recorded.
-type addedHost hostJSON
-
-func (h addedHost) Human(w io.Writer) error {
-	_, err := fmt.Fprintf(w, "Added Host %s (%s) to Space %s.\n", h.Name, h.ID, h.Space)
-	return err
+// addedHosts is what host add prints: the Hosts it recorded, in the order
+// given, each Note and all. Its --json is a hostJSON, in host show's shape,
+// for koko host add <host> and for one Host read on stdin as an object, and
+// a []hostJSON for an array on stdin, so what comes out mirrors what went
+// in.
+type addedHosts struct {
+	hosts []hostJSON
+	// one says the Hosts came as one: an argument or a JSON object.
+	one bool
 }
 
-func hostAdd(ctx context.Context, in *Input) (addedHost, error) {
+func (a addedHosts) MarshalJSONTo(enc *jsontext.Encoder) error {
+	if a.one {
+		return json.MarshalEncode(enc, a.hosts[0])
+	}
+	return json.MarshalEncode(enc, a.hosts)
+}
+
+func (a addedHosts) Human(w io.Writer) error {
+	for _, h := range a.hosts {
+		if _, err := fmt.Fprintf(w, "Added Host %s (%s) to Space %s.\n", h.Name, h.ID, h.Space); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// hostAdd is koko host add <host> key=value..., or without <host> the Hosts
+// JSON on stdin holds (hostAddStdin).
+func hostAdd(ctx context.Context, in *Input) (addedHosts, error) {
+	if in.Arg("host") == "" {
+		return hostAddStdin(ctx, in)
+	}
 	p, err := readHostPairs(in, "add")
 	if err != nil {
-		return addedHost{}, err
+		return addedHosts{}, err
 	}
 	switch {
 	case p.address == nil:
-		return addedHost{}, usagef("koko host add needs the Host's address: give address=<ip-or-dns-name>")
+		return addedHosts{}, usagef("koko host add needs the Host's address: give address=<ip-or-dns-name>")
 	case p.account == nil:
-		return addedHost{}, usagef("koko host add needs the Host Account koko logs in as, which has no default: give account=<user>")
+		return addedHosts{}, usagef("koko host add needs the Host Account koko logs in as, which has no default: give account=<user>")
 	}
 	note, err := readNote(in)
 	if err != nil {
-		return addedHost{}, err
+		return addedHosts{}, err
 	}
-	resp, err := in.Call(ctx, api.HostAdd, api.HostAddRequest{Hosts: []api.NewHost{{
+	return recordHosts(ctx, in, []api.NewHost{{
 		Name:       in.Arg("host"),
 		Space:      p.space,
 		Address:    *p.address,
@@ -320,14 +346,24 @@ func hostAdd(ctx context.Context, in *Input) (addedHost, error) {
 		Account:    *p.account,
 		Attributes: p.attributes,
 		Note:       note,
-	}}})
+	}}, true)
+}
+
+// recordHosts records hosts in one host.add call, all or none, and returns
+// what host add prints of them.
+func recordHosts(ctx context.Context, in *Input, hosts []api.NewHost, one bool) (addedHosts, error) {
+	resp, err := in.Call(ctx, api.HostAdd, api.HostAddRequest{Hosts: hosts})
 	if err != nil {
-		return addedHost{}, err
+		return addedHosts{}, err
 	}
-	if len(resp.Hosts) != 1 {
-		return addedHost{}, fmt.Errorf("host.add answered %d Hosts for one", len(resp.Hosts))
+	if len(resp.Hosts) != len(hosts) {
+		return addedHosts{}, fmt.Errorf("host.add answered %d Hosts for %d", len(resp.Hosts), len(hosts))
 	}
-	return addedHost(hostFromAPI(resp.Hosts[0])), nil
+	added := addedHosts{hosts: make([]hostJSON, 0, len(hosts)), one: one}
+	for _, h := range resp.Hosts {
+		added.hosts = append(added.hosts, hostFromAPI(h))
+	}
+	return added, nil
 }
 
 // hostList is what host ls prints: every Host, as a bare array.

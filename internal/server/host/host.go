@@ -236,7 +236,11 @@ func invalid(hostName string, err error) error {
 	return api.CodeInvalidValue.Errorf("the Host %s: %v", hostName, err)
 }
 
-// add is host.add: it records the Hosts, all or none.
+// add is host.add: it records the Hosts, all or none. One Host at fault is
+// refused as it is; in a batch of several, every Host is checked, and the
+// refusal lists each one at fault (api.HostBatchError). A later Host of the
+// batch under an earlier one's name is at fault, whether or not the earlier
+// one is.
 func add(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostAddRequest) (api.HostAddResponse, error) {
 	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
@@ -246,12 +250,28 @@ func add(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostAddRequ
 		return api.HostAddResponse{}, api.CodeInvalidRequest.Errorf("name at least one Host to add")
 	}
 	resp := api.HostAddResponse{Hosts: make([]api.Host, 0, len(req.Hosts))}
-	for _, n := range req.Hosts {
+	var faults []api.ItemError
+	first := map[string]int{}
+	for i, n := range req.Hosts {
+		if j, ok := first[n.Name]; ok {
+			msg := fmt.Sprintf("the Host [%d] of this batch is named %q too", j, n.Name)
+			faults = append(faults, api.ItemError{Index: i, Code: api.CodeNameTaken.Name, Message: msg})
+			continue
+		}
+		first[n.Name] = i
 		h, err := insert(ctx, tx, who, n)
+		if e, ok := errors.AsType[*api.Error](err); ok && len(req.Hosts) > 1 {
+			faults = append(faults, api.ItemError{Index: i, Code: e.Code, Message: e.Message})
+			continue
+		}
 		if err != nil {
 			return api.HostAddResponse{}, err
 		}
 		resp.Hosts = append(resp.Hosts, h)
+	}
+	if len(faults) > 0 {
+		// Returning an error rolls back the Hosts already recorded.
+		return api.HostAddResponse{}, api.HostBatchError(len(req.Hosts), faults)
 	}
 	return resp, nil
 }

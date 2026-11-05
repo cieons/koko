@@ -126,7 +126,10 @@ status. A command reaches the koko server only on its first `in.Call`, so
   when it ends; a failure after that still goes to stderr with its status.
   **stderr** gets every error: `koko: <message>`, or with `--json` (anywhere
   on the line, even where refused) the error object
-  `{"error": {"code": ..., "message": ...}}`.
+  `{"error": {"code": ..., "message": ...}}`. A refused batch, so far `koko
+  host add` of several Hosts on stdin, adds `items`, each Host at fault, by
+  the koko server or before any call alike
+  ([a refused batch](record.md#a-refused-batch)).
 - **Codes:** the API's pass through; the CLI adds `invalid_usage` (exit 2),
   `not_joined` (no koko server joined and no socket on this machine, or the
   joined koko server holds no Device Session with this device's key),
@@ -234,6 +237,7 @@ remove` says whether it deleted the User, freeing the name, or Removed them.
 | `koko server show` | read | `server.show` | `{"address", "listen_port", "host_key_fingerprint", "version", "root_key_file", "root_key_id", "data_dir"}` ([the deployment afterwards](initialisation.md#the-deployment-afterwards)) |
 | `koko server set address=<host[:port]>` (Owner, over the Unix socket only) | reversible | `server.set` | the settings as `server show` prints them, as the change left them |
 | `koko host add <host> address=<address> account=<account> [port=<port>] [space=<space>] [<key>=<value>...] [--note-file <file\|->]` | reversible | `host.add` | the Host: `{"id", "name", "space", "address", "port", "account", "state", "host_key", "attributes": {...}, "note", "created_at", "updated_at"}` ([the record](record.md)) |
+| `koko host add`, with Hosts as JSON on stdin | reversible | `host.add` | the Host, for one object on stdin, or an array of the Hosts, for an array, in the order given ([Hosts as JSON on stdin](record.md#hosts-as-json-on-stdin)) |
 | `koko host ls [<filter>...] [--sort <key>[.desc]]... [--with-note]` | read | `host.list` | an array of the Hosts the caller can see that match every filter term, by the sort keys and then by name, without `"note"` unless `--with-note` ([filtering and sorting](record.md#filtering-and-sorting)) |
 | `koko host show <host>` | read | `host.show` | the Host |
 | `koko host set <host> [<key>=<value>...] [--unset <key>]... [--note-file <file\|->]` | reversible | `host.set` | the Host as the change left it |

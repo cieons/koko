@@ -1,0 +1,33 @@
+[
+  {
+    "id": "host_<1>",
+    "name": "web1",
+    "space": "alice",
+    "address": "203.0.113.10",
+    "port": 22,
+    "account": "deploy",
+    "state": "registered",
+    "host_key": null,
+    "attributes": {
+      "price": 9.9,
+      "provider": "hetzner"
+    },
+    "note": null,
+    "created_at": "<time>",
+    "updated_at": "<time>"
+  },
+  {
+    "id": "host_<2>",
+    "name": "web2",
+    "space": "alice",
+    "address": "203.0.113.11",
+    "port": 2222,
+    "account": "deploy",
+    "state": "registered",
+    "host_key": null,
+    "attributes": {},
+    "note": "The second.",
+    "created_at": "<time>",
+    "updated_at": "<time>"
+  }
+]

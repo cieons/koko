@@ -1,0 +1,18 @@
+{
+  "error": {
+    "code": "invalid_usage",
+    "message": "none of the 4 Hosts was added, for the 2 at fault:\n[1] the Host web2: the Attribute price: \"10\" is a JSON string, where a number is written as a JSON number\n[3] the Host web4: unknown field \"region\": koko host add reads the fields koko host ls --json prints, with the Attributes in \"attributes\"",
+    "items": [
+      {
+        "index": 1,
+        "code": "invalid_usage",
+        "message": "the Host web2: the Attribute price: \"10\" is a JSON string, where a number is written as a JSON number"
+      },
+      {
+        "index": 3,
+        "code": "invalid_usage",
+        "message": "the Host web4: unknown field \"region\": koko host add reads the fields koko host ls --json prints, with the Attributes in \"attributes\""
+      }
+    ]
+  }
+}

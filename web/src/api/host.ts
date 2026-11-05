@@ -261,3 +261,9 @@ export const CodeInvalidValue = "invalid_value";
  * deleted.
  */
 export const CodeHostWasManaged = "host_was_managed";
+
+/**
+ * CodeInvalidBatch: a batch host.add whose Hosts at fault are at fault
+ * for different reasons; the error's items give each its own code.
+ */
+export const CodeInvalidBatch = "invalid_batch";

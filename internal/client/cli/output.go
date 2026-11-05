@@ -76,6 +76,8 @@ func (e *cliError) Error() string {
 // usageError is a command line refused before any call.
 type usageError struct {
 	message string
+	// items, for a batch read on stdin, holds each item at fault.
+	items []api.ItemError
 }
 
 func (e *usageError) Error() string {
@@ -127,7 +129,7 @@ func writeError(stderr io.Writer, err error, asJSON bool) int {
 // exits 2, every other failure 1.
 func classify(err error) (int, api.Error) {
 	if e, ok := errors.AsType[*usageError](err); ok {
-		return exitRefused, api.Error{Code: codeInvalidUsage, Message: e.message}
+		return exitRefused, api.Error{Code: codeInvalidUsage, Message: e.message, Items: e.items}
 	}
 	if e, ok := errors.AsType[*cliError](err); ok {
 		return exitFailed, api.Error{Code: e.code, Message: e.message}

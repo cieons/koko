@@ -402,7 +402,7 @@ func (a *API) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		code, e = api.CodeInternal, internalError()
 	}
 	a.log.Debug("api call", "path", r.URL.Path, "status", code.Status, "code", code.Name)
-	body, _ := json.Marshal(api.ErrorResponse{Error: *e}) // two strings: never fails
+	body, _ := json.Marshal(api.ErrorResponse{Error: *e}) // strings and ints: never fails
 	writeBody(w, code.Status, body)
 }
 

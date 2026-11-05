@@ -7,6 +7,22 @@
 export interface Error {
   code: string;
   message: string;
+  /**
+   * Items, in the refusal of a batch of several items, holds each item at
+   * fault, in the order of the batch; every other error leaves it out.
+   */
+  items?: ItemError[];
+}
+
+/**
+ * ItemError is one item at fault in a refused batch: its index in the
+ * batch, counted from 0, with the code and message it would be refused with
+ * alone.
+ */
+export interface ItemError {
+  index: number;
+  code: string;
+  message: string;
 }
 
 /** ErrorResponse is the body of a failed call: {"error": {"code": ..., "message": ...}}. */

@@ -128,7 +128,7 @@ to run too, so the two resolvers cannot drift.
 
 | Operation | Does |
 | --- | --- |
-| `host.add` | Records the Hosts in `hosts`, all or none, each Registered. |
+| `host.add` | Records the Hosts in `hosts`, all or none, each Registered. One Host at fault is refused with its own error; in a batch of several, every Host is checked and the refusal lists each one at fault ([a refused batch](#a-refused-batch)). |
 | `host.list` | Every Host the caller can see that is not Retired and matches the filters, by the sort keys and then by name, in natural order, and id ([filtering and sorting](#filtering-and-sorting)); the Notes only with `with_note`. |
 | `host.show` | One Host. |
 | `host.set` | Sets the address, port, Host Account, Attributes and Note it names, and clears the Attribute keys in `unset`, the Note for `note`, and the port back to 22 for `port`; nothing else changes. It refuses a request that changes nothing, a key both set and cleared, and clearing the address or the Host Account ([`record.Required`](../../internal/shared/record/record.go)). It takes no `name`, `space` or `state`. |
@@ -160,6 +160,26 @@ logged in to it.
 - **What a Space holds** is counted by [`host.Holding`](../../internal/server/host/host.go)
   ([what a Space holds](access.md#what-a-space-holds)).
 
+### A refused batch
+
+A `host.add` of several Hosts that refuses any of them checks every one,
+adds none, and lists each Host at fault in the error's `items` ([the error
+object](api.md#calls), [`api.HostBatchError`](../../internal/shared/api/host.go)).
+The error's code is the one every item shares, or `invalid_batch` when they
+differ; its message lists each item on a line of its own:
+
+```json
+{"error": {"code": "invalid_batch", "message": "none of the 3 Hosts was added, for the 2 at fault:\n[0] a Host named \"web1\" already exists\n[2] no Space is named \"nowhere\"",
+  "items": [{"index": 0, "code": "name_taken", "message": "a Host named \"web1\" already exists"},
+            {"index": 2, "code": "unknown_space", "message": "no Space is named \"nowhere\""}]}}
+```
+
+A Host under the name of an earlier Host of the batch is refused with
+`name_taken`, whether or not the earlier one is at fault. A request of one
+Host is refused with that Host's own error and no `items`, as before. The
+Hosts the batch recorded before a refusal go with the rolled-back
+transaction.
+
 ## The CLI
 
 `koko host add`, `ls`, `show`, `set`, `rename`, `move` and `rm` ([the commands
@@ -189,6 +209,35 @@ Hosts due for renewal, soonest first.
 people, a table `KEY TYPE PRESET IN USE`, an enum of more than 10 values
 named by its count, first and last.
 
+### Hosts as JSON on stdin
+
+`koko host add` without a name reads Hosts as JSON on stdin
+([`hostAddStdin`](../../internal/client/cli/host_stdin.go)), so an agent
+that turns a provider's welcome email into JSON pipes it in, and `koko host
+ls --json --with-note | koko host add` copies Hosts, Notes and all. It reads
+what `host ls --json` prints: one Host as an object, or several as an array,
+recorded in one `host.add` call, all or none.
+
+- **The members** are `hostJSON`'s. `name`, `address` and `account` are
+  required; `space`, `port`, `attributes` and `note` may be left out or
+  `null`, for the caller's Personal Space, port 22, no Attributes and no
+  Note. `id`, `state`, `host_key`, `created_at` and `updated_at`, which only
+  koko sets, are ignored whatever they hold, so every Host added is
+  Registered, with no pin. Any other member is refused by name. An
+  Attribute value comes in its JSON type, as `ls --json` prints it, and a
+  date is absolute: stdin's dates are not resolved.
+- **Before any call**, with exit 2 and `invalid_usage`: a terminal on stdin,
+  which nobody may type into; stdin that holds no Hosts as JSON, or more
+  than the 16 MiB one call carries; and `key=value` words or `--note-file`,
+  which only `koko host add <host>` takes. Each Host meets the value rules
+  `key=value` meets, and holds its JSON members in their types. A batch with
+  Hosts at fault lists each of them, as the koko server does ([a refused
+  batch](#a-refused-batch)), every item with the code `invalid_usage`. A
+  Host's name is the koko server's to check, as for `koko host add <host>`.
+- **It prints** what it read: one Host for an object, in `host show`'s shape,
+  and an array of Hosts for an array, each with its Note. For people, one
+  line per Host: `Added Host web1 (host_...) to Space alice.`
+
 ## Verifying
 
 - [`internal/client/cli/host_test.go`](../../internal/client/cli/host_test.go):
@@ -197,6 +246,12 @@ named by its count, first and last.
   the caller cannot see answering as unknown, the Spaces a move needs,
   concurrent adds of one name, the Note from a file and from stdin, and
   `space show` and `space rm` counting Hosts.
+- [`internal/client/cli/host_stdin_test.go`](../../internal/client/cli/host_stdin_test.go):
+  `koko host add` on stdin with its goldens: an array and one object, the
+  fields only koko sets ignored, an unknown member refused by name, each
+  value rule refused before any call, a refused batch listing every Host at
+  fault, before any call and from the koko server, a terminal refused, and
+  `ls --json --with-note | host add` keeping Notes and typed values.
 - [`internal/client/cli/enroll_test.go`](../../internal/client/cli/enroll_test.go):
   the state table through the real `koko host enroll`, and `host rm` refused
   once a Host has a pin.

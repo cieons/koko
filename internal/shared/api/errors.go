@@ -11,6 +11,18 @@ import (
 type Error struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// Items, in the refusal of a batch of several items, holds each item at
+	// fault, in the order of the batch; every other error leaves it out.
+	Items []ItemError `json:"items,omitempty"`
+}
+
+// ItemError is one item at fault in a refused batch: its index in the
+// batch, counted from 0, with the code and message it would be refused with
+// alone.
+type ItemError struct {
+	Index   int    `json:"index"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 func (e *Error) Error() string {
