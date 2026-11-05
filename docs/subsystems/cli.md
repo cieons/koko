@@ -135,10 +135,15 @@ and a list is a table with a header (`NAME  ID`), or a sentence when empty.
 | `koko space add <space>` (Owner; enforced from #39) | reversible | `space.add` | the Space: `{"id", "name"}` |
 | `koko space ls` | read | `space.list` | an array of Spaces |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
-| `koko server run [--data-dir <dir>] [--log-level <level>]` | irreversible | none | nothing on success |
+| `koko server run [--data-dir <dir>] [--root-key-file <file>] [--log-level <level>]` | irreversible | none | nothing on success |
 
 `koko server run` takes `--data-dir` (`KOKO_DATA_DIR`, default
-`/var/lib/koko`) and `--log-level` (`KOKO_LOG_LEVEL`: `debug`, `info`, `warn`
-or `error`; default `info`). The koko server logs to stderr in slog's text
-format (`time=... level=INFO msg=... key=value`), one line per event, for
-journald to keep.
+`/var/lib/koko`), `--root-key-file` (`KOKO_ROOT_KEY_FILE`, default
+`$CREDENTIALS_DIRECTORY/root-key`, the file systemd's
+`LoadCredential=root-key` hands the unit) and `--log-level` (`KOKO_LOG_LEVEL`:
+`debug`, `info`, `warn` or `error`; default `info`). Left to its default
+without `CREDENTIALS_DIRECTORY` set, the Root Key file is refused with exit 2.
+The flag takes the file's absolute path, never the key, and the koko server
+refuses to start without a usable Root Key ([the Seal](seal.md#at-start-up)). The koko
+server logs to stderr in slog's text format (`time=... level=INFO msg=...
+key=value`), one line per event, for journald to keep.

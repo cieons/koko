@@ -32,7 +32,12 @@ func TestStartRefusesADatabaseANewerKokoMigrated(t *testing.T) {
 	}
 
 	socket := filepath.Join(harness.ShortTempDir(t), "koko.sock")
-	srv, err := server.Start(t.Context(), server.Config{DataDir: dataDir, Log: io.Discard, SocketPath: socket})
+	srv, err := server.Start(t.Context(), server.Config{
+		DataDir:     dataDir,
+		RootKeyPath: harness.NewRootKeyFile(t),
+		Log:         io.Discard,
+		SocketPath:  socket,
+	})
 	if err == nil {
 		_ = srv.Close()
 		t.Fatal("the koko server started on a database at a newer schema")

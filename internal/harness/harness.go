@@ -10,7 +10,9 @@ package harness
 
 import (
 	"bytes"
+	"context"
 	"encoding/json/v2"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -20,6 +22,7 @@ import (
 
 	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/server"
+	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/shared/api"
 )
 
@@ -38,8 +41,8 @@ type Option func(*options)
 type options struct{}
 
 // Start starts a koko server in the test process on a temporary data
-// directory and a temporary Unix socket, logging at debug level. It stops when
-// the test ends.
+// directory, a Root Key file made for this test outside it, and a temporary
+// Unix socket, logging at debug level. It stops when the test ends.
 func Start(t testing.TB, opts ...Option) *Harness {
 	t.Helper()
 	var o options
@@ -53,10 +56,11 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		log:    &syncBuffer{},
 	}
 	srv, err := server.Start(t.Context(), server.Config{
-		DataDir:    t.TempDir(),
-		LogLevel:   slog.LevelDebug,
-		Log:        h.log,
-		SocketPath: h.socket,
+		DataDir:     t.TempDir(),
+		RootKeyPath: NewRootKeyFile(t),
+		LogLevel:    slog.LevelDebug,
+		Log:         h.log,
+		SocketPath:  h.socket,
 	})
 	if err != nil {
 		t.Fatalf("start the koko server: %v", err)
@@ -67,6 +71,40 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		}
 	})
 	return h
+}
+
+// NewRootKeyFile makes a new Root Key in a file of its own in a temporary
+// directory, readable by its owner only, and returns the file's path. A test
+// makes every Root Key it uses; none is ever committed.
+func NewRootKeyFile(t testing.TB) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "root.key")
+	if err := os.WriteFile(path, seal.NewRootKey(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// ServerStart returns a cli.Runner.ServerRun for S1 tests of `koko server
+// run`: the koko server's real start-up, given its settings as cmd/koko gives
+// them, on a temporary socket. A koko server that starts stops at once, so
+// the command exits 0, or 1 naming why the start-up refused, and never serves.
+func ServerStart(t testing.TB) func(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
+	t.Helper()
+	socket := filepath.Join(ShortTempDir(t), "koko.sock")
+	return func(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
+		srv, err := server.Start(ctx, server.Config{
+			DataDir:     s.DataDir,
+			RootKeyPath: s.RootKeyPath,
+			LogLevel:    s.LogLevel,
+			Log:         log,
+			SocketPath:  socket,
+		})
+		if err != nil {
+			return err
+		}
+		return srv.Close()
+	}
 }
 
 // ShortTempDir makes a temporary directory whose path is short enough for a

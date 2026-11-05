@@ -48,8 +48,10 @@ type Runner struct {
 // ServerSettings are the startup settings `koko server run` takes as flags or
 // KOKO_* variables.
 type ServerSettings struct {
-	DataDir  string
-	LogLevel slog.Level
+	DataDir string
+	// RootKeyPath is the Root Key's file, never the key itself.
+	RootKeyPath string
+	LogLevel    slog.Level
 }
 
 // Invocation is one command line with its streams and environment.

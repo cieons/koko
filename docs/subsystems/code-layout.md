@@ -15,7 +15,7 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
 | shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the wire constants and channel adapter (`wire`), the build report (`build`); later the Join Code codec, Attribute values, the resumable stream, the port-owner lookup | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), one package per area (`space`); later the Root Key and Seal, Gateway, Host connector, installer, embedded web UI | client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the Root Key and the Seal (`seal`), one package per area (`space`); later the Gateway, Host connector, installer, embedded web UI | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`); later the Device Mux, tunnel, ssh_config and device files | server |
 
 Only [`cmd/koko`](../../cmd/koko) and the S1 harness
@@ -125,10 +125,14 @@ apart.
 ## The S1 harness
 
 [`harness.Start`](../../internal/harness/harness.go) starts a real koko server
-in the test process (a temporary data directory, a temporary socket in a short
-path for macOS's 104-byte limit, logging at debug level), and `h.Koko(args...)`
+in the test process (a temporary data directory, a Root Key file made for the
+test by `harness.NewRootKeyFile`, a temporary socket in a short path for
+macOS's 104-byte limit, logging at debug level), and `h.Koko(args...)`
 runs a command line in process through `cli.Runner` as the Local caller under a
 temporary HOME. `h.Calls()` counts the API calls the server answered, so a
 refusal can be shown to make none. [`harness.Golden`](../../internal/harness/golden.go)
 compares output with `testdata/<name>` after replacing each record id with a
 numbered placeholder (`"space_<1>"`); `go test -update` rewrites the files.
+[`harness.ServerStart`](../../internal/harness/harness.go) is a
+`cli.Runner.ServerRun` for S1 tests of `koko server run`: the real start-up on
+a temporary socket, stopped at once if it starts.

@@ -26,41 +26,50 @@ func (f *fakeServer) run(_ context.Context, s cli.ServerSettings, log io.Writer)
 	return f.err
 }
 
+// credentialsDirectory is the variable systemd sets for the koko unit, whose
+// LoadCredential=root-key hands it the Root Key's file.
+const credentialsDirectory = "CREDENTIALS_DIRECTORY=/run/credentials/koko.service"
+
 func TestServerRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
+	defaults := cli.ServerSettings{
+		DataDir:     "/var/lib/koko",
+		RootKeyPath: "/run/credentials/koko.service/root-key",
+		LogLevel:    slog.LevelInfo,
+	}
 	for _, tc := range []struct {
 		name string
 		env  []string
 		args []string
 		want cli.ServerSettings
 	}{
-		{"defaults", nil, nil, cli.ServerSettings{DataDir: "/var/lib/koko", LogLevel: slog.LevelInfo}},
+		{"defaults", []string{credentialsDirectory}, nil, defaults},
 		{
 			"flags", nil,
-			[]string{"--data-dir", "/srv/koko", "--log-level", "debug"},
-			cli.ServerSettings{DataDir: "/srv/koko", LogLevel: slog.LevelDebug},
+			[]string{"--data-dir", "/srv/koko", "--root-key-file", "/etc/koko/root.key", "--log-level", "debug"},
+			cli.ServerSettings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", LogLevel: slog.LevelDebug},
 		},
 		{
 			"flags with =", nil,
-			[]string{"--data-dir=/srv/koko", "--log-level=warn"},
-			cli.ServerSettings{DataDir: "/srv/koko", LogLevel: slog.LevelWarn},
+			[]string{"--data-dir=/srv/koko", "--root-key-file=/etc/koko/root.key", "--log-level=warn"},
+			cli.ServerSettings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", LogLevel: slog.LevelWarn},
 		},
 		{
 			"environment",
-			[]string{"KOKO_DATA_DIR=/env/koko", "KOKO_LOG_LEVEL=error"},
+			[]string{"KOKO_DATA_DIR=/env/koko", "KOKO_ROOT_KEY_FILE=/env/root.key", "KOKO_LOG_LEVEL=error"},
 			nil,
-			cli.ServerSettings{DataDir: "/env/koko", LogLevel: slog.LevelError},
+			cli.ServerSettings{DataDir: "/env/koko", RootKeyPath: "/env/root.key", LogLevel: slog.LevelError},
 		},
 		{
 			"flag over environment",
-			[]string{"KOKO_DATA_DIR=/env/koko"},
-			[]string{"--data-dir", "/srv/koko"},
-			cli.ServerSettings{DataDir: "/srv/koko", LogLevel: slog.LevelInfo},
+			[]string{credentialsDirectory, "KOKO_DATA_DIR=/env/koko", "KOKO_ROOT_KEY_FILE=/env/root.key"},
+			[]string{"--data-dir", "/srv/koko", "--root-key-file", "/etc/koko/root.key"},
+			cli.ServerSettings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", LogLevel: slog.LevelInfo},
 		},
 		{
 			"empty variable is unset",
-			[]string{"KOKO_DATA_DIR="},
+			[]string{credentialsDirectory, "KOKO_DATA_DIR=", "KOKO_ROOT_KEY_FILE="},
 			nil,
-			cli.ServerSettings{DataDir: "/var/lib/koko", LogLevel: slog.LevelInfo},
+			defaults,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -92,6 +101,11 @@ func TestServerRunRefusesBadSettings(t *testing.T) {
 		{"data directory without a value", nil, []string{"--data-dir"}, "--data-dir needs a value"},
 		{"data directory followed by a flag", nil, []string{"--data-dir", "--json"}, "--data-dir needs a value"},
 		{"data directory twice", nil, []string{"--data-dir", "/a", "--data-dir", "/b"}, "--data-dir is given twice"},
+		{"empty Root Key file", nil, []string{"--root-key-file="}, "--root-key-file needs a value; it cannot be empty"},
+		{
+			"no Root Key file outside systemd", nil, nil,
+			"give the Root Key's file with --root-key-file or KOKO_ROOT_KEY_FILE: its default, $CREDENTIALS_DIRECTORY/root-key, needs CREDENTIALS_DIRECTORY",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := &fakeServer{}
@@ -118,7 +132,7 @@ func TestServerRunWhereTheBuildHasNoServer(t *testing.T) {
 
 func TestServerRunFailureExitsOne(t *testing.T) {
 	f := &fakeServer{err: errors.New("listen on /run/koko/koko.sock: permission denied")}
-	r := harness.Run(t, cli.Runner{ServerRun: f.run}, nil, "server", "run")
+	r := harness.Run(t, cli.Runner{ServerRun: f.run}, []string{credentialsDirectory}, "server", "run")
 	if r.Status != 1 || r.Stdout != "" || !strings.HasSuffix(r.Stderr, "koko: listen on /run/koko/koko.sock: permission denied\n") {
 		t.Errorf("status %d, stdout %q, stderr %q", r.Status, r.Stdout, r.Stderr)
 	}

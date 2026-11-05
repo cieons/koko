@@ -11,6 +11,7 @@ ADR; a proposed change lives in its issue or PR.
 | The API: the Unix socket, channels, calls, error codes and the operation framework | [api.md](api.md) |
 | The CLI: the command tree, parser, runner, output layer and `--json` | [cli.md](cli.md) |
 | The store: SQLite, transactions, migrations and record ids | [store.md](store.md) |
+| The Seal: the Root Key's file, sealed values, and the Root Key at start-up | [seal.md](seal.md) |
 
 ## Maintaining a reference
 
