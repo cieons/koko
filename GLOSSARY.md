@@ -11,6 +11,10 @@ and agents use to reach them.
 A machine koko records in one Space and can reach over SSH.
 _Avoid_: VPS, server, machine, node, asset
 
+**SSH Name**:
+What `ssh` is given to reach a Host through koko: the Host's own name, alone or followed by `.koko`.
+_Avoid_: alias, hostname, koko address
+
 **Host Account**:
 The existing account on a Host that koko logs in as, given when the Host is recorded.
 _Avoid_: login user, deploy user, koko user
@@ -30,16 +34,20 @@ A Host the Gateway passes through to reach another Host.
 _Avoid_: jump host, bastion
 
 **Retired**:
-A Host that no longer exists, kept as history.
+A Host that no longer exists, kept as history, left out of ordinary lists, and no longer holding its name.
 _Avoid_: deleted, archived
 
 **Service**:
-A named application running on one Host and listening on its ports.
+A named application running on one Host, with the ports it listens on, if any.
 _Avoid_: app, workload, container
 
 **Attribute**:
 A key-value pair recorded on a Host or a Service to describe, filter and group it; it never decides who can see or act on anything.
 _Avoid_: tag, label, metadata
+
+**Note**:
+Free multi-line text kept on a Host or a Service for people and agents to read; unlike an Attribute, nothing filters, sorts or groups by it.
+_Avoid_: description, comment, remarks
 
 **Preset Attribute**:
 An Attribute key koko ships with a fixed type, such as `expires_at` as a date.
@@ -82,12 +90,16 @@ A container of Hosts and Secrets whose members are the only Members who can see 
 _Avoid_: vault, project, group, team, folder
 
 **Personal Space**:
-The Space every User has to themselves, where what they record goes by default.
+The Space every User has to themselves, named after them, where what they record goes by default.
 _Avoid_: home, private space
 
 **Invite**:
-A Join Code the Owner issues to bring a new person in as a User.
+The first Join Code of a new User, which the Owner issues and which creates that User.
 _Avoid_: enroll, signup, registration, invite link
+
+**Removed**:
+A User the Owner has taken out of the koko server, kept on record so their name is never used again.
+_Avoid_: deleted, deactivated, banned
 
 ### Access
 
