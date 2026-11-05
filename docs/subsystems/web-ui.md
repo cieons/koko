@@ -74,7 +74,8 @@ them after the Go tests, under the same temporary HOME. A page test gets
 [`fakeApi()`](../../web/src/test/fakeApi.ts), which stands in for `fetch` until
 the test ends. `api.on(SpaceList, handler)` answers an operation, typed by
 the generated types, and `api.calls` records each request (method, path,
-parsed body and headers). A handler may answer later, with a promise, and
+parsed body and headers); `api.requests(SpaceAdd)` is the bodies of one
+operation's calls. A handler may answer later, with a promise, and
 refuses a call by throwing `refusal(code, status)`; an operation without a
 handler answers
 `unknown_operation`, as the koko server does. `api.drop(n)` fails the next `n`
@@ -84,7 +85,11 @@ client ([the shell](web-shell.md#calls)), with its retry and
 `Idempotency-Key`. The setup puts each test back at `/` with an empty
 `localStorage`, and stands in for the `showModal` and `close` of a
 `<dialog>`, which jsdom lacks; a test sends Escape as the dialog's `cancel`
-event.
+event. A test of a capability's pages runs the whole app through
+[`test/pages.tsx`](../../web/src/test/pages.tsx): `renderAt(path)` renders it
+at a path, `actAs(api, user, deviceSession?)` makes `user.current` answer
+that User, on a Device Session of their laptop unless another is given, and
+`tableRows(name)` reads the cells of the table that name labels.
 
 ## Verifying
 
@@ -98,4 +103,6 @@ event.
   the generated files are up to date, every registered error code is a
   constant of the file that declares it, and the generator's mapping and
   refusals.
-- The page tests are listed in [the web UI shell](web-shell.md#verifying).
+- The shell's page tests are listed in [the web UI shell](web-shell.md#verifying),
+  and those of the Spaces, People and Devices pages in
+  [their reference](people-pages.md#verifying).

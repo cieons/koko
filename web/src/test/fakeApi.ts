@@ -53,6 +53,11 @@ export class FakeApi {
     this.#handlers.set(op.path, (request) => handler(request as Req));
   }
 
+  /** requests are the parsed bodies of every call of op, in the order they came. */
+  requests<Req, Resp>(op: Op<Req, Resp>): unknown[] {
+    return this.calls.filter((c) => c.path === op.path).map((c) => c.request);
+  }
+
   /**
    * drop makes the next times requests, of any operation, fail as a dropped
    * connection does: fetch rejects with a TypeError. Each is still recorded

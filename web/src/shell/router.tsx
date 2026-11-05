@@ -115,6 +115,25 @@ export function useSearchParams(): [URLSearchParams, (next: URLSearchParams, opt
   return [params, set];
 }
 
+/**
+ * useQueryFlag is a yes-or-no page state kept in the URL's query as
+ * name=1, such as ?all=1 for a list that shows its Removed or Revoked
+ * records too, and a function that navigates to the page with it set or not.
+ */
+export function useQueryFlag(name: string): [boolean, (on: boolean) => void] {
+  const [params, setParams] = useSearchParams();
+  const set = (on: boolean) => {
+    const next = new URLSearchParams(params);
+    if (on) {
+      next.set(name, "1");
+    } else {
+      next.delete(name);
+    }
+    setParams(next);
+  };
+  return [params.get(name) === "1", set];
+}
+
 /** Link is a link to a page of the web UI, followed without a page load. */
 export function Link({ to, children }: { to: string; children: ReactNode }) {
   const { pathname } = useLocation();

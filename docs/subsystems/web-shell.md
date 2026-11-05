@@ -18,7 +18,8 @@ a browser reaches it is [`koko web` and the web front](web-front.md).
   [`web/src/routes.ts`](../../web/src/routes.ts), and `/` goes, keeping its
   query, to the first linked page the caller may see. A path no route
   matches, or one that does not decode, shows that there is no page there.
-- **Page state lives in the URL's query** (`useSearchParams`), so a bookmark
+- **Page state lives in the URL's query** (`useSearchParams`, and
+  `useQueryFlag` for a yes-or-no state kept as `name=1`), so a bookmark
   is a saved view and Back returns to the earlier state. The router uses the
   browser's history alone; the web front serves `index.html` for every path
   outside `/v1/`.
