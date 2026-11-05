@@ -67,6 +67,10 @@ _Avoid_: advertised address, public address, endpoint, URL
 The part of the koko server that ends every SSH Session and opens its own SSH connection to the Host.
 _Avoid_: bastion, jump host, proxy
 
+**Web UI**:
+The pages a koko server serves to a browser, reached only through `koko web`, which acts as the User of the device running it.
+_Avoid_: dashboard, console, admin panel, portal
+
 **koko key**:
 The one SSH key pair a koko server uses to log in to every Managed Host.
 _Avoid_: deploy key, master key, server key

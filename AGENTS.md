@@ -23,8 +23,9 @@ Before editing Go code, load the `use-modern-go` skill when it is available.
 
 Everything committed to this repo is in English: code, comments, docs,
 commit messages, issues and PRs. This overrides any personal preference for
-commit language. `README.zh-CN.md` is the one Chinese file; it mirrors
-`README.md`, and the two change together.
+commit language. Two files are Chinese, and each changes with its English
+twin: `README.zh-CN.md` mirrors `README.md`, and the web UI's Simplified
+Chinese message catalogue mirrors its English one key for key.
 
 ## Parallel sessions
 
