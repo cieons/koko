@@ -14,8 +14,8 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
-| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the version and operations report, the channel adapter and how a join carries its secret (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`), the record's value rules: a Host's fields, Attribute keys and values, the Note (`record`) | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `host`, `secret`, `web`: the web front), the embedded web UI (`webui`), the Host connector (`hostconn`), the installer (`installer`); later the Gateway | client |
+| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the version and operations report, the channel adapter and how a join carries its secret (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`), the record's value rules: a Host's fields, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`) | server, client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `host`, `attr`, `secret`, `web`: the web front), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), the installer (`installer`); later the Gateway | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join, koko's ssh_config and known_hosts, and the Include line (`devicefiles`); later the Device Mux and tunnel | server |
 
 Only [`cmd/koko`](../../cmd/koko) and the S1 harness
@@ -53,6 +53,7 @@ lines.
 | S1 tests and golden files | `internal/client/cli/<area>_test.go`, `testdata/<command>[-<case>].json` | none |
 | Access-matrix rows | `internal/server/access/matrix_<area>_test.go`, with `<area>Rows` | `areaRows` in [`matrix_test.go`](../../internal/server/access/matrix_test.go) (rule 6) |
 | What a Space holds, for an area whose records live in a Space | a [`space.Holding`](../../internal/server/space/space.go) in the area's package | `holdings` in [`server.go`](../../internal/server/server.go) (rule 7) |
+| The Attribute keys in use, for an area whose records hold Attributes | an [`attr.Keys`](../../internal/server/attr/attr.go) in the area's package | `attrKeys` in [`server.go`](../../internal/server/server.go) |
 
 The `server` area's operations act on the koko server process itself (the
 Root Key it loaded, its keys, its listeners), so the process package
@@ -156,7 +157,7 @@ apart.
 | The socket path | `server.Config.SocketPath`, `cli.Runner.SocketPath` | #27 |
 | The fake terminal | `cli.Runner.Terminal` | #28 |
 | The P0 timing constants | `hostconn.Connector.Timings` and `installer.Installer.Timings`, each a [`timing.Timings`](../../internal/shared/timing/timing.go), where a ticket that uses a new timing adds its constant and field | #32 |
-| The clock | `server.Config.Clock`, which every operation reads once per call through `op.Now`; the harness's `h.Now()` and `h.Advance(d)` | #36 |
+| The clock | `server.Config.Clock`, which every operation reads once per call through `op.Now`, and `cli.Runner.Clock`, which a relative date counts from; the harness's `h.Now()`, `h.Advance(d)` and `h.SetNow(t)` | #36, the CLI's side #51 |
 
 ## The S1 harness
 
@@ -170,8 +171,9 @@ logging at debug level) and initialises it over the socket, with the Owner
 on); so `koko space ls` lists `alice`'s Personal Space, and initialisation's
 Join Code holds `alice`'s `device-1`.
 `h.Koko(args...)` runs a command line in process through `cli.Runner` as the
-Local caller under a temporary HOME (`h.Home()`), with empty stdin;
-`h.KokoStdin(stdin, args...)` gives it stdin, and `h.KokoTerminal(term,
+Local caller under a temporary HOME (`h.Home()`), with empty stdin, on the
+koko server's clock; `h.KokoEnv(env, args...)` adds variables such as `TZ`
+to its environment, `h.KokoStdin(stdin, args...)` gives it stdin, and `h.KokoTerminal(term,
 args...)` puts the fake terminal `term`, a `harness.NewTerminal(lines...)`
 where a person types one line at each prompt, on its stdin through the
 fake-terminal hook. `h.Call(op, req)` calls an operation
@@ -183,7 +185,8 @@ none. The options `harness.NoInit()`, `harness.DataDir(dir)` and
 `harness.FreeAddr(t)`, and `h.Stop()` stops it before the test ends, to
 start another on its data directory. The koko server's clock stands still at the second `Start` began
 until `h.Advance(d)` moves it, so a test moves time, such as past a Join
-Code's 15 minutes, and never waits; `h.Now()` reads it.
+Code's 15 minutes, and never waits; `h.SetNow(t)` sets it to a given
+instant, such as a leap day, and `h.Now()` reads it.
 `h.Background(env, args...)` runs a command that runs until it is stopped,
 such as `koko web`, with `WaitStdout`, `Stop` (as Ctrl-C) and `Wait`.
 [`harness.Golden`](../../internal/harness/golden.go)
@@ -205,7 +208,7 @@ args...)` run command lines on it, `d.Home()` is its HOME, and `d.Dial()`
 opens a Device Connection from its files and holds it until the test ends,
 as a long-lived connection would.
 `h.Join(user)` issues a Join Code for the User over the socket and returns a
-new device joined with it. `h.Socket()` is the socket's path, for a runner on
+new device joined with it, on the koko server's clock. `h.Socket()` is the socket's path, for a runner on
 the koko server's own machine. `h.Send(op, body)` and `d.Send(op, body)`
 call an operation with a raw JSON body, as the Local caller or as the
 device's Device Session, and return the status and the body as the koko

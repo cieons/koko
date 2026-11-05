@@ -6,12 +6,14 @@
 package host
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +21,7 @@ import (
 
 	"github.com/cieons/koko/internal/server/access"
 	"github.com/cieons/koko/internal/server/op"
+	"github.com/cieons/koko/internal/server/query"
 	"github.com/cieons/koko/internal/server/space"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
@@ -52,6 +55,30 @@ func Holding(ctx context.Context, tx store.Tx, spaceID string, c *api.SpaceCount
 	return nil
 }
 
+// AttributeKeys lists the Attribute keys in use on the Hosts in the Spaces
+// scope holds, Retired ones among them, for attr.list.
+func AttributeKeys(ctx context.Context, tx store.Tx, scope access.Scope) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT h.space_id, a.key FROM host_attributes a JOIN hosts h ON h.id = a.host_id`)
+	if err != nil {
+		return nil, fmt.Errorf("list the Attribute keys of the Hosts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var keys []string
+	for rows.Next() {
+		var spaceID, key string
+		if err := rows.Scan(&spaceID, &key); err != nil {
+			return nil, fmt.Errorf("list the Attribute keys of the Hosts: %w", err)
+		}
+		if scope.Has(spaceID) {
+			keys = append(keys, key)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list the Attribute keys of the Hosts: %w", err)
+	}
+	return keys, nil
+}
+
 // stored is a Host as stored: the API's Host, and the id of its Space.
 type stored struct {
 	api.Host
@@ -79,8 +106,20 @@ func scan(row interface{ Scan(...any) error }) (stored, error) {
 		}
 		h.HostKey = new(ssh.FingerprintSHA256(pub))
 	}
-	h.Attributes = map[string]string{}
+	h.Attributes = map[string]record.Value{}
 	return h, nil
+}
+
+// storedValue reads the stored text of the Attribute key of the Host named
+// hostName as a value of its key's type. Every write checks its values, so
+// a value that does not parse means the record was changed behind koko's
+// back, and is an error rather than a guess.
+func storedValue(hostName, key, text string) (record.Value, error) {
+	v, err := record.TypeOf(key).Parse(text)
+	if err != nil {
+		return record.Value{}, fmt.Errorf("read the Attribute %s of %s: %w", key, hostName, err)
+	}
+	return v, nil
 }
 
 // target answers who is calling and returns the Host ref names, as find
@@ -125,11 +164,13 @@ func find(ctx context.Context, tx store.Tx, who access.Identity, ref string) (st
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
-		var k, v string
-		if err := rows.Scan(&k, &v); err != nil {
+		var k, text string
+		if err := rows.Scan(&k, &text); err != nil {
 			return stored{}, fmt.Errorf("read the Attributes of %s: %w", h.Name, err)
 		}
-		h.Attributes[k] = v
+		if h.Attributes[k], err = storedValue(h.Name, k, text); err != nil {
+			return stored{}, err
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return stored{}, fmt.Errorf("read the Attributes of %s: %w", h.Name, err)
@@ -143,12 +184,12 @@ type values struct {
 	address    *string
 	port       *int
 	account    *string
-	attributes map[string]string
+	attributes map[string]record.Value
 	note       *string
 }
 
 // check refuses, for the Host named hostName, a value that breaks its rule,
-// and puts the address in the form koko stores.
+// and puts the address and the Attributes in the form koko stores.
 func (v *values) check(hostName string) error {
 	if v.address != nil {
 		address, err := record.Address(*v.address)
@@ -167,14 +208,18 @@ func (v *values) check(hostName string) error {
 			return invalid(hostName, err)
 		}
 	}
+	attributes := make(map[string]record.Value, len(v.attributes))
 	for _, k := range slices.Sorted(maps.Keys(v.attributes)) {
 		if err := record.CheckKey(k); err != nil {
 			return invalid(hostName, err)
 		}
-		if err := record.CheckText(v.attributes[k]); err != nil {
+		value, err := record.TypeOf(k).Check(v.attributes[k])
+		if err != nil {
 			return invalid(hostName, fmt.Errorf("the Attribute %s: %w", k, err))
 		}
+		attributes[k] = value
 	}
+	v.attributes = attributes
 	if v.note != nil {
 		if err := record.CheckNote(*v.note); err != nil {
 			return invalid(hostName, err)
@@ -231,7 +276,7 @@ func insert(ctx context.Context, tx store.Tx, who access.Identity, n api.NewHost
 	now := op.Now(ctx).Format(time.RFC3339)
 	h := api.Host{
 		ID: store.NewID(idPrefix), Name: n.Name, Space: sp.Name, Address: *v.address, Port: *v.port, Account: *v.account,
-		State: api.HostRegistered, Attributes: map[string]string{}, CreatedAt: now, UpdatedAt: now,
+		State: api.HostRegistered, Attributes: map[string]record.Value{}, CreatedAt: now, UpdatedAt: now,
 	}
 	var note sql.NullString
 	if v.note != nil {
@@ -274,11 +319,11 @@ func checkFree(ctx context.Context, tx store.Tx, hostName string) error {
 }
 
 // setAttributes gives the Host whose id is hostID the Attributes attrs,
-// replacing the value of a key it has.
-func setAttributes(ctx context.Context, tx store.Tx, hostID string, attrs map[string]string) error {
+// each checked, replacing the value of a key it has.
+func setAttributes(ctx context.Context, tx store.Tx, hostID string, attrs map[string]record.Value) error {
 	for k, v := range attrs {
 		_, err := tx.ExecContext(ctx, `INSERT INTO host_attributes (host_id, key, value) VALUES (?, ?, ?)
-			ON CONFLICT (host_id, key) DO UPDATE SET value = excluded.value`, hostID, k, v)
+			ON CONFLICT (host_id, key) DO UPDATE SET value = excluded.value`, hostID, k, v.String())
 		if err != nil {
 			return fmt.Errorf("set the Attribute %s of %s: %w", k, hostID, err)
 		}
@@ -286,10 +331,46 @@ func setAttributes(ctx context.Context, tx store.Tx, hostID string, attrs map[st
 	return nil
 }
 
+// hostLookup gives a Host's values to a query: its fields of
+// api.HostListFields, a Host with no pin lacking host_key, and its
+// Attributes.
+func hostLookup(h api.Host) query.Lookup {
+	return func(key string) (string, bool) {
+		switch key {
+		case "id":
+			return h.ID, true
+		case "name":
+			return h.Name, true
+		case "space":
+			return h.Space, true
+		case "address":
+			return h.Address, true
+		case "port":
+			return strconv.Itoa(h.Port), true
+		case "account":
+			return h.Account, true
+		case "state":
+			return h.State, true
+		case "host_key":
+			if h.HostKey == nil {
+				return "", false
+			}
+			return *h.HostKey, true
+		}
+		v, ok := h.Attributes[key]
+		return v.String(), ok
+	}
+}
+
 // list is host.list: the Hosts that are not Retired in the Spaces the caller
-// can act in, by name, with their Notes only when asked for.
+// can act in and match the filter, by the sort keys, then by name and id,
+// with their Notes only when asked for.
 func list(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostListRequest) (api.HostListResponse, error) {
 	who, err := access.Who(ctx, tx, caller)
+	if err != nil {
+		return api.HostListResponse{}, err
+	}
+	q, err := query.New("host.list", api.HostListFields, req.Filters, req.Sort)
 	if err != nil {
 		return api.HostListResponse{}, err
 	}
@@ -297,12 +378,12 @@ func list(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostListRe
 	if err != nil {
 		return api.HostListResponse{}, err
 	}
-	rows, err := tx.QueryContext(ctx, selectHosts+" WHERE h.state <> 'retired' ORDER BY h.name, h.id")
+	rows, err := tx.QueryContext(ctx, selectHosts+" WHERE h.state <> 'retired'")
 	if err != nil {
 		return api.HostListResponse{}, fmt.Errorf("list the Hosts: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	resp := api.HostListResponse{Hosts: []api.Host{}}
+	var hosts []api.Host
 	for rows.Next() {
 		h, err := scan(rows)
 		if err != nil {
@@ -314,33 +395,48 @@ func list(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostListRe
 		if !req.WithNote {
 			h.Note = ""
 		}
-		resp.Hosts = append(resp.Hosts, h.Host)
+		hosts = append(hosts, h.Host)
 	}
 	if err := rows.Err(); err != nil {
 		return api.HostListResponse{}, fmt.Errorf("list the Hosts: %w", err)
 	}
+	if err := readAttributes(ctx, tx, hosts); err != nil {
+		return api.HostListResponse{}, err
+	}
+	// By name in natural order, as --sort name orders them, so web2 comes
+	// before web10; then by id.
+	slices.SortFunc(hosts, func(a, b api.Host) int {
+		return cmp.Or(record.Text.Compare(a.Name, b.Name), strings.Compare(a.ID, b.ID))
+	})
+	return api.HostListResponse{Hosts: q.Apply(hosts, hostLookup)}, nil
+}
+
+// readAttributes reads the Attributes of hosts into them.
+func readAttributes(ctx context.Context, tx store.Tx, hosts []api.Host) error {
 	byID := map[string]*api.Host{}
-	for i := range resp.Hosts {
-		byID[resp.Hosts[i].ID] = &resp.Hosts[i]
+	for i := range hosts {
+		byID[hosts[i].ID] = &hosts[i]
 	}
-	attrs, err := tx.QueryContext(ctx, "SELECT host_id, key, value FROM host_attributes")
+	rows, err := tx.QueryContext(ctx, "SELECT host_id, key, value FROM host_attributes")
 	if err != nil {
-		return api.HostListResponse{}, fmt.Errorf("list the Attributes of the Hosts: %w", err)
+		return fmt.Errorf("list the Attributes of the Hosts: %w", err)
 	}
-	defer func() { _ = attrs.Close() }()
-	for attrs.Next() {
-		var id, k, v string
-		if err := attrs.Scan(&id, &k, &v); err != nil {
-			return api.HostListResponse{}, fmt.Errorf("list the Attributes of the Hosts: %w", err)
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id, k, text string
+		if err := rows.Scan(&id, &k, &text); err != nil {
+			return fmt.Errorf("list the Attributes of the Hosts: %w", err)
 		}
 		if h, ok := byID[id]; ok {
-			h.Attributes[k] = v
+			if h.Attributes[k], err = storedValue(h.Name, k, text); err != nil {
+				return err
+			}
 		}
 	}
-	if err := attrs.Err(); err != nil {
-		return api.HostListResponse{}, fmt.Errorf("list the Attributes of the Hosts: %w", err)
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("list the Attributes of the Hosts: %w", err)
 	}
-	return resp, nil
+	return nil
 }
 
 func show(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostShowRequest) (api.HostShowResponse, error) {

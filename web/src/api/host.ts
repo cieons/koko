@@ -1,6 +1,7 @@
 // Code generated from internal/shared/api/host.go by make generate; DO NOT EDIT.
 
 import type { Op } from "./api";
+import type { Filter, SortKey } from "./attr";
 
 /** Host is a Host as the API returns it. */
 export interface Host {
@@ -23,8 +24,12 @@ export interface Host {
    * prints it ("SHA256:..."), or null for a Host with no pin.
    */
   host_key: string | null;
-  /** Attributes are the Host's Attributes, by key. */
-  attributes: Record<string, string>;
+  /**
+   * Attributes are the Host's Attributes, by key, each value in the JSON
+   * type that matches it (package record): a number as a JSON number,
+   * written exactly as stored, and every other value as a JSON string.
+   */
+  attributes: Record<string, string | number>;
   /**
    * Note is the Host's Note, left out when the Host has none. host.list
    * leaves every Note out unless with_note asks for them.
@@ -50,8 +55,11 @@ export interface NewHost {
   port?: number;
   /** Account is the Host Account, which has no default. */
   account: string;
-  /** Attributes are free-text values by key (package record). */
-  attributes?: Record<string, string>;
+  /**
+   * Attributes are values by key, each of its key's type (package
+   * record): a Preset's, or free text.
+   */
+  attributes?: Record<string, string | number>;
   /** Note, when given, is the Host's Note: never empty. */
   note?: string;
 }
@@ -67,13 +75,31 @@ export interface HostAddResponse {
   hosts: Host[];
 }
 
-/** HostListRequest asks for every Host the caller can see. */
+/**
+ * HostListRequest asks for the Hosts the caller can see that match its
+ * filter, in its order.
+ */
 export interface HostListRequest {
+  /**
+   * Filters are the terms a Host must match, every one. A term takes a
+   * field of HostListFields: id, name, space, address, port (a number),
+   * account, state (an enum: registered, managed, retired) and host_key;
+   * or an Attribute key. A date is absolute.
+   */
+  filters?: Filter[];
+  /**
+   * Sort orders the Hosts by these keys, in turn, from the fields and
+   * Attribute keys Filters takes; Hosts that tie stay by name and then id.
+   */
+  sort?: SortKey[];
   /** WithNote asks for each Host's Note. */
   with_note?: boolean;
 }
 
-/** HostListResponse holds every Host the caller can see, by name. */
+/**
+ * HostListResponse holds the Hosts the caller can see that match the
+ * filter, by the sort keys, then by name and then id.
+ */
 export interface HostListResponse {
   hosts: Host[];
 }
@@ -100,7 +126,7 @@ export interface HostSetRequest {
   port?: number;
   account?: string;
   /** Attributes set these Attributes, by key, leaving the others. */
-  attributes?: Record<string, string>;
+  attributes?: Record<string, string | number>;
   /** Note, when given, replaces the Host's Note: never empty. */
   note?: string;
   /**

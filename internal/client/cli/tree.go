@@ -33,6 +33,11 @@ type Command struct {
 	// Unset makes the command take --unset <key>, repeatable, to clear a
 	// field or Attribute. It is not listed in Flags.
 	Unset bool
+	// Filters makes a list take filter terms beside its arguments, each a
+	// word holding '=' or '.' (price.gt=10, region!=eu, expires_at.le=+30d,
+	// price.has), and --sort <key>[.desc], repeatable, which is not listed in
+	// Flags. Reading the terms is the command's (readFilters).
+	Filters bool
 	// ReadsSecret says the command reads a secret input (Input.ReadSecret),
 	// such as a Secret value, which is never an argument: a word its command
 	// line does not expect is refused without being repeated, since it may
@@ -194,6 +199,7 @@ var commands = [][]Command{
 	hostCommands,
 	secretCommands,
 	statusCommands,
+	attrCommands,
 }
 
 // Tree returns every command.

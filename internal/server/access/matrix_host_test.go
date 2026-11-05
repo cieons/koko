@@ -1,6 +1,9 @@
 package access_test
 
-import "github.com/cieons/koko/internal/shared/api"
+import (
+	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/record"
+)
 
 // addWeb1 records the Host web1 in the target Space, as the Local caller.
 func addWeb1(f *fixture, target string) {
@@ -55,7 +58,7 @@ var hostRows = []row{
 		op:    api.HostSet,
 		setup: addWeb1,
 		request: func(string) any {
-			return api.HostSetRequest{Host: "web1", Attributes: map[string]string{"region": "fsn1"}}
+			return api.HostSetRequest{Host: "web1", Attributes: map[string]record.Value{"region": record.StringValue("fsn1")}}
 		},
 		want: hostAnswers,
 	},

@@ -233,24 +233,41 @@ func ShortTempDir(t testing.TB) string {
 }
 
 // Koko runs one koko command line in process, as the Local caller under the
-// harness's temporary HOME, with empty stdin.
+// harness's temporary HOME, with empty stdin. The command reads the koko
+// server's clock (Now) through the clock hook, as relative dates such as
+// +30d count from.
 func (h *Harness) Koko(args ...string) Result {
 	h.t.Helper()
-	return Run(h.t, cli.Runner{SocketPath: h.socket}, []string{"HOME=" + h.home}, args...)
+	return Run(h.t, h.runner(), []string{"HOME=" + h.home}, args...)
+}
+
+// KokoEnv runs one koko command line in process, as Koko does, with the
+// variables env beside HOME, such as TZ.
+func (h *Harness) KokoEnv(env []string, args ...string) Result {
+	h.t.Helper()
+	return Run(h.t, h.runner(), append([]string{"HOME=" + h.home}, env...), args...)
 }
 
 // KokoStdin runs one koko command line in process, as Koko does, with stdin
 // as its stdin, which is not a terminal.
 func (h *Harness) KokoStdin(stdin string, args ...string) Result {
 	h.t.Helper()
-	return run(h.t, cli.Runner{SocketPath: h.socket}, []string{"HOME=" + h.home}, stdin, args...)
+	return run(h.t, h.runner(), []string{"HOME=" + h.home}, stdin, args...)
 }
 
 // KokoTerminal runs one koko command line in process, as Koko does, with
 // term as the terminal on its stdin, through the fake-terminal hook.
 func (h *Harness) KokoTerminal(term *Terminal, args ...string) Result {
 	h.t.Helper()
-	return run(h.t, cli.Runner{SocketPath: h.socket, Terminal: term}, []string{"HOME=" + h.home}, "", args...)
+	r := h.runner()
+	r.Terminal = term
+	return run(h.t, r, []string{"HOME=" + h.home}, "", args...)
+}
+
+// runner is the runner of the Local caller's command lines: over the
+// harness's socket, on the koko server's clock.
+func (h *Harness) runner() cli.Runner {
+	return cli.Runner{SocketPath: h.socket, Clock: h.clock.Now}
 }
 
 // Home returns the temporary HOME that Koko runs command lines under.
@@ -268,6 +285,13 @@ func (h *Harness) Now() time.Time {
 // hook, so that a test never waits for time to pass.
 func (h *Harness) Advance(d time.Duration) {
 	h.clock.advance(d)
+}
+
+// SetNow sets the koko server's clock, which the Local caller's command
+// lines read too, to now, earlier or later, for a test of a given day, such
+// as a leap day.
+func (h *Harness) SetNow(now time.Time) {
+	h.clock.set(now)
 }
 
 // clock is the koko server's clock in a test, which stands still until the
@@ -289,12 +313,18 @@ func (c *clock) advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
+func (c *clock) set(now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = now
+}
+
 // Background starts one koko command line in process, as Koko does but with
 // the variables env beside HOME, for a command that runs until it is stopped,
 // such as koko web.
 func (h *Harness) Background(env []string, args ...string) *Process {
 	h.t.Helper()
-	return background(h.t, cli.Runner{SocketPath: h.socket}, append([]string{"HOME=" + h.home}, env...), args...)
+	return background(h.t, h.runner(), append([]string{"HOME=" + h.home}, env...), args...)
 }
 
 // Log returns what the koko server has logged so far.
@@ -339,7 +369,8 @@ func NewDevice(t testing.TB) *Device {
 }
 
 // Join issues a Join Code over the Unix socket for a new device of the User
-// named user, and returns a new device joined with it.
+// named user, and returns a new device joined with it, whose command lines
+// read the koko server's clock, as the Local caller's do.
 func (h *Harness) Join(user string) *Device {
 	h.t.Helper()
 	resp, err := h.Call(api.DeviceAdd, api.DeviceAddRequest{User: user})
@@ -347,6 +378,7 @@ func (h *Harness) Join(user string) *Device {
 		h.t.Fatalf("issue a Join Code for %s: %v", user, err)
 	}
 	d := NewDevice(h.t)
+	d.runner.Clock = h.clock.Now
 	d.Koko("join", resp.JoinCode.Code).WantSuccess(h.t)
 	return d
 }

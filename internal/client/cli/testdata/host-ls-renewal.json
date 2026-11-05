@@ -1,0 +1,37 @@
+[
+  {
+    "id": "host_<1>",
+    "name": "web4",
+    "space": "alice",
+    "address": "203.0.113.10",
+    "port": 22,
+    "account": "deploy",
+    "state": "registered",
+    "host_key": null,
+    "attributes": {
+      "auto_renew": "no",
+      "billing_cycle": "monthly",
+      "expires_at": "2026-11-07"
+    },
+    "created_at": "<time>",
+    "updated_at": "<time>"
+  },
+  {
+    "id": "host_<2>",
+    "name": "web1",
+    "space": "alice",
+    "address": "203.0.113.10",
+    "port": 22,
+    "account": "deploy",
+    "state": "registered",
+    "host_key": null,
+    "attributes": {
+      "auto_renew": "no",
+      "currency": "EUR",
+      "expires_at": "2026-12-07",
+      "price": 4.5
+    },
+    "created_at": "<time>",
+    "updated_at": "<time>"
+  }
+]

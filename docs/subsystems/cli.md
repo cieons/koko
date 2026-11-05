@@ -50,6 +50,14 @@ arguments and flags, or refuses the command line with exit 2 and the code
   clears it), a key given twice, `--unset` of one key twice, and a key both set
   and unset.
 
+A list with `Filters`, such as `host ls`, reads every word holding `=` or
+`.` as a filter term (`price.gt=10`, `region!=eu`, `price.has`) and takes
+`--sort <key>[.desc]`, repeatable; `Input.Terms` and `Input.Sorts` return
+them in order. Reading a term (its operator, key and value, by the key's
+type) is the command's, through `readFilters` and `readSort`
+([the record](record.md#filtering-and-sorting)), which refuse a bad one with
+exit 2 before any call.
+
 A command that reads a secret input (`ReadsSecret`, such as `secret add`)
 refuses an extra argument, and an unknown flag that does not start with
 `--`, without repeating the word: it may be the secret written where an
@@ -222,12 +230,13 @@ remove` says whether it deleted the User, freeing the name, or Removed them.
 | `koko server show` | read | `server.show` | `{"address", "listen_port", "host_key_fingerprint", "version", "root_key_file", "root_key_id", "data_dir"}` ([the deployment afterwards](initialisation.md#the-deployment-afterwards)) |
 | `koko server set address=<host[:port]>` (Owner, over the Unix socket only) | reversible | `server.set` | the settings as `server show` prints them, as the change left them |
 | `koko host add <host> address=<address> account=<account> [port=<port>] [space=<space>] [<key>=<value>...] [--note-file <file\|->]` | reversible | `host.add` | the Host: `{"id", "name", "space", "address", "port", "account", "state", "host_key", "attributes": {...}, "note", "created_at", "updated_at"}` ([the record](record.md)) |
-| `koko host ls [--with-note]` | read | `host.list` | an array of the Hosts the caller can see, by name, without `"note"` unless `--with-note` |
+| `koko host ls [<filter>...] [--sort <key>[.desc]]... [--with-note]` | read | `host.list` | an array of the Hosts the caller can see that match every filter term, by the sort keys and then by name, without `"note"` unless `--with-note` ([filtering and sorting](record.md#filtering-and-sorting)) |
 | `koko host show <host>` | read | `host.show` | the Host |
 | `koko host set <host> [<key>=<value>...] [--unset <key>]... [--note-file <file\|->]` | reversible | `host.set` | the Host as the change left it |
 | `koko host rename <host> <new-name>` | reversible | `host.rename` | the Host under its new name |
 | `koko host move <host> <space>` | reversible | `host.move` | the Host in its new Space |
 | `koko host rm <host>` | irreversible | `host.remove` | the Host it deleted, as it was |
+| `koko attr ls` | read | `attr.list` | an array of every Preset, then every other key in use on what the caller can see: `{"key", "type", "values", "min", "preset", "in_use"}` ([the record](record.md#attributes-and-the-preset-attributes)) |
 
 `koko server run` takes `--data-dir` (`KOKO_DATA_DIR`, default
 `/var/lib/koko`), `--root-key-file` (`KOKO_ROOT_KEY_FILE`, default

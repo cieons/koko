@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/record"
 )
 
 // generateTypeScript returns the TypeScript files generated from the Go files
@@ -281,6 +282,10 @@ func literalName(lit *ast.CompositeLit) string {
 
 var (
 	timeType = reflect.TypeFor[time.Time]()
+	// valueType is an Attribute value, which writes its own JSON: a JSON
+	// number for a number, an exact decimal that a JavaScript number holds
+	// exactly (record.MaxDecimalDigits), and a JSON string otherwise.
+	valueType = reflect.TypeFor[record.Value]()
 	// customMarshalers are the interfaces of a type that writes its own JSON.
 	customMarshalers = []reflect.Type{
 		reflect.TypeFor[json.Marshaler](),
@@ -294,6 +299,9 @@ var (
 func tsType(t reflect.Type, ref func(reflect.Type) (string, error)) (string, error) {
 	if t == timeType {
 		return "string", nil // RFC 3339
+	}
+	if t == valueType {
+		return "string | number", nil
 	}
 	if t.PkgPath() != "" && !strings.HasPrefix(t.PkgPath(), kokoModule) {
 		return "", fmt.Errorf("%s is declared outside koko, with JSON rules of its own (time.Duration has none)", t)

@@ -1,6 +1,10 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/cieons/koko/internal/shared/record"
+)
 
 // The states of a Host, as Host.State names them. Only koko sets a Host's
 // state: Enroll makes it Managed, and retiring makes it Retired.
@@ -27,8 +31,10 @@ type Host struct {
 	// HostKey is the pinned host key's SHA-256 fingerprint, as OpenSSH
 	// prints it ("SHA256:..."), or null for a Host with no pin.
 	HostKey *string `json:"host_key"`
-	// Attributes are the Host's Attributes, by key.
-	Attributes map[string]string `json:"attributes"`
+	// Attributes are the Host's Attributes, by key, each value in the JSON
+	// type that matches it (package record): a number as a JSON number,
+	// written exactly as stored, and every other value as a JSON string.
+	Attributes map[string]record.Value `json:"attributes"`
 	// Note is the Host's Note, left out when the Host has none. host.list
 	// leaves every Note out unless with_note asks for them.
 	Note string `json:"note,omitempty"`
@@ -50,8 +56,9 @@ type NewHost struct {
 	Port *int `json:"port,omitzero"`
 	// Account is the Host Account, which has no default.
 	Account string `json:"account"`
-	// Attributes are free-text values by key (package record).
-	Attributes map[string]string `json:"attributes,omitempty"`
+	// Attributes are values by key, each of its key's type (package
+	// record): a Preset's, or free text.
+	Attributes map[string]record.Value `json:"attributes,omitempty"`
 	// Note, when given, is the Host's Note: never empty.
 	Note *string `json:"note,omitzero"`
 }
@@ -67,13 +74,40 @@ type HostAddResponse struct {
 	Hosts []Host `json:"hosts"`
 }
 
-// HostListRequest asks for every Host the caller can see.
+// HostListRequest asks for the Hosts the caller can see that match its
+// filter, in its order.
 type HostListRequest struct {
+	// Filters are the terms a Host must match, every one. A term takes a
+	// field of HostListFields: id, name, space, address, port (a number),
+	// account, state (an enum: registered, managed, retired) and host_key;
+	// or an Attribute key. A date is absolute.
+	Filters []Filter `json:"filters,omitempty"`
+	// Sort orders the Hosts by these keys, in turn, from the fields and
+	// Attribute keys Filters takes; Hosts that tie stay by name and then id.
+	Sort []SortKey `json:"sort,omitempty"`
 	// WithNote asks for each Host's Note.
 	WithNote bool `json:"with_note,omitzero"`
 }
 
-// HostListResponse holds every Host the caller can see, by name.
+// HostListFields are the fields host.list filters and sorts on, by key, with
+// the types of their values; every other key is an Attribute key. The Note
+// is not a key to filter on, and neither are the created and updated times:
+// a timestamp is no date, and to compare one with a date would need the
+// caller's time zone, which the API never sees. The CLI checks a term
+// against them before any call, and the koko server on every call.
+var HostListFields = map[string]record.Type{
+	"id":       record.Text,
+	"name":     record.Text,
+	"space":    record.Text,
+	"address":  record.Text,
+	"port":     record.Number,
+	"account":  record.Text,
+	"state":    record.Enum(HostRegistered, HostManaged, HostRetired),
+	"host_key": record.Text,
+}
+
+// HostListResponse holds the Hosts the caller can see that match the
+// filter, by the sort keys, then by name and then id.
 type HostListResponse struct {
 	Hosts []Host `json:"hosts"`
 }
@@ -98,7 +132,7 @@ type HostSetRequest struct {
 	Port    *int    `json:"port,omitzero"`
 	Account *string `json:"account,omitzero"`
 	// Attributes set these Attributes, by key, leaving the others.
-	Attributes map[string]string `json:"attributes,omitempty"`
+	Attributes map[string]record.Value `json:"attributes,omitempty"`
 	// Note, when given, replaces the Host's Note: never empty.
 	Note *string `json:"note,omitzero"`
 	// Unset clears these Attribute keys, the Note for "note", and sets the

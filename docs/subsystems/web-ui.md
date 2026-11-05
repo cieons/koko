@@ -59,8 +59,11 @@ Serving it on `web@koko` is the [web front](web-front.md)'s job.
   [rules for working in parallel](code-layout.md#rules-for-working-in-parallel).
 - A field's JSON name is its tag's, else its Go name. `omitzero` and
   `omitempty` make it optional, and an optional pointer is never `null`.
-  Slices and maps are never `null` (json/v2), `time.Time` is a string, and an
-  empty struct is `Record<string, never>`. The generator refuses any other
+  Slices and maps are never `null` (json/v2), `time.Time` is a string, an
+  Attribute value (`record.Value`) is `string | number`, a number being an
+  exact decimal a JavaScript number holds exactly ([ADR
+  0029](../adr/0029-a-number-attribute-is-a-decimal-a-javascript-number-holds.md)),
+  and an empty struct is `Record<string, never>`. The generator refuses any other
   shape, naming it, rather than write it wrong; an API type that needs one
   extends the generator (`tsType` and `tsFields`).
 

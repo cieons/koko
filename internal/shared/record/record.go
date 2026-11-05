@@ -1,9 +1,10 @@
 // Package record holds the record's value rules, shared by the koko server
 // and the CLI so that both judge a value alike (P0 spec: the record): a
-// Host's address, port and Host Account, Attribute keys and free-text
-// values, and the Note. The koko server checks every rule on every write,
-// whichever client sent it; the CLI checks them first, to refuse a bad
-// command line before any call.
+// Host's address, port and Host Account, Attribute keys, the Preset
+// Attributes and the four types of values (parsing a value, writing it and
+// comparing two), and the Note. The koko server checks every rule on every
+// write, whichever client sent it; the CLI checks them first, to refuse a
+// bad command line before any call.
 package record
 
 import (
@@ -88,11 +89,11 @@ func isAccountRune(r rune) bool {
 	return isLabelRune(r) || r == '.' || r == '_'
 }
 
-// CheckText reports why value is not a free-text Attribute value, or nil
-// when it is one: 1 byte to 1 KiB of UTF-8 on one line, with no control
-// characters, so that it prints as it is on a terminal. Longer or
-// multi-line text belongs in the Note.
-func CheckText(value string) error {
+// checkText reports why value is not free text, the kind of every Attribute
+// key that is not a Preset's, or nil when it is: 1 byte to 1 KiB of UTF-8 on
+// one line, with no control characters, so that it prints as it is on a
+// terminal. Longer or multi-line text belongs in the Note.
+func checkText(value string) error {
 	switch {
 	case value == "":
 		return errors.New("a value cannot be empty")

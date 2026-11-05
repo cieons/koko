@@ -86,10 +86,10 @@ first call, through the dial it was given, and for each call:
 
 | Code | Status | When |
 | --- | --- | --- |
-| `invalid_request` | 400 | The body is not a JSON object of the operation's request type (malformed, wrong type, duplicate or trailing data), or a write carries no valid `Idempotency-Key`. |
+| `invalid_request` | 400 | The body is not a JSON object of the operation's request type (malformed, wrong type, duplicate or trailing data), or a write carries no valid `Idempotency-Key`; or a list's filter term or sort key is malformed or names a key the list does not take ([filtering and sorting](record.md#filtering-and-sorting)). |
 | `unknown_field` | 400 | The body holds a field the operation does not know. |
 | `invalid_name` | 400 | A name breaks its rule: a lowercase DNS label ([`name.Check`](../../internal/shared/name/name.go)), or for a Secret, `name.CheckSecret`'s. |
-| `invalid_value` | 400 | A Host's field, an Attribute or the Note, or a value given for one, breaks its rule ([the record](record.md#a-host)). |
+| `invalid_value` | 400 | A Host's field, an Attribute or the Note, or a value given for one, breaks its rule ([the record](record.md#a-host)): a Preset's value that does not parse as its type, or comes in another JSON type, among them, and a filter term's value not of its key's type. |
 | `revoked` | 401 | The call came on a Device Session that is Revoked ([the Device Connection](device-connection.md#who-is-calling)). |
 | `local_only` | 403 | The operation answers only the Local caller, over the Unix socket; `server.set` not even a browser tab of `koko web` there ([initialisation](initialisation.md#the-deployment-afterwards)). |
 | `owner_only` | 403 | Only the Owner may do what the call asks, such as changing Spaces and their Members, inviting a User, or issuing a Join Code for another User's device; it is answered before the call reads anything it names ([the access check](access.md#what-a-caller-cannot-see)). |

@@ -37,8 +37,9 @@ var hostCommands = []Command{
 	{
 		Noun:    "host",
 		Verb:    "ls",
-		Summary: "List the Hosts you can see",
+		Summary: "List the Hosts you can see that match every filter term, such as expires_at.le=+30d auto_renew=no",
 		Flags:   []Flag{{Name: "with-note", Bool: true, Summary: "Include each Host's Note"}},
+		Filters: true,
 		Tier:    Read,
 		Op:      api.HostList,
 		Run:     action(hostLs),
@@ -108,8 +109,10 @@ type hostJSON struct {
 	// Host with no pin.
 	HostKey *string `json:"host_key"`
 	// Attributes sit in their own object, so a field koko adds later never
-	// collides with an Attribute key.
-	Attributes map[string]string `json:"attributes"`
+	// collides with an Attribute key. Each value is typed: a number is a
+	// JSON number written exactly as stored, and every other value a JSON
+	// string.
+	Attributes map[string]record.Value `json:"attributes"`
 	// Note is the Host's Note, or null for none. Every command that prints
 	// one Host prints it; host ls only with --with-note, and without it
 	// leaves the member out: nil here, where a Host with no Note is a
@@ -135,7 +138,7 @@ func hostFromAPI(h api.Host) hostJSON {
 		UpdatedAt:  h.UpdatedAt,
 	}
 	if j.Attributes == nil {
-		j.Attributes = map[string]string{}
+		j.Attributes = map[string]record.Value{}
 	}
 	var note *string
 	if h.Note != "" {
@@ -169,15 +172,18 @@ var hostMappings = []mapping{
 type hostPairs struct {
 	address, account, space *string
 	port                    *int
-	attributes              map[string]string
+	attributes              map[string]record.Value
 }
 
 // readHostPairs sorts the key=value words of koko host <verb> into fields
 // and Attributes, refusing before any call a key the command does not take
-// and a value that breaks the record's rules. Only add takes space=.
-func readHostPairs(pairs []Pair, verb string) (hostPairs, error) {
-	p := hostPairs{attributes: map[string]string{}}
-	for _, pr := range pairs {
+// and a value that breaks the record's rules, a Preset's value that does
+// not parse as its type among them. A relative date, such as
+// expires_at=+1y, is resolved in the caller's time zone. Only add takes
+// space=.
+func readHostPairs(in *Input, verb string) (hostPairs, error) {
+	p := hostPairs{attributes: map[string]record.Value{}}
+	for _, pr := range in.Pairs() {
 		switch {
 		case pr.Key == "address":
 			address, err := record.Address(pr.Value)
@@ -204,10 +210,11 @@ func readHostPairs(pairs []Pair, verb string) (hostPairs, error) {
 			if err := record.CheckKey(pr.Key); err != nil {
 				return hostPairs{}, usagef("%s=: %v", pr.Key, err)
 			}
-			if err := record.CheckText(pr.Value); err != nil {
+			v, err := in.parseValue(record.TypeOf(pr.Key), pr.Value)
+			if err != nil {
 				return hostPairs{}, usagef("the value of %s=: %v", pr.Key, err)
 			}
-			p.attributes[pr.Key] = pr.Value
+			p.attributes[pr.Key] = v
 		}
 	}
 	return p, nil
@@ -291,7 +298,7 @@ func (h addedHost) Human(w io.Writer) error {
 }
 
 func hostAdd(ctx context.Context, in *Input) (addedHost, error) {
-	p, err := readHostPairs(in.Pairs(), "add")
+	p, err := readHostPairs(in, "add")
 	if err != nil {
 		return addedHost{}, err
 	}
@@ -351,8 +358,16 @@ func (l hostList) Human(w io.Writer) error {
 }
 
 func hostLs(ctx context.Context, in *Input) (hostList, error) {
+	filters, err := readFilters(in, api.HostListFields)
+	if err != nil {
+		return nil, err
+	}
+	sort, err := readSort(in, api.HostListFields)
+	if err != nil {
+		return nil, err
+	}
 	withNote := in.Bool("with-note")
-	resp, err := in.Call(ctx, api.HostList, api.HostListRequest{WithNote: withNote})
+	resp, err := in.Call(ctx, api.HostList, api.HostListRequest{Filters: filters, Sort: sort, WithNote: withNote})
 	if err != nil {
 		return nil, err
 	}
@@ -424,7 +439,7 @@ func (h changedHost) Human(w io.Writer) error {
 }
 
 func hostSet(ctx context.Context, in *Input) (changedHost, error) {
-	p, err := readHostPairs(in.Pairs(), "set")
+	p, err := readHostPairs(in, "set")
 	if err != nil {
 		return changedHost{}, err
 	}

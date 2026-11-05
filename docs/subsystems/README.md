@@ -24,7 +24,7 @@ ADR; a proposed change lives in its issue or PR.
 | The Device Connection and joining: the TCP listener, device authentication, `koko join`, the device's files, koko's ssh_config, known_hosts and the Include line, which koko server the CLI reaches, last used, revoking a Device Session, the access-change signal and the revocation record | [device-connection.md](device-connection.md) |
 | The access check and Spaces: who is calling, the rule, unseen equals unknown, memberships, what a Space holds, the access matrix | [access.md](access.md) |
 | Users: the record, `user ls`, and `user remove` deleting a User who never joined or Removing anyone else | [users.md](users.md) |
-| The record: a Host's fields and their rules, Attributes and the Note, the host operations, the one leak | [record.md](record.md) |
+| The record: a Host's fields and their rules, Attributes, the Preset Attributes and the four types, the Note, the host operations and `attr.list`, filtering and sorting, relative dates, the one leak | [record.md](record.md) |
 | Secrets: the record and its name rule, the commands and the one that prints a value, values in JSON, access, sealing | [secrets.md](secrets.md) |
 
 ## Maintaining a reference

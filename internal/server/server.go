@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/cieons/koko/internal/server/access"
+	"github.com/cieons/koko/internal/server/attr"
 	"github.com/cieons/koko/internal/server/deployment"
 	"github.com/cieons/koko/internal/server/device"
 	"github.com/cieons/koko/internal/server/host"
@@ -47,6 +48,13 @@ var areas = []func(*op.API){
 var holdings = []space.Holding{
 	host.Holding,
 	secret.Holding,
+}
+
+// attrKeys lists the Attribute keys in use on each area's records, for
+// attr.list; an area whose records hold Attributes, such as Hosts or
+// Services, adds its line.
+var attrKeys = []attr.Keys{
+	host.AttributeKeys,
 }
 
 // Config is what the koko server starts with.
@@ -135,6 +143,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 		register(a)
 	}
 	space.Register(a, user.ByName, holdings)
+	attr.Register(a, attrKeys)
 	// The access-change signal: once a change that withdraws access
 	// commits, the transport closes the Device Connections it Revoked.
 	var changes access.Signal

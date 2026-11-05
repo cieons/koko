@@ -1,0 +1,24 @@
+{
+  "id": "host_<1>",
+  "name": "web1",
+  "space": "alice",
+  "address": "203.0.113.10",
+  "port": 22,
+  "account": "deploy",
+  "state": "registered",
+  "host_key": null,
+  "attributes": {
+    "auto_renew": "no",
+    "billing_cycle": "yearly",
+    "cores": "8",
+    "currency": "EUR",
+    "expires_at": "2027-11-30",
+    "price": 9.9,
+    "provider": "hetzner",
+    "provider_account": "ops@example.com",
+    "region": "fsn1"
+  },
+  "note": null,
+  "created_at": "<time>",
+  "updated_at": "<time>"
+}

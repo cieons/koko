@@ -16,7 +16,11 @@ type parsed struct {
 	flags     map[string]string
 	pairs     []Pair
 	unset     []string
-	json      bool
+	// terms are the filter terms of a command with Filters, and sorts the
+	// values of its --sort, each in order.
+	terms []string
+	sorts []string
+	json  bool
 }
 
 // qualifiedName is a qualified argument's two parts: ops and db-password for
@@ -47,6 +51,10 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 	for i := 0; i < len(rest); i++ {
 		tok := rest[i]
 		if !isFlag(tok) {
+			if cmd.Filters && strings.ContainsAny(tok, "=.") {
+				p.terms = append(p.terms, tok)
+				continue
+			}
 			if key, value, ok := strings.Cut(tok, "="); ok && cmd.Pairs {
 				if err := p.addPair(key, value); err != nil {
 					return nil, err
@@ -101,6 +109,10 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 				return nil, usagef("--unset %s is given twice", value)
 			}
 			p.unset = append(p.unset, value)
+			continue
+		}
+		if f == &sortFlag {
+			p.sorts = append(p.sorts, value)
 			continue
 		}
 		p.flags[name] = value
@@ -290,9 +302,16 @@ func (c *Command) many() *Arg {
 // unsetFlag is --unset <key>, which a command with Unset takes, repeatable.
 var unsetFlag = Flag{Name: "unset", Value: "key", Summary: "Clear a field or Attribute; repeatable"}
 
+// sortFlag is --sort <key>[.desc], which a command with Filters takes,
+// repeatable: each sorts the ties of the one before.
+var sortFlag = Flag{Name: "sort", Value: "key[.desc]", Summary: "Sort by a field or Attribute, from the greatest value down with .desc; repeatable"}
+
 func (c *Command) flag(name string) *Flag {
 	if c.Unset && name == unsetFlag.Name {
 		return &unsetFlag
+	}
+	if c.Filters && name == sortFlag.Name {
+		return &sortFlag
 	}
 	i := slices.IndexFunc(c.Flags, func(f Flag) bool { return f.Name == name })
 	if i < 0 {

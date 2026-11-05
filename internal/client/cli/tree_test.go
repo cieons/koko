@@ -40,6 +40,9 @@ func TestCommandTreeEntries(t *testing.T) {
 		if c.Unset && !c.Pairs {
 			t.Errorf("%s takes --unset but no key=value pairs", path)
 		}
+		if c.Filters && c.Pairs {
+			t.Errorf("%s takes both filter terms and key=value pairs, which the parser cannot tell apart", path)
+		}
 		var names []string
 		for i, a := range c.Args {
 			switch {
@@ -65,6 +68,8 @@ func TestCommandTreeEntries(t *testing.T) {
 				t.Errorf("%s lists --json, which every command already takes", path)
 			case f.Name == unsetFlag.Name:
 				t.Errorf("%s lists --unset, which Unset adds", path)
+			case f.Name == sortFlag.Name:
+				t.Errorf("%s lists --sort, which Filters adds", path)
 			case slices.Contains(names, f.Name):
 				t.Errorf("%s has two flags named --%s", path, f.Name)
 			case f.Env != "" && !strings.HasPrefix(f.Env, "KOKO_"):

@@ -1,11 +1,17 @@
 # The record: Hosts
 
-The Hosts koko records, each in one Space, with their Attributes and Notes.
-The rules are [P0 spec: the record](https://github.com/cieons/koko/issues/22)
-and [ADR 0014](../adr/0014-host-names-are-unique-across-the-koko-server.md);
-the operations are [`internal/server/host`](../../internal/server/host/host.go),
+The Hosts koko records, each in one Space, with their Attributes and Notes,
+and the filters and sorting of their lists.
+The rules are [P0 spec: the record](https://github.com/cieons/koko/issues/22),
+[ADR 0014](../adr/0014-host-names-are-unique-across-the-koko-server.md) and
+[ADR 0029](../adr/0029-a-number-attribute-is-a-decimal-a-javascript-number-holds.md);
+the operations are [`internal/server/host`](../../internal/server/host/host.go)
+and [`internal/server/attr`](../../internal/server/attr/attr.go), the
+filtering and sorting [`internal/server/query`](../../internal/server/query/query.go),
 the value rules [`internal/shared/record`](../../internal/shared/record/record.go),
-and the commands [`internal/client/cli/host.go`](../../internal/client/cli/host.go).
+and the commands [`internal/client/cli/host.go`](../../internal/client/cli/host.go),
+[`attr.go`](../../internal/client/cli/attr.go) and
+[`filter.go`](../../internal/client/cli/filter.go).
 
 ## A Host
 
@@ -22,7 +28,7 @@ Stored in `hosts`, with its Attributes in `host_attributes`
 | `account` | The Host Account: 1 to 32 of `a-z`, `A-Z`, `0-9`, `.`, `_` and `-`, not starting with `-`. No default. |
 | `state` | `registered`, `managed` or `retired`, set only by koko. Every Host is Registered until Enroll and retiring set the others. |
 | `host_key` | The pinned host key's SHA-256 fingerprint, `SHA256:...`, or `null` for a Host with no pin. Stored as the key in SSH wire format, which Enroll writes. |
-| `attributes` | Free text by key: 1 byte to 1 KiB of UTF-8 on one line, with no control character. A key is snake_case (`a-z`, `0-9`, `_`, starting with a letter, 1 to 63 characters) and not a field's name: `id`, `name`, `space`, `address`, `port`, `account`, `relay`, `state`, `host_key`, `host`, `ports`, `attributes`, `note`, `created_at` or `updated_at`. |
+| `attributes` | Values by key, each of its key's type ([Attributes](#attributes-and-the-preset-attributes)). A key is snake_case (`a-z`, `0-9`, `_`, starting with a letter, 1 to 63 characters) and not a field's name: `id`, `name`, `space`, `address`, `port`, `account`, `relay`, `state`, `host_key`, `host`, `ports`, `attributes`, `note`, `created_at` or `updated_at`. |
 | `note` | 1 byte to 64 KiB of UTF-8 on any number of lines, with no control character but tab, line feed and carriage return; `null` for none. |
 | `created_at`, `updated_at` | RFC 3339 in UTC to the second; every write moves `updated_at`. |
 
@@ -32,17 +38,104 @@ write, whichever client sent it, and refuses with `invalid_value`, or
 `invalid_name` for a name ([the codes](api.md#calls)). An empty value and an
 empty Note are refused, so clearing is always `--unset`.
 
+## Attributes and the Preset Attributes
+
+Every Attribute key that is not a Preset's takes free text. The Presets
+([`record.Presets`](../../internal/shared/record/preset.go), [ADR
+0010](../adr/0010-provider-details-are-attributes.md)) have fixed types, the
+same on a Host and a Service:
+
+| Key | Type |
+| --- | --- |
+| `provider`, `provider_account`, `region` | text |
+| `price` | number, at least 0 |
+| `currency` | enum: the 178 alphabetic codes of ISO 4217's List One as SIX published it on 2026-09-17, sorted |
+| `billing_cycle` | enum: `monthly`, `quarterly`, `semiannual`, `yearly`, `biennial`, `triennial` |
+| `expires_at` | date: the last day already paid for |
+| `auto_renew` | enum: `no`, `yes` |
+
+The four types ([`record.Type`](../../internal/shared/record/value.go)):
+
+| Type | A value | Compared | In JSON |
+| --- | --- | --- | --- |
+| text | 1 byte to 1 KiB of UTF-8 on one line, no control character | in natural order: a run of ASCII digits against a run of digits by its value, anything else byte by byte, so `8` sorts before `16` and `EU` before `eu` | a string |
+| number | an exact decimal: plain decimal, at most 15 digits and 6 after the point, stored with no leading zeros, no trailing zeros after the point and no `-0`, so `9.90` is `9.9` ([`record.ParseDecimal`](../../internal/shared/record/decimal.go), [ADR 0029](../adr/0029-a-number-attribute-is-a-decimal-a-javascript-number-holds.md)) | by value | a number, written exactly as stored |
+| date | `YYYY-MM-DD`, from 0001-01-01 to 9999-12-31, no time | by the calendar | a string |
+| enum | one of its values | in their declared order | a string |
+
+- A Preset's value that does not parse as its type is refused, never kept as
+  text. A value must also come in its type's JSON type: `"price": "10"` and
+  `"region": 5` are refused with `invalid_value`, and a value that is neither
+  a string nor a number with `invalid_request`.
+- The API carries each value as a [`record.Value`](../../internal/shared/record/value.go),
+  which keeps a number's text as JSON wrote it and never decodes it into a
+  float; the web UI's type for it is `string | number`.
+- `host_attributes.value` holds each value's text in the one form it is
+  stored in; the key's type is the Preset table's, not stored. A stored value
+  that does not parse for its key's type fails the read as an error, since
+  every write checks it.
+
+## Filtering and sorting
+
+`host.list` takes `filters`, terms a Host must match, every one, and `sort`,
+keys it orders by in turn ([`api.Filter`, `api.SortKey`](../../internal/shared/api/attr.go)).
+A term is `{"key", "op", "value"}` with `op` one of `eq`, `ne`, `lt`, `le`,
+`gt`, `ge`, `has` and `lacks`; `has` and `lacks` take no value, and the
+others a value of the key's type in its JSON type. A sort key is `{"key",
+"desc"}`.
+
+- **Keys.** The fields of [`api.HostListFields`](../../internal/shared/api/host.go)
+  with their types: `id`, `name`, `space`, `address`, `account` and
+  `host_key` as text, `port` as a number, and `state` as an enum (`registered`,
+  `managed`, `retired`). Any other key is an Attribute key, of its Preset's
+  type or text. The Note, `created_at` and `updated_at` are not keys to
+  filter or sort on: a timestamp is no date, and comparing one with a date
+  would need the caller's time zone, which the API never sees.
+- **A Host that lacks the key** (an Attribute it does not have, or
+  `host_key` without a pin) matches `ne` and `lacks` and no other term, and
+  sorts after every Host that has it, in either direction.
+- **Order.** By the sort keys in turn; Hosts that tie stay by name, in
+  natural order as `--sort name` gives it (`web2` before `web10`), and then
+  id, the order without `sort`.
+- **Refusals.** A malformed term, a key the list does not take, and a key
+  sorted by twice are refused with `invalid_request`; a value not of its key's
+  type with `invalid_value`. The API compares only absolute dates, so
+  `"+30d"` is refused too.
+- [`query.New`](../../internal/server/query/query.go) checks the terms and
+  sort keys and `Query.Apply` applies them to the Hosts the caller can see,
+  through each Host's values (`hostValues`); Services will take the same
+  query with fields of their own.
+
+### Relative dates
+
+The CLI resolves `today`, `+30d`, `-2w`, `+3m` and `+1y` (a sign, at most 6
+digits and a unit) into absolute dates before any call, in filters and in
+writes alike ([`resolveDate`](../../internal/client/cli/reldate.go)). A month
+or a year that lands past the end of its month clamps to the month's last
+day: `+1m` from 2026-01-31 is 2026-02-28, and `+1y` from 2028-02-29 is
+2029-02-28. Today is the clock's date in the time zone `TZ` names in the
+run's environment, as Go reads `TZ` for a process: unset is the machine's
+zone, empty or `UTC` is UTC, and any other value is an IANA name or a
+zoneinfo file's path, after an optional `:`. A `TZ` that names no zone koko
+can load is refused with exit 2 where a relative date needs it, rather than
+read as UTC. The cases are one table,
+[`internal/client/cli/testdata/relative-dates.json`](../../internal/client/cli/testdata/relative-dates.json)
+(`case`, `now` in RFC 3339, `tz`, `date`, and `want`, or `null` for a date
+refused), which the CLI's S1 tests run and the web UI's Hosts list (#71) is
+to run too, so the two resolvers cannot drift.
+
 ## Operations
 
 | Operation | Does |
 | --- | --- |
 | `host.add` | Records the Hosts in `hosts`, all or none, each Registered. |
-| `host.list` | Every Host the caller can see that is not Retired, by name and then id; the Notes only with `with_note`. |
+| `host.list` | Every Host the caller can see that is not Retired and matches the filters, by the sort keys and then by name, in natural order, and id ([filtering and sorting](#filtering-and-sorting)); the Notes only with `with_note`. |
 | `host.show` | One Host. |
 | `host.set` | Sets the address, port, Host Account, Attributes and Note it names, and clears the Attribute keys in `unset`, the Note for `note`, and the port back to 22 for `port`; nothing else changes. It refuses a request that changes nothing, a key both set and cleared, and clearing the address or the Host Account ([`record.Required`](../../internal/shared/record/record.go)). It takes no `name`, `space` or `state`. |
 | `host.rename` | A new name, checked as on `host.add`; the id and everything else stay. |
 | `host.move` | Another Space, with the Attributes and Note; the name stays. |
 | `host.remove` | Deletes the Host with its Attributes and Note; answers it as it was. |
+| `attr.list` | Every Preset with its type, an enum's values and a number's least value, in the order of the Preset table, then every other key in use on what the caller can see, by key; each says whether it is a Preset and whether something the caller can see has it. A key held only in a Space the caller cannot act in is answered as if nothing held it. Each area whose records hold Attributes lists its keys through an `attr.Keys`, Hosts through `host.AttributeKeys`, Retired ones among them. |
 
 - **Naming a Host.** A request names a Host by its name, which names only a
   Host that is not Retired, or by its id (`host_...`), which names any.
@@ -67,9 +160,26 @@ so far](cli.md#the-commands-so-far)). Fields and Attributes are both
 `koko host rename` and `koko host move`. `--note-file <file>` reads the Note from a file
 and `--note-file -` from stdin, which it refuses when stdin is a terminal.
 `--json` prints the CLI's own Host, `hostJSON`, with its Attributes in their
-own object and `note` a string or `null`, which `ls` leaves out without
-`--with-note`. For people, `ls` prints a table (`NAME SPACE STATE ADDRESS
-PORT ACCOUNT ID`) followed, with `--with-note`, by each Host's Note.
+own object, each in its JSON type, and `note` a string or `null`, which `ls`
+leaves out without `--with-note`. For people, `ls` prints a table (`NAME
+SPACE STATE ADDRESS PORT ACCOUNT ID`) followed, with `--with-note`, by each
+Host's Note. A Preset's value that does not parse, and a relative date that
+does not resolve, are refused with exit 2 before any call.
+
+`koko host ls` takes filter terms that need no quoting in a shell
+([`readFilters`](../../internal/client/cli/filter.go)): `key=value`,
+`key!=value`, `key.lt=value`, `key.le=value`, `key.gt=value`, `key.ge=value`,
+`key.has` and `key.lacks`, ANDed, and `--sort key` or `--sort key.desc`,
+repeatable. It checks each term's syntax, key and value as the koko server
+would and refuses a bad one with exit 2 before any call:
+`koko host ls expires_at.le=+30d auto_renew=no --sort expires_at` lists the
+Hosts due for renewal, soonest first.
+
+`koko attr ls` prints what `attr.list` answers, as a bare array of `{"key",
+"type", "values", "min", "preset", "in_use"}`, `values` an enum's values or
+`null` and `min` a number's least value (`price`'s `0`) or `null`; for
+people, a table `KEY TYPE PRESET IN USE`, an enum of more than 10 values
+named by its count, first and last.
 
 ## Verifying
 
@@ -82,5 +192,22 @@ PORT ACCOUNT ID`) followed, with `--with-note`, by each Host's Note.
 - [`internal/server/host/host_test.go`](../../internal/server/host/host_test.go):
   the koko server's own checks on raw `host.add` and `host.set` calls, a batch
   added all or none, and which answers carry the Note.
-- [`internal/server/access/matrix_host_test.go`](../../internal/server/access/matrix_host_test.go):
-  every host operation as each caller.
+- [`internal/server/host/preset_test.go`](../../internal/server/host/preset_test.go):
+  each Preset's value refused when it does not parse or comes in the wrong
+  JSON type, and numbers stored in their one form and written as JSON
+  numbers exactly as stored.
+- [`internal/server/host/list_test.go`](../../internal/server/host/list_test.go):
+  the comparisons as a table (exact decimals, dates, enum order, natural
+  order, case, a Host lacking the key under every operator and in both sort
+  directions, the fields) and each refusal of a bad filter.
+- [`internal/client/cli/host_filter_test.go`](../../internal/client/cli/host_filter_test.go):
+  the renewal question with its golden, each operator, repeated `--sort`,
+  each malformed term refused before any call, a `TZ` koko cannot load, the
+  relative-date table in writes, a Preset's value refused before any call,
+  and typed values in `--json`.
+- [`internal/client/cli/attr_test.go`](../../internal/client/cli/attr_test.go):
+  `koko attr ls` with its golden, and the keys in use as each caller sees
+  them.
+- [`internal/server/access/matrix_host_test.go`](../../internal/server/access/matrix_host_test.go)
+  and [`matrix_attr_test.go`](../../internal/server/access/matrix_attr_test.go):
+  every host operation and `attr.list` as each caller.

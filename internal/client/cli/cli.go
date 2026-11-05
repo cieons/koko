@@ -59,6 +59,11 @@ type Runner struct {
 	// stdin is a terminal when it is one. No flag or environment variable
 	// sets it.
 	Terminal Terminal
+
+	// Clock is the clock hook, for tests only: nil means the system clock.
+	// The CLI reads it for today's date, which a relative date such as +30d
+	// counts from. No flag or environment variable sets it.
+	Clock func() time.Time
 }
 
 // ServerSettings are the startup settings `koko server run` takes as flags or
@@ -90,13 +95,19 @@ type Invocation struct {
 
 // getenv returns the value of the last KEY=value in the environment.
 func (inv *Invocation) getenv(key string) string {
-	value := ""
+	value, _ := inv.lookupEnv(key)
+	return value
+}
+
+// lookupEnv returns the value of the last KEY=value in the environment, and
+// whether there is one, empty or not.
+func (inv *Invocation) lookupEnv(key string) (value string, ok bool) {
 	for _, kv := range inv.Env {
-		if k, v, ok := strings.Cut(kv, "="); ok && k == key {
-			value = v
+		if k, v, found := strings.Cut(kv, "="); found && k == key {
+			value, ok = v, true
 		}
 	}
-	return value
+	return value, ok
 }
 
 // Run runs one command line and returns its exit status: 0 on success, 1 when
@@ -181,6 +192,17 @@ func (in *Input) Pairs() []Pair {
 // Unset returns the keys given with --unset, in the order given.
 func (in *Input) Unset() []string {
 	return in.line.unset
+}
+
+// Terms returns the filter terms of a command with Filters, as typed and in
+// order.
+func (in *Input) Terms() []string {
+	return in.line.terms
+}
+
+// Sorts returns the values given with --sort, in order.
+func (in *Input) Sorts() []string {
+	return in.line.sorts
 }
 
 // Call calls an operation on the koko server, connecting on the first call.
