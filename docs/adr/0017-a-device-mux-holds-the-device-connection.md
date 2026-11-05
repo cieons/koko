@@ -34,12 +34,11 @@ Host, and agents run many commands in a row.
 - When the koko server says its Device Session was Revoked, the Device Mux
   deletes the device's key and config, leaves a record that later commands
   explain, and exits.
-- When its Device Connection drops, it exits too, and the next command starts
-  another. That is a baseline only: session resumption is P0, and
-  [Research: resuming SSH Sessions across a client network drop](https://github.com/cieons/koko/issues/20)
-  and [Gateway and Tunnel behaviour details](https://github.com/cieons/koko/issues/16)
-  decide how the Device Mux
-  reconnects and keeps its Tunnels across a network drop.
+- When its Device Connection drops, it opens a new one and its Tunnels Resume
+  on it (ADR 0021). It carries every Tunnel's bytes but holds none of their
+  state, which lives in the process that opened each Tunnel, so a Device Mux
+  crash ends no SSH Session. A Tunnel waiting to Resume counts as an open
+  channel.
 - When it cannot start, as in a sandbox that forbids background processes, a
   command opens its own Device Connection with the same code. An environment
   variable forces that path.

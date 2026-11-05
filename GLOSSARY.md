@@ -144,5 +144,13 @@ One SSH connection through the Gateway to a Host.
 _Avoid_: session (alone), connection
 
 **Tunnel**:
-A channel the CLI opens to the koko server, on a Device Connection or over the Unix socket, to carry one SSH Session to the Gateway.
+What carries one SSH Session from the CLI to the Gateway, inside a channel on a Device Connection or over the Unix socket; it outlives a dropped Device Connection by Resuming on a new one.
 _Avoid_: websocket, channel, stream
+
+**Detached**:
+A Tunnel that has lost its Device Connection, whose SSH Session the Gateway holds for a short grace period so the device can Resume it.
+_Avoid_: suspended, orphaned, disconnected
+
+**Resume**:
+To carry a Detached Tunnel, and the SSH Session inside it, onto a new Device Connection of the same Device Session.
+_Avoid_: reattach, reconnect, roam
