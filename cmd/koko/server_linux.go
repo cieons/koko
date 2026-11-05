@@ -16,7 +16,7 @@ import (
 // koko server, which runs on Linux only.
 func serverRun(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
 	return server.Run(ctx, server.Config{
-		DataDir:     s.DataDir,
+		DataDir:       s.DataDir,
 		RootKeyPath:   s.RootKeyPath,
 		RootKeySource: s.RootKeySource,
 		Listen:        s.Listen,

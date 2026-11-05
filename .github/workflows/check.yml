@@ -10,10 +10,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: check-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
 jobs:
   check:
     strategy:
@@ -21,6 +17,15 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # One group for each ref and OS, so a job waiting for a runner holds up
+    # only that OS's jobs of later pushes.
+    concurrency:
+      group: check-${{ github.ref }}-${{ matrix.os }}
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+    # make test bounds each test binary with go test's -timeout, well inside
+    # this, so a hanging test fails the job with a goroutine dump instead of
+    # being cancelled without a log.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -32,7 +37,10 @@ jobs:
           node-version-file: web/package.json
           cache: npm
           cache-dependency-path: web/package-lock.json
+      # The action only installs golangci-lint and keeps its cache; make lint
+      # runs it, once for each OS koko builds for.
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.15.0
-      - run: make webui vet test cross
+          install-only: true
+      - run: make check

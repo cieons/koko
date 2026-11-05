@@ -33,6 +33,16 @@ their own Device Session got `EOF` instead of the answer.
 **Seen:** 1 (2026-11-06)
 **Evidence:** df63902 (#40); #76
 
+### Lint the build of every OS koko builds for, not only the machine's own
+
+**Why:** golangci-lint checks only the files one OS's build takes, so
+`make check` on macOS skipped `cmd/koko/server_linux.go`. A gofumpt slip
+there passed every local check, and CI on `main` stayed red from f42c347 on,
+under every later push, so no push to `main` had its tests run on Linux.
+**Seen:** 1 (2026-11-06)
+**Evidence:** f42c347 (#42); check run 42033632619 and every run on `main`
+after it; #76
+
 ## Moved to the code standards
 
 _None yet._

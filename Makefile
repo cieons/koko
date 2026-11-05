@@ -18,8 +18,16 @@ check: webui lint vet test cross
 # its steps in order, even under -j.
 .NOTPARALLEL: check
 
+# golangci-lint checks only the files the build for one OS takes, so lint
+# runs once for each OS koko builds for: a _linux.go file is linted on macOS
+# too, and a _darwin.go or _windows.go file on Linux.
+LINT_OSES := $(sort $(foreach t,$(CROSS_TARGETS),$(word 1,$(subst /, ,$(t)))))
+
 lint:
-	golangci-lint run
+	@for os in $(LINT_OSES); do \
+		echo "lint GOOS=$$os"; \
+		GOOS=$$os golangci-lint run || exit 1; \
+	done
 
 fmt:
 	golangci-lint fmt
@@ -31,14 +39,16 @@ vet:
 # ~/.claude or ~/.config. Go's caches and env file are pinned first, or
 # every run would re-download modules into the temp HOME. The Go tests
 # include the check that the web UI's generated types are up to date; the
-# web UI's own tests run in Vitest.
+# web UI's own tests run in Vitest. A test binary still running after 5
+# minutes has hung: go test fails it with a goroutine dump, well inside the
+# CI job's timeout.
 test: $(WEB_DEPS)
 	@home=$$(mktemp -d); trap 'rm -rf "$$home"' EXIT; \
 	export GOENV="$$($(GO) env GOENV)" GOPATH="$$($(GO) env GOPATH)" \
 	GOMODCACHE="$$($(GO) env GOMODCACHE)" GOCACHE="$$($(GO) env GOCACHE)" \
 	HOME="$$home" XDG_CONFIG_HOME="$$home/.config" \
 	XDG_DATA_HOME="$$home/.local/share" XDG_STATE_HOME="$$home/.local/state"; \
-	$(GO) test -race ./... && cd web && node_modules/.bin/vitest run
+	$(GO) test -race -timeout 5m ./... && cd web && node_modules/.bin/vitest run
 
 cross:
 	@for t in $(CROSS_TARGETS); do \
