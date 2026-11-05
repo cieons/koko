@@ -19,6 +19,7 @@ import (
 	"github.com/cieons/koko/internal/server/space"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/server/transport"
+	"github.com/cieons/koko/internal/server/webui"
 	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -86,7 +87,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 		return nil, errors.Join(err, t.Close(), st.Close())
 	}
 	log.Info("koko server started", "version", build.Read().Version, "data_dir", cfg.DataDir,
-		"root_key", key.ID(), "socket", socket)
+		"root_key", key.ID(), "socket", socket, "web_ui_built", webui.Built())
 	return &Server{store: st, transport: t}, nil
 }
 

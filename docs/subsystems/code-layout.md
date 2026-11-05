@@ -15,7 +15,7 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
 | shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the wire constants and channel adapter (`wire`), the build report (`build`); later the Join Code codec, Attribute values, the resumable stream, the port-owner lookup | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the Root Key and the Seal (`seal`), one package per area (`space`); later the Gateway, Host connector, installer, embedded web UI | client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the Root Key and the Seal (`seal`), one package per area (`space`), the embedded web UI (`webui`); later the Gateway, Host connector, installer | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`); later the Device Mux, tunnel, ssh_config and device files | server |
 
 Only [`cmd/koko`](../../cmd/koko) and the S1 harness
@@ -41,6 +41,7 @@ lines.
 | Part | The area's own file | The central list |
 | --- | --- | --- |
 | API types, operations (`api.Op`) and error codes (`api.Code`) | `internal/shared/api/<area>.go`, with `<area>Operations` and, if it has codes of its own, `<area>Codes` | `operations` in [`api.go`](../../internal/shared/api/api.go), `codes` in [`errors.go`](../../internal/shared/api/errors.go) |
+| The web UI's TypeScript types | `web/src/api/<area>.ts`, written by `make generate` from `<area>.go` ([web-ui.md](web-ui.md#generated-types)) | none |
 | Server operations | `internal/server/<area>/`, with `Register(*op.API)` | `areas` in [`server.go`](../../internal/server/server.go) |
 | Commands and their `--json` types | `internal/client/cli/<area>.go`, with `<area>Commands` | `commands` in [`tree.go`](../../internal/client/cli/tree.go) |
 | API-to-CLI mappings | `<area>Mappings` in the same file | `mappings` in [`mapping.go`](../../internal/client/cli/mapping.go) |
@@ -64,7 +65,7 @@ its own only when an agent would act on it differently.
 3. **Operations, commands, API types and error codes** come from each area's
    own files, joined by one line per area in the central lists above.
 4. **Generated TypeScript types.** One generated file per API area. On a rebase
-   conflict, re-run the generator; never hand-merge.
+   conflict, re-run the generator (`make generate`); never hand-merge.
 5. **Message catalogues.** One English and one Simplified Chinese file per
    area, so each page ticket adds its own pair; the messages for an area's API
    error codes go in that pair. The completeness test (#46) spans every pair.

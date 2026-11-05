@@ -24,7 +24,13 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+      # The Node version is the one web/package.json's devEngines names.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: web/package.json
+          cache: npm
+          cache-dependency-path: web/package-lock.json
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.15.0
-      - run: make vet test cross
+      - run: make webui vet test cross

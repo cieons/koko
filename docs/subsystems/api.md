@@ -2,7 +2,9 @@
 
 How a call reaches the koko server and how the server answers it. The design
 is [ADR 0015](../adr/0015-the-api-is-http-and-json-in-ssh-channels.md); the
-types are in [`internal/shared/api`](../../internal/shared/api).
+types are in [`internal/shared/api`](../../internal/shared/api), and the web
+UI's TypeScript types are generated from them
+([web-ui.md](web-ui.md#generated-types)).
 
 ## The way in
 
