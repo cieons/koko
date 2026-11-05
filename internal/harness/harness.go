@@ -234,6 +234,14 @@ func (c *clock) advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
+// Background starts one koko command line in process, as Koko does but with
+// the variables env beside HOME, for a command that runs until it is stopped,
+// such as koko web.
+func (h *Harness) Background(env []string, args ...string) *Process {
+	h.t.Helper()
+	return background(h.t, cli.Runner{SocketPath: h.socket}, append([]string{"HOME=" + h.home}, env...), args...)
+}
+
 // Log returns what the koko server has logged so far.
 func (h *Harness) Log() string {
 	return h.log.String()
@@ -262,6 +270,83 @@ func Run(t testing.TB, r cli.Runner, env []string, args ...string) Result {
 		Env:    env,
 	})
 	return Result{Stdout: stdout.String(), Stderr: stderr.String(), Status: status}
+}
+
+// waitFor bounds how long a Process helper waits for a command.
+const waitFor = 10 * time.Second
+
+// Process is one koko command line running in process in the background.
+type Process struct {
+	t      testing.TB
+	stdout *syncBuffer
+	stderr *syncBuffer
+	// interrupt ends the command's context, as Ctrl-C does.
+	interrupt context.CancelFunc
+	done      chan struct{}
+	status    int
+}
+
+// background starts one koko command line in process with the runner r and
+// the environment env, as Run does, and returns at once. The command runs
+// until it exits or Stop interrupts it; it is stopped when the test ends.
+func background(t testing.TB, r cli.Runner, env []string, args ...string) *Process {
+	t.Helper()
+	ctx, interrupt := context.WithCancel(context.Background())
+	p := &Process{t: t, stdout: &syncBuffer{}, stderr: &syncBuffer{}, interrupt: interrupt, done: make(chan struct{})}
+	go func() {
+		defer close(p.done)
+		p.status = r.Run(ctx, cli.Invocation{
+			Args:   args,
+			Stdin:  strings.NewReader(""),
+			Stdout: p.stdout,
+			Stderr: p.stderr,
+			Env:    env,
+		})
+	}()
+	t.Cleanup(func() { p.Stop() })
+	return p
+}
+
+// WaitStdout waits until the command's stdout holds substr, and returns its
+// stdout so far. It fails the test when the command exits first or 10 s
+// pass.
+func (p *Process) WaitStdout(substr string) string {
+	p.t.Helper()
+	deadline := time.Now().Add(waitFor)
+	for {
+		out := p.stdout.String()
+		if strings.Contains(out, substr) {
+			return out
+		}
+		select {
+		case <-p.done:
+			p.t.Fatalf("the command exited with status %d before printing %q: stdout %q, stderr %q", p.status, substr, p.stdout.String(), p.stderr.String())
+		case <-time.After(10 * time.Millisecond):
+		}
+		if time.Now().After(deadline) {
+			p.t.Fatalf("the command did not print %q within %v: stdout %q, stderr %q", substr, waitFor, out, p.stderr.String())
+		}
+	}
+}
+
+// Stop interrupts the command, as Ctrl-C does, and returns what it printed
+// and its exit status once it has exited.
+func (p *Process) Stop() Result {
+	p.t.Helper()
+	p.interrupt()
+	return p.Wait()
+}
+
+// Wait waits for the command to exit by itself and returns what it printed
+// and its exit status. It fails the test when 10 s pass first.
+func (p *Process) Wait() Result {
+	p.t.Helper()
+	select {
+	case <-p.done:
+	case <-time.After(waitFor):
+		p.t.Fatalf("the command did not exit within %v: stdout %q, stderr %q", waitFor, p.stdout.String(), p.stderr.String())
+	}
+	return Result{Stdout: p.stdout.String(), Stderr: p.stderr.String(), Status: p.status}
 }
 
 // Result is what one koko command line printed, and its exit status.

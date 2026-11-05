@@ -159,6 +159,18 @@ func (in *Input) Call[Req, Resp any](ctx context.Context, op api.Op[Req, Resp], 
 	return resp, err
 }
 
+// server returns the connection to the koko server, connecting on first
+// use, for a command that opens channels of its own, such as koko web's
+// web@koko.
+func (in *Input) server(ctx context.Context) (serverconn.Conn, error) {
+	if in.conn == nil {
+		if err := in.connect(ctx); err != nil {
+			return nil, err
+		}
+	}
+	return in.conn, nil
+}
+
 // connect reaches the koko server over its Unix socket.
 func (in *Input) connect(ctx context.Context) error {
 	path := cmp.Or(in.runner.SocketPath, wire.SocketPath)

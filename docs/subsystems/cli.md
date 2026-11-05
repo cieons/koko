@@ -98,15 +98,19 @@ status. A command reaches the koko server only on its first `in.Call`, so
 - **Exit statuses:** 0 success; 1 the operation failed; 2 the command line was
   refused before any call. They never change meaning.
 - **stdout** gets the result only on success, rendered in full first, so it
-  stays empty on failure. **stderr** gets every error: `koko: <message>`, or
-  with `--json` (anywhere on the line, even where refused) the error object
+  stays empty on failure. A command that runs until it is stopped, such as
+  `koko web`, prints its result once, as soon as it is ready, and nothing
+  when it ends; a failure after that still goes to stderr with its status.
+  **stderr** gets every error: `koko: <message>`, or with `--json` (anywhere
+  on the line, even where refused) the error object
   `{"error": {"code": ..., "message": ...}}`.
 - **Codes:** the API's pass through; the CLI adds `invalid_usage` (exit 2),
   `not_joined` (no koko server joined and no socket on this machine),
   `server_unreachable` (the socket does not answer, or the connection could
-  not carry the call), `unsupported_platform`
-  (`koko server run` outside Linux), and `internal_error` for a failure it did
-  not expect.
+  not carry the call, or ended under `koko web`), `unsupported_platform`
+  (`koko server run` outside Linux), `port_taken` (another process holds the
+  port `koko web` listens on), and `internal_error` for a failure it did not
+  expect.
 
 ## `--json`
 
@@ -141,6 +145,7 @@ one `koko join koko_...` line to paste on the new device.
 | `koko user invite <user>` (Owner; enforced from #39) | irreversible | `user.invite` | `{"user": {"id", "name", "role", "created_at"}, "join_code": ...}`, the Join Code as `device add` prints it |
 | `koko device add [<device>] [--user <user>]` | irreversible | `device.add` | the Join Code: `{"id", "code", "user", "device", "expires_at"}` |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
+| `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
 | `koko server run [--data-dir <dir>] [--root-key-file <file>] [--log-level <level>]` | irreversible | none | nothing on success |
 
 `koko server run` takes `--data-dir` (`KOKO_DATA_DIR`, default

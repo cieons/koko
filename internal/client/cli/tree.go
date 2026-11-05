@@ -151,6 +151,21 @@ func action[R Result](run func(ctx context.Context, in *Input) (R, error)) Actio
 	}
 }
 
+// longAction makes the Action of a command that runs until it is stopped,
+// such as koko web: run prints its R once, as soon as it is ready, through
+// ready, and nothing more when it ends. A failure after that still goes to
+// stderr with its exit status.
+func longAction[R Result](run func(ctx context.Context, in *Input, ready func(R) error) error) Action {
+	return Action{
+		run: func(ctx context.Context, in *Input) (Result, error) {
+			return nil, run(ctx, in, func(r R) error {
+				return writeResult(in.inv.Stdout, r, in.line.json)
+			})
+		},
+		shape: reflect.TypeFor[R](),
+	}
+}
+
 // quietAction makes the Action of a command that prints nothing on success.
 func quietAction(run func(ctx context.Context, in *Input) error) Action {
 	return Action{run: func(ctx context.Context, in *Input) (Result, error) {
@@ -165,6 +180,7 @@ var commands = [][]Command{
 	versionCommands,
 	deviceCommands,
 	userCommands,
+	webCommands,
 }
 
 // Tree returns every command.

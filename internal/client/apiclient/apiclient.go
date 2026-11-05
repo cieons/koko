@@ -32,7 +32,7 @@ type Client struct {
 func New(conn serverconn.Conn) *Client {
 	t := &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			ch, err := conn.OpenChannel(ctx, wire.ChannelAPI)
+			ch, err := conn.OpenChannel(ctx, wire.ChannelAPI, nil)
 			if err != nil {
 				return nil, err
 			}

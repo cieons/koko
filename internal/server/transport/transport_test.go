@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -36,11 +37,19 @@ var whoAmI = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	}
 })
 
-// startSocket serves h on a fresh socket and returns its path.
+// startSocket serves h on a fresh socket, for api@koko and web@koko
+// channels alike, and returns its path.
 func startSocket(t *testing.T, h http.Handler) string {
 	t.Helper()
+	return startTransport(t, h, h)
+}
+
+// startTransport serves api on api@koko channels and web on web@koko
+// channels of a fresh socket, and returns its path.
+func startTransport(t *testing.T, api, web http.Handler) string {
+	t.Helper()
 	path := filepath.Join(harness.ShortTempDir(t), "koko.sock")
-	s := transport.New(h, slog.New(slog.DiscardHandler))
+	s := transport.New(api, web, slog.New(slog.DiscardHandler))
 	if err := s.ListenSocket(t.Context(), path); err != nil {
 		t.Fatalf("listen on socket: %v", err)
 	}
@@ -155,7 +164,7 @@ func TestSocketIsOpenToEveryLocalUser(t *testing.T) {
 // Closing stops listening and removes the socket file.
 func TestCloseRemovesTheSocket(t *testing.T) {
 	path := filepath.Join(harness.ShortTempDir(t), "koko.sock")
-	s := transport.New(whoAmI, slog.New(slog.DiscardHandler))
+	s := transport.New(whoAmI, whoAmI, slog.New(slog.DiscardHandler))
 	if err := s.ListenSocket(t.Context(), path); err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +191,7 @@ func TestCloseWaitsForCallsInFlight(t *testing.T) {
 		_, _ = io.WriteString(w, "done")
 	})
 	path := filepath.Join(harness.ShortTempDir(t), "koko.sock")
-	s := transport.New(slow, slog.New(slog.DiscardHandler))
+	s := transport.New(slow, slow, slog.New(slog.DiscardHandler))
 	if err := s.ListenSocket(t.Context(), path); err != nil {
 		t.Fatal(err)
 	}
@@ -210,4 +219,90 @@ func TestCloseWaitsForCallsInFlight(t *testing.T) {
 		t.Error("Close returned while a call was still running")
 	}
 	wg.Wait()
+}
+
+// whereFrom answers every request with the channel's koko web port and the
+// caller, and sends the connection it came on to conns.
+func whereFrom(name string, conns chan<- *transport.Connection) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, _ := op.CallerFrom(r.Context())
+		port, _ := transport.WebPortFrom(r.Context())
+		conn, ok := transport.ConnectionFrom(r.Context())
+		if ok {
+			conns <- conn
+		}
+		_, _ = fmt.Fprintf(w, "%s port=%d local=%t", name, port, c.Local)
+	})
+}
+
+// openWeb opens a web@koko channel naming port as koko web's.
+func openWeb(t *testing.T, c *ssh.Client, port int) (ssh.Channel, *bufio.Reader) {
+	t.Helper()
+	ch, reqs, err := c.OpenChannel(wire.ChannelWeb, wire.WebPayload(port))
+	if err != nil {
+		t.Fatalf("open %s: %v", wire.ChannelWeb, err)
+	}
+	go ssh.DiscardRequests(reqs)
+	t.Cleanup(func() { _ = ch.Close() })
+	return ch, bufio.NewReader(ch)
+}
+
+// A web@koko channel reaches the web front, not the API, with the Local
+// caller, the port koko web named, and the SSH connection it came on, which
+// the api@koko channels of that connection share.
+func TestWebChannelCarriesHTTPToTheWebFront(t *testing.T) {
+	conns := make(chan *transport.Connection, 4)
+	c, _ := dial(t, startTransport(t, whereFrom("api", conns), whereFrom("web", conns)))
+	ch, br := openWeb(t, c, 5656)
+	if got := get(t, ch, br); got != "web port=5656 local=true" {
+		t.Errorf("web@koko answered %q, want the web front with port 5656 and the Local caller", got)
+	}
+	api, reqs, err := c.OpenChannel(wire.ChannelAPI, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go ssh.DiscardRequests(reqs)
+	defer func() { _ = api.Close() }()
+	if got := get(t, api, bufio.NewReader(api)); got != "api port=0 local=true" {
+		t.Errorf("api@koko answered %q, want the API, with no koko web port", got)
+	}
+	if web, api := <-conns, <-conns; web != api {
+		t.Error("the web@koko and api@koko channels of one connection gave two connections")
+	}
+
+	other, _ := dial(t, startTransport(t, whoAmI, whereFrom("web", conns)))
+	ch, br = openWeb(t, other, 5656)
+	get(t, ch, br)
+	first := <-conns
+	select {
+	case <-first.Context().Done():
+		t.Fatal("the connection's context ended while it was open")
+	default:
+	}
+	_ = other.Close()
+	select {
+	case <-first.Context().Done():
+	case <-time.After(5 * time.Second):
+		t.Error("the connection's context did not end when the connection closed")
+	}
+}
+
+// A web@koko channel that does not name koko web's port is refused when it
+// opens, so the web front never answers without the port its Host header
+// guard needs.
+func TestWebChannelWithoutItsPortIsRefused(t *testing.T) {
+	c, _ := dial(t, startSocket(t, whoAmI))
+	for name, payload := range map[string][]byte{
+		"none":       nil,
+		"short":      {0, 0, 0x16},
+		"long":       append(wire.WebPayload(5656), 0),
+		"port 0":     wire.WebPayload(0),
+		"port 65536": {0, 1, 0, 0},
+	} {
+		_, _, err := c.OpenChannel(wire.ChannelWeb, payload)
+		oce, ok := errors.AsType[*ssh.OpenChannelError](err)
+		if !ok || oce.Reason != ssh.ConnectionFailed || !strings.Contains(oce.Message, "port") {
+			t.Errorf("%s: open %s = %v, want a refusal naming the port", name, wire.ChannelWeb, err)
+		}
+	}
 }

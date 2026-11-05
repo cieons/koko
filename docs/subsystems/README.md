@@ -17,6 +17,7 @@ ADR; a proposed change lives in its issue or PR.
 | The resumable stream: the byte stream beneath a Tunnel, its frames, offset exchange and replay buffer | [resumable-stream.md](resumable-stream.md) |
 | Initialisation: the Owner, the koko server's own keys and the Server Address, and what answers before it | [initialisation.md](initialisation.md) |
 | Join Codes: the `koko_` string, issuing them, device names, and the hash kept of each | [join-codes.md](join-codes.md) |
+| `koko web` and the web front: the listener, the `web@koko` channel, the Host guard, the token and the cookie, the port-owner lookup | [web-front.md](web-front.md) |
 
 ## Maintaining a reference
 

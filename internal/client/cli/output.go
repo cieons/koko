@@ -25,6 +25,8 @@ const (
 	codeServerUnreachable = "server_unreachable"
 	// codeUnsupportedPlatform: the command does not run on this OS.
 	codeUnsupportedPlatform = "unsupported_platform"
+	// codePortTaken: another process holds the port the command listens on.
+	codePortTaken = "port_taken"
 )
 
 // cliCodes lists the CLI's own codes, for `koko skill` and for the test that
@@ -34,6 +36,7 @@ var cliCodes = []string{
 	codeNotJoined,
 	codeServerUnreachable,
 	codeUnsupportedPlatform,
+	codePortTaken,
 }
 
 // The exit statuses, part of the CLI's contract: new ones may be added, and

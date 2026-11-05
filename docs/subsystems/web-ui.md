@@ -3,7 +3,7 @@
 How the web UI is built, embedded and typed. It is a React and TypeScript
 single-page app in [`web/`](../../web), built by Vite and never committed
 ([ADR 0023](../adr/0023-the-web-ui-is-react-built-by-make-and-never-committed.md)).
-Serving it on `web@koko` is the web front's job.
+Serving it on `web@koko` is the [web front](web-front.md)'s job.
 
 ## Toolchain
 

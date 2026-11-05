@@ -15,10 +15,14 @@ UI's TypeScript types are generated from them
   connection on it is the Local caller, acting as the Owner
   ([ADR 0008](../adr/0008-local-callers-act-as-the-owner.md)). Source:
   [`transport.ListenSocket`](../../internal/server/transport/transport.go).
-- **Channels.** An `api@koko` channel carries HTTP/1.1. Any other channel type
-  is refused with `unknown channel type`. The transport attaches the
-  connection's caller to every request (`op.WithCaller`); the API refuses a
-  request without one.
+- **Channels.** An `api@koko` channel carries HTTP/1.1 to the API. A
+  `web@koko` channel carries one browser connection of `koko web` to the web
+  front, which asks for its cookie before it hands a call to the API
+  ([`koko web` and the web front](web-front.md)). Any other channel type is
+  refused with `unknown channel type`. The transport attaches the
+  connection's caller, and the connection itself, to every request
+  (`op.WithCaller`, `transport.ConnectionFrom`); the API refuses a request
+  without a caller.
 - **One channel, many calls.** A channel carries any number of calls in turn
   (HTTP keep-alive). The CLI's [`apiclient`](../../internal/client/apiclient/apiclient.go)
   reuses an idle channel and opens another only for a concurrent call.

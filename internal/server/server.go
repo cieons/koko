@@ -1,8 +1,9 @@
 // Package server is the koko server process: what `koko server run`
 // dispatches into. It opens the store, loads the Root Key and opens the
 // koko server's own keys with it, registers every area's operations and
-// serves them on the Unix socket. It also serves the server area's
-// operations, such as initialisation, which act on the process itself.
+// serves them, and the web front, on the Unix socket. It also serves the
+// server area's operations, such as initialisation, which act on the process
+// itself.
 //
 // The packages under internal/server are the server-only group: no client
 // package imports them (docs/subsystems/code-layout.md).
@@ -25,6 +26,7 @@ import (
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/server/transport"
 	"github.com/cieons/koko/internal/server/user"
+	"github.com/cieons/koko/internal/server/web"
 	"github.com/cieons/koko/internal/server/webui"
 	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/wire"
@@ -103,7 +105,11 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	device.Register(a, issuer)
 	user.Register(a, issuer.Issue)
 	registerServer(a, key, issuer)
-	t := transport.New(a, log)
+	// The web area's front holds the runs of koko web, so it registers its
+	// operation itself.
+	front := web.New(a, st, key, clock, log)
+	front.Register(a)
+	t := transport.New(a, front, log)
 	socket := cmp.Or(cfg.SocketPath, wire.SocketPath)
 	if err := t.ListenSocket(ctx, socket); err != nil {
 		return nil, errors.Join(err, t.Close(), st.Close())

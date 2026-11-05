@@ -1,5 +1,5 @@
 // Package serverconn reaches the koko server. All CLI traffic opens its
-// channels (api@koko now; web@koko and tunnel@koko later) through one
+// channels (api@koko and web@koko now; tunnel@koko later) through one
 // interface, Conn. DialSocket implements it over the Unix socket as the Local
 // caller; a direct Device Connection and the Device Mux implement it later,
 // so commands written against Conn do not change.
@@ -18,8 +18,11 @@ import (
 
 // Conn is one way to the koko server.
 type Conn interface {
-	// OpenChannel opens a channel of the given type, such as wire.ChannelAPI.
-	OpenChannel(ctx context.Context, kind string) (io.ReadWriteCloser, error)
+	// OpenChannel opens a channel of the given type, such as wire.ChannelAPI,
+	// with its open payload, nil for none.
+	OpenChannel(ctx context.Context, kind string, payload []byte) (io.ReadWriteCloser, error)
+	// Wait blocks until the connection has ended, and returns why.
+	Wait() error
 	// Close ends the connection and every channel on it.
 	Close() error
 }
@@ -58,7 +61,7 @@ type sshConn struct {
 
 // OpenChannel opens a channel, or gives up when ctx ends; a channel the koko
 // server grants after that is closed at once.
-func (c sshConn) OpenChannel(ctx context.Context, kind string) (io.ReadWriteCloser, error) {
+func (c sshConn) OpenChannel(ctx context.Context, kind string, payload []byte) (io.ReadWriteCloser, error) {
 	type opened struct {
 		ch   ssh.Channel
 		reqs <-chan *ssh.Request
@@ -66,7 +69,7 @@ func (c sshConn) OpenChannel(ctx context.Context, kind string) (io.ReadWriteClos
 	}
 	done := make(chan opened, 1)
 	go func() {
-		ch, reqs, err := c.client.OpenChannel(kind, nil)
+		ch, reqs, err := c.client.OpenChannel(kind, payload)
 		done <- opened{ch, reqs, err}
 	}()
 	select {
@@ -85,6 +88,10 @@ func (c sshConn) OpenChannel(ctx context.Context, kind string) (io.ReadWriteClos
 		}()
 		return nil, fmt.Errorf("open %s channel: %w", kind, ctx.Err())
 	}
+}
+
+func (c sshConn) Wait() error {
+	return c.client.Wait()
 }
 
 func (c sshConn) Close() error {

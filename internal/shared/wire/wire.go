@@ -4,6 +4,8 @@
 package wire
 
 import (
+	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 )
@@ -21,6 +23,31 @@ const Version = "SSH-2.0-koko"
 // ChannelAPI is the channel type that carries API calls: HTTP/1.1 requests in
 // turn, kept alive between calls, so one channel serves a command's calls.
 const ChannelAPI = "api@koko"
+
+// ChannelWeb is the channel type that carries one browser connection koko web
+// forwards: HTTP/1.1 to the koko server's web front, which asks for its
+// cookie. Its open payload is WebPayload.
+const ChannelWeb = "web@koko"
+
+// WebPayload is the open payload of a web@koko channel: the port koko web
+// listens on, on 127.0.0.1, as an SSH uint32 (4 bytes, big-endian). The web
+// front answers only a Host header that names it.
+func WebPayload(port int) []byte {
+	return binary.BigEndian.AppendUint32(nil, uint32(port))
+}
+
+// ParseWebPayload returns the port a web@koko channel's open payload names,
+// refusing anything but a TCP port in exactly 4 bytes.
+func ParseWebPayload(b []byte) (int, error) {
+	if len(b) != 4 {
+		return 0, errors.New("a web@koko channel names the port koko web listens on, in 4 bytes")
+	}
+	port := binary.BigEndian.Uint32(b)
+	if port < 1 || port > 65535 {
+		return 0, errors.New("a web@koko channel names the port koko web listens on, from 1 to 65535")
+	}
+	return int(port), nil
+}
 
 // Conn turns a channel into a net.Conn for net/http, which needs deadlines a
 // channel lacks: it copies the channel's bytes through net.Pipe. Closing either

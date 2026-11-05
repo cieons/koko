@@ -14,8 +14,8 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
-| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants and channel adapter (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`); later Attribute values, the port-owner lookup | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`), the embedded web UI (`webui`), the Host connector (`hostconn`); later the Gateway, installer | client |
+| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants and channel adapter (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`); later Attribute values | server, client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `web`: the web front), the embedded web UI (`webui`), the Host connector (`hostconn`); later the Gateway, installer | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`); later the Device Mux, tunnel, ssh_config and device files | server |
 
 Only [`cmd/koko`](../../cmd/koko) and the S1 harness
@@ -55,6 +55,9 @@ area package of its own. An area whose operations need what the process
 loaded takes it in its `Register`, which [`server.Start`](../../internal/server/server.go)
 calls after the `areas` list: `device` and `user` take the Join Code issuer,
 which reads the host key with the Root Key ([Join Codes](join-codes.md#issuing)).
+The `web` area's front holds the runs of `koko web` in memory and reads the
+koko server's clock, so `server.Start` makes it and it registers its own
+operation (`web.Front.Register`).
 
 Error codes every area shares (`invalid_request`, `unknown_field`,
 `invalid_name`, `name_taken`, ...) are in `commonCodes`; an area adds a code of
@@ -107,13 +110,13 @@ its own only when an agent would act on it differently.
 13. **Platform-specific code** sits behind a small per-OS interface selected
     by build tags (`_linux.go`, `_darwin.go`, `_windows.go` or a `//go:build`
     line), never inline: the Device Mux socket and its same-user check, the
-    route-change watch, the port-owner lookup, file permissions, the terminal
-    (`golang.org/x/term` already splits it per OS, Windows included though
-    untested until P1, so koko adds no files of its own), and signal
-    forwarding. A ticket that adds one writes the Linux and macOS
-    implementations the specs ask for, plus a Windows file that compiles and
-    returns a "not supported on Windows" error. `make cross` compiles
-    `windows/amd64` (compile only; a Windows CLI is P1). The server group runs
+    route-change watch, the port-owner lookup, opening a browser, file
+    permissions, the terminal (`golang.org/x/term` already splits it per OS,
+    Windows included though untested until P1, so koko adds no files of its
+    own), and signal forwarding. A ticket that adds one writes the Linux and
+    macOS implementations the specs ask for, plus a Windows file that
+    compiles and returns a "not supported on Windows" error. `make cross`
+    compiles `windows/amd64` (compile only; a Windows CLI is P1). The server group runs
     on Linux only (and on macOS in tests), so it needs no per-OS files;
     `cmd/koko`'s `server_linux.go` and `server_other.go` are the pattern.
 
@@ -150,6 +153,8 @@ none. The options `harness.NoInit()`, `harness.DataDir(dir)` and
 directory. The koko server's clock stands still at the second `Start` began
 until `h.Advance(d)` moves it, so a test moves time, such as past a Join
 Code's 15 minutes, and never waits; `h.Now()` reads it.
+`h.Background(env, args...)` runs a command that runs until it is stopped,
+such as `koko web`, with `WaitStdout`, `Stop` (as Ctrl-C) and `Wait`.
 [`harness.Golden`](../../internal/harness/golden.go)
 compares output with `testdata/<name>` after replacing each record id with a
 numbered placeholder (`"space_<1>"`), each Join Code with `koko_<code>` and
