@@ -64,9 +64,24 @@ func (l helpList) Human(w io.Writer) error {
 		_, _ = fmt.Fprintf(tw, "  %s\t%s\n", strings.Join(args, " "), c.Summary)
 	}
 	_, _ = fmt.Fprintln(tw)
-	_, _ = fmt.Fprintln(tw, "Every command takes --json. Run koko help <command> for its flags,")
+	_, _ = fmt.Fprintf(tw, "Every command %stakes --json. Run koko help <command> for its flags,\n", butRemote(l, ""))
 	_, _ = fmt.Fprintln(tw, "and koko skill for the reference for agents.")
 	return tw.Flush()
+}
+
+// butRemote names the commands of cs that run a remote command, which take
+// no --json, each between quote, as "but koko exec ", or "" for none.
+func butRemote(cs []commandJSON, quote string) string {
+	var remote []string
+	for _, c := range cs {
+		if c.remote {
+			remote = append(remote, quote+"koko "+c.Command+quote)
+		}
+	}
+	if len(remote) == 0 {
+		return ""
+	}
+	return "but " + strings.Join(remote, " and ") + " "
 }
 
 // help writes one command in full, for people.
@@ -84,11 +99,16 @@ func (c commandJSON) help(w io.Writer) error {
 			_, _ = fmt.Fprintf(tw, "\n%s is one of %s.\n", a.Arg, strings.Join(*a.Choices, ", "))
 		}
 	}
-	_, _ = fmt.Fprintln(tw, "\nFlags:")
-	for _, f := range c.Flags {
-		_, _ = fmt.Fprintf(tw, "  %s\t%s%s\n", f.Flag, f.Summary, f.details())
+	if c.remote {
+		_, _ = fmt.Fprintf(tw, "\nIt takes no flag, not even --json: every word after %s is the command's, as typed,\n"+
+			"joined with spaces for the Host Account's shell, as ssh joins them.\n", c.Args[len(c.Args)-2].Arg)
+	} else {
+		_, _ = fmt.Fprintln(tw, "\nFlags:")
+		for _, f := range c.Flags {
+			_, _ = fmt.Fprintf(tw, "  %s\t%s%s\n", f.Flag, f.Summary, f.details())
+		}
+		_, _ = fmt.Fprintf(tw, "  --json\tPrint the result as JSON\n")
 	}
-	_, _ = fmt.Fprintf(tw, "  --json\tPrint the result as JSON\n")
 	if c.Filters != nil {
 		var fields []string
 		for _, k := range *c.Filters {

@@ -23,7 +23,9 @@ UI's TypeScript types are generated from them
 - **Channels.** On either way in, an `api@koko` channel carries HTTP/1.1 to
   the API. A `web@koko` channel carries one browser connection of `koko web`
   to the web front, which asks for its cookie before it hands a call to the
-  API ([`koko web` and the web front](web-front.md)). Any other channel type
+  API ([`koko web` and the web front](web-front.md)). A `tunnel@koko`
+  channel carries one SSH Session to the Gateway, which the transport hands
+  it with the connection ([the Gateway](gateway.md)). Any other channel type
   is refused with `unknown channel type`. The transport attaches the
   connection's caller, and the connection itself, to every request
   (`op.WithCaller`, `transport.ConnectionFrom`); the API refuses a request

@@ -38,6 +38,9 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 		return nil, usagef("give a command: koko <noun> <verb>, such as koko space ls; koko help lists them")
 	}
 	cmd, path, early, rest := locate(tree, argv)
+	if cmd != nil && cmd.RemoteCommand {
+		return parseRemote(cmd, early, rest)
+	}
 	if slices.Contains(early, "--help") {
 		return nil, noHelpFlag(path)
 	}
@@ -173,6 +176,38 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 		}
 		p.flags[f.Name] = f.Default
 	}
+	return p, nil
+}
+
+// parseRemote reads the command line of a command with RemoteCommand: its
+// arguments before the last, none of them a flag, then every word left, as
+// typed, as its last, where --help reaches the remote command. It refuses a
+// flag before the last argument, early among them, since such a command
+// takes none (--help pointing to koko help), and a missing or empty
+// argument; each refusal exits 255.
+func parseRemote(cmd *Command, early, rest []string) (*parsed, error) {
+	refuse := func(err error) (*parsed, error) {
+		return nil, &remoteFailure{err: err}
+	}
+	fixed := cmd.Args[:len(cmd.Args)-1]
+	before := slices.Concat(early, rest[:min(len(fixed), len(rest))])
+	if slices.Contains(before, "--help") {
+		return refuse(noHelpFlag(cmd.words()))
+	}
+	if slices.ContainsFunc(before, isFlag) {
+		return refuse(usagef("koko %s takes no flags, not even --json: %s", cmd.Path(), usageLine(cmd)))
+	}
+	if len(rest) <= len(fixed) {
+		return refuse(usagef("koko %s needs %s: %s", cmd.Path(), cmd.Args[len(rest)].usage(), usageLine(cmd)))
+	}
+	p := &parsed{cmd: cmd, args: map[string]string{}, qualified: map[string]qualifiedName{}, flags: map[string]string{}}
+	for i, a := range fixed {
+		if rest[i] == "" {
+			return refuse(usagef("%s cannot be empty in koko %s", a.usage(), cmd.Path()))
+		}
+		p.args[a.Name] = rest[i]
+	}
+	p.many = rest[len(fixed):]
 	return p, nil
 }
 

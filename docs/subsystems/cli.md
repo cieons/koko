@@ -20,14 +20,19 @@ bare; each required, or optional after every required one, shown as
 (`ReadsSecret`), the risk tier (required),
 Owner-only, the API operation it calls and its `Run`, made with `action(f)`
 from a function returning the command's `--json` type, which is also its
-shape. Every command takes `--json`, which is not listed. The parser, `koko
-help`, `koko completion` and `koko skill` are all generated from the tree
+shape. Every command takes `--json`, which is not listed, except one with
+`RemoteCommand`, whose last argument is a command it runs on a Host as ssh
+does, `koko exec`; its `Run` is a `remoteAction`, returning the remote
+command's exit status. The parser, `koko help`, `koko completion` and `koko
+skill` are all generated from the tree
 ([below](#koko-skill-koko-help-and-koko-completion)), so a command added to
 it reaches all four; a command's `Run` gets the tree through its `Input`.
 [`tree_test.go`](../../internal/client/cli/tree_test.go) checks every entry: a
 tier, a summary, a unique path, sound arguments and flags (neither `--json`
 nor `--unset` listed, `--unset` only beside pairs, and many words only for
-the last argument, unqualified), and an operation that `api.Operations` lists.
+the last argument, unqualified), an operation that `api.Operations` lists,
+and for `RemoteCommand` many words last, no flags, pairs, filters, secret
+input or shape, and a `remoteAction`.
 
 ## The parser
 
@@ -67,6 +72,15 @@ value, by the key's type) is the command's, through `readFilters` and
 ([the record](record.md#filtering-and-sorting)) and refuse a bad one with
 exit 2 before any call. `filterTerms` lists the forms of a term, for `koko
 skill` and the refusals.
+
+A command with `RemoteCommand` ([`parseRemote`](../../internal/client/cli/parse.go))
+takes its arguments before the last as plain words, then every word left, as
+typed, as its last, flags, `--json` and `--help` included: `koko exec web1
+ls -l --json` runs `ls -l --json`. It refuses a flag anywhere before its
+last argument (`--help` pointing to `koko help exec`), and a missing or
+empty argument, with exit 255 rather than 2, so that a refusal never passes
+for the remote command's own status. `koko help` and `koko skill` say so in
+place of its flags, and leave it out of the commands that take `--json`.
 
 A command that reads a secret input (`ReadsSecret`, such as `secret add`)
 refuses an extra argument, and an unknown flag that does not start with
@@ -129,7 +143,11 @@ status. A command reaches the koko server only on its first `in.Call`, so
 `koko version` needs none.
 
 - **Exit statuses:** 0 success; 1 the operation failed; 2 the command line was
-  refused before any call. They never change meaning.
+  refused before any call. They never change meaning. A command with
+  `RemoteCommand`, `koko exec`, exits instead with its remote command's
+  status, and 255 when there is none or for every failure of its own, a
+  refused command line included, as ssh does ([`koko exec`](gateway.md#koko-exec)); its failures are always
+  `koko: <message>` lines, never the error object.
 - **stdout** gets the result only on success, rendered in full first, so it
   stays empty on failure. A command that runs until it is stopped, such as
   `koko web`, prints its result once, as soon as it is ready, and nothing
@@ -332,6 +350,7 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
 | `koko host move <host> <space>` | reversible | `host.move` | the Host in its new Space |
 | `koko host rm <host>` | irreversible | `host.remove` | the Host it deleted, as it was, its Services deleted with it |
 | `koko host enroll <host> [--password-stdin \| --key <file> \| --secret <space>/<secret>] [--host-key <fingerprint> \| --replace-host-key]` | irreversible | `host.enroll` | the Host, Managed, with its pinned `host_key` ([Enroll](enroll.md)) |
+| `koko exec <host> <command...>` | irreversible | none: it opens a `tunnel@koko` channel | none: the command's stdout, stderr and exit status ([`koko exec`](gateway.md#koko-exec)) |
 | `koko service add <host>/<service> [ports=<port>[/<protocol>],...] [<key>=<value>...] [--note-file <file\|->]` | reversible | `service.add` | the Service: `{"id", "name", "host", "ports": ["443/tcp", ...], "attributes": {...}, "note", "created_at", "updated_at"}` ([the record](record.md#a-service)) |
 | `koko service ls [<filter>...] [--sort <key>[.desc]]... [--with-note]` | read | `service.list` | an array of the Services on the Hosts the caller can see that match every filter term, by the sort keys and then by Host and name, without `"note"` unless `--with-note` |
 | `koko service show <host>/<service>` | read | `service.show` | the Service |

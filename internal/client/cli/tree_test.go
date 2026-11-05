@@ -43,6 +43,12 @@ func TestCommandTreeEntries(t *testing.T) {
 		if c.Filters != nil && c.Pairs {
 			t.Errorf("%s takes both filter terms and key=value pairs, which the parser cannot tell apart", path)
 		}
+		if c.RemoteCommand && (c.many() == nil || len(c.Flags) > 0 || c.Pairs || c.Unset || len(c.Filters) > 0 || c.ReadsSecret || c.Run.Shape() != nil) {
+			t.Errorf("%s runs a remote command, which takes the words after its other arguments as typed: it takes no flags, pairs, filters or secret, and prints nothing of its own", path)
+		}
+		if c.RemoteCommand != c.Run.remote {
+			t.Errorf("%s: a command runs a remote command exactly when its Run is a remoteAction, which exits 255 for koko's own failures", path)
+		}
 		var names []string
 		for i, a := range c.Args {
 			switch {

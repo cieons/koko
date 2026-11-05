@@ -14,9 +14,9 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
-| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the version and operations report, the channel adapter and how a join carries its secret (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`), the record's value rules: a Host's fields, a Service's ports, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`) | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `host`, `service`, `attr`, `secret`, `web`: the web front), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`); later the Gateway | client |
-| client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join, koko's ssh_config and known_hosts, and the Include line (`devicefiles`), the Device Mux and the client of its local protocol (`devicemux`); later the tunnel | server |
+| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the version and operations report, the channel adapter, how a join carries its secret and what a Tunnel's two ends agree on (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`), the record's value rules: a Host's fields, a Service's ports, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`) | server, client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `host`, `service`, `attr`, `secret`, `web`: the web front), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`), the Gateway (`gateway`) | client |
+| client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join, koko's ssh_config and known_hosts, and the Include line (`devicefiles`), the Device Mux and the client of its local protocol (`devicemux`), the device end of a Tunnel (`tunnel`) | server |
 
 Only [`cmd/koko`](../../cmd/koko) and the S1 harness
 ([`internal/harness`](../../internal/harness)) import both the server and the
@@ -80,6 +80,12 @@ operation (`web.Front.Register`).
 The device area also answers the TCP listener's join step
 ([`device.Authenticator`](../../internal/server/device/join.go)), which
 `server.Start` hands the transport ([the Device Connection](device-connection.md)).
+The Gateway is no area: it serves no operation but takes the transport's
+`tunnel@koko` channels, so `server.Start` makes it with the store, the Root
+Key and the timing-constants hook, hands it the transport
+(`transport.Server.HandleTunnels`), and closes it beside the transport,
+which ends a connection too stalled to take a Tunnel's close
+([the Gateway](gateway.md)).
 `server.Start` also makes the access-change signal
 ([`access.Signal`](../../internal/server/access/signal.go)) and subscribes
 the transport to it: an area whose operations withdraw access takes the
@@ -255,7 +261,8 @@ and `DropConns` break it as a network path or a slow PAM stack would.
 count its connections. It runs a session's exec request as sshd does,
 through `/bin/sh -c`, as a local process in the Host Account's home
 directory (`Home()`) with `HOME` set to it, its stdio on the channel, and
-sends the exit status; it refuses every other session request for now, and
+sends the exit status, or `exit-signal` when a signal ended the command; it
+refuses every other session request for now, and
 the ticket that needs a shell, a pty or a subsystem adds it, by addition like
 the harness. `AuthorizedKeys()` reads the Host Account's `authorized_keys`
 as it is. `sshhost.NewKey` makes ed25519, ECDSA and RSA keys for tests.

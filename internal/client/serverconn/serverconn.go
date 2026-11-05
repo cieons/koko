@@ -151,19 +151,9 @@ func (e *RevokedError) Error() string {
 // *HostKeyMismatchError, with ErrUnknownKey, with a *RevokedError, with a
 // *RefusedError, or with the error of a koko server it could not reach.
 func DialDevice(ctx context.Context, d Device) (Conn, error) {
-	pinned := func(_ string, _ net.Addr, key ssh.PublicKey) error {
-		if slices.ContainsFunc(d.HostKeys, func(k ssh.PublicKey) bool { return bytes.Equal(k.Marshal(), key.Marshal()) }) {
-			return nil
-		}
-		e := &HostKeyMismatchError{Address: d.Address, Presented: ssh.FingerprintSHA256(key)}
-		for _, k := range d.HostKeys {
-			e.Pinned = append(e.Pinned, ssh.FingerprintSHA256(k))
-		}
-		return e
-	}
 	var banner string
 	client, err := dialTCP(ctx, d.Address, &ssh.ClientConfig{
-		HostKeyCallback: pinned,
+		HostKeyCallback: Pinned(d.Address, d.HostKeys),
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(d.Key)},
 		AuthCallback: func(c *ssh.ClientAuthContext) (ssh.AuthMethod, error) {
 			switch {
@@ -189,6 +179,24 @@ func DialDevice(ctx context.Context, d Device) (Conn, error) {
 		return nil, err
 	}
 	return client, nil
+}
+
+// Pinned checks the host key the koko server at address presents against
+// the keys pinned for it, and accepts any of them; another fails with a
+// *HostKeyMismatchError. A Device Connection checks it before it
+// authenticates, and koko exec again inside its Tunnel, where the Gateway
+// presents the same key.
+func Pinned(address string, pinned []ssh.PublicKey) ssh.HostKeyCallback {
+	return func(_ string, _ net.Addr, key ssh.PublicKey) error {
+		if slices.ContainsFunc(pinned, func(k ssh.PublicKey) bool { return bytes.Equal(k.Marshal(), key.Marshal()) }) {
+			return nil
+		}
+		e := &HostKeyMismatchError{Address: address, Presented: ssh.FingerprintSHA256(key)}
+		for _, k := range pinned {
+			e.Pinned = append(e.Pinned, ssh.FingerprintSHA256(k))
+		}
+		return e
+	}
 }
 
 // Join opens a Device Connection to the koko server at address that makes

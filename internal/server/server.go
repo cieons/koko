@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/cieons/koko/internal/server/access"
@@ -23,6 +24,7 @@ import (
 	"github.com/cieons/koko/internal/server/deployment"
 	"github.com/cieons/koko/internal/server/device"
 	"github.com/cieons/koko/internal/server/enroll"
+	"github.com/cieons/koko/internal/server/gateway"
 	"github.com/cieons/koko/internal/server/host"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
@@ -101,6 +103,7 @@ type Config struct {
 type Server struct {
 	store     *store.Store
 	transport *transport.Server
+	gateway   *gateway.Gateway
 	tcp       *tcpListener
 	// api serves every operation the areas registered.
 	api *op.API
@@ -145,8 +148,12 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	// Each connection is reported every operation registered below.
 	report := func() wire.Report { return wire.Report{Version: version, Operations: a.Names()} }
 	t := transport.New(a, front, report, log)
+	// The Gateway takes every tunnel@koko channel; it opens the host key and
+	// the koko key with the Root Key, and logs in to Hosts.
+	gw := gateway.New(st, key, cfg.Timings, log)
+	t.HandleTunnels(gw)
 	tcp := &tcpListener{addr: cfg.Listen, transport: t, devices: device.NewAuthenticator(st, clock, log)}
-	srv := &Server{store: st, transport: t, tcp: tcp, api: a}
+	srv := &Server{store: st, transport: t, gateway: gw, tcp: tcp, api: a}
 	for _, register := range areas {
 		register(a)
 	}
@@ -200,9 +207,15 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	return srv, nil
 }
 
-// Close stops serving, waits for calls in flight to end, and closes the store.
+// Close stops serving, waits for calls in flight to end, ends every SSH
+// Session, and closes the store.
 func (s *Server) Close() error {
+	// The Gateway ends its SSH Sessions beside the transport's close, which
+	// ends a connection too stalled to take a Tunnel's close.
+	var closing sync.WaitGroup
+	closing.Go(s.gateway.Close)
 	err := s.transport.Close()
+	closing.Wait()
 	s.tcp.unbind()
 	return errors.Join(err, s.store.Close())
 }

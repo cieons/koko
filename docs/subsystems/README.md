@@ -18,6 +18,7 @@ ADR; a proposed change lives in its issue or PR.
 | The Host connector: logging in to a Host through its Relay, the pinned host key and connect retries | [host-connector.md](host-connector.md) |
 | Enroll: `koko host enroll`, its inputs, the host key it pins, the states, and the one line it adds to `authorized_keys` | [enroll.md](enroll.md) |
 | The resumable stream: the byte stream beneath a Tunnel, its frames, offset exchange and replay buffer | [resumable-stream.md](resumable-stream.md) |
+| The Gateway, the Tunnel and `koko exec`: the `tunnel@koko` channel, its open payload and Tunnel id, who may open an SSH Session and the refusals, the relay to the Host, the log lines, and `koko exec` | [gateway.md](gateway.md) |
 | Initialisation: the Owner, the koko server's own keys and the Server Address, what answers before it, and `server show` and `server set` after | [initialisation.md](initialisation.md) |
 | The installer: `koko server install`, the upgrade, `koko server uninstall`, the machine interface, the unit, the checks before any write, and the fake machine | [installer.md](installer.md) |
 | The release and `install.sh`: the assets and their names, `make dist`, the release workflow, and what `install.sh` checks before it runs the binary | [release.md](release.md) |

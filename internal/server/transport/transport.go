@@ -1,8 +1,9 @@
 // Package transport is the koko server's SSH server. Every way in is an SSH
 // connection carrying the same channels (ADR 0015): an api@koko channel is
 // handed to the API's HTTP handler and a web@koko channel to the web front's,
-// each request with the connection's caller and the connection itself, and
-// any other channel type is refused. Each connection is sent the koko
+// each request with the connection's caller and the connection itself; a
+// tunnel@koko channel goes to the Gateway (Tunnels), and any other channel
+// type is refused. Each connection is sent the koko
 // server's version and operations report once it has authenticated, before
 // any channel is served (wire.RequestReport).
 //
@@ -80,6 +81,14 @@ const joinRefused = "koko: the Join Code is invalid or expired.\n"
 // of the Device Session it authenticated as.
 const deviceSessionExt = "koko-device-session"
 
+// Tunnels takes the tunnel@koko channels: the Gateway.
+type Tunnels interface {
+	// Open takes one tunnel@koko channel the connection c asks for: it
+	// accepts or rejects it, and returns without waiting for the Tunnel,
+	// which outlives the connection when it Resumes elsewhere.
+	Open(c *Connection, nch ssh.NewChannel)
+}
+
 // Server accepts SSH connections and serves their channels.
 type Server struct {
 	log *slog.Logger
@@ -88,6 +97,9 @@ type Server struct {
 	// report returns the version and operations report each connection is
 	// sent.
 	report func() wire.Report
+	// tunnels takes the tunnel@koko channels; nil refuses them as an
+	// unknown channel type. HandleTunnels sets it before any way in opens.
+	tunnels Tunnels
 
 	mu        sync.Mutex
 	closed    bool
@@ -119,6 +131,13 @@ func New(api, web http.Handler, report func() wire.Report, log *slog.Logger) *Se
 	return s
 }
 
+// HandleTunnels hands every tunnel@koko channel to t, the Gateway. Call it
+// before ListenSocket and ServeTCP; without it, those channels are refused
+// as an unknown channel type.
+func (s *Server) HandleTunnels(t Tunnels) {
+	s.tunnels = t
+}
+
 // Connection is one SSH connection to the koko server, as the requests on its
 // channels see it.
 type Connection struct {
@@ -139,6 +158,17 @@ type Connection struct {
 // Context returns a context that ends when the connection closes.
 func (c *Connection) Context() context.Context {
 	return c.ctx
+}
+
+// Caller returns who the connection authenticated as: the Local caller or a
+// Device Session.
+func (c *Connection) Caller() op.Caller {
+	return c.caller
+}
+
+// RemoteAddr returns the address the connection came from.
+func (c *Connection) RemoteAddr() net.Addr {
+	return c.ssh.RemoteAddr()
 }
 
 // callState records that the channel cc of the connection began a call
@@ -343,19 +373,22 @@ func (s *Server) serve(nc net.Conn, w wayIn) {
 	s.wg.Go(func() { ssh.DiscardRequests(reqs) })
 	for nch := range chans {
 		cc := &callerConn{caller: caller, conn: connection}
+		kind := nch.ChannelType()
 		var dest *channelServer
-		switch nch.ChannelType() {
-		case wire.ChannelAPI:
+		switch {
+		case kind == wire.ChannelAPI:
 			dest = s.api
-		case wire.ChannelWeb:
+		case kind == wire.ChannelWeb:
 			port, err := wire.ParseWebPayload(nch.ExtraData())
 			if err != nil {
 				_ = nch.Reject(ssh.ConnectionFailed, err.Error())
 				continue
 			}
 			dest, cc.webPort = s.web, port
+		case kind == wire.ChannelTunnel && s.tunnels != nil:
+			// The Gateway takes it, below.
 		default:
-			_ = nch.Reject(ssh.UnknownChannelType, fmt.Sprintf("koko serves no %q channel", nch.ChannelType()))
+			_ = nch.Reject(ssh.UnknownChannelType, fmt.Sprintf("koko serves no %q channel", kind))
 			continue
 		}
 		if caller.DeviceSession != "" {
@@ -364,6 +397,10 @@ func (s *Server) serve(nc net.Conn, w wayIn) {
 			if err := w.devices.Used(ctx, caller.DeviceSession); err != nil {
 				s.log.Error("record a Device Session's use", "device_session", caller.DeviceSession, "err", err)
 			}
+		}
+		if kind == wire.ChannelTunnel {
+			s.tunnels.Open(connection, nch)
+			continue
 		}
 		ch, chReqs, err := nch.Accept()
 		if err != nil {

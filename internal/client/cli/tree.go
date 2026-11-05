@@ -46,6 +46,14 @@ type Command struct {
 	// line does not expect is refused without being repeated, since it may
 	// be the secret written where an argument goes.
 	ReadsSecret bool
+	// RemoteCommand says the command's last argument is a command it runs on
+	// a Host, as ssh does, as koko exec does: that argument takes Many
+	// words, every word after the arguments before it, as typed, flags
+	// included, so the command takes no flag, not even --json; and every
+	// failure of koko's own, a refused command line included, exits 255
+	// (exitRemote), so that it does not pass for the remote command's own
+	// status. Its Run is a remoteAction.
+	RemoteCommand bool
 	// Tier is the command's risk tier (ADR 0019). It is required.
 	Tier Tier
 	// OwnerOnly says only the Owner may run the command, for help and koko
@@ -153,6 +161,9 @@ type Result interface {
 type Action struct {
 	run   func(ctx context.Context, in *Input) (Result, error)
 	shape reflect.Type
+	// remote says remoteAction made it, as a command with RemoteCommand
+	// needs.
+	remote bool
 }
 
 // Shape is the type of the command's --json, or nil for a command that prints
@@ -193,6 +204,22 @@ func quietAction(run func(ctx context.Context, in *Input) error) Action {
 	}}
 }
 
+// remoteAction makes the Action of a command with RemoteCommand: run returns
+// the remote command's exit status, which the command exits with, having
+// printed nothing of its own; a failure exits 255.
+func remoteAction(run func(ctx context.Context, in *Input) (status int, err error)) Action {
+	return Action{remote: true, run: func(ctx context.Context, in *Input) (Result, error) {
+		status, err := run(ctx, in)
+		switch {
+		case err != nil:
+			return nil, &remoteFailure{err: err}
+		case status != exitOK:
+			return nil, remoteStatus(status)
+		}
+		return nil, nil
+	}}
+}
+
 // commands lists every area's commands; an area's first ticket adds its line.
 var commands = [][]Command{
 	serverCommands,
@@ -209,6 +236,7 @@ var commands = [][]Command{
 	enrollCommands,
 	serviceCommands,
 	skillCommands,
+	execCommands,
 }
 
 // Tree returns every command.

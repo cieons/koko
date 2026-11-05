@@ -95,6 +95,10 @@ type commandJSON struct {
 
 	// tier is Tier's, to order and group by.
 	tier Tier
+	// remote says the command runs a remote command (RemoteCommand): it
+	// takes no flag, not even --json, and every word after its other
+	// arguments is that command's.
+	remote bool
 	// longer are the paths of the longer commands this one's path starts,
 	// which koko help names beside it.
 	longer []string
@@ -205,6 +209,7 @@ func commandOf(c *Command) commandJSON {
 		Summary:   c.Summary,
 		Tier:      c.Tier.String(),
 		tier:      c.Tier,
+		remote:    c.RemoteCommand,
 		OwnerOnly: c.OwnerOnly,
 		Args:      []argJSON{},
 		Flags:     []flagJSON{},
@@ -334,8 +339,17 @@ func (s skillJSON) Human(w io.Writer) error {
 	p("  was not given; without a terminal it fails at once with exit status %d, naming the flag or stdin\n", exitRefused)
 	p("  form. A Secret value is never an argument.\n")
 	p("- A flag not given takes its `KOKO_*` variable, where it lists one, then its default.\n")
-	p("- Every command takes `--json`. On success stdout holds the result; on failure stdout is empty and\n")
-	p("  stderr holds the error, with `--json` as `{\"error\": {\"code\": ..., \"message\": ...}}`. A refused\n")
+	for _, c := range s.Commands {
+		if c.remote {
+			p("- `%s` runs one command on a Host as ssh does: every word after\n", c.Usage)
+			p("  `%s` is the command's, as typed, flags included, joined with spaces for the Host Account's\n", c.Args[len(c.Args)-2].Arg)
+			p("  shell. It takes no flag, not even `--json`, passes stdin, stdout and stderr through, and exits\n")
+			p("  with the command's status, or %d when there is none or koko itself failed.\n", exitRemote)
+		}
+	}
+	p("- Every command %stakes `--json`. On success stdout holds the result; on\n", butRemote(s.Commands, "`"))
+	p("  failure stdout is empty and stderr holds the error, with `--json` as\n")
+	p("  `{\"error\": {\"code\": ..., \"message\": ...}}`. A refused\n")
 	p("  batch, such as several Hosts on stdin, adds `\"items\"`, each `{\"index\", \"code\", \"message\"}`:\n")
 	p("  an item at fault, by its place in the batch.\n")
 	p("- A list prints a bare JSON array of every item, a write the record it made or changed, and every\n")

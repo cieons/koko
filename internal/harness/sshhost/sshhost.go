@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -442,7 +443,8 @@ func (h *Host) session(nch ssh.NewChannel) {
 // exec runs command as sshd runs an exec request: through the Host
 // Account's shell, here /bin/sh, as a local process in the Host Account's
 // home directory with HOME set to it, its stdin, stdout and stderr on the
-// channel. It then sends the command's exit status and closes the channel.
+// channel. It then sends the command's exit status, or the signal that ended
+// it, and closes the channel.
 func (h *Host) exec(ch ssh.Channel, command string) {
 	defer func() { _ = ch.Close() }()
 	cmd := exec.CommandContext(h.t.Context(), "/bin/sh", "-c", command)
@@ -467,11 +469,38 @@ func (h *Host) exec(ch ssh.Channel, command string) {
 	status := 0
 	if err := cmd.Wait(); err != nil {
 		status = 255
-		if ee, ok := errors.AsType[*exec.ExitError](err); ok && ee.ExitCode() >= 0 {
-			status = ee.ExitCode()
+		if ee, ok := errors.AsType[*exec.ExitError](err); ok {
+			if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() && signalNames[ws.Signal()] != "" {
+				sendExitSignal(ch, signalNames[ws.Signal()])
+				return
+			}
+			if ee.ExitCode() >= 0 {
+				status = ee.ExitCode()
+			}
 		}
 	}
 	sendExitStatus(ch, status)
+}
+
+// signalNames are the names sshd gives the signals a test sends a command,
+// without their "SIG". Another signal is told as the exit status 255.
+var signalNames = map[syscall.Signal]string{
+	syscall.SIGHUP:  "HUP",
+	syscall.SIGINT:  "INT",
+	syscall.SIGKILL: "KILL",
+	syscall.SIGTERM: "TERM",
+}
+
+// sendExitSignal tells the client that the signal named name ended an exec
+// request's command, as sshd does in place of its exit status.
+func sendExitSignal(ch ssh.Channel, name string) {
+	payload := ssh.Marshal(struct {
+		Signal     string
+		CoreDumped bool
+		Error      string
+		Lang       string
+	}{Signal: name})
+	_, _ = ch.SendRequest("exit-signal", false, payload)
 }
 
 // sendExitStatus tells the client an exec request's exit status, as sshd

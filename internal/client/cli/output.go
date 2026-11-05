@@ -61,6 +61,10 @@ const (
 	exitOK      = 0
 	exitFailed  = 1
 	exitRefused = 2
+	// exitRemote is every failure of koko's own in a command with
+	// RemoteCommand, such as koko exec, whose other statuses are the remote
+	// command's: 255, as ssh's.
+	exitRemote = 255
 )
 
 // exitStatuses are the exit statuses with what each means, for koko skill;
@@ -71,7 +75,27 @@ var exitStatuses = []exitStatusJSON{
 	{exitRefused, "the command line was refused before any call to the koko server, such as for an unknown flag, " +
 		"a bad filter term, a flag before the command path, JSON on stdin that does not parse or has an unknown field, " +
 		"or a secret input missing without a terminal"},
+	{exitRemote, "koko exec only, whose other statuses are the remote command's: koko itself failed, its command line " +
+		"included, or the remote command ended without an exit status, such as by a signal, as with ssh"},
 }
+
+// remoteStatus ends a command with RemoteCommand with its remote command's
+// exit status, having printed nothing of its own.
+type remoteStatus int
+
+func (s remoteStatus) Error() string {
+	return fmt.Sprintf("the remote command exited with status %d", int(s))
+}
+
+// remoteFailure is a failure of koko's own in a command with RemoteCommand:
+// it is printed as any failure is, and exits 255.
+type remoteFailure struct {
+	err error
+}
+
+func (e *remoteFailure) Error() string { return e.err.Error() }
+
+func (e *remoteFailure) Unwrap() error { return e.err }
 
 // cliError is a failure the CLI reports with one of its own codes.
 type cliError struct {
@@ -124,7 +148,15 @@ func writeResult(stdout io.Writer, res Result, asJSON bool) error {
 
 // writeError prints err to stderr and returns the exit status it means.
 func writeError(stderr io.Writer, err error, asJSON bool) int {
+	if s, ok := errors.AsType[remoteStatus](err); ok {
+		return int(s)
+	}
 	status, e := classify(err)
+	if _, ok := errors.AsType[*remoteFailure](err); ok {
+		// A command with RemoteCommand takes no --json: its failures are
+		// lines.
+		status, asJSON = exitRemote, false
+	}
 	if asJSON {
 		var buf bytes.Buffer
 		_ = encodeJSON(&buf, api.ErrorResponse{Error: e})

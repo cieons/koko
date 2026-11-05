@@ -21,7 +21,7 @@ one-time code is
   name, the same across restarts. The Unix socket keeps its own key made at
   each start ([the API](api.md#the-way-in)).
 - **SSH** with the version string `SSH-2.0-koko`, carrying the socket's
-  channels, `api@koko` and `web@koko`, and refusing any other type
+  channels, `api@koko`, `web@koko` and `tunnel@koko`, and refusing any other type
   ([`transport.ServeTCP`](../../internal/server/transport/transport.go)).
   `web.start` answers only the Local caller, so the web front serves a
   Device Connection nothing yet.
@@ -200,8 +200,8 @@ describes them.
 ## Last used
 
 A Device Session is used each time a Device Connection it authenticated
-opens a channel (`api@koko` or `web@koko`): a command, a browser connection,
-`koko join`'s own call. A long-lived connection, such as the Device Mux's,
+opens a channel (`api@koko`, `web@koko` or `tunnel@koko`): a command, a
+browser connection, an SSH Session, `koko join`'s own call. A long-lived connection, such as the Device Mux's,
 counts only by what it opens, never by staying open. The transport tells the
 device area ([`device.Authenticator.Used`](../../internal/server/device/join.go)),
 which keeps the time to the minute: a use within a minute of the time it
