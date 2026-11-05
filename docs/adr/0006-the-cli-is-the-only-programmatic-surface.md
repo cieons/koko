@@ -15,6 +15,7 @@ API, for people, and is reached only through `koko web` (ADR 0012).
 ## Consequences
 
 Command names carry their risk (`koko host ls` versus `koko exec`), because
-agent harnesses allow or ask by command prefix. Output can be `--json`, never
-prompts, and leaves Secrets out unless a command exists to show one. Anything
-the web UI can do goes through the API, so the CLI can do it too.
+agent harnesses allow or ask by command prefix (ADR 0019). Output can be
+`--json`, a command never prompts without a terminal (ADR 0019), and output
+leaves Secrets out unless a command exists to show one. Anything the web UI
+can do goes through the API, so the CLI can do it too.
