@@ -14,8 +14,8 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
-| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants and channel adapter (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`); later Attribute values | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `web`: the web front), the embedded web UI (`webui`), the Host connector (`hostconn`); later the Gateway, installer | client |
+| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants and channel adapter (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`); later Attribute values | server, client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `web`: the web front), the embedded web UI (`webui`), the Host connector (`hostconn`), the installer (`installer`); later the Gateway | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`); later the Device Mux, tunnel, ssh_config and device files | server |
 
 Only [`cmd/koko`](../../cmd/koko) and the S1 harness
@@ -26,9 +26,11 @@ the harness from any package; only non-test dependencies count.
 `koko server run` dispatches into server code through
 [`cli.Runner.ServerRun`](../../internal/client/cli/cli.go), which `cmd/koko`
 sets in Linux builds only ([`server_linux.go`](../../cmd/koko/server_linux.go)).
-`koko server install` and `uninstall` will dispatch the same way, each through
-a `cli.Runner` field of its own. Every other command is a client command that
-reaches the koko server over the socket.
+`koko server install` dispatches the same way, through
+`cli.Runner.ServerInstall`, whose request, report and refusals are the shared
+[`install`](../../internal/shared/install/install.go) types; `uninstall` will
+take a field of its own. Every other command is a client command that reaches
+the koko server over the socket.
 
 ## Where an area adds its parts
 
@@ -131,7 +133,7 @@ apart.
 | --- | --- | --- |
 | The socket path | `server.Config.SocketPath`, `cli.Runner.SocketPath` | #27 |
 | The fake terminal | `cli.Runner.Terminal` | #28 |
-| The P0 timing constants | `hostconn.Connector.Timings`, a [`timing.Timings`](../../internal/shared/timing/timing.go), where a ticket that uses a new timing adds its constant and field | #32 |
+| The P0 timing constants | `hostconn.Connector.Timings` and `installer.Installer.Timings`, each a [`timing.Timings`](../../internal/shared/timing/timing.go), where a ticket that uses a new timing adds its constant and field | #32 |
 | The clock | `server.Config.Clock`, which every operation reads once per call through `op.Now`; the harness's `h.Now()` and `h.Advance(d)` | #36 |
 
 ## The S1 harness
@@ -157,11 +159,14 @@ Code's 15 minutes, and never waits; `h.Now()` reads it.
 such as `koko web`, with `WaitStdout`, `Stop` (as Ctrl-C) and `Wait`.
 [`harness.Golden`](../../internal/harness/golden.go)
 compares output with `testdata/<name>` after replacing each record id with a
-numbered placeholder (`"space_<1>"`), each Join Code with `koko_<code>` and
-each time with `<time>`; `go test -update` rewrites the files.
+numbered placeholder (`"space_<1>"`), each Join Code with `koko_<code>`,
+each SHA-256 fingerprint with `SHA256:<fingerprint>` and each time with
+`<time>`; `go test -update` rewrites the files.
 [`harness.ServerStart`](../../internal/harness/harness.go) is a
 `cli.Runner.ServerRun` for S1 tests of `koko server run`: the real start-up on
 a temporary socket, stopped at once if it starts.
+[`harness.NewMachine`](../../internal/harness/machine.go) is the fake machine
+of `koko server install`'s system seam ([the installer](installer.md#verifying)).
 
 ## The in-process Host
 

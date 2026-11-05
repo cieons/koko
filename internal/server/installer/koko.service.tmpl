@@ -1,0 +1,35 @@
+# The koko server. koko server install writes this file from the template in
+# the koko binary, and writes it again at every run, so that it always
+# matches the binary. Change a setting with a drop-in (systemctl edit koko),
+# whose Environment= lines override the KOKO_* ones below.
+[Unit]
+Description=koko server
+Documentation=https://github.com/cieons/koko
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+ExecStart={{.Binary}} server run
+Environment=KOKO_DATA_DIR={{.DataDir}}
+Environment=KOKO_LISTEN=:{{.Port}}
+Environment=KOKO_LOG_LEVEL=info
+# The Root Key's file is koko server run's default,
+# $CREDENTIALS_DIRECTORY/{{.Credential}}, which LoadCredential= makes.
+LoadCredential={{.Credential}}:{{.RootKeyFile}}
+User={{.User}}
+Group={{.User}}
+StateDirectory={{.StateDirectory}}
+StateDirectoryMode=0700
+RuntimeDirectory={{.RuntimeDirectory}}
+RuntimeDirectoryMode=0755
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

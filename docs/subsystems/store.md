@@ -79,6 +79,19 @@ before, instead of being replaced by a copy of the half-migrated database. A
 snapshot whose header cannot be read in that case is left alone, and `Open`
 refuses, naming it.
 
+## Reading it as it is
+
+[`store.Peek`](../../internal/server/store/peek.go) runs a function in a
+read-only transaction on `koko.db` as it is, for `koko server install`,
+which reads the record before the koko server runs and beside one that runs
+([the installer](installer.md#what-is-there-already)). It opens the file
+`mode=ro` and `query_only(1)`, with the busy timeout and none of the settings
+that would write, and `immutable=1` when there is no `koko.db-wal`: then
+nothing has the file open and it holds every commit, and SQLite takes no lock
+and makes no `-shm` or `-wal` file. It never creates the file or the data
+directory, migrates or snapshots, and calls nothing when there is no
+`koko.db` or one at `user_version` 0.
+
 ## Record ids
 
 [`store.NewID`](../../internal/server/store/id.go) makes a record's id: its
@@ -101,5 +114,9 @@ newer schema refused and left as it was, a failed step keeping the steps
 before it and the snapshot, upgrading again after going back, and an
 unreadable snapshot left alone. It also migrates every older schema of
 koko's own steps, which covers each step as it lands.
+[`peek_test.go`](../../internal/server/store/peek_test.go) shows `Peek`
+finding nothing without a database or in an empty one, reading an older
+schema beside the koko that holds it without migrating or snapshotting it,
+leaving no file in a stopped koko's data directory, and unable to write.
 [`schema_test.go`](../../internal/server/schema_test.go) shows the koko server
 refusing to start on a newer schema, with no socket opened.

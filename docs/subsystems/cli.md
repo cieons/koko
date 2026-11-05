@@ -108,9 +108,10 @@ status. A command reaches the koko server only on its first `in.Call`, so
   `not_joined` (no koko server joined and no socket on this machine),
   `server_unreachable` (the socket does not answer, or the connection could
   not carry the call, or ended under `koko web`), `unsupported_platform`
-  (`koko server run` outside Linux), `port_taken` (another process holds the
-  port `koko web` listens on), and `internal_error` for a failure it did not
-  expect.
+  (`koko server run` or `koko server install` outside Linux, or a machine
+  install cannot use), `port_taken` (another process holds the port `koko
+  web` or `koko server install` listens on), and `internal_error` for a
+  failure it did not expect.
 
 ## `--json`
 
@@ -147,6 +148,7 @@ one `koko join koko_...` line to paste on the new device.
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
 | `koko server run [--data-dir <dir>] [--root-key-file <file>] [--log-level <level>]` | irreversible | none | nothing on success |
+| `koko server install [--owner <user>] [--address <host[:port]>] [--port <port>]` | irreversible | `server.init` | `{"address", "host_key_fingerprint", "root_key_file", "root_key_id", "listen_port", "join_code"}`, the Join Code as `device add` prints it ([the installer](installer.md#what-it-prints)) |
 
 `koko server run` takes `--data-dir` (`KOKO_DATA_DIR`, default
 `/var/lib/koko`), `--root-key-file` (`KOKO_ROOT_KEY_FILE`, default

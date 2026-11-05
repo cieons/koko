@@ -18,6 +18,10 @@ var idPattern = regexp.MustCompile(`"([a-z]+)_[0-9a-hjkmnp-tv-z]{8}"`)
 // in a fixture.
 var codePattern = regexp.MustCompile(`koko_[a-z2-7]{32,}`)
 
+// fingerprintPattern matches a SHA-256 fingerprint as OpenSSH prints one,
+// of a key made at run time.
+var fingerprintPattern = regexp.MustCompile(`SHA256:[A-Za-z0-9+/]{43}`)
+
 // timePattern matches a time as koko prints one: RFC 3339 in UTC to the
 // second.
 var timePattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z`)
@@ -25,13 +29,15 @@ var timePattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z`)
 // Golden checks got against testdata/<name> in the test's package, after
 // replacing each distinct record id with a numbered placeholder in order of
 // first appearance ("space_<1>", "space_<2>"), since ids are random, each
-// Join Code with "koko_<code>" and each time with "<time>". With -update it
+// Join Code with "koko_<code>", each SHA-256 fingerprint with
+// "SHA256:<fingerprint>" and each time with "<time>". With -update it
 // rewrites the file instead. Name one file per command and case, such as
 // space-add.json.
 func Golden(t testing.TB, name, got string) {
 	t.Helper()
 	got = normalizeIDs(got)
 	got = codePattern.ReplaceAllString(got, "koko_<code>")
+	got = fingerprintPattern.ReplaceAllString(got, "SHA256:<fingerprint>")
 	got = timePattern.ReplaceAllString(got, "<time>")
 	path := filepath.Join("testdata", name)
 	if *update {

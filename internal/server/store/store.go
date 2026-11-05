@@ -27,11 +27,15 @@ const FileName = "koko.db"
 // syncs every commit, so a power cut never loses a write the koko server
 // reported done.
 var pragmas = []string{
-	"busy_timeout(5000)",
+	busyTimeout,
 	"journal_mode(WAL)",
 	"foreign_keys(1)",
 	"synchronous(FULL)",
 }
+
+// busyTimeout is how long a connection waits for another's lock, in
+// milliseconds, before it gives up with SQLITE_BUSY.
+const busyTimeout = "busy_timeout(5000)"
 
 // Store is an open koko.db: one pool of connections for writes, and one of
 // query-only connections for reads, which modernc's read-only transactions

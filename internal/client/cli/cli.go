@@ -23,6 +23,7 @@ import (
 	"github.com/cieons/koko/internal/client/apiclient"
 	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/install"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -33,6 +34,13 @@ type Runner struct {
 	// server (Linux), so that no client package imports a server package;
 	// where it is nil, `koko server run` refuses.
 	ServerRun func(ctx context.Context, s ServerSettings, log io.Writer) error
+
+	// ServerInstall installs, starts and initialises the koko server on this
+	// machine, for `koko server install`, calling initialise once the koko
+	// server's Unix socket is there. cmd/koko sets it in the builds that
+	// carry the koko server (Linux); where it is nil, `koko server install`
+	// refuses.
+	ServerInstall func(ctx context.Context, req install.Request, initialise install.Initialise) (install.Report, error)
 
 	// SocketPath is the socket-path hook, for tests only: empty means the
 	// fixed wire.SocketPath. No flag or environment variable sets it.

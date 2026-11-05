@@ -40,7 +40,9 @@ In one transaction, so that a refusal leaves the koko server as it was, it:
    host key made in step 3; a Server Address too long for a Join Code is
    refused here with `invalid_address`.
 
-No command calls it: `koko server install` (#38) does, and the S1 harness.
+No command of its own calls it: [`koko server install`](installer.md)
+does, once the koko service it started has opened its socket, and so does the
+S1 harness.
 
 ## Before initialisation
 

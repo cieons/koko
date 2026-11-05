@@ -7,12 +7,14 @@ import (
 	"github.com/cieons/koko/internal/shared/timing"
 )
 
-// The zero Timings is the product: each timing is the reach spec's constant.
+// The zero Timings is the product: each timing is the reach spec's constant,
+// or the one its ticket chose.
 func TestZeroTimingsAreTheProductsConstants(t *testing.T) {
 	got := timing.Timings{}.Resolve()
 	want := timing.Timings{
 		HostConnectAttempt: 10 * time.Second,
 		HostConnectWait:    time.Second,
+		InstallSocketWait:  30 * time.Second,
 	}
 	if got != want {
 		t.Errorf("Timings{}.Resolve() = %+v, want %+v", got, want)
@@ -25,6 +27,7 @@ func TestASetTimingReplacesOnlyItsConstant(t *testing.T) {
 	want := timing.Timings{
 		HostConnectAttempt: 10 * time.Second,
 		HostConnectWait:    time.Millisecond,
+		InstallSocketWait:  30 * time.Second,
 	}
 	if got != want {
 		t.Errorf("Resolve() = %+v, want %+v", got, want)
