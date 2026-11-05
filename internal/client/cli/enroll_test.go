@@ -279,9 +279,10 @@ func TestEnrollWithAnEncryptedKeyAsksForItsPassphrase(t *testing.T) {
 }
 
 // Enroll refuses before any call, with exit 2, a command line it cannot
-// carry out: no password or key and no terminal to ask on, two ways to log
-// in or to pin, a fingerprint that is not one, a key file it cannot read,
-// and a password that is empty once its line ending is dropped.
+// carry out: no password, key or Secret and no terminal to ask on, two ways
+// to log in or to pin, a fingerprint that is not one, a key file it cannot
+// read, a Secret named without its Space, and a password that is empty once
+// its line ending is dropped.
 func TestEnrollRefusesWhatItCannotUseBeforeAnyCall(t *testing.T) {
 	h := harness.Start(t)
 	host := sshhost.Start(t, sshhost.Password(hostPassword))
@@ -298,8 +299,12 @@ func TestEnrollRefusesWhatItCannotUseBeforeAnyCall(t *testing.T) {
 		args  []string
 		says  string
 	}{
-		{"no password and no terminal", hostPassword, nil, "--password-stdin or --key <file>"},
+		{"no password and no terminal", hostPassword, nil, "--password-stdin, --key <file> or --secret <space>/<secret>"},
 		{"both ways to log in", hostPassword, []string{"--password-stdin", "--key", key.path}, "give one of them"},
+		{"a password and a Secret", hostPassword, []string{"--password-stdin", "--secret", "ops/root-password"}, "give one of them"},
+		{"a key and a Secret", "", []string{"--key", key.path, "--secret", "ops/root-password"}, "give one of them"},
+		{"a Secret without its Space", "", []string{"--secret", "root-password"}, `--secret "root-password" is not <space>/<secret>`},
+		{"a Secret with an empty name", "", []string{"--secret", "ops/"}, "the <secret> is empty"},
 		{"both ways to pin", hostPassword, []string{"--password-stdin", "--host-key", fingerprint(host), "--replace-host-key"}, "give one of them"},
 		{"an MD5 fingerprint", hostPassword, []string{"--password-stdin", "--host-key", "MD5:16:27:ac:a5:76:28:2d:36:63:1b:56:4d:eb:df:a6:48"}, "SHA256:"},
 		{"a cut fingerprint", hostPassword, []string{"--password-stdin", "--host-key", fingerprint(host)[:20]}, "43 characters"},

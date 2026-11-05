@@ -19,6 +19,16 @@ func addEnrollable(f *fixture, target string) {
 		"account="+sshhost.Account).WantSuccess(f.t)
 }
 
+// addRootPassword stores enrollPassword as the Secret root-password in the
+// Space named spaceName, as the Local caller.
+func addRootPassword(f *fixture, spaceName string) {
+	f.t.Helper()
+	req := api.SecretAddRequest{Space: spaceName, Name: "root-password", Value: api.SecretValue(enrollPassword)}
+	if _, err := f.h.Call(api.SecretAdd, req); err != nil {
+		f.t.Fatalf("add %s/root-password: %v", spaceName, err)
+	}
+}
+
 var enrollRows = []row{
 	{
 		op:    api.HostEnroll,
@@ -27,5 +37,33 @@ var enrollRows = []row{
 			return api.HostEnrollRequest{Host: "web1", Password: api.EnrollInput(enrollPassword)}
 		},
 		want: hostAnswers,
+	},
+	{
+		op:   api.HostEnroll,
+		name: "with a Secret of the Host's Space",
+		setup: func(f *fixture, target string) {
+			addEnrollable(f, target)
+			addRootPassword(f, target)
+		},
+		request: func(target string) any {
+			return api.HostEnrollRequest{Host: "web1", Secret: &api.SecretRef{Space: target, Name: "root-password"}}
+		},
+		want: hostAnswers,
+	},
+	{
+		// The Secret is in dave's Personal Space, which only the Owner can
+		// act in: being able to act on the Host does not grant it.
+		op:   api.HostEnroll,
+		name: "with a Secret of a Space the caller cannot act in",
+		setup: func(f *fixture, target string) {
+			addEnrollable(f, target)
+			addRootPassword(f, "dave")
+		},
+		request: func(string) any {
+			return api.HostEnrollRequest{Host: "web1", Secret: &api.SecretRef{Space: "dave", Name: "root-password"}}
+		},
+		want: map[caller]answer{
+			ownerDevice: allowed, local: allowed, member: unseenSpace, personal: unseenSpace, outsider: unknown,
+		},
 	},
 }

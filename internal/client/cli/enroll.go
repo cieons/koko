@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/pem"
@@ -9,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 
@@ -25,6 +25,7 @@ var enrollCommands = []Command{
 		Flags: []Flag{
 			{Name: "password-stdin", Bool: true, Summary: "Read the Host Account's password from stdin"},
 			{Name: "key", Value: "file", Summary: "Log in with the private key in this file, asking for its passphrase if it is encrypted"},
+			{Name: "secret", Value: "space/secret", Summary: "Log in with the password or private key this Secret holds, which the koko server reads: the value never reaches this device"},
 			{Name: "host-key", Value: "fingerprint", Summary: "Accept and pin only the host key with this SHA256:... fingerprint"},
 			{Name: "replace-host-key", Bool: true, Summary: "Pin whatever host key the Host offers now, in place of the pinned one"},
 		},
@@ -59,10 +60,14 @@ func passwordInput(hostName string) SecretInput {
 	return SecretInput{
 		What:      "the password of " + hostName,
 		StdinFlag: "password-stdin",
-		Others:    []string{"--key <file>"},
+		Others:    []string{"--key <file>", "--secret <space>/<secret>"},
 		Max:       api.EnrollInputMaxSize,
 	}
 }
+
+// secretArg is how --secret names a Secret: <space>/<secret>, as every
+// command names one.
+var secretArg = Arg{Name: "secret", Qualifier: "space"}
 
 func hostEnroll(ctx context.Context, in *Input) (enrolledHost, error) {
 	hostName := in.Arg("host")
@@ -76,9 +81,24 @@ func hostEnroll(ctx context.Context, in *Input) (enrolledHost, error) {
 		}
 		req.HostKey = &fp
 	}
-	switch keyFile := in.Flag("key"); {
-	case keyFile != "" && in.Bool("password-stdin"):
-		return enrolledHost{}, usagef("--key and --password-stdin are two ways to log in to %s: give one of them", hostName)
+	var ways []string
+	for _, f := range []string{"password-stdin", "key", "secret"} {
+		if in.Flag(f) != "" {
+			ways = append(ways, "--"+f)
+		}
+	}
+	if len(ways) > 1 {
+		return enrolledHost{}, usagef("%s are each a way to log in to %s: give one of them", strings.Join(ways, " and "), hostName)
+	}
+	switch keyFile, secretName := in.Flag("key"), in.Flag("secret"); {
+	case secretName != "":
+		// The koko server reads the Secret, so its value never reaches
+		// this device.
+		q, err := secretArg.split(secretName)
+		if err != nil {
+			return enrolledHost{}, usagef("--secret %v", err)
+		}
+		req.Secret = &api.SecretRef{Space: q.qualifier, Name: q.name}
 	case keyFile != "":
 		key, err := readKey(ctx, in, keyFile)
 		if err != nil {
@@ -90,9 +110,8 @@ func hostEnroll(ctx context.Context, in *Input) (enrolledHost, error) {
 		if err != nil {
 			return enrolledHost{}, err
 		}
-		// A password piped in usually ends with the newline of echo, which
-		// no password typed at ssh's prompt can hold.
-		password = bytes.TrimSuffix(bytes.TrimSuffix(password, []byte("\n")), []byte("\r"))
+		// A password piped in usually ends with the newline of echo.
+		password = api.EnrollPassword(password)
 		if len(password) == 0 {
 			return enrolledHost{}, usagef("the password of %s cannot be empty: stdin holds only a line ending", hostName)
 		}

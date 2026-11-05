@@ -128,6 +128,22 @@ and only the Owner sees them and moves them out or deletes them.
 holds one, through [`secret.Holding`](../../internal/server/secret/secret.go)
 ([what a Space holds](access.md#what-a-space-holds)).
 
+## Enroll's read
+
+`koko host enroll <host> --secret <space>/<secret>` logs in to a Host with
+the password or private key a Secret holds; how Enroll tells them apart is
+[Enroll's](enroll.md#reading-a-secret). Only the name crosses the API, in
+`host.enroll`'s `secret`; the koko server reads the value through
+[`secret.Open`](../../internal/server/secret/open.go), which is
+`secret.show` without the API: the same access check on the Secret's Space,
+for the same caller, so the Secret's Space is checked apart from the Host's;
+the same refusals, `unknown_space` for a Space the caller cannot act in among
+them; and the value opened for its own record. No operation makes this
+read, so the value never reaches the device, and `secret.show` stays the one
+response that holds one. Enroll uses the value once, changes nothing in the
+Secret, and stores nothing it read. Its tests are Enroll's
+([Enroll](enroll.md#verifying)).
+
 ## Sealing
 
 `secret.add` seals the value with `RootKey.Seal` for the new Secret's id,

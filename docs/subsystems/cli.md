@@ -240,7 +240,7 @@ remove` says whether it deleted the User, freeing the name, or Removed them.
 | `koko host rename <host> <new-name>` | reversible | `host.rename` | the Host under its new name |
 | `koko host move <host> <space>` | reversible | `host.move` | the Host in its new Space |
 | `koko host rm <host>` | irreversible | `host.remove` | the Host it deleted, as it was |
-| `koko host enroll <host> [--password-stdin \| --key <file>] [--host-key <fingerprint> \| --replace-host-key]` | irreversible | `host.enroll` | the Host, Managed, with its pinned `host_key` ([Enroll](enroll.md)) |
+| `koko host enroll <host> [--password-stdin \| --key <file> \| --secret <space>/<secret>] [--host-key <fingerprint> \| --replace-host-key]` | irreversible | `host.enroll` | the Host, Managed, with its pinned `host_key` ([Enroll](enroll.md)) |
 | `koko attr ls` | read | `attr.list` | an array of every Preset, then every other key in use on what the caller can see: `{"key", "type", "values", "min", "preset", "in_use"}` ([the record](record.md#attributes-and-the-preset-attributes)) |
 
 `koko server run` takes `--data-dir` (`KOKO_DATA_DIR`, default

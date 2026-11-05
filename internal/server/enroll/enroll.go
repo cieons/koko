@@ -1,15 +1,17 @@
 // Package enroll is Enroll, the host.enroll operation: it makes a Registered
 // Host Managed (P0 spec: reach, ADR 0003). The koko server logs in to the
 // Host once as its Host Account with the password or private key the caller
-// supplies, never with the koko key, checks the host key the Host offers,
-// appends the koko key to the Host Account's authorized_keys and changes
-// nothing else there, then records the pin and the Managed state.
+// supplies, or that a Secret the caller can read holds, never with the koko
+// key, checks the host key the Host offers, appends the koko key to the Host
+// Account's authorized_keys and changes nothing else there, then records the
+// pin and the Managed state.
 //
 // The login runs before the write's transaction (op.HandlePrepared), so a
 // slow Host holds up no other write, and a dropped caller cancels nothing.
 package enroll
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -26,6 +28,7 @@ import (
 	"github.com/cieons/koko/internal/server/hostconn"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
+	"github.com/cieons/koko/internal/server/secret"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/record"
@@ -34,7 +37,7 @@ import (
 
 // enroller carries out host.enroll.
 type enroller struct {
-	// rootKey opens the koko key.
+	// rootKey opens the koko key and the Secrets that requests name.
 	rootKey   *seal.RootKey
 	connector hostconn.Connector
 	// addKey bounds the command that appends the koko key.
@@ -42,9 +45,10 @@ type enroller struct {
 	log    *slog.Logger
 }
 
-// Register adds host.enroll to the API. It opens the koko key with rootKey,
-// waits as timings say (the zero Timings is the product's), and logs each
-// Enroll, each re-pin and each failure to log.
+// Register adds host.enroll to the API. It opens the koko key and the
+// Secrets that requests name with rootKey, waits as timings say (the zero
+// Timings is the product's), and logs each Enroll, each re-pin and each
+// failure to log.
 func Register(a *op.API, rootKey *seal.RootKey, timings timing.Timings, log *slog.Logger) {
 	e := &enroller{rootKey: rootKey, connector: hostconn.Connector{Timings: timings}, addKey: timings.Resolve().EnrollAddKey, log: log}
 	a.HandlePrepared(api.HostEnroll, e.prepare, e.record)
@@ -65,7 +69,7 @@ func (e *enroller) prepare(ctx context.Context, read op.Read, caller op.Caller, 
 	var (
 		who     access.Identity
 		h       host.Reach
-		login   hostconn.Login
+		in      input
 		kokoKey ssh.PublicKey
 	)
 	// Who is calling comes first, so a Revoked Device Session learns
@@ -74,7 +78,7 @@ func (e *enroller) prepare(ctx context.Context, read op.Read, caller op.Caller, 
 		if who, h, err = host.ReachOf(ctx, tx, caller, req.Host); err != nil {
 			return err
 		}
-		if login, err = loginOf(req); err != nil {
+		if in, err = e.inputOf(ctx, tx, caller, req); err != nil {
 			return err
 		}
 		if err := enrollable(h, req); err != nil {
@@ -86,10 +90,10 @@ func (e *enroller) prepare(ctx context.Context, read op.Read, caller op.Caller, 
 	if err != nil {
 		return loggedIn{}, err
 	}
-	target := hostconn.Target{Address: h.Address, Port: h.Port, Account: h.Account, Login: login, Pin: pinFor(h, req)}
+	target := hostconn.Target{Address: h.Address, Port: h.Port, Account: h.Account, Login: in.login, Pin: pinFor(h, req)}
 	conn, err := e.connector.Connect(ctx, target, nil)
 	if err != nil {
-		return loggedIn{}, e.failed(who, h, connectRefusal(h, req, err))
+		return loggedIn{}, e.failed(who, h, connectRefusal(h, req, in, err))
 	}
 	defer func() { _ = conn.Close() }()
 	if err := e.appendKey(ctx, conn, kokoKey); err != nil {
@@ -123,38 +127,88 @@ func (e *enroller) record(ctx context.Context, tx store.Tx, caller op.Caller, _ 
 	return api.HostEnrollResponse{Host: h}, nil
 }
 
-// loginOf checks the request and returns how to log in to the Host with
-// what it supplies.
-func loginOf(req api.HostEnrollRequest) (hostconn.Login, error) {
+// input is the Enroll input Enroll logs in with: a password or a private
+// key, given in the request or held in the Secret it names.
+type input struct {
+	login hostconn.Login
+	// refusedAs is how a refusal names the input, such as "the password"
+	// or "the private key in the Secret ops/deploy-key", never by its value.
+	refusedAs string
+}
+
+// inputOf checks the request and returns the input it gives: the password
+// or private key it holds, or what the Secret it names holds, read in tx
+// for caller.
+func (e *enroller) inputOf(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostEnrollRequest) (input, error) {
 	if req.HostKey != nil {
 		if req.ReplaceHostKey {
-			return hostconn.Login{}, api.CodeInvalidRequest.Errorf(
+			return input{}, api.CodeInvalidRequest.Errorf(
 				"host_key and replace_host_key are two ways to pin a new host key: give one of them")
 		}
 		if err := record.CheckHostKey(*req.HostKey); err != nil {
-			return hostconn.Login{}, api.CodeInvalidValue.Errorf("host_key: %v", err)
+			return input{}, api.CodeInvalidValue.Errorf("host_key: %v", err)
 		}
 	}
-	if (len(req.Password) > 0) == (len(req.PrivateKey) > 0) {
-		return hostconn.Login{}, api.CodeInvalidRequest.Errorf(
-			"give host.enroll the Host Account's password or a private key it accepts: exactly one of them")
+	given := 0
+	for _, g := range []bool{len(req.Password) > 0, len(req.PrivateKey) > 0, req.Secret != nil} {
+		if g {
+			given++
+		}
+	}
+	if given != 1 {
+		return input{}, api.CodeInvalidRequest.Errorf(
+			"give host.enroll the Host Account's password, a private key it accepts, or a Secret holding either: exactly one of them")
 	}
 	if max(len(req.Password), len(req.PrivateKey)) > api.EnrollInputMaxSize {
-		return hostconn.Login{}, api.CodeInvalidValue.Errorf(
+		return input{}, api.CodeInvalidValue.Errorf(
 			"the password or private key is longer than %d KiB, the most Enroll takes", api.EnrollInputMaxSize>>10)
 	}
-	if len(req.Password) > 0 {
-		return hostconn.PasswordLogin(string(req.Password)), nil
+	switch {
+	case len(req.Password) > 0:
+		return input{login: hostconn.PasswordLogin(string(req.Password)), refusedAs: "the password"}, nil
+	case len(req.PrivateKey) > 0:
+		return keyInput(req.PrivateKey, "the private key",
+			"Enroll takes it decrypted, as koko host enroll --key sends it once it has asked for the passphrase")
 	}
-	signer, err := ssh.ParsePrivateKey(req.PrivateKey)
+	return e.inputFromSecret(ctx, tx, caller, *req.Secret)
+}
+
+// pemHeader begins every private key Enroll takes, in each of the PEM forms
+// golang.org/x/crypto/ssh parses.
+var pemHeader = []byte("-----BEGIN ")
+
+// inputFromSecret reads the Secret ref for caller and returns what it holds:
+// a private key when it begins with a PEM header, past any blank space, else
+// a password. A value with a PEM header is never tried as a password.
+func (e *enroller) inputFromSecret(ctx context.Context, tx store.Tx, caller op.Caller, ref api.SecretRef) (input, error) {
+	value, err := secret.Open(ctx, tx, caller, e.rootKey, ref)
+	if err != nil {
+		return input{}, err
+	}
+	if key := bytes.TrimLeft(value, " \t\r\n"); bytes.HasPrefix(key, pemHeader) {
+		return keyInput(key, "the private key in the Secret "+ref.String(),
+			"Enroll takes a key decrypted, and koko keeps no passphrase: store the key decrypted, or Enroll with --key <file>, which asks for the passphrase on the device")
+	}
+	password := api.EnrollPassword(value)
+	if len(password) == 0 {
+		return input{}, api.CodeInvalidValue.Errorf(
+			"the Secret %s holds only a line ending, which is neither a password nor a private key", ref)
+	}
+	return input{login: hostconn.PasswordLogin(string(password)), refusedAs: "the password in the Secret " + ref.String()}, nil
+}
+
+// keyInput parses key, the private key refusedAs names. It refuses an
+// encrypted key, saying why with whenEncrypted, and one that does not
+// parse.
+func keyInput(key []byte, refusedAs, whenEncrypted string) (input, error) {
+	signer, err := ssh.ParsePrivateKey(key)
 	if _, encrypted := errors.AsType[*ssh.PassphraseMissingError](err); encrypted {
-		return hostconn.Login{}, api.CodeInvalidValue.Errorf(
-			"the private key is encrypted: Enroll takes it decrypted, as koko host enroll --key sends it once it has asked for the passphrase")
+		return input{}, api.CodeInvalidValue.Errorf("%s is encrypted: %s", refusedAs, whenEncrypted)
 	}
 	if err != nil {
-		return hostconn.Login{}, api.CodeInvalidValue.Errorf("the private key does not parse: %v", err)
+		return input{}, api.CodeInvalidValue.Errorf("%s does not parse: %v", refusedAs, err)
 	}
-	return hostconn.KeyLogin(signer), nil
+	return input{login: hostconn.KeyLogin(signer), refusedAs: refusedAs}, nil
 }
 
 // enrollable refuses to Enroll a Host whose state does not allow it: a
@@ -186,10 +240,10 @@ func pinFor(h host.Reach, req api.HostEnrollRequest) hostconn.Pin {
 	return hostconn.PinKey(h.Pin)
 }
 
-// connectRefusal is the caller's answer to a failed login to the Host. The
-// connector's errors name the Host's address and Host Account, which the
-// caller may see: they can act on the Host.
-func connectRefusal(h host.Reach, req api.HostEnrollRequest, err error) *api.Error {
+// connectRefusal is the caller's answer to a failed login to the Host with
+// in. The connector's errors name the Host's address and Host Account,
+// which the caller may see: they can act on the Host.
+func connectRefusal(h host.Reach, req api.HostEnrollRequest, in input, err error) *api.Error {
 	if m, ok := errors.AsType[*hostconn.HostKeyMismatchError](err); ok {
 		if req.HostKey != nil {
 			return api.CodeUnexpectedHostKey.Errorf(
@@ -201,11 +255,7 @@ func connectRefusal(h host.Reach, req api.HostEnrollRequest, err error) *api.Err
 			h.Name, m.Pinned, m.Offered, h.Name)
 	}
 	if errors.Is(err, hostconn.ErrLoginRefused) {
-		what := "password"
-		if len(req.PrivateKey) > 0 {
-			what = "private key"
-		}
-		return api.CodeLoginRefused.Errorf("%s refused the %s for its Host Account %q; koko changed nothing on it", h.Name, what, h.Account)
+		return api.CodeLoginRefused.Errorf("%s refused %s for its Host Account %q; koko changed nothing on it", h.Name, in.refusedAs, h.Account)
 	}
 	return api.CodeHostUnreachable.Errorf("koko could not connect to %s: %v", h.Name, err)
 }

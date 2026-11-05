@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -30,21 +31,35 @@ func (v EnrollInput) LogValue() slog.Value {
 	return slog.StringValue(fmt.Sprintf("<Enroll input, %d bytes>", len(v)))
 }
 
+// EnrollPassword is the password Enroll takes from b, read whole from stdin
+// or a Secret: b less one line ending at its end, which echo adds and no
+// password typed at ssh's prompt can hold.
+func EnrollPassword(b []byte) []byte {
+	return bytes.TrimSuffix(bytes.TrimSuffix(b, []byte("\n")), []byte("\r"))
+}
+
 // HostEnrollRequest Enrolls a Host: the koko server logs in to it once as
-// its Host Account with the password or the private key given, never with
-// the koko key, checks its host key, and appends the koko key to the Host
-// Account's authorized_keys.
+// its Host Account with the password or the private key given, or held in
+// the Secret named, never with the koko key, checks its host key, and
+// appends the koko key to the Host Account's authorized_keys.
 type HostEnrollRequest struct {
 	// Host names the Host, by its name or its id.
 	Host string `json:"host"`
-	// Password is the Host Account's password. Exactly one of Password and
-	// PrivateKey is given.
+	// Password is the Host Account's password. Exactly one of Password,
+	// PrivateKey and Secret is given.
 	Password EnrollInput `json:"password_base64,omitzero"`
 	// PrivateKey is a private key the Host Account accepts, unencrypted, in
 	// a form golang.org/x/crypto/ssh parses: OpenSSH, PKCS #1, PKCS #8 or
 	// SEC 1, in PEM. koko host enroll --key decrypts an encrypted key on the
 	// device, so its passphrase never leaves it.
 	PrivateKey EnrollInput `json:"private_key_base64,omitzero"`
+	// Secret names a Secret that holds the Host Account's password or a
+	// private key it accepts. The koko server reads it on its own side, for
+	// the caller, who must be able to act in its Space, so the value never
+	// crosses the API. A value that begins with a PEM header ("-----BEGIN ")
+	// is a private key, taken as PrivateKey is; any other is a password, as
+	// EnrollPassword reads one.
+	Secret *SecretRef `json:"secret,omitzero"`
 	// HostKey, when given, is the SHA-256 fingerprint ("SHA256:...") of the
 	// only host key Enroll accepts, which it then pins in place of any pin
 	// the Host has.
@@ -53,6 +68,18 @@ type HostEnrollRequest struct {
 	// the pinned one, with the login as its only proof: a fresh trust on
 	// first use. It is not given with HostKey.
 	ReplaceHostKey bool `json:"replace_host_key,omitzero"`
+}
+
+// SecretRef names a Secret, by its Space and its name, as the secret
+// operations name one.
+type SecretRef struct {
+	Space string `json:"space"`
+	Name  string `json:"name"`
+}
+
+// String is the Secret's name as a command takes it, <space>/<secret>.
+func (s SecretRef) String() string {
+	return s.Space + "/" + s.Name
 }
 
 // HostEnrollResponse is the Host Enroll left Managed, with its pinned host
@@ -65,8 +92,11 @@ type HostEnrollResponse struct {
 // offers and appends the koko key to its Host Account's authorized_keys,
 // changing nothing else there. A Host with a pin must offer that key;
 // host_key or replace_host_key pins a new one, which is also the only way to
-// Enroll a Managed Host again. The login runs before the write's
-// transaction, so a slow Host holds up no other write.
+// Enroll a Managed Host again. A Secret is read as secret.show reads it, so
+// one in a Space the caller cannot act in is refused as one that does not
+// exist, with CodeUnknownSpace, whatever the caller can do on the Host. The
+// login runs before the write's transaction, so a slow Host holds up no
+// other write.
 var HostEnroll = Op[HostEnrollRequest, HostEnrollResponse]{Name: "host.enroll", Write: true}
 
 var enrollOperations = []Operation{
