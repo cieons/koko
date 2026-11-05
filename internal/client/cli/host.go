@@ -430,16 +430,7 @@ func (h shownHost) Human(w io.Writer) error {
 	}
 	fmt.Fprintf(&b, "Host %s (%s)\nSpace:       %s\nState:       %s\nAddress:     %s\nPort:        %d\nAccount:     %s\nHost key:    %s\nCreated:     %s\nUpdated:     %s\n",
 		h.Name, h.ID, h.Space, h.State, h.Address, h.Port, h.Account, hostKey, h.CreatedAt, h.UpdatedAt)
-	if len(h.Attributes) == 0 {
-		b.WriteString("Attributes:  none\n")
-	} else {
-		b.WriteString("Attributes:\n")
-		tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-		for _, k := range slices.Sorted(maps.Keys(h.Attributes)) {
-			_, _ = fmt.Fprintf(tw, "  %s\t%s\n", k, h.Attributes[k])
-		}
-		_ = tw.Flush() // a strings.Builder never fails a write
-	}
+	writeAttributes(&b, h.Attributes)
 	if note, ok := hostJSON(h).note(); ok {
 		b.WriteString("Note:\n" + withNewline(note))
 	} else {
@@ -447,6 +438,21 @@ func (h shownHost) Human(w io.Writer) error {
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// writeAttributes writes a record's Attributes for people, as a show
+// command prints them: one per line, by key, or none.
+func writeAttributes(b *strings.Builder, attrs map[string]record.Value) {
+	if len(attrs) == 0 {
+		b.WriteString("Attributes:  none\n")
+		return
+	}
+	b.WriteString("Attributes:\n")
+	tw := tabwriter.NewWriter(b, 0, 0, 2, ' ', 0)
+	for _, k := range slices.Sorted(maps.Keys(attrs)) {
+		_, _ = fmt.Fprintf(tw, "  %s\t%s\n", k, attrs[k])
+	}
+	_ = tw.Flush() // a strings.Builder never fails a write
 }
 
 // withNewline ends s with a line ending, for text printed on lines of its
