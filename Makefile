@@ -1,12 +1,16 @@
 GO ?= go
 NPM ?= npm
+# A release publishes one binary for each of these, named koko-<os>-<arch>
+# (ADR 0026).
+RELEASE_TARGETS := linux/amd64 linux/arm64 darwin/arm64
+RELEASE_BINARIES := $(foreach t,$(RELEASE_TARGETS),koko-$(subst /,-,$(t)))
 # windows/amd64 is compiled only, never released: it keeps the CLI ready for
 # Windows (P1) by failing the build when code skips its per-OS interface.
-CROSS_TARGETS := linux/amd64 linux/arm64 darwin/arm64 windows/amd64
+CROSS_TARGETS := $(RELEASE_TARGETS) windows/amd64
 # npm ci writes this file, so it is newer than the lockfile once installed.
 WEB_DEPS := web/node_modules/.package-lock.json
 
-.PHONY: check lint fmt vet test cross build webui generate clean
+.PHONY: check lint fmt vet test cross build dist webui generate clean
 
 ## check: everything a change must pass before it is committed
 check: webui lint vet test cross
@@ -44,6 +48,20 @@ cross:
 
 build: webui
 	$(GO) build -o bin/koko ./cmd/koko
+
+## dist: build a release's assets into dist/: the binaries (the Linux ones
+## carry the koko server and its web UI), install.sh, and SHA256SUMS listing
+## them (docs/subsystems/release.md). Go stamps each binary's version from
+## git, so at a tag, with nothing changed, the version is the tag.
+dist: webui
+	@mkdir -p dist
+	@for b in $(RELEASE_BINARIES); do \
+		p=$${b#koko-}; echo "build dist/$$b"; \
+		GOOS=$${p%-*} GOARCH=$${p#*-} CGO_ENABLED=0 \
+			$(GO) build -trimpath -ldflags='-s -w' -o dist/$$b ./cmd/koko || exit 1; \
+	done
+	cp release/install.sh dist/install.sh
+	cd dist && sha256sum $(RELEASE_BINARIES) install.sh >SHA256SUMS
 
 ## webui: build the web UI into internal/server/webui/site/app, which the koko
 ## binary embeds; a build without it embeds the placeholder page (ADR 0023)

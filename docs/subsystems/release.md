@@ -1,0 +1,111 @@
+# The release and install.sh
+
+What a koko release publishes, how it is built, and what `install.sh` does
+with it. Where the assets live and why their names are fixed is
+[ADR 0026](../adr/0026-install-sh-and-the-binaries-are-release-assets-with-fixed-names.md);
+what install does once the binary runs is the [installer](installer.md).
+
+## The assets
+
+A release is a GitHub Release whose tag is the version, such as `v0.3.0`. It
+holds:
+
+| Asset | What it is |
+| --- | --- |
+| `koko-linux-amd64`, `koko-linux-arm64` | the koko server, its web UI and the CLI |
+| `koko-darwin-arm64` | the CLI for Apple Silicon macOS; it carries no koko server, so no web UI ([ADR 0024](../adr/0024-the-server-and-the-cli-are-separable.md)) |
+| `install.sh` | [`release/install.sh`](../../release/install.sh) as it is at the tag |
+| `SHA256SUMS` | the SHA-256 of each asset above, one `<hex>  <name>` line each, as `sha256sum` writes it |
+
+Each binary is self-contained, built with `CGO_ENABLED=0`, `-trimpath` and
+`-ldflags='-s -w'`. Every asset in `SHA256SUMS` has a GitHub artifact
+attestation, which `gh attestation verify <file> --repo cieons/koko` checks.
+
+## Building one
+
+`make dist` builds the assets into `dist/`, which git ignores: the web UI
+first, as `make build` does, then the binaries of `RELEASE_BINARIES` in the
+[Makefile](../../Makefile), then `install.sh` and `SHA256SUMS`. Go stamps
+each binary's version from git ([`build.Read`](../../internal/shared/build/build.go)),
+so `koko version` says the tag in a checkout at the tag with nothing
+changed, and a pseudo-version (with `+dirty` for changes) anywhere else.
+
+The [release workflow](../../.github/workflows/release.yml) runs on a pushed
+`v*` tag, in three jobs:
+
+1. **check**: the [check workflow](../../.github/workflows/check.yml) on the
+   tag, on Linux and macOS; nothing is built unless it passes;
+2. **build**, with a read-only token and no credentials left in the
+   checkout, since it runs koko's and npm's code: `make dist`, a check that
+   `dist/koko-linux-amd64 version` is the tag, and `dist/` uploaded as a
+   workflow artifact;
+3. **publish**, which alone may write and sign, and runs no code of koko's
+   or npm's: one attestation that covers every subject in `SHA256SUMS`
+   (`actions/attest`, `subject-checksums`), then `gh release create` with
+   every file in `dist/` and notes generated from the commits. A tag with a
+   pre-release part (`v0.3.0-rc.1`) is published as a pre-release, which
+   `releases/latest` skips.
+
+Attestations and anonymous downloads need the repository public (or, for
+attestations, GitHub Enterprise Cloud).
+
+## install.sh
+
+```
+curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh -s -- --owner alice
+```
+
+A POSIX `sh` script that needs `curl`, `sha256sum`, `awk`, `mktemp` and,
+when not run as root, `sudo`. Everything is in `main`, called on the last
+line, so a download cut short runs nothing. In this order:
+
+1. **Checks before any download or write**, each ending with "nothing was
+   written":
+   - `uname -s` is not `Linux`;
+   - `systemctl is-system-running` is missing, prints `offline` (systemd is
+     not PID 1, as in most containers) or prints nothing (a chroot). A
+     booting or degraded systemd is taken;
+   - `uname -m` is neither `x86_64`/`amd64` nor `aarch64`/`arm64`;
+   - not root, and `sudo -n true` fails: the hint is to pipe to `sudo sh`.
+2. **The release.** `KOKO_VERSION`, with or without its `v`, or else the tag
+   of the page that `releases/latest` redirects to, followed through every
+   redirect (a moved repository adds one) and read once. A `KOKO_VERSION`
+   that is not `v<digit>` followed by letters, digits, `.`, `+` and `-` is
+   refused with exit 2.
+3. **Download** `SHA256SUMS` and `koko-linux-<arch>` from
+   `releases/download/<tag>/` over HTTPS only (`--proto =https`), into a
+   `mktemp -d` directory removed on every exit. It is under `TMPDIR`, so on
+   a machine whose `/tmp` is mounted `noexec`, `TMPDIR` names another.
+4. **The checksum.** A binary that `SHA256SUMS` does not list, or whose
+   SHA-256 differs, is never run.
+5. **`koko server install "$@"`**, as root (directly, or through `sudo -n`),
+   with stdin from `/dev/null`, since under `curl | sh` stdin is the rest of
+   the script. install.sh exits with its status.
+
+Nothing prompts. install.sh writes only to stderr, as `install.sh: ...`, and
+exits 1 when it stops; stdout is `koko server install`'s alone, so `--json`
+passes through clean.
+
+## Verifying
+
+[`release/install_test.go`](../../release/install_test.go) runs `install.sh`
+as `curl … | sh -s -- <args>` does, the script on `sh`'s stdin, which stays
+open so that anything reading stdin, as a prompt would, times the test out.
+The fake machine is a `PATH` of its own: fakes for `uname`, `systemctl`,
+`id` and `sudo`, a `curl` that serves a fake GitHub from a directory and logs
+every URL, and the real `mktemp`, `rm`, `chmod`, `awk`, `sha256sum` and
+`true`. The fake `curl` follows redirects only with `-L` and fails on a
+missing file only with `-f`, writing the error page otherwise, as curl does,
+and refuses a call without `--proto =https`. Its release binaries are
+scripts that log their arguments, uid and stdin. The tests cover the latest
+release (through a moved repository too) and `KOKO_VERSION`, each
+architecture, every refusal before a download, a checksum that does not
+match, a binary `SHA256SUMS` does not list, failed downloads, a release not
+published, no release at all, root and sudo, and koko's exit status. CI runs
+them under Ubuntu's `sh` (dash) and macOS's. `release/` holds no Go code but
+the test, so nothing imports it, and it is in no
+[package group](code-layout.md#the-package-groups).
+
+The release workflow runs only on a tag, and no test runs it; actionlint
+checks it by hand. Nothing yet installs a `make dist` build on a real
+systemd machine.
