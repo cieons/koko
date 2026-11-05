@@ -14,7 +14,7 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
-| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the wire constants and channel adapter (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`); later the Join Code codec, Attribute values, the resumable stream, the port-owner lookup | server, client |
+| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the wire constants and channel adapter (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`); later the Join Code codec, Attribute values, the port-owner lookup | server, client |
 | server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the Root Key and the Seal (`seal`), one package per area (`space`), the embedded web UI (`webui`), the Host connector (`hostconn`); later the Gateway, installer | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`); later the Device Mux, tunnel, ssh_config and device files | server |
 
