@@ -41,6 +41,11 @@ UI's TypeScript types are generated from them
 - **One channel, many calls.** A channel carries any number of calls in turn
   (HTTP keep-alive). The CLI's [`apiclient`](../../internal/client/apiclient/apiclient.go)
   reuses an idle channel and opens another only for a concurrent call.
+  Both ends run HTTP over a channel through
+  [`wire.Conn`](../../internal/shared/wire/wire.go), whose Write goes to the
+  channel itself, so a call counts as answered only once its answer has gone
+  to the SSH connection, and closing the connection then (a Revoked Device
+  Session's, or at shutdown) does not cut it.
 
 ## The API client
 

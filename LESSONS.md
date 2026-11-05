@@ -23,7 +23,15 @@ pointer under [Moved to the code standards](#moved-to-the-code-standards).
 
 ## Lessons
 
-_None yet._
+### A Write returns only once its bytes are on the connection beneath it
+
+**Why:** `wire.Conn` handed written bytes to a goroutine that copied them into
+the SSH channel, so net/http counted a call answered while its answer was
+still in that goroutine's hands. `closeRevoked` (#40) closed a Revoked Device
+Session's connection at that moment, and about 1 in 140 devices revoking
+their own Device Session got `EOF` instead of the answer.
+**Seen:** 1 (2026-11-06)
+**Evidence:** df63902 (#40); #76
 
 ## Moved to the code standards
 

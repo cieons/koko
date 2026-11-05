@@ -14,6 +14,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 
 	"github.com/cieons/koko/internal/shared/joincode"
 	"github.com/cieons/koko/internal/shared/name"
@@ -99,8 +100,10 @@ func ParseWebPayload(b []byte) (int, error) {
 	return int(port), nil
 }
 
-// Conn turns a channel into a net.Conn for net/http, which needs deadlines a
-// channel lacks: it copies the channel's bytes through net.Pipe. Closing either
+// Conn turns a channel into a net.Conn for net/http. Reads come through
+// net.Pipe, for the read deadlines net/http needs and a channel lacks. A
+// Write goes to the channel itself, so an answer net/http has written has
+// gone to the SSH connection; write deadlines are not kept. Closing either
 // end closes both.
 func Conn(ch io.ReadWriteCloser) net.Conn {
 	inner, outer := net.Pipe()
@@ -108,11 +111,30 @@ func Conn(ch io.ReadWriteCloser) net.Conn {
 		_, _ = io.Copy(outer, ch)
 		_ = outer.Close()
 	}()
-	go func() {
-		_, _ = io.Copy(ch, outer)
-		_ = ch.Close()
-	}()
-	return inner
+	return &channelConn{Conn: inner, ch: ch}
+}
+
+// channelConn is a channel as Conn returns it: reads and deadlines come from
+// the pipe, writes go to the channel.
+type channelConn struct {
+	net.Conn
+	ch io.ReadWriteCloser
+	// writeMu serialises writes, which an SSH channel does not.
+	writeMu sync.Mutex
+}
+
+func (c *channelConn) Write(p []byte) (int, error) {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.ch.Write(p)
+}
+
+// Close closes the pipe at once and the channel after it: closing an SSH
+// channel can wait on its connection, which net/http's Shutdown and Close,
+// holding their lock, must not.
+func (c *channelConn) Close() error {
+	go func() { _ = c.ch.Close() }()
+	return c.Conn.Close()
 }
 
 // JoinSecret is the SSH password a join's second step sends: the Join Code's
