@@ -98,8 +98,10 @@ its own only when an agent would act on it differently.
 13. **Platform-specific code** sits behind a small per-OS interface selected
     by build tags (`_linux.go`, `_darwin.go`, `_windows.go` or a `//go:build`
     line), never inline: the Device Mux socket and its same-user check, the
-    route-change watch, the port-owner lookup, file permissions, the terminal,
-    and signal forwarding. A ticket that adds one writes the Linux and macOS
+    route-change watch, the port-owner lookup, file permissions, the terminal
+    (`golang.org/x/term` already splits it per OS, Windows included though
+    untested until P1, so koko adds no files of its own), and signal
+    forwarding. A ticket that adds one writes the Linux and macOS
     implementations the specs ask for, plus a Windows file that compiles and
     returns a "not supported on Windows" error. `make cross` compiles
     `windows/amd64` (compile only; a Windows CLI is P1). The server group runs
@@ -116,7 +118,7 @@ apart.
 | Hook | Where | Made by |
 | --- | --- | --- |
 | The socket path | `server.Config.SocketPath`, `cli.Runner.SocketPath` | #27 |
-| The fake terminal | | #28 |
+| The fake terminal | `cli.Runner.Terminal` | #28 |
 | The P0 timing constants | | #32 |
 | The clock | | #36 |
 

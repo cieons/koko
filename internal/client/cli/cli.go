@@ -37,6 +37,12 @@ type Runner struct {
 	// SocketPath is the socket-path hook, for tests only: empty means the
 	// fixed wire.SocketPath. No flag or environment variable sets it.
 	SocketPath string
+
+	// Terminal is the fake-terminal hook, for tests only: when set, stdin is
+	// this terminal, so a secret input not given prompts on it. Nil means
+	// stdin is a terminal when it is one. No flag or environment variable
+	// sets it.
+	Terminal Terminal
 }
 
 // ServerSettings are the startup settings `koko server run` takes as flags or
@@ -77,7 +83,7 @@ func (r *Runner) Run(ctx context.Context, inv Invocation) int {
 	if err != nil {
 		return writeError(inv.Stderr, err, wantsJSON(inv.Args))
 	}
-	in := &Input{inv: &inv, runner: r, args: p.args, flags: p.flags}
+	in := &Input{inv: &inv, runner: r, line: p}
 	defer in.close()
 	res, err := p.cmd.Run.run(ctx, in)
 	if err != nil {
@@ -92,31 +98,48 @@ func (r *Runner) Run(ctx context.Context, inv Invocation) int {
 	return exitOK
 }
 
-// Input is what a command's Run gets: its arguments and flags, the
+// Input is what a command's Run gets: its command line as parsed, the
 // invocation, and the koko server, reached on the first call.
 type Input struct {
 	inv    *Invocation
 	runner *Runner
-	args   map[string]string
-	flags  map[string]string
+	line   *parsed
 
 	conn serverconn.Conn
 	api  *apiclient.Client
 }
 
-// Arg returns the positional argument with this name.
+// Arg returns the positional argument with this name, as typed.
 func (in *Input) Arg(name string) string {
-	return in.args[name]
+	return in.line.args[name]
+}
+
+// Qualified returns the two parts of the qualified argument arg: "ops" and
+// "db-password" for ops/db-password. The qualifier is "" for one written
+// bare.
+func (in *Input) Qualified(arg string) (qualifier, name string) {
+	q := in.line.qualified[arg]
+	return q.qualifier, q.name
 }
 
 // Flag returns a value flag: given, from its KOKO_* variable, or its default.
 func (in *Input) Flag(name string) string {
-	return in.flags[name]
+	return in.line.flags[name]
 }
 
 // Bool tells whether a boolean flag was given.
 func (in *Input) Bool(name string) bool {
-	return in.flags[name] != ""
+	return in.line.flags[name] != ""
+}
+
+// Pairs returns the key=value words, in the order given.
+func (in *Input) Pairs() []Pair {
+	return in.line.pairs
+}
+
+// Unset returns the keys given with --unset, in the order given.
+func (in *Input) Unset() []string {
+	return in.line.unset
 }
 
 // Call calls an operation on the koko server, connecting on the first call.

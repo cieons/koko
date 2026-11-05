@@ -8,10 +8,20 @@ import (
 
 // parsed is a command line the parser accepted.
 type parsed struct {
-	cmd   *Command
-	args  map[string]string
-	flags map[string]string
-	json  bool
+	cmd       *Command
+	args      map[string]string
+	qualified map[string]qualifiedName
+	flags     map[string]string
+	pairs     []Pair
+	unset     []string
+	json      bool
+}
+
+// qualifiedName is a qualified argument's two parts: ops and db-password for
+// ops/db-password. The qualifier is empty for one written bare.
+type qualifiedName struct {
+	qualifier string
+	name      string
 }
 
 // parse turns argv into the command it names, with its arguments and flags,
@@ -30,11 +40,17 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 		return nil, usagef("flags come after the command path: write %s", shellJoin(fixed))
 	}
 
-	p := &parsed{cmd: cmd, args: map[string]string{}, flags: map[string]string{}}
+	p := &parsed{cmd: cmd, args: map[string]string{}, qualified: map[string]qualifiedName{}, flags: map[string]string{}}
 	var positional []string
 	for i := 0; i < len(rest); i++ {
 		tok := rest[i]
 		if !isFlag(tok) {
+			if key, value, ok := strings.Cut(tok, "="); ok && cmd.Pairs {
+				if err := p.addPair(key, value); err != nil {
+					return nil, err
+				}
+				continue
+			}
 			positional = append(positional, tok)
 			continue
 		}
@@ -75,20 +91,40 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 		if err := f.check(value, "--"+name); err != nil {
 			return nil, err
 		}
+		if f == &unsetFlag {
+			if slices.Contains(p.unset, value) {
+				return nil, usagef("--unset %s is given twice", value)
+			}
+			p.unset = append(p.unset, value)
+			continue
+		}
 		p.flags[name] = value
+	}
+	for _, key := range p.unset {
+		if p.hasPair(key) {
+			return nil, usagef("%s= and --unset %s are both given", key, key)
+		}
 	}
 
 	if len(positional) < len(cmd.Args) {
-		return nil, usagef("koko %s needs <%s>", cmd.Path(), cmd.Args[len(positional)].Name)
+		return nil, usagef("koko %s needs %s", cmd.Path(), cmd.Args[len(positional)].usage())
 	}
 	if len(positional) > len(cmd.Args) {
 		return nil, usagef("unexpected argument %q: %s", positional[len(cmd.Args)], usageLine(cmd))
 	}
 	for i, a := range cmd.Args {
-		if positional[i] == "" {
-			return nil, usagef("<%s> cannot be empty in koko %s", a.Name, cmd.Path())
+		v := positional[i]
+		if v == "" {
+			return nil, usagef("%s cannot be empty in koko %s", a.usage(), cmd.Path())
 		}
-		p.args[a.Name] = positional[i]
+		if a.Qualifier != "" {
+			q, err := a.split(v)
+			if err != nil {
+				return nil, err
+			}
+			p.qualified[a.Name] = q
+		}
+		p.args[a.Name] = v
 	}
 
 	for _, f := range cmd.Flags {
@@ -105,6 +141,27 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 		p.flags[f.Name] = f.Default
 	}
 	return p, nil
+}
+
+// addPair takes one key=value word, refusing an empty key or value and a key
+// given twice.
+func (p *parsed) addPair(key, value string) error {
+	switch {
+	case key == "":
+		return usagef("=%s has no key: write <key>=%s", value, value)
+	case value == "" && p.cmd.Unset:
+		return usagef("the value of %s= cannot be empty; to clear %s, write --unset %s", key, key, key)
+	case value == "":
+		return usagef("the value of %s= cannot be empty", key)
+	case p.hasPair(key):
+		return usagef("%s= is given twice", key)
+	}
+	p.pairs = append(p.pairs, Pair{Key: key, Value: value})
+	return nil
+}
+
+func (p *parsed) hasPair(key string) bool {
+	return slices.ContainsFunc(p.pairs, func(pr Pair) bool { return pr.Key == key })
 }
 
 // locate finds the command argv names. It reads the command path word by
@@ -208,7 +265,13 @@ func find(tree []Command, path []string) *Command {
 	return &tree[i]
 }
 
+// unsetFlag is --unset <key>, which a command with Unset takes, repeatable.
+var unsetFlag = Flag{Name: "unset", Value: "key", Summary: "Clear a field or Attribute; repeatable"}
+
 func (c *Command) flag(name string) *Flag {
+	if c.Unset && name == unsetFlag.Name {
+		return &unsetFlag
+	}
 	i := slices.IndexFunc(c.Flags, func(f Flag) bool { return f.Name == name })
 	if i < 0 {
 		return nil
@@ -225,6 +288,37 @@ func (f *Flag) check(value, source string) error {
 	return nil
 }
 
+// split cuts a qualified argument at its one '/', refusing an empty part, a
+// part that holds '/', and a bare name where the qualifier is required.
+func (a *Arg) split(v string) (qualifiedName, error) {
+	q, n, ok := strings.Cut(v, "/")
+	switch {
+	case !ok && a.Bare:
+		return qualifiedName{name: v}, nil
+	case !ok:
+		return qualifiedName{}, usagef("%q is not %s: the <%s> is missing", v, a.usage(), a.Qualifier)
+	case q == "":
+		return qualifiedName{}, usagef("%q is not %s: the <%s> is empty", v, a.usage(), a.Qualifier)
+	case n == "":
+		return qualifiedName{}, usagef("%q is not %s: the <%s> is empty", v, a.usage(), a.Name)
+	case strings.Contains(n, "/"):
+		return qualifiedName{}, usagef("%q is not %s: a name cannot hold /", v, a.usage())
+	}
+	return qualifiedName{qualifier: q, name: n}, nil
+}
+
+// usage shows how the argument is written: <space>, <space>/<secret>, or
+// [<user>/]<device> for one that may be bare.
+func (a *Arg) usage() string {
+	switch {
+	case a.Qualifier != "" && a.Bare:
+		return "[<" + a.Qualifier + ">/]<" + a.Name + ">"
+	case a.Qualifier != "":
+		return "<" + a.Qualifier + ">/<" + a.Name + ">"
+	}
+	return "<" + a.Name + ">"
+}
+
 // usageLine shows how a command is written, such as "koko space add <space>".
 func usageLine(c *Command) string {
 	if len(c.Args) == 0 {
@@ -232,7 +326,7 @@ func usageLine(c *Command) string {
 	}
 	line := "koko " + c.Path()
 	for _, a := range c.Args {
-		line += " <" + a.Name + ">"
+		line += " " + a.usage()
 	}
 	return "write " + line
 }

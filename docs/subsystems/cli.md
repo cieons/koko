@@ -10,13 +10,16 @@ contract is [ADR 0016](../adr/0016-the-cli-json-is-its-own-contract.md).
 One list of every command, [`cli.Tree`](../../internal/client/cli/tree.go),
 joined from each area's `<area>Commands`. An entry
 ([`cli.Command`](../../internal/client/cli/tree.go)) holds the noun and verb,
-the positional arguments, the flags (each with its `KOKO_*` variable, default
-and choices), the risk tier (required), Owner-only, the API operation it calls
-and its `Run`, made with `action(f)` from a function returning the command's
-`--json` type, which is also its shape. Every command takes `--json`, which is
-not listed. [`tree_test.go`](../../internal/client/cli/tree_test.go) checks
-every entry: a tier, a summary, a unique path, sound flags, and an operation
-that `api.Operations` lists.
+the positional arguments (each plain, qualified, or qualified and allowed
+bare), the flags (each with its `KOKO_*` variable, default and choices),
+whether it takes `key=value` pairs and `--unset`, the risk tier (required),
+Owner-only, the API operation it calls and its `Run`, made with `action(f)`
+from a function returning the command's `--json` type, which is also its
+shape. Every command takes `--json`, which is not listed.
+[`tree_test.go`](../../internal/client/cli/tree_test.go) checks every entry: a
+tier, a summary, a unique path, sound arguments and flags (neither `--json`
+nor `--unset` listed, and `--unset` only beside pairs), and an operation that
+`api.Operations` lists.
 
 ## The parser
 
@@ -33,12 +36,55 @@ arguments and flags, or refuses the command line with exit 2 and the code
   empty one, a value outside the flag's choices (from the flag or its
   variable), and `--json` or a boolean flag given a value;
 - a missing, an empty or an extra argument, so `koko space add "$NAME"` with
-  `NAME` unset never reaches the koko server.
+  `NAME` unset never reaches the koko server;
+- a qualified name (`<space>/<secret>`, `<host>/<service>`, `<user>/<device>`)
+  with a part missing or empty, or a part that holds `/`; one that may be bare
+  (`[<user>/]<device>`) is also taken without its `/`;
+- for a command that takes `key=value` pairs: a pair with an empty key or an
+  empty value (naming the key, so `region=$REGION` with `REGION` unset never
+  clears it), a key given twice, `--unset` of one key twice, and a key both set
+  and unset.
 
 Flags come after the path, mixed with arguments in any order, as `--name value`
 or `--name=value`; a value that starts with `--` needs the `=` form. A flag not
 given takes its `KOKO_*` variable when that is set and not empty, else its
 default.
+
+A command with `Pairs` reads every word holding `=` as a pair, cut at its
+first `=` (`note=a=b` sets `note` to `a=b`); no name holds `=`, so no argument
+is mistaken for one. One with `Unset` also takes `--unset <key>`, repeatable.
+`Input.Pairs` and `Input.Unset` return them in the order given; checking a key
+against the field names and Attribute key rules is the command's. A qualified
+argument keeps its text in `Input.Arg` and its parts in `Input.Qualified`.
+
+## The secret-input reader
+
+[`Input.ReadSecret`](../../internal/client/cli/secretinput.go) is the one way
+a command reads a secret input: a Secret value, an Enroll password or a key's
+passphrase, never an argument. The command declares its forms in a
+`SecretInput` (a file flag, a stdin flag, stdin itself, and the forms it reads
+itself, such as `--secret`, for the refusal to name), and the reader reads the
+first one given, byte for byte. With none given it prompts on stderr
+(`Enter the value of ops/db-password: `) and reads one line with echo off when
+stdin is a terminal; without one it fails at once with exit 2, naming the
+forms. It refuses:
+
+- a stdin flag when stdin is a terminal, which would echo what is typed;
+- an empty value from any form, so a pipe from a command that failed sends
+  nothing; empty stdin, such as an agent's `/dev/null`, gives nothing;
+- a file it cannot read, with exit 2.
+
+It reads stdin only for a stdin form. Stdin itself as the form (`secret add`)
+is read to its end whenever stdin is not a terminal, so a pipe that never
+closes waits; every other secret input fails at once without a terminal.
+
+**Stdin decides "on a terminal".** The prompt reads its answer there, and a
+terminal anywhere else (stderr, or the controlling terminal of an agent's
+harness) has nobody typing into it. Nothing else in the CLI prompts, and
+nothing asks "are you sure?". The terminal sits behind
+[`cli.Terminal`](../../internal/client/cli/terminal.go), whose per-OS code is
+under [rule 13](code-layout.md#rules-for-working-in-parallel). Ctrl-C at the
+prompt turns echo back on and ends the command.
 
 ## The runner and the output layer
 

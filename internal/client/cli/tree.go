@@ -25,6 +25,13 @@ type Command struct {
 	// Flags are the command's flags. Every command also takes --json, which is
 	// not listed.
 	Flags []Flag
+	// Pairs makes the command take key=value words beside its arguments, such
+	// as region=eu: the fields and Attributes it writes. An empty value is
+	// refused, so region=$REGION with REGION unset never clears one.
+	Pairs bool
+	// Unset makes the command take --unset <key>, repeatable, to clear a
+	// field or Attribute. It is not listed in Flags.
+	Unset bool
 	// Tier is the command's risk tier (ADR 0019). It is required.
 	Tier Tier
 	// OwnerOnly says only the Owner may run the command. The koko server's
@@ -51,6 +58,19 @@ func (c *Command) words() []string {
 type Arg struct {
 	// Name is shown as <Name>, such as <space>.
 	Name string
+	// Qualifier, when set, makes the argument a qualified name written
+	// <Qualifier>/<Name>, such as <space>/<secret>, which the parser splits
+	// on its one '/'. No name holds '/'.
+	Qualifier string
+	// Bare lets a qualified argument also be written as <Name> alone, as a
+	// User names their own device.
+	Bare bool
+}
+
+// Pair is a key=value word, cut at its first '='.
+type Pair struct {
+	Key   string
+	Value string
 }
 
 // Flag is a flag, always written after the command path.

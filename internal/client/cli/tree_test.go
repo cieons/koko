@@ -37,10 +37,18 @@ func TestCommandTreeEntries(t *testing.T) {
 		}) {
 			t.Errorf("%s calls %s, which is not in api.Operations", path, c.Op.Info().Name)
 		}
+		if c.Unset && !c.Pairs {
+			t.Errorf("%s takes --unset but no key=value pairs", path)
+		}
 		var names []string
 		for _, a := range c.Args {
-			if slices.Contains(names, a.Name) {
+			switch {
+			case slices.Contains(names, a.Name):
 				t.Errorf("%s has two arguments named %s", path, a.Name)
+			case strings.Contains(a.Name+a.Qualifier, "/"):
+				t.Errorf("%s %s holds /; write a qualified name with Qualifier", path, a.usage())
+			case a.Bare && a.Qualifier == "":
+				t.Errorf("%s <%s> may be bare but has no qualifier", path, a.Name)
 			}
 			names = append(names, a.Name)
 		}
@@ -49,6 +57,8 @@ func TestCommandTreeEntries(t *testing.T) {
 			switch {
 			case f.Name == "json":
 				t.Errorf("%s lists --json, which every command already takes", path)
+			case f.Name == unsetFlag.Name:
+				t.Errorf("%s lists --unset, which Unset adds", path)
 			case slices.Contains(names, f.Name):
 				t.Errorf("%s has two flags named --%s", path, f.Name)
 			case f.Env != "" && !strings.HasPrefix(f.Env, "KOKO_"):
