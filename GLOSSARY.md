@@ -67,6 +67,10 @@ _Avoid_: bastion, jump host, proxy
 The one SSH key pair a koko server uses to log in to every Managed Host.
 _Avoid_: deploy key, master key, server key
 
+**Root Key**:
+The one key, kept outside the data directory, that seals every Secret and every private key a koko server holds.
+_Avoid_: master key, encryption key, data key, KEK
+
 **Secret**:
 A sensitive value the koko server holds in one Space and shows only when asked to by name.
 _Avoid_: credential, password
