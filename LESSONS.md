@@ -53,6 +53,18 @@ longer, and `main` went red at 68c9ad8, which touched nothing near the test.
 **Seen:** 1 (2026-11-06)
 **Evidence:** 3cae7b1 (#38); check run 42081318152 on 68c9ad8; #77
 
+### Wait for the event itself, not for one that comes just before it
+
+**Why:** `koko server install` took the socket's file for the koko server
+listening, but `net.Listen` binds the file before it listens. A loaded
+machine stretches the moment between, and `server.init` dialled into it and
+got `connection refused`: 4 of 240 runs of the install test under load. The
+upgrade test, in turn, read the koko server's start from its log once
+install returned, though the koko server logs it just after its socket
+accepts: 3 failures under load.
+**Seen:** 1 (2026-11-06)
+**Evidence:** 3cae7b1 (#38); 4232f09 (#43); #77
+
 ## Moved to the code standards
 
 _None yet._

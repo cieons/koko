@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -66,6 +67,11 @@ type Machine struct {
 	// StartDelay is how long the koko service takes to open its socket once
 	// systemctl has started it.
 	StartDelay time.Duration
+	// ListenDelay is how long the koko service's socket file is there
+	// before the koko server accepts connections on it: the moment between
+	// the bind and the listen of its start-up, which a loaded machine
+	// stretches.
+	ListenDelay time.Duration
 	// NoSocket makes the koko service start but never open its socket, as
 	// one whose start-up refuses does under Restart=on-failure. Install
 	// then waits NoSocketWait for it.
@@ -260,6 +266,25 @@ func (m *Machine) Log() string {
 		b.WriteString(p.stderr.String())
 	}
 	return b.String()
+}
+
+// WaitLog waits until what every run of the koko service has logged holds
+// substr n times, and returns it: the koko server logs its start just after
+// its socket accepts, which is all install waits for. It fails the test
+// when 10 s pass first.
+func (m *Machine) WaitLog(substr string, n int) string {
+	m.t.Helper()
+	deadline := time.Now().Add(waitFor)
+	for {
+		log := m.Log()
+		if strings.Count(log, substr) >= n {
+			return log
+		}
+		if time.Now().After(deadline) {
+			m.t.Fatalf("the koko service did not log %q %d times within %v:\n%s", substr, n, waitFor, log)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // Files lists every file and directory under the machine's root, as the
@@ -576,7 +601,7 @@ func (m *Machine) startService() error {
 	// The unit's own settings, then what systemd adds. The koko server
 	// listens on a loopback port of the test's choosing, never the unit's.
 	env := append(slices.Clone(u.env), "CREDENTIALS_DIRECTORY="+creds, "KOKO_LISTEN=127.0.0.1:0")
-	noSocket, delay := m.NoSocket, m.StartDelay
+	noSocket, delay, listenDelay := m.NoSocket, m.StartDelay, m.ListenDelay
 	serve := func(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
 		if noSocket {
 			<-ctx.Done()
@@ -586,6 +611,14 @@ func (m *Machine) startService() error {
 		case <-ctx.Done():
 			return nil
 		case <-time.After(delay):
+		}
+		if listenDelay > 0 {
+			if err := holdUnlistenedSocket(ctx, m.SocketPath(), listenDelay); err != nil {
+				return err
+			}
+			if ctx.Err() != nil {
+				return nil
+			}
 		}
 		return server.Run(ctx, server.Config{
 			DataDir:       m.Path(s.DataDir),
@@ -601,6 +634,31 @@ func (m *Machine) startService() error {
 	m.running = u
 	m.runs = append(m.runs, m.service)
 	return nil
+}
+
+// holdUnlistenedSocket keeps a socket file at path that accepts no
+// connection, as the koko server's is between its bind and its listen,
+// until wait has passed or ctx ends, then removes it for the koko server to
+// listen there. The file is made beside path and renamed into place once
+// its listener is closed, so path never accepts one.
+func holdUnlistenedSocket(ctx context.Context, path string, wait time.Duration) error {
+	made := filepath.Join(filepath.Dir(path), "unlistened")
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: made, Net: "unix"})
+	if err != nil {
+		return err
+	}
+	ln.SetUnlinkOnClose(false)
+	if err := ln.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(made, path); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(wait):
+	}
+	return os.Remove(path)
 }
 
 // stopService stops the koko service, if it runs, and removes its runtime

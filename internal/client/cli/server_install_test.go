@@ -205,6 +205,16 @@ func TestServerInstallChecksFirstAndWaitsForTheSocket(t *testing.T) {
 	}
 }
 
+// Install waits until the koko server accepts a connection on its socket,
+// not only until the socket's file is there: here the file comes 300 ms
+// before the koko server listens, and initialisation still reaches it.
+func TestServerInstallWaitsUntilTheSocketAccepts(t *testing.T) {
+	m := harness.NewMachine(t)
+	m.ListenDelay = 300 * time.Millisecond
+	install(t, m, "--owner", "alice")
+	wantInitialised(t, m, "alice")
+}
+
 // For people, install says where the koko server is, what to keep and what
 // to open, and the one koko join line for the Owner's first device; never
 // the Root Key.

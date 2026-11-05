@@ -109,8 +109,10 @@ In this order ([`Installer.Install`](../../internal/server/installer/installer.g
 5. **`systemctl daemon-reload`, `enable koko.service`, `restart
    koko.service`.** Restart, not start, so that a koko service an earlier run
    left running takes the new unit and binary.
-6. **The socket.** Install waits for `/run/koko/koko.sock` for up to
-   `timing.InstallSocketWait` (30 s). A koko server that
+6. **The socket.** Install waits until the koko server accepts a connection
+   on `/run/koko/koko.sock`, for up to `timing.InstallSocketWait` (30 s). It
+   connects rather than looks for the file, which is there a moment before
+   the koko server listens on it. A koko server that
    refuses to start never opens it, so the failure names
    `systemctl status koko` and `journalctl -u koko`, where its refusal is.
 7. **Initialisation** over the socket ([`server.init`](initialisation.md)),
@@ -284,14 +286,16 @@ listening on a loopback port, which its Join Codes therefore name in place
 of the unit's port. So initialisation and the printout run for real. The tests cover a fresh install (files, modes, owners, the unit's
 golden file, the `--json` golden, the koko server initialised), the order
 (checks before any write, the Root Key and the binary before the start, a
-late socket waited for), the printout for people, `--port`, `--address`,
+late socket waited for), a socket file there before the koko server accepts
+on it (`ListenDelay`), the printout for people, `--port`, `--address`,
 every refusal writing nothing, systemd not running, private source IPs, bad
 flags, running again after a refused address and after a service that never
 opened its socket, and a Root Key file there already. Only a service that
 never opens its socket (`NoSocket`) has install wait less than the product's
 30 s, `harness.NoSocketWait`: no wait would see that socket, so a short one
 fails no slower machine, and every socket that does open is waited for as
-on a real machine.
+on a real machine. `WaitLog` waits for a line the koko server logs after
+its socket accepts, such as its start.
 [`server_upgrade_test.go`](../../internal/client/cli/server_upgrade_test.go)
 tests the upgrade on an initialised koko server: the new release's binary,
 the unit written again, the restart, the record kept, the `--json` goldens;

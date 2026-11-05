@@ -88,7 +88,7 @@ func TestServerInstallUpgradesAnInitialisedServer(t *testing.T) {
 	if got, want := whats[len(whats)-3:], []string{"systemctl daemon-reload", "systemctl enable koko.service", "systemctl restart koko.service"}; !slices.Equal(got, want) {
 		t.Errorf("the upgrade ended with %v, want %v", got, want)
 	}
-	if starts := strings.Count(m.Log(), "koko server started"); starts != 2 || !m.Running() {
+	if starts := strings.Count(m.WaitLog("koko server started", 2), "koko server started"); starts != 2 || !m.Running() {
 		t.Errorf("the koko service started %d times and runs %v, want a restart that runs", starts, m.Running())
 	}
 	wantInitialised(t, m, "alice")

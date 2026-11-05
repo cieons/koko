@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -673,18 +674,21 @@ func (in *Installer) systemctl(ctx context.Context, args ...string) error {
 	return nil
 }
 
-// socketPoll is how often install looks for the koko server's socket.
+// socketPoll is how often install tries the koko server's socket.
 const socketPoll = 50 * time.Millisecond
 
-// waitForSocket waits until the koko service has opened its Unix socket, for
-// as long as timing.InstallSocketWait. A koko server that refuses to start
-// never opens it, and the journal says why.
+// waitForSocket waits until the koko service accepts a connection on its
+// Unix socket, whose file is there a moment before, for as long as
+// timing.InstallSocketWait. A koko server that refuses to start never opens
+// it, and the journal says why.
 func (in *Installer) waitForSocket(ctx context.Context) error {
 	wait := in.Timings.Resolve().InstallSocketWait
 	socket := in.path(wire.SocketPath)
 	deadline := time.Now().Add(wait)
+	d := net.Dialer{Deadline: deadline}
 	for {
-		if info, err := os.Stat(socket); err == nil && info.Mode().Type() == fs.ModeSocket {
+		if conn, err := d.DialContext(ctx, "unix", socket); err == nil {
+			_ = conn.Close()
 			return nil
 		}
 		if time.Now().After(deadline) {
