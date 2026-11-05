@@ -33,6 +33,11 @@ type Command struct {
 	// Unset makes the command take --unset <key>, repeatable, to clear a
 	// field or Attribute. It is not listed in Flags.
 	Unset bool
+	// ReadsSecret says the command reads a secret input (Input.ReadSecret),
+	// such as a Secret value, which is never an argument: a word its command
+	// line does not expect is refused without being repeated, since it may
+	// be the secret written where an argument goes.
+	ReadsSecret bool
 	// Tier is the command's risk tier (ADR 0019). It is required.
 	Tier Tier
 	// OwnerOnly says only the Owner may run the command, for help and koko
@@ -187,6 +192,7 @@ var commands = [][]Command{
 	webCommands,
 	joinCommands,
 	hostCommands,
+	secretCommands,
 }
 
 // Tree returns every command.

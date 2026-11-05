@@ -40,3 +40,41 @@ func TestCheckRefusesEverythingElse(t *testing.T) {
 		}
 	}
 }
+
+// A Secret's name also takes '_', and may end in '-' or '_'; it starts with
+// a letter or a digit (P0 spec: Secrets, story 4).
+func TestCheckSecretAcceptsSecretNames(t *testing.T) {
+	for _, s := range []string{
+		"a",
+		"0",
+		"db-password",
+		"db_password",
+		"api-key_2",
+		"key-",
+		"key_",
+		strings.Repeat("a", 63),
+	} {
+		if err := name.CheckSecret(s); err != nil {
+			t.Errorf("CheckSecret(%q) = %v, want nil", s, err)
+		}
+	}
+}
+
+func TestCheckSecretRefusesEverythingElse(t *testing.T) {
+	for _, s := range []string{
+		"",
+		strings.Repeat("a", 64),
+		"-key",
+		"_key",
+		"DB-password",
+		"db.password",
+		"db/password",
+		"db password",
+		"db=password",
+		"é",
+	} {
+		if err := name.CheckSecret(s); err == nil {
+			t.Errorf("CheckSecret(%q) = nil, want an error", s)
+		}
+	}
+}

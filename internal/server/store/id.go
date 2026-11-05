@@ -7,8 +7,9 @@ import "crypto/rand"
 const idAlphabet = "0123456789abcdefghjkmnpqrstvwxyz"
 
 // NewID returns a new record id: the record's prefix, '_' and 8 random
-// characters (40 bits), as in host_7k2m9q4x. No name holds '_', so an id is
-// never mistaken for a name. A table's primary key refuses the rare repeat.
+// characters (40 bits), as in host_7k2m9q4x. No name holds '_' but a
+// Secret's, which is always named with its Space, so an id is never mistaken
+// for a name. A table's primary key refuses the rare repeat.
 func NewID(prefix string) string {
 	var b [5]byte
 	_, _ = rand.Read(b[:]) // crypto/rand.Read never fails

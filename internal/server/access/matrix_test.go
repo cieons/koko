@@ -24,6 +24,7 @@ var areaRows = [][]row{
 	serverRows,
 	webRows,
 	hostRows,
+	secretRows,
 }
 
 // A row states, for one operation, the answer each caller gets.

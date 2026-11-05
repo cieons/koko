@@ -65,6 +65,7 @@ func TestTypeScriptTypeMapping(t *testing.T) {
 		{[]*string{}, "(string | null)[]"},
 		{map[string]int{}, "Record<string, number>"},
 		{new(record), "record | null"},
+		{[]byte{}, "string"}, // base64
 	} {
 		typ := reflect.TypeOf(tc.value)
 		got, err := tsType(typ, nameRef)
@@ -108,7 +109,6 @@ func TestTypeScriptFieldMapping(t *testing.T) {
 func TestTypeScriptRefusesWhatItCannotMap(t *testing.T) {
 	for name, typ := range map[string]reflect.Type{
 		"any":              reflect.TypeFor[any](),
-		"bytes":            reflect.TypeFor[[]byte](),
 		"int keys":         reflect.TypeFor[map[int]string](),
 		"anonymous struct": reflect.TypeFor[struct{ A string }](),
 		"duration":         reflect.TypeFor[time.Duration](),

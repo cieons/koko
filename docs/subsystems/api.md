@@ -83,7 +83,7 @@ first call, through the dial it was given, and for each call:
 | --- | --- | --- |
 | `invalid_request` | 400 | The body is not a JSON object of the operation's request type (malformed, wrong type, duplicate or trailing data), or a write carries no valid `Idempotency-Key`. |
 | `unknown_field` | 400 | The body holds a field the operation does not know. |
-| `invalid_name` | 400 | A name is not a lowercase DNS label ([`name.Check`](../../internal/shared/name/name.go)). |
+| `invalid_name` | 400 | A name breaks its rule: a lowercase DNS label ([`name.Check`](../../internal/shared/name/name.go)), or for a Secret, `name.CheckSecret`'s. |
 | `invalid_value` | 400 | A Host's field, an Attribute or the Note, or a value given for one, breaks its rule ([the record](record.md#a-host)). |
 | `revoked` | 401 | The call came on a Device Session that is Revoked ([the Device Connection](device-connection.md#who-is-calling)). |
 | `local_only` | 403 | The operation answers only the Local caller, over the Unix socket; `server.set` not even a browser tab of `koko web` there ([initialisation](initialisation.md#the-deployment-afterwards)). |
@@ -93,7 +93,7 @@ first call, through the dial it was given, and for each call:
 | `last_device_session` | 409 | The call would revoke the Owner's last live Device Session without `last` (`--last`). |
 | `unknown_operation` | 404 | No operation is served at the path. |
 | `method_not_allowed` | 405 | The method is not `POST`. |
-| `name_taken` | 409 | A record already holds the name where names must differ: a Space or a User for a new User's name, which they share; a Space for a Space's; one of the same User's devices or valid Join Codes for a device's; a Host that is not Retired, in any Space, for a Host's, with the same message whichever Space holds it. |
+| `name_taken` | 409 | A record already holds the name where names must differ: a Space or a User for a new User's name, which they share; a Space for a Space's; one of the same User's devices or valid Join Codes for a device's; a Host that is not Retired, in any Space, for a Host's, with the same message whichever Space holds it; a Secret of the same Space for a Secret's. |
 | `not_initialised` | 409 | The koko server is not initialised, so it answers no operation but `server.init` ([initialisation](initialisation.md#before-initialisation)). |
 | `request_too_large` | 413 | The body is over 16 MiB. |
 | `unsupported_media_type` | 415 | The body is not `application/json`. |

@@ -86,9 +86,10 @@ Retired ones ([`host.Holding`](../../internal/server/host/host.go)).
 
 An area whose records live in a Space (Hosts, #47; Secrets, #48) writes its
 `Holding` in its own package and adds one line to `holdings` in
-[`server.go`](../../internal/server/server.go). `api.SpaceCounts` already has
-`secrets`, 0 until its area counts it; `space rm` refuses while any count is
-above 0, and its message names each, as in "2 Hosts and 1 Retired Host".
+[`server.go`](../../internal/server/server.go). `secrets` counts a Space's
+Secrets ([`secret.Holding`](../../internal/server/secret/secret.go)); `space
+rm` refuses while any count is above 0, and its message names each, as in
+"2 Hosts and 1 Retired Host".
 
 ## The access matrix
 

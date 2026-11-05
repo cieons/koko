@@ -14,14 +14,51 @@ import (
 var secretTree = []Command{
 	{
 		Noun: "secret", Verb: "add", Tier: Reversible,
-		Args:  []Arg{{Name: "secret", Qualifier: "space"}},
-		Flags: []Flag{{Name: "from-file", Value: "file"}},
+		Args:        []Arg{{Name: "secret", Qualifier: "space"}},
+		Flags:       []Flag{{Name: "from-file", Value: "file"}},
+		ReadsSecret: true,
 	},
 	{
 		Noun: "host", Verb: "enroll", Tier: Irreversible,
-		Args:  []Arg{{Name: "host"}},
-		Flags: []Flag{{Name: "password-stdin", Bool: true}, {Name: "key", Value: "file"}},
+		Args:        []Arg{{Name: "host"}},
+		Flags:       []Flag{{Name: "password-stdin", Bool: true}, {Name: "key", Value: "file"}},
+		ReadsSecret: true,
 	},
+}
+
+// A command that reads a secret input refuses a word its command line does
+// not expect without repeating it, since it may be the secret written where
+// an argument goes: koko never takes one there, and a refusal that repeated
+// it would put it in an agent's transcript once more (P0 spec: Secrets,
+// story 9).
+func TestASecretWrittenAsAnArgumentIsRefusedUnrepeated(t *testing.T) {
+	for _, tc := range []struct {
+		argv    []string
+		message string
+	}{
+		{
+			[]string{"secret", "add", "ops/db-password", "hunter2"},
+			"unexpected argument, not repeated here in case it is a secret, which koko never takes as an argument: " +
+				"write koko secret add <space>/<secret>",
+		},
+		{
+			[]string{"secret", "add", "ops/db-password", "password=hunter2"},
+			"unexpected argument, not repeated here in case it is a secret, which koko never takes as an argument: " +
+				"write koko secret add <space>/<secret>",
+		},
+		{
+			[]string{"host", "enroll", "web-1", "hunter2"},
+			"unexpected argument, not repeated here in case it is a secret, which koko never takes as an argument: " +
+				"write koko host enroll <host>",
+		},
+		{
+			[]string{"secret", "add", "ops/db-password", "-hunter2"},
+			"unknown flag for koko secret add, not repeated here in case it is a secret",
+		},
+	} {
+		_, err := parse(secretTree, tc.argv, noEnv)
+		wantRefused(t, err, tc.message)
+	}
 }
 
 // The secret inputs of secretTree: a Secret value from stdin or a file, an
@@ -202,6 +239,60 @@ func TestSecretInputWithoutATerminalFailsAtOnce(t *testing.T) {
 			t.Errorf("%s: stderr %q, want no prompt", tc.s.What, stderr)
 		}
 	}
+}
+
+// A secret input with a limit takes exactly that many bytes from every form,
+// and refuses one byte more with exit 2, reading no further, so a value is
+// never stored cut short and an endless stdin or file is never read to its
+// end.
+func TestSecretInputHoldsToItsLimit(t *testing.T) {
+	value, pw := secretValue, password
+	value.Max, pw.Max = 8, 8
+	dir := t.TempDir()
+	exact, over := filepath.Join(dir, "exact"), filepath.Join(dir, "over")
+	if err := os.WriteFile(exact, []byte("12345678"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(over, []byte("123456789"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	add := []string{"secret", "add", "ops/db-password"}
+	enroll := []string{"host", "enroll", "web-1", "--password-stdin"}
+	for _, tc := range []struct {
+		name  string
+		s     SecretInput
+		stdin io.Reader
+		term  *fakeTerminal
+		argv  []string
+		// over says the form holds more than the limit.
+		over bool
+	}{
+		{"a file of 8 bytes", value, untouchedStdin{t}, nil, append(add, "--from-file", exact), false},
+		{"a file of 9 bytes", value, untouchedStdin{t}, nil, append(add, "--from-file", over), true},
+		{"stdin of 8 bytes", value, strings.NewReader("12345678"), nil, add, false},
+		{"endless stdin", value, endless{}, nil, add, true},
+		{"a stdin flag of 8 bytes", pw, strings.NewReader("12345678"), nil, enroll, false},
+		{"a stdin flag on endless stdin", pw, endless{}, nil, enroll, true},
+		{"8 bytes typed", value, untouchedStdin{t}, &fakeTerminal{typed: "12345678\n"}, add, false},
+		{"9 bytes typed", value, untouchedStdin{t}, &fakeTerminal{typed: "123456789\n"}, add, true},
+	} {
+		got, _, err := readSecret(t, tc.s, tc.stdin, tc.term, tc.argv...)
+		if tc.over {
+			wantRefused(t, err, tc.s.What+" is longer than 8 bytes, the most it may be")
+		} else if err != nil || string(got) != "12345678" {
+			t.Errorf("%s: read %q, %v; want all 8 bytes", tc.name, got, err)
+		}
+	}
+}
+
+// endless is a stdin that never ends.
+type endless struct{}
+
+func (endless) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 'x'
+	}
+	return len(p), nil
 }
 
 // An empty secret input is refused from every form, so a pipe from a command

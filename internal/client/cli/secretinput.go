@@ -30,40 +30,47 @@ type SecretInput struct {
 	// Others are forms the command reads itself instead, such as "--secret
 	// <space>/<secret>" beside an Enroll password, for the refusal to name.
 	Others []string
+	// Max, when above 0, is the longest input taken, in bytes: a longer one
+	// is refused, never cut short. No file or stdin is read past one byte
+	// more; a typed line is checked once it is read.
+	Max int
 }
 
 // ReadSecret returns s byte for byte from the first form given: the file,
 // the stdin flag, then stdin. With none it prompts with echo off when stdin is
 // a terminal, and otherwise refuses at once with exit 2, naming the forms. It
-// refuses an empty value. A command calls it before its first call, so that
-// its refusals make none.
+// refuses an empty value, and one longer than s.Max. A command calls it
+// before its first call, so that its refusals make none.
 func (in *Input) ReadSecret(ctx context.Context, s SecretInput) ([]byte, error) {
 	term := in.terminal()
 	switch {
 	case s.FileFlag != "" && in.Flag(s.FileFlag) != "":
 		path := in.Flag(s.FileFlag)
-		value, err := os.ReadFile(path)
+		value, err := readFile(path, s.Max)
 		if err != nil {
 			if pe, ok := errors.AsType[*fs.PathError](err); ok {
 				err = pe.Err
 			}
 			return nil, usagef("cannot read --%s %s: %v", s.FileFlag, path, err)
 		}
-		return nonEmpty(s, value, "--"+s.FileFlag+" "+path)
+		return s.check(value, "--"+s.FileFlag+" "+path)
 	case s.StdinFlag != "" && in.Bool(s.StdinFlag):
 		if term != nil {
 			return nil, usagef("--%s reads stdin, which is a terminal: pipe %s in, or leave out --%s to type it with echo off",
 				s.StdinFlag, s.What, s.StdinFlag)
 		}
-		value, err := in.readStdin()
+		value, err := in.readStdin(s.Max)
 		if err != nil {
 			return nil, err
 		}
-		return nonEmpty(s, value, "stdin")
+		return s.check(value, "stdin")
 	case s.Stdin && term == nil:
-		value, err := in.readStdin()
-		if err != nil || len(value) > 0 {
-			return value, err
+		value, err := in.readStdin(s.Max)
+		if err != nil {
+			return nil, err
+		}
+		if len(value) > 0 {
+			return s.check(value, "stdin")
 		}
 	case term != nil:
 		return in.prompt(ctx, term, s)
@@ -86,24 +93,50 @@ func (in *Input) prompt(ctx context.Context, term Terminal, s SecretInput) ([]by
 	if len(value) == 0 {
 		return nil, usagef("%s cannot be empty", s.What)
 	}
-	return value, nil
+	return s.check(value, "what was typed")
 }
 
-func (in *Input) readStdin() ([]byte, error) {
+// readStdin reads stdin to its end, or to one byte past limit when limit is
+// above 0.
+func (in *Input) readStdin(limit int) ([]byte, error) {
 	if in.inv.Stdin == nil {
 		return nil, nil
 	}
-	value, err := io.ReadAll(in.inv.Stdin)
+	value, err := readUpTo(in.inv.Stdin, limit)
 	if err != nil {
 		return nil, fmt.Errorf("read stdin: %w", err)
 	}
 	return value, nil
 }
 
-// nonEmpty refuses an empty value read from source.
-func nonEmpty(s SecretInput, value []byte, source string) ([]byte, error) {
-	if len(value) == 0 {
+// readFile reads the file at path, as readUpTo reads.
+func readFile(path string, limit int) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return readUpTo(f, limit)
+}
+
+// readUpTo reads r to its end, or, when limit is above 0, to one byte past
+// limit, which is enough to refuse what is too long without reading an
+// endless stream to its end.
+func readUpTo(r io.Reader, limit int) ([]byte, error) {
+	if limit > 0 {
+		r = io.LimitReader(r, int64(limit)+1)
+	}
+	return io.ReadAll(r)
+}
+
+// check refuses a value read from source that is empty or longer than
+// s.Max.
+func (s SecretInput) check(value []byte, source string) ([]byte, error) {
+	switch {
+	case len(value) == 0:
 		return nil, usagef("%s cannot be empty: %s is empty", s.What, source)
+	case s.Max > 0 && len(value) > s.Max:
+		return nil, usagef("%s is longer than %d bytes, the most it may be", s.What, s.Max)
 	}
 	return value, nil
 }

@@ -103,6 +103,7 @@ var codes = [][]Code{
 	webCodes,
 	deviceCodes,
 	hostCodes,
+	secretCodes,
 }
 
 // Codes returns every error code the API answers with.

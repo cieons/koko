@@ -266,7 +266,7 @@ func tsType(t reflect.Type, ref func(reflect.Type) (string, error)) (string, err
 		return "number", nil
 	case reflect.Slice:
 		if t.Elem().Kind() == reflect.Uint8 {
-			break // base64 in JSON; no API type needs it yet
+			return "string", nil // standard base64 in json/v2, such as a Secret value
 		}
 		elem, err := tsType(t.Elem(), ref)
 		if err != nil {

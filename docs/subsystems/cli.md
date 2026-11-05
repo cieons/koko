@@ -14,7 +14,8 @@ the positional arguments (each plain, qualified, or qualified and allowed
 bare; each required, or optional after every required one, shown as
 `[<device>]`; the last, if plain, may take many words, one or more, shown as
 `<user>...`), the flags (each with its `KOKO_*` variable, default and choices),
-whether it takes `key=value` pairs and `--unset`, the risk tier (required),
+whether it takes `key=value` pairs and `--unset`, whether it reads a secret
+input (`ReadsSecret`), the risk tier (required),
 Owner-only, the API operation it calls and its `Run`, made with `action(f)`
 from a function returning the command's `--json` type, which is also its
 shape. Every command takes `--json`, which is not listed.
@@ -49,6 +50,12 @@ arguments and flags, or refuses the command line with exit 2 and the code
   clears it), a key given twice, `--unset` of one key twice, and a key both set
   and unset.
 
+A command that reads a secret input (`ReadsSecret`, such as `secret add`)
+refuses an extra argument, and an unknown flag that does not start with
+`--`, without repeating the word: it may be the secret written where an
+argument goes, which koko never takes, and a refusal that repeated it would
+put it in an agent's transcript once more.
+
 Flags come after the path, mixed with arguments in any order, as `--name value`
 or `--name=value`; a value that starts with `--` needs the `=` form. A flag not
 given takes its `KOKO_*` variable when that is set and not empty, else its
@@ -77,11 +84,16 @@ forms. It refuses:
 - a stdin flag when stdin is a terminal, which would echo what is typed;
 - an empty value from any form, so a pipe from a command that failed sends
   nothing; empty stdin, such as an agent's `/dev/null`, gives nothing;
+- a value longer than the input's `Max`, when it has one (a Secret value's
+  is 64 KiB), never cut short; it reads no file or stdin past `Max` and one
+  byte, so an endless one is never read to its end, and checks a typed line
+  once it is read;
 - a file it cannot read, with exit 2.
 
 It reads stdin only for a stdin form. Stdin itself as the form (`secret add`)
-is read to its end whenever stdin is not a terminal, so a pipe that never
-closes waits; every other secret input fails at once without a terminal.
+is read to its end, or to `Max` and one byte, whenever stdin is not a
+terminal, so a pipe that never closes and stays under `Max` waits; every
+other secret input fails at once without a terminal.
 
 **Stdin decides "on a terminal".** The prompt reads its answer there, and a
 terminal anywhere else (stderr, or the controlling terminal of an agent's
@@ -145,7 +157,9 @@ status. A command reaches the koko server only on its first `in.Call`, so
   map, such as a Host's `attributes`, are sorted by key, so one record always
   prints the same.
 - Every record carries an `id`: its kind, `_` and 8 lowercase Crockford base32
-  characters, such as `space_3f9k2m7q`. No name holds `_`.
+  characters, such as `space_3f9k2m7q`. No name holds `_` but a Secret's,
+  which a command always takes with its Space, so an id never passes for a
+  name.
 - Timestamps, when a record has them, are RFC 3339 in UTC to the second, as
   `2026-11-05T14:03:07Z`.
 - Every field of a record is always there: one with no value is `null`, as
@@ -187,6 +201,9 @@ revoked, and when it was this device, that koko deleted its files.
 | `koko device ls [--user <user>] [--all]` | read | `device.list` | an array of Device Sessions, by User and then in the order they joined: `{"id", "user", "device", "added_by", "created_at", "last_used_at", "revoked_at"}`, where `added_by` is `{"id", "user", "device"}` of the Device Session that issued its Join Code, or `null` for the Unix socket; a Device Session's id is `device_...` |
 | `koko device revoke <device>` or `<user>/<device>` `[--last]` | irreversible | `device.revoke` | the Device Session it Revoked, as `device ls` prints one ([revoking](device-connection.md#revoking)) |
 | `koko join <join-code>` or `koko join -` | irreversible | `user.current`, after joining in SSH authentication | `{"server_address", "device_session"}`, the Device Session as `device ls` prints one |
+| `koko secret ls [<space>]` | read | `secret.list` | an array of Secrets, never a value: `{"id", "space", "name", "created_at", "updated_at"}` ([Secrets](secrets.md)) |
+| `koko secret show <space>/<secret>` | irreversible | `secret.show` | the Secret with its value, `"value_base64"`, the one `--json` that holds a value; without `--json`, the value's bytes alone |
+| `koko secret add <space>/<secret> [--from-file <file>]` | reversible | `secret.add` | the Secret it stored, without its value |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
 | `koko server run [--data-dir <dir>] [--root-key-file <file>] [--listen <addr>] [--log-level <level>]` | irreversible | none | nothing on success |

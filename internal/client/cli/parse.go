@@ -58,6 +58,9 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 		}
 		name, value, hasValue := strings.Cut(strings.TrimPrefix(tok, "--"), "=")
 		if !strings.HasPrefix(tok, "--") || name == "" {
+			if cmd.ReadsSecret {
+				return nil, usagef("unknown flag for koko %s, not repeated here in case it is a secret", cmd.Path())
+			}
 			return nil, usagef("unknown flag %s for koko %s", tok, cmd.Path())
 		}
 		if name == "json" {
@@ -112,6 +115,10 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 		return nil, usagef("koko %s needs %s", cmd.Path(), cmd.Args[len(positional)].usage())
 	}
 	if len(positional) > len(cmd.Args) && cmd.many() == nil {
+		if cmd.ReadsSecret {
+			return nil, usagef("unexpected argument, not repeated here in case it is a secret, which koko never takes as an argument: %s",
+				usageLine(cmd))
+		}
 		return nil, usagef("unexpected argument %q: %s", positional[len(cmd.Args)], usageLine(cmd))
 	}
 	for i, v := range positional {

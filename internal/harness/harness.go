@@ -239,6 +239,25 @@ func (h *Harness) Koko(args ...string) Result {
 	return Run(h.t, cli.Runner{SocketPath: h.socket}, []string{"HOME=" + h.home}, args...)
 }
 
+// KokoStdin runs one koko command line in process, as Koko does, with stdin
+// as its stdin, which is not a terminal.
+func (h *Harness) KokoStdin(stdin string, args ...string) Result {
+	h.t.Helper()
+	return run(h.t, cli.Runner{SocketPath: h.socket}, []string{"HOME=" + h.home}, stdin, args...)
+}
+
+// KokoTerminal runs one koko command line in process, as Koko does, with
+// term as the terminal on its stdin, through the fake-terminal hook.
+func (h *Harness) KokoTerminal(term *Terminal, args ...string) Result {
+	h.t.Helper()
+	return run(h.t, cli.Runner{SocketPath: h.socket, Terminal: term}, []string{"HOME=" + h.home}, "", args...)
+}
+
+// Home returns the temporary HOME that Koko runs command lines under.
+func (h *Harness) Home() string {
+	return h.home
+}
+
 // Now returns the koko server's clock: the second Start began, moved only by
 // Advance.
 func (h *Harness) Now() time.Time {

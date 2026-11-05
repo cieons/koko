@@ -26,9 +26,10 @@ func TestCommandsThatPrintAJoinCodeAreIrreversible(t *testing.T) {
 	}
 }
 
-// holds tells whether a value of type t can hold a want.
+// holds tells whether a value of type t can hold a want, which may itself be
+// a slice type, such as api.SecretValue.
 func holds(t, want reflect.Type, seen map[reflect.Type]bool) bool {
-	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array || t.Kind() == reflect.Map {
+	for t != want && (t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array || t.Kind() == reflect.Map) {
 		t = t.Elem()
 	}
 	if t == want {

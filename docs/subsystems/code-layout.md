@@ -15,7 +15,7 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
 | shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the version and operations report, the channel adapter and how a join carries its secret (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`), the record's value rules: a Host's fields, Attribute keys and values, the Note (`record`) | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `host`, `web`: the web front), the embedded web UI (`webui`), the Host connector (`hostconn`), the installer (`installer`); later the Gateway | client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `host`, `secret`, `web`: the web front), the embedded web UI (`webui`), the Host connector (`hostconn`), the installer (`installer`); later the Gateway | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join (`devicefiles`); later the Device Mux, tunnel and ssh_config | server |
 
 Only [`cmd/koko`](../../cmd/koko) and the S1 harness
@@ -61,7 +61,8 @@ loaded takes it in its `Register`, which [`server.Start`](../../internal/server/
 calls after the `areas` list: `device` and `user` take the Join Code issuer,
 which reads the host key with the Root Key ([Join Codes](join-codes.md#issuing)).
 `space` takes `user.ByName`, since `user` imports `space` (every User gets a
-Personal Space), and the `holdings` list.
+Personal Space), and the `holdings` list. `secret` takes the Root Key, which
+seals and opens every value ([Secrets](secrets.md#sealing)).
 The `web` area's front holds the runs of `koko web` in memory and reads the
 koko server's clock, so `server.Start` makes it and it registers its own
 operation (`web.Front.Register`).
@@ -164,7 +165,11 @@ logging at debug level) and initialises it over the socket, with the Owner
 on); so `koko space ls` lists `alice`'s Personal Space, and initialisation's
 Join Code holds `alice`'s `device-1`.
 `h.Koko(args...)` runs a command line in process through `cli.Runner` as the
-Local caller under a temporary HOME, and `h.Call(op, req)` calls an operation
+Local caller under a temporary HOME (`h.Home()`), with empty stdin;
+`h.KokoStdin(stdin, args...)` gives it stdin, and `h.KokoTerminal(term,
+args...)` puts the fake terminal `term`, a `harness.NewTerminal(lines...)`
+where a person types one line at each prompt, on its stdin through the
+fake-terminal hook. `h.Call(op, req)` calls an operation
 no command calls, such as `server.init`. `h.Calls()` counts the API calls the
 server answered since `Start` returned, so a refusal can be shown to make
 none. The options `harness.NoInit()`, `harness.DataDir(dir)` and

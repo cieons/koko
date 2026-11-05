@@ -24,6 +24,7 @@ import (
 	"github.com/cieons/koko/internal/server/host"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
+	"github.com/cieons/koko/internal/server/secret"
 	"github.com/cieons/koko/internal/server/space"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/server/transport"
@@ -45,6 +46,7 @@ var areas = []func(*op.API){
 // records live in a Space, such as Hosts or Secrets, adds its line.
 var holdings = []space.Holding{
 	host.Holding,
+	secret.Holding,
 }
 
 // Config is what the koko server starts with.
@@ -137,6 +139,8 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	// commits, the transport closes the Device Connections it Revoked.
 	var changes access.Signal
 	changes.Subscribe(func(c access.Change) { t.CloseDeviceSessions(c.Revoked...) })
+	// The secret area seals and opens every value with the Root Key.
+	secret.Register(a, key)
 	// The areas that issue Join Codes need what the process loaded to name
 	// the koko server in them.
 	issuer := device.NewIssuer(joinTarget(key, tcp.port))

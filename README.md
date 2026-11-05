@@ -14,6 +14,10 @@ providers, and it is the one door people and AI agents use to reach them.
 - A record of your hosts and the services on them, described by typed
   attributes such as provider, region and renewal date.
 - Spaces that decide who can see and reach which hosts.
+- Secrets: passwords, keys and tokens kept in a Space, sealed under a key
+  that never sits beside the data, and printed only by
+  `koko secret show`. Credentials go only into Secrets: notes and
+  attributes are stored plain.
 - A gateway that ends every SSH session, so only koko holds a key your
   hosts trust.
 - Enrolling a host adds one public key to it and changes nothing else.
