@@ -1,5 +1,7 @@
 GO ?= go
-CROSS_TARGETS := linux/amd64 linux/arm64 darwin/arm64
+# windows/amd64 is compiled only, never released: it keeps the CLI ready for
+# Windows (P1) by failing the build when code skips its per-OS interface.
+CROSS_TARGETS := linux/amd64 linux/arm64 darwin/arm64 windows/amd64
 
 .PHONY: check lint fmt vet test cross build clean
 

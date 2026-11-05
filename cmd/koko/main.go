@@ -1,25 +1,29 @@
-// Command koko is the koko CLI and server.
+// Command koko is the koko CLI and, in Linux builds, the koko server.
+//
+// It is one of the two places (with the test harness) that import both the
+// server and the client package groups: it hands `koko server run` the koko
+// server through cli.Runner, so no client package imports a server package.
 package main
 
 import (
-	"fmt"
+	"context"
 	"os"
-	"runtime/debug"
+	"os/signal"
+	"syscall"
+
+	"github.com/cieons/koko/internal/client/cli"
 )
 
 func main() {
-	if len(os.Args) == 2 && os.Args[1] == "version" {
-		fmt.Println(version())
-		return
-	}
-	fmt.Fprintln(os.Stderr, "usage: koko version")
-	os.Exit(2)
-}
-
-// version reports the module version the Go toolchain stamped from VCS at build time.
-func version() string {
-	if info, ok := debug.ReadBuildInfo(); ok {
-		return info.Main.Version
-	}
-	return "unknown"
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	r := cli.Runner{ServerRun: serverRun}
+	status := r.Run(ctx, cli.Invocation{
+		Args:   os.Args[1:],
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+		Env:    os.Environ(),
+	})
+	stop()
+	os.Exit(status)
 }

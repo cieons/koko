@@ -7,7 +7,10 @@ ADR; a proposed change lives in its issue or PR.
 
 | Subsystem | Reference |
 | --- | --- |
-| _None yet._ | |
+| Code layout: the package groups, where an area adds its parts, and the rules for working in parallel | [code-layout.md](code-layout.md) |
+| The API: the Unix socket, channels, calls, error codes and the operation framework | [api.md](api.md) |
+| The CLI: the command tree, parser, runner, output layer and `--json` | [cli.md](cli.md) |
+| The store: SQLite, transactions, migrations and record ids | [store.md](store.md) |
 
 ## Maintaining a reference
 
