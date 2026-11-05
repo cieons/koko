@@ -127,10 +127,14 @@ _Avoid_: admin, root, console
 An SSH connection from a device to the koko server, authenticated by that device's Device Session.
 _Avoid_: tunnel, session, link
 
+**Device Mux**:
+The background process on a device that holds its one Device Connection and carries every koko command and Tunnel of that device over it.
+_Avoid_: daemon, agent, mux (alone), master
+
 **SSH Session**:
 One SSH connection through the Gateway to a Host.
 _Avoid_: session (alone), connection
 
 **Tunnel**:
-A channel the CLI opens on a Device Connection to carry one SSH Session to the Gateway.
+A channel the CLI opens to the koko server, on a Device Connection or over the Unix socket, to carry one SSH Session to the Gateway.
 _Avoid_: websocket, channel, stream
