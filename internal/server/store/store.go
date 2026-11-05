@@ -50,8 +50,14 @@ type Tx interface {
 }
 
 // Open opens koko.db in dataDir, creating the directory and the file when they
-// are missing, and migrates it forward to this binary's schema.
+// are missing, and brings it to this binary's schema (see upgrade).
 func Open(ctx context.Context, dataDir string) (*Store, error) {
+	return open(ctx, dataDir, kokoSchema)
+}
+
+// open is Open with the schema given, so tests can play an older or a newer
+// koko.
+func open(ctx context.Context, dataDir string, sc schema) (*Store, error) {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create data directory %s: %w", dataDir, err)
 	}
@@ -61,9 +67,9 @@ func Open(ctx context.Context, dataDir string) (*Store, error) {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 	s := &Store{write: write}
-	if err := s.migrate(ctx); err != nil {
+	if err := s.upgrade(ctx, dataDir, sc); err != nil {
 		_ = write.Close()
-		return nil, fmt.Errorf("migrate %s: %w", path, err)
+		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 	// The read pool opens once the file exists in WAL mode, which a
 	// query-only connection could not switch it to.
