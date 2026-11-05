@@ -51,6 +51,10 @@ func TestCommandTreeEntries(t *testing.T) {
 				t.Errorf("%s %s holds /; write a qualified name with Qualifier", path, a.usage())
 			case a.Bare && a.Qualifier == "":
 				t.Errorf("%s <%s> may be bare but has no qualifier", path, a.Name)
+			case a.Many && i != len(c.Args)-1:
+				t.Errorf("%s <%s> takes many words but is not the last argument", path, a.Name)
+			case a.Many && a.Qualifier != "":
+				t.Errorf("%s %s takes many words and is qualified, which the parser does not take", path, a.usage())
 			}
 			names = append(names, a.Name)
 		}

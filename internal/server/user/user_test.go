@@ -28,7 +28,12 @@ func TestUserInviteIsOneTransaction(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	a := op.New(st, slog.New(slog.DiscardHandler),
 		func(context.Context, store.Tx) (bool, error) { return true, nil }, time.Now)
-	space.Register(a)
+	space.Register(a, user.ByName, nil)
+	// Only the Owner invites, so the Local caller needs an Owner to act as.
+	addOwner := api.Op[struct{}, struct{}]{Name: "test.owner", Write: true}
+	a.Handle(addOwner, func(ctx context.Context, tx store.Tx, _ op.Caller, _ struct{}) (struct{}, error) {
+		return struct{}{}, user.AddOwner(ctx, tx, "alice")
+	})
 	failing := true
 	user.Register(a, func(context.Context, store.Tx, op.Caller, api.DeviceAddRequest) (api.JoinCode, error) {
 		if failing {
@@ -44,6 +49,9 @@ func TestUserInviteIsOneTransaction(t *testing.T) {
 		return rec
 	}
 
+	if rec := call(addOwner.Path(), `{}`); rec.Code != http.StatusOK {
+		t.Fatalf("record the Owner: %d %s", rec.Code, rec.Body)
+	}
 	if rec := call(api.UserInvite.Path(), `{"name": "bob"}`); rec.Code != api.CodeInternal.Status {
 		t.Fatalf("user.invite with a failing Join Code = %d %s, want internal_error", rec.Code, rec.Body)
 	}

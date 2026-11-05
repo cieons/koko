@@ -132,6 +132,15 @@ func (in *Input) Arg(name string) string {
 	return in.line.args[name]
 }
 
+// Args returns the words of the argument with this name that takes many
+// (Arg.Many), as typed and in order.
+func (in *Input) Args(name string) []string {
+	if a := in.line.cmd.many(); a == nil || a.Name != name {
+		return nil
+	}
+	return in.line.many
+}
+
 // Qualified returns the two parts of the qualified argument arg: "ops" and
 // "db-password" for ops/db-password. The qualifier is "" for one written
 // bare.

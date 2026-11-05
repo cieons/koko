@@ -9,8 +9,8 @@ test("the page lists the Spaces the API answers with", async () => {
   const api = fakeApi();
   api.on(SpaceList, () => ({
     spaces: [
-      { id: "space_3f9k2m7q", name: "ops" },
-      { id: "space_8h2j4k6m", name: "web" },
+      { id: "space_3f9k2m7q", name: "ops", personal: false },
+      { id: "space_8h2j4k6m", name: "web", personal: false },
     ],
   }));
 

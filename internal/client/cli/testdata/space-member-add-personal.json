@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "personal_space",
+    "message": "alice is a Personal Space, which is never given Members while its User exists"
+  }
+}

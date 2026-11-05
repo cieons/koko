@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "personal_space",
+    "message": "bob is a Personal Space, which stays while its User exists"
+  }
+}

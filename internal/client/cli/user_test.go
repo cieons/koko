@@ -92,6 +92,27 @@ func TestUserInviteRefusesATakenName(t *testing.T) {
 	}
 }
 
+// Only the Owner invites a User. A Member is refused with owner_only before
+// koko reads the name, so the refusal does not say whether a User or a
+// Space holds it, and creates nothing.
+func TestOnlyTheOwnerInvites(t *testing.T) {
+	h := harness.Start(t)
+	h.Koko("user", "invite", "bob").WantSuccess(t)
+	h.Koko("space", "add", "ops").WantSuccess(t)
+	bob := h.Join("bob")
+	r := bob.Koko("user", "invite", "carol", "--json")
+	r.WantError(t, 1, "owner_only")
+	harness.Golden(t, "user-invite-owner-only.json", r.Stderr)
+	for _, taken := range []string{"ops", "bob", harness.Owner} {
+		if got := bob.Koko("user", "invite", taken, "--json"); got != r {
+			t.Errorf("a Member's user invite %s = %+v, want the refusal for a free name: %+v", taken, got, r)
+		}
+	}
+	if r := h.Koko("user", "invite", "carol", "--json"); r.Status != 0 {
+		t.Errorf("the Owner's user invite carol after the refusals = %+v, want carol free", r)
+	}
+}
+
 // A User's name is a lowercase DNS label.
 func TestUserInviteRefusesAnInvalidName(t *testing.T) {
 	h := harness.Start(t)

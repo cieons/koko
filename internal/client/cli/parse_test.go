@@ -203,6 +203,38 @@ func TestParseRefusesQualifiedNames(t *testing.T) {
 	}
 }
 
+// A tree whose last argument takes one word or more.
+var manyTree = []Command{
+	{Noun: "space member", Verb: "add", Tier: Reversible, Args: []Arg{{Name: "space"}, {Name: "user", Many: true}}},
+}
+
+// An argument with Many takes every word left, in order, and needs one;
+// each word is checked as any argument is.
+func TestParseManyArguments(t *testing.T) {
+	for _, tc := range []struct {
+		argv  []string
+		users []string
+	}{
+		{[]string{"space", "member", "add", "ops", "bob"}, []string{"bob"}},
+		{[]string{"space", "member", "add", "ops", "bob", "--json", "carol", "dave"}, []string{"bob", "carol", "dave"}},
+	} {
+		in := inputFor(t, manyTree, tc.argv...)
+		if in.Arg("space") != "ops" || !slices.Equal(in.Args("user"), tc.users) {
+			t.Errorf("parse %q = <space> %q, <user>... %q; want ops, %q", tc.argv, in.Arg("space"), in.Args("user"), tc.users)
+		}
+	}
+	for _, tc := range []struct {
+		argv    []string
+		message string
+	}{
+		{[]string{"space", "member", "add", "ops"}, "koko space member add needs <user>..."},
+		{[]string{"space", "member", "add", "ops", "bob", ""}, "<user>... cannot be empty in koko space member add"},
+	} {
+		_, err := parse(manyTree, tc.argv, noEnv)
+		wantRefused(t, err, tc.message)
+	}
+}
+
 // A tree with an optional argument after a required one.
 var optionalTree = []Command{
 	{Noun: "device", Verb: "add", Tier: Irreversible, Args: []Arg{{Name: "device", Optional: true}}, Flags: []Flag{{Name: "user", Value: "user"}}},

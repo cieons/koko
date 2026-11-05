@@ -1,0 +1,12 @@
+[
+  {
+    "id": "space_<1>",
+    "name": "bob",
+    "personal": true
+  },
+  {
+    "id": "space_<2>",
+    "name": "ops",
+    "personal": false
+  }
+]

@@ -34,9 +34,12 @@ import (
 
 // areas registers each area's operations; an area's first ticket adds its
 // line.
-var areas = []func(*op.API){
-	space.Register,
-}
+var areas = []func(*op.API){}
+
+// holdings counts what each area records in a Space, for space show's
+// counts and space rm's refusal of a Space that is not empty; an area whose
+// records live in a Space, such as Hosts or Secrets, adds its line.
+var holdings = []space.Holding{}
 
 // Config is what the koko server starts with.
 type Config struct {
@@ -75,6 +78,8 @@ type Server struct {
 	store     *store.Store
 	transport *transport.Server
 	tcp       *tcpListener
+	// api serves every operation the areas registered.
+	api *op.API
 }
 
 // Start opens the data directory, loads the Root Key, opens the koko
@@ -114,10 +119,11 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	front := web.New(a, st, key, clock, log)
 	t := transport.New(a, front, log)
 	tcp := &tcpListener{addr: cfg.Listen, transport: t, devices: device.NewAuthenticator(st, clock, log)}
-	srv := &Server{store: st, transport: t, tcp: tcp}
+	srv := &Server{store: st, transport: t, tcp: tcp, api: a}
 	for _, register := range areas {
 		register(a)
 	}
+	space.Register(a, user.ByName, holdings)
 	// The areas that issue Join Codes need what the process loaded to name
 	// the koko server in them.
 	issuer := device.NewIssuer(joinTarget(key, tcp.port))

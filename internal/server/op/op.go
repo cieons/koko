@@ -18,8 +18,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"mime"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -154,6 +156,11 @@ func (a *API) Handle[Req, Resp any](o api.Op[Req, Resp], fn Func[Req, Resp], opt
 		opt(&entry)
 	}
 	a.ops[o.Name] = entry
+}
+
+// Names returns the names of the registered operations, sorted.
+func (a *API) Names() []string {
+	return slices.Sorted(maps.Keys(a.ops))
 }
 
 // ServeHTTP answers one call.

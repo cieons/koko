@@ -43,9 +43,13 @@ func current(ctx context.Context, tx store.Tx, caller op.Caller, _ api.UserCurre
 
 // invite is user.invite: in one transaction it creates the Member with their
 // Personal Space, and issues their first Join Code, whose device the Invite
-// does not name.
+// does not name. Only the Owner invites, and a Member is refused before the
+// name is checked, so the refusal says nothing of who holds it.
 func invite(issue IssueFunc) op.Func[api.UserInviteRequest, api.UserInviteResponse] {
 	return func(ctx context.Context, tx store.Tx, caller op.Caller, req api.UserInviteRequest) (api.UserInviteResponse, error) {
+		if _, err := access.OwnerOnly(ctx, tx, caller, "invites Users"); err != nil {
+			return api.UserInviteResponse{}, err
+		}
 		u, err := add(ctx, tx, req.Name, api.RoleMember)
 		if err != nil {
 			return api.UserInviteResponse{}, err

@@ -1,6 +1,7 @@
 [
   {
     "id": "space_<1>",
-    "name": "alice"
+    "name": "alice",
+    "personal": true
   }
 ]

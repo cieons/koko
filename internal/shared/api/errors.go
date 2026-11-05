@@ -82,6 +82,7 @@ var commonCodes = []Code{
 // adds codes of its own adds its line.
 var codes = [][]Code{
 	commonCodes,
+	spaceCodes,
 	serverCodes,
 	userCodes,
 	webCodes,

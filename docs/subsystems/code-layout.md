@@ -15,7 +15,7 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
 | shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the channel adapter and how a join carries its secret (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`); later Attribute values | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check, which answers who is calling (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `web`: the web front), the embedded web UI (`webui`), the Host connector (`hostconn`), the installer (`installer`); later the Gateway | client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `web`: the web front), the embedded web UI (`webui`), the Host connector (`hostconn`), the installer (`installer`); later the Gateway | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join (`devicefiles`); later the Device Mux, tunnel and ssh_config | server |
 
 Only [`cmd/koko`](../../cmd/koko) and the S1 harness
@@ -49,6 +49,8 @@ lines.
 | API-to-CLI mappings | `<area>Mappings` in the same file | `mappings` in [`mapping.go`](../../internal/client/cli/mapping.go) |
 | Migration steps | `internal/server/store/migrations/<what-it-adds>.sql` | `steps` in [`migrations.go`](../../internal/server/store/migrations.go) (rule 2) |
 | S1 tests and golden files | `internal/client/cli/<area>_test.go`, `testdata/<command>[-<case>].json` | none |
+| Access-matrix rows | `internal/server/access/matrix_<area>_test.go`, with `<area>Rows` | `areaRows` in [`matrix_test.go`](../../internal/server/access/matrix_test.go) (rule 6) |
+| What a Space holds, for an area whose records live in a Space | a [`space.Holding`](../../internal/server/space/space.go) in the area's package | `holdings` in [`server.go`](../../internal/server/server.go) (rule 7) |
 
 The `server` area's operations act on the koko server process itself (the
 Root Key it loaded, its keys, its listeners), so the process package
@@ -58,6 +60,8 @@ package of its own. An area whose operations need what the process
 loaded takes it in its `Register`, which [`server.Start`](../../internal/server/server.go)
 calls after the `areas` list: `device` and `user` take the Join Code issuer,
 which reads the host key with the Root Key ([Join Codes](join-codes.md#issuing)).
+`space` takes `user.ByName`, since `user` imports `space` (every User gets a
+Personal Space), and the `holdings` list.
 The `web` area's front holds the runs of `koko web` in memory and reads the
 koko server's clock, so `server.Start` makes it and it registers its own
 operation (`web.Front.Register`).
@@ -87,10 +91,12 @@ its own only when an agent would act on it differently.
    area, so each page ticket adds its own pair; the messages for an area's API
    error codes go in that pair. The completeness test (#46) spans every pair.
 6. **The access matrix.** Each area keeps its rows in a test file of its own;
-   the matrix test (#39) fails for any registered operation without a row.
+   the matrix test fails for any registered operation without a row
+   ([the access matrix](access.md#the-access-matrix)).
 7. **"What a Space holds".** `space show` counts and the `space rm` refusal
-   ask each area through one small interface (#39), so Hosts (#47) and Secrets
-   (#48) each add their own file.
+   ask each area through one small interface, a `space.Holding`, so Hosts
+   (#47) and Secrets (#48) each add their own file and one line to `holdings`
+   ([what a Space holds](access.md#what-a-space-holds)).
 8. **Transactions.** The operation framework ([`op`](../../internal/server/op/op.go))
    opens and commits each call's transaction; an operation gets a `store.Tx`,
    which cannot commit. The `Idempotency-Key` store (#41) joins every write
@@ -182,7 +188,10 @@ over a Device Connection; `d.Koko(args...)` and `d.KokoStdin(stdin,
 args...)` run command lines on it, and `d.Home()` is its HOME.
 `h.Join(user)` issues a Join Code for the User over the socket and returns a
 new device joined with it. `h.Socket()` is the socket's path, for a runner on
-the koko server's own machine.
+the koko server's own machine. `h.Send(op, body)` and `d.Send(op, body)`
+call an operation with a raw JSON body, as the Local caller or as the
+device's Device Session, and return the status and the body as the koko
+server wrote them, for the access matrix and other byte-for-byte checks.
 [`harness.Forward(t, target)`](../../internal/harness/forward.go) is a
 loopback TCP forwarder whose target `f.To(addr)` changes and whose
 `f.Conns()` counts its connections: initialised with its address as the

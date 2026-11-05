@@ -8,8 +8,10 @@ import (
 
 // parsed is a command line the parser accepted.
 type parsed struct {
-	cmd       *Command
-	args      map[string]string
+	cmd  *Command
+	args map[string]string
+	// many holds the words of the argument that takes many, in order.
+	many      []string
 	qualified map[string]qualifiedName
 	flags     map[string]string
 	pairs     []Pair
@@ -109,13 +111,17 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 	if len(positional) < len(cmd.Args) && !cmd.Args[len(positional)].Optional {
 		return nil, usagef("koko %s needs %s", cmd.Path(), cmd.Args[len(positional)].usage())
 	}
-	if len(positional) > len(cmd.Args) {
+	if len(positional) > len(cmd.Args) && cmd.many() == nil {
 		return nil, usagef("unexpected argument %q: %s", positional[len(cmd.Args)], usageLine(cmd))
 	}
 	for i, v := range positional {
-		a := cmd.Args[i]
+		a := cmd.Args[min(i, len(cmd.Args)-1)]
 		if v == "" {
 			return nil, usagef("%s cannot be empty in koko %s", a.usage(), cmd.Path())
+		}
+		if a.Many {
+			p.many = append(p.many, v)
+			continue
 		}
 		if a.Qualifier != "" {
 			q, err := a.split(v)
@@ -265,6 +271,15 @@ func find(tree []Command, path []string) *Command {
 	return &tree[i]
 }
 
+// many returns the command's argument that takes many words, its last, or
+// nil when it has none.
+func (c *Command) many() *Arg {
+	if len(c.Args) == 0 || !c.Args[len(c.Args)-1].Many {
+		return nil
+	}
+	return &c.Args[len(c.Args)-1]
+}
+
 // unsetFlag is --unset <key>, which a command with Unset takes, repeatable.
 var unsetFlag = Flag{Name: "unset", Value: "key", Summary: "Clear a field or Attribute; repeatable"}
 
@@ -308,8 +323,8 @@ func (a *Arg) split(v string) (qualifiedName, error) {
 }
 
 // usage shows how the argument is written: <space>, <space>/<secret>,
-// [<user>/]<device> for one that may be bare, and in brackets for an
-// optional one, such as [<device>].
+// [<user>/]<device> for one that may be bare, <user>... for one that takes
+// many words, and in brackets for an optional one, such as [<device>].
 func (a *Arg) usage() string {
 	var u string
 	switch {
@@ -319,6 +334,9 @@ func (a *Arg) usage() string {
 		u = "<" + a.Qualifier + ">/<" + a.Name + ">"
 	default:
 		u = "<" + a.Name + ">"
+	}
+	if a.Many {
+		u += "..."
 	}
 	if a.Optional {
 		return "[" + u + "]"

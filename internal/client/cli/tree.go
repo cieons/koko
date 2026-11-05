@@ -35,9 +35,9 @@ type Command struct {
 	Unset bool
 	// Tier is the command's risk tier (ADR 0019). It is required.
 	Tier Tier
-	// OwnerOnly says only the Owner may run the command. The koko server's
-	// access check (#39) enforces it; until then every caller is the Local
-	// caller, who acts as the Owner.
+	// OwnerOnly says only the Owner may run the command, for help and koko
+	// skill. The koko server's access check enforces it, refusing anyone
+	// else with owner_only.
 	OwnerOnly bool
 	// Op is the API operation the command calls, or nil for a command that
 	// calls none.
@@ -69,6 +69,10 @@ type Arg struct {
 	// Optional lets the argument be left out, shown as [<Name>]. Only
 	// arguments after every required one may be optional.
 	Optional bool
+	// Many makes the last argument take every word left, one or more, shown
+	// as <Name>..., such as the Users of space member add; Input.Args
+	// returns them in order.
+	Many bool
 }
 
 // Pair is a key=value word, cut at its first '='.

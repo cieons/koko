@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "unknown_user",
+    "message": "no User is named \"nobody\""
+  }
+}

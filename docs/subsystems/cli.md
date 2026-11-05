@@ -12,15 +12,16 @@ joined from each area's `<area>Commands`. An entry
 ([`cli.Command`](../../internal/client/cli/tree.go)) holds the noun and verb,
 the positional arguments (each plain, qualified, or qualified and allowed
 bare; each required, or optional after every required one, shown as
-`[<device>]`), the flags (each with its `KOKO_*` variable, default and choices),
+`[<device>]`; the last, if plain, may take many words, one or more, shown as
+`<user>...`), the flags (each with its `KOKO_*` variable, default and choices),
 whether it takes `key=value` pairs and `--unset`, the risk tier (required),
 Owner-only, the API operation it calls and its `Run`, made with `action(f)`
 from a function returning the command's `--json` type, which is also its
 shape. Every command takes `--json`, which is not listed.
 [`tree_test.go`](../../internal/client/cli/tree_test.go) checks every entry: a
 tier, a summary, a unique path, sound arguments and flags (neither `--json`
-nor `--unset` listed, and `--unset` only beside pairs), and an operation that
-`api.Operations` lists.
+nor `--unset` listed, `--unset` only beside pairs, and many words only for
+the last argument, unqualified), and an operation that `api.Operations` lists.
 
 ## The parser
 
@@ -38,7 +39,8 @@ arguments and flags, or refuses the command line with exit 2 and the code
   variable), and `--json` or a boolean flag given a value;
 - a missing, an empty or an extra argument, so `koko space add "$NAME"` with
   `NAME` unset never reaches the koko server; an optional argument may be
-  left out, but given empty it is refused too;
+  left out, but given empty it is refused too; an argument that takes many
+  words needs one, refuses an empty one, and leaves no word extra;
 - a qualified name (`<space>/<secret>`, `<host>/<service>`, `<user>/<device>`)
   with a part missing or empty, or a part that holds `/`; one that may be bare
   (`[<user>/]<device>`) is also taken without its `/`;
@@ -56,7 +58,8 @@ A command with `Pairs` reads every word holding `=` as a pair, cut at its
 first `=` (`note=a=b` sets `note` to `a=b`); no name holds `=`, so no argument
 is mistaken for one. One with `Unset` also takes `--unset <key>`, repeatable.
 `Input.Pairs` and `Input.Unset` return them in the order given; checking a key
-against the field names and Attribute key rules is the command's. A qualified
+against the field names and Attribute key rules is the command's.
+`Input.Args` returns the words of an argument that takes many, in order. A qualified
 argument keeps its text in `Input.Arg` and its parts in `Input.Qualified`.
 
 ## The secret-input reader
@@ -125,7 +128,9 @@ status. A command reaches the koko server only on its first `in.Call`, so
 
 - The shapes are the CLI's own Go types (`spaceJSON`), mapped by hand from the
   API's. A list prints a bare array of every item (`[]` when empty), and a
-  write prints the record it made or changed.
+  write prints the record it made or changed. An `rm` prints the record it
+  removed, as it was, in the shape its `ls` prints, so a script keeps the
+  id of what is gone.
 - Indented by two spaces, one value, ending in a newline.
 - Every record carries an `id`: its kind, `_` and 8 lowercase Crockford base32
   characters, such as `space_3f9k2m7q`. No name holds `_`.
@@ -140,8 +145,9 @@ status. A command reaches the koko server only on its first `in.Call`, so
 
 ## Output for people
 
-Not a contract: a write says what it did (`Added Space ops (space_3f9k2m7q).`),
-and a list is a table with a header (`NAME  ID`), or a sentence when empty. A
+Not a contract: a write says what it did (`Added Space ops (space_3f9k2m7q).`,
+`Removed Space ops (space_3f9k2m7q).`), and a list is a table with a header
+(`NAME  ID`), or a sentence when empty. A
 command that issues a Join Code says for whom and until when, then prints the
 one `koko join koko_...` line to paste on the new device. `koko join` says
 which koko server it joined, as whose device.
@@ -150,9 +156,14 @@ which koko server it joined, as whose device.
 
 | Command | Tier | Calls | `--json` |
 | --- | --- | --- | --- |
-| `koko space add <space>` (Owner; enforced from #39) | reversible | `space.add` | the Space: `{"id", "name"}` |
-| `koko space ls` | read | `space.list` | an array of Spaces |
-| `koko user invite <user>` (Owner; enforced from #39) | irreversible | `user.invite` | `{"user": {"id", "name", "role", "created_at"}, "join_code": ...}`, the Join Code as `device add` prints it |
+| `koko space add <space>` (Owner) | reversible | `space.add` | the Space: `{"id", "name", "personal"}` |
+| `koko space ls` | read | `space.list` | an array of the Spaces the caller can act in |
+| `koko space show <space>` | read | `space.show` | the Space with its Members and counts: `{"id", "name", "personal", "members": [{"id", "name"}], "counts": {"hosts", "secrets"}}`; a member's `id` is the User's |
+| `koko space rename <space> <new-name>` (Owner) | reversible | `space.rename` | the Space under its new name |
+| `koko space rm <space>` (Owner) | irreversible | `space.remove` | the Space it removed, as it was |
+| `koko space member add <space> <user>...` (Owner) | reversible | `space.member.add` | the Space with its Members after the change, as `space show` prints it |
+| `koko space member rm <space> <user>...` (Owner) | reversible | `space.member.remove` | the same |
+| `koko user invite <user>` (Owner) | irreversible | `user.invite` | `{"user": {"id", "name", "role", "created_at"}, "join_code": ...}`, the Join Code as `device add` prints it |
 | `koko device add [<device>] [--user <user>]` | irreversible | `device.add` | the Join Code: `{"id", "code", "user", "device", "expires_at"}` |
 | `koko join <join-code>` or `koko join -` | irreversible | `user.current`, after joining in SSH authentication | `{"server_address", "device_session": {"id", "user", "device", "created_at"}}`; a Device Session's id is `device_...` |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
