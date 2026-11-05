@@ -67,8 +67,8 @@ func Initialised(ctx context.Context, tx store.Tx) (bool, error) {
 // rootKey for its own record, and stores them with the Server Address
 // address, which it checks first.
 func Create(ctx context.Context, tx store.Tx, rootKey *seal.RootKey, address string) (*Keys, error) {
-	if err := serveraddr.Check(address); err != nil {
-		return nil, api.CodeInvalidAddress.Errorf("invalid Server Address: %v", err)
+	if err := checkAddress(address); err != nil {
+		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, "INSERT INTO deployment (id, address) VALUES (1, ?)", address); err != nil {
 		return nil, fmt.Errorf("store the Server Address: %w", err)
@@ -131,6 +131,27 @@ func Address(ctx context.Context, tx store.Tx) (string, error) {
 		return "", fmt.Errorf("read the Server Address: %w", err)
 	}
 	return address, nil
+}
+
+// SetAddress changes the Server Address to address, which it checks first.
+// Only the Join Codes issued afterwards carry it.
+func SetAddress(ctx context.Context, tx store.Tx, address string) error {
+	if err := checkAddress(address); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE deployment SET address = ?", address); err != nil {
+		return fmt.Errorf("change the Server Address: %w", err)
+	}
+	return nil
+}
+
+// checkAddress refuses what is not a Server Address with
+// api.CodeInvalidAddress.
+func checkAddress(address string) error {
+	if err := serveraddr.Check(address); err != nil {
+		return api.CodeInvalidAddress.Errorf("invalid Server Address: %v", err)
+	}
+	return nil
 }
 
 // HostKey opens the host key with rootKey and returns its public key, which

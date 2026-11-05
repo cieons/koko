@@ -45,6 +45,12 @@ type Config struct {
 	// RootKeyPath is the Root Key's file, outside DataDir. The koko server
 	// reads it at every start and never writes it.
 	RootKeyPath string
+	// RootKeySource is the file RootKeyPath is a copy of, when it is one:
+	// under systemd, RootKeyPath is the credential's copy, and the source
+	// is the file the koko unit's LoadCredential= names. It is the Root
+	// Key's file as the Owner keeps it, which server.show names; empty
+	// means RootKeyPath itself.
+	RootKeySource string
 	// Listen is the TCP listen address, such as :443, where devices reach
 	// the koko server once it is initialised. A Server Address without a
 	// port names its port.
@@ -118,6 +124,13 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	device.Register(a, issuer)
 	user.Register(a, issuer.Issue)
 	registerServer(a, key, issuer, tcp, log)
+	registerSettings(a, &settings{
+		rootKey:     key,
+		rootKeyFile: cmp.Or(cfg.RootKeySource, cfg.RootKeyPath),
+		dataDir:     cfg.DataDir,
+		version:     build.Read().Version,
+		listenPort:  tcp.port,
+	})
 	front.Register(a)
 	if keys != nil {
 		if err := tcp.bind(ctx); err != nil {

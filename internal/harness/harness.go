@@ -208,12 +208,13 @@ func ServerStart(t testing.TB) func(ctx context.Context, s cli.ServerSettings, l
 	socket := filepath.Join(ShortTempDir(t), "koko.sock")
 	return func(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
 		srv, err := server.Start(ctx, server.Config{
-			DataDir:     s.DataDir,
-			RootKeyPath: s.RootKeyPath,
-			Listen:      listenAddr,
-			LogLevel:    s.LogLevel,
-			Log:         log,
-			SocketPath:  socket,
+			DataDir:       s.DataDir,
+			RootKeyPath:   s.RootKeyPath,
+			RootKeySource: s.RootKeySource,
+			Listen:        listenAddr,
+			LogLevel:      s.LogLevel,
+			Log:           log,
+			SocketPath:    socket,
 		})
 		if err != nil {
 			return err

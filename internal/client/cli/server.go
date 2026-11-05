@@ -23,6 +23,11 @@ import (
 // as a file of that name in $CREDENTIALS_DIRECTORY (P0 spec: install and run).
 const rootKeyCredential = "root-key"
 
+// rootKeySource is the file the koko unit's LoadCredential= hands the
+// service as rootKeyCredential, which install writes: the Root Key's file
+// as the Owner keeps it, which koko server show names.
+const rootKeySource = "/etc/koko/root.key"
+
 // defaultListenPort is the port the koko server listens on unless install's
 // --port names another (P0 spec: install and run).
 const defaultListenPort = "443"
@@ -99,6 +104,26 @@ var serverCommands = []Command{
 		Op:   api.ServerInit,
 		Run:  action(serverInstall),
 	},
+	{
+		Noun:    "server",
+		Verb:    "show",
+		Summary: "Show the koko server's Server Address, port, host key, version, Root Key file and data directory",
+		Tier:    Read,
+		Op:      api.ServerShow,
+		Run:     action(serverShow),
+	},
+	{
+		Noun:    "server",
+		Verb:    "set",
+		Summary: "Change the Server Address that Join Codes issued from now on carry, on the koko server's machine",
+		Pairs:   true,
+		Tier:    Reversible,
+		// Only the Owner, as the Local caller on the koko server's machine,
+		// may run it: the koko server answers it only over its Unix socket.
+		OwnerOnly: true,
+		Op:        api.ServerSet,
+		Run:       action(serverSet),
+	},
 }
 
 // noServer is the refusal of a command that runs the koko server's own code
@@ -117,28 +142,32 @@ func serverRun(ctx context.Context, in *Input) error {
 	if err := level.UnmarshalText([]byte(in.Flag("log-level"))); err != nil {
 		return fmt.Errorf("read the log level: %w", err)
 	}
-	rootKey := in.Flag("root-key-file")
+	rootKey, source := in.Flag("root-key-file"), ""
 	if rootKey == defaultRootKeyFile {
 		dir := in.inv.getenv("CREDENTIALS_DIRECTORY")
 		if dir == "" {
 			return usagef("give the Root Key's file with --root-key-file or KOKO_ROOT_KEY_FILE: its default, %s, needs CREDENTIALS_DIRECTORY, which systemd sets for the koko unit", defaultRootKeyFile)
 		}
-		rootKey = filepath.Join(dir, rootKeyCredential)
+		rootKey, source = filepath.Join(dir, rootKeyCredential), rootKeySource
 	}
 	listen := in.Flag("listen")
 	if !isListenAddr(listen) {
 		return usagef("--listen (KOKO_LISTEN) takes host:port or :port, not %q", listen)
 	}
 	return in.runner.ServerRun(ctx, ServerSettings{
-		DataDir:     in.Flag("data-dir"),
-		RootKeyPath: rootKey,
-		Listen:      listen,
-		LogLevel:    level,
+		DataDir:       in.Flag("data-dir"),
+		RootKeyPath:   rootKey,
+		RootKeySource: source,
+		Listen:        listen,
+		LogLevel:      level,
 	}, in.inv.Stderr)
 }
 
 var serverMappings = []mapping{
 	{api: reflect.TypeFor[api.ServerInitResponse](), cli: reflect.TypeFor[installedJSON]()},
+	{api: reflect.TypeFor[api.ServerShowResponse]()},
+	{api: reflect.TypeFor[api.ServerSetResponse]()},
+	{api: reflect.TypeFor[api.Server](), cli: reflect.TypeFor[serverJSON]()},
 }
 
 // installedJSON is what koko server install prints once the koko server runs

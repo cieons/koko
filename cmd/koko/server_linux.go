@@ -17,10 +17,11 @@ import (
 func serverRun(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
 	return server.Run(ctx, server.Config{
 		DataDir:     s.DataDir,
-		RootKeyPath: s.RootKeyPath,
-		Listen:      s.Listen,
-		LogLevel:    s.LogLevel,
-		Log:         log,
+		RootKeyPath:   s.RootKeyPath,
+		RootKeySource: s.RootKeySource,
+		Listen:        s.Listen,
+		LogLevel:      s.LogLevel,
+		Log:           log,
 	})
 }
 

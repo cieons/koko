@@ -434,12 +434,13 @@ func (m *Machine) startService() error {
 		case <-time.After(delay):
 		}
 		return server.Run(ctx, server.Config{
-			DataDir:     m.Path(s.DataDir),
-			RootKeyPath: s.RootKeyPath,
-			Listen:      s.Listen,
-			LogLevel:    s.LogLevel,
-			Log:         log,
-			SocketPath:  m.SocketPath(),
+			DataDir:       m.Path(s.DataDir),
+			RootKeyPath:   s.RootKeyPath,
+			RootKeySource: s.RootKeySource,
+			Listen:        s.Listen,
+			LogLevel:      s.LogLevel,
+			Log:           log,
+			SocketPath:    m.SocketPath(),
 		})
 	}
 	m.service = background(m.t, cli.Runner{ServerRun: serve}, env, u.execStart[1:]...)

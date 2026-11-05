@@ -31,11 +31,13 @@ func (f *fakeServer) run(_ context.Context, s cli.ServerSettings, log io.Writer)
 const credentialsDirectory = "CREDENTIALS_DIRECTORY=/run/credentials/koko.service"
 
 func TestServerRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
+	// The Root Key's file is systemd's copy of the one the koko unit loads.
 	defaults := cli.ServerSettings{
-		DataDir:     "/var/lib/koko",
-		RootKeyPath: "/run/credentials/koko.service/root-key",
-		Listen:      ":443",
-		LogLevel:    slog.LevelInfo,
+		DataDir:       "/var/lib/koko",
+		RootKeyPath:   "/run/credentials/koko.service/root-key",
+		RootKeySource: "/etc/koko/root.key",
+		Listen:        ":443",
+		LogLevel:      slog.LevelInfo,
 	}
 	for _, tc := range []struct {
 		name string

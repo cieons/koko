@@ -51,9 +51,10 @@ lines.
 | S1 tests and golden files | `internal/client/cli/<area>_test.go`, `testdata/<command>[-<case>].json` | none |
 
 The `server` area's operations act on the koko server process itself (the
-Root Key it loaded, its keys, later its listeners), so the process package
-registers them ([`init.go`](../../internal/server/init.go)) rather than an
-area package of its own. An area whose operations need what the process
+Root Key it loaded, its keys, its listeners), so the process package
+registers them ([`init.go`](../../internal/server/init.go),
+[`settings.go`](../../internal/server/settings.go)) rather than an area
+package of its own. An area whose operations need what the process
 loaded takes it in its `Register`, which [`server.Start`](../../internal/server/server.go)
 calls after the `areas` list: `device` and `user` take the Join Code issuer,
 which reads the host key with the Root Key ([Join Codes](join-codes.md#issuing)).

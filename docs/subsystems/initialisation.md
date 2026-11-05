@@ -1,7 +1,8 @@
 # Initialisation
 
 How a fresh koko server gets its Owner, its keys and its Server Address,
-once, over its Unix socket. The order is P0 spec: install and run; the
+once, over its Unix socket, and how the Owner shows and changes its
+deployment afterwards. The order is P0 spec: install and run; the
 sealing is [the Seal](seal.md) and
 [ADR 0018](../adr/0018-secrets-and-private-keys-are-sealed-with-a-root-key.md).
 
@@ -79,8 +80,66 @@ started` log line says `initialised=true host_key=SHA256:... listen=<addr>`
 once initialised, and `initialised=false` before; initialisation itself logs
 `koko server initialised` with the host key and the listen address.
 
+## The deployment afterwards
+
+Two operations of the server area read and change the deployment once the
+koko server is initialised; like every operation but `server.init`, both
+are refused with `not_initialised` before. The process registers them
+([`settings.go`](../../internal/server/settings.go)), since they show what it
+loaded and runs with. Each returns `{"server": {...}}`
+([`api.Server`](../../internal/shared/api/server.go)):
+
+| Field | What |
+| --- | --- |
+| `address` | the Server Address as stored: without a port, its port is `listen_port` |
+| `listen_port` | the TCP port the koko server listens on |
+| `host_key_fingerprint` | the host key devices pin, as OpenSSH prints its SHA-256 fingerprint |
+| `version` | the koko server's version, as `koko version` names its own |
+| `root_key_file`, `root_key_id` | the Root Key's file as the Owner keeps it, and the id it names; never the key |
+| `data_dir` | the data directory, as `koko server run` was given it |
+
+- **`server.show`** ([`koko server show`](cli.md#the-commands-so-far), read
+  tier) answers every caller, a Member's Device Session included: the
+  overview spec marks it for no one, and nothing in it is secret. Its
+  `root_key_file` is the file the Root Key was loaded from, except under
+  systemd, where `koko server run` reads the copy `LoadCredential=` hands it
+  in `$CREDENTIALS_DIRECTORY`: then it is `/etc/koko/root.key`, the file the
+  koko unit loads that credential from, which install wrote and printed
+  (`server.Config.RootKeySource`). A drop-in that loads the credential from
+  another file leaves it naming `/etc/koko/root.key`, since the service is
+  never told where its credential came from.
+- **`server.set`** (`koko server set address=<host[:port]>`, reversible tier)
+  answers only the Local caller (`op.LocalOnly`): over a Device Connection,
+  the Owner's own Device Session included, it is refused with `local_only`,
+  so no device can move where devices connect. A browser tab of `koko web`
+  on the koko server's machine, whose calls come over the Unix socket as the
+  Local caller, is refused with `local_only` too (a `web@koko` channel,
+  `transport.WebPortFrom`), so no browser tab can either. It changes only
+  what the request names, `{"address": "<host[:port]>"}`; naming nothing, it
+  changes nothing. The address is checked as at initialisation, and refused
+  with `invalid_address` when it is not a Server Address or, with the listen
+  port written, is longer than a Join Code carries
+  ([`joincode.CheckAddress`](../../internal/shared/joincode/joincode.go),
+  255 bytes); a refusal changes nothing. The change takes effect
+  for the Join Codes issued afterwards: a code issued before keeps the
+  address it carries, and still joins there while the koko server answers
+  at it. A joined device takes the new address with `koko connect
+  <host:port>`; nothing moves a device by itself.
+
+The CLI refuses a `key=value` other than `address=`, an address that is not a
+Server Address and a `server set` naming nothing, with exit 2, before any
+call.
+
 ## Verifying
 
+- [`server_settings_test.go`](../../internal/client/cli/server_settings_test.go),
+  through the CLI: `server show` and `server set` with their `--json`
+  golden files and never the Root Key, the Root Key's file named under
+  systemd's credential on the installer's fake machine, Join Codes issued
+  before and after a change and where each joins, the refusals before any
+  call and of an address no Join Code carries, `server set` refused and
+  `server show` answered from the Owner's and a Member's devices and from a
+  browser tab of `koko web`, and the two commands' tiers.
 - [`listen_test.go`](../../internal/server/listen_test.go): nothing on TCP
   before initialisation, the sealed host key once initialised and after a
   restart, and nothing listening after a refused initialisation.

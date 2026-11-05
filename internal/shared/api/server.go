@@ -25,6 +25,51 @@ type ServerInitResponse struct {
 	JoinCode JoinCode `json:"join_code"`
 }
 
+// Server is the koko server's deployment, as server.show and server.set
+// return it. It names the Root Key's file and id, never the key (ADR 0018).
+type Server struct {
+	// Address is the Server Address, as stored: without a port, its port is
+	// ListenPort.
+	Address string `json:"address"`
+	// ListenPort is the TCP port the koko server listens on.
+	ListenPort int `json:"listen_port"`
+	// HostKeyFingerprint is the SHA-256 fingerprint of the host key devices
+	// pin from their Join Codes, as OpenSSH prints it.
+	HostKeyFingerprint string `json:"host_key_fingerprint"`
+	// Version is the koko server's version, as `koko version` names its
+	// own: a release such as v0.3.0, a pseudo-version, or "(devel)".
+	Version string `json:"version"`
+	// RootKeyFile is the Root Key's file as the Owner keeps it: under
+	// systemd, the file the koko unit hands the service, /etc/koko/root.key.
+	RootKeyFile string `json:"root_key_file"`
+	// RootKeyID is the id the Root Key's file names, so the Owner can tell
+	// which copy fits.
+	RootKeyID string `json:"root_key_id"`
+	// DataDir is the data directory, which holds koko.db.
+	DataDir string `json:"data_dir"`
+}
+
+// ServerShowRequest asks for the koko server's deployment.
+type ServerShowRequest struct{}
+
+// ServerShowResponse is the koko server's deployment.
+type ServerShowResponse struct {
+	Server Server `json:"server"`
+}
+
+// ServerSetRequest changes the deployment settings it names, and only those.
+type ServerSetRequest struct {
+	// Address, when given, is the new Server Address, host or host:port
+	// (package serveraddr). Join Codes issued before keep the address they
+	// carry.
+	Address *string `json:"address,omitzero"`
+}
+
+// ServerSetResponse is the koko server's deployment as server.set left it.
+type ServerSetResponse struct {
+	Server Server `json:"server"`
+}
+
 // The server operations.
 var (
 	// ServerInit initialises a fresh koko server: it makes the koko key and
@@ -34,10 +79,23 @@ var (
 	// that answers before initialisation; once the koko server is
 	// initialised it is refused with CodeAlreadyInitialised.
 	ServerInit = Op[ServerInitRequest, ServerInitResponse]{Name: "server.init", Write: true}
+	// ServerShow returns the koko server's deployment: its Server Address,
+	// listen port, host key, version, Root Key's file and id, and data
+	// directory.
+	ServerShow = Op[ServerShowRequest, ServerShowResponse]{Name: "server.show"}
+	// ServerSet changes the deployment settings the request names: the
+	// Server Address, for the Join Codes issued afterwards. It answers only
+	// the Local caller, over the Unix socket, and never a browser tab of
+	// koko web there, so no device and no browser tab can move where
+	// devices connect. A Server Address a Join Code cannot carry is refused
+	// with CodeInvalidAddress.
+	ServerSet = Op[ServerSetRequest, ServerSetResponse]{Name: "server.set", Write: true}
 )
 
 var serverOperations = []Operation{
 	ServerInit,
+	ServerShow,
+	ServerSet,
 }
 
 // The server area's codes.

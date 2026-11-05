@@ -15,7 +15,7 @@ ADR; a proposed change lives in its issue or PR.
 | The web UI build: Node, the embedded app and placeholder, the generated types, page tests | [web-ui.md](web-ui.md) |
 | The Host connector: logging in to a Host through its Relay, the pinned host key and connect retries | [host-connector.md](host-connector.md) |
 | The resumable stream: the byte stream beneath a Tunnel, its frames, offset exchange and replay buffer | [resumable-stream.md](resumable-stream.md) |
-| Initialisation: the Owner, the koko server's own keys and the Server Address, and what answers before it | [initialisation.md](initialisation.md) |
+| Initialisation: the Owner, the koko server's own keys and the Server Address, what answers before it, and `server show` and `server set` after | [initialisation.md](initialisation.md) |
 | The installer: `koko server install`, the machine interface, the unit, the checks before any write, and the fake machine | [installer.md](installer.md) |
 | The release and `install.sh`: the assets and their names, `make dist`, the release workflow, and what `install.sh` checks before it runs the binary | [release.md](release.md) |
 | Join Codes: the `koko_` string, issuing them, device names, and the hash kept of each | [join-codes.md](join-codes.md) |

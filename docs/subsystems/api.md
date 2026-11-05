@@ -50,7 +50,7 @@ UI's TypeScript types are generated from them
 | `invalid_request` | 400 | The body is not a JSON object of the operation's request type (malformed, wrong type, duplicate or trailing data). |
 | `unknown_field` | 400 | The body holds a field the operation does not know. |
 | `invalid_name` | 400 | A name is not a lowercase DNS label ([`name.Check`](../../internal/shared/name/name.go)). |
-| `local_only` | 403 | The operation answers only the Local caller, over the Unix socket. |
+| `local_only` | 403 | The operation answers only the Local caller, over the Unix socket; `server.set` not even a browser tab of `koko web` there ([initialisation](initialisation.md#the-deployment-afterwards)). |
 | `owner_only` | 403 | Only the Owner may do what the call asks, such as issuing a Join Code for another User's device. |
 | `unknown_operation` | 404 | No operation is served at the path. |
 | `method_not_allowed` | 405 | The method is not `POST`. |

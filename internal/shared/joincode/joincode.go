@@ -79,7 +79,7 @@ type Code struct {
 // Encode writes the code as its koko_ string. It refuses an address a Join
 // Code cannot carry: one that is not host:port, or longer than MaxAddressLen.
 func (c Code) Encode() (string, error) {
-	if err := checkAddress(c.Address); err != nil {
+	if err := CheckAddress(c.Address); err != nil {
 		return "", err
 	}
 	b := make([]byte, 0, fixedLen+len(c.Address))
@@ -123,14 +123,15 @@ func Decode(s string) (Code, error) {
 	c.Address, rest = string(rest[:content[1]]), rest[content[1]:]
 	rest = rest[copy(c.Fingerprint[:], rest):]
 	copy(c.Secret[:], rest)
-	if checkAddress(c.Address) != nil {
+	if CheckAddress(c.Address) != nil {
 		return Code{}, ErrMalformed
 	}
 	return c, nil
 }
 
-// checkAddress refuses an address a Join Code cannot carry.
-func checkAddress(address string) error {
+// CheckAddress refuses an address a Join Code cannot carry: one that is not
+// host:port, or longer than MaxAddressLen.
+func CheckAddress(address string) error {
 	if len(address) > MaxAddressLen {
 		return fmt.Errorf("the address %q is %d bytes; a Join Code carries at most %d", address, len(address), MaxAddressLen)
 	}

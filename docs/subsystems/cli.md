@@ -159,6 +159,8 @@ which koko server it joined, as whose device.
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
 | `koko server run [--data-dir <dir>] [--root-key-file <file>] [--listen <addr>] [--log-level <level>]` | irreversible | none | nothing on success |
 | `koko server install [--owner <user>] [--address <host[:port]>] [--port <port>]` | irreversible | `server.init` | `{"address", "host_key_fingerprint", "root_key_file", "root_key_id", "listen_port", "join_code"}`, the Join Code as `device add` prints it ([the installer](installer.md#what-it-prints)) |
+| `koko server show` | read | `server.show` | `{"address", "listen_port", "host_key_fingerprint", "version", "root_key_file", "root_key_id", "data_dir"}` ([the deployment afterwards](initialisation.md#the-deployment-afterwards)) |
+| `koko server set address=<host[:port]>` (Owner, over the Unix socket only) | reversible | `server.set` | the settings as `server show` prints them, as the change left them |
 
 `koko server run` takes `--data-dir` (`KOKO_DATA_DIR`, default
 `/var/lib/koko`), `--root-key-file` (`KOKO_ROOT_KEY_FILE`, default
@@ -167,7 +169,10 @@ which koko server it joined, as whose device.
 `:443`: an optional host and a port number, where devices reach the koko
 server once it is initialised) and `--log-level` (`KOKO_LOG_LEVEL`:
 `debug`, `info`, `warn` or `error`; default `info`). Left to its default
-without `CREDENTIALS_DIRECTORY` set, the Root Key file is refused with exit 2.
+without `CREDENTIALS_DIRECTORY` set, the Root Key file is refused with exit 2;
+left to it under systemd, the file is a copy of `/etc/koko/root.key`, the
+file the unit's `LoadCredential=` names, which `koko server show` names as
+the Root Key's file.
 The flag takes the file's absolute path, never the key, and the koko server
 refuses to start without a usable Root Key ([the Seal](seal.md#at-start-up)). The koko
 server logs to stderr in slog's text format (`time=... level=INFO msg=...

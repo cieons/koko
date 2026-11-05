@@ -60,6 +60,11 @@ type ServerSettings struct {
 	DataDir string
 	// RootKeyPath is the Root Key's file, never the key itself.
 	RootKeyPath string
+	// RootKeySource is the file RootKeyPath is a copy of, when it is the
+	// credential systemd hands the koko unit: the Root Key's file as the
+	// Owner keeps it, which koko server show names. Empty when RootKeyPath
+	// is that file itself.
+	RootKeySource string
 	// Listen is the TCP listen address, such as :443.
 	Listen   string
 	LogLevel slog.Level

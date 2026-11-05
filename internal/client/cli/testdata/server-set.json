@@ -1,0 +1,9 @@
+{
+  "address": "koko.example.com:8443",
+  "listen_port": <port>,
+  "host_key_fingerprint": "SHA256:<fingerprint>",
+  "version": "<version>",
+  "root_key_file": "<root-key-file>",
+  "root_key_id": "rootkey_<1>",
+  "data_dir": "<data-dir>"
+}
