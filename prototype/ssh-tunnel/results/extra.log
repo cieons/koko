@@ -1,0 +1,95 @@
+Runs made by hand after try.sh and measure.sh, copied verbatim. $S is the
+scratch directory. Same machine: Apple M4 Pro, macOS 27.0.1, OpenSSH_10.3p1,
+OrbStack 29.4.0 running the Host (Alpine 3.22.7, sshd OpenSSH_10.0p2, rsync 3.5.0).
+
+===== which ciphers the hops negotiate (ssh -v)
+--- inner (OpenSSH -> Gateway)
+debug1: kex: algorithm: mlkem768x25519-sha256
+debug1: kex: host key algorithm: ssh-ed25519
+debug1: kex: server->client cipher: chacha20-poly1305@openssh.com MAC: <implicit> compression: none
+debug1: kex: client->server cipher: chacha20-poly1305@openssh.com MAC: <implicit> compression: none
+--- direct (OpenSSH -> sshd)
+debug1: kex: algorithm: mlkem768x25519-sha256
+debug1: kex: host key algorithm: ssh-ed25519
+debug1: kex: server->client cipher: chacha20-poly1305@openssh.com MAC: <implicit> compression: none
+debug1: kex: client->server cipher: chacha20-poly1305@openssh.com MAC: <implicit> compression: none
+(x/crypto v0.58.0 has chacha20 assembly for arm64 but none for poly1305;
+the Device Connection and the Gateway's own connection to the Host pick
+aes128-gcm, x/crypto's first choice.)
+
+===== Gateway CPU: x/crypto default ciphers (:47443) against AES-GCM only inside the Tunnel (:47445)
+$ kokoproto server -listen 127.0.0.1:47445 -gateway-ciphers aes128-gcm@openssh.com,aes256-gcm@openssh.com
+debug1: kex: client->server cipher: aes128-gcm@openssh.com MAC: <implicit> compression: none
+server :47443 raw up         n=3 min=1144.1ms p50=1165.1ms p90=1191.9ms max=1191.9ms  p50 439 MiB/s (best 448)
+server :47443 raw down       n=3 min=1176.8ms p50=1181.6ms p90=1193.5ms max=1193.5ms  p50 433 MiB/s (best 435)
+  server :47443 CPU for 3 GiB: 1:00.01 -> 1:13.18
+  koko tunnel for one 512 MiB upload: cpu 1.123s
+server :47445 raw up         n=3 min=934.8ms p50=951.2ms p90=956.9ms max=956.9ms  p50 538 MiB/s (best 548)
+server :47445 raw down       n=3 min=896.5ms p50=912.2ms p90=918.6ms max=918.6ms  p50 561 MiB/s (best 571)
+  server :47445 CPU for 3 GiB: 0:00.03 -> 0:10.47
+  koko tunnel for one 512 MiB upload: cpu 1.069s
+
+===== agent forwarding: only sent when ssh has an agent to forward
+(a scratch ssh-agent at $S/agent.sock; the "Host *" stand-in sets IdentityAgent none)
+$ ssh -v -F $C -A web1.koko 'echo "remote SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-unset}"'
+debug1: Sending command: echo "remote SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-unset}"
+remote SSH_AUTH_SOCK=unset
+$ ssh -G -F $C -A web1.koko | grep -i forwardagent
+forwardagent yes
+$ ssh -v -F $C -o ForwardAgent=yes -o IdentityAgent=agent.sock web1.koko '...'
+debug1: Requesting agent forwarding on channel 0 via auth-agent-req@openssh.com
+debug1: Sending command: echo "remote SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-unset}"
+remote SSH_AUTH_SOCK=unset
+server 10:19:24.668942 gateway web1: channel request "auth-agent-req@openssh.com" refused
+
+===== how koko tunnel exits when ssh is killed: 6 x (ssh -N -L ... &; curl; kill ssh)
+no tunnel left
+621.917ms exit 0 (signal hangup), cpu 9ms
+657.114ms exit 0 (tunnel closed by the Gateway), cpu 10ms
+609.833ms exit 0 (tunnel closed by the Gateway), cpu 13ms
+608.328ms exit 0 (signal hangup), cpu 10ms
+675.651ms exit 0 (signal hangup), cpu 11ms
+(6th run, no exit line: killed by SIGPIPE writing to the dead ssh)
+tunnel pid=52701 + 646.515ms stdin EOF after 3394 bytes (err=<nil>); half-closing the Tunnel
+server 10:25:22.203808 device connection 127.0.0.1:57651 (alice/laptop) closed after 621ms
+server 10:25:22.876737 device connection 127.0.0.1:57656 (alice/laptop) closed after 657ms
+server 10:25:23.514357 device connection 127.0.0.1:57659 (alice/laptop) closed after 610ms
+server 10:25:24.147225 device connection 127.0.0.1:57664 (alice/laptop) closed after 608ms
+server 10:25:24.837172 device connection 127.0.0.1:57667 (alice/laptop) closed after 675ms
+server 10:25:25.507576 device connection 127.0.0.1:57674 (alice/laptop) closed after 647ms
+
+===== which errors survive ControlPersist on the user's ssh
+$ ssh -o ControlMaster=auto -o ControlPersist=30 web9.koko true   # unknown name: koko tunnel's stderr
+Connection closed by UNKNOWN port 65535
+[exit 255]
+$ ssh web2.koko true   # Host down, no ControlPersist
+koko: cannot reach web2: dial tcp 127.0.0.1:47099: connect: connection refused
+Connection closed by UNKNOWN port 65535
+[exit 255]
+$ ssh -o ControlMaster=auto -o ControlPersist=30 web2.koko true   # Host down: the Gateway's banner, in band
+koko: cannot reach web2: dial tcp 127.0.0.1:47099: connect: connection refused
+Connection closed by UNKNOWN port 65535
+[exit 255]
+
+===== first run of try.sh, not reproduced since
+The -L check of the first try.sh run left its Device Connection open for
+16 s after the SSH Session ended (server.log of that run:
+"device connection 127.0.0.1:56114 (alice/laptop) closed after 16.174s",
+session "ended after 1.072s"). Its trace was overwritten. Eight later runs
+of the same steps (one in the second try.sh run, one by hand, six in a loop) closed it within 1 ms of ssh exiting.
+
+===== revocation during an open SSH Session, rerun after koko tunnel waits for the Tunnel to drain
+$ (sleep 2; kokoproto revoke -device alice/laptop) & ssh -tt web1.koko 'for i in 1 2 3 4 5 6 7 8; do echo tick $i; sleep 0.5; done'
+tick 1
+tick 2
+tick 3
+tick 4
+tick 5
+
+koko: the Device Session "alice/laptop" was revoked; this SSH Session is closed.
+
+koko: the Device Connection to 127.0.0.1:47443 closed.
+Connection to web1.koko closed by remote host.
+Connection to web1.koko closed.
+client_loop: send disconnect: Broken pipe
+[exit 255]

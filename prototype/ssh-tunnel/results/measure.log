@@ -1,0 +1,61 @@
+
+===== setup time per invocation: ssh <name> true (loopback)
+direct (no koko)             n=30 min=77.0ms p50=107.6ms p90=123.1ms max=131.5ms
+koko tunnel                  n=30 min=94.0ms p50=110.5ms p90=120.0ms max=124.5ms
+shared Device Connection     n=30 min=90.3ms p50=115.1ms p90=126.4ms max=127.7ms
+user ControlMaster           n=30 min=6.1ms p50=8.1ms p90=10.8ms max=16.7ms
+
+===== setup time per invocation: 40 ms RTT between device and koko server / Host
+direct (no koko) wan         n=15 min=396.5ms p50=411.5ms p90=430.3ms max=432.1ms
+koko tunnel wan              n=15 min=606.6ms p50=623.1ms p90=627.8ms max=630.1ms
+shared Device Connection wan n=15 min=329.0ms p50=352.7ms p90=363.0ms max=364.3ms
+
+===== where the setup time goes (one koko tunnel run, loopback then wan)
+  tunnel pid=50981 +   0.037ms start "web1.koko"
+  tunnel pid=50981 +   0.476ms tcp connected
+  tunnel pid=50981 +   2.773ms device connection up (handshake+auth)
+  tunnel pid=50981 +   2.967ms tunnel open
+  tunnel pid=50981 +   3.000ms first bytes from the Gateway
+  tunnel pid=50981 +  92.734ms stdin EOF after 3290 bytes (err=<nil>); half-closing the Tunnel
+  tunnel pid=50981 +  92.868ms signal hangup
+  tunnel pid=50981 +  92.920ms stdin had already reached EOF
+  tunnel pid=50981 +  93.328ms exit 0 (signal hangup), cpu 14ms
+  server: server 10:21:04.780795 gateway web1: SSH Session for alice/laptop ready 43.68ms after the Tunnel opened (inner kex 3.496ms; Host dial 175µs, Host handshake 43.387ms)
+  tunnel pid=50987 +   0.030ms start "web1.koko"
+  tunnel pid=50987 +   0.406ms tcp connected
+  tunnel pid=50987 + 268.618ms device connection up (handshake+auth)
+  tunnel pid=50987 + 312.524ms tunnel open
+  tunnel pid=50987 + 312.600ms first bytes from the Gateway
+  tunnel pid=50987 + 583.316ms stdin EOF after 3290 bytes (err=<nil>); half-closing the Tunnel
+  tunnel pid=50987 + 583.449ms signal hangup
+  tunnel pid=50987 + 583.566ms stdin had already reached EOF
+  tunnel pid=50987 + 583.698ms exit 0 (signal hangup), cpu 13ms
+  server: server 10:21:05.332726 gateway web1: SSH Session for alice/laptop ready 183.918ms after the Tunnel opened (inner kex 183.753ms; Host dial 255µs, Host handshake 35.339ms)
+
+===== interactive latency: one keystroke out, its echo back (ssh -tt, raw tty, cat)
+direct (no koko)             keystrokes=300 p50=4.63ms p90=6.66ms p99=11.23ms max=30.57ms
+koko tunnel                  keystrokes=300 p50=3.52ms p90=6.05ms p99=29.78ms max=30.92ms
+direct (no koko) wan         keystrokes=150 p50=48.13ms p90=50.00ms p99=55.34ms max=63.41ms
+koko tunnel wan              keystrokes=150 p50=48.66ms p90=50.80ms p99=57.39ms max=57.98ms
+
+===== throughput, 512 MiB, loopback (n=3 each)
+direct-web1 raw up           n=3 min=1267.5ms p50=1285.2ms p90=1297.3ms max=1297.3ms  p50 398 MiB/s (best 404)
+direct-web1 raw down         n=3 min=1070.6ms p50=1121.6ms p90=1168.6ms max=1168.6ms  p50 457 MiB/s (best 478)
+direct-web1 scp up           n=3 min=1951.2ms p50=2040.1ms p90=2110.8ms max=2110.8ms  p50 251 MiB/s (best 262)
+direct-web1 scp down         n=3 min=1837.6ms p50=1849.4ms p90=2055.2ms max=2055.2ms  p50 277 MiB/s (best 279)
+direct-web1 rsync up         n=3 min=3083.7ms p50=3128.6ms p90=3282.8ms max=3282.8ms  p50 164 MiB/s (best 166)
+  koko server CPU during direct-web1 runs: 0:02.56 -> 0:02.57
+web1.koko raw up             n=3 min=1142.5ms p50=1174.3ms p90=1256.9ms max=1256.9ms  p50 436 MiB/s (best 448)
+web1.koko raw down           n=3 min=1207.4ms p50=1215.5ms p90=1220.3ms max=1220.3ms  p50 421 MiB/s (best 424)
+web1.koko scp up             n=3 min=1777.8ms p50=1833.4ms p90=1840.0ms max=1840.0ms  p50 279 MiB/s (best 288)
+web1.koko scp down           n=3 min=1939.5ms p50=1950.9ms p90=2401.6ms max=2401.6ms  p50 262 MiB/s (best 264)
+web1.koko rsync up           n=3 min=2489.3ms p50=2538.6ms p90=2554.0ms max=2554.0ms  p50 202 MiB/s (best 206)
+  koko server CPU during web1.koko runs: 0:02.57 -> 0:51.46
+  koko tunnel itself, one 512 MiB upload: tunnel pid=51237 +1156.664ms exit 0 (signal hangup), cpu 1.022s
+
+===== throughput, 128 MiB, 40 ms RTT (n=2 each)
+direct wan raw up            n=2 min=3497.7ms p50=3515.2ms p90=3515.2ms max=3515.2ms  p50 36 MiB/s (best 37)
+koko wan raw up              n=2 min=3531.2ms p50=3570.9ms p90=3570.9ms max=3570.9ms  p50 36 MiB/s (best 36)
+direct wan raw down          n=2 min=3264.4ms p50=3267.5ms p90=3267.5ms max=3267.5ms  p50 39 MiB/s (best 39)
+koko wan raw down            n=2 min=3521.9ms p50=3559.5ms p90=3559.5ms max=3559.5ms  p50 36 MiB/s (best 36)
+shared DC wan raw down       n=2 min=3291.8ms p50=3307.2ms p90=3307.2ms max=3307.2ms  p50 39 MiB/s (best 39)

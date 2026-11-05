@@ -1,0 +1,1341 @@
+server 10:18:12.515231 listening on 127.0.0.1:47443, host key SHA256:HwYS0ZtEP3A/dcy22ctE5DZ98sl3aUrH/BqJphKL2yo, serial=false
+server 10:18:15.955731 device 127.0.0.1:56514 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:15.957016 device 127.0.0.1:56514 auth method=publickey user="koko" err=<nil>
+server 10:18:15.957050 device connection 127.0.0.1:56514 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 3.199ms
+server 10:18:15.957217 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:15.961467 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:15.987651 gateway web1: SSH Session for alice/laptop ready 30.49ms after the Tunnel opened (inner kex 4.307ms; Host dial 251µs, Host handshake 30.116ms)
+server 10:18:15.988351 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:16.033359 gateway web1: SSH Session for alice/laptop ended after 76ms
+server 10:18:16.033543 device connection 127.0.0.1:56514 (alice/laptop) closed after 80ms
+server 10:18:16.052514 device 127.0.0.1:56516 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:16.053446 device 127.0.0.1:56516 auth method=publickey user="koko" err=<nil>
+server 10:18:16.053480 device connection 127.0.0.1:56516 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 2.267ms
+server 10:18:16.053769 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:16.057654 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:16.090669 gateway web1: SSH Session for alice/laptop ready 36.964ms after the Tunnel opened (inner kex 3.949ms; Host dial 175µs, Host handshake 36.648ms)
+server 10:18:16.091861 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:16.138641 gateway web1: SSH Session for alice/laptop ended after 85ms
+server 10:18:16.138707 device connection 127.0.0.1:56516 (alice/laptop) closed after 87ms
+server 10:18:16.319252 device 127.0.0.1:56520 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:16.320236 device 127.0.0.1:56520 auth method=publickey user="koko" err=<nil>
+server 10:18:16.320263 device connection 127.0.0.1:56520 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 2.12ms
+server 10:18:16.320418 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:16.323914 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:16.356710 gateway web1: SSH Session for alice/laptop ready 36.34ms after the Tunnel opened (inner kex 3.544ms; Host dial 167µs, Host handshake 36.09ms)
+server 10:18:16.357307 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:16.554218 gateway web1: SSH Session for alice/laptop ended after 234ms
+server 10:18:16.554360 device connection 127.0.0.1:56520 (alice/laptop) closed after 236ms
+server 10:18:16.573419 device 127.0.0.1:56522 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:16.574226 device 127.0.0.1:56522 auth method=publickey user="koko" err=<nil>
+server 10:18:16.574256 device connection 127.0.0.1:56522 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.708ms
+server 10:18:16.574370 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:16.577675 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:16.596811 gateway web1: SSH Session for alice/laptop ready 22.484ms after the Tunnel opened (inner kex 3.349ms; Host dial 143µs, Host handshake 22.257ms)
+server 10:18:16.597162 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:16.751093 gateway web1: SSH Session for alice/laptop ended after 177ms
+server 10:18:16.751247 device connection 127.0.0.1:56522 (alice/laptop) closed after 179ms
+server 10:18:16.770817 device 127.0.0.1:56524 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:16.771529 device 127.0.0.1:56524 auth method=publickey user="koko" err=<nil>
+server 10:18:16.771547 device connection 127.0.0.1:56524 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.502ms
+server 10:18:16.771650 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:16.775103 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:16.795076 gateway web1: SSH Session for alice/laptop ready 23.464ms after the Tunnel opened (inner kex 3.492ms; Host dial 82µs, Host handshake 23.304ms)
+server 10:18:16.795467 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:17.009993 gateway web1: SSH Session for alice/laptop ended after 238ms
+server 10:18:17.010164 device connection 127.0.0.1:56524 (alice/laptop) closed after 240ms
+server 10:18:17.031450 device 127.0.0.1:56528 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:17.032202 device 127.0.0.1:56528 auth method=publickey user="koko" err=<nil>
+server 10:18:17.032217 device connection 127.0.0.1:56528 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.544ms
+server 10:18:17.032329 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:17.035903 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:17.055392 gateway web1: SSH Session for alice/laptop ready 23.102ms after the Tunnel opened (inner kex 3.612ms; Host dial 74µs, Host handshake 22.946ms)
+server 10:18:17.055783 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:17.386009 gateway web1: SSH Session for alice/laptop ended after 354ms
+server 10:18:17.386168 device connection 127.0.0.1:56528 (alice/laptop) closed after 355ms
+server 10:18:17.406292 device 127.0.0.1:56530 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:17.407035 device 127.0.0.1:56530 auth method=publickey user="koko" err=<nil>
+server 10:18:17.407126 device connection 127.0.0.1:56530 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.61ms
+server 10:18:17.407212 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:17.410484 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:17.430490 gateway web1: SSH Session for alice/laptop ready 23.31ms after the Tunnel opened (inner kex 3.304ms; Host dial 115µs, Host handshake 23.127ms)
+server 10:18:17.430872 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:17.659823 gateway web1: SSH Session for alice/laptop ended after 253ms
+server 10:18:17.659933 device connection 127.0.0.1:56530 (alice/laptop) closed after 254ms
+server 10:18:17.677628 device 127.0.0.1:56532 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:17.678396 device 127.0.0.1:56532 auth method=publickey user="koko" err=<nil>
+server 10:18:17.678409 device connection 127.0.0.1:56532 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.519ms
+server 10:18:17.678500 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:17.682213 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:17.702442 gateway web1: SSH Session for alice/laptop ready 23.975ms after the Tunnel opened (inner kex 3.746ms; Host dial 82µs, Host handshake 23.815ms)
+server 10:18:17.703415 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:18.155770 gateway web1: SSH Session for alice/laptop ended after 477ms
+server 10:18:18.155853 device connection 127.0.0.1:56532 (alice/laptop) closed after 479ms
+server 10:18:18.170116 device 127.0.0.1:56534 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:18.171016 device 127.0.0.1:56534 auth method=publickey user="koko" err=<nil>
+server 10:18:18.171037 device connection 127.0.0.1:56534 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.739ms
+server 10:18:18.171161 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:18.174931 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:18.193454 gateway web1: SSH Session for alice/laptop ready 22.334ms after the Tunnel opened (inner kex 3.812ms; Host dial 146µs, Host handshake 22.103ms)
+server 10:18:18.194218 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:18.661533 gateway web1: SSH Session for alice/laptop ended after 490ms
+server 10:18:18.661791 device connection 127.0.0.1:56534 (alice/laptop) closed after 492ms
+server 10:18:18.926265 device 127.0.0.1:56538 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:18.927101 device 127.0.0.1:56538 auth method=publickey user="koko" err=<nil>
+server 10:18:18.927128 device connection 127.0.0.1:56538 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.754ms
+server 10:18:18.927301 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:18.930617 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:18.968177 gateway web1: SSH Session for alice/laptop ready 40.918ms after the Tunnel opened (inner kex 3.358ms; Host dial 196µs, Host handshake 40.612ms)
+server 10:18:18.969728 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:19.013720 gateway web1: SSH Session for alice/laptop ended after 86ms
+server 10:18:19.013804 device connection 127.0.0.1:56538 (alice/laptop) closed after 88ms
+server 10:18:19.027610 device 127.0.0.1:56540 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:19.028477 device 127.0.0.1:56540 auth method=publickey user="koko" err=<nil>
+server 10:18:19.028495 device connection 127.0.0.1:56540 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.785ms
+server 10:18:19.028627 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:19.032297 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:19.056632 gateway web1: SSH Session for alice/laptop ready 28.042ms after the Tunnel opened (inner kex 3.708ms; Host dial 158µs, Host handshake 27.797ms)
+server 10:18:19.097482 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:20.105931 gateway web1: SSH Session for alice/laptop ended after 1.077s
+server 10:18:20.105982 device connection 127.0.0.1:56540 (alice/laptop) closed after 1.079s
+server 10:18:20.130111 device 127.0.0.1:56545 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:20.131376 device 127.0.0.1:56545 auth method=publickey user="koko" err=<nil>
+server 10:18:20.131396 device connection 127.0.0.1:56545 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 2.843ms
+server 10:18:20.131535 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:20.135853 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:20.176277 gateway web1: SSH Session for alice/laptop ready 44.784ms after the Tunnel opened (inner kex 4.361ms; Host dial 140µs, Host handshake 44.551ms)
+server 10:18:20.225268 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:21.150039 gateway web1: SSH Session for alice/laptop ended after 1.019s
+server 10:18:21.150792 device connection 127.0.0.1:56545 (alice/laptop) closed after 1.022s
+server 10:18:22.179874 device 127.0.0.1:56551 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:22.181101 device 127.0.0.1:56551 auth method=publickey user="koko" err=<nil>
+server 10:18:22.181147 device connection 127.0.0.1:56551 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 2.738ms
+server 10:18:22.181387 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:22.185758 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:22.206366 gateway web1: SSH Session for alice/laptop ready 25.047ms after the Tunnel opened (inner kex 4.438ms; Host dial 195µs, Host handshake 24.721ms)
+server 10:18:22.206682 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:22.206880 gateway web1: tcpip-forward -> ok=true err=<nil>
+server 10:18:22.757564 gateway web1: SSH Session for alice/laptop ended after 576ms
+server 10:18:22.757616 device connection 127.0.0.1:56551 (alice/laptop) closed after 579ms
+server 10:18:22.776958 device 127.0.0.1:56554 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:22.777735 device 127.0.0.1:56554 auth method=publickey user="koko" err=<nil>
+server 10:18:22.777756 device connection 127.0.0.1:56554 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.625ms
+server 10:18:22.777869 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:22.781100 gateway web1: auth none from alice/laptop, ssh user "bob", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:22.816170 gateway web1: SSH Session for alice/laptop ready 38.341ms after the Tunnel opened (inner kex 3.271ms; Host dial 115µs, Host handshake 38.134ms)
+server 10:18:22.818741 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:22.864282 gateway web1: SSH Session for alice/laptop ended after 86ms
+server 10:18:22.864302 device connection 127.0.0.1:56554 (alice/laptop) closed after 88ms
+server 10:18:22.886393 device 127.0.0.1:56556 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:22.887214 device 127.0.0.1:56556 auth method=publickey user="koko" err=<nil>
+server 10:18:22.887234 device connection 127.0.0.1:56556 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.705ms
+server 10:18:22.887353 tunnel for "web9.koko" from alice/laptop refused: no such Host
+server 10:18:22.887479 device connection 127.0.0.1:56556 (alice/laptop) closed after 2ms
+server 10:18:22.905329 device 127.0.0.1:56557 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:22.906134 device 127.0.0.1:56557 auth method=publickey user="koko" err=<nil>
+server 10:18:22.906156 device connection 127.0.0.1:56557 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.715ms
+server 10:18:22.906296 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:22.909627 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:22.941387 gateway web1: SSH Session for alice/laptop ready 35.13ms after the Tunnel opened (inner kex 3.37ms; Host dial 150µs, Host handshake 34.87ms)
+server 10:18:22.941998 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:22.984276 gateway web1: SSH Session for alice/laptop ended after 78ms
+server 10:18:22.984369 device connection 127.0.0.1:56557 (alice/laptop) closed after 80ms
+server 10:18:22.998799 device 127.0.0.1:56559 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:22.999686 device 127.0.0.1:56559 auth method=publickey user="koko" err=<nil>
+server 10:18:22.999701 device connection 127.0.0.1:56559 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.756ms
+server 10:18:22.999866 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:23.003758 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:23.025219 gateway web1: SSH Session for alice/laptop ready 25.391ms after the Tunnel opened (inner kex 3.931ms; Host dial 154µs, Host handshake 25.168ms)
+server 10:18:23.025651 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:23.072976 gateway web1: SSH Session for alice/laptop ended after 73ms
+server 10:18:23.073028 device connection 127.0.0.1:56559 (alice/laptop) closed after 75ms
+server 10:18:23.093269 device 127.0.0.1:56562 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:23.094140 device 127.0.0.1:56562 auth method=publickey user="koko" err=<nil>
+server 10:18:23.094159 device connection 127.0.0.1:56562 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.734ms
+server 10:18:23.094286 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:23.097738 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:23.131697 gateway web1: SSH Session for alice/laptop ready 37.449ms after the Tunnel opened (inner kex 3.491ms; Host dial 142µs, Host handshake 37.213ms)
+server 10:18:23.132348 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:23.176281 gateway web1: SSH Session for alice/laptop ended after 82ms
+server 10:18:23.176384 device connection 127.0.0.1:56562 (alice/laptop) closed after 84ms
+server 10:18:23.201430 device 127.0.0.1:56564 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:23.202422 device 127.0.0.1:56564 auth method=publickey user="koko" err=<nil>
+server 10:18:23.202446 device connection 127.0.0.1:56564 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.962ms
+server 10:18:23.202603 tunnel for "web2.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:23.206152 gateway web2: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:23.206180 gateway web2: inner handshake for alice/laptop failed after 3.625ms: ssh: no authentication methods available
+server 10:18:23.206280 device connection 127.0.0.1:56564 (alice/laptop) closed after 6ms
+server 10:18:23.218966 device 127.0.0.1:56566 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:23.219870 device 127.0.0.1:56566 auth method=publickey user="koko" err=<nil>
+server 10:18:23.219888 device connection 127.0.0.1:56566 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.892ms
+server 10:18:23.220053 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:23.220260 gateway web1: inner handshake for alice/laptop failed after 252µs: EOF
+server 10:18:23.220379 device connection 127.0.0.1:56566 (alice/laptop) closed after 2ms
+server 10:18:23.240353 device 127.0.0.1:56570 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:23.241150 device 127.0.0.1:56570 auth method=publickey user="koko" err=<nil>
+server 10:18:23.241168 device connection 127.0.0.1:56570 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.717ms
+server 10:18:23.241296 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:23.738320 gateway web1: inner handshake for alice/laptop failed after 497.06ms: EOF
+server 10:18:23.738394 device connection 127.0.0.1:56570 (alice/laptop) closed after 499ms
+server 10:18:53.512309 device 127.0.0.1:56631 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:53.513880 device 127.0.0.1:56631 auth method=publickey user="koko" err=<nil>
+server 10:18:53.513909 device connection 127.0.0.1:56631 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 2.646ms
+server 10:18:53.514101 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:53.518710 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:53.541312 gateway web1: SSH Session for alice/laptop ready 27.266ms after the Tunnel opened (inner kex 4.664ms; Host dial 198µs, Host handshake 26.956ms)
+server 10:18:53.541881 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:55.001463 gateway web1: SSH Session for alice/laptop ended after 1.487s
+server 10:18:55.002904 device connection 127.0.0.1:56631 (alice/laptop) closed after 1.492s
+server 10:18:55.045149 device 127.0.0.1:56633 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:55.046281 device 127.0.0.1:56633 auth method=publickey user="koko" err=<nil>
+server 10:18:55.046307 device connection 127.0.0.1:56633 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 2.22ms
+server 10:18:55.046455 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:55.051207 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:55.093909 gateway web1: SSH Session for alice/laptop ready 47.5ms after the Tunnel opened (inner kex 4.798ms; Host dial 240µs, Host handshake 47.171ms)
+server 10:18:55.096129 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:56.535764 device connection 127.0.0.1:56633 (alice/laptop) closed after 1.492s
+server 10:18:56.535887 gateway web1: SSH Session for alice/laptop ended after 1.489s
+server 10:18:56.573059 device 127.0.0.1:56638 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:56.574158 device 127.0.0.1:56638 auth method=publickey user="koko" err=<nil>
+server 10:18:56.574181 device connection 127.0.0.1:56638 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.991ms
+server 10:18:56.574441 tunnel for "web9.koko" from alice/laptop refused: no such Host
+server 10:18:56.574620 device connection 127.0.0.1:56638 (alice/laptop) closed after 2ms
+server 10:18:56.624560 device connection from 127.0.0.1:56639 refused after 814µs: read tcp 127.0.0.1:47443->127.0.0.1:56639: read: connection reset by peer
+server 10:18:56.654423 device 127.0.0.1:56641 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:56.655257 device 127.0.0.1:56641 auth method=publickey user="koko" err=<nil>
+server 10:18:56.655275 device connection 127.0.0.1:56641 up: alice/laptop (SHA256:39GxirZ0iKjkDQs5KaI7AY9mDuvSXsoM9a5BCNb9MkI), client "SSH-2.0-Go", handshake+auth 1.693ms
+server 10:18:56.655416 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:18:56.658796 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:18:56.687858 gateway web1: SSH Session for alice/laptop ready 32.482ms after the Tunnel opened (inner kex 3.421ms; Host dial 133µs, Host handshake 32.246ms)
+server 10:18:56.688505 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:18:59.018111 Device Session alice/laptop revoked: closing its Device Connection
+server 10:18:59.018660 device connection 127.0.0.1:56641 (alice/laptop) closed after 2.365s
+server 10:18:59.018895 gateway web1: SSH Session for alice/laptop ended after 2.364s
+server 10:18:59.058119 device 127.0.0.1:56643 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:18:59.058986 device 127.0.0.1:56643 auth method=publickey user="koko" err=revoked Device Session alice/laptop
+server 10:18:59.059094 device connection from 127.0.0.1:56643 refused after 2.13ms: [ssh: no auth passed yet, revoked Device Session alice/laptop]
+server 10:19:24.456883 device 127.0.0.1:56688 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:19:24.457831 device 127.0.0.1:56688 auth method=publickey user="koko" err=<nil>
+server 10:19:24.457864 device connection 127.0.0.1:56688 up: alice/laptop (SHA256:tMbFy1zpuZFXRgciTnHfGFBe2HwZ8l+H00EwMWlHwk8), client "SSH-2.0-Go", handshake+auth 1.909ms
+server 10:19:24.458015 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:19:24.461419 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:19:24.506276 gateway web1: SSH Session for alice/laptop ready 48.302ms after the Tunnel opened (inner kex 3.446ms; Host dial 177µs, Host handshake 48.002ms)
+server 10:19:24.506772 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:19:24.555965 gateway web1: SSH Session for alice/laptop ended after 98ms
+server 10:19:24.556074 device connection 127.0.0.1:56688 (alice/laptop) closed after 100ms
+server 10:19:24.582096 device 127.0.0.1:56690 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:19:24.583053 device 127.0.0.1:56690 auth method=publickey user="koko" err=<nil>
+server 10:19:24.583083 device connection 127.0.0.1:56690 up: alice/laptop (SHA256:tMbFy1zpuZFXRgciTnHfGFBe2HwZ8l+H00EwMWlHwk8), client "SSH-2.0-Go", handshake+auth 2.034ms
+server 10:19:24.583227 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:19:24.586931 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:19:24.622147 gateway web1: SSH Session for alice/laptop ready 38.971ms after the Tunnel opened (inner kex 3.755ms; Host dial 159µs, Host handshake 38.721ms)
+server 10:19:24.622616 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:19:24.668942 gateway web1: channel request "auth-agent-req@openssh.com" refused
+server 10:19:24.671317 gateway web1: SSH Session for alice/laptop ended after 88ms
+server 10:19:24.671493 device connection 127.0.0.1:56690 (alice/laptop) closed after 90ms
+server 10:20:34.721804 device 127.0.0.1:56812 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:34.723225 device 127.0.0.1:56812 auth method=publickey user="koko" err=<nil>
+server 10:20:34.723262 device connection 127.0.0.1:56812 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.558ms
+server 10:20:34.723416 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:34.728065 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:34.764545 gateway web1: SSH Session for alice/laptop ready 41.18ms after the Tunnel opened (inner kex 4.701ms; Host dial 141µs, Host handshake 40.916ms)
+server 10:20:34.765306 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:34.812908 gateway web1: SSH Session for alice/laptop ended after 90ms
+server 10:20:34.813062 device connection 127.0.0.1:56812 (alice/laptop) closed after 92ms
+server 10:20:34.836899 device 127.0.0.1:56814 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:34.837899 device 127.0.0.1:56814 auth method=publickey user="koko" err=<nil>
+server 10:20:34.837931 device connection 127.0.0.1:56814 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.865ms
+server 10:20:34.838102 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:34.841930 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:34.881598 gateway web1: SSH Session for alice/laptop ready 43.544ms after the Tunnel opened (inner kex 3.876ms; Host dial 201µs, Host handshake 43.244ms)
+server 10:20:34.883102 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:34.932314 gateway web1: SSH Session for alice/laptop ended after 94ms
+server 10:20:34.932907 device connection 127.0.0.1:56814 (alice/laptop) closed after 97ms
+server 10:20:34.956932 device 127.0.0.1:56816 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:34.958560 device 127.0.0.1:56816 auth method=publickey user="koko" err=<nil>
+server 10:20:34.958578 device connection 127.0.0.1:56816 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.797ms
+server 10:20:34.958735 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:34.963633 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:35.003429 gateway web1: SSH Session for alice/laptop ready 44.744ms after the Tunnel opened (inner kex 4.948ms; Host dial 699µs, Host handshake 43.934ms)
+server 10:20:35.016922 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:35.056707 gateway web1: SSH Session for alice/laptop ended after 98ms
+server 10:20:35.057244 device connection 127.0.0.1:56816 (alice/laptop) closed after 101ms
+server 10:20:35.076192 device 127.0.0.1:56818 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:35.077019 device 127.0.0.1:56818 auth method=publickey user="koko" err=<nil>
+server 10:20:35.077042 device connection 127.0.0.1:56818 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.803ms
+server 10:20:35.077199 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:35.082072 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:35.114741 gateway web1: SSH Session for alice/laptop ready 37.581ms after the Tunnel opened (inner kex 4.913ms; Host dial 179µs, Host handshake 37.314ms)
+server 10:20:35.116319 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:35.165785 gateway web1: SSH Session for alice/laptop ended after 89ms
+server 10:20:35.165873 device connection 127.0.0.1:56818 (alice/laptop) closed after 91ms
+server 10:20:35.185795 device 127.0.0.1:56820 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:35.186723 device 127.0.0.1:56820 auth method=publickey user="koko" err=<nil>
+server 10:20:35.186748 device connection 127.0.0.1:56820 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.084ms
+server 10:20:35.186894 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:35.190814 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:35.232081 gateway web1: SSH Session for alice/laptop ready 45.237ms after the Tunnel opened (inner kex 3.97ms; Host dial 459µs, Host handshake 44.665ms)
+server 10:20:35.232940 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:35.282133 gateway web1: SSH Session for alice/laptop ended after 95ms
+server 10:20:35.282317 device connection 127.0.0.1:56820 (alice/laptop) closed after 98ms
+server 10:20:35.316070 device 127.0.0.1:56822 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:35.317338 device 127.0.0.1:56822 auth method=publickey user="koko" err=<nil>
+server 10:20:35.317364 device connection 127.0.0.1:56822 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.704ms
+server 10:20:35.317483 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:35.321853 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:35.354294 gateway web1: SSH Session for alice/laptop ready 36.844ms after the Tunnel opened (inner kex 4.404ms; Host dial 155µs, Host handshake 36.616ms)
+server 10:20:35.355683 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:35.402209 gateway web1: SSH Session for alice/laptop ended after 85ms
+server 10:20:35.402792 device connection 127.0.0.1:56822 (alice/laptop) closed after 88ms
+server 10:20:35.428410 device 127.0.0.1:56824 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:35.429415 device 127.0.0.1:56824 auth method=publickey user="koko" err=<nil>
+server 10:20:35.429435 device connection 127.0.0.1:56824 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.907ms
+server 10:20:35.429569 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:35.434615 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:35.470318 gateway web1: SSH Session for alice/laptop ready 40.79ms after the Tunnel opened (inner kex 5.088ms; Host dial 161µs, Host handshake 40.516ms)
+server 10:20:35.472164 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:35.516414 gateway web1: SSH Session for alice/laptop ended after 87ms
+server 10:20:35.516509 device connection 127.0.0.1:56824 (alice/laptop) closed after 89ms
+server 10:20:35.534736 device 127.0.0.1:56826 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:35.535608 device 127.0.0.1:56826 auth method=publickey user="koko" err=<nil>
+server 10:20:35.535635 device connection 127.0.0.1:56826 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.936ms
+server 10:20:35.535793 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:35.540649 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:35.575443 gateway web1: SSH Session for alice/laptop ready 39.694ms after the Tunnel opened (inner kex 4.901ms; Host dial 176µs, Host handshake 39.439ms)
+server 10:20:35.576513 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:35.623451 gateway web1: SSH Session for alice/laptop ended after 88ms
+server 10:20:35.624868 device connection 127.0.0.1:56826 (alice/laptop) closed after 91ms
+server 10:20:35.651579 device 127.0.0.1:56828 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:35.652660 device 127.0.0.1:56828 auth method=publickey user="koko" err=<nil>
+server 10:20:35.652689 device connection 127.0.0.1:56828 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.438ms
+server 10:20:35.652948 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:35.656814 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:35.696888 gateway web1: SSH Session for alice/laptop ready 44.066ms after the Tunnel opened (inner kex 3.993ms; Host dial 184µs, Host handshake 43.646ms)
+server 10:20:35.697450 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:35.743282 gateway web1: SSH Session for alice/laptop ended after 90ms
+server 10:20:35.743613 device connection 127.0.0.1:56828 (alice/laptop) closed after 93ms
+server 10:20:35.768877 device 127.0.0.1:56830 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:35.769752 device 127.0.0.1:56830 auth method=publickey user="koko" err=<nil>
+server 10:20:35.769777 device connection 127.0.0.1:56830 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.696ms
+server 10:20:35.769895 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:35.773296 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:35.810780 gateway web1: SSH Session for alice/laptop ready 40.923ms after the Tunnel opened (inner kex 3.44ms; Host dial 143µs, Host handshake 40.699ms)
+server 10:20:35.811746 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:35.863532 gateway web1: SSH Session for alice/laptop ended after 94ms
+server 10:20:35.865530 device connection 127.0.0.1:56830 (alice/laptop) closed after 97ms
+server 10:20:35.889336 device 127.0.0.1:56832 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:35.890221 device 127.0.0.1:56832 auth method=publickey user="koko" err=<nil>
+server 10:20:35.890241 device connection 127.0.0.1:56832 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.361ms
+server 10:20:35.890363 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:35.895177 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:35.926480 gateway web1: SSH Session for alice/laptop ready 36.155ms after the Tunnel opened (inner kex 4.852ms; Host dial 155µs, Host handshake 35.928ms)
+server 10:20:35.928282 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:35.978321 gateway web1: SSH Session for alice/laptop ended after 88ms
+server 10:20:35.978876 device connection 127.0.0.1:56832 (alice/laptop) closed after 91ms
+server 10:20:35.999617 device 127.0.0.1:56834 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:36.000535 device 127.0.0.1:56834 auth method=publickey user="koko" err=<nil>
+server 10:20:36.000578 device connection 127.0.0.1:56834 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.85ms
+server 10:20:36.000779 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:36.005515 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:36.043108 gateway web1: SSH Session for alice/laptop ready 42.39ms after the Tunnel opened (inner kex 4.798ms; Host dial 180µs, Host handshake 42.073ms)
+server 10:20:36.044519 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:36.088769 gateway web1: SSH Session for alice/laptop ended after 88ms
+server 10:20:36.089306 device connection 127.0.0.1:56834 (alice/laptop) closed after 91ms
+server 10:20:36.111178 device 127.0.0.1:56836 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:36.112195 device 127.0.0.1:56836 auth method=publickey user="koko" err=<nil>
+server 10:20:36.112226 device connection 127.0.0.1:56836 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.888ms
+server 10:20:36.112351 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:36.116689 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:36.153871 gateway web1: SSH Session for alice/laptop ready 41.553ms after the Tunnel opened (inner kex 4.372ms; Host dial 152µs, Host handshake 41.297ms)
+server 10:20:36.155476 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:36.199420 gateway web1: SSH Session for alice/laptop ended after 87ms
+server 10:20:36.199944 device connection 127.0.0.1:56836 (alice/laptop) closed after 90ms
+server 10:20:36.225825 device 127.0.0.1:56838 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:36.226960 device 127.0.0.1:56838 auth method=publickey user="koko" err=<nil>
+server 10:20:36.226982 device connection 127.0.0.1:56838 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.155ms
+server 10:20:36.227116 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:36.231642 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:36.253566 gateway web1: SSH Session for alice/laptop ready 26.493ms after the Tunnel opened (inner kex 4.569ms; Host dial 152µs, Host handshake 26.252ms)
+server 10:20:36.254354 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:36.298195 gateway web1: SSH Session for alice/laptop ended after 71ms
+server 10:20:36.298671 device connection 127.0.0.1:56838 (alice/laptop) closed after 74ms
+server 10:20:36.323839 device 127.0.0.1:56840 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:36.325264 device 127.0.0.1:56840 auth method=publickey user="koko" err=<nil>
+server 10:20:36.325286 device connection 127.0.0.1:56840 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.528ms
+server 10:20:36.325434 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:36.331340 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:36.351695 gateway web1: SSH Session for alice/laptop ready 26.302ms after the Tunnel opened (inner kex 5.947ms; Host dial 528µs, Host handshake 25.691ms)
+server 10:20:36.352591 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:36.398558 gateway web1: SSH Session for alice/laptop ended after 73ms
+server 10:20:36.398726 device connection 127.0.0.1:56840 (alice/laptop) closed after 76ms
+server 10:20:36.426079 device 127.0.0.1:56842 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:36.426974 device 127.0.0.1:56842 auth method=publickey user="koko" err=<nil>
+server 10:20:36.427005 device connection 127.0.0.1:56842 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.832ms
+server 10:20:36.427171 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:36.431173 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:36.459144 gateway web1: SSH Session for alice/laptop ready 32.014ms after the Tunnel opened (inner kex 4.043ms; Host dial 141µs, Host handshake 31.798ms)
+server 10:20:36.459631 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:36.506652 gateway web1: SSH Session for alice/laptop ended after 80ms
+server 10:20:36.510033 device connection 127.0.0.1:56842 (alice/laptop) closed after 85ms
+server 10:20:36.535385 device 127.0.0.1:56844 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:36.536543 device 127.0.0.1:56844 auth method=publickey user="koko" err=<nil>
+server 10:20:36.536575 device connection 127.0.0.1:56844 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.562ms
+server 10:20:36.536757 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:36.542278 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:36.575596 gateway web1: SSH Session for alice/laptop ready 38.907ms after the Tunnel opened (inner kex 5.589ms; Host dial 581µs, Host handshake 38.193ms)
+server 10:20:36.576172 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:36.619432 gateway web1: SSH Session for alice/laptop ended after 83ms
+server 10:20:36.620249 device connection 127.0.0.1:56844 (alice/laptop) closed after 86ms
+server 10:20:36.641074 device 127.0.0.1:56846 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:36.641983 device 127.0.0.1:56846 auth method=publickey user="koko" err=<nil>
+server 10:20:36.642003 device connection 127.0.0.1:56846 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.797ms
+server 10:20:36.642154 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:36.645693 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:36.685829 gateway web1: SSH Session for alice/laptop ready 43.72ms after the Tunnel opened (inner kex 3.584ms; Host dial 139µs, Host handshake 43.475ms)
+server 10:20:36.686705 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:36.737124 gateway web1: SSH Session for alice/laptop ended after 95ms
+server 10:20:36.737241 device connection 127.0.0.1:56846 (alice/laptop) closed after 97ms
+server 10:20:36.764075 device 127.0.0.1:56848 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:36.764949 device 127.0.0.1:56848 auth method=publickey user="koko" err=<nil>
+server 10:20:36.764969 device connection 127.0.0.1:56848 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.778ms
+server 10:20:36.765090 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:36.770205 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:36.795901 gateway web1: SSH Session for alice/laptop ready 30.85ms after the Tunnel opened (inner kex 5.155ms; Host dial 144µs, Host handshake 30.612ms)
+server 10:20:36.796770 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:36.840579 gateway web1: SSH Session for alice/laptop ended after 76ms
+server 10:20:36.840881 device connection 127.0.0.1:56848 (alice/laptop) closed after 78ms
+server 10:20:36.863073 device 127.0.0.1:56850 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:36.864028 device 127.0.0.1:56850 auth method=publickey user="koko" err=<nil>
+server 10:20:36.864056 device connection 127.0.0.1:56850 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.956ms
+server 10:20:36.864188 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:36.868728 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:36.889391 gateway web1: SSH Session for alice/laptop ready 25.249ms after the Tunnel opened (inner kex 4.586ms; Host dial 163µs, Host handshake 24.996ms)
+server 10:20:36.889872 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:36.935498 gateway web1: SSH Session for alice/laptop ended after 71ms
+server 10:20:36.935606 device connection 127.0.0.1:56850 (alice/laptop) closed after 74ms
+server 10:20:36.958662 device 127.0.0.1:56852 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:36.959567 device 127.0.0.1:56852 auth method=publickey user="koko" err=<nil>
+server 10:20:36.959591 device connection 127.0.0.1:56852 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.126ms
+server 10:20:36.959711 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:36.964864 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:36.984260 gateway web1: SSH Session for alice/laptop ready 24.582ms after the Tunnel opened (inner kex 5.186ms; Host dial 159µs, Host handshake 24.35ms)
+server 10:20:36.984925 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:37.029857 gateway web1: SSH Session for alice/laptop ended after 70ms
+server 10:20:37.029924 device connection 127.0.0.1:56852 (alice/laptop) closed after 72ms
+server 10:20:37.048132 device 127.0.0.1:56854 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:37.049038 device 127.0.0.1:56854 auth method=publickey user="koko" err=<nil>
+server 10:20:37.049066 device connection 127.0.0.1:56854 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.079ms
+server 10:20:37.049184 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:37.052646 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:37.082224 gateway web1: SSH Session for alice/laptop ready 33.08ms after the Tunnel opened (inner kex 3.502ms; Host dial 188µs, Host handshake 32.815ms)
+server 10:20:37.082710 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:37.126919 gateway web1: SSH Session for alice/laptop ended after 78ms
+server 10:20:37.127094 device connection 127.0.0.1:56854 (alice/laptop) closed after 80ms
+server 10:20:37.144083 device 127.0.0.1:56856 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:37.145002 device 127.0.0.1:56856 auth method=publickey user="koko" err=<nil>
+server 10:20:37.145031 device connection 127.0.0.1:56856 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.832ms
+server 10:20:37.145160 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:37.149761 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:37.180681 gateway web1: SSH Session for alice/laptop ready 35.568ms after the Tunnel opened (inner kex 4.65ms; Host dial 276µs, Host handshake 35.181ms)
+server 10:20:37.181844 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:37.230576 gateway web1: SSH Session for alice/laptop ended after 85ms
+server 10:20:37.230627 device connection 127.0.0.1:56856 (alice/laptop) closed after 87ms
+server 10:20:37.250410 device 127.0.0.1:56858 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:37.252106 device 127.0.0.1:56858 auth method=publickey user="koko" err=<nil>
+server 10:20:37.252150 device connection 127.0.0.1:56858 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.995ms
+server 10:20:37.252274 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:37.257693 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:37.295547 gateway web1: SSH Session for alice/laptop ready 43.307ms after the Tunnel opened (inner kex 5.455ms; Host dial 156µs, Host handshake 43.01ms)
+server 10:20:37.299027 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:37.347642 gateway web1: SSH Session for alice/laptop ended after 95ms
+server 10:20:37.349805 device connection 127.0.0.1:56858 (alice/laptop) closed after 101ms
+server 10:20:37.385080 device 127.0.0.1:56860 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:37.386106 device 127.0.0.1:56860 auth method=publickey user="koko" err=<nil>
+server 10:20:37.386139 device connection 127.0.0.1:56860 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.554ms
+server 10:20:37.386346 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:37.390297 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:37.425380 gateway web1: SSH Session for alice/laptop ready 39.106ms after the Tunnel opened (inner kex 4.024ms; Host dial 184µs, Host handshake 38.785ms)
+server 10:20:37.426350 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:37.471953 gateway web1: SSH Session for alice/laptop ended after 86ms
+server 10:20:37.472019 device connection 127.0.0.1:56860 (alice/laptop) closed after 88ms
+server 10:20:37.490170 device 127.0.0.1:56864 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:37.491012 device 127.0.0.1:56864 auth method=publickey user="koko" err=<nil>
+server 10:20:37.491030 device connection 127.0.0.1:56864 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.94ms
+server 10:20:37.491164 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:37.495096 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:37.540375 gateway web1: SSH Session for alice/laptop ready 49.255ms after the Tunnel opened (inner kex 3.977ms; Host dial 172µs, Host handshake 48.968ms)
+server 10:20:37.541645 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:37.586437 gateway web1: SSH Session for alice/laptop ended after 95ms
+server 10:20:37.586659 device connection 127.0.0.1:56864 (alice/laptop) closed after 98ms
+server 10:20:37.606938 device 127.0.0.1:56866 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:37.608453 device 127.0.0.1:56866 auth method=publickey user="koko" err=<nil>
+server 10:20:37.608476 device connection 127.0.0.1:56866 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.653ms
+server 10:20:37.608618 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:37.612547 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:37.637193 gateway web1: SSH Session for alice/laptop ready 28.619ms after the Tunnel opened (inner kex 3.973ms; Host dial 144µs, Host handshake 28.378ms)
+server 10:20:37.637652 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:37.691233 gateway web1: SSH Session for alice/laptop ended after 83ms
+server 10:20:37.691322 device connection 127.0.0.1:56866 (alice/laptop) closed after 85ms
+server 10:20:37.716810 device 127.0.0.1:56871 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:37.717660 device 127.0.0.1:56871 auth method=publickey user="koko" err=<nil>
+server 10:20:37.717687 device connection 127.0.0.1:56871 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.814ms
+server 10:20:37.717834 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:37.721919 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:37.746885 gateway web1: SSH Session for alice/laptop ready 29.098ms after the Tunnel opened (inner kex 4.133ms; Host dial 154µs, Host handshake 28.836ms)
+server 10:20:37.747388 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:37.791812 device connection 127.0.0.1:56871 (alice/laptop) closed after 76ms
+server 10:20:37.791824 gateway web1: SSH Session for alice/laptop ended after 74ms
+server 10:20:37.810840 device 127.0.0.1:56873 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:37.812349 device 127.0.0.1:56873 auth method=publickey user="koko" err=<nil>
+server 10:20:37.812386 device connection 127.0.0.1:56873 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.767ms
+server 10:20:37.812571 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:37.817872 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:37.839497 gateway web1: SSH Session for alice/laptop ready 26.979ms after the Tunnel opened (inner kex 5.355ms; Host dial 177µs, Host handshake 26.695ms)
+server 10:20:37.840136 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:37.894885 gateway web1: SSH Session for alice/laptop ended after 82ms
+server 10:20:37.895563 device connection 127.0.0.1:56873 (alice/laptop) closed after 86ms
+server 10:20:37.923492 device 127.0.0.1:56877 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:37.924485 device 127.0.0.1:56877 auth method=publickey user="koko" err=<nil>
+server 10:20:37.924506 device connection 127.0.0.1:56877 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.056ms
+server 10:20:37.924637 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:37.929501 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:37.956447 gateway web1: SSH Session for alice/laptop ready 31.851ms after the Tunnel opened (inner kex 4.906ms; Host dial 408µs, Host handshake 31.367ms)
+server 10:20:37.956995 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:38.004335 gateway web1: SSH Session for alice/laptop ended after 80ms
+server 10:20:38.005522 device connection 127.0.0.1:56877 (alice/laptop) closed after 83ms
+server 10:20:38.039178 device 127.0.0.1:56879 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:38.040341 device 127.0.0.1:56879 auth method=publickey user="koko" err=<nil>
+server 10:20:38.040383 device connection 127.0.0.1:56879 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.667ms
+server 10:20:38.040588 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:38.045236 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:38.073367 gateway web1: SSH Session for alice/laptop ready 32.862ms after the Tunnel opened (inner kex 4.73ms; Host dial 195µs, Host handshake 32.516ms)
+server 10:20:38.074392 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:38.119516 gateway web1: SSH Session for alice/laptop ended after 79ms
+server 10:20:38.120195 device connection 127.0.0.1:56879 (alice/laptop) closed after 82ms
+server 10:20:38.146030 device 127.0.0.1:56881 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:38.147432 device 127.0.0.1:56881 auth method=publickey user="koko" err=<nil>
+server 10:20:38.147475 device connection 127.0.0.1:56881 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.853ms
+server 10:20:38.147683 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:38.152573 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:38.188843 gateway web1: SSH Session for alice/laptop ready 41.231ms after the Tunnel opened (inner kex 4.963ms; Host dial 529µs, Host handshake 40.555ms)
+server 10:20:38.190852 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:38.237000 gateway web1: SSH Session for alice/laptop ended after 89ms
+server 10:20:38.237212 device connection 127.0.0.1:56881 (alice/laptop) closed after 93ms
+server 10:20:38.278543 device 127.0.0.1:56883 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:38.279449 device 127.0.0.1:56883 auth method=publickey user="koko" err=<nil>
+server 10:20:38.279468 device connection 127.0.0.1:56883 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-OpenSSH_10.3", handshake+auth 5.472ms
+server 10:20:38.282242 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:38.286281 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:38.318689 gateway web1: SSH Session for alice/laptop ready 36.501ms after the Tunnel opened (inner kex 4.094ms; Host dial 185µs, Host handshake 36.194ms)
+server 10:20:38.319778 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:38.365902 gateway web1: SSH Session for alice/laptop ended after 84ms
+server 10:20:38.387008 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:38.391034 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:38.425685 gateway web1: SSH Session for alice/laptop ready 38.761ms after the Tunnel opened (inner kex 4.111ms; Host dial 713µs, Host handshake 37.867ms)
+server 10:20:38.426836 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:38.472399 gateway web1: SSH Session for alice/laptop ended after 85ms
+server 10:20:38.491830 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:38.496476 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:38.540295 gateway web1: SSH Session for alice/laptop ready 48.521ms after the Tunnel opened (inner kex 4.703ms; Host dial 184µs, Host handshake 48.207ms)
+server 10:20:38.540963 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:38.583739 gateway web1: SSH Session for alice/laptop ended after 92ms
+server 10:20:38.607399 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:38.612322 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:38.634396 gateway web1: SSH Session for alice/laptop ready 27.053ms after the Tunnel opened (inner kex 4.979ms; Host dial 160µs, Host handshake 26.774ms)
+server 10:20:38.635455 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:38.678245 gateway web1: SSH Session for alice/laptop ended after 71ms
+server 10:20:38.701272 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:38.704668 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:38.739573 gateway web1: SSH Session for alice/laptop ready 38.393ms after the Tunnel opened (inner kex 3.488ms; Host dial 223µs, Host handshake 37.99ms)
+server 10:20:38.740846 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:38.796847 gateway web1: SSH Session for alice/laptop ended after 96ms
+server 10:20:38.826770 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:38.830197 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:38.863972 gateway web1: SSH Session for alice/laptop ready 37.263ms after the Tunnel opened (inner kex 3.487ms; Host dial 168µs, Host handshake 36.974ms)
+server 10:20:38.865083 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:38.913064 gateway web1: SSH Session for alice/laptop ended after 86ms
+server 10:20:38.945181 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:38.949929 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:38.970052 gateway web1: SSH Session for alice/laptop ready 24.918ms after the Tunnel opened (inner kex 4.796ms; Host dial 176µs, Host handshake 24.638ms)
+server 10:20:38.970601 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:39.017085 gateway web1: SSH Session for alice/laptop ended after 72ms
+server 10:20:39.033120 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:39.037462 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:39.059875 gateway web1: SSH Session for alice/laptop ready 26.845ms after the Tunnel opened (inner kex 4.432ms; Host dial 559µs, Host handshake 26.115ms)
+server 10:20:39.060818 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:39.106108 gateway web1: SSH Session for alice/laptop ended after 73ms
+server 10:20:39.137939 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:39.143175 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:39.164510 gateway web1: SSH Session for alice/laptop ready 26.633ms after the Tunnel opened (inner kex 5.299ms; Host dial 211µs, Host handshake 26.285ms)
+server 10:20:39.164998 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:39.209099 gateway web1: SSH Session for alice/laptop ended after 71ms
+server 10:20:39.234924 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:39.239079 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:39.273474 gateway web1: SSH Session for alice/laptop ready 38.606ms after the Tunnel opened (inner kex 4.212ms; Host dial 193µs, Host handshake 38.268ms)
+server 10:20:39.274204 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:39.324825 gateway web1: SSH Session for alice/laptop ended after 90ms
+server 10:20:39.356415 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:39.359715 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:39.393513 gateway web1: SSH Session for alice/laptop ready 37.158ms after the Tunnel opened (inner kex 3.361ms; Host dial 175µs, Host handshake 36.841ms)
+server 10:20:39.395491 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:39.440339 gateway web1: SSH Session for alice/laptop ended after 84ms
+server 10:20:39.473064 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:39.476984 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:39.507549 gateway web1: SSH Session for alice/laptop ready 34.538ms after the Tunnel opened (inner kex 3.973ms; Host dial 172µs, Host handshake 34.235ms)
+server 10:20:39.508162 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:39.551670 gateway web1: SSH Session for alice/laptop ended after 79ms
+server 10:20:39.578408 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:39.582145 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:39.621472 gateway web1: SSH Session for alice/laptop ready 43.115ms after the Tunnel opened (inner kex 3.788ms; Host dial 239µs, Host handshake 42.752ms)
+server 10:20:39.622355 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:39.670736 gateway web1: SSH Session for alice/laptop ended after 92ms
+server 10:20:39.708278 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:39.712205 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:39.750223 gateway web1: SSH Session for alice/laptop ready 41.998ms after the Tunnel opened (inner kex 3.981ms; Host dial 266µs, Host handshake 41.541ms)
+server 10:20:39.751542 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:39.798795 gateway web1: SSH Session for alice/laptop ended after 91ms
+server 10:20:39.831987 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:39.837838 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:39.878118 gateway web1: SSH Session for alice/laptop ready 46.184ms after the Tunnel opened (inner kex 5.906ms; Host dial 185µs, Host handshake 45.826ms)
+server 10:20:39.880973 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:39.925683 gateway web1: SSH Session for alice/laptop ended after 94ms
+server 10:20:39.943017 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:39.947438 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:39.987655 gateway web1: SSH Session for alice/laptop ready 44.746ms after the Tunnel opened (inner kex 4.53ms; Host dial 230µs, Host handshake 44.294ms)
+server 10:20:39.989352 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:40.034918 gateway web1: SSH Session for alice/laptop ended after 92ms
+server 10:20:40.051721 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:40.056096 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:40.091862 gateway web1: SSH Session for alice/laptop ready 40.225ms after the Tunnel opened (inner kex 4.459ms; Host dial 214µs, Host handshake 39.843ms)
+server 10:20:40.093440 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:40.139569 gateway web1: SSH Session for alice/laptop ended after 88ms
+server 10:20:40.168369 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:40.171653 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:40.212319 gateway web1: SSH Session for alice/laptop ready 44.001ms after the Tunnel opened (inner kex 3.336ms; Host dial 175µs, Host handshake 43.696ms)
+server 10:20:40.213698 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:40.268057 gateway web1: SSH Session for alice/laptop ended after 100ms
+server 10:20:40.288537 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:40.296442 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:40.330356 gateway web1: SSH Session for alice/laptop ready 42.402ms after the Tunnel opened (inner kex 8.488ms; Host dial 644µs, Host handshake 40.939ms)
+server 10:20:40.331128 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:40.376882 gateway web1: SSH Session for alice/laptop ended after 89ms
+server 10:20:40.403499 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:40.408108 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:40.441414 gateway web1: SSH Session for alice/laptop ready 38.012ms after the Tunnel opened (inner kex 4.706ms; Host dial 221µs, Host handshake 37.597ms)
+server 10:20:40.442125 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:40.485841 gateway web1: SSH Session for alice/laptop ended after 82ms
+server 10:20:40.517256 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:40.520682 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:40.561505 gateway web1: SSH Session for alice/laptop ready 44.294ms after the Tunnel opened (inner kex 3.472ms; Host dial 352µs, Host handshake 43.802ms)
+server 10:20:40.562084 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:40.605411 gateway web1: SSH Session for alice/laptop ended after 88ms
+server 10:20:40.628119 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:40.632032 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:40.652434 gateway web1: SSH Session for alice/laptop ready 24.409ms after the Tunnel opened (inner kex 4.007ms; Host dial 242µs, Host handshake 24.002ms)
+server 10:20:40.653430 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:40.701587 gateway web1: SSH Session for alice/laptop ended after 74ms
+server 10:20:40.726578 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:40.732285 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:40.751747 gateway web1: SSH Session for alice/laptop ready 25.26ms after the Tunnel opened (inner kex 5.798ms; Host dial 184µs, Host handshake 24.913ms)
+server 10:20:40.752831 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:40.800856 gateway web1: SSH Session for alice/laptop ended after 74ms
+server 10:20:40.833662 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:40.838215 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:40.865823 gateway web1: SSH Session for alice/laptop ready 32.22ms after the Tunnel opened (inner kex 4.612ms; Host dial 175µs, Host handshake 31.907ms)
+server 10:20:40.866625 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:40.918560 gateway web1: SSH Session for alice/laptop ended after 85ms
+server 10:20:40.948481 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:40.951810 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:40.984296 gateway web1: SSH Session for alice/laptop ready 35.867ms after the Tunnel opened (inner kex 3.381ms; Host dial 198µs, Host handshake 35.538ms)
+server 10:20:40.986029 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:41.036843 gateway web1: SSH Session for alice/laptop ended after 88ms
+server 10:20:41.064338 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:41.069205 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:41.109863 gateway web1: SSH Session for alice/laptop ready 45.61ms after the Tunnel opened (inner kex 4.952ms; Host dial 232µs, Host handshake 45.219ms)
+server 10:20:41.112061 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:41.155979 gateway web1: SSH Session for alice/laptop ended after 92ms
+server 10:20:41.179307 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:41.183500 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:41.219190 gateway web1: SSH Session for alice/laptop ready 39.934ms after the Tunnel opened (inner kex 4.245ms; Host dial 173µs, Host handshake 39.64ms)
+server 10:20:41.219879 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:41.265707 gateway web1: SSH Session for alice/laptop ended after 86ms
+server 10:20:41.285185 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:41.290463 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:41.313445 gateway web1: SSH Session for alice/laptop ready 28.314ms after the Tunnel opened (inner kex 5.332ms; Host dial 173µs, Host handshake 28.028ms)
+server 10:20:41.314151 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:41.358201 gateway web1: SSH Session for alice/laptop ended after 73ms
+server 10:20:41.385802 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:41.389311 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:41.425965 gateway web1: SSH Session for alice/laptop ready 40.22ms after the Tunnel opened (inner kex 3.566ms; Host dial 181µs, Host handshake 39.895ms)
+server 10:20:41.426553 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:41.475988 gateway web1: SSH Session for alice/laptop ended after 90ms
+server 10:20:41.505966 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:41.509346 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:41.542463 gateway web1: SSH Session for alice/laptop ready 36.567ms after the Tunnel opened (inner kex 3.451ms; Host dial 234µs, Host handshake 36.08ms)
+server 10:20:41.543236 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:41.592219 gateway web1: SSH Session for alice/laptop ended after 86ms
+server 10:20:41.627542 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:41.631258 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:41.666493 gateway web1: SSH Session for alice/laptop ready 39.026ms after the Tunnel opened (inner kex 3.791ms; Host dial 228µs, Host handshake 38.62ms)
+server 10:20:41.667048 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:41.712803 gateway web1: SSH Session for alice/laptop ended after 85ms
+server 10:20:41.747424 tunnel for "web1.kokomux" from alice/laptop accepted (direct-tcpip)
+server 10:20:41.751741 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:41.791660 gateway web1: SSH Session for alice/laptop ready 44.337ms after the Tunnel opened (inner kex 4.419ms; Host dial 239µs, Host handshake 43.902ms)
+server 10:20:41.792771 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:41.839348 gateway web1: SSH Session for alice/laptop ended after 92ms
+server 10:20:41.865428 device 127.0.0.1:56928 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:41.866855 device 127.0.0.1:56928 auth method=publickey user="koko" err=<nil>
+server 10:20:41.866876 device connection 127.0.0.1:56928 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.493ms
+server 10:20:41.867019 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:41.871235 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:41.910433 gateway web1: SSH Session for alice/laptop ready 43.457ms after the Tunnel opened (inner kex 4.26ms; Host dial 181µs, Host handshake 43.175ms)
+server 10:20:41.914560 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:42.235058 gateway web1: SSH Session for alice/laptop ended after 368ms
+server 10:20:42.235158 device connection 127.0.0.1:56928 (alice/laptop) closed after 371ms
+server 10:20:49.039896 device 127.0.0.1:57009 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:49.132941 device 127.0.0.1:57009 auth method=publickey user="koko" err=<nil>
+server 10:20:49.133152 device connection 127.0.0.1:57009 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 246.508ms
+server 10:20:49.177863 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:49.362267 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:49.362456 gateway web1: SSH Session for alice/laptop ready 184.758ms after the Tunnel opened (inner kex 184.567ms; Host dial 224µs, Host handshake 47.615ms)
+server 10:20:49.362507 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:49.499024 device connection 127.0.0.1:57009 (alice/laptop) closed after 612ms
+server 10:20:49.499154 gateway web1: SSH Session for alice/laptop ended after 321ms
+server 10:20:49.668075 device 127.0.0.1:57014 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:49.758879 device 127.0.0.1:57014 auth method=publickey user="koko" err=<nil>
+server 10:20:49.759085 device connection 127.0.0.1:57014 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 247.322ms
+server 10:20:49.802381 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:49.981734 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:49.981931 gateway web1: SSH Session for alice/laptop ready 179.778ms after the Tunnel opened (inner kex 179.579ms; Host dial 199µs, Host handshake 41.647ms)
+server 10:20:49.982025 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:50.116579 device connection 127.0.0.1:57014 (alice/laptop) closed after 605ms
+server 10:20:50.116719 gateway web1: SSH Session for alice/laptop ended after 315ms
+server 10:20:50.295752 device 127.0.0.1:57019 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:50.387393 device 127.0.0.1:57019 auth method=publickey user="koko" err=<nil>
+server 10:20:50.387485 device connection 127.0.0.1:57019 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 251.101ms
+server 10:20:50.430006 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:50.613968 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:50.614071 gateway web1: SSH Session for alice/laptop ready 184.178ms after the Tunnel opened (inner kex 184.074ms; Host dial 186µs, Host handshake 37.24ms)
+server 10:20:50.614109 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:50.747665 device connection 127.0.0.1:57019 (alice/laptop) closed after 611ms
+server 10:20:50.747935 gateway web1: SSH Session for alice/laptop ended after 318ms
+server 10:20:50.913428 device 127.0.0.1:57026 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:51.002871 device 127.0.0.1:57026 auth method=publickey user="koko" err=<nil>
+server 10:20:51.002970 device connection 127.0.0.1:57026 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 244.486ms
+server 10:20:51.046963 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:51.234435 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:51.234529 gateway web1: SSH Session for alice/laptop ready 187.673ms after the Tunnel opened (inner kex 187.579ms; Host dial 182µs, Host handshake 24.899ms)
+server 10:20:51.234559 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:51.371542 gateway web1: SSH Session for alice/laptop ended after 325ms
+server 10:20:51.372518 device connection 127.0.0.1:57026 (alice/laptop) closed after 614ms
+server 10:20:51.539530 device 127.0.0.1:57030 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:51.630699 device 127.0.0.1:57030 auth method=publickey user="koko" err=<nil>
+server 10:20:51.630998 device connection 127.0.0.1:57030 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 244.752ms
+server 10:20:51.676365 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:51.858445 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:51.858618 gateway web1: SSH Session for alice/laptop ready 182.56ms after the Tunnel opened (inner kex 182.384ms; Host dial 277µs, Host handshake 43.343ms)
+server 10:20:51.858648 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:51.993200 device connection 127.0.0.1:57030 (alice/laptop) closed after 607ms
+server 10:20:51.993241 gateway web1: SSH Session for alice/laptop ended after 317ms
+server 10:20:52.158777 device 127.0.0.1:57033 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:52.248548 device 127.0.0.1:57033 auth method=publickey user="koko" err=<nil>
+server 10:20:52.248750 device connection 127.0.0.1:57033 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 245.668ms
+server 10:20:52.293201 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:52.483150 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:52.483428 gateway web1: SSH Session for alice/laptop ready 190.69ms after the Tunnel opened (inner kex 190.411ms; Host dial 633µs, Host handshake 47.977ms)
+server 10:20:52.483823 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:52.616947 device connection 127.0.0.1:57033 (alice/laptop) closed after 614ms
+server 10:20:52.616959 gateway web1: SSH Session for alice/laptop ended after 324ms
+server 10:20:52.779837 device 127.0.0.1:57036 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:52.866384 device 127.0.0.1:57036 auth method=publickey user="koko" err=<nil>
+server 10:20:52.866580 device connection 127.0.0.1:57036 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 242.018ms
+server 10:20:52.910316 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:53.093098 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:53.093257 gateway web1: SSH Session for alice/laptop ready 183.346ms after the Tunnel opened (inner kex 183.185ms; Host dial 576µs, Host handshake 42.85ms)
+server 10:20:53.093313 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:53.230241 device connection 127.0.0.1:57036 (alice/laptop) closed after 606ms
+server 10:20:53.230290 gateway web1: SSH Session for alice/laptop ended after 320ms
+server 10:20:53.398322 device 127.0.0.1:57039 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:53.490186 device 127.0.0.1:57039 auth method=publickey user="koko" err=<nil>
+server 10:20:53.490408 device connection 127.0.0.1:57039 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 246.875ms
+server 10:20:53.535050 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:53.719154 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:53.719282 gateway web1: SSH Session for alice/laptop ready 184.574ms after the Tunnel opened (inner kex 184.441ms; Host dial 585µs, Host handshake 45.68ms)
+server 10:20:53.719310 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:53.853669 gateway web1: SSH Session for alice/laptop ended after 319ms
+server 10:20:53.853821 device connection 127.0.0.1:57039 (alice/laptop) closed after 610ms
+server 10:20:54.014839 device 127.0.0.1:57042 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:54.107442 device 127.0.0.1:57042 auth method=publickey user="koko" err=<nil>
+server 10:20:54.107564 device connection 127.0.0.1:57042 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 246.911ms
+server 10:20:54.151797 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:54.338188 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:54.338376 gateway web1: SSH Session for alice/laptop ready 186.924ms after the Tunnel opened (inner kex 186.736ms; Host dial 598µs, Host handshake 49.024ms)
+server 10:20:54.338423 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:54.470397 device connection 127.0.0.1:57042 (alice/laptop) closed after 610ms
+server 10:20:54.470409 gateway web1: SSH Session for alice/laptop ended after 319ms
+server 10:20:54.628286 device 127.0.0.1:57045 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:54.718271 device 127.0.0.1:57045 auth method=publickey user="koko" err=<nil>
+server 10:20:54.718412 device connection 127.0.0.1:57045 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 242.56ms
+server 10:20:54.761458 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:54.944915 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:54.945130 gateway web1: SSH Session for alice/laptop ready 183.909ms after the Tunnel opened (inner kex 183.691ms; Host dial 333µs, Host handshake 41.053ms)
+server 10:20:54.945237 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:55.084074 device connection 127.0.0.1:57045 (alice/laptop) closed after 608ms
+server 10:20:55.084084 gateway web1: SSH Session for alice/laptop ended after 323ms
+server 10:20:55.237917 device 127.0.0.1:57048 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:55.327027 device 127.0.0.1:57048 auth method=publickey user="koko" err=<nil>
+server 10:20:55.327202 device connection 127.0.0.1:57048 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 243.048ms
+server 10:20:55.371545 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:55.556076 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:55.556308 gateway web1: SSH Session for alice/laptop ready 184.9ms after the Tunnel opened (inner kex 184.666ms; Host dial 392µs, Host handshake 44.091ms)
+server 10:20:55.556407 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:55.692495 device connection 127.0.0.1:57048 (alice/laptop) closed after 608ms
+server 10:20:55.692662 gateway web1: SSH Session for alice/laptop ended after 321ms
+server 10:20:55.865360 device 127.0.0.1:57054 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:55.956208 device 127.0.0.1:57054 auth method=publickey user="koko" err=<nil>
+server 10:20:55.956398 device connection 127.0.0.1:57054 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 247.988ms
+server 10:20:56.000492 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:56.187130 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:56.187363 gateway web1: SSH Session for alice/laptop ready 187.3ms after the Tunnel opened (inner kex 187.065ms; Host dial 707µs, Host handshake 42.501ms)
+server 10:20:56.187465 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:56.318528 gateway web1: SSH Session for alice/laptop ended after 318ms
+server 10:20:56.318522 device connection 127.0.0.1:57054 (alice/laptop) closed after 610ms
+server 10:20:56.478898 device 127.0.0.1:57059 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:56.570294 device 127.0.0.1:57059 auth method=publickey user="koko" err=<nil>
+server 10:20:56.570448 device connection 127.0.0.1:57059 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 246.134ms
+server 10:20:56.615871 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:56.796186 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:56.796297 gateway web1: SSH Session for alice/laptop ready 180.588ms after the Tunnel opened (inner kex 180.476ms; Host dial 242µs, Host handshake 34.661ms)
+server 10:20:56.796337 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:56.930319 device connection 127.0.0.1:57059 (alice/laptop) closed after 606ms
+server 10:20:56.930417 gateway web1: SSH Session for alice/laptop ended after 315ms
+server 10:20:57.101474 device 127.0.0.1:57062 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:57.191803 device 127.0.0.1:57062 auth method=publickey user="koko" err=<nil>
+server 10:20:57.192354 device connection 127.0.0.1:57062 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 249.926ms
+server 10:20:57.235739 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:57.419989 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:57.420161 gateway web1: SSH Session for alice/laptop ready 184.728ms after the Tunnel opened (inner kex 184.555ms; Host dial 375µs, Host handshake 53.07ms)
+server 10:20:57.420203 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:57.554521 device connection 127.0.0.1:57062 (alice/laptop) closed after 612ms
+server 10:20:57.554541 gateway web1: SSH Session for alice/laptop ended after 319ms
+server 10:20:57.721319 device 127.0.0.1:57067 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:57.809691 device 127.0.0.1:57067 auth method=publickey user="koko" err=<nil>
+server 10:20:57.809833 device connection 127.0.0.1:57067 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 243.818ms
+server 10:20:57.852754 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:58.042676 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:58.042811 gateway web1: SSH Session for alice/laptop ready 190.238ms after the Tunnel opened (inner kex 190.102ms; Host dial 209µs, Host handshake 37.047ms)
+server 10:20:58.042864 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:58.178189 device connection 127.0.0.1:57067 (alice/laptop) closed after 612ms
+server 10:20:58.178274 gateway web1: SSH Session for alice/laptop ended after 326ms
+server 10:20:58.347772 device 127.0.0.1:57070 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:58.436327 device 127.0.0.1:57070 auth method=publickey user="koko" err=<nil>
+server 10:20:58.436465 device connection 127.0.0.1:57070 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 245.058ms
+server 10:20:58.480197 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:20:58.664227 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:58.664378 gateway web1: SSH Session for alice/laptop ready 184.75ms after the Tunnel opened (inner kex 184.599ms; Host dial 426µs, Host handshake 26.442ms)
+server 10:20:58.664453 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:58.806470 device connection 127.0.0.1:57070 (alice/laptop) closed after 615ms
+server 10:20:58.806481 gateway web1: SSH Session for alice/laptop ended after 327ms
+server 10:20:58.983677 device 127.0.0.1:57073 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:20:59.074053 device 127.0.0.1:57073 auth method=publickey user="koko" err=<nil>
+server 10:20:59.074116 device connection 127.0.0.1:57073 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-OpenSSH_10.3", handshake+auth 255.548ms
+server 10:20:59.121231 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:20:59.301629 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:59.301828 gateway web1: SSH Session for alice/laptop ready 180.92ms after the Tunnel opened (inner kex 180.717ms; Host dial 214µs, Host handshake 50.92ms)
+server 10:20:59.301871 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:59.438075 gateway web1: SSH Session for alice/laptop ended after 317ms
+server 10:20:59.472462 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:20:59.659847 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:20:59.659955 gateway web1: SSH Session for alice/laptop ready 187.625ms after the Tunnel opened (inner kex 187.515ms; Host dial 258µs, Host handshake 44.906ms)
+server 10:20:59.660069 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:20:59.802154 gateway web1: SSH Session for alice/laptop ended after 330ms
+server 10:20:59.827946 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:21:00.013035 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:00.013139 gateway web1: SSH Session for alice/laptop ready 185.287ms after the Tunnel opened (inner kex 185.182ms; Host dial 194µs, Host handshake 51.991ms)
+server 10:21:00.013178 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:00.145185 gateway web1: SSH Session for alice/laptop ended after 317ms
+server 10:21:00.171191 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:21:00.355626 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:00.355802 gateway web1: SSH Session for alice/laptop ready 184.869ms after the Tunnel opened (inner kex 184.692ms; Host dial 200µs, Host handshake 25.866ms)
+server 10:21:00.355866 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:00.490043 gateway web1: SSH Session for alice/laptop ended after 319ms
+server 10:21:00.525441 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:21:00.710472 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:00.710822 gateway web1: SSH Session for alice/laptop ready 185.455ms after the Tunnel opened (inner kex 185.104ms; Host dial 592µs, Host handshake 28.692ms)
+server 10:21:00.710897 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:00.854672 gateway web1: SSH Session for alice/laptop ended after 329ms
+server 10:21:00.877404 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:21:01.063705 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:01.063961 gateway web1: SSH Session for alice/laptop ready 186.699ms after the Tunnel opened (inner kex 186.44ms; Host dial 248µs, Host handshake 46.162ms)
+server 10:21:01.064057 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:01.196371 gateway web1: SSH Session for alice/laptop ended after 319ms
+server 10:21:01.228591 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:21:01.411493 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:01.411623 gateway web1: SSH Session for alice/laptop ready 183.236ms after the Tunnel opened (inner kex 183.105ms; Host dial 276µs, Host handshake 47.798ms)
+server 10:21:01.411660 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:01.542231 gateway web1: SSH Session for alice/laptop ended after 314ms
+server 10:21:01.576605 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:21:01.760884 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:01.761091 gateway web1: SSH Session for alice/laptop ready 184.672ms after the Tunnel opened (inner kex 184.464ms; Host dial 227µs, Host handshake 27.481ms)
+server 10:21:01.761148 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:01.899056 gateway web1: SSH Session for alice/laptop ended after 323ms
+server 10:21:01.942552 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:21:02.123977 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:02.124135 gateway web1: SSH Session for alice/laptop ready 181.646ms after the Tunnel opened (inner kex 181.487ms; Host dial 203µs, Host handshake 43.73ms)
+server 10:21:02.124211 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:02.258752 gateway web1: SSH Session for alice/laptop ended after 316ms
+server 10:21:02.281139 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:21:02.469510 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:02.469909 gateway web1: SSH Session for alice/laptop ready 188.914ms after the Tunnel opened (inner kex 188.512ms; Host dial 237µs, Host handshake 26.959ms)
+server 10:21:02.470030 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:02.606844 gateway web1: SSH Session for alice/laptop ended after 326ms
+server 10:21:02.645065 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:21:02.827533 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:02.827669 gateway web1: SSH Session for alice/laptop ready 182.842ms after the Tunnel opened (inner kex 182.705ms; Host dial 308µs, Host handshake 42.676ms)
+server 10:21:02.827716 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:02.960210 gateway web1: SSH Session for alice/laptop ended after 315ms
+server 10:21:03.003110 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:21:03.192012 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:03.192136 gateway web1: SSH Session for alice/laptop ready 189.588ms after the Tunnel opened (inner kex 189.463ms; Host dial 485µs, Host handshake 51.844ms)
+server 10:21:03.192164 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:03.325532 gateway web1: SSH Session for alice/laptop ended after 323ms
+server 10:21:03.361305 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:21:03.545724 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:03.545969 gateway web1: SSH Session for alice/laptop ready 184.79ms after the Tunnel opened (inner kex 184.542ms; Host dial 242µs, Host handshake 52ms)
+server 10:21:03.546081 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:03.678877 gateway web1: SSH Session for alice/laptop ended after 318ms
+server 10:21:03.696650 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:21:03.875319 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:03.875387 gateway web1: SSH Session for alice/laptop ready 178.833ms after the Tunnel opened (inner kex 178.765ms; Host dial 183µs, Host handshake 38.985ms)
+server 10:21:03.875405 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:04.006489 gateway web1: SSH Session for alice/laptop ended after 310ms
+server 10:21:04.049410 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:21:04.230781 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:04.230875 gateway web1: SSH Session for alice/laptop ready 181.595ms after the Tunnel opened (inner kex 181.5ms; Host dial 253µs, Host handshake 45.388ms)
+server 10:21:04.230917 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:04.371620 gateway web1: SSH Session for alice/laptop ended after 322ms
+server 10:21:04.405711 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:21:04.590245 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:04.590376 gateway web1: SSH Session for alice/laptop ready 184.833ms after the Tunnel opened (inner kex 184.701ms; Host dial 230µs, Host handshake 30.757ms)
+server 10:21:04.590429 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:04.720707 gateway web1: SSH Session for alice/laptop ended after 315ms
+server 10:21:04.735962 device 127.0.0.1:57105 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:21:04.736953 device 127.0.0.1:57105 auth method=publickey user="koko" err=<nil>
+server 10:21:04.736983 device connection 127.0.0.1:57105 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.21ms
+server 10:21:04.737170 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:21:04.740611 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:04.780795 gateway web1: SSH Session for alice/laptop ready 43.68ms after the Tunnel opened (inner kex 3.496ms; Host dial 175µs, Host handshake 43.387ms)
+server 10:21:04.781918 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:04.828241 gateway web1: SSH Session for alice/laptop ended after 91ms
+server 10:21:04.828282 device connection 127.0.0.1:57105 (alice/laptop) closed after 94ms
+server 10:21:05.014955 device 127.0.0.1:57108 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:21:05.104279 device 127.0.0.1:57108 auth method=publickey user="koko" err=<nil>
+server 10:21:05.104338 device connection 127.0.0.1:57108 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 245.855ms
+server 10:21:05.148907 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:21:05.332563 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:05.332726 gateway web1: SSH Session for alice/laptop ready 183.918ms after the Tunnel opened (inner kex 183.753ms; Host dial 255µs, Host handshake 35.339ms)
+server 10:21:05.332804 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:05.463583 device connection 127.0.0.1:57108 (alice/laptop) closed after 605ms
+server 10:21:05.463625 gateway web1: SSH Session for alice/laptop ended after 315ms
+server 10:21:12.152150 device 127.0.0.1:57127 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:21:12.153013 device 127.0.0.1:57127 auth method=publickey user="koko" err=<nil>
+server 10:21:12.153041 device connection 127.0.0.1:57127 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.97ms
+server 10:21:12.153170 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:21:12.157378 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:12.186146 gateway web1: SSH Session for alice/laptop ready 33.026ms after the Tunnel opened (inner kex 4.258ms; Host dial 147µs, Host handshake 32.779ms)
+server 10:21:12.188048 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:18.676560 gateway web1: SSH Session for alice/laptop ended after 6.523s
+server 10:21:18.677901 device connection 127.0.0.1:57127 (alice/laptop) closed after 6.527s
+server 10:21:29.231168 device 127.0.0.1:57147 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:21:29.321276 device 127.0.0.1:57147 auth method=publickey user="koko" err=<nil>
+server 10:21:29.321417 device connection 127.0.0.1:57147 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 246.37ms
+server 10:21:29.366403 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:21:29.553116 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:21:29.553297 gateway web1: SSH Session for alice/laptop ready 187.259ms after the Tunnel opened (inner kex 187.077ms; Host dial 317µs, Host handshake 51.709ms)
+server 10:21:29.553331 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:21:39.674049 gateway web1: SSH Session for alice/laptop ended after 10.308s
+server 10:21:39.676798 device connection 127.0.0.1:57147 (alice/laptop) closed after 10.602s
+server 10:22:12.732243 device 127.0.0.1:57248 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:12.733154 device 127.0.0.1:57248 auth method=publickey user="koko" err=<nil>
+server 10:22:12.733181 device connection 127.0.0.1:57248 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.799ms
+server 10:22:12.733448 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:12.736805 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:12.775795 gateway web1: SSH Session for alice/laptop ready 42.529ms after the Tunnel opened (inner kex 3.539ms; Host dial 166µs, Host handshake 42.103ms)
+server 10:22:12.777372 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:13.884780 gateway web1: SSH Session for alice/laptop ended after 1.152s
+server 10:22:13.884898 device connection 127.0.0.1:57248 (alice/laptop) closed after 1.154s
+server 10:22:13.904064 device 127.0.0.1:57253 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:13.904843 device 127.0.0.1:57253 auth method=publickey user="koko" err=<nil>
+server 10:22:13.904859 device connection 127.0.0.1:57253 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.624ms
+server 10:22:13.904944 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:13.908525 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:13.929390 gateway web1: SSH Session for alice/laptop ready 24.485ms after the Tunnel opened (inner kex 3.62ms; Host dial 83µs, Host handshake 24.311ms)
+server 10:22:13.929809 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:15.139804 gateway web1: SSH Session for alice/laptop ended after 1.235s
+server 10:22:15.139861 device connection 127.0.0.1:57253 (alice/laptop) closed after 1.237s
+server 10:22:15.161460 device 127.0.0.1:57261 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:15.162256 device 127.0.0.1:57261 auth method=publickey user="koko" err=<nil>
+server 10:22:15.162285 device connection 127.0.0.1:57261 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.588ms
+server 10:22:15.162368 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:15.165891 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:15.186191 gateway web1: SSH Session for alice/laptop ready 23.859ms after the Tunnel opened (inner kex 3.559ms; Host dial 107µs, Host handshake 23.681ms)
+server 10:22:15.186574 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:16.284237 gateway web1: SSH Session for alice/laptop ended after 1.122s
+server 10:22:16.284285 device connection 127.0.0.1:57261 (alice/laptop) closed after 1.124s
+server 10:22:16.308533 device 127.0.0.1:57267 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:16.309329 device 127.0.0.1:57267 auth method=publickey user="koko" err=<nil>
+server 10:22:16.309349 device connection 127.0.0.1:57267 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.552ms
+server 10:22:16.309516 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:16.313081 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:16.335084 gateway web1: SSH Session for alice/laptop ready 25.662ms after the Tunnel opened (inner kex 3.659ms; Host dial 95µs, Host handshake 25.428ms)
+server 10:22:16.335763 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:17.497191 gateway web1: SSH Session for alice/laptop ended after 1.188s
+server 10:22:17.497229 device connection 127.0.0.1:57267 (alice/laptop) closed after 1.189s
+server 10:22:17.516682 device 127.0.0.1:57269 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:17.517494 device 127.0.0.1:57269 auth method=publickey user="koko" err=<nil>
+server 10:22:17.517534 device connection 127.0.0.1:57269 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.721ms
+server 10:22:17.517632 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:17.521217 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:17.539893 gateway web1: SSH Session for alice/laptop ready 22.315ms after the Tunnel opened (inner kex 3.639ms; Host dial 112µs, Host handshake 22.111ms)
+server 10:22:17.540257 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:18.717575 gateway web1: SSH Session for alice/laptop ended after 1.2s
+server 10:22:18.717630 device connection 127.0.0.1:57269 (alice/laptop) closed after 1.202s
+server 10:22:18.736529 device 127.0.0.1:57274 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:18.737344 device 127.0.0.1:57274 auth method=publickey user="koko" err=<nil>
+server 10:22:18.737394 device connection 127.0.0.1:57274 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.672ms
+server 10:22:18.737531 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:18.743205 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:18.763209 gateway web1: SSH Session for alice/laptop ready 25.732ms after the Tunnel opened (inner kex 5.728ms; Host dial 2.385ms, Host handshake 23.231ms)
+server 10:22:18.763587 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:19.933183 gateway web1: SSH Session for alice/laptop ended after 1.196s
+server 10:22:19.933219 device connection 127.0.0.1:57274 (alice/laptop) closed after 1.197s
+server 10:22:19.959205 device 127.0.0.1:57280 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:19.960076 device 127.0.0.1:57280 auth method=publickey user="koko" err=<nil>
+server 10:22:19.960108 device connection 127.0.0.1:57280 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.706ms
+server 10:22:19.960211 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:19.964662 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:19.986168 gateway web1: SSH Session for alice/laptop ready 26.007ms after the Tunnel opened (inner kex 4.5ms; Host dial 126µs, Host handshake 25.787ms)
+server 10:22:19.986592 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:21.771850 gateway web1: SSH Session for alice/laptop ended after 1.812s
+server 10:22:21.771957 device connection 127.0.0.1:57280 (alice/laptop) closed after 1.814s
+server 10:22:21.792917 device 127.0.0.1:57283 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:21.793791 device 127.0.0.1:57283 auth method=publickey user="koko" err=<nil>
+server 10:22:21.793815 device connection 127.0.0.1:57283 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.908ms
+server 10:22:21.793924 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:21.797779 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:21.817689 gateway web1: SSH Session for alice/laptop ready 23.814ms after the Tunnel opened (inner kex 3.904ms; Host dial 126µs, Host handshake 23.571ms)
+server 10:22:21.818231 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:23.612268 gateway web1: SSH Session for alice/laptop ended after 1.818s
+server 10:22:23.612327 device connection 127.0.0.1:57283 (alice/laptop) closed after 1.82s
+server 10:22:23.632557 device 127.0.0.1:57285 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:23.633410 device 127.0.0.1:57285 auth method=publickey user="koko" err=<nil>
+server 10:22:23.633432 device connection 127.0.0.1:57285 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.732ms
+server 10:22:23.633611 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:23.637007 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:23.656772 gateway web1: SSH Session for alice/laptop ready 23.207ms after the Tunnel opened (inner kex 3.442ms; Host dial 138µs, Host handshake 22.976ms)
+server 10:22:23.657313 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:25.390191 gateway web1: SSH Session for alice/laptop ended after 1.757s
+server 10:22:25.390233 device connection 127.0.0.1:57285 (alice/laptop) closed after 1.759s
+server 10:22:25.415242 device 127.0.0.1:57288 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:25.416013 device 127.0.0.1:57288 auth method=publickey user="koko" err=<nil>
+server 10:22:25.416036 device connection 127.0.0.1:57288 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.565ms
+server 10:22:25.416112 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:25.419333 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:25.442922 gateway web1: SSH Session for alice/laptop ready 26.846ms after the Tunnel opened (inner kex 3.256ms; Host dial 111µs, Host handshake 26.654ms)
+server 10:22:25.443320 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:27.794961 gateway web1: SSH Session for alice/laptop ended after 2.379s
+server 10:22:27.795010 device connection 127.0.0.1:57288 (alice/laptop) closed after 2.381s
+server 10:22:27.815923 device 127.0.0.1:57299 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:27.816742 device 127.0.0.1:57299 auth method=publickey user="koko" err=<nil>
+server 10:22:27.816766 device connection 127.0.0.1:57299 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.636ms
+server 10:22:27.816850 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:27.820501 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:27.840950 gateway web1: SSH Session for alice/laptop ready 24.135ms after the Tunnel opened (inner kex 3.686ms; Host dial 90µs, Host handshake 23.977ms)
+server 10:22:27.841557 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:29.734817 gateway web1: SSH Session for alice/laptop ended after 1.918s
+server 10:22:29.734876 device connection 127.0.0.1:57299 (alice/laptop) closed after 1.92s
+server 10:22:29.756668 device 127.0.0.1:57303 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:29.757428 device 127.0.0.1:57303 auth method=publickey user="koko" err=<nil>
+server 10:22:29.757445 device connection 127.0.0.1:57303 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.505ms
+server 10:22:29.757534 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:29.761193 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:29.780941 gateway web1: SSH Session for alice/laptop ready 23.442ms after the Tunnel opened (inner kex 3.695ms; Host dial 90µs, Host handshake 23.276ms)
+server 10:22:29.781284 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:31.685577 gateway web1: SSH Session for alice/laptop ended after 1.928s
+server 10:22:31.685655 device connection 127.0.0.1:57303 (alice/laptop) closed after 1.93s
+server 10:22:31.711873 device 127.0.0.1:57306 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:31.712726 device 127.0.0.1:57306 auth method=publickey user="koko" err=<nil>
+server 10:22:31.712750 device connection 127.0.0.1:57306 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.646ms
+server 10:22:31.712835 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:31.716638 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:31.736285 gateway web1: SSH Session for alice/laptop ready 23.486ms after the Tunnel opened (inner kex 3.84ms; Host dial 113µs, Host handshake 23.289ms)
+server 10:22:31.737076 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:31.780000 gateway web1: SSH Session for alice/laptop ended after 67ms
+server 10:22:31.780064 device connection 127.0.0.1:57306 (alice/laptop) closed after 69ms
+server 10:22:31.797811 device 127.0.0.1:57308 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:31.798583 device 127.0.0.1:57308 auth method=publickey user="koko" err=<nil>
+server 10:22:31.798600 device connection 127.0.0.1:57308 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.613ms
+server 10:22:31.798674 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:31.802058 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:31.821853 gateway web1: SSH Session for alice/laptop ready 23.209ms after the Tunnel opened (inner kex 3.413ms; Host dial 123µs, Host handshake 23.014ms)
+server 10:22:31.822253 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:34.182388 gateway web1: SSH Session for alice/laptop ended after 2.384s
+server 10:22:34.182505 device connection 127.0.0.1:57308 (alice/laptop) closed after 2.386s
+server 10:22:34.201981 device 127.0.0.1:57310 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:34.202883 device 127.0.0.1:57310 auth method=publickey user="koko" err=<nil>
+server 10:22:34.202908 device connection 127.0.0.1:57310 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.828ms
+server 10:22:34.203045 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:34.206592 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:34.247547 gateway web1: SSH Session for alice/laptop ready 44.541ms after the Tunnel opened (inner kex 3.587ms; Host dial 150µs, Host handshake 44.299ms)
+server 10:22:34.248677 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:34.345295 gateway web1: SSH Session for alice/laptop ended after 142ms
+server 10:22:34.345372 device connection 127.0.0.1:57310 (alice/laptop) closed after 144ms
+server 10:22:34.363414 device 127.0.0.1:57312 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:34.364331 device 127.0.0.1:57312 auth method=publickey user="koko" err=<nil>
+server 10:22:34.364361 device connection 127.0.0.1:57312 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.845ms
+server 10:22:34.364487 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:34.369036 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:34.389949 gateway web1: SSH Session for alice/laptop ready 25.505ms after the Tunnel opened (inner kex 4.592ms; Host dial 170µs, Host handshake 25.243ms)
+server 10:22:34.390488 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:36.736565 gateway web1: SSH Session for alice/laptop ended after 2.372s
+server 10:22:36.736640 device connection 127.0.0.1:57312 (alice/laptop) closed after 2.374s
+server 10:22:36.755720 device 127.0.0.1:57317 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:36.756595 device 127.0.0.1:57317 auth method=publickey user="koko" err=<nil>
+server 10:22:36.756619 device connection 127.0.0.1:57317 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.811ms
+server 10:22:36.756737 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:36.760197 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:36.798532 gateway web1: SSH Session for alice/laptop ready 41.826ms after the Tunnel opened (inner kex 3.492ms; Host dial 154µs, Host handshake 41.597ms)
+server 10:22:36.800349 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:36.898214 device connection 127.0.0.1:57317 (alice/laptop) closed after 143ms
+server 10:22:36.898241 gateway web1: SSH Session for alice/laptop ended after 142ms
+server 10:22:36.918575 device 127.0.0.1:57325 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:36.919867 device 127.0.0.1:57325 auth method=publickey user="koko" err=<nil>
+server 10:22:36.919894 device connection 127.0.0.1:57325 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.184ms
+server 10:22:36.920062 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:36.923864 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:36.945738 gateway web1: SSH Session for alice/laptop ready 25.736ms after the Tunnel opened (inner kex 3.862ms; Host dial 523µs, Host handshake 25.087ms)
+server 10:22:36.946522 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:39.275489 gateway web1: SSH Session for alice/laptop ended after 2.355s
+server 10:22:39.275547 device connection 127.0.0.1:57325 (alice/laptop) closed after 2.358s
+server 10:22:39.294091 device 127.0.0.1:57329 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:39.294957 device 127.0.0.1:57329 auth method=publickey user="koko" err=<nil>
+server 10:22:39.294984 device connection 127.0.0.1:57329 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.738ms
+server 10:22:39.295096 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:39.298559 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:39.335694 gateway web1: SSH Session for alice/laptop ready 40.633ms after the Tunnel opened (inner kex 3.498ms; Host dial 144µs, Host handshake 40.385ms)
+server 10:22:39.336693 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:39.380809 gateway web1: SSH Session for alice/laptop ended after 86ms
+server 10:22:39.380889 device connection 127.0.0.1:57329 (alice/laptop) closed after 88ms
+server 10:22:39.396763 device 127.0.0.1:57331 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:39.397650 device 127.0.0.1:57331 auth method=publickey user="koko" err=<nil>
+server 10:22:39.397674 device connection 127.0.0.1:57331 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.884ms
+server 10:22:39.397827 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:39.401335 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:39.435710 gateway web1: SSH Session for alice/laptop ready 37.928ms after the Tunnel opened (inner kex 3.555ms; Host dial 157µs, Host handshake 37.66ms)
+server 10:22:39.436393 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:40.551939 gateway web1: SSH Session for alice/laptop ended after 1.154s
+server 10:22:40.552029 device connection 127.0.0.1:57331 (alice/laptop) closed after 1.156s
+server 10:22:47.948247 device 127.0.0.1:57368 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:48.040187 device 127.0.0.1:57368 auth method=publickey user="koko" err=<nil>
+server 10:22:48.040504 device connection 127.0.0.1:57368 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 248.04ms
+server 10:22:48.085051 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:48.266205 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:48.266309 gateway web1: SSH Session for alice/laptop ready 181.594ms after the Tunnel opened (inner kex 181.489ms; Host dial 563µs, Host handshake 42.617ms)
+server 10:22:48.266336 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:51.317878 gateway web1: SSH Session for alice/laptop ended after 3.233s
+server 10:22:51.318991 device connection 127.0.0.1:57368 (alice/laptop) closed after 3.527s
+server 10:22:51.480533 device 127.0.0.1:57374 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:22:51.570720 device 127.0.0.1:57374 auth method=publickey user="koko" err=<nil>
+server 10:22:51.570986 device connection 127.0.0.1:57374 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 243.686ms
+server 10:22:51.615510 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:22:51.799194 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:22:51.799633 gateway web1: SSH Session for alice/laptop ready 184.417ms after the Tunnel opened (inner kex 183.974ms; Host dial 297µs, Host handshake 43.517ms)
+server 10:22:51.799726 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:22:54.892646 device connection 127.0.0.1:57374 (alice/laptop) closed after 3.565s
+server 10:22:54.892663 gateway web1: SSH Session for alice/laptop ended after 3.277s
+server 10:23:01.605562 device 127.0.0.1:57393 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:23:01.694639 device 127.0.0.1:57393 auth method=publickey user="koko" err=<nil>
+server 10:23:01.694859 device connection 127.0.0.1:57393 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 243.05ms
+server 10:23:01.738220 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:23:01.924915 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:23:01.925002 gateway web1: SSH Session for alice/laptop ready 186.984ms after the Tunnel opened (inner kex 186.896ms; Host dial 372µs, Host handshake 30.127ms)
+server 10:23:01.925031 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:23:04.972121 gateway web1: SSH Session for alice/laptop ended after 3.234s
+server 10:23:04.972180 device connection 127.0.0.1:57393 (alice/laptop) closed after 3.52s
+server 10:23:05.128114 device 127.0.0.1:57400 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:23:05.222910 device 127.0.0.1:57400 auth method=publickey user="koko" err=<nil>
+server 10:23:05.223046 device connection 127.0.0.1:57400 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 247.452ms
+server 10:23:05.265606 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:23:05.449958 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:23:05.450186 gateway web1: SSH Session for alice/laptop ready 184.79ms after the Tunnel opened (inner kex 184.56ms; Host dial 217µs, Host handshake 28.559ms)
+server 10:23:05.450233 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:23:08.531611 gateway web1: SSH Session for alice/laptop ended after 3.266s
+server 10:23:08.531794 device connection 127.0.0.1:57400 (alice/laptop) closed after 3.556s
+server 10:23:08.562043 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:23:08.747295 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:23:08.747508 gateway web1: SSH Session for alice/laptop ready 185.566ms after the Tunnel opened (inner kex 185.35ms; Host dial 253µs, Host handshake 24.082ms)
+server 10:23:08.747621 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:23:11.849960 gateway web1: SSH Session for alice/laptop ended after 3.288s
+server 10:23:11.872075 tunnel for "web1.kokomuxwan" from alice/laptop accepted (direct-tcpip)
+server 10:23:12.056337 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:23:12.056715 gateway web1: SSH Session for alice/laptop ready 184.698ms after the Tunnel opened (inner kex 184.354ms; Host dial 184µs, Host handshake 42.276ms)
+server 10:23:12.056854 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:23:15.137930 device connection 127.0.0.1:56883 (alice/laptop) closed after 2m36.863s
+server 10:23:15.139192 gateway web1: SSH Session for alice/laptop ended after 3.267s
+server 10:23:15.166948 device connection 127.0.0.1:57073 (alice/laptop) closed after 2m16.348s
+server 10:23:58.799306 device 127.0.0.1:57480 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:23:58.800217 device 127.0.0.1:57480 auth method=publickey user="koko" err=<nil>
+server 10:23:58.800247 device connection 127.0.0.1:57480 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.886ms
+server 10:23:58.800395 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:23:58.803786 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:23:58.832771 gateway web1: SSH Session for alice/laptop ready 32.427ms after the Tunnel opened (inner kex 3.442ms; Host dial 154µs, Host handshake 32.174ms)
+server 10:23:58.833262 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:23:58.877966 gateway web1: SSH Session for alice/laptop ended after 78ms
+server 10:23:58.878193 device connection 127.0.0.1:57480 (alice/laptop) closed after 80ms
+server 10:24:35.842797 device 127.0.0.1:57568 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:24:35.843635 device 127.0.0.1:57568 auth method=publickey user="koko" err=<nil>
+server 10:24:35.843659 device connection 127.0.0.1:57568 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.72ms
+server 10:24:35.843797 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:24:35.847136 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:24:35.878142 gateway web1: SSH Session for alice/laptop ready 34.39ms after the Tunnel opened (inner kex 3.385ms; Host dial 179µs, Host handshake 34.097ms)
+server 10:24:35.879127 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:24:37.018136 gateway web1: SSH Session for alice/laptop ended after 1.174s
+server 10:24:37.018191 device connection 127.0.0.1:57568 (alice/laptop) closed after 1.176s
+server 10:24:37.036585 device 127.0.0.1:57570 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:24:37.037386 device 127.0.0.1:57570 auth method=publickey user="koko" err=<nil>
+server 10:24:37.037413 device connection 127.0.0.1:57570 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.577ms
+server 10:24:37.037505 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:24:37.041222 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:24:37.061153 gateway web1: SSH Session for alice/laptop ready 23.691ms after the Tunnel opened (inner kex 3.761ms; Host dial 124µs, Host handshake 23.471ms)
+server 10:24:37.061498 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:24:38.182619 gateway web1: SSH Session for alice/laptop ended after 1.145s
+server 10:24:38.182669 device connection 127.0.0.1:57570 (alice/laptop) closed after 1.147s
+server 10:24:38.201706 device 127.0.0.1:57572 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:24:38.202479 device 127.0.0.1:57572 auth method=publickey user="koko" err=<nil>
+server 10:24:38.202499 device connection 127.0.0.1:57572 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.581ms
+server 10:24:38.202571 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:24:38.206263 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:24:38.227650 gateway web1: SSH Session for alice/laptop ready 25.11ms after the Tunnel opened (inner kex 3.723ms; Host dial 567µs, Host handshake 24.473ms)
+server 10:24:38.228381 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:24:39.327535 gateway web1: SSH Session for alice/laptop ended after 1.125s
+server 10:24:39.327588 device connection 127.0.0.1:57572 (alice/laptop) closed after 1.127s
+server 10:24:39.350332 device 127.0.0.1:57574 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:24:39.351128 device 127.0.0.1:57574 auth method=publickey user="koko" err=<nil>
+server 10:24:39.351149 device connection 127.0.0.1:57574 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.567ms
+server 10:24:39.351230 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:24:39.354537 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:24:39.376613 gateway web1: SSH Session for alice/laptop ready 25.419ms after the Tunnel opened (inner kex 3.343ms; Host dial 93µs, Host handshake 25.25ms)
+server 10:24:39.376994 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:24:40.526296 gateway web1: SSH Session for alice/laptop ended after 1.175s
+server 10:24:40.526339 device connection 127.0.0.1:57574 (alice/laptop) closed after 1.177s
+server 10:24:40.545138 device 127.0.0.1:57576 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:24:40.545921 device 127.0.0.1:57576 auth method=publickey user="koko" err=<nil>
+server 10:24:40.545948 device connection 127.0.0.1:57576 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.577ms
+server 10:24:40.546041 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:24:40.549608 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:24:40.569328 gateway web1: SSH Session for alice/laptop ready 23.331ms after the Tunnel opened (inner kex 3.611ms; Host dial 88µs, Host handshake 23.151ms)
+server 10:24:40.569883 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:24:41.703213 gateway web1: SSH Session for alice/laptop ended after 1.157s
+server 10:24:41.703264 device connection 127.0.0.1:57576 (alice/laptop) closed after 1.159s
+server 10:24:41.721666 device 127.0.0.1:57579 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:24:41.722447 device 127.0.0.1:57579 auth method=publickey user="koko" err=<nil>
+server 10:24:41.722467 device connection 127.0.0.1:57579 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.556ms
+server 10:24:41.722552 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:24:41.726258 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:24:41.747082 gateway web1: SSH Session for alice/laptop ready 24.569ms after the Tunnel opened (inner kex 3.746ms; Host dial 612µs, Host handshake 23.874ms)
+server 10:24:41.747798 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:24:42.884889 gateway web1: SSH Session for alice/laptop ended after 1.162s
+server 10:24:42.884995 device connection 127.0.0.1:57579 (alice/laptop) closed after 1.164s
+server 10:24:42.904381 device 127.0.0.1:57585 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:24:42.905161 device 127.0.0.1:57585 auth method=publickey user="koko" err=<nil>
+server 10:24:42.905178 device connection 127.0.0.1:57585 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.596ms
+server 10:24:42.905295 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:24:42.908792 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:24:42.927248 gateway web1: SSH Session for alice/laptop ready 21.993ms after the Tunnel opened (inner kex 3.537ms; Host dial 95µs, Host handshake 21.816ms)
+server 10:24:42.928159 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:24:44.157301 gateway web1: SSH Session for alice/laptop ended after 1.252s
+server 10:24:44.157388 device connection 127.0.0.1:57585 (alice/laptop) closed after 1.254s
+server 10:25:21.583404 device 127.0.0.1:57651 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:25:21.584383 device 127.0.0.1:57651 auth method=publickey user="koko" err=<nil>
+server 10:25:21.584402 device connection 127.0.0.1:57651 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.991ms
+server 10:25:21.584556 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:25:21.588049 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:25:21.628966 gateway web1: SSH Session for alice/laptop ready 44.454ms after the Tunnel opened (inner kex 3.538ms; Host dial 177µs, Host handshake 44.176ms)
+server 10:25:21.672424 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:25:22.203628 gateway web1: SSH Session for alice/laptop ended after 619ms
+server 10:25:22.203808 device connection 127.0.0.1:57651 (alice/laptop) closed after 621ms
+server 10:25:22.220763 device 127.0.0.1:57656 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:25:22.221622 device 127.0.0.1:57656 auth method=publickey user="koko" err=<nil>
+server 10:25:22.221646 device connection 127.0.0.1:57656 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.736ms
+server 10:25:22.221879 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:25:22.226583 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:25:22.276982 gateway web1: SSH Session for alice/laptop ready 55.163ms after the Tunnel opened (inner kex 4.765ms; Host dial 184µs, Host handshake 54.775ms)
+server 10:25:22.315658 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:25:22.876418 gateway web1: SSH Session for alice/laptop ended after 655ms
+server 10:25:22.876737 device connection 127.0.0.1:57656 (alice/laptop) closed after 657ms
+server 10:25:22.905675 device 127.0.0.1:57659 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:25:22.906526 device 127.0.0.1:57659 auth method=publickey user="koko" err=<nil>
+server 10:25:22.906550 device connection 127.0.0.1:57659 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.772ms
+server 10:25:22.906682 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:25:22.911299 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:25:22.943584 gateway web1: SSH Session for alice/laptop ready 36.936ms after the Tunnel opened (inner kex 4.652ms; Host dial 157µs, Host handshake 36.653ms)
+server 10:25:22.985474 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:25:23.513994 gateway web1: SSH Session for alice/laptop ended after 607ms
+server 10:25:23.514357 device connection 127.0.0.1:57659 (alice/laptop) closed after 610ms
+server 10:25:23.540273 device 127.0.0.1:57664 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:25:23.541155 device 127.0.0.1:57664 auth method=publickey user="koko" err=<nil>
+server 10:25:23.541177 device connection 127.0.0.1:57664 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.823ms
+server 10:25:23.541466 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:25:23.546048 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:25:23.585564 gateway web1: SSH Session for alice/laptop ready 44.25ms after the Tunnel opened (inner kex 4.735ms; Host dial 166µs, Host handshake 43.839ms)
+server 10:25:23.625542 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:25:24.147144 gateway web1: SSH Session for alice/laptop ended after 606ms
+server 10:25:24.147225 device connection 127.0.0.1:57664 (alice/laptop) closed after 608ms
+server 10:25:24.162889 device 127.0.0.1:57667 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:25:24.164278 device 127.0.0.1:57667 auth method=publickey user="koko" err=<nil>
+server 10:25:24.164303 device connection 127.0.0.1:57667 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.385ms
+server 10:25:24.164431 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:25:24.169912 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:25:24.223104 gateway web1: SSH Session for alice/laptop ready 58.713ms after the Tunnel opened (inner kex 5.522ms; Host dial 157µs, Host handshake 58.434ms)
+server 10:25:24.263817 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:25:24.833964 gateway web1: SSH Session for alice/laptop ended after 670ms
+server 10:25:24.837172 device connection 127.0.0.1:57667 (alice/laptop) closed after 675ms
+server 10:25:24.862143 device 127.0.0.1:57674 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:25:24.863494 device 127.0.0.1:57674 auth method=publickey user="koko" err=<nil>
+server 10:25:24.863528 device connection 127.0.0.1:57674 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 2.989ms
+server 10:25:24.863753 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+server 10:25:24.867981 gateway web1: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:25:24.901633 gateway web1: SSH Session for alice/laptop ready 37.94ms after the Tunnel opened (inner kex 4.288ms; Host dial 193µs, Host handshake 37.631ms)
+server 10:25:24.948743 gateway web1: Host global request "hostkeys-00@openssh.com" dropped
+server 10:25:25.506618 gateway web1: SSH Session for alice/laptop ended after 643ms
+server 10:25:25.507576 device connection 127.0.0.1:57674 (alice/laptop) closed after 647ms
+server 10:26:59.682747 device 127.0.0.1:57825 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:26:59.683723 device 127.0.0.1:57825 auth method=publickey user="koko" err=<nil>
+server 10:26:59.683744 device connection 127.0.0.1:57825 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.823ms
+server 10:26:59.683932 tunnel for "web2.koko" from alice/laptop refused: no such Host
+server 10:26:59.684057 device connection 127.0.0.1:57825 (alice/laptop) closed after 2ms
+server 10:26:59.697868 device 127.0.0.1:57826 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:26:59.698725 device 127.0.0.1:57826 auth method=publickey user="koko" err=<nil>
+server 10:26:59.698754 device connection 127.0.0.1:57826 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.682ms
+server 10:26:59.698847 tunnel for "web9.koko" from alice/laptop refused: no such Host
+server 10:26:59.698957 device connection 127.0.0.1:57826 (alice/laptop) closed after 2ms
+server 10:26:59.721726 device 127.0.0.1:57827 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:26:59.722589 device 127.0.0.1:57827 auth method=publickey user="koko" err=<nil>
+server 10:26:59.722616 device connection 127.0.0.1:57827 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.713ms
+server 10:26:59.722710 tunnel for "web2.koko" from alice/laptop refused: no such Host
+server 10:26:59.722805 device connection 127.0.0.1:57827 (alice/laptop) closed after 2ms
+server 10:27:07.184573 device 127.0.0.1:57848 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:27:07.185503 device 127.0.0.1:57848 auth method=publickey user="koko" err=<nil>
+server 10:27:07.185533 device connection 127.0.0.1:57848 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.863ms
+server 10:27:07.185692 tunnel for "web2.koko" from alice/laptop accepted (tunnel@koko)
+server 10:27:07.189287 gateway web2: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:27:07.189337 gateway web2: inner handshake for alice/laptop failed after 3.687ms: ssh: no authentication methods available
+server 10:27:07.189454 device connection 127.0.0.1:57848 (alice/laptop) closed after 6ms
+server 10:27:07.203537 device 127.0.0.1:57850 auth method=none user="koko" err=ssh: no auth passed yet
+server 10:27:07.204449 device 127.0.0.1:57850 auth method=publickey user="koko" err=<nil>
+server 10:27:07.204470 device connection 127.0.0.1:57850 up: alice/laptop (SHA256:UHvIZZrkKVmRvyPJ9Flqrq69T7leo/AZ13GSjMJRTRI), client "SSH-2.0-Go", handshake+auth 1.804ms
+server 10:27:07.204603 tunnel for "web2.koko" from alice/laptop accepted (tunnel@koko)
+server 10:27:07.208118 gateway web2: auth none from alice/laptop, ssh user "cieons", client "SSH-2.0-OpenSSH_10.3"
+server 10:27:07.208144 gateway web2: inner handshake for alice/laptop failed after 3.577ms: ssh: no authentication methods available
+server 10:27:07.208257 device connection 127.0.0.1:57850 (alice/laptop) closed after 6ms

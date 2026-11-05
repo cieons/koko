@@ -1,0 +1,181 @@
+
+===== 1. ssh: what the OpenSSH client does with none (ssh -vvv, auth lines)
+  debug1: Executing proxy command: exec "$S/bin/kokoproto" tunnel 'web1.koko'
+  debug1: identity file $S/keys/none type -1
+  debug1: Remote protocol version 2.0, remote software version Go
+  debug1: using hostkeyalias: koko-proto
+  debug1: using hostkeyalias: koko-proto
+  debug1: Host 'koko-proto' is known and matches the ED25519 host key.
+  debug1: SSH2_MSG_SERVICE_ACCEPT received
+  debug3: send packet: type 50
+  debug3: receive packet: type 52
+  Authenticated to web1.koko (via proxy) using "none".
+
+===== 2. ssh: a shell with a pty, an exec, exit status and stderr
+$ ssh -F $S/home/ssh/config -tt web1.koko tty; echo out; echo err >&2; exit 7
+/dev/pts/0
+out
+err
+Connection to web1.koko closed.
+[exit 7]
+
+===== 3. scp (sftp protocol), scp -O (legacy), sftp, rsync, with checksums
+local 32m sha256 238d1e65d5498f08
+$ scp -q -F $S/home/ssh/config $S/data/32m web1.koko:/tmp/up-scp
+[exit 0]
+$ scp -q -O -F $S/home/ssh/config $S/data/32m web1.koko:/tmp/up-scp-legacy
+[exit 0]
+$ scp -q -F $S/home/ssh/config web1.koko:/tmp/up-scp $S/data/down-scp
+[exit 0]
+$ sftp -q -F $S/home/ssh/config -b $S/data/sftp.batch web1.koko
+sftp> put $S/data/32m /tmp/up-sftp
+sftp> get /tmp/up-sftp $S/data/down-sftp
+[exit 0]
+$ rsync -a -e ssh -F $S/home/ssh/config $S/data/32m web1.koko:/tmp/up-rsync
+[exit 0]
+$ rsync -a -e ssh -F $S/home/ssh/config web1.koko:/tmp/up-rsync $S/data/down-rsync
+[exit 0]
+/tmp/up-scp 238d1e65d5498f08
+/tmp/up-scp-legacy 238d1e65d5498f08
+/tmp/up-sftp 238d1e65d5498f08
+/tmp/up-rsync 238d1e65d5498f08
+$S/data/down-scp 238d1e65d5498f08
+$S/data/down-sftp 238d1e65d5498f08
+$S/data/down-rsync 238d1e65d5498f08
+rsync --version: openrsync: protocol version 29; Host: rsync  version 3.5.0  protocol version 32
+
+===== 4. port forwards: -L to a Service on the Host's loopback, -D, -R
+$ curl -s http://127.0.0.1:47180/
+hello from a Service on web1
+[exit 0]
+$ curl -s --socks5-hostname 127.0.0.1:47181 http://127.0.0.1:8080/
+hello from a Service on web1
+[exit 0]
+$ ssh -F $S/home/ssh/config -R 127.0.0.1:47182:127.0.0.1:47183 web1.koko sleep 0.5; wget -qO- http://127.0.0.1:47182/
+hello from the device
+[exit 0]
+
+===== 5. how the Host name travels: case, user, port, HostName
+$ ssh -F $S/home/ssh/config -p 2222 bob@WEB1.koko echo "Host Account: $(id -un)"
+Host Account: deploy
+[exit 0]
+  server: server 10:18:22.777869 tunnel for "web1.koko" from alice/laptop accepted (tunnel@koko)
+  server: server 10:18:22.781100 gateway web1: auth none from alice/laptop, ssh user "bob", client "SSH-2.0-OpenSSH_10.3"
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+hostname web1.koko
+hostkeyalias koko-proto
+proxycommand "$S/bin/kokoproto" tunnel '%h'
+
+===== 6. a name koko does not know
+$ ssh -F $S/home/ssh/config web9.koko true
+koko: no Host named "web9.koko" in your Spaces
+Connection closed by UNKNOWN port 65535
+[exit 255]
+
+===== 7. agent and X11 forwarding asked for on the command line
+$ ssh -F $S/home/ssh/config -A web1.koko echo "SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-unset}"
+SSH_AUTH_SOCK=unset
+[exit 0]
+$ ssh -F $S/home/ssh/config -X web1.koko echo "DISPLAY=${DISPLAY:-unset}"
+DISPLAY=unset
+[exit 0]
+$ ssh -F $S/home/ssh/config -o SendEnv=LANG web1.koko echo "LANG=${LANG:-unset}"
+LANG=en_US.UTF-8
+[exit 0]
+  server: server 10:18:22.887353 tunnel for "web9.koko" from alice/laptop refused: no such Host
+
+===== 8. the Host is down (a recorded Host on a closed port)
+$ ssh -F $S/home/ssh/config web2.koko true
+koko: cannot reach web2: dial tcp 127.0.0.1:47099: connect: connection refused
+Connection closed by UNKNOWN port 65535
+[exit 255]
+
+===== 9. koko tunnel alone: stdin EOF at once, and SIGHUP while open
+stdin </dev/null: exit 0 after .013s; stdout: SSH-2.0-Go
+  tunnel pid=49020 +   0.023ms start "web1.koko"
+  tunnel pid=49020 +   0.422ms tcp connected
+  tunnel pid=49020 +   2.381ms device connection up (handshake+auth)
+  tunnel pid=49020 +   2.550ms tunnel open
+  tunnel pid=49020 +   2.568ms stdin EOF after 0 bytes (err=<nil>); half-closing the Tunnel
+  tunnel pid=49020 +   2.579ms first bytes from the Gateway
+  tunnel pid=49020 +   2.778ms Tunnel EOF after 12 bytes
+  tunnel pid=49020 +   2.801ms exit 0 (tunnel closed by the Gateway), cpu 6ms
+SIGHUP with stdin open: exit 0
+  tunnel pid=49029 +   0.024ms start "web1.koko"
+  tunnel pid=49029 +   0.374ms tcp connected
+  tunnel pid=49029 +   2.137ms device connection up (handshake+auth)
+  tunnel pid=49029 +   2.272ms tunnel open
+  tunnel pid=49029 +   2.290ms first bytes from the Gateway
+  tunnel pid=49029 + 498.949ms signal hangup
+  tunnel pid=49029 + 499.143ms exit 0 (signal hangup), cpu 6ms
+  server: server 10:18:23.738320 gateway web1: inner handshake for alice/laptop failed after 497.06ms: EOF
+  server: server 10:18:23.738394 device connection 127.0.0.1:56570 (alice/laptop) closed after 499ms
+
+===== 10. Ctrl-C on ssh without a tty (SIGINT to the whole process group)
+koko tunnel SIGINT=ignore: ssh exit 255
+  tunnel pid=49184 +   0.028ms start "web1.koko"
+  tunnel pid=49184 +   0.523ms tcp connected
+  tunnel pid=49184 +   3.246ms device connection up (handshake+auth)
+  tunnel pid=49184 +   3.455ms tunnel open
+  tunnel pid=49184 +   3.500ms first bytes from the Gateway
+  tunnel pid=49184 +1490.604ms signal hangup
+  tunnel pid=49184 +1491.354ms stdin EOF after 3254 bytes (err=<nil>); half-closing the Tunnel
+  tunnel pid=49184 +1491.503ms exit 0 (signal hangup), cpu 12ms
+koko tunnel SIGINT=default: ssh exit 255
+  tunnel pid=49188 +   0.044ms start "web1.koko"
+  tunnel pid=49188 +   0.576ms tcp connected
+  tunnel pid=49188 +   2.855ms device connection up (handshake+auth)
+  tunnel pid=49188 +   3.062ms tunnel open
+  tunnel pid=49188 +   3.091ms first bytes from the Gateway
+
+===== 11. ControlMaster on the user's ssh: the error channel under ControlPersist
+$ ssh -F $S/home/ssh/config -o ControlMaster=auto -o ControlPath=um-%C -o ControlPersist=30 web9.koko true
+Connection closed by UNKNOWN port 65535
+[exit 255]
+
+===== 12. the device has not joined (no device key)
+$ ssh -F $S/home/ssh/config web1.koko true
+koko: this device has not joined a koko server, so it has no Device Session.
+koko: run `koko join <Join Code>` with an Invite, or with a code from `koko device add` on a device that has joined.
+Connection closed by UNKNOWN port 65535
+[exit 255]
+
+===== 13. the koko server presents a key other than the pinned one
+$ ssh -F $S/home/ssh/config web1.koko true
+koko: Device Connection to 127.0.0.1:47443 failed: ssh: handshake failed: the koko server at 127.0.0.1:47443 presented host key SHA256:HwYS0ZtEP3A/dcy22ctE5DZ98sl3aUrH/BqJphKL2yo, but this device pinned SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA when it joined
+Connection closed by UNKNOWN port 65535
+[exit 255]
+
+===== 14. the koko server is down
+$ env KOKO_PROTO_SERVER=127.0.0.1:47499 ssh -F $S/home/ssh/config web1.koko true
+koko: cannot reach the koko server at 127.0.0.1:47499: dial tcp 127.0.0.1:47499: connect: connection refused
+Connection closed by UNKNOWN port 65535
+[exit 255]
+
+===== 15. the Device Session is revoked during an open SSH Session, then used again
+$ ssh -F $S/home/ssh/config -tt web1.koko for i in 1 2 3 4 5 6 7 8; do echo tick $i; sleep 0.5; done
+tick 1
+tick 2
+tick 3
+tick 4
+revoked alice/laptop
+tick 5
+
+koko: the Device Connection to 127.0.0.1:47443 closed.
+
+koko: the Device Session "alice/laptop" was revoked; this SSH Session is closed.
+Connection to web1.koko closed by remote host.
+Connection to web1.koko closed.
+client_loop: send disconnect: Broken pipe
+[exit 255]
+  server: server 10:18:56.574620 device connection 127.0.0.1:56638 (alice/laptop) closed after 2ms
+  server: server 10:18:59.018111 Device Session alice/laptop revoked: closing its Device Connection
+  server: server 10:18:59.018660 device connection 127.0.0.1:56641 (alice/laptop) closed after 2.365s
+$ ssh -F $S/home/ssh/config web1.koko true
+koko: the Device Session "alice/laptop" of this device was revoked.
+koko: join again with a new Join Code: koko join <Join Code>
+Connection closed by UNKNOWN port 65535
+[exit 255]
+  server: server 10:18:56.655257 device 127.0.0.1:56641 auth method=publickey user="koko" err=<nil>
+  server: server 10:18:59.058986 device 127.0.0.1:56643 auth method=publickey user="koko" err=revoked Device Session alice/laptop
+(re-joined as a fresh Device Session)
