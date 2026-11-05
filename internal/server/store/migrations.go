@@ -32,6 +32,16 @@ func SchemaVersion() int {
 	return len(steps)
 }
 
+// CheckVersion refuses a database in dataDir at schema version when this
+// binary predates it, as Open does, naming the snapshot to put back to go
+// back; it returns nil for a version this binary opens.
+func CheckVersion(dataDir string, version int) error {
+	if latest := SchemaVersion(); version > latest {
+		return refusal(dataDir, version, latest)
+	}
+	return nil
+}
+
 // schema is a list of forward migration steps, each a file under migrations/
 // in files. A step's position is its schema version.
 type schema struct {

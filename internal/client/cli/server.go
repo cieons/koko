@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/install"
@@ -28,8 +29,9 @@ const rootKeyCredential = "root-key"
 // as the Owner keeps it, which koko server show names.
 const rootKeySource = "/etc/koko/root.key"
 
-// defaultListenPort is the port the koko server listens on unless install's
-// --port names another (P0 spec: install and run).
+// defaultListenPort is the port koko server run listens on unless --listen
+// names another; the unit install writes names its own (P0 spec: install
+// and run).
 const defaultListenPort = "443"
 
 // defaultRootKeyFile is --root-key-file's default, as help shows it. Only this
@@ -79,7 +81,7 @@ var serverCommands = []Command{
 	{
 		Noun:    "server",
 		Verb:    "install",
-		Summary: "Install, start and initialise the koko server on this Linux machine, as root",
+		Summary: "Install, start and initialise the koko server on this Linux machine, as root, or upgrade the one here",
 		Flags: []Flag{
 			{
 				Name:    "owner",
@@ -94,8 +96,7 @@ var serverCommands = []Command{
 			{
 				Name:    "port",
 				Value:   "port",
-				Default: defaultListenPort,
-				Summary: "the TCP port the koko server listens on; install never moves to another",
+				Summary: "the TCP port the koko server listens on: 443 on a fresh install, and on an upgrade the port it listens on now; install never moves to another by itself",
 			},
 		},
 		// It prints a credential, the first Join Code (P0 spec: install and
@@ -103,6 +104,15 @@ var serverCommands = []Command{
 		Tier: Irreversible,
 		Op:   api.ServerInit,
 		Run:  action(serverInstall),
+	},
+	{
+		Noun:    "server",
+		Verb:    "uninstall",
+		Summary: "Stop the koko server on this Linux machine and remove its unit and binary, as root; its data, Root Key and system user stay",
+		// It stops the koko server and removes it from the machine (P0
+		// spec: install and run).
+		Tier: Irreversible,
+		Run:  action(serverUninstall),
 	},
 	{
 		Noun:    "server",
@@ -170,9 +180,13 @@ var serverMappings = []mapping{
 	{api: reflect.TypeFor[api.Server](), cli: reflect.TypeFor[serverJSON]()},
 }
 
-// installedJSON is what koko server install prints once the koko server runs
-// and is initialised: everything the Owner needs next.
+// installedJSON is what koko server install prints once the koko server
+// runs: on a fresh machine, initialised, everything the Owner needs next; on
+// an upgrade, the same without a Join Code.
 type installedJSON struct {
+	// Upgraded tells whether install found the koko server initialised
+	// already and upgraded it, rather than initialising it.
+	Upgraded bool `json:"upgraded"`
 	// Address is the Server Address as stored: without a port, its port is
 	// ListenPort.
 	Address string `json:"address"`
@@ -186,27 +200,51 @@ type installedJSON struct {
 	// ListenPort is the TCP port the koko server listens on, which the Owner
 	// opens in the provider's firewall.
 	ListenPort int `json:"listen_port"`
-	// JoinCode is the Owner's first Join Code, valid for 15 minutes.
-	JoinCode joinCodeJSON `json:"join_code"`
+	// JoinCode is the Owner's first Join Code, valid for 15 minutes; an
+	// upgrade issues none, and leaves it out.
+	JoinCode joinCodeJSON `json:"join_code,omitzero"`
+	// DevicesMustConnect is the address devices joined before must now take
+	// by hand, with koko connect, after an upgrade moved the listen port
+	// under a Server Address that names no port of its own; left out when
+	// they need not.
+	DevicesMustConnect string `json:"devices_must_connect,omitempty"`
 }
 
+// Human writes where the koko server is and what to open, then on a fresh
+// machine what to keep and the first Join Code, and after an upgrade that
+// moved the port devices connect to, what they must do.
 func (r installedJSON) Human(w io.Writer) error {
-	_, err := fmt.Fprintf(w, `The koko server is installed, running and initialised.
-
+	var b strings.Builder
+	if r.Upgraded {
+		b.WriteString("The koko server is upgraded and running, with its record as it was.\n")
+	} else {
+		b.WriteString("The koko server is installed, running and initialised.\n")
+	}
+	fmt.Fprintf(&b, `
 Server Address:  %s
 Host key:        %s
 Root Key:        %s (%s)
 Firewall:        open TCP port %d in your provider's firewall; koko opens none itself
-
+`, serveraddr.WithPort(r.Address, r.ListenPort), r.HostKeyFingerprint, r.RootKeyFile, r.RootKeyID, r.ListenPort)
+	switch {
+	case !r.Upgraded:
+		fmt.Fprintf(&b, `
 Keep a copy of %s off this machine, such as in a password manager:
 without it, nothing sealed in the koko server's data can be opened again.
 
 The first Join Code works once, within 15 minutes.
-`, serveraddr.WithPort(r.Address, r.ListenPort), r.HostKeyFingerprint, r.RootKeyFile, r.RootKeyID, r.ListenPort, r.RootKeyFile)
-	if err != nil {
-		return err
+`, r.RootKeyFile)
+		_ = r.JoinCode.writeJoinLine(&b) // a strings.Builder takes every write
+	case r.DevicesMustConnect != "":
+		fmt.Fprintf(&b, `
+Devices that joined on another port must take the new address by hand:
+the Server Address names no port of its own, so it follows the listen
+port, now %d. On each of them, run
+koko connect %s
+`, r.ListenPort, r.DevicesMustConnect)
 	}
-	return r.JoinCode.writeJoinLine(w)
+	_, err := io.WriteString(w, b.String())
+	return err
 }
 
 // serverInstall is koko server install: it checks its flags, then hands the
@@ -227,22 +265,33 @@ func serverInstall(ctx context.Context, in *Input) (installedJSON, error) {
 	if err != nil {
 		return installedJSON{}, installError(err)
 	}
-	return installedJSON{
-		Address:            report.Init.Address,
-		HostKeyFingerprint: report.Init.HostKeyFingerprint,
+	out := installedJSON{
+		Upgraded:           report.Upgraded,
+		Address:            report.Address,
+		HostKeyFingerprint: report.HostKeyFingerprint,
 		RootKeyFile:        report.RootKeyFile,
 		RootKeyID:          report.RootKeyID,
 		ListenPort:         report.Port,
-		JoinCode:           joinCodeFromAPI(report.Init.JoinCode),
-	}, nil
+		DevicesMustConnect: report.DevicesMustConnect,
+	}
+	if !report.Upgraded {
+		out.JoinCode = joinCodeFromAPI(report.JoinCode)
+	}
+	return out, nil
 }
 
 // installRequest reads install's flags, refusing a value that could never
-// work before the installer touches the machine.
+// work before the installer touches the machine. A port not given is 0,
+// which the installer reads as 443 on a fresh machine and as the port the
+// koko server listens on now on an upgrade.
 func installRequest(in *Input) (install.Request, error) {
-	port, err := strconv.Atoi(in.Flag("port"))
-	if err != nil || port < 1 || port > 65535 {
-		return install.Request{}, usagef("--port takes a TCP port from 1 to 65535, not %q", in.Flag("port"))
+	port := 0
+	if p := in.Flag("port"); p != "" {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 1 || n > 65535 {
+			return install.Request{}, usagef("--port takes a TCP port from 1 to 65535, not %q", p)
+		}
+		port = n
 	}
 	owner, address := in.Flag("owner"), in.Flag("address")
 	if owner != "" {
@@ -287,4 +336,67 @@ func isListenAddr(addr string) bool {
 	}
 	n, err := strconv.ParseUint(port, 10, 16)
 	return err == nil && strconv.FormatUint(n, 10) == port
+}
+
+// uninstalledJSON is what koko server uninstall prints: what it removed, and
+// where what it kept is.
+type uninstalledJSON struct {
+	// Removed are the files uninstall removed, the unit and the binary;
+	// empty when neither was there.
+	Removed []string `json:"removed"`
+	// DataDir is the data directory, kept with the record in it.
+	DataDir string `json:"data_dir"`
+	// RootKeyFile is the Root Key's file, kept, never the key.
+	RootKeyFile string `json:"root_key_file"`
+	// SystemUser is the system user the koko service ran as, kept.
+	SystemUser string `json:"system_user"`
+	// ListenPort is the TCP port the koko server listened on, which
+	// install takes again with --port; left out when unknown.
+	ListenPort int `json:"listen_port,omitzero"`
+}
+
+// Human writes what uninstall removed, where what it kept is, and how to
+// install koko again on it.
+func (r uninstalledJSON) Human(w io.Writer) error {
+	var b strings.Builder
+	if len(r.Removed) == 0 {
+		b.WriteString("No koko server is installed here: nothing to remove.\n")
+	} else {
+		b.WriteString("The koko server is uninstalled: its service is stopped, and these are removed:\n")
+		for _, path := range r.Removed {
+			fmt.Fprintf(&b, "  %s\n", path)
+		}
+	}
+	fmt.Fprintf(&b, `
+Kept, with the record sealed under the Root Key:
+Data directory:  %s
+Root Key:        %s
+System user:     %s
+`, r.DataDir, r.RootKeyFile, r.SystemUser)
+	again := "To run the koko server again on them, install koko again without --owner"
+	if r.ListenPort != 0 {
+		again += fmt.Sprintf(", with --port %d", r.ListenPort)
+	}
+	b.WriteString("\n" + again + ".\n")
+	_, err := io.WriteString(w, b.String())
+	return err
+}
+
+// serverUninstall is koko server uninstall: it hands the machine's part to
+// the installer in the koko server's code.
+func serverUninstall(ctx context.Context, in *Input) (uninstalledJSON, error) {
+	if in.runner.ServerUninstall == nil {
+		return uninstalledJSON{}, noServer()
+	}
+	report, err := in.runner.ServerUninstall(ctx)
+	if err != nil {
+		return uninstalledJSON{}, err
+	}
+	return uninstalledJSON{
+		Removed:     report.Removed,
+		DataDir:     report.DataDir,
+		RootKeyFile: report.RootKeyFile,
+		SystemUser:  report.SystemUser,
+		ListenPort:  report.ListenPort,
+	}, nil
 }

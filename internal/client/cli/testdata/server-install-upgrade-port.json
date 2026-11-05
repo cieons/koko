@@ -1,0 +1,9 @@
+{
+  "upgraded": true,
+  "address": "203.0.113.7",
+  "host_key_fingerprint": "SHA256:<fingerprint>",
+  "root_key_file": "/etc/koko/root.key",
+  "root_key_id": "rootkey_<1>",
+  "listen_port": 9443,
+  "devices_must_connect": "203.0.113.7:9443"
+}

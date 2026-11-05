@@ -176,6 +176,22 @@ func (System) Systemctl(ctx context.Context, args ...string) error {
 	return run(ctx, "systemctl", args...)
 }
 
+// ServiceShow runs systemctl show --property=<property> --value
+// koko.service, giving what systemd printed to stderr when it fails. A unit
+// systemd does not know shows its defaults: MainPID 0, no Environment.
+func (System) ServiceShow(ctx context.Context, property string) (string, error) {
+	out, err := exec.CommandContext(ctx, "systemctl", "show", "--property="+property, "--value", UnitName).Output()
+	if err != nil {
+		if exit, ok := errors.AsType[*exec.ExitError](err); ok {
+			if msg := strings.TrimSpace(string(exit.Stderr)); msg != "" {
+				err = fmt.Errorf("%w: %s", err, msg)
+			}
+		}
+		return "", fmt.Errorf("systemctl show %s %s: %w", UnitName, property, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // run runs a command, giving what it printed when it fails.
 func run(ctx context.Context, name string, args ...string) error {
 	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()

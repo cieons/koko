@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -28,6 +29,14 @@ import (
 // 5737), so it reaches no one.
 const SourceIP = "203.0.113.7"
 
+// servicePID is the process ID a fake machine's systemd gives the koko
+// service while it runs.
+const servicePID = 4242
+
+// dropInDir holds the koko unit's drop-ins, as systemctl edit koko writes
+// them.
+const dropInDir = installer.UnitPath + ".d"
+
 // Machine is a fake machine for `koko server install`, the system seam of
 // P0 spec: install and run: a temporary directory that stands for its root,
 // and fakes of everything else install asks of it, which record each call.
@@ -45,7 +54,8 @@ type Machine struct {
 	Source netip.Addr
 	// FSType is the type of the filesystem the data directory is on.
 	FSType string
-	// Listening holds the process listening on each TCP port.
+	// Listening holds the process listening on each TCP port, beside the
+	// koko service, which listens on its unit's port while it runs.
 	Listening map[int]portowner.Process
 	// StartDelay is how long the koko service takes to open its socket once
 	// systemctl has started it.
@@ -61,6 +71,8 @@ type Machine struct {
 	root   string
 	home   string
 	binary string
+	// releases counts the binaries NewRelease made.
+	releases int
 
 	mu      sync.Mutex
 	calls   []Call
@@ -88,11 +100,13 @@ type owned struct {
 	owner string
 }
 
-// unitFile is what the fake systemd reads of the koko unit.
+// unitFile is what the fake systemd reads of the koko unit and its
+// drop-ins.
 type unitFile struct {
 	execStart   []string
 	env         []string
 	credentials [][2]string // name, path
+	user        string
 	runtimeDirs []string
 	stateDirs   []string
 }
@@ -133,12 +147,13 @@ func NewMachine(t testing.TB) *Machine {
 }
 
 // Koko runs one koko command line in process, as root on this machine under
-// a temporary HOME, with empty stdin: `koko server install` installs on it,
-// and every other command reaches the koko service's socket under its root.
+// a temporary HOME, with empty stdin: `koko server install` and `uninstall`
+// act on it, and every other command reaches the koko service's socket under
+// its root.
 func (m *Machine) Koko(args ...string) Result {
 	m.t.Helper()
 	inst := &installer.Installer{Machine: m, Binary: m.binary, Timings: timing.Timings{InstallSocketWait: m.SocketWait}}
-	return Run(m.t, cli.Runner{ServerInstall: inst.Install, SocketPath: m.SocketPath()}, []string{"HOME=" + m.home}, args...)
+	return Run(m.t, cli.Runner{ServerInstall: inst.Install, ServerUninstall: inst.Uninstall, SocketPath: m.SocketPath()}, []string{"HOME=" + m.home}, args...)
 }
 
 // Path is the real path of path on the machine, under its root.
@@ -159,6 +174,20 @@ func (m *Machine) Binary() []byte {
 		m.t.Fatal(err)
 	}
 	return b
+}
+
+// NewRelease makes the koko binary that install installs from now on a new
+// one, as a newer release's is, and returns its bytes.
+func (m *Machine) NewRelease() []byte {
+	m.t.Helper()
+	m.releases++
+	binary := filepath.Join(m.t.TempDir(), "koko")
+	text := fmt.Appendf(nil, "#!/bin/sh\n# the koko binary of %s, release %d\n", m.t.Name(), m.releases+1)
+	if err := os.WriteFile(binary, text, 0o755); err != nil {
+		m.t.Fatal(err)
+	}
+	m.binary = binary
+	return text
 }
 
 // Calls returns what install asked of the machine so far, in order.
@@ -285,7 +314,61 @@ func (m *Machine) PortOwner(_ context.Context, port int) (portowner.Process, err
 	if p, ok := m.Listening[port]; ok {
 		return p, nil
 	}
+	if m.serviceListens(port) {
+		return portowner.Process{PID: servicePID, Name: "koko", User: installer.User}, nil
+	}
 	return portowner.Process{}, portowner.ErrNotFound
+}
+
+// serviceListens tells whether the koko service runs with its unit's
+// listen address on port, as an initialised koko server listens. One not
+// initialised yet listens on no port, which install takes the same way: the
+// restart leaves the port free.
+func (m *Machine) serviceListens(port int) bool {
+	if !m.Running() {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	listen := ""
+	for _, kv := range m.running.env {
+		if v, ok := strings.CutPrefix(kv, "KOKO_LISTEN="); ok {
+			listen = v
+		}
+	}
+	_, p, _ := strings.CutLast(listen, ":")
+	return p == strconv.Itoa(port)
+}
+
+// ServiceShow shows, as systemctl show does, the koko service's main PID,
+// servicePID while it runs and 0 otherwise, and the Environment=
+// assignments of its loaded unit, drop-ins included, separated by spaces,
+// each in double quotes when it holds a character a shell would take, as
+// systemd's shell_maybe_quote does; none when systemd has no koko unit.
+func (m *Machine) ServiceShow(_ context.Context, property string) (string, error) {
+	m.record("show " + installer.UnitName + " " + property)
+	switch property {
+	case "MainPID":
+		if m.Running() {
+			return strconv.Itoa(servicePID), nil
+		}
+		return "0", nil
+	case "Environment":
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if m.loaded == nil {
+			return "", nil
+		}
+		var shown []string
+		for _, kv := range m.loaded.env {
+			if strings.ContainsAny(kv, " \t\"'\\$`()<>|&;!*?[") {
+				kv = `"` + kv + `"`
+			}
+			shown = append(shown, kv)
+		}
+		return strings.Join(shown, " "), nil
+	}
+	return "", fmt.Errorf("the fake systemctl show does not know %s", property)
 }
 
 func (m *Machine) SourceIP(context.Context) (netip.Addr, error) {
@@ -307,21 +390,43 @@ func (m *Machine) AddUser(_ context.Context, name string) error {
 }
 
 func (m *Machine) Chown(path, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.chown(path, name)
+}
+
+// chown records name as the owner of the file at the real path, with m.mu
+// held.
+func (m *Machine) chown(path, name string) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.owners = slices.DeleteFunc(m.owners, func(o owned) bool { return os.SameFile(o.info, info) })
 	m.owners = append(m.owners, owned{info: info, owner: name})
 	return nil
 }
 
+// ownerOf returns the owner recorded for the file at the real path, or ""
+// when there is none, with m.mu held.
+func (m *Machine) ownerOf(path string) string {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return ""
+	}
+	for _, o := range m.owners {
+		if os.SameFile(o.info, info) {
+			return o.owner
+		}
+	}
+	return ""
+}
+
 // Systemctl does what systemd would with the koko unit: daemon-reload loads
-// the unit file as it is then, enable enables it, and restart, start and
-// stop run the loaded unit. Like systemd with Type=exec, starting returns
-// once the binary runs, before the koko server opens its socket.
+// the unit file and its drop-ins as they are then, enable and disable
+// enable it and undo that, and restart, start and stop run the loaded unit.
+// Like systemd with Type=exec, starting returns once the binary runs, before
+// the koko server opens its socket.
 func (m *Machine) Systemctl(_ context.Context, args ...string) error {
 	m.record("systemctl " + strings.Join(args, " "))
 	m.mu.Lock()
@@ -339,6 +444,9 @@ func (m *Machine) Systemctl(_ context.Context, args ...string) error {
 	case "enable":
 		m.enabled = true
 		return nil
+	case "disable":
+		m.enabled = false
+		return nil
 	case "start":
 		if m.service != nil {
 			return nil
@@ -354,8 +462,9 @@ func (m *Machine) Systemctl(_ context.Context, args ...string) error {
 	return fmt.Errorf("the fake systemctl does not know %q", args)
 }
 
-// reload loads the unit file as it is now, or forgets the unit when it is
-// gone.
+// reload loads the unit file as it is now, then its drop-ins in the order
+// of their names, whose Environment= lines come after the unit's and so
+// override them, or forgets the unit when it is gone.
 func (m *Machine) reload() error {
 	text, err := os.ReadFile(m.Path(installer.UnitPath))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -365,7 +474,19 @@ func (m *Machine) reload() error {
 	if err != nil {
 		return err
 	}
+	dropIns, err := filepath.Glob(m.Path(dropInDir + "/*.conf"))
+	if err != nil {
+		return err
+	}
+	slices.Sort(dropIns)
 	u := &unitFile{}
+	for _, file := range dropIns {
+		more, err := os.ReadFile(file)
+		if err != nil {
+			return err
+		}
+		text = append(append(text, '\n'), more...)
+	}
 	for line := range strings.Lines(string(text)) {
 		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
 		if !ok || strings.HasPrefix(key, "#") {
@@ -379,6 +500,8 @@ func (m *Machine) reload() error {
 		case "LoadCredential":
 			name, path, _ := strings.Cut(value, ":")
 			u.credentials = append(u.credentials, [2]string{name, path})
+		case "User":
+			u.user = value
 		case "RuntimeDirectory":
 			u.runtimeDirs = append(u.runtimeDirs, value)
 		case "StateDirectory":
@@ -387,6 +510,29 @@ func (m *Machine) reload() error {
 	}
 	m.loaded = u
 	return nil
+}
+
+// stateDirectory makes the unit's state directory dir as systemd's
+// StateDirectory= does at each start: it gives it, and everything in it,
+// to the unit's user, but only when the directory itself is not that
+// user's already, in which case systemd leaves what is in it as it is.
+func (m *Machine) stateDirectory(dir, user string) error {
+	path := m.Path("/var/lib/" + dir)
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(path, 0o700); err != nil {
+		return err
+	}
+	if m.ownerOf(path) == user {
+		return nil
+	}
+	return filepath.WalkDir(path, func(p string, _ fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		return m.chown(p, user)
+	})
 }
 
 // startService runs the loaded unit, failing as systemd fails a start when
@@ -415,7 +561,7 @@ func (m *Machine) startService() error {
 		}
 	}
 	for _, d := range u.stateDirs {
-		if err := os.MkdirAll(m.Path("/var/lib/"+d), 0o700); err != nil {
+		if err := m.stateDirectory(d, u.user); err != nil {
 			return err
 		}
 	}

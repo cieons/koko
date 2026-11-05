@@ -26,11 +26,11 @@ the harness from any package; only non-test dependencies count.
 `koko server run` dispatches into server code through
 [`cli.Runner.ServerRun`](../../internal/client/cli/cli.go), which `cmd/koko`
 sets in Linux builds only ([`server_linux.go`](../../cmd/koko/server_linux.go)).
-`koko server install` dispatches the same way, through
-`cli.Runner.ServerInstall`, whose request, report and refusals are the shared
-[`install`](../../internal/shared/install/install.go) types; `uninstall` will
-take a field of its own. Every other command is a client command that reaches
-the koko server over the socket.
+`koko server install` and `koko server uninstall` dispatch the same way,
+through `cli.Runner.ServerInstall` and `cli.Runner.ServerUninstall`, whose
+requests, reports and refusals are the shared
+[`install`](../../internal/shared/install/install.go) types. Every other
+command is a client command that reaches the koko server over the socket.
 
 ## Where an area adds its parts
 

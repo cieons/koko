@@ -44,6 +44,12 @@ type Runner struct {
 	// refuses.
 	ServerInstall func(ctx context.Context, req install.Request, initialise install.Initialise) (install.Report, error)
 
+	// ServerUninstall stops the koko service on this machine and removes its
+	// unit and binary, for `koko server uninstall`. cmd/koko sets it in the
+	// builds that carry the koko server (Linux); where it is nil, `koko
+	// server uninstall` refuses.
+	ServerUninstall func(ctx context.Context) (install.UninstallReport, error)
+
 	// SocketPath is the socket-path hook, for tests only: empty means the
 	// fixed wire.SocketPath. No flag or environment variable sets it.
 	SocketPath string

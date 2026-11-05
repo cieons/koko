@@ -1,12 +1,12 @@
 # The installer
 
 `koko server install`, which installs, starts and initialises the koko server
-on a fresh Linux machine with systemd, as root, in
+on a fresh Linux machine with systemd, as root, and upgrades one initialised
+already; and `koko server uninstall`, which removes it and keeps its data; in
 [`internal/server/installer`](../../internal/server/installer). Why the koko
 server installs itself is
 [ADR 0020](../adr/0020-the-koko-server-installs-itself-and-has-no-configuration-file.md);
 the order, the paths and the unit's settings are P0 spec: install and run.
-Upgrading an initialised koko server and `koko server uninstall` are #43's.
 
 ## The command and the installer
 
@@ -16,14 +16,18 @@ the first Join Code. It never prompts. The CLI
 ([`server.go`](../../internal/client/cli/server.go)) refuses a
 `--port` outside 1 to 65535, an `--owner` that is not a User name and an
 `--address` that is not a Server Address with exit 2, before anything else.
-It then hands the rest to the installer through `cli.Runner.ServerInstall`,
-which `cmd/koko` sets in Linux builds only
+`--port` has no fixed default: a port not given reaches the installer as 0,
+which is 443 on a fresh machine and the port the koko server listens on now
+on [an upgrade](#the-upgrade). The CLI then hands the rest to the installer
+through `cli.Runner.ServerInstall`, which `cmd/koko` sets in Linux builds only
 ([code layout](code-layout.md#the-package-groups)); a build without it refuses
 with `unsupported_platform`, as `koko server run` does. The two sides agree on
 the shared [`install`](../../internal/shared/install/install.go) types: the
 request, the report, the function that calls `server.init` over the socket
 (the installer owns no API client), and `install.Refusal`, whose reason the
-CLI turns into its code.
+CLI turns into its code. `koko server uninstall`, also irreversible, takes no
+flag but `--json` and dispatches the same way, through
+`cli.Runner.ServerUninstall` ([uninstall](#uninstall)).
 
 ## The machine interface
 
@@ -42,23 +46,35 @@ the real one, rooted at `/`:
 | `AddUser` | `useradd --system --user-group --no-create-home --home-dir /var/lib/koko --shell /usr/sbin/nologin --comment "koko server" koko`, unless `koko` exists |
 | `Chown` | `os.Chown` to the user and its primary group |
 | `Systemctl` | `systemctl` with the arguments |
+| `ServiceShow` | `systemctl show --property=<property> --value koko.service`, as systemd has the unit loaded: `MainPID` (0 while it does not run) and `Environment` (its assignments, each quoted as systemd quotes one a shell would take) |
 
 ## The steps
 
 In this order ([`Installer.Install`](../../internal/server/installer/installer.go)):
 
-1. **Every check, before any write.** Each refusal below is an
-   `install.Refusal` saying "nothing was written":
+1. **Every check, before any write.** Each refusal below says "nothing was
+   written"; all but the schema's are an `install.Refusal`, whose reason the
+   CLI turns into its code:
    - systemd older than 247, which `LoadCredential=` needs:
      `unsupported_platform`;
    - a data directory on a network filesystem (NFS, SMB, Ceph, 9p, sshfs and
      the like; `networkFilesystem`), where SQLite's WAL does not work:
      `unsupported_platform`. Before `/var/lib/koko` exists, the filesystem it
      will be made on is checked;
-   - a koko server initialised already (below): `already_initialised`;
+   - a `koko.db` at a schema this koko predates, which the koko server would
+     refuse to start on, as when an older koko is installed to go back
+     before the snapshot is put back: `internal_error`, naming both schema
+     versions and the snapshot to put in place
+     ([`store.CheckVersion`](store.md));
+   - a koko server initialised already (below) makes the run
+     [the upgrade](#the-upgrade), whose own checks follow;
    - no `--owner` for one not initialised yet: exit 2;
    - the port held by another process, named, with the hint to pass
-     `--port`: `port_taken`. Install never moves to another port;
+     `--port`: `port_taken`. Install never moves to another port. The koko
+     service's own process holding it is no refusal, since the restart frees
+     it: install asks systemd for the service's `MainPID` and compares it
+     with the PID holding the port, so another process, even one named
+     `koko` or run by the `koko` user, is refused;
    - without `--address`, a default route's source IP that is not public,
      or none: exit 2, with the hint to pass `--address`. The address check
      ([`isPublic`](../../internal/server/installer/checks.go)) is a pure
@@ -69,9 +85,14 @@ In this order ([`Installer.Install`](../../internal/server/installer/installer.g
    A Root Key file that is there but does not load stops install too, before
    any write, with `seal.Load`'s error naming it (`internal_error`); it is
    left as it is, never replaced.
-2. **The `koko` user and the directories:** `/etc/koko` (0700, root) and
-   `/var/lib/koko` (0700, `koko`), each given its mode and owner at every run,
-   whatever the umask or a copy put back made them.
+2. **The `koko` user and the directories:** `/etc/koko` (0700, root), given
+   its mode and owner at every run, whatever the umask or a copy put back
+   made them, and `/var/lib/koko` (0700, `koko`). The data directory is given
+   its owner only when install makes it; one there already, such as a copy
+   put back, gets its mode, and its owner from the unit's `StateDirectory=`
+   at the start, which gives the directory and everything in it to `koko`
+   when the directory is not `koko`'s. A chown of the directory alone would
+   make systemd leave what is in it as the copy left it.
 3. **The Root Key**, `/etc/koko/root.key` (0600, root): reused when it is
    there, else written new (`seal.NewRootKey`).
 4. **The binary**, `/usr/local/bin/koko` (0755, root), copied from the
@@ -104,10 +125,51 @@ record exists ([initialisation](initialisation.md#the-record)); no
 `koko.db`, or one no migration step has reached, is not. A database it cannot
 read stops the install, never taken for an empty one.
 
-On an initialised koko server install refuses with `already_initialised`,
-naming the Root Key the sealed data needs and `koko device add` for a Join
-Code, and writes nothing: no Root Key is ever written over sealed data, even
-when the Root Key's file is gone. #43 makes this run the upgrade.
+On an initialised koko server install is the upgrade.
+
+## The upgrade
+
+Re-running install on an initialised koko server, as a newer release's
+`install.sh` does, replaces the binary, writes the unit again from the
+template, and runs `daemon-reload`, `enable` and `restart`, then waits for the
+socket, as a fresh install does ([the steps](#the-steps) 2 to 6). It
+initialises nothing and issues no Join Code: the restarted koko server keeps
+its record, its Owner, its Server Address and its keys, and migrates its
+schema at start ([the store](store.md)). Its own checks, after the machine's
+and before any write, each leaving the running koko server as it was:
+
+- **`--owner` and `--address`** are refused with `already_initialised`
+  (exit 1): only initialisation takes them. The message names the way on,
+  `koko device add` for a Join Code and `koko server set address=` for the
+  Server Address.
+- **The port.** Without `--port` the upgrade keeps the port the koko service
+  listens on, the last `KOKO_LISTEN` in its `Environment` as systemd has the
+  unit loaded, so that a port set with a drop-in (`systemctl edit koko`)
+  counts as one install set; with it, the koko server moves to the port
+  given. A drop-in in `/etc/systemd/system/koko.service.d/` whose
+  `Environment=` lines set `KOKO_LISTEN` overrides the unit at the restart,
+  so install reads those files itself (systemd loads none without the unit,
+  and uninstall keeps them): the koko server listens on the port the last
+  one sets, and a `--port` naming another is refused with exit 2, naming the
+  drop-in. Without a unit or such a drop-in, as after
+  [uninstall](#uninstall) or on a restore, the port the koko server
+  listened on is unknown, and it listens on 443 or the port given. The port
+  is then checked as on a fresh machine, the service's own process allowed.
+  Install never reads its own unit: it writes it again at every run. It
+  reads `KOKO_LISTEN` from `Environment=` settings only, not from an
+  `EnvironmentFile=`.
+- **The Root Key.** Install loads `/etc/koko/root.key` and opens the koko
+  server's sealed keys with it, as the restarted koko server will. A file
+  that is missing, does not parse or names another Root Key is refused
+  (`internal_error`), naming the Root Key id the sealed data needs, and left
+  as it is: no Root Key is ever written over sealed data.
+
+An upgrade that leaves the koko server on another port than it listened on,
+or on a port it cannot know was the same (no unit), says that devices joined
+before must take the new address by hand, with `koko connect <host:port>`,
+when the Server Address names no port of its own and so follows the listen
+port (ADR 0020). A Server Address with its own port stays where devices
+connect, and nothing is said.
 
 ## The unit
 
@@ -137,6 +199,7 @@ With `--json`:
 
 ```json
 {
+  "upgraded": false,
   "address": "203.0.113.7",
   "host_key_fingerprint": "SHA256:...",
   "root_key_file": "/etc/koko/root.key",
@@ -147,7 +210,52 @@ With `--json`:
 ```
 
 `address` is the Server Address as stored: without a port, its port is
-`listen_port`.
+`listen_port`. `upgraded` is `false` here. An upgrade prints the same
+fields without `join_code`, with `upgraded: true`, and, when devices joined
+before must take the new address, `devices_must_connect` with it:
+
+```json
+{
+  "upgraded": true,
+  "address": "203.0.113.7",
+  "host_key_fingerprint": "SHA256:...",
+  "root_key_file": "/etc/koko/root.key",
+  "root_key_id": "rootkey_3f9k2m7q",
+  "listen_port": 8443,
+  "devices_must_connect": "203.0.113.7:8443"
+}
+```
+
+For people, an upgrade prints the same lines but the Root Key reminder and
+the Join Code, and then the one `koko connect` line to run on each device
+when devices must take the new address.
+
+## Uninstall
+
+[`Installer.Uninstall`](../../internal/server/installer/uninstall.go), when
+the unit is there, reads the port the koko service listens on from systemd,
+runs `systemctl stop` and `disable koko.service` while systemd still knows
+the unit, removes the unit and runs `daemon-reload`; it then removes the
+binary. It keeps `/var/lib/koko`, `/etc/koko/root.key` and the `koko` user,
+and prints their paths, with the port, which a later install no longer
+knows: the hint for people says to install koko again without `--owner`
+and with that `--port`. There is no purge: P0 has no backup, and one command
+would erase the record, the Secrets and the koko key. Drop-ins are the
+Owner's and stay. What is not there is not removed, so running it again
+removes nothing and asks systemd nothing. Install without `--owner` then
+runs the koko server again on the data it kept, as
+[the upgrade](#the-upgrade). With `--json` (`listen_port` left out when
+systemd did not tell it):
+
+```json
+{
+  "removed": ["/etc/systemd/system/koko.service", "/usr/local/bin/koko"],
+  "data_dir": "/var/lib/koko",
+  "root_key_file": "/etc/koko/root.key",
+  "system_user": "koko",
+  "listen_port": 443
+}
+```
 
 ## Verifying
 
@@ -158,10 +266,14 @@ temporary root holding only the system directories, and fakes that answer
 what the test sets (systemd's version, the filesystem type, the processes on
 ports, the source IP) and record every call with the files under the root at
 that moment. Its `systemctl` acts as systemd does with the unit: it runs only
-the unit loaded at the last `daemon-reload`, refuses a binary that does not
-run or a credential's missing file, makes the runtime directory, and runs the
-unit's `ExecStart` with its `Environment=` lines and `CREDENTIALS_DIRECTORY`
-through `koko server run` as an in-process koko server under the root,
+the unit loaded, with its drop-ins, at the last `daemon-reload`, refuses a
+binary that does not run or a credential's missing file, makes the runtime
+directory, gives the state directory and all in it to the unit's `User=`
+unless the directory is that user's already (as `StateDirectory=` does),
+shows the `MainPID` and the quoted `Environment` systemd would, and runs
+the unit's `ExecStart` with its `Environment=` lines and
+`CREDENTIALS_DIRECTORY` through `koko server run` as an in-process koko
+server under the root,
 listening on a loopback port, which its Join Codes therefore name in place
 of the unit's port. So initialisation and the printout run for real. The tests cover a fresh install (files, modes, owners, the unit's
 golden file, the `--json` golden, the koko server initialised), the order
@@ -169,9 +281,28 @@ golden file, the `--json` golden, the koko server initialised), the order
 late socket waited for), the printout for people, `--port`, `--address`,
 every refusal writing nothing, private source IPs, bad flags, running again
 after a refused address and after a service that never opened its socket,
-a Root Key file there already, and an initialised koko server.
-[`checks_test.go`](../../internal/server/installer/checks_test.go) and
-[`system_test.go`](../../internal/server/installer/system_test.go) test the
-address check, the network filesystems, reading systemd's version and
-reading mountinfo. The real machine's own calls run in the real-systemd
-workflow (#65).
+and a Root Key file there already.
+[`server_upgrade_test.go`](../../internal/client/cli/server_upgrade_test.go)
+tests the upgrade on an initialised koko server: the new release's binary,
+the unit written again, the restart, the record kept, the `--json` goldens;
+`--owner` and `--address` refused; the port kept without `--port`, moved with
+it, and the warning only under a Server Address without a port of its own;
+the service's own port allowed and another process's refused, a `koko`-named
+one included; a missing, another or a damaged Root Key refused; a port set
+with a drop-in kept, and a `--port` it would override refused, before and
+after uninstall; no unit after
+uninstall, and a unit changed by hand; the P0 restore of a copy onto a fresh
+machine; and data at a newer schema refused.
+[`server_uninstall_test.go`](../../internal/client/cli/server_uninstall_test.go)
+tests uninstall: the service stopped while its unit is there, the unit and
+the binary gone, what it keeps, the port, the golden, running it again,
+install after it, and the build without the koko server. The fake machine's
+`PortOwner` names the koko service on the port its loaded unit's
+`KOKO_LISTEN` names while it runs, and `NewRelease` gives install a newer
+binary.
+[`checks_test.go`](../../internal/server/installer/checks_test.go),
+[`system_test.go`](../../internal/server/installer/system_test.go) and
+[`unit_test.go`](../../internal/server/installer/unit_test.go) test the
+address check, the network filesystems, reading systemd's version, reading
+mountinfo and reading the port from the unit's environment as systemd shows
+it. The real machine's own calls run in the real-systemd workflow (#65).

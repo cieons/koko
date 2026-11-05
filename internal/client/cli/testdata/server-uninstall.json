@@ -1,0 +1,10 @@
+{
+  "removed": [
+    "/etc/systemd/system/koko.service",
+    "/usr/local/bin/koko"
+  ],
+  "data_dir": "/var/lib/koko",
+  "root_key_file": "/etc/koko/root.key",
+  "system_user": "koko",
+  "listen_port": 443
+}

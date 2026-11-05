@@ -91,6 +91,9 @@ nothing has the file open and it holds every commit, and SQLite takes no lock
 and makes no `-shm` or `-wal` file. It never creates the file or the data
 directory, migrates or snapshots, and calls nothing when there is no
 `koko.db` or one at `user_version` 0.
+[`store.CheckVersion`](../../internal/server/store/migrations.go) gives
+install, which reads `user_version` that way, the refusal `Open` gives a
+database at a schema this koko predates, naming the snapshot to put back.
 
 ## Record ids
 

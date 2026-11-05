@@ -36,3 +36,10 @@ func serverInstall(ctx context.Context, req install.Request, initialise install.
 	inst := &installer.Installer{Machine: installer.System{}, Binary: binary}
 	return inst.Install(ctx, req, initialise)
 }
+
+// serverUninstall removes the koko server from this machine and keeps its
+// data. Only Linux builds carry the installer.
+func serverUninstall(ctx context.Context) (install.UninstallReport, error) {
+	inst := &installer.Installer{Machine: installer.System{}}
+	return inst.Uninstall(ctx)
+}

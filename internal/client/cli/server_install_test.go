@@ -2,7 +2,6 @@ package cli_test
 
 import (
 	"encoding/json/v2"
-	"errors"
 	"io/fs"
 	"net/netip"
 	"os"
@@ -20,12 +19,14 @@ import (
 
 // installed is what koko server install --json prints.
 type installed struct {
+	Upgraded           bool        `json:"upgraded"`
 	Address            string      `json:"address"`
 	HostKeyFingerprint string      `json:"host_key_fingerprint"`
 	RootKeyFile        string      `json:"root_key_file"`
 	RootKeyID          string      `json:"root_key_id"`
 	ListenPort         int         `json:"listen_port"`
 	JoinCode           joinCodeOut `json:"join_code"`
+	DevicesMustConnect string      `json:"devices_must_connect"`
 }
 
 // install runs koko server install --json on m with args, wants it to
@@ -487,53 +488,6 @@ func TestServerInstallKeepsARootKeyFileThere(t *testing.T) {
 			t.Errorf("install went on to create %v", users)
 		}
 	})
-}
-
-// Install never initialises a koko server again: on one initialised
-// already it refuses and changes nothing, and with the Root Key's file gone
-// it writes no new Root Key over the sealed data.
-func TestServerInstallOnAnInitialisedServer(t *testing.T) {
-	m := harness.NewMachine(t)
-	out := install(t, m, "--owner", "alice")
-	written := map[string]string{}
-	for _, path := range []string{"/usr/local/bin/koko", "/etc/systemd/system/koko.service", "/etc/koko/root.key"} {
-		b, err := os.ReadFile(m.Path(path))
-		if err != nil {
-			t.Fatal(err)
-		}
-		written[path] = string(b)
-	}
-
-	refusedAgain := func(t *testing.T) {
-		t.Helper()
-		before := len(m.Calls())
-		msg := m.Koko("server", "install", "--owner", "alice", "--json").WantError(t, 1, "already_initialised")
-		for _, want := range []string{"initialised already", out.RootKeyID, "koko device add", "nothing was written"} {
-			if !strings.Contains(msg, want) {
-				t.Errorf("message %q does not say %q", msg, want)
-			}
-		}
-		for _, c := range m.Calls()[before:] {
-			if strings.HasPrefix(c.What, "useradd") || strings.HasPrefix(c.What, "systemctl") {
-				t.Errorf("the refused run asked the machine %q", c.What)
-			}
-		}
-	}
-	refusedAgain(t)
-	for path, text := range written {
-		if b, err := os.ReadFile(m.Path(path)); err != nil || string(b) != text {
-			t.Errorf("the refused run changed %s", path)
-		}
-	}
-	wantInitialised(t, m, "alice")
-
-	if err := os.Remove(m.Path("/etc/koko/root.key")); err != nil {
-		t.Fatal(err)
-	}
-	refusedAgain(t)
-	if _, err := os.Stat(m.Path("/etc/koko/root.key")); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("install wrote a Root Key over the sealed data: %v", err)
-	}
 }
 
 // A build without the koko server (every OS but Linux) refuses to install it,

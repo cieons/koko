@@ -119,8 +119,8 @@ status. A command reaches the koko server only on its first `in.Call`, so
   ([the device](device-connection.md#on-the-device)), `already_joined`
   (`koko join` on a joined device),
   `invalid_join_code` (the koko server refused the Join Code, used, expired
-  or never issued alike), `unsupported_platform` (`koko server run` or
-  `koko server install` outside Linux, or a machine install cannot use),
+  or never issued alike), `unsupported_platform` (`koko server run`,
+  `install` or `uninstall` outside Linux, or a machine install cannot use),
   `port_taken` (another process holds the port `koko web` or `koko server
   install` listens on), and `internal_error` for a failure it did not expect.
 - **Which koko server:** the Unix socket when it is at its path, and
@@ -179,7 +179,8 @@ revoked, and when it was this device, that koko deleted its files.
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
 | `koko server run [--data-dir <dir>] [--root-key-file <file>] [--listen <addr>] [--log-level <level>]` | irreversible | none | nothing on success |
-| `koko server install [--owner <user>] [--address <host[:port]>] [--port <port>]` | irreversible | `server.init` | `{"address", "host_key_fingerprint", "root_key_file", "root_key_id", "listen_port", "join_code"}`, the Join Code as `device add` prints it ([the installer](installer.md#what-it-prints)) |
+| `koko server install [--owner <user>] [--address <host[:port]>] [--port <port>]` | irreversible | `server.init` | `{"upgraded", "address", "host_key_fingerprint", "root_key_file", "root_key_id", "listen_port", "join_code"}`, the Join Code as `device add` prints it; an upgrade has no `join_code`, and may have `devices_must_connect` ([the installer](installer.md#what-it-prints)) |
+| `koko server uninstall` | irreversible | none | `{"removed", "data_dir", "root_key_file", "system_user", "listen_port"}` ([the installer](installer.md#uninstall)) |
 | `koko server show` | read | `server.show` | `{"address", "listen_port", "host_key_fingerprint", "version", "root_key_file", "root_key_id", "data_dir"}` ([the deployment afterwards](initialisation.md#the-deployment-afterwards)) |
 | `koko server set address=<host[:port]>` (Owner, over the Unix socket only) | reversible | `server.set` | the settings as `server show` prints them, as the change left them |
 
