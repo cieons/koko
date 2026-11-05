@@ -5,6 +5,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/cieons/koko/internal/server/access"
 	"github.com/cieons/koko/internal/server/deployment"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
@@ -39,7 +40,12 @@ func registerSettings(a *op.API, s *settings) {
 	a.Handle(api.ServerSet, s.set, op.LocalOnly)
 }
 
-func (s *settings) show(ctx context.Context, tx store.Tx, _ op.Caller, _ api.ServerShowRequest) (api.ServerShowResponse, error) {
+func (s *settings) show(ctx context.Context, tx store.Tx, caller op.Caller, _ api.ServerShowRequest) (api.ServerShowResponse, error) {
+	// Every caller may, but each is resolved, so a Revoked Device Session is
+	// refused.
+	if _, err := access.Who(ctx, tx, caller); err != nil {
+		return api.ServerShowResponse{}, err
+	}
 	srv, err := s.read(ctx, tx)
 	if err != nil {
 		return api.ServerShowResponse{}, err

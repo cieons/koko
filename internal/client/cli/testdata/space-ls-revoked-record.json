@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "revoked",
+    "message": "the Device Session \"laptop\" of this device was revoked (koko learned it at <time>), so this device is no longer joined; to reach the koko server at <server address> again, join with a new Join Code: koko join <join-code>"
+  }
+}

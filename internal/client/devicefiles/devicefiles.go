@@ -6,7 +6,10 @@
 //
 // It is the one place a device's join is written and read, so whatever ends
 // a join on the device (the revocation cleanup, leaving) removes it here.
-// P0 allows one koko server per device, that is per OS user's home.
+// Once a device learns that its Device Session was Revoked, it keeps a
+// revocation record (0600) in place of its key and client config, until it
+// joins again. P0 allows one koko server per device, that is per OS user's
+// home.
 package devicefiles
 
 import (
@@ -20,6 +23,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -33,6 +37,9 @@ const (
 	// configFile is the client config. It is written last, so a device is
 	// joined exactly when it exists.
 	configFile = "client.json"
+	// revocationFile is the revocation record, which a device keeps from
+	// learning that its Device Session was Revoked until it joins again.
+	revocationFile = "revoked.json"
 )
 
 // ErrNotJoined says the device holds no join: no client config is there.
@@ -200,7 +207,102 @@ func (s *Staged) Commit(c Config) error {
 		s.undo(keyPath)
 		return fmt.Errorf("write the client config: %w", err)
 	}
+	// The join holds: a revocation record of an earlier join explains
+	// nothing any more. A record left behind is harmless, since the client
+	// config is read first.
+	_ = os.Remove(filepath.Join(dir(s.home), revocationFile))
 	return nil
+}
+
+// Revocation is the record a device keeps once it learns that its Device
+// Session was Revoked: which one, at which koko server, and when it learned
+// it. Later commands explain the revocation from it until the next join.
+type Revocation struct {
+	ServerAddress string
+	User          string
+	Device        string
+	DeviceSession string
+	// LearnedAt is when the device learned it, by its own clock.
+	LearnedAt time.Time
+}
+
+// revocationJSON is the revocation record as revoked.json holds it.
+type revocationJSON struct {
+	ServerAddress string `json:"server_address"`
+	User          string `json:"user"`
+	Device        string `json:"device"`
+	DeviceSession string `json:"device_session"`
+	LearnedAt     string `json:"learned_at"`
+}
+
+// Revoke is the revocation cleanup on the device whose home directory is
+// home, once it learns at learned that the Device Session its client config
+// c names was Revoked: it writes the revocation record (0600), then deletes
+// the client config, so the device is no longer joined, and the device's
+// key, whose copies are now useless.
+func Revoke(home string, c Config, learned time.Time) error {
+	if err := checkHome(home); err != nil {
+		return err
+	}
+	rj := revocationJSON{
+		ServerAddress: c.ServerAddress,
+		User:          c.User,
+		Device:        c.Device,
+		DeviceSession: c.DeviceSession,
+		LearnedAt:     learned.UTC().Truncate(time.Second).Format(time.RFC3339),
+	}
+	b, err := json.Marshal(rj, jsontext.WithIndent("  "))
+	if err != nil {
+		return fmt.Errorf("encode the revocation record: %w", err)
+	}
+	tmp, err := writeTemp(dir(home), "."+revocationFile+"-*", append(b, '\n'))
+	if err == nil {
+		if err = os.Rename(tmp, filepath.Join(dir(home), revocationFile)); err != nil {
+			_ = os.Remove(tmp)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("write the revocation record: %w", err)
+	}
+	for _, f := range []string{configFile, keyFile} {
+		if err := os.Remove(filepath.Join(dir(home), f)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("delete the files of this device's Revoked Device Session: %w", err)
+		}
+	}
+	return nil
+}
+
+// ReadRevocation returns the revocation record the device whose home
+// directory is home keeps. It fails with an error wrapping fs.ErrNotExist
+// when there is none, or no home directory to hold one, and naming the file
+// when it cannot be read or does not parse.
+func ReadRevocation(home string) (Revocation, error) {
+	if home == "" {
+		return Revocation{}, fmt.Errorf("read this device's revocation record: no home directory: %w", fs.ErrNotExist)
+	}
+	if err := checkHome(home); err != nil {
+		return Revocation{}, err
+	}
+	path := filepath.Join(dir(home), revocationFile)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return Revocation{}, fmt.Errorf("read this device's revocation record: %w", err)
+	}
+	var rj revocationJSON
+	if err := json.Unmarshal(b, &rj); err != nil {
+		return Revocation{}, fmt.Errorf("read this device's revocation record %s: %w", path, err)
+	}
+	learned, err := time.Parse(time.RFC3339, rj.LearnedAt)
+	if err != nil {
+		return Revocation{}, fmt.Errorf("read this device's revocation record %s: %w", path, err)
+	}
+	return Revocation{
+		ServerAddress: rj.ServerAddress,
+		User:          rj.User,
+		Device:        rj.Device,
+		DeviceSession: rj.DeviceSession,
+		LearnedAt:     learned,
+	}, nil
 }
 
 // undo removes the key Commit put in place at keyPath, then aborts.

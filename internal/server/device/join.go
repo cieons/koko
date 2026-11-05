@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/server/store"
+	"github.com/cieons/koko/internal/server/transport"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -27,31 +29,78 @@ type Authenticator struct {
 	store *store.Store
 	clock func() time.Time
 	log   *slog.Logger
+
+	mu sync.Mutex
+	// recorded is the last used time Used last wrote for each Device
+	// Session, so a use within usedGranularity of it skips the database.
+	recorded map[string]time.Time
 }
 
 // NewAuthenticator returns the Authenticator of the koko server whose
 // records st holds, whose clock is clock, logging each join and failed join
 // to log.
 func NewAuthenticator(st *store.Store, clock func() time.Time, log *slog.Logger) *Authenticator {
-	return &Authenticator{store: st, clock: clock, log: log}
+	return &Authenticator{store: st, clock: clock, log: log, recorded: map[string]time.Time{}}
 }
 
-// DeviceSession returns the id of the live Device Session whose key is key,
-// or "" when none holds it.
-func (s *Authenticator) DeviceSession(ctx context.Context, key ssh.PublicKey) (string, error) {
-	var id string
+// Key tells what key is: the key of a live Device Session, of a Revoked
+// one, which a public key stays for ever, or of none.
+func (s *Authenticator) Key(ctx context.Context, key ssh.PublicKey) (transport.DeviceKey, error) {
+	var k transport.DeviceKey
 	err := s.store.Read(ctx, func(tx store.Tx) error {
-		err := tx.QueryRowContext(ctx, "SELECT id FROM device_sessions WHERE public_key = ? AND revoked_at IS NULL",
-			key.Marshal()).Scan(&id)
+		err := tx.QueryRowContext(ctx, "SELECT id, device, revoked_at IS NOT NULL FROM device_sessions WHERE public_key = ?",
+			key.Marshal()).Scan(&k.DeviceSession, &k.Device, &k.Revoked)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
 		return err
 	})
 	if err != nil {
-		return "", fmt.Errorf("look up a device's key: %w", err)
+		return transport.DeviceKey{}, fmt.Errorf("look up a device's key: %w", err)
 	}
-	return id, nil
+	return k, nil
+}
+
+// usedGranularity is how finely a Device Session's last used time is kept: a
+// use within it of the time recorded changes nothing, so a device running
+// many commands writes its row once a minute.
+const usedGranularity = time.Minute
+
+// Used records that a Device Connection of the live Device Session whose id
+// is deviceSession opened a channel now: its last used time, kept to
+// usedGranularity. A long-lived Device Connection is used each time it opens
+// a channel (a command, an SSH Session, a browser connection), never by
+// merely staying open. A use within usedGranularity of the time this koko
+// server last wrote costs no transaction.
+func (s *Authenticator) Used(ctx context.Context, deviceSession string) error {
+	now := s.clock().UTC().Truncate(time.Second)
+	s.mu.Lock()
+	last, ok := s.recorded[deviceSession]
+	s.mu.Unlock()
+	if ok && now.Sub(last) < usedGranularity {
+		return nil
+	}
+	var written bool
+	err := s.store.Write(ctx, func(tx store.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE device_sessions SET last_used_at = ?1
+			WHERE id = ?2 AND revoked_at IS NULL AND (last_used_at IS NULL OR last_used_at <= ?3)`,
+			now.Format(time.RFC3339), deviceSession, now.Add(-usedGranularity).Format(time.RFC3339))
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		written = n == 1
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("record the use of the Device Session %s: %w", deviceSession, err)
+	}
+	if written {
+		s.mu.Lock()
+		s.recorded[deviceSession] = now
+		s.mu.Unlock()
+	}
+	return nil
 }
 
 // noCodeError is why a join fails when the secret is no valid Join Code's.
@@ -89,10 +138,14 @@ func (s *Authenticator) Join(ctx context.Context, key ssh.PublicKey, password []
 	return j.id, nil
 }
 
+// unixSocket stands in the log for the Unix socket where a Device Session's
+// id would: as the issuer of a Join Code, or what revoked a Device Session.
+const unixSocket = "unix socket"
+
 // joined is a Device Session a join made.
 type joined struct {
 	id, user, device, code string
-	// addedBy is the issuing Device Session's id, or "unix socket".
+	// addedBy is the issuing Device Session's id, or unixSocket.
 	addedBy string
 }
 
@@ -128,7 +181,7 @@ func (s *Authenticator) join(ctx context.Context, key ssh.PublicKey, password []
 			return &noCodeError{reason: "the Join Code expired", code: j.code}
 		}
 		j.id = store.NewID(sessionIDPrefix)
-		j.addedBy = "unix socket"
+		j.addedBy = unixSocket
 		if issuedBy.Valid {
 			j.addedBy = issuedBy.String
 		}

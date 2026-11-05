@@ -50,8 +50,11 @@ UI's TypeScript types are generated from them
 | `invalid_request` | 400 | The body is not a JSON object of the operation's request type (malformed, wrong type, duplicate or trailing data). |
 | `unknown_field` | 400 | The body holds a field the operation does not know. |
 | `invalid_name` | 400 | A name is not a lowercase DNS label ([`name.Check`](../../internal/shared/name/name.go)). |
+| `revoked` | 401 | The call came on a Device Session that is Revoked ([the Device Connection](device-connection.md#who-is-calling)). |
 | `local_only` | 403 | The operation answers only the Local caller, over the Unix socket; `server.set` not even a browser tab of `koko web` there ([initialisation](initialisation.md#the-deployment-afterwards)). |
 | `owner_only` | 403 | Only the Owner may do what the call asks, such as changing Spaces and their Members, inviting a User, or issuing a Join Code for another User's device; it is answered before the call reads anything it names ([the access check](access.md#what-a-caller-cannot-see)). |
+| `unknown_device` | 404 | No live Device Session the caller may revoke has the name: another User's, for a Member, is answered the same. |
+| `last_device_session` | 409 | The call would revoke the Owner's last live Device Session without `last` (`--last`). |
 | `unknown_operation` | 404 | No operation is served at the path. |
 | `method_not_allowed` | 405 | The method is not `POST`. |
 | `name_taken` | 409 | A record already holds the name where names must differ: a Space or a User for a new User's name, which they share; a Space for a Space's; one of the same User's devices or valid Join Codes for a device's. |
@@ -96,11 +99,17 @@ error is logged at error level.
 The caller (`op.Caller`) is the Local caller or a Device Connection's Device
 Session. Who it acts as comes from the current records on every call
 ([`access.Who`](../../internal/server/access/access.go)): a Device Session's
-User, or the Owner for the Local caller; `user.current` answers it. What
-each caller may do, and in which Spaces, is the access check's
+User, or the Owner for the Local caller; `user.current` answers it. A
+Revoked Device Session is refused with `revoked`. What each caller may do,
+and in which Spaces, is the access check's
 ([the access check and Spaces](access.md)), which each operation asks inside
 its transaction; the access matrix states every operation's answer to each
 kind of caller.
+
+An operation that withdraws access announces it on the access-change signal
+([`access.Signal`](../../internal/server/access/signal.go)) with
+`Publish`, which reaches its subscribers only once the call's transaction
+has committed ([revoking](device-connection.md#revoking)).
 
 Closing the transport stops new connections and channels, waits up to
 `shutdownGrace` (5 s) for calls in flight, then ends every connection, so the

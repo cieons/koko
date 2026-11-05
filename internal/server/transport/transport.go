@@ -12,8 +12,10 @@
 // Session. A key no Device Session holds may join, in the same SSH
 // authentication: once the device has proved it holds the key, the koko
 // server answers with a partial success and takes a Join Code's secret as an
-// SSH password (P0 spec: people and Spaces, "Joining"). Devices answers what
-// a key is and whether a secret joins it.
+// SSH password (P0 spec: people and Spaces, "Joining"). A Revoked Device
+// Session's key is refused once the device has signed with it, with a banner
+// that names the device. Devices answers what a key is and whether a secret
+// joins it.
 package transport
 
 import (
@@ -23,9 +25,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -39,14 +43,30 @@ import (
 // a Join Code's secret makes it a Device Session. The device area answers;
 // the transport only asks.
 type Devices interface {
-	// DeviceSession returns the id of the Device Session whose key is key,
-	// or "" when no Device Session holds it.
-	DeviceSession(ctx context.Context, key ssh.PublicKey) (string, error)
+	// Key tells what a device's key is: a live Device Session's, a Revoked
+	// one's, or none's.
+	Key(ctx context.Context, key ssh.PublicKey) (DeviceKey, error)
 	// Join makes key, which the device has proved it holds, a Device Session
 	// through the valid Join Code whose secret the password carries
 	// (wire.JoinSecret), and returns its id. It fails for any password that
 	// is not such a secret, and logs why.
 	Join(ctx context.Context, key ssh.PublicKey, password []byte, from net.Addr) (string, error)
+	// Used records that a Device Connection of the Device Session opened a
+	// channel: what makes a Device Session used.
+	Used(ctx context.Context, deviceSession string) error
+}
+
+// DeviceKey is what a device's key is to the koko server. The zero
+// DeviceKey is a key no Device Session holds, which may join.
+type DeviceKey struct {
+	// DeviceSession is the id of the Device Session that holds the key, or
+	// "" for none.
+	DeviceSession string
+	// Device is that Device Session's device name.
+	Device string
+	// Revoked tells that the Device Session is Revoked: the key never
+	// authenticates or joins again, and its device is told so by name.
+	Revoked bool
 }
 
 // joinRefused is the banner a failed join gets, whatever the reason: the
@@ -67,18 +87,23 @@ type Server struct {
 	mu        sync.Mutex
 	closed    bool
 	listeners []net.Listener
-	conns     map[ssh.Conn]struct{}
-	wg        sync.WaitGroup
+	conns     map[*Connection]struct{}
+	// revoked are the Device Sessions CloseDeviceSessions closed, whose
+	// connections are refused from then on, even one that authenticated just
+	// before the revocation committed.
+	revoked map[string]bool
+	wg      sync.WaitGroup
 }
 
 // New returns a Server that hands every api@koko channel to api and every
 // web@koko channel to web.
 func New(api, web http.Handler, log *slog.Logger) *Server {
 	s := &Server{
-		log:   log,
-		api:   newChannelServer(api, wire.ChannelAPI, log),
-		web:   newChannelServer(web, wire.ChannelWeb, log),
-		conns: map[ssh.Conn]struct{}{},
+		log:     log,
+		api:     newChannelServer(api, wire.ChannelAPI, log),
+		web:     newChannelServer(web, wire.ChannelWeb, log),
+		conns:   map[*Connection]struct{}{},
+		revoked: map[string]bool{},
 	}
 	for _, cs := range []*channelServer{s.api, s.web} {
 		s.wg.Go(func() { _ = cs.http.Serve(cs.channels) })
@@ -89,12 +114,60 @@ func New(api, web http.Handler, log *slog.Logger) *Server {
 // Connection is one SSH connection to the koko server, as the requests on its
 // channels see it.
 type Connection struct {
-	ctx context.Context
+	ctx    context.Context
+	ssh    ssh.Conn
+	caller op.Caller
+
+	mu sync.Mutex
+	// calls counts the HTTP requests in flight on the connection's
+	// channels: each channel's, from its first byte read until its response
+	// is written.
+	calls int
+	// answered, once drain asks for it, is closed when no call is in
+	// flight.
+	answered chan struct{}
 }
 
 // Context returns a context that ends when the connection closes.
 func (c *Connection) Context() context.Context {
 	return c.ctx
+}
+
+// callState records that the channel cc of the connection began a call
+// (active) or ended one, as net/http's ConnState reports it.
+func (c *Connection) callState(cc *callerConn, active bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cc.active == active {
+		return
+	}
+	cc.active = active
+	if active {
+		c.calls++
+		return
+	}
+	c.calls--
+	if c.calls == 0 && c.answered != nil {
+		select {
+		case <-c.answered:
+		default:
+			close(c.answered)
+		}
+	}
+}
+
+// drain returns a channel closed once no call is in flight on the
+// connection.
+func (c *Connection) drain() <-chan struct{} {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.answered == nil {
+		c.answered = make(chan struct{})
+		if c.calls == 0 {
+			close(c.answered)
+		}
+	}
+	return c.answered
 }
 
 type connectionKey struct{}
@@ -142,7 +215,9 @@ func (s *Server) ListenSocket(ctx context.Context, path string) error {
 		_ = ln.Close()
 		return errors.New("the transport is closed")
 	}
-	s.wg.Go(func() { s.accept(ln, cfg, func(*ssh.ServerConn) op.Caller { return op.Caller{Local: true} }) })
+	s.wg.Go(func() {
+		s.accept(ln, wayIn{cfg: cfg, callerOf: func(*ssh.ServerConn) op.Caller { return op.Caller{Local: true} }})
+	})
 	return nil
 }
 
@@ -160,13 +235,19 @@ func (s *Server) ServeTCP(ln net.Listener, hostKey ssh.Signer, devices Devices) 
 		},
 		VerifiedPublicKeyCallback: func(conn ssh.ConnMetadata, key ssh.PublicKey, _ *ssh.Permissions, _ string) (*ssh.Permissions, error) {
 			ctx := context.Background()
-			id, err := devices.DeviceSession(ctx, key)
+			k, err := devices.Key(ctx, key)
 			switch {
 			case err != nil:
 				s.log.Error("look up a device's key", "addr", conn.RemoteAddr(), "err", err)
 				return nil, err
-			case id != "":
-				return &ssh.Permissions{Extensions: map[string]string{deviceSessionExt: id}}, nil
+			case k.Revoked:
+				s.log.Info("revoked device refused", "device_session", k.DeviceSession, "addr", conn.RemoteAddr())
+				return nil, &ssh.BannerError{
+					Err:     fmt.Errorf("the Device Session %s is revoked", k.DeviceSession),
+					Message: wire.RevokedBanner(k.Device),
+				}
+			case k.DeviceSession != "":
+				return &ssh.Permissions{Extensions: map[string]string{deviceSessionExt: k.DeviceSession}}, nil
 			}
 			// No Device Session holds the key: it may join, with a Join
 			// Code's secret as the second step.
@@ -187,16 +268,29 @@ func (s *Server) ServeTCP(ln net.Listener, hostKey ssh.Signer, devices Devices) 
 		return errors.New("the transport is closed")
 	}
 	s.wg.Go(func() {
-		s.accept(ln, cfg, func(conn *ssh.ServerConn) op.Caller {
-			return op.Caller{DeviceSession: conn.Permissions.Extensions[deviceSessionExt]}
+		s.accept(ln, wayIn{
+			cfg: cfg,
+			callerOf: func(conn *ssh.ServerConn) op.Caller {
+				return op.Caller{DeviceSession: conn.Permissions.Extensions[deviceSessionExt]}
+			},
+			devices: devices,
 		})
 	})
 	return nil
 }
 
-// accept serves each connection ln accepts, as the caller callerOf names
-// once it has authenticated.
-func (s *Server) accept(ln net.Listener, cfg *ssh.ServerConfig, callerOf func(*ssh.ServerConn) op.Caller) {
+// wayIn is one way into the koko server: how its connections authenticate,
+// who each one is once it has, and for the TCP listener the device area.
+type wayIn struct {
+	cfg      *ssh.ServerConfig
+	callerOf func(*ssh.ServerConn) op.Caller
+	// devices is the device area the TCP listener asks; nil on the Unix
+	// socket, which has no Device Session.
+	devices Devices
+}
+
+// accept serves each connection ln accepts, the way w says.
+func (s *Server) accept(ln net.Listener, w wayIn) {
 	for {
 		nc, err := ln.Accept()
 		if err != nil {
@@ -205,27 +299,28 @@ func (s *Server) accept(ln net.Listener, cfg *ssh.ServerConfig, callerOf func(*s
 			}
 			return
 		}
-		s.wg.Go(func() { s.serve(nc, cfg, callerOf) })
+		s.wg.Go(func() { s.serve(nc, w) })
 	}
 }
 
-// serve runs one SSH connection until it ends.
-func (s *Server) serve(nc net.Conn, cfg *ssh.ServerConfig, callerOf func(*ssh.ServerConn) op.Caller) {
-	conn, chans, reqs, err := ssh.NewServerConn(nc, cfg)
+// serve runs one SSH connection until it ends. Each channel a Device
+// Connection opens uses its Device Session.
+func (s *Server) serve(nc net.Conn, w wayIn) {
+	conn, chans, reqs, err := ssh.NewServerConn(nc, w.cfg)
 	if err != nil {
 		s.log.Debug("ssh handshake failed", "addr", nc.RemoteAddr(), "err", err)
 		_ = nc.Close()
 		return
 	}
-	caller := callerOf(conn)
-	if !s.trackConn(conn) {
+	caller := w.callerOf(conn)
+	ctx, ended := context.WithCancel(context.Background())
+	defer ended()
+	connection := &Connection{ctx: ctx, ssh: conn, caller: caller}
+	if !s.trackConn(connection) {
 		_ = conn.Close()
 		return
 	}
-	defer s.untrackConn(conn)
-	ctx, ended := context.WithCancel(context.Background())
-	defer ended()
-	connection := &Connection{ctx: ctx}
+	defer s.untrackConn(connection)
 	s.wg.Go(func() { ssh.DiscardRequests(reqs) })
 	for nch := range chans {
 		cc := &callerConn{caller: caller, conn: connection}
@@ -244,6 +339,13 @@ func (s *Server) serve(nc net.Conn, cfg *ssh.ServerConfig, callerOf func(*ssh.Se
 			_ = nch.Reject(ssh.UnknownChannelType, fmt.Sprintf("koko serves no %q channel", nch.ChannelType()))
 			continue
 		}
+		if caller.DeviceSession != "" {
+			// What a Device Session last did is bookkeeping: failing to
+			// record it fails no channel.
+			if err := w.devices.Used(ctx, caller.DeviceSession); err != nil {
+				s.log.Error("record a Device Session's use", "device_session", caller.DeviceSession, "err", err)
+			}
+		}
 		ch, chReqs, err := nch.Accept()
 		if err != nil {
 			s.log.Debug("accept channel", "err", err)
@@ -255,8 +357,44 @@ func (s *Server) serve(nc net.Conn, cfg *ssh.ServerConfig, callerOf func(*ssh.Se
 	}
 }
 
-// shutdownGrace bounds how long Close waits for calls in flight.
+// shutdownGrace bounds how long Close, and the closing of a Revoked Device
+// Session's connection, wait for calls in flight.
 const shutdownGrace = 5 * time.Second
+
+// CloseDeviceSessions closes the Device Connections of the Device Sessions
+// named, which were Revoked, and refuses any connection of theirs from now
+// on. Each connection closes once the calls in flight on it have answered,
+// such as a device's call that revoked its own Device Session, or after
+// shutdownGrace. It does not block.
+func (s *Server) CloseDeviceSessions(ids ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	for _, id := range ids {
+		s.revoked[id] = true
+	}
+	for c := range s.conns {
+		if id := c.caller.DeviceSession; id != "" && slices.Contains(ids, id) {
+			s.wg.Go(func() { s.closeRevoked(c) })
+		}
+	}
+}
+
+// closeRevoked closes c, a Revoked Device Session's connection, once its
+// calls in flight have answered, at most shutdownGrace from now.
+func (s *Server) closeRevoked(c *Connection) {
+	select {
+	case <-c.drain():
+	case <-c.ctx.Done():
+		return
+	case <-time.After(shutdownGrace):
+	}
+	s.log.Info("device connection closed", "device_session", c.caller.DeviceSession,
+		"addr", c.ssh.RemoteAddr(), "reason", "revoked")
+	_ = c.ssh.Close()
+}
 
 // Close stops listening and accepting channels, waits up to shutdownGrace for
 // calls in flight to finish, then ends every connection and waits for its
@@ -265,10 +403,7 @@ func (s *Server) Close() error {
 	s.mu.Lock()
 	s.closed = true
 	listeners := s.listeners
-	conns := make([]ssh.Conn, 0, len(s.conns))
-	for c := range s.conns {
-		conns = append(conns, c)
-	}
+	conns := slices.Collect(maps.Keys(s.conns))
 	s.mu.Unlock()
 
 	var errs []error
@@ -285,7 +420,7 @@ func (s *Server) Close() error {
 		}
 	}
 	for _, c := range conns {
-		_ = c.Close()
+		_ = c.ssh.Close()
 	}
 	s.wg.Wait()
 	return errors.Join(errs...)
@@ -301,17 +436,17 @@ func (s *Server) track(ln net.Listener) bool {
 	return true
 }
 
-func (s *Server) trackConn(c ssh.Conn) bool {
+func (s *Server) trackConn(c *Connection) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
+	if s.closed || s.revoked[c.caller.DeviceSession] {
 		return false
 	}
 	s.conns[c] = struct{}{}
 	return true
 }
 
-func (s *Server) untrackConn(c ssh.Conn) {
+func (s *Server) untrackConn(c *Connection) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.conns, c)
@@ -342,6 +477,14 @@ func newChannelServer(h http.Handler, kind string, log *slog.Logger) *channelSer
 				}
 				return ctx
 			},
+			// A channel is active from a request's first byte until its
+			// response is written, so its connection knows when its calls
+			// have answered.
+			ConnState: func(c net.Conn, state http.ConnState) {
+				if cc, ok := c.(*callerConn); ok {
+					cc.conn.callState(cc, state == http.StateActive)
+				}
+			},
 		},
 		channels: newChannelListener(kind),
 	}
@@ -354,6 +497,9 @@ type callerConn struct {
 	caller  op.Caller
 	conn    *Connection
 	webPort int
+	// active tells that a call is in flight on the channel; conn's mutex
+	// guards it.
+	active bool
 }
 
 // channelListener hands accepted channels of one type to its HTTP server.

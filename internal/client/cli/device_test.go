@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -296,6 +297,180 @@ func TestAJoinedOwnerAddsDevicesForAnyUser(t *testing.T) {
 	if jc := deviceAddOn(t, alice, "--user", "bob"); jc.User != "bob" {
 		t.Errorf("the Owner's device add --user bob issued for %s", jc.User)
 	}
+}
+
+// deviceSessionOut is a Device Session as the CLI's --json prints it.
+type deviceSessionOut struct {
+	ID      string `json:"id"`
+	User    string `json:"user"`
+	Device  string `json:"device"`
+	AddedBy *struct {
+		ID     string `json:"id"`
+		User   string `json:"user"`
+		Device string `json:"device"`
+	} `json:"added_by"`
+	CreatedAt  string  `json:"created_at"`
+	LastUsedAt *string `json:"last_used_at"`
+	RevokedAt  *string `json:"revoked_at"`
+}
+
+// deviceLs runs device ls --json with args through run, which is h.Koko or
+// a device's Koko, and returns the Device Sessions it listed.
+func deviceLs(t *testing.T, run func(...string) harness.Result, args ...string) []deviceSessionOut {
+	t.Helper()
+	r := run(append([]string{"device", "ls", "--json"}, args...)...)
+	r.WantSuccess(t)
+	var l []deviceSessionOut
+	if err := json.Unmarshal([]byte(r.Stdout), &l); err != nil {
+		t.Fatalf("device ls --json printed %q: %v", r.Stdout, err)
+	}
+	return l
+}
+
+// joinAs joins a new device with the Join Code jc and returns it with its
+// Device Session's id.
+func joinAs(t *testing.T, jc joinCodeOut) (*harness.Device, string) {
+	t.Helper()
+	d := harness.NewDevice(t)
+	d.Koko("join", jc.Code).WantSuccess(t)
+	return d, readClientConfig(t, d).DeviceSession
+}
+
+// The Owner's koko device ls lists every User's Device Sessions, by User and
+// then in the order they joined: each with its name, who added it (the Unix
+// socket, or the Device Session that issued its Join Code, by id and name),
+// and its created and last used times.
+func TestDeviceLsListsEveryDeviceSessionForTheOwner(t *testing.T) {
+	h := harness.Start(t)
+	h.Koko("user", "invite", "bob").WantSuccess(t)
+	_, desktopID := joinAs(t, deviceAdd(t, h, "desktop", "--user", "bob"))
+	laptop, laptopID := joinAs(t, deviceAdd(t, h, "laptop"))
+	h.Advance(time.Minute)
+	_, phoneID := joinAs(t, deviceAddOn(t, laptop, "phone"))
+
+	r := h.Koko("device", "ls", "--json")
+	r.WantSuccess(t)
+	harness.Golden(t, "device-ls.json", r.Stdout)
+	l := deviceLs(t, h.Koko)
+	var got []string
+	for _, d := range l {
+		got = append(got, d.ID)
+	}
+	if want := []string{laptopID, phoneID, desktopID}; !slices.Equal(got, want) {
+		t.Fatalf("device ls listed %v, want alice's laptop and phone, then bob's desktop: %v", got, want)
+	}
+	if l[0].AddedBy != nil || l[2].AddedBy != nil {
+		t.Errorf("laptop and desktop were added by %+v and %+v, want the Unix socket (null)", l[0].AddedBy, l[2].AddedBy)
+	}
+	if a := l[1].AddedBy; a == nil || a.ID != laptopID || a.User != harness.Owner || a.Device != "laptop" {
+		t.Errorf("phone was added by %+v, want alice's laptop %s", a, laptopID)
+	}
+	joined := h.Now().Format(time.RFC3339)
+	if p := l[1]; p.User != harness.Owner || p.Device != "phone" || p.CreatedAt != joined || p.RevokedAt != nil {
+		t.Errorf("phone is %+v, want alice's live device phone created at %s", p, joined)
+	}
+}
+
+// A Device Session is used when a Device Connection it authenticated opens a
+// channel, as each command on the device does, koko join's own included:
+// that moves its last used time, kept to the minute, and nothing done on
+// another connection does.
+func TestDeviceLsShowsWhenADeviceWasLastUsed(t *testing.T) {
+	h := harness.Start(t)
+	laptop, id := joinAs(t, deviceAdd(t, h, "laptop"))
+	wantLastUsed := func(when time.Time) {
+		t.Helper()
+		l := deviceLs(t, h.Koko)
+		i := slices.IndexFunc(l, func(d deviceSessionOut) bool { return d.ID == id })
+		if i < 0 {
+			t.Fatalf("device ls does not list the laptop %s", id)
+		}
+		if got, want := l[i].LastUsedAt, when.Format(time.RFC3339); got == nil || *got != want {
+			t.Errorf("the laptop was last used at %v, want %s", orNull(got), want)
+		}
+	}
+	joined := h.Now()
+	wantLastUsed(joined)
+
+	h.Advance(time.Hour)
+	h.Koko("space", "ls").WantSuccess(t)
+	wantLastUsed(joined)
+	laptop.Koko("space", "ls").WantSuccess(t)
+	wantLastUsed(joined.Add(time.Hour))
+	h.Advance(time.Minute - time.Second)
+	laptop.Koko("space", "ls").WantSuccess(t)
+	wantLastUsed(joined.Add(time.Hour))
+	h.Advance(time.Second)
+	laptop.Koko("space", "ls").WantSuccess(t)
+	wantLastUsed(joined.Add(time.Hour + time.Minute))
+}
+
+// A Member's koko device ls lists their own Device Sessions only, and --user
+// naming another User is refused with owner_only, which says nothing of
+// whether that User exists. The Owner's --user narrows the list to one User.
+func TestDeviceLsShowsAMemberOnlyTheirOwn(t *testing.T) {
+	h := harness.Start(t)
+	h.Koko("user", "invite", "bob").WantSuccess(t)
+	h.Join(harness.Owner)
+	bob := h.Join("bob")
+	bobID := readClientConfig(t, bob).DeviceSession
+	for _, args := range [][]string{nil, {"--user", "bob"}} {
+		if l := deviceLs(t, bob.Koko, args...); len(l) != 1 || l[0].ID != bobID {
+			t.Errorf("bob's device ls %v listed %+v, want bob's own device %s only", args, l, bobID)
+		}
+	}
+	for _, other := range []string{harness.Owner, "nobody"} {
+		r := bob.Koko("device", "ls", "--user", other, "--json")
+		if msg := r.WantError(t, 1, "owner_only"); strings.Contains(msg, other) {
+			t.Errorf("the refusal for --user %s names it: %q", other, msg)
+		}
+		if other == harness.Owner {
+			harness.Golden(t, "device-ls-owner-only.json", r.Stderr)
+		}
+	}
+	if l := deviceLs(t, h.Koko, "--user", "bob"); len(l) != 1 || l[0].ID != bobID {
+		t.Errorf("the Owner's device ls --user bob listed %+v, want bob's device %s only", l, bobID)
+	}
+	h.Koko("device", "ls", "--user", "nobody", "--json").WantError(t, 1, "unknown_user")
+}
+
+// For people, device ls is a table with a header that names who added each
+// device, by <user>/<device> or the Unix socket, and with --all a REVOKED
+// column; with nothing to list, it says so.
+func TestDeviceLsForPeople(t *testing.T) {
+	h := harness.Start(t)
+	r := h.Koko("device", "ls")
+	r.WantSuccess(t)
+	if r.Stdout != "No Device Sessions.\n" {
+		t.Errorf("device ls with no Device Session printed %q", r.Stdout)
+	}
+	laptop, laptopID := joinAs(t, deviceAdd(t, h, "laptop"))
+	_, phoneID := joinAs(t, deviceAddOn(t, laptop, "phone"))
+	deviceRevoke(t, h.Koko, "laptop")
+	now := h.Now().Format(time.RFC3339)
+
+	r = h.Koko("device", "ls", "--all")
+	r.WantSuccess(t)
+	var rows [][]string
+	for line := range strings.Lines(r.Stdout) {
+		rows = append(rows, strings.Fields(strings.ReplaceAll(line, "ADDED BY", "ADDED_BY")))
+	}
+	want := [][]string{
+		{"USER", "DEVICE", "ID", "ADDED_BY", "CREATED", "LAST", "USED", "REVOKED"},
+		{"alice", "laptop", laptopID, "unix", "socket", now, now, now},
+		{"alice", "phone", phoneID, "alice/laptop", now, now, "-"},
+	}
+	if !slices.EqualFunc(rows, want, slices.Equal) {
+		t.Errorf("device ls --all printed\n%s\nwant the rows %q", r.Stdout, want)
+	}
+}
+
+// orNull is what s points at, or "null" for nil, as --json prints it.
+func orNull(s *string) string {
+	if s == nil {
+		return "null"
+	}
+	return *s
 }
 
 // A live Device Session holds its name as a valid Join Code does, and

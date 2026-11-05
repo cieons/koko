@@ -114,7 +114,10 @@ status. A command reaches the koko server only on its first `in.Call`, so
   or the connection could not carry the call, or ended under `koko web`; for
   the joined koko server the hint names `koko connect <host:port>`),
   `host_key_mismatch` (the koko server presented a host key other than the
-  one pinned), `already_joined` (`koko join` on a joined device),
+  one pinned), the API's `revoked` for a device whose Device Session the
+  koko server refused as Revoked or that keeps the record of it
+  ([the device](device-connection.md#on-the-device)), `already_joined`
+  (`koko join` on a joined device),
   `invalid_join_code` (the koko server refused the Join Code, used, expired
   or never issued alike), `unsupported_platform` (`koko server run` or
   `koko server install` outside Linux, or a machine install cannot use),
@@ -136,6 +139,8 @@ status. A command reaches the koko server only on its first `in.Call`, so
   characters, such as `space_3f9k2m7q`. No name holds `_`.
 - Timestamps, when a record has them, are RFC 3339 in UTC to the second, as
   `2026-11-05T14:03:07Z`.
+- Every field of a record is always there: one with no value is `null`, as
+  a Device Session's `revoked_at` while it is live.
 - **The mapping test**
   ([`mapping_test.go`](../../internal/client/cli/mapping_test.go)) fails when a
   field of an API response a command reads is neither in the CLI's type under
@@ -150,7 +155,10 @@ Not a contract: a write says what it did (`Added Space ops (space_3f9k2m7q).`,
 (`NAME  ID`), or a sentence when empty. A
 command that issues a Join Code says for whom and until when, then prints the
 one `koko join koko_...` line to paste on the new device. `koko join` says
-which koko server it joined, as whose device.
+which koko server it joined, as whose device. `koko device ls` names who
+added each device as `<user>/<device>` or `unix socket`, and adds a REVOKED
+column when it lists a Revoked one; `koko device revoke` says which device it
+revoked, and when it was this device, that koko deleted its files.
 
 ## The commands so far
 
@@ -165,7 +173,9 @@ which koko server it joined, as whose device.
 | `koko space member rm <space> <user>...` (Owner) | reversible | `space.member.remove` | the same |
 | `koko user invite <user>` (Owner) | irreversible | `user.invite` | `{"user": {"id", "name", "role", "created_at"}, "join_code": ...}`, the Join Code as `device add` prints it |
 | `koko device add [<device>] [--user <user>]` | irreversible | `device.add` | the Join Code: `{"id", "code", "user", "device", "expires_at"}` |
-| `koko join <join-code>` or `koko join -` | irreversible | `user.current`, after joining in SSH authentication | `{"server_address", "device_session": {"id", "user", "device", "created_at"}}`; a Device Session's id is `device_...` |
+| `koko device ls [--user <user>] [--all]` | read | `device.list` | an array of Device Sessions, by User and then in the order they joined: `{"id", "user", "device", "added_by", "created_at", "last_used_at", "revoked_at"}`, where `added_by` is `{"id", "user", "device"}` of the Device Session that issued its Join Code, or `null` for the Unix socket; a Device Session's id is `device_...` |
+| `koko device revoke <device>` or `<user>/<device>` `[--last]` | irreversible | `device.revoke` | the Device Session it Revoked, as `device ls` prints one ([revoking](device-connection.md#revoking)) |
+| `koko join <join-code>` or `koko join -` | irreversible | `user.current`, after joining in SSH authentication | `{"server_address", "device_session"}`, the Device Session as `device ls` prints one |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
 | `koko server run [--data-dir <dir>] [--root-key-file <file>] [--listen <addr>] [--log-level <level>]` | irreversible | none | nothing on success |

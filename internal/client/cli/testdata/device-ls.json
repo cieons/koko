@@ -1,0 +1,33 @@
+[
+  {
+    "id": "device_<1>",
+    "user": "alice",
+    "device": "laptop",
+    "added_by": null,
+    "created_at": "<time>",
+    "last_used_at": "<time>",
+    "revoked_at": null
+  },
+  {
+    "id": "device_<2>",
+    "user": "alice",
+    "device": "phone",
+    "added_by": {
+      "id": "device_<1>",
+      "user": "alice",
+      "device": "laptop"
+    },
+    "created_at": "<time>",
+    "last_used_at": "<time>",
+    "revoked_at": null
+  },
+  {
+    "id": "device_<3>",
+    "user": "bob",
+    "device": "desktop",
+    "added_by": null,
+    "created_at": "<time>",
+    "last_used_at": "<time>",
+    "revoked_at": null
+  }
+]

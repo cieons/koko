@@ -25,6 +25,7 @@ import (
 
 	"github.com/cieons/koko/internal/client/apiclient"
 	"github.com/cieons/koko/internal/client/cli"
+	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/server"
 	"github.com/cieons/koko/internal/server/seal"
@@ -338,6 +339,23 @@ func (h *Harness) Join(user string) *Device {
 // Home returns the device's HOME.
 func (d *Device) Home() string {
 	return d.home
+}
+
+// Dial opens a Device Connection from the joined device's files, as its
+// commands do, and holds it until the test ends or the koko server closes
+// it, as a long-lived connection such as the Device Mux's would.
+func (d *Device) Dial() serverconn.Conn {
+	d.t.Helper()
+	c, key, err := devicefiles.Read(d.home)
+	if err != nil {
+		d.t.Fatalf("read the device's files: %v", err)
+	}
+	conn, err := serverconn.DialDevice(d.t.Context(), serverconn.Device{Address: c.ServerAddress, HostKeys: c.HostKeys, Key: key})
+	if err != nil {
+		d.t.Fatalf("open a Device Connection: %v", err)
+	}
+	d.t.Cleanup(func() { _ = conn.Close() })
+	return conn
 }
 
 // Koko runs one koko command line in process on the device, with empty

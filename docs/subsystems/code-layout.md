@@ -68,6 +68,11 @@ operation (`web.Front.Register`).
 The device area also answers the TCP listener's join step
 ([`device.Authenticator`](../../internal/server/device/join.go)), which
 `server.Start` hands the transport ([the Device Connection](device-connection.md)).
+`server.Start` also makes the access-change signal
+([`access.Signal`](../../internal/server/access/signal.go)) and subscribes
+the transport to it: an area whose operations withdraw access takes the
+signal in its `Register`, as `device` does, and publishes on it; a later
+consumer subscribes in `server.Start` (rule 12).
 
 Error codes every area shares (`invalid_request`, `unknown_field`,
 `invalid_name`, `name_taken`, ...) are in `commonCodes`; an area adds a code of
@@ -185,7 +190,9 @@ of `koko server install`'s system seam ([the installer](installer.md#verifying))
 Devices: `harness.NewDevice(t)` is a device that has not joined, with a HOME
 of its own and nothing at its socket path, so it reaches a koko server only
 over a Device Connection; `d.Koko(args...)` and `d.KokoStdin(stdin,
-args...)` run command lines on it, and `d.Home()` is its HOME.
+args...)` run command lines on it, `d.Home()` is its HOME, and `d.Dial()`
+opens a Device Connection from its files and holds it until the test ends,
+as a long-lived connection would.
 `h.Join(user)` issues a Join Code for the User over the socket and returns a
 new device joined with it. `h.Socket()` is the socket's path, for a runner on
 the koko server's own machine. `h.Send(op, body)` and `d.Send(op, body)`

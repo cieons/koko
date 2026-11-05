@@ -4,6 +4,9 @@
     "id": "device_<1>",
     "user": "alice",
     "device": "laptop",
-    "created_at": "<time>"
+    "added_by": null,
+    "created_at": "<time>",
+    "last_used_at": "<time>",
+    "revoked_at": null
   }
 }

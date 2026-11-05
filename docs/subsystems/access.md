@@ -11,8 +11,10 @@ and [ADR 0008](../adr/0008-local-callers-act-as-the-owner.md); the source is
 [`access`](../../internal/server/access/access.go) is the one place that
 decides access. No other package reads roles or memberships to decide what a
 caller may do. Every answer is read from the current records, inside the
-call's transaction, so a change (a membership, later a revocation) holds from
-the next call.
+call's transaction, so a change (a membership, a revocation) holds from the
+next call. Every operation asks who is calling, even one every caller may
+make, such as `server.show`, so a Revoked Device Session is refused
+([revoking](device-connection.md#revoking)).
 
 | Question | Answer |
 | --- | --- |
@@ -109,12 +111,20 @@ states.
   [`TestTheServerServesExactlyTheDeclaredOperations`](../../internal/server/operations_test.go)
   fails when the koko server registers an operation `api.Operations` does not
   list (`op.API.Names`), so no registered operation escapes the matrix.
-- A Revoked Device Session and a Removed User's Device Session join the
-  callers with the tickets that make them (#40, #50).
+- **A Revoked Device Session** gets nothing from any operation: each answers
+  `revoked`, or `local_only` for an operation only the Local caller makes.
+  The transport refuses a Revoked key before any call, so no Device
+  Connection can carry the matrix's call for it; only a call already on its
+  way when the revocation commits reaches the operations.
+  [`TestARevokedDeviceSessionIsRefusedByEveryOperation`](../../internal/server/revoked_test.go)
+  therefore calls every registered operation as that caller beneath the
+  transport, so a new operation that does not ask who is calling fails it.
+  A Removed User's Device Session joins with #50.
 
 ## Verifying
 
-- The matrix above.
+- The matrix above, and its Revoked Device Session in
+  [`revoked_test.go`](../../internal/server/revoked_test.go).
 - [`internal/client/cli/space_test.go`](../../internal/client/cli/space_test.go):
   every `space` command over the CLI, with its goldens; what a Member lists
   and shows over their own Device Connection; a membership change holding

@@ -135,6 +135,10 @@ _Avoid_: session (alone), login, token
 A Device Session that can never connect again, kept as history; its key can never join again.
 _Avoid_: logged out, expired, deleted
 
+**Last used**:
+When a Device Session's Device Connection last opened a channel (a command, an SSH Session, a browser connection), kept to the minute; staying connected does not count.
+_Avoid_: last seen, last active, last login
+
 **Local caller**:
 Anything on the koko server's own machine that calls it over its Unix socket; it acts as the Owner.
 _Avoid_: admin, root, console
@@ -146,6 +150,10 @@ _Avoid_: tunnel, session, link
 **Client config**:
 The file on a device that names the koko server it joined, by its Server Address and pinned host keys, and the User and device name it joined as.
 _Avoid_: profile, credentials, settings
+
+**Revocation record**:
+The file a device keeps in place of its key and Client config once it learns that its Device Session was Revoked, so later commands say why until it joins again.
+_Avoid_: tombstone, revoked flag
 
 **Device Mux**:
 The background process on a device that holds its one Device Connection and carries every koko command and Tunnel of that device over it.

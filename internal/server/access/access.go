@@ -4,9 +4,12 @@
 // the Owner (Identity.IsOwner, and OwnerOnly, which refuses anyone else), whether
 // they can act in a Space (Identity.CanAct), and which Spaces they can act in
 // (Identity.Spaces). It answers from the current records on every call,
-// inside the call's transaction, so a change, such as a membership, takes
-// effect on the next call. No other package reads roles or memberships to
-// decide what a caller may do.
+// inside the call's transaction, so a change, such as a membership or a
+// revocation, takes effect on the next call. No other package reads roles or
+// memberships to decide what a caller may do. It also carries the
+// access-change signal (Signal), which tells the parts of the koko server
+// that hold access open, such as Device Connections, when a committed change
+// withdrew it.
 package access
 
 import (
@@ -36,32 +39,34 @@ func (i Identity) IsOwner() bool {
 }
 
 // Who answers who is calling: it turns a Device Connection's Device Session
-// into its User, and the Local caller into the Owner. A caller that is
-// neither, or a Device Session no record holds, is a bug in the transport,
-// and fails.
+// into its User, and the Local caller into the Owner. A Revoked Device
+// Session is refused with api.CodeRevoked. A caller that is neither, or a
+// Device Session no record holds, is a bug in the transport, and fails.
 func Who(ctx context.Context, tx store.Tx, c op.Caller) (Identity, error) {
 	switch {
 	case c.Local:
-		var u api.User
-		err := tx.QueryRowContext(ctx, "SELECT id, name, role, created_at FROM users WHERE role = ?", api.RoleOwner).
-			Scan(&u.ID, &u.Name, &u.Role, &u.CreatedAt)
+		u, err := scanUser(tx.QueryRowContext(ctx, "SELECT id, name, role, created_at FROM users WHERE role = ?", api.RoleOwner))
 		if err != nil {
 			return Identity{}, fmt.Errorf("read the Owner, whom the Local caller acts as: %w", err)
 		}
 		return Identity{User: u}, nil
 	case c.DeviceSession != "":
-		var u api.User
-		var d api.DeviceSession
-		err := tx.QueryRowContext(ctx, `SELECT u.id, u.name, u.role, u.created_at, d.id, d.device, d.created_at
-			FROM device_sessions d JOIN users u ON u.id = d.user_id WHERE d.id = ?`, c.DeviceSession).
-			Scan(&u.ID, &u.Name, &u.Role, &u.CreatedAt, &d.ID, &d.Device, &d.CreatedAt)
-		if errors.Is(err, sql.ErrNoRows) {
+		found, err := DeviceSessions(ctx, tx, "d.id = ?", c.DeviceSession)
+		if err != nil {
+			return Identity{}, err
+		}
+		if len(found) == 0 {
 			return Identity{}, fmt.Errorf("no Device Session is %s", c.DeviceSession)
 		}
-		if err != nil {
-			return Identity{}, fmt.Errorf("read the Device Session %s: %w", c.DeviceSession, err)
+		d := found[0]
+		if d.RevokedAt != "" {
+			return Identity{}, api.CodeRevoked.Errorf("the Device Session %q of this device was revoked", d.Device)
 		}
-		d.User = u.Name
+		u, err := scanUser(tx.QueryRowContext(ctx, `SELECT u.id, u.name, u.role, u.created_at
+			FROM device_sessions d JOIN users u ON u.id = d.user_id WHERE d.id = ?`, d.ID))
+		if err != nil {
+			return Identity{}, fmt.Errorf("read the User of the Device Session %s: %w", d.ID, err)
+		}
 		return Identity{User: u, DeviceSession: &d}, nil
 	}
 	return Identity{}, errors.New("the call came from neither the Unix socket nor a Device Session")
@@ -132,4 +137,46 @@ func (i Identity) Spaces(ctx context.Context, tx store.Tx) (Scope, error) {
 		return Scope{}, fmt.Errorf("read the Spaces %s can act in: %w", i.User.Name, err)
 	}
 	return s, nil
+}
+
+func scanUser(row *sql.Row) (api.User, error) {
+	var u api.User
+	err := row.Scan(&u.ID, &u.Name, &u.Role, &u.CreatedAt)
+	return u, err
+}
+
+// DeviceSessions returns the Device Sessions, live and Revoked, that the SQL
+// condition where selects with args, as the API returns them, ordered by
+// their User's name and then in the order they joined. The condition reads
+// the Device Session as d and its User as u. It is the one way a Device
+// Session record is read, so who is calling and the device operations
+// answer alike.
+func DeviceSessions(ctx context.Context, tx store.Tx, where string, args ...any) ([]api.DeviceSession, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT d.id, u.name, d.device, a.id, au.name, a.device,
+			d.created_at, d.last_used_at, d.revoked_at
+		FROM device_sessions d JOIN users u ON u.id = d.user_id
+		LEFT JOIN device_sessions a ON a.id = d.added_by LEFT JOIN users au ON au.id = a.user_id
+		WHERE `+where+` ORDER BY u.name, d.created_at, d.device, d.id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("read Device Sessions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var list []api.DeviceSession
+	for rows.Next() {
+		var d api.DeviceSession
+		var addedID, addedUser, addedDevice, lastUsed, revoked sql.NullString
+		err := rows.Scan(&d.ID, &d.User, &d.Device, &addedID, &addedUser, &addedDevice, &d.CreatedAt, &lastUsed, &revoked)
+		if err != nil {
+			return nil, fmt.Errorf("read Device Sessions: %w", err)
+		}
+		if addedID.Valid {
+			d.AddedBy = &api.DeviceSessionRef{ID: addedID.String, User: addedUser.String, Device: addedDevice.String}
+		}
+		d.LastUsedAt, d.RevokedAt = lastUsed.String, revoked.String
+		list = append(list, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read Device Sessions: %w", err)
+	}
+	return list, nil
 }

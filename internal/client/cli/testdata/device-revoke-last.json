@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "last_device_session",
+    "message": "alice/laptop is the Owner's last live Device Session: once it is revoked, only koko device add on the koko server's own machine adds a device for the Owner; to revoke it anyway, confirm with --last"
+  }
+}

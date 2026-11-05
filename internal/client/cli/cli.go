@@ -19,6 +19,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/cieons/koko/internal/client/apiclient"
 	"github.com/cieons/koko/internal/client/devicefiles"
@@ -125,6 +126,9 @@ type Input struct {
 
 	conn serverconn.Conn
 	api  *apiclient.Client
+	// joined is the client config of this device, when the connection is
+	// its Device Connection.
+	joined *devicefiles.Config
 }
 
 // Arg returns the positional argument with this name, as typed.
@@ -216,21 +220,52 @@ func (in *Input) connect(ctx context.Context) error {
 }
 
 // dialJoined opens a direct Device Connection to the koko server this
-// device joined, on a machine whose Unix socket path holds nothing.
+// device joined, on a machine whose Unix socket path holds nothing. When the
+// koko server refuses the device's key as a Revoked Device Session's, it
+// runs the revocation cleanup; a device that holds the revocation record
+// instead of a join is told why from it.
 func (in *Input) dialJoined(ctx context.Context, socket string) (serverconn.Conn, error) {
-	c, key, err := devicefiles.Read(in.inv.getenv("HOME"))
+	home := in.inv.getenv("HOME")
+	c, key, err := devicefiles.Read(home)
 	switch {
 	case errors.Is(err, devicefiles.ErrNotJoined):
-		return nil, &cliError{code: codeNotJoined, message: fmt.Sprintf(
-			"this device has not joined a koko server, and no koko server runs on this machine (nothing at %s): join one with koko join <join-code>", socket)}
+		return nil, notJoined(home, socket)
 	case err != nil:
 		return nil, err
 	}
 	conn, err := serverconn.DialDevice(ctx, serverconn.Device{Address: c.ServerAddress, HostKeys: c.HostKeys, Key: key})
+	if e, ok := errors.AsType[*serverconn.RevokedError](err); ok {
+		if err := devicefiles.Revoke(home, c, time.Now()); err != nil {
+			return nil, api.CodeRevoked.Errorf("%v, but koko could not delete this device's key and client config: %v", e, err)
+		}
+		return nil, api.CodeRevoked.Errorf("%v, so koko deleted this device's key and client config; %s", e, rejoin(c.ServerAddress))
+	}
 	if err != nil {
 		return nil, deviceConnError(c.ServerAddress, err)
 	}
+	in.joined = &c
 	return conn, nil
+}
+
+// notJoined is why a device that holds no join reaches no koko server: its
+// revocation record, when it keeps one, or that it never joined one.
+func notJoined(home, socket string) error {
+	r, err := devicefiles.ReadRevocation(home)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return &cliError{code: codeNotJoined, message: fmt.Sprintf(
+			"this device has not joined a koko server, and no koko server runs on this machine (nothing at %s): join one with koko join <join-code>", socket)}
+	case err != nil:
+		return err
+	}
+	return api.CodeRevoked.Errorf("%v (koko learned it at %s), so this device is no longer joined; %s",
+		&serverconn.RevokedError{Device: r.Device}, r.LearnedAt.Format(time.RFC3339), rejoin(r.ServerAddress))
+}
+
+// rejoin says how a device whose Device Session was Revoked reaches the koko
+// server at address again.
+func rejoin(address string) string {
+	return fmt.Sprintf("to reach the koko server at %s again, join with a new Join Code: koko join <join-code>", address)
 }
 
 // deviceConnError gives a Device Connection that failed to the koko server

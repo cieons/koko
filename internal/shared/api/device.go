@@ -1,5 +1,7 @@
 package api
 
+import "net/http"
+
 // JoinCode is a Join Code just issued, as the API returns it once: the code
 // itself is never stored and never shown again.
 type JoinCode struct {
@@ -16,15 +18,34 @@ type JoinCode struct {
 }
 
 // DeviceSession is a Device Session as the API returns it: the key one
-// device registered when it joined, under a name that never changes.
+// device registered when it joined, under a name that never changes. Every
+// time is RFC 3339 in UTC to the second.
 type DeviceSession struct {
 	ID string `json:"id"`
 	// User is the name of the User the device acts as.
 	User string `json:"user"`
 	// Device is the device's name, which its Join Code bound.
 	Device string `json:"device"`
-	// CreatedAt is when the device joined, as RFC 3339 in UTC to the second.
+	// AddedBy is the Device Session that issued the Join Code the device
+	// joined with, left out when the Unix socket issued it.
+	AddedBy *DeviceSessionRef `json:"added_by,omitzero"`
+	// CreatedAt is when the device joined.
 	CreatedAt string `json:"created_at"`
+	// LastUsedAt is when a Device Connection of the Device Session last
+	// opened a channel, kept to the minute; empty before the first.
+	LastUsedAt string `json:"last_used_at,omitempty"`
+	// RevokedAt is when the Device Session was Revoked; empty while it is
+	// live.
+	RevokedAt string `json:"revoked_at,omitempty"`
+}
+
+// DeviceSessionRef names a Device Session: by its id, which is unique for
+// ever, and by its User and device name, which a later Device Session of
+// that User may take once it is Revoked.
+type DeviceSessionRef struct {
+	ID     string `json:"id"`
+	User   string `json:"user"`
+	Device string `json:"device"`
 }
 
 // DeviceAddRequest issues a Join Code for one new device.
@@ -42,6 +63,37 @@ type DeviceAddResponse struct {
 	JoinCode JoinCode `json:"join_code"`
 }
 
+// DeviceListRequest lists Device Sessions.
+type DeviceListRequest struct {
+	// User narrows the list to one User's Device Sessions. Empty means the
+	// caller's own, or every User's for the Owner.
+	User string `json:"user,omitempty"`
+	// All adds the Revoked Device Sessions.
+	All bool `json:"all,omitzero"`
+}
+
+// DeviceListResponse is every Device Session device.list selected, by User
+// name and then in the order they joined.
+type DeviceListResponse struct {
+	DeviceSessions []DeviceSession `json:"device_sessions"`
+}
+
+// DeviceRevokeRequest revokes one live Device Session.
+type DeviceRevokeRequest struct {
+	// User is the User whose device it is. Empty means the caller's own; for
+	// the Local caller, the Owner.
+	User string `json:"user,omitempty"`
+	// Device is the device's name.
+	Device string `json:"device"`
+	// Last confirms revoking the Owner's last live Device Session.
+	Last bool `json:"last,omitzero"`
+}
+
+// DeviceRevokeResponse is the Device Session device.revoke Revoked.
+type DeviceRevokeResponse struct {
+	DeviceSession DeviceSession `json:"device_session"`
+}
+
 // The device operations.
 var (
 	// DeviceAdd issues a Join Code, valid for 15 minutes, for one new device
@@ -50,8 +102,43 @@ var (
 	// another live device or valid Join Code of that User holds is refused
 	// with CodeNameTaken.
 	DeviceAdd = Op[DeviceAddRequest, DeviceAddResponse]{Name: "device.add", Write: true}
+	// DeviceList lists the caller's own Device Sessions or, for the Owner,
+	// every User's; a Member naming another User is refused with
+	// CodeOwnerOnly.
+	DeviceList = Op[DeviceListRequest, DeviceListResponse]{Name: "device.list"}
+	// DeviceRevoke revokes one live Device Session of the caller's own User
+	// or, for the Owner, of any User, in one transaction with voiding the
+	// valid Join Codes it issued. A Device Session the caller may not revoke
+	// is refused with CodeUnknownDevice, as an unknown one is; the Owner's
+	// last live one, without Last, with CodeLastDeviceSession. Once it
+	// commits, the Device Session's Device Connections close.
+	DeviceRevoke = Op[DeviceRevokeRequest, DeviceRevokeResponse]{Name: "device.revoke", Write: true}
 )
 
 var deviceOperations = []Operation{
 	DeviceAdd,
+	DeviceList,
+	DeviceRevoke,
+}
+
+// The device area's codes.
+var (
+	// CodeRevoked: the call came on a Device Session that is Revoked. The
+	// CLI also answers it for a device whose Device Session the koko server
+	// refused as Revoked, and for one that keeps the record of it.
+	CodeRevoked = Code{"revoked", http.StatusUnauthorized}
+	// CodeUnknownDevice: the caller has no live Device Session by the name
+	// given that it may revoke; another User's, for a Member, is answered
+	// the same.
+	CodeUnknownDevice = Code{"unknown_device", http.StatusNotFound}
+	// CodeLastDeviceSession: the call would revoke the Owner's last live
+	// Device Session without confirming it, which would leave the Owner
+	// only the koko server's own machine to add a device from.
+	CodeLastDeviceSession = Code{"last_device_session", http.StatusConflict}
+)
+
+var deviceCodes = []Code{
+	CodeRevoked,
+	CodeUnknownDevice,
+	CodeLastDeviceSession,
 }

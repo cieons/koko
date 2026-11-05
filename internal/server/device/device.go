@@ -1,8 +1,10 @@
 // Package device is the device area of the koko server: the Join Codes a
 // User's new devices join with, and the Device Sessions they become (P0
 // spec: people and Spaces). It issues the codes, keeping only a hash of each
-// code's secret, so a copy of the database lets nobody join; and it answers
-// what a device's key is and whether a code's secret joins it.
+// code's secret, so a copy of the database lets nobody join; it answers
+// what a device's key is and whether a code's secret joins it; and it lists
+// and revokes Device Sessions, announcing each revocation on the
+// access-change signal.
 package device
 
 import (
@@ -10,6 +12,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/cieons/koko/internal/server/access"
@@ -50,9 +53,12 @@ func NewIssuer(target func(context.Context, store.Tx) (Target, error)) *Issuer {
 	return &Issuer{target: target}
 }
 
-// Register adds the device operations to the API, issuing with issuer.
-func Register(a *op.API, issuer *Issuer) {
+// Register adds the device operations to the API, issuing with issuer. Each
+// revocation is announced on changes and logged to log once it commits.
+func Register(a *op.API, issuer *Issuer, changes *access.Signal, log *slog.Logger) {
 	a.Handle(api.DeviceAdd, issuer.add)
+	a.Handle(api.DeviceList, list)
+	a.Handle(api.DeviceRevoke, revoker{changes: changes, log: log}.revoke)
 }
 
 func (i *Issuer) add(ctx context.Context, tx store.Tx, caller op.Caller, req api.DeviceAddRequest) (api.DeviceAddResponse, error) {

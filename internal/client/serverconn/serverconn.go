@@ -107,11 +107,24 @@ func (e *RefusedError) Error() string {
 	return e.Banner
 }
 
+// RevokedError says the koko server refused the device's key as the key of
+// a Revoked Device Session, which it names.
+type RevokedError struct {
+	// Device is the Revoked Device Session's device name.
+	Device string
+}
+
+// Error is the banner's sentence without its "koko: " and its full stop,
+// such as `the Device Session "laptop" of this device was revoked`.
+func (e *RevokedError) Error() string {
+	return strings.TrimSuffix(trimBanner(wire.RevokedBanner(e.Device)), ".")
+}
+
 // DialDevice opens a direct Device Connection to the koko server d names:
 // it checks the host key against the pinned ones before it authenticates,
 // then authenticates with the device's key. It fails with a
-// *HostKeyMismatchError, with ErrUnknownKey, with a *RefusedError, or with
-// the error of a koko server it could not reach.
+// *HostKeyMismatchError, with ErrUnknownKey, with a *RevokedError, with a
+// *RefusedError, or with the error of a koko server it could not reach.
 func DialDevice(ctx context.Context, d Device) (Conn, error) {
 	pinned := func(_ string, _ net.Addr, key ssh.PublicKey) error {
 		if slices.ContainsFunc(d.HostKeys, func(k ssh.PublicKey) bool { return bytes.Equal(k.Marshal(), key.Marshal()) }) {
@@ -135,6 +148,9 @@ func DialDevice(ctx context.Context, d Device) (Conn, error) {
 				// Code's secret.
 				return nil, ErrUnknownKey
 			case slices.Contains(c.TriedMethods, "publickey"):
+				if device, ok := wire.ParseRevokedBanner(banner); ok {
+					return nil, &RevokedError{Device: device}
+				}
 				return nil, &RefusedError{Banner: trimBanner(banner)}
 			}
 			return nil, nil

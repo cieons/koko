@@ -1,7 +1,7 @@
 // Package wire holds what both ends of a connection to the koko server agree
 // on: where the Unix socket is, the SSH version string, the channel types,
-// how an HTTP/1.1 exchange runs inside a channel (ADR 0015), and how a join
-// carries a Join Code's secret.
+// how an HTTP/1.1 exchange runs inside a channel (ADR 0015), how a join
+// carries a Join Code's secret, and how a Revoked device is told so.
 package wire
 
 import (
@@ -10,8 +10,10 @@ import (
 	"errors"
 	"io"
 	"net"
+	"strings"
 
 	"github.com/cieons/koko/internal/shared/joincode"
+	"github.com/cieons/koko/internal/shared/name"
 )
 
 // SocketPath is the koko server's fixed Unix socket. Every connection on it is
@@ -75,6 +77,33 @@ func Conn(ch io.ReadWriteCloser) net.Conn {
 // (P0 spec: people and Spaces, "Joining").
 func JoinSecret(secret [joincode.SecretSize]byte) string {
 	return hex.EncodeToString(secret[:])
+}
+
+// The parts of RevokedBanner around the device name.
+const (
+	revokedPrefix = `koko: the Device Session "`
+	revokedSuffix = `" of this device was revoked.` + "\n"
+)
+
+// RevokedBanner is the SSH banner the koko server answers a Revoked Device
+// Session's key with, once the device has signed with it: the device is
+// told by name that it was cut off (P0 spec: reach).
+func RevokedBanner(device string) string {
+	return revokedPrefix + device + revokedSuffix
+}
+
+// ParseRevokedBanner returns the device name a RevokedBanner names; ok is
+// false for any other banner.
+func ParseRevokedBanner(banner string) (device string, ok bool) {
+	rest, ok := strings.CutPrefix(banner, revokedPrefix)
+	if !ok {
+		return "", false
+	}
+	device, ok = strings.CutSuffix(rest, revokedSuffix)
+	if !ok || name.Check(device) != nil {
+		return "", false
+	}
+	return device, true
 }
 
 // ParseJoinSecret reads the secret from a password JoinSecret wrote; ok is

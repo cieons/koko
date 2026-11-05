@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/cieons/koko/internal/server/access"
 	"github.com/cieons/koko/internal/server/deployment"
 	"github.com/cieons/koko/internal/server/device"
 	"github.com/cieons/koko/internal/server/op"
@@ -124,10 +125,14 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 		register(a)
 	}
 	space.Register(a, user.ByName, holdings)
+	// The access-change signal: once a change that withdraws access
+	// commits, the transport closes the Device Connections it Revoked.
+	var changes access.Signal
+	changes.Subscribe(func(c access.Change) { t.CloseDeviceSessions(c.Revoked...) })
 	// The areas that issue Join Codes need what the process loaded to name
 	// the koko server in them.
 	issuer := device.NewIssuer(joinTarget(key, tcp.port))
-	device.Register(a, issuer)
+	device.Register(a, issuer, &changes, log)
 	user.Register(a, issuer.Issue)
 	registerServer(a, key, issuer, tcp, log)
 	registerSettings(a, &settings{

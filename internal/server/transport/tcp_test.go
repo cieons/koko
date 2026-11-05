@@ -3,13 +3,16 @@ package transport_test
 import (
 	"bufio"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -26,14 +29,20 @@ type fakeDevices struct {
 	mu sync.Mutex
 	// sessions are the Device Sessions' ids by their key in wire format.
 	sessions map[string]string
+	// revoked are the names of the Revoked Device Sessions by their key in
+	// wire format.
+	revoked map[string]string
 	// secrets are the ids of the Device Sessions each secret makes.
 	secrets map[[joincode.SecretSize]byte]string
 }
 
-func (f *fakeDevices) DeviceSession(_ context.Context, key ssh.PublicKey) (string, error) {
+func (f *fakeDevices) Key(_ context.Context, key ssh.PublicKey) (transport.DeviceKey, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.sessions[string(key.Marshal())], nil
+	if device, ok := f.revoked[string(key.Marshal())]; ok {
+		return transport.DeviceKey{DeviceSession: "device_r3v0k3d0", Device: device, Revoked: true}, nil
+	}
+	return transport.DeviceKey{DeviceSession: f.sessions[string(key.Marshal())]}, nil
 }
 
 func (f *fakeDevices) Join(_ context.Context, key ssh.PublicKey, password []byte, _ net.Addr) (string, error) {
@@ -49,9 +58,20 @@ func (f *fakeDevices) Join(_ context.Context, key ssh.PublicKey, password []byte
 	return id, nil
 }
 
+func (f *fakeDevices) Used(context.Context, string) error {
+	return nil
+}
+
 // startTCP serves h to Device Connections on a loopback port, through
 // devices, and returns the address and the host key's fingerprint.
 func startTCP(t *testing.T, h http.Handler, devices transport.Devices) (string, [sha256.Size]byte) {
+	t.Helper()
+	_, addr, fingerprint := serveTCP(t, h, devices)
+	return addr, fingerprint
+}
+
+// serveTCP is startTCP that also returns the transport.
+func serveTCP(t *testing.T, h http.Handler, devices transport.Devices) (*transport.Server, string, [sha256.Size]byte) {
 	t.Helper()
 	s := transport.New(h, h, slog.New(slog.DiscardHandler))
 	t.Cleanup(func() {
@@ -68,7 +88,52 @@ func startTCP(t *testing.T, h http.Handler, devices transport.Devices) (string, 
 	if err := s.ServeTCP(ln, hostKey, devices); err != nil {
 		t.Fatal(err)
 	}
-	return ln.Addr().String(), sha256.Sum256(hostKey.PublicKey().Marshal())
+	return s, ln.Addr().String(), sha256.Sum256(hostKey.PublicKey().Marshal())
+}
+
+// waitEnded fails the test unless conn ends within 10 s.
+func waitEnded(t *testing.T, conn serverconn.Conn, what string) {
+	t.Helper()
+	ended := make(chan struct{})
+	go func() {
+		_ = conn.Wait()
+		close(ended)
+	}()
+	select {
+	case <-ended:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("%s is still open after 10 s", what)
+	}
+}
+
+// CloseDeviceSessions closes the Device Connections of the Device Sessions
+// it names, and no other's. From then on it refuses their connections, even
+// one that authenticated as one of them while the revocation committed:
+// here through a device area that still answers the key as live.
+func TestClosingADeviceSessionClosesItsConnectionsAndRefusesNew(t *testing.T) {
+	revoked, other := sshhost.NewKey(t, ssh.KeyAlgoED25519), sshhost.NewKey(t, ssh.KeyAlgoED25519)
+	devices := &fakeDevices{sessions: map[string]string{
+		string(revoked.PublicKey().Marshal()): "device_3f9k2m7q",
+		string(other.PublicKey().Marshal()):   "device_7h2k9m3q",
+	}}
+	s, addr, _ := serveTCP(t, whoAmI, devices)
+	dial := func(key ssh.Signer) serverconn.Conn {
+		t.Helper()
+		conn, err := serverconn.DialDevice(t.Context(), serverconn.Device{Address: addr, HostKeys: hostKeysAt(t, addr), Key: key})
+		if err != nil {
+			t.Fatalf("dial the Device Connection: %v", err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		return conn
+	}
+	before, kept := dial(revoked), dial(other)
+
+	s.CloseDeviceSessions("device_3f9k2m7q")
+	waitEnded(t, before, "the closed Device Session's connection")
+	waitEnded(t, dial(revoked), "a new connection of the closed Device Session")
+	if got := callerOn(t, kept); got != "device session device_7h2k9m3q" {
+		t.Errorf("caller on the other Device Session's connection = %q", got)
+	}
 }
 
 // callerOn makes one call on a new api@koko channel of conn and returns the
@@ -137,6 +202,39 @@ func TestAnUnknownKeyJoinsWithAJoinCodesSecret(t *testing.T) {
 	defer func() { _ = again.Close() }()
 	if got := callerOn(t, again); got != "device session device_7h2k9m3q" {
 		t.Errorf("caller = %q, want the Device Session the join made", got)
+	}
+}
+
+// forgedSigner offers a public key without its private half: its
+// signatures are garbage.
+type forgedSigner struct {
+	key ssh.PublicKey
+}
+
+func (f forgedSigner) PublicKey() ssh.PublicKey {
+	return f.key
+}
+
+func (f forgedSigner) Sign(io.Reader, []byte) (*ssh.Signature, error) {
+	return &ssh.Signature{Format: f.key.Type(), Blob: make([]byte, ed25519.SignatureSize)}, nil
+}
+
+// A Revoked Device Session's key is refused with a banner naming its
+// device, and only once the device has signed with it: offering the key
+// without its private half learns nothing of the Device Session.
+func TestARevokedKeyIsToldByNameOnlyAfterItsSignature(t *testing.T) {
+	key := sshhost.NewKey(t, ssh.KeyAlgoED25519)
+	devices := &fakeDevices{revoked: map[string]string{string(key.PublicKey().Marshal()): "laptop"}}
+	addr, _ := startTCP(t, whoAmI, devices)
+	device := serverconn.Device{Address: addr, HostKeys: hostKeysAt(t, addr), Key: key}
+	_, err := serverconn.DialDevice(t.Context(), device)
+	if e, ok := errors.AsType[*serverconn.RevokedError](err); !ok || e.Device != "laptop" {
+		t.Errorf("a Device Connection with a Revoked key = %v, want it refused as the Revoked laptop's", err)
+	}
+	device.Key = forgedSigner{key.PublicKey()}
+	_, err = serverconn.DialDevice(t.Context(), device)
+	if e, ok := errors.AsType[*serverconn.RefusedError](err); !ok || e.Banner != "" {
+		t.Errorf("a Device Connection offering the Revoked key without signing = %v, want a refusal with no banner", err)
 	}
 }
 

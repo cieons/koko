@@ -56,9 +56,10 @@ call it inside their own transaction. It:
    that is not a User name is refused with `invalid_name`, and one no User
    holds with `unknown_user` (404);
 2. binds the device name given, or `device-<n>`, where n counts up from one
-   past the number of Device Sessions the User has ever had, past every name
-   taken. A name is taken while one of that User's live Device Sessions or
-   valid Join Codes holds it, so two live codes never collide; a name given
+   past the number of Device Sessions the User has ever had, Revoked ones
+   included, past every name taken. A name is taken while one of that
+   User's live Device Sessions or valid Join Codes holds it, so two live
+   codes never collide; a name given
    is checked as a lowercase DNS label (`invalid_name`) and refused when
    taken (`name_taken`);
 3. reads what the code names inside the transaction, so that the first code
@@ -88,7 +89,7 @@ User or any Space holds, then issues their first code, in one transaction.
 
 | Table | What it holds |
 | --- | --- |
-| `join_codes` | One row per code issued: its id (`joincode_...`), its User, the hash of its secret, its device name, its issuer (NULL for the Unix socket, else the issuing Device Session's id), its expiry, and the times it was used or voided. A code is valid while it is neither used nor voided and has not expired; a join marks it used. Spent codes are kept, for the P1 audit log. |
+| `join_codes` | One row per code issued: its id (`joincode_...`), its User, the hash of its secret, its device name, its issuer (NULL for the Unix socket, else the issuing Device Session's id), its expiry, and the times it was used or voided. A code is valid while it is neither used nor voided and has not expired; a join marks it used, and revoking its issuer voids it while it is valid ([revoking](device-connection.md#revoking)). Spent codes are kept, for the P1 audit log. |
 
 The koko server keeps neither the code nor its secret, only
 `SHA-256("koko Join Code secret\0" ‖ secret)`, unique per row, which joining
