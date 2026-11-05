@@ -24,6 +24,7 @@ ADR; a proposed change lives in its issue or PR.
 | Join Codes: the `koko_` string, issuing them, device names, and the hash kept of each | [join-codes.md](join-codes.md) |
 | `koko web` and the web front: the listener, the `web@koko` channel, the Host guard, the token and the cookie, the port-owner lookup | [web-front.md](web-front.md) |
 | The Device Connection and joining: the TCP listener, device authentication, `koko join`, the device's files, koko's ssh_config, known_hosts and the Include line, which koko server the CLI reaches, last used, revoking a Device Session, the access-change signal and the revocation record | [device-connection.md](device-connection.md) |
+| The Device Mux: which way a command goes and the direct path, starting it, the lock, its socket and runtime directory, the local protocol, its state, the idle exit and the revocation disconnect | [device-mux.md](device-mux.md) |
 | The access check and Spaces: who is calling, the rule, unseen equals unknown, memberships, what a Space holds, the access matrix | [access.md](access.md) |
 | Users: the record, `user ls`, and `user remove` deleting a User who never joined or Removing anyone else | [users.md](users.md) |
 | The record: a Host's fields and their rules, a Service and its ports, Attributes, the Preset Attributes and the four types, the Note, the host and service operations and `attr.list`, filtering and sorting, relative dates, the one leak | [record.md](record.md) |

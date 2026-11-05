@@ -8,6 +8,7 @@
     "code": "not_joined",
     "message": "this device has not joined a koko server, and no koko server runs on this machine (nothing at <socket>): join one with koko join <join-code>"
   },
+  "device_mux": null,
   "revocation": null,
   "include_warning": null
 }

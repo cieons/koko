@@ -30,6 +30,14 @@ const (
 	// command that takes milliseconds, so a Host that has not answered by
 	// then never will.
 	EnrollAddKey = 30 * time.Second
+	// DeviceMuxIdle is how long a Device Mux runs with nothing open, no
+	// command, koko web or koko tunnel connected to it, before it exits.
+	DeviceMuxIdle = 10 * time.Minute
+	// DeviceMuxStart bounds how long a command waits for the socket of a
+	// Device Mux it started, and how long a Device Mux starting waits for
+	// the lock of one of its build that is exiting. A start takes
+	// milliseconds; past this, the command opens its own Device Connection.
+	DeviceMuxStart = 5 * time.Second
 )
 
 // Timings is the timing-constants hook. Each field is named after its
@@ -40,6 +48,8 @@ type Timings struct {
 	HostConnectWait    time.Duration
 	InstallSocketWait  time.Duration
 	EnrollAddKey       time.Duration
+	DeviceMuxIdle      time.Duration
+	DeviceMuxStart     time.Duration
 }
 
 // Resolve returns t with each zero field set to the product's constant.
@@ -48,5 +58,7 @@ func (t Timings) Resolve() Timings {
 	t.HostConnectWait = cmp.Or(t.HostConnectWait, HostConnectWait)
 	t.InstallSocketWait = cmp.Or(t.InstallSocketWait, InstallSocketWait)
 	t.EnrollAddKey = cmp.Or(t.EnrollAddKey, EnrollAddKey)
+	t.DeviceMuxIdle = cmp.Or(t.DeviceMuxIdle, DeviceMuxIdle)
+	t.DeviceMuxStart = cmp.Or(t.DeviceMuxStart, DeviceMuxStart)
 	return t
 }

@@ -38,6 +38,14 @@ const Version = "SSH-2.0-koko"
 // costs no round trip.
 const RequestReport = "report@koko"
 
+// RequestRevoked is the SSH global request the koko server sends a Device
+// Connection, wanting no reply and with no payload, just before it closes the
+// connection because its Device Session was Revoked: the revocation
+// disconnect, which tells whoever holds the connection to run the revocation
+// cleanup. A device that misses it learns the same from RevokedBanner on
+// its next connection.
+const RequestRevoked = "revoked@koko"
+
 // Report is the koko server's version and operations report. Within /v1 a
 // koko server only adds operations, so a CLI calls an operation only when
 // the report lists it, and otherwise says the koko server is too old.

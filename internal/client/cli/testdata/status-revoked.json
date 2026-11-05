@@ -8,6 +8,7 @@
     "code": "revoked",
     "message": "the Device Session \"laptop\" of this device was revoked, so koko deleted this device's key and client config; to reach the koko server at <server address> again, join with a new Join Code: koko join <join-code>"
   },
+  "device_mux": null,
   "revocation": {
     "server_address": "<server address>",
     "device_session": {

@@ -5,6 +5,7 @@
   "cli_version": "<version>",
   "server_version": "<version>",
   "server_error": null,
+  "device_mux": null,
   "revocation": null,
   "include_warning": null
 }

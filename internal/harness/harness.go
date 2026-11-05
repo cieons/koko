@@ -18,6 +18,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -365,6 +366,17 @@ type Device struct {
 	t      testing.TB
 	home   string
 	runner cli.Runner
+	// env are the variables its commands get beside HOME.
+	env []string
+	// muxes are the Device Muxes it started, when it starts any
+	// (NewMuxDevice).
+	muxes *muxes
+}
+
+// environ returns the environment the device's commands run with, and
+// then extra.
+func (d *Device) environ(extra ...string) []string {
+	return slices.Concat([]string{"HOME=" + d.home}, d.env, extra)
 }
 
 // NewDevice returns a device that has not joined a koko server. Its HOME
@@ -419,14 +431,14 @@ func (d *Device) Dial() serverconn.Conn {
 // stdin.
 func (d *Device) Koko(args ...string) Result {
 	d.t.Helper()
-	return run(d.t, d.runner, []string{"HOME=" + d.home}, "", args...)
+	return run(d.t, d.runner, d.environ(), "", args...)
 }
 
 // KokoStdin runs one koko command line in process on the device, with
 // stdin as its stdin.
 func (d *Device) KokoStdin(stdin string, args ...string) Result {
 	d.t.Helper()
-	return run(d.t, d.runner, []string{"HOME=" + d.home}, stdin, args...)
+	return run(d.t, d.runner, d.environ(), stdin, args...)
 }
 
 // Run runs one koko command line in process with the runner r and the

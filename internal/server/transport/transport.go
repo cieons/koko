@@ -325,6 +325,10 @@ func (s *Server) serve(nc net.Conn, w wayIn) {
 	defer ended()
 	connection := &Connection{ctx: ctx, ssh: conn, caller: caller}
 	if !s.trackConn(connection) {
+		if s.isRevoked(caller.DeviceSession) {
+			// It authenticated while its revocation committed.
+			disconnectRevoked(conn)
+		}
 		_ = conn.Close()
 		return
 	}
@@ -408,7 +412,24 @@ func (s *Server) closeRevoked(c *Connection) {
 	}
 	s.log.Info("device connection closed", "device_session", c.caller.DeviceSession,
 		"addr", c.ssh.RemoteAddr(), "reason", "revoked")
+	disconnectRevoked(c.ssh)
 	_ = c.ssh.Close()
+}
+
+// disconnectRevoked tells a Revoked Device Session's connection why it is
+// about to close (wire.RequestRevoked), so the device runs the revocation
+// cleanup at once. SSH has no reason on a close, and x/crypto/ssh sends no
+// disconnect message; a device that misses the request learns the same from
+// the Revoked banner on its next connection.
+func disconnectRevoked(conn ssh.Conn) {
+	_, _, _ = conn.SendRequest(wire.RequestRevoked, false, nil)
+}
+
+// isRevoked tells whether CloseDeviceSessions closed the Device Session id.
+func (s *Server) isRevoked(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return id != "" && s.revoked[id]
 }
 
 // Close stops listening and accepting channels, waits up to shutdownGrace for

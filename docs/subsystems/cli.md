@@ -154,8 +154,18 @@ status. A command reaches the koko server only on its first `in.Call`, so
   ([the API client](api.md#the-api-client)); only when that one drops too
   does the command fail, with `server_unreachable`.
 - **Which koko server:** the Unix socket when it is at its path, and
-  otherwise the koko server this device joined, over a direct Device
-  Connection ([the Device Connection](device-connection.md#which-koko-server-the-cli-reaches)).
+  otherwise the koko server this device joined, through this build's Device
+  Mux, which `cli.Runner.StartDeviceMux` starts when none answers, or over
+  a direct Device Connection of the command's own, which `KOKO_DIRECT=1`
+  forces ([the Device Connection](device-connection.md#which-koko-server-the-cli-reaches),
+  [the Device Mux](device-mux.md#which-way-a-command-goes)).
+- **The command's own log** goes to stderr in slog's text format at the
+  level `KOKO_LOG_LEVEL` names (`debug`, `info`, `warn` or `error`, as
+  `koko server run --log-level` takes; info when unset, and any other value
+  refuses the command line with `invalid_usage`); only debug lines exist so
+  far, such as the direct path's one. `koko device-mux`, the
+  Device Mux's entry point, is no command of the tree
+  ([the Device Mux](device-mux.md#starting-the-lock-and-the-socket)).
 
 ## `--json`
 
@@ -196,7 +206,7 @@ one `koko join koko_...` line to paste on the new device. `koko join` says
 which koko server it joined, as whose device, then any Include warning.
 `koko status` lists its
 fields one per line (`Server Address:`, `User:`, `Device:`, `Unix socket:`,
-`koko server:`, `This CLI:`, `Revoked:`), then any Include warning. `koko device ls` names who
+`koko server:`, `Device Mux:`, `This CLI:`, `Revoked:`), then any Include warning. `koko device ls` names who
 added each device as `<user>/<device>` or `unix socket`, and adds a REVOKED
 column when it lists a Revoked one; `koko device revoke` says which device it
 revoked, and when it was this device, that koko deleted its files. `koko
@@ -228,7 +238,7 @@ remove` says whether it deleted the User, freeing the name, or Removed them.
 | `koko secret rename <space>/<secret> <new-name>` | reversible | `secret.rename` | the Secret under its new name |
 | `koko secret move <space>/<secret> <space>` | reversible | `secret.move` | the Secret in its new Space |
 | `koko secret rm <space>/<secret>` | irreversible | `secret.remove` | the Secret it deleted, as it was, without its value |
-| `koko status` | read | none: the koko server's version comes from its report | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_error", "revocation", "include_warning"}`, below |
+| `koko status` | read | none: the koko server's version comes from its report | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_error", "device_mux", "revocation", "include_warning"}`, below |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
 | `koko server run [--data-dir <dir>] [--root-key-file <file>] [--listen <addr>] [--log-level <level>]` | irreversible | none | nothing on success |
@@ -280,7 +290,14 @@ caller; `cli_version` is this koko's version and `server_version` the one
 the koko server reported on connecting, or `null`; `server_error` is the
 error object (`{"code", "message"}`) any command that calls the koko server
 would fail with now, such as `not_joined`, `revoked` or
-`server_unreachable`, or `null`; `revocation` is the revocation record,
+`server_unreachable`, or `null`; `device_mux` is the
+[Device Mux](device-mux.md) status reached the koko server through,
+`{"socket", "state", "since", "last_error"}`, where `state` is `connected`
+(since it opened its Device Connection, `last_error` `null`) or
+`reconnecting` (since its Device Connection dropped or its first try
+failed, `last_error` the error object of its last try, as `server_error`
+shows it), or `null` when status went another way (the Unix socket, the
+direct path) or found no join; `revocation` is the revocation record,
 `{"server_address", "device_session", "learned_at"}` with the Device Session
 in the same shape, or `null`; and `include_warning` says why ssh does not
 read koko's ssh_config for every host and how to fix it (the Include line

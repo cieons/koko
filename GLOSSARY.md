@@ -163,6 +163,10 @@ _Avoid_: tombstone, revoked flag
 The background process on a device that holds its one Device Connection and carries every koko command and Tunnel of that device over it.
 _Avoid_: daemon, agent, mux (alone), master
 
+**Direct path**:
+A command on a joined device opening a Device Connection of its own because no Device Mux can carry it, or because `KOKO_DIRECT=1` asks it to.
+_Avoid_: fallback, standalone mode, no-mux
+
 **SSH Session**:
 One SSH connection through the Gateway to a Host.
 _Avoid_: session (alone), connection

@@ -3,12 +3,13 @@
 // DialSocket implements it over the Unix socket as the Local caller, and
 // DialDevice over a direct Device Connection to the koko server a device
 // joined, as its Device Session; Join opens the Device Connection that
-// joins. The Device Mux implements Conn later, so commands written against
-// Conn do not change.
+// joins. The Device Mux (package devicemux) implements it over its own
+// socket with Handshake, so commands written against Conn do not change.
 package serverconn
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -18,6 +19,7 @@ import (
 	"net"
 	"slices"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/ssh"
 
@@ -29,17 +31,24 @@ import (
 type Conn interface {
 	// Report returns the koko server's version and operations report, which
 	// it sends unasked once the connection has authenticated
-	// (wire.RequestReport), waiting for it if it has not arrived yet. It
+	// (wire.RequestReport), waiting for it if it has not arrived yet; over
+	// a Device Mux, the report of the Device Connection it holds now. It
 	// fails when the connection ends without one, or ctx ends first.
 	Report(ctx context.Context) (wire.Report, error)
 	// OpenChannel opens a channel of the given type, such as wire.ChannelAPI,
 	// with its open payload, nil for none.
 	OpenChannel(ctx context.Context, kind string, payload []byte) (io.ReadWriteCloser, error)
-	// Wait blocks until the connection has ended, and returns why.
+	// Wait blocks until the connection has ended, and returns why: an error
+	// wrapping ErrRevoked when the koko server ended it because its Device
+	// Session was Revoked.
 	Wait() error
 	// Close ends the connection and every channel on it.
 	Close() error
 }
+
+// ErrRevoked says the koko server ended a Device Connection because its
+// Device Session was Revoked (wire.RequestRevoked).
+var ErrRevoked = errors.New("the koko server ended the connection: this device's Device Session was revoked")
 
 // user is the SSH user name koko sends; it identifies nobody.
 const user = "koko"
@@ -54,16 +63,27 @@ func DialSocket(ctx context.Context, path string) (Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	stop := context.AfterFunc(ctx, func() { _ = nc.Close() })
-	defer stop()
-	conn, chans, reqs, err := ssh.NewClientConn(nc, path, &ssh.ClientConfig{
-		User:            user,
-		ClientVersion:   wire.Version,
+	conn, err := Handshake(ctx, nc, path, &ssh.ClientConfig{
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // the socket's directory is its pin
 	})
 	if err != nil {
-		_ = nc.Close()
 		return nil, fmt.Errorf("SSH handshake: %w", err)
+	}
+	return conn, nil
+}
+
+// Handshake runs the SSH handshake with cfg over nc, a connection to addr,
+// with koko's version string, as user koko unless cfg names another (the
+// Device Mux takes the command's home there), and returns the Conn on it.
+// It gives up when ctx ends. On failure it closes nc.
+func Handshake(ctx context.Context, nc net.Conn, addr string, cfg *ssh.ClientConfig) (Conn, error) {
+	stop := context.AfterFunc(ctx, func() { _ = nc.Close() })
+	defer stop()
+	cfg.User, cfg.ClientVersion = cmp.Or(cfg.User, user), wire.Version
+	conn, chans, reqs, err := ssh.NewClientConn(nc, addr, cfg)
+	if err != nil {
+		_ = nc.Close()
+		return nil, err
 	}
 	return newSSHConn(conn, chans, reqs), nil
 }
@@ -221,21 +241,13 @@ func Join(ctx context.Context, address string, fingerprint [sha256.Size]byte, ke
 // dialTCP connects to the koko server at address and runs the SSH
 // handshake with cfg, as user koko with koko's version string, or gives up
 // when ctx ends.
-func dialTCP(ctx context.Context, address string, cfg *ssh.ClientConfig) (*sshConn, error) {
+func dialTCP(ctx context.Context, address string, cfg *ssh.ClientConfig) (Conn, error) {
 	var d net.Dialer
 	nc, err := d.DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, err
 	}
-	stop := context.AfterFunc(ctx, func() { _ = nc.Close() })
-	defer stop()
-	cfg.User, cfg.ClientVersion = user, wire.Version
-	conn, chans, reqs, err := ssh.NewClientConn(nc, address, cfg)
-	if err != nil {
-		_ = nc.Close()
-		return nil, err
-	}
-	return newSSHConn(conn, chans, reqs), nil
+	return Handshake(ctx, nc, address, cfg)
 }
 
 // trimBanner turns a koko server's banner, such as "koko: the Join Code is
@@ -249,38 +261,66 @@ type sshConn struct {
 	client *ssh.Client
 	// reported is closed once report and reportErr hold the koko server's
 	// report, or why there is none.
-	reported  chan struct{}
+	reported chan struct{}
+	// requestsDone is closed once the connection has ended and every global
+	// request it carried has been taken.
+	requestsDone chan struct{}
+
+	mu        sync.Mutex
 	report    wire.Report
 	reportErr error
+	// revoked tells that the koko server said, before it ended the
+	// connection, that its Device Session was Revoked.
+	revoked bool
 }
 
 // newSSHConn returns a Conn over an SSH connection that has authenticated.
-// It takes the koko server's global requests itself: it keeps the first
-// report and refuses every other request, as ssh.Client does.
+// It takes the koko server's global requests itself: it keeps the latest
+// report, notes a revocation, and refuses every other request, as
+// ssh.Client does.
 func newSSHConn(conn ssh.Conn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request) *sshConn {
 	none := make(chan *ssh.Request)
 	close(none)
-	c := &sshConn{client: ssh.NewClient(conn, chans, none), reported: make(chan struct{})}
+	c := &sshConn{
+		client:       ssh.NewClient(conn, chans, none),
+		reported:     make(chan struct{}),
+		requestsDone: make(chan struct{}),
+	}
 	go c.takeRequests(reqs)
 	return c
 }
 
 // takeRequests answers the koko server's global requests until the
-// connection ends, keeping the first report.
+// connection ends. A koko server reports once; a Device Mux reports again
+// for each Device Connection it opens, and the latest report holds: one
+// that does not parse leaves the report unknown, not the one before.
 func (c *sshConn) takeRequests(reqs <-chan *ssh.Request) {
+	defer close(c.requestsDone)
 	got := false
 	for r := range reqs {
-		if !got && r.Type == wire.RequestReport {
-			c.report, c.reportErr = wire.ParseReport(r.Payload)
-			got = true
-			close(c.reported)
+		switch r.Type {
+		case wire.RequestReport:
+			report, err := wire.ParseReport(r.Payload)
+			c.mu.Lock()
+			c.report, c.reportErr = report, err
+			c.mu.Unlock()
+			if !got {
+				got = true
+				close(c.reported)
+			}
+		case wire.RequestRevoked:
+			c.mu.Lock()
+			c.revoked = true
+			c.mu.Unlock()
 		}
 		if r.WantReply {
 			_ = r.Reply(false, nil)
 		}
 	}
 	if !got {
+		c.mu.Lock()
 		c.reportErr = errors.New("the connection to the koko server ended before it reported its version")
+		c.mu.Unlock()
 		close(c.reported)
 	}
 }
@@ -288,6 +328,8 @@ func (c *sshConn) takeRequests(reqs <-chan *ssh.Request) {
 func (c *sshConn) Report(ctx context.Context) (wire.Report, error) {
 	select {
 	case <-c.reported:
+		c.mu.Lock()
+		defer c.mu.Unlock()
 		return c.report, c.reportErr
 	case <-ctx.Done():
 		return wire.Report{}, fmt.Errorf("wait for the koko server's report: %w", ctx.Err())
@@ -326,7 +368,16 @@ func (c *sshConn) OpenChannel(ctx context.Context, kind string, payload []byte) 
 }
 
 func (c *sshConn) Wait() error {
-	return c.client.Wait()
+	err := c.client.Wait()
+	// The requests the connection carried before it ended are all taken
+	// once this closes, a revocation among them.
+	<-c.requestsDone
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.revoked {
+		return ErrRevoked
+	}
+	return err
 }
 
 func (c *sshConn) Close() error {

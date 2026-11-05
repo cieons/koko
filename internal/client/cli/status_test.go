@@ -3,12 +3,15 @@ package cli_test
 import (
 	"encoding/json/v2"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/cieons/koko/internal/client/devicemux"
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/shared/build"
+	"github.com/cieons/koko/internal/shared/timing"
 )
 
 // deviceSessionRef is a Device Session as koko status names one, and as
@@ -26,16 +29,25 @@ type statusOut struct {
 	Socket        *string           `json:"socket"`
 	CLIVersion    string            `json:"cli_version"`
 	ServerVersion *string           `json:"server_version"`
-	ServerError   *struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	} `json:"server_error"`
+	ServerError   *errorOut         `json:"server_error"`
+	DeviceMux     *struct {
+		Socket    string    `json:"socket"`
+		State     string    `json:"state"`
+		Since     string    `json:"since"`
+		LastError *errorOut `json:"last_error"`
+	} `json:"device_mux"`
 	Revocation *struct {
 		ServerAddress string           `json:"server_address"`
 		DeviceSession deviceSessionRef `json:"device_session"`
 		LearnedAt     string           `json:"learned_at"`
 	} `json:"revocation"`
 	IncludeWarning *string `json:"include_warning"`
+}
+
+// errorOut is an error object as koko status prints one inside its result.
+type errorOut struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 // versionField matches a version koko status prints, which depends on the
@@ -158,6 +170,58 @@ func TestStatusWhenTheKokoServerIsUnreachable(t *testing.T) {
 	s, _ := status(t, d.Koko)
 	if s.ServerError == nil || s.ServerError.Code != "server_unreachable" || s.ServerVersion != nil || s.ServerAddress == nil {
 		t.Errorf("status with the koko server stopped = %+v", s)
+	}
+}
+
+// On a device whose commands go through the Device Mux, koko status shows
+// it: its socket, and connected since it opened its Device Connection. Once
+// the koko server stops, the Device Mux is reconnecting since the drop, and
+// its last error is what status's own connection failed with.
+func TestStatusShowsTheDeviceMux(t *testing.T) {
+	h, _, d := muxDevice(t, timing.Timings{})
+	c := readClientConfig(t, d)
+	socket := filepath.Join(d.RuntimeDir(), "koko", devicemux.Name(build.Read())+".sock")
+	s, out := status(t, d.Koko, c.ServerAddress, "<server address>", socket, "<socket>")
+	harness.Golden(t, "status-device-mux.json", out)
+	if m := s.DeviceMux; m == nil || m.Socket != socket || m.State != "connected" || m.LastError != nil || s.ServerVersion == nil {
+		t.Fatalf("status through the Device Mux = %+v, device_mux %+v", s, deref(s.DeviceMux))
+	}
+	connected := s.DeviceMux.Since
+	r := d.Koko("status")
+	r.WantSuccess(t)
+	if want := "Device Mux:      connected since " + connected + " (" + socket + ")\n"; !strings.Contains(r.Stdout, want) {
+		t.Errorf("status says\n%s\nwith no line %q", r.Stdout, want)
+	}
+
+	h.Stop()
+	waitLog(t, d, `msg="device connection dropped"`)
+	s, _ = status(t, d.Koko)
+	m := s.DeviceMux
+	if m == nil || m.State != "reconnecting" || m.LastError == nil || s.ServerError == nil || *m.LastError != *s.ServerError || m.LastError.Code != "server_unreachable" {
+		t.Fatalf("status with the koko server stopped = %+v, device_mux %+v", s, deref(m))
+	}
+	if m.Since < connected {
+		t.Errorf("the Device Mux is reconnecting since %s, before it connected at %s", m.Since, connected)
+	}
+	again, _ := status(t, d.Koko)
+	if again.DeviceMux == nil || again.DeviceMux.Since != m.Since {
+		t.Errorf("a second try left the Device Mux reconnecting since %v, want still %s", deref(again.DeviceMux), m.Since)
+	}
+	r = d.Koko("status")
+	r.WantSuccess(t)
+	// Each try's error names the local port it tried from.
+	if want := "Device Mux:      reconnecting since " + m.Since + " (" + socket + "): cannot reach the koko server at " + c.ServerAddress; !strings.Contains(r.Stdout, want) {
+		t.Errorf("status says\n%s\nwith no line %q", r.Stdout, want)
+	}
+}
+
+// Without a Device Mux, on the direct path, koko status shows none.
+func TestStatusShowsNoDeviceMuxOnTheDirectPath(t *testing.T) {
+	_, _, d := muxDevice(t, timing.Timings{})
+	r := d.KokoEnv([]string{"KOKO_DIRECT=1"}, "status", "--json")
+	r.WantSuccess(t)
+	if !strings.Contains(r.Stdout, `"device_mux": null`) {
+		t.Errorf("status with KOKO_DIRECT=1 printed %s, want device_mux null", r.Stdout)
 	}
 }
 

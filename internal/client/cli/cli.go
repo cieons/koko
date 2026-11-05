@@ -18,14 +18,17 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/cieons/koko/internal/client/apiclient"
 	"github.com/cieons/koko/internal/client/devicefiles"
+	"github.com/cieons/koko/internal/client/devicemux"
 	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/install"
+	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -50,9 +53,22 @@ type Runner struct {
 	// server uninstall` refuses.
 	ServerUninstall func(ctx context.Context) (install.UninstallReport, error)
 
+	// StartDeviceMux starts this build's Device Mux in the background, with
+	// the environment env, for a command on a joined device that finds none
+	// answering at socket, and for koko join; it does not wait for it to
+	// listen, and the Device Mux outlives ctx, the command's. The channel it
+	// returns closes if the Device Mux exits. cmd/koko sets it to start this
+	// binary, detached (devicemux.Spawn); the S1 harness runs one in the test
+	// process. Where it is nil, commands open their own Device Connection.
+	StartDeviceMux func(ctx context.Context, socket string, env []string) (exited <-chan struct{}, err error)
+
 	// SocketPath is the socket-path hook, for tests only: empty means the
 	// fixed wire.SocketPath. No flag or environment variable sets it.
 	SocketPath string
+
+	// Timings is the timing-constants hook, for tests only: the zero
+	// Timings is the product's. No flag or environment variable sets it.
+	Timings timing.Timings
 
 	// Terminal is the fake-terminal hook, for tests only: when set, stdin is
 	// this terminal, so a secret input not given prompts on it. Nil means
@@ -115,11 +131,18 @@ func (inv *Invocation) lookupEnv(key string) (value string, ok bool) {
 // On failure stdout stays empty and the error goes to stderr, as an error
 // object when --json was given.
 func (r *Runner) Run(ctx context.Context, inv Invocation) int {
+	if slices.Equal(inv.Args, []string{devicemux.Arg}) {
+		return r.runDeviceMux(ctx, &inv)
+	}
 	p, err := parse(Tree(), inv.Args, inv.getenv)
 	if err != nil {
 		return writeError(inv.Stderr, err, wantsJSON(inv.Args))
 	}
-	in := &Input{inv: &inv, runner: r, line: p}
+	log, err := logger(&inv)
+	if err != nil {
+		return writeError(inv.Stderr, err, p.json)
+	}
+	in := &Input{inv: &inv, runner: r, line: p, log: log}
 	defer in.close()
 	res, err := p.cmd.Run.run(ctx, in)
 	if err != nil {
@@ -140,6 +163,9 @@ type Input struct {
 	inv    *Invocation
 	runner *Runner
 	line   *parsed
+	// log is the command's own log on stderr, at the level KOKO_LOG_LEVEL
+	// names (info by default), for what only someone debugging wants.
+	log *slog.Logger
 
 	// api calls the koko server, dialling it on the first call; nil until
 	// then.
@@ -150,6 +176,9 @@ type Input struct {
 	// socket is the path of the Unix socket the connection went over, when
 	// it did.
 	socket string
+	// deviceMux is the Device Mux the latest connection reached, and the
+	// state it answered in; nil when none answered.
+	deviceMux *deviceMuxSeen
 }
 
 // Arg returns the positional argument with this name, as typed.
@@ -251,11 +280,12 @@ func (in *Input) connect(ctx context.Context) (serverconn.Conn, error) {
 	return conn, nil
 }
 
-// dialJoined opens a direct Device Connection to the koko server this
-// device joined, on a machine whose Unix socket path holds nothing. When the
-// koko server refuses the device's key as a Revoked Device Session's, it
-// runs the revocation cleanup; a device that holds the revocation record
-// instead of a join is told why from it.
+// dialJoined reaches the koko server this device joined, on a machine whose
+// Unix socket path holds nothing: through this build's Device Mux, or over a
+// direct Device Connection of its own when no Device Mux can carry the
+// command (viaDeviceMux). When the koko server refuses the device's key as
+// a Revoked Device Session's, the revocation cleanup runs; a device that
+// holds the revocation record instead of a join is told why from it.
 func (in *Input) dialJoined(ctx context.Context, socket string) (serverconn.Conn, error) {
 	home := in.inv.getenv("HOME")
 	c, key, err := devicefiles.Read(home)
@@ -265,12 +295,23 @@ func (in *Input) dialJoined(ctx context.Context, socket string) (serverconn.Conn
 	case err != nil:
 		return nil, err
 	}
-	conn, err := serverconn.DialDevice(ctx, serverconn.Device{Address: c.ServerAddress, HostKeys: c.HostKeys, Key: key})
+	conn, err := in.viaDeviceMux(ctx)
+	if errors.Is(err, errDirect) {
+		conn, err = serverconn.DialDevice(ctx, serverconn.Device{Address: c.ServerAddress, HostKeys: c.HostKeys, Key: key})
+	}
 	if e, ok := errors.AsType[*serverconn.RevokedError](err); ok {
+		if _, _, err := devicefiles.Read(home); errors.Is(err, devicefiles.ErrNotJoined) {
+			// The Device Mux ran the cleanup already.
+			return nil, notJoined(home, socket)
+		}
 		if err := devicefiles.Revoke(home, c, time.Now()); err != nil {
 			return nil, api.CodeRevoked.Errorf("%v, but koko could not finish clearing this device's files of it: %v", e, err)
 		}
 		return nil, api.CodeRevoked.Errorf("%v, so koko deleted this device's key and client config; %s", e, rejoin(c.ServerAddress))
+	}
+	if errors.Is(err, devicefiles.ErrNotJoined) {
+		// The Device Mux found the join gone since it was read above.
+		return nil, notJoined(home, socket)
 	}
 	if err != nil {
 		return nil, deviceConnError(c.ServerAddress, err)

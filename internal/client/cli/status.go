@@ -27,7 +27,8 @@ var statusCommands = []Command{
 }
 
 // statusJSON is what status prints. Every field is always there, null when
-// it has no value; later tickets add the Device Mux's state beside them.
+// it has no value; later tickets add fields beside them, never change one
+// (ADR 0016).
 type statusJSON struct {
 	// ServerAddress and DeviceSession are this device's join, from its
 	// client config: the koko server it joined, and its Device Session there
@@ -46,6 +47,9 @@ type statusJSON struct {
 	// object any command that calls it would fail with now; null when it
 	// answered.
 	ServerError *errorJSON `json:"server_error"`
+	// DeviceMux is the Device Mux commands reach the koko server through,
+	// and its state; null when they reach it another way, or not at all.
+	DeviceMux *deviceMuxJSON `json:"device_mux"`
 	// Revocation is the record the device keeps of its Revoked Device
 	// Session; null when it keeps none.
 	Revocation *revocationJSON `json:"revocation"`
@@ -59,6 +63,20 @@ type statusJSON struct {
 type errorJSON struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+// deviceMuxJSON is the Device Mux of this build: its socket, and its state
+// when status reached it.
+type deviceMuxJSON struct {
+	Socket string `json:"socket"`
+	// State is "connected", holding its Device Connection, or
+	// "reconnecting", holding none.
+	State string `json:"state"`
+	// Since is when it connected, or began reconnecting.
+	Since string `json:"since"`
+	// LastError is why its last try to open a Device Connection failed,
+	// while it reconnects, as server_error shows it; null while connected.
+	LastError *errorJSON `json:"last_error"`
 }
 
 // revocationJSON is the revocation record: which Device Session of which
@@ -86,6 +104,13 @@ func (s statusJSON) Human(w io.Writer) error {
 		line("koko server", "koko %s", *s.ServerVersion)
 	} else {
 		line("koko server", "not reached: %s", s.ServerError.Message)
+	}
+	if m := s.DeviceMux; m != nil {
+		if m.LastError != nil {
+			line("Device Mux", "%s since %s (%s): %s", m.State, m.Since, m.Socket, m.LastError.Message)
+		} else {
+			line("Device Mux", "%s since %s (%s)", m.State, m.Since, m.Socket)
+		}
 	}
 	line("This CLI", "koko %s", s.CLIVersion)
 	if r := s.Revocation; r != nil {
@@ -115,6 +140,13 @@ func status(ctx context.Context, in *Input) (statusJSON, error) {
 		s.ServerVersion = &report.Version
 		if in.socket != "" {
 			s.Socket = &in.socket
+		}
+	}
+	if m := in.deviceMux; m != nil {
+		s.DeviceMux = &deviceMuxJSON{Socket: m.socket, State: "connected", Since: m.state.Since.UTC().Format(time.RFC3339)}
+		if !m.state.Connected {
+			// What failed its last try is what failed status's connection.
+			s.DeviceMux.State, s.DeviceMux.LastError = "reconnecting", s.ServerError
 		}
 	}
 

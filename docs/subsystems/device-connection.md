@@ -185,10 +185,13 @@ ssh integration (P0 spec: reach, "Device files and ssh integration").
 
 A command reaches the koko server on its first call
 ([`Input.connect`](../../internal/client/cli/cli.go)): over the Unix socket
-when the socket is at its path, as the Local caller; otherwise over a direct
-Device Connection to the koko server this device joined
-([`serverconn.DialDevice`](../../internal/client/serverconn/serverconn.go)),
-checked against the pinned host keys. Both are a
+when the socket is at its path, as the Local caller; otherwise the koko
+server this device joined, through this build's
+[Device Mux](device-mux.md), which holds the device's Device Connection,
+or over a direct Device Connection of its own
+([`serverconn.DialDevice`](../../internal/client/serverconn/serverconn.go))
+when no Device Mux can carry it ([the direct path](device-mux.md#which-way-a-command-goes)),
+checked against the pinned host keys either way. Each is a
 [`serverconn.Conn`](../../internal/client/serverconn/serverconn.go), so a
 command does not know which it has. A failure is `not_joined`,
 `revoked`, `server_unreachable` or `host_key_mismatch`, as [the CLI](cli.md#the-runner-and-the-output-layer)
@@ -229,7 +232,13 @@ subscribes the transport, which closes their Device Connections
 ([`transport.Server.CloseDeviceSessions`](../../internal/server/transport/transport.go)):
 each one once the calls in flight on it have answered (so a device that
 revoked itself gets its answer), at most 5 s later, and any connection of
-theirs that authenticated while the revocation committed is refused.
+theirs that authenticated while the revocation committed is refused. Just
+before it closes one, it sends the **revocation disconnect**, the SSH
+global request [`wire.RequestRevoked`](../../internal/shared/wire/wire.go)
+(`revoked@koko`, no payload, no reply wanted), since SSH carries no reason
+on a close; the device's `serverconn.Conn.Wait` then returns
+`serverconn.ErrRevoked`. A device that misses it learns the same from the
+Revoked banner on its next connection.
 Removing a User revokes each of their live Device Sessions in the same way,
 and names them all as Revoked on the signal ([Users](users.md#removing)).
 Later changes that withdraw access (a Member taken out of a Space, a Host's
@@ -238,10 +247,12 @@ Gateway, the web front's cookies) subscribe.
 
 ## On the device
 
-A command reaching the koko server over its Device Connection
-([`Input.dialJoined`](../../internal/client/cli/cli.go)) learns of a
-revocation from the banner, and `koko device revoke` of this device's own
-Device Session learns it from the answer. Either way the device runs the
+The Device Mux learns of a revocation from the revocation disconnect, or
+from the banner when it reconnects ([the Device Mux](device-mux.md#state-and-exit)),
+and exits once it has run the cleanup; a command on the direct path
+([`Input.dialJoined`](../../internal/client/cli/cli.go)) learns it from
+the banner; and `koko device revoke` of this device's own Device Session
+learns it from the answer. Each runs the
 revocation cleanup ([`devicefiles.Revoke`](../../internal/client/devicefiles/devicefiles.go)):
 it writes the revocation record, then deletes the client config, the
 device's key and koko's known_hosts, and rewrites koko's ssh_config without
@@ -306,6 +317,10 @@ key logs `revoked device refused` with the Device Session and the address.
   in use answered and cleaned up, a device revoked elsewhere told by name with
   its files deleted and the record explained until a join clears it, the
   issued Join Codes voided, `device-<n>` past Revoked ones, the log lines.
+- [`devicemux_test.go`](../../internal/client/cli/devicemux_test.go)
+  `TestTheDeviceMuxRunsTheRevocationCleanupAndExits`: the revocation
+  disconnect cleans up a device whose Device Mux holds its Device
+  Connection, with no command running.
 - [`revoked_test.go`](../../internal/server/revoked_test.go): a Revoked
   Device Session's call refused by every operation; and the `device.list`
   and `device.revoke` rows of the

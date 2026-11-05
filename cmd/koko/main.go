@@ -13,11 +13,17 @@ import (
 	"syscall"
 
 	"github.com/cieons/koko/internal/client/cli"
+	"github.com/cieons/koko/internal/client/devicemux"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	r := cli.Runner{ServerRun: serverRun, ServerInstall: serverInstall, ServerUninstall: serverUninstall}
+	r := cli.Runner{
+		ServerRun:       serverRun,
+		ServerInstall:   serverInstall,
+		ServerUninstall: serverUninstall,
+		StartDeviceMux:  devicemux.Spawn,
+	}
 	status := r.Run(ctx, cli.Invocation{
 		Args:   os.Args[1:],
 		Stdin:  os.Stdin,

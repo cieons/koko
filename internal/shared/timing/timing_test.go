@@ -16,6 +16,8 @@ func TestZeroTimingsAreTheProductsConstants(t *testing.T) {
 		HostConnectWait:    time.Second,
 		InstallSocketWait:  30 * time.Second,
 		EnrollAddKey:       30 * time.Second,
+		DeviceMuxIdle:      10 * time.Minute,
+		DeviceMuxStart:     5 * time.Second,
 	}
 	if got != want {
 		t.Errorf("Timings{}.Resolve() = %+v, want %+v", got, want)
@@ -30,6 +32,8 @@ func TestASetTimingReplacesOnlyItsConstant(t *testing.T) {
 		HostConnectWait:    time.Millisecond,
 		InstallSocketWait:  30 * time.Second,
 		EnrollAddKey:       30 * time.Second,
+		DeviceMuxIdle:      10 * time.Minute,
+		DeviceMuxStart:     5 * time.Second,
 	}
 	if got != want {
 		t.Errorf("Resolve() = %+v, want %+v", got, want)
