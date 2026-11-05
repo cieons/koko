@@ -48,18 +48,23 @@ secret, and a `Code` prints as its address alone.
 way a Join Code is issued: `device.add`, `user.invite` and `server.init` all
 call it inside their own transaction. It:
 
-1. finds the User: the one named, or the caller's own; the Local caller's own
-   User is the Owner (ADR 0008). A name that is not a User name is refused
-   with `invalid_name`, and one no User holds with `unknown_user` (404);
+1. finds the User: the one named, or the caller's own, which is its Device
+   Session's User, or the Owner for the Local caller (ADR 0008,
+   [`access.Who`](../../internal/server/access/access.go)). Only the Owner
+   names another User: anyone else is refused with `owner_only` (403) before
+   the name is looked up, so the refusal says nothing of who exists. A name
+   that is not a User name is refused with `invalid_name`, and one no User
+   holds with `unknown_user` (404);
 2. binds the device name given, or `device-<n>`, where n counts up from one
    past the number of Device Sessions the User has ever had, past every name
-   taken. A name is taken while one of that User's valid Join Codes holds it,
-   so two live codes never collide; a name given is checked as a lowercase
-   DNS label (`invalid_name`) and refused when taken (`name_taken`);
+   taken. A name is taken while one of that User's live Device Sessions or
+   valid Join Codes holds it, so two live codes never collide; a name given
+   is checked as a lowercase DNS label (`invalid_name`) and refused when
+   taken (`name_taken`);
 3. reads what the code names inside the transaction, so that the first code
    names what initialisation made in the same transaction: the Server
-   Address, with the listen port (443) written when it names none, and the
-   host key's fingerprint, opened with the Root Key
+   Address, with the port the koko server listens on written when it names
+   none, and the host key's fingerprint, opened with the Root Key
    ([`joinTarget`](../../internal/server/jointarget.go)). A Server Address
    too long for a Join Code with its port is refused with `invalid_address`,
    which also refuses such an address at initialisation;
@@ -68,7 +73,9 @@ call it inside their own transaction. It:
 
 A code is valid for 15 minutes (`joincode.Lifetime`, a constant) from the
 call's time, `op.Now`. Several codes may be valid at once. The issuer is
-recorded: the Unix socket, the only issuer until Device Sessions exist.
+recorded: the caller's Device Session, or the Unix socket; it becomes the
+"added by" of the Device Session the code joins
+([the Device Connection](device-connection.md)).
 
 `koko device add [<device>] [--user <user>]` and `koko user invite <user>`
 print the code ([the CLI](cli.md#the-commands-so-far)); both are in the
@@ -81,12 +88,13 @@ User or any Space holds, then issues their first code, in one transaction.
 
 | Table | What it holds |
 | --- | --- |
-| `join_codes` | One row per code issued: its id (`joincode_...`), its User, the hash of its secret, its device name, its issuer (NULL for the Unix socket, else the issuing Device Session's id), its expiry, and the times it was used or voided. A code is valid while it is neither used nor voided and has not expired. Spent codes are kept, for the P1 audit log. |
+| `join_codes` | One row per code issued: its id (`joincode_...`), its User, the hash of its secret, its device name, its issuer (NULL for the Unix socket, else the issuing Device Session's id), its expiry, and the times it was used or voided. A code is valid while it is neither used nor voided and has not expired; a join marks it used. Spent codes are kept, for the P1 audit log. |
 
 The koko server keeps neither the code nor its secret, only
 `SHA-256("koko Join Code secret\0" ‖ secret)`, unique per row, which joining
 looks up. The secret's 128 random bits make a slow hash needless. Nothing
-logs a code: the API logs a call's path and status only.
+logs a code: the API logs a call's path and status only, and a join its Join
+Code's id.
 
 ## Verifying
 
@@ -98,11 +106,13 @@ logs a code: the API logs a call's path and status only.
   `koko device add` against the in-process koko server: the code for the
   Owner and what it names, `device-<n>` past taken names, a name held until
   the code expires at exactly 15 minutes (the clock moved, not waited for),
-  the refusals, and that neither `koko.db` and its `-wal` and `-shm`, while
-  running and once stopped, nor the log holds a code or its secret in any
-  common encoding.
+  names held by live Device Sessions, the refusals, a joined Member issuing
+  for themselves only (`owner_only`), and that after issuing and joining
+  neither `koko.db` and its `-wal` and `-shm`, while running and once
+  stopped, nor the log holds a code or its secret in any common encoding.
 - [`user_test.go`](../../internal/client/cli/user_test.go): `koko user
-  invite`, its refusals, and names per User; the one transaction is
+  invite`, its refusals, names per User, and an expired Invite that leaves
+  its User to join with a new code; the one transaction is
   [`user/user_test.go`](../../internal/server/user/user_test.go).
 - [`init_test.go`](../../internal/server/init_test.go): initialisation's
   first code, and a Server Address no code carries.

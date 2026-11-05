@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/netip"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -51,6 +52,19 @@ func wantMode(t *testing.T, m *harness.Machine, path string, mode fs.FileMode) {
 	if got := info.Mode() & (fs.ModePerm | fs.ModeDir); got != mode {
 		t.Errorf("%s has mode %v, want %v", path, got, mode)
 	}
+}
+
+// listenPort returns the port the koko server running on m listens on, as
+// its log names it once initialised. The fake machine's koko server listens
+// on a loopback port of the test's choosing, never the unit's, so its Join
+// Codes name that port where a real machine's name the unit's.
+func listenPort(t *testing.T, m *harness.Machine) string {
+	t.Helper()
+	match := regexp.MustCompile(`msg="koko server initialised" .*listen=127\.0\.0\.1:(\d+)`).FindStringSubmatch(m.Log())
+	if match == nil {
+		t.Fatalf("the koko server's log names no TCP listener:\n%s", m.Log())
+	}
+	return match[1]
 }
 
 // wantInitialised fails the test unless the koko server running on m is
@@ -145,8 +159,8 @@ func TestServerInstallOnAFreshMachine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode the first Join Code: %v", err)
 	}
-	if jc.User != "alice" || jc.Device != "device-1" || code.Address != harness.SourceIP+":443" {
-		t.Errorf("the first Join Code is %+v for %s, want alice's device-1 at %s:443", jc, code.Address, harness.SourceIP)
+	if port := listenPort(t, m); jc.User != "alice" || jc.Device != "device-1" || code.Address != harness.SourceIP+":"+port {
+		t.Errorf("the first Join Code is %+v for %s, want alice's device-1 at %s:%s", jc, code.Address, harness.SourceIP, port)
 	}
 	wantNoRootKey(t, r, key)
 }
@@ -249,7 +263,7 @@ func TestServerInstallWithAnAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Address != "koko.example.com" || code.Address != "koko.example.com:443" {
+	if out.Address != "koko.example.com" || code.Address != "koko.example.com:"+listenPort(t, m) {
 		t.Errorf("install set the Server Address %q, and the Join Code names %q", out.Address, code.Address)
 	}
 	if slices.ContainsFunc(m.Calls(), func(c harness.Call) bool { return c.What == "source ip" }) {

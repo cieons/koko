@@ -27,11 +27,16 @@ import (
 	"github.com/cieons/koko/internal/shared/api"
 )
 
-// Caller is who a call comes from, as the transport saw it.
+// Caller is who a call comes from, as the transport saw it: the Local
+// caller, or a Device Connection's Device Session. Who that is, its User,
+// comes from the current records on every call (package access).
 type Caller struct {
 	// Local is set for a call over the Unix socket. The Local caller acts as
 	// the Owner (ADR 0008).
 	Local bool
+	// DeviceSession is the id of the Device Session a Device Connection
+	// authenticated as, for a call over TCP.
+	DeviceSession string
 }
 
 type callerKey struct{}
@@ -61,6 +66,21 @@ func Now(ctx context.Context) time.Time {
 		panic("op: Now outside an operation's call")
 	}
 	return t
+}
+
+type afterTxKey struct{}
+
+// AfterTx has f run once the transaction of the call ctx belongs to has
+// ended, told whether it committed: so an operation starts what must outlive
+// the call, such as a listener, only once its write holds, and undoes what it
+// began when the write is rolled back. Hooks run in the order they were added.
+// It panics outside a call, which only a bug reaches.
+func AfterTx(ctx context.Context, f func(committed bool)) {
+	hooks, ok := ctx.Value(afterTxKey{}).(*[]func(bool))
+	if !ok {
+		panic("op: AfterTx outside an operation's call")
+	}
+	*hooks = append(*hooks, f)
 }
 
 // Func carries out one operation inside its transaction.
@@ -177,6 +197,15 @@ func (a *API) serve(r *http.Request) (any, error) {
 	}
 
 	ctx = context.WithValue(ctx, nowKey{}, a.clock().UTC().Truncate(time.Second))
+	var hooks []func(bool)
+	ctx = context.WithValue(ctx, afterTxKey{}, &hooks)
+	committed := false
+	// Deferred, so an operation that panics still undoes what it began.
+	defer func() {
+		for _, f := range hooks {
+			f(committed)
+		}
+	}()
 	run := a.store.Read
 	if o.write {
 		run = a.store.Write
@@ -196,6 +225,7 @@ func (a *API) serve(r *http.Request) (any, error) {
 		resp, err = c(ctx, tx, caller)
 		return err
 	})
+	committed = err == nil
 	return resp, err
 }
 

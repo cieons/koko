@@ -105,13 +105,21 @@ status. A command reaches the koko server only on its first `in.Call`, so
   on the line, even where refused) the error object
   `{"error": {"code": ..., "message": ...}}`.
 - **Codes:** the API's pass through; the CLI adds `invalid_usage` (exit 2),
-  `not_joined` (no koko server joined and no socket on this machine),
-  `server_unreachable` (the socket does not answer, or the connection could
-  not carry the call, or ended under `koko web`), `unsupported_platform`
-  (`koko server run` or `koko server install` outside Linux, or a machine
-  install cannot use), `port_taken` (another process holds the port `koko
-  web` or `koko server install` listens on), and `internal_error` for a
-  failure it did not expect.
+  `not_joined` (no koko server joined and no socket on this machine, or the
+  joined koko server holds no Device Session with this device's key),
+  `server_unreachable` (the socket or the joined koko server does not answer,
+  or the connection could not carry the call, or ended under `koko web`; for
+  the joined koko server the hint names `koko connect <host:port>`),
+  `host_key_mismatch` (the koko server presented a host key other than the
+  one pinned), `already_joined` (`koko join` on a joined device),
+  `invalid_join_code` (the koko server refused the Join Code, used, expired
+  or never issued alike), `unsupported_platform` (`koko server run` or
+  `koko server install` outside Linux, or a machine install cannot use),
+  `port_taken` (another process holds the port `koko web` or `koko server
+  install` listens on), and `internal_error` for a failure it did not expect.
+- **Which koko server:** the Unix socket when it is at its path, and
+  otherwise the koko server this device joined, over a direct Device
+  Connection ([the Device Connection](device-connection.md#which-koko-server-the-cli-reaches)).
 
 ## `--json`
 
@@ -135,7 +143,8 @@ status. A command reaches the koko server only on its first `in.Call`, so
 Not a contract: a write says what it did (`Added Space ops (space_3f9k2m7q).`),
 and a list is a table with a header (`NAME  ID`), or a sentence when empty. A
 command that issues a Join Code says for whom and until when, then prints the
-one `koko join koko_...` line to paste on the new device.
+one `koko join koko_...` line to paste on the new device. `koko join` says
+which koko server it joined, as whose device.
 
 ## The commands so far
 
@@ -145,15 +154,18 @@ one `koko join koko_...` line to paste on the new device.
 | `koko space ls` | read | `space.list` | an array of Spaces |
 | `koko user invite <user>` (Owner; enforced from #39) | irreversible | `user.invite` | `{"user": {"id", "name", "role", "created_at"}, "join_code": ...}`, the Join Code as `device add` prints it |
 | `koko device add [<device>] [--user <user>]` | irreversible | `device.add` | the Join Code: `{"id", "code", "user", "device", "expires_at"}` |
+| `koko join <join-code>` or `koko join -` | irreversible | `user.current`, after joining in SSH authentication | `{"server_address", "device_session": {"id", "user", "device", "created_at"}}`; a Device Session's id is `device_...` |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
-| `koko server run [--data-dir <dir>] [--root-key-file <file>] [--log-level <level>]` | irreversible | none | nothing on success |
+| `koko server run [--data-dir <dir>] [--root-key-file <file>] [--listen <addr>] [--log-level <level>]` | irreversible | none | nothing on success |
 | `koko server install [--owner <user>] [--address <host[:port]>] [--port <port>]` | irreversible | `server.init` | `{"address", "host_key_fingerprint", "root_key_file", "root_key_id", "listen_port", "join_code"}`, the Join Code as `device add` prints it ([the installer](installer.md#what-it-prints)) |
 
 `koko server run` takes `--data-dir` (`KOKO_DATA_DIR`, default
 `/var/lib/koko`), `--root-key-file` (`KOKO_ROOT_KEY_FILE`, default
 `$CREDENTIALS_DIRECTORY/root-key`, the file systemd's
-`LoadCredential=root-key` hands the unit) and `--log-level` (`KOKO_LOG_LEVEL`:
+`LoadCredential=root-key` hands the unit), `--listen` (`KOKO_LISTEN`, default
+`:443`: an optional host and a port number, where devices reach the koko
+server once it is initialised) and `--log-level` (`KOKO_LOG_LEVEL`:
 `debug`, `info`, `warn` or `error`; default `info`). Left to its default
 without `CREDENTIALS_DIRECTORY` set, the Root Key file is refused with exit 2.
 The flag takes the file's absolute path, never the key, and the koko server

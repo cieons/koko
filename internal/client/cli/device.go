@@ -49,9 +49,22 @@ func (jc joinCodeJSON) writeJoinLine(w io.Writer) error {
 	return err
 }
 
+// deviceSessionJSON is a Device Session in the CLI's own --json.
+type deviceSessionJSON struct {
+	ID        string `json:"id"`
+	User      string `json:"user"`
+	Device    string `json:"device"`
+	CreatedAt string `json:"created_at"`
+}
+
+func deviceSessionFromAPI(d api.DeviceSession) deviceSessionJSON {
+	return deviceSessionJSON{ID: d.ID, User: d.User, Device: d.Device, CreatedAt: d.CreatedAt}
+}
+
 var deviceMappings = []mapping{
 	{api: reflect.TypeFor[api.DeviceAddResponse]()},
 	{api: reflect.TypeFor[api.JoinCode](), cli: reflect.TypeFor[joinCodeJSON]()},
+	{api: reflect.TypeFor[api.DeviceSession](), cli: reflect.TypeFor[deviceSessionJSON]()},
 }
 
 // issuedCode is what device add prints: the Join Code it issued.

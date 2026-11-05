@@ -59,6 +59,9 @@ var (
 	// CodeLocalOnly: the operation answers only the Local caller, over the
 	// koko server's Unix socket.
 	CodeLocalOnly = Code{"local_only", http.StatusForbidden}
+	// CodeOwnerOnly: only the Owner may do what the call asks, such as
+	// issuing a Join Code for another User's device.
+	CodeOwnerOnly = Code{"owner_only", http.StatusForbidden}
 )
 
 var commonCodes = []Code{
@@ -72,6 +75,7 @@ var commonCodes = []Code{
 	CodeNameTaken,
 	CodeNotInitialised,
 	CodeLocalOnly,
+	CodeOwnerOnly,
 }
 
 // codes lists every area's error codes after the common ones; an area that

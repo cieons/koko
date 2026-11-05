@@ -10,10 +10,12 @@ package harness
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,9 +35,16 @@ import (
 const (
 	// Owner is the Owner's name, which their Personal Space takes too.
 	Owner = "alice"
-	// Address is the Server Address.
-	Address = "koko.test"
+	// Address is the Server Address. It names no port, so a Join Code
+	// carries the port the koko server listens on, and a device joining
+	// with it reaches the koko server over loopback.
+	Address = "127.0.0.1"
 )
+
+// listenAddr is where Start's koko server listens on TCP once it is
+// initialised, unless Listen names another address: a loopback port of the
+// system's choosing, so a test binds no port below 1024 and none in use.
+const listenAddr = "127.0.0.1:0"
 
 // Harness is one in-process koko server and the CLI that reaches it.
 type Harness struct {
@@ -57,6 +66,7 @@ type options struct {
 	noInit      bool
 	dataDir     string
 	rootKeyFile string
+	listen      string
 }
 
 // NoInit leaves the koko server as Start finds it, without initialising it.
@@ -76,10 +86,34 @@ func RootKeyFile(path string) Option {
 	return func(o *options) { o.rootKeyFile = path }
 }
 
+// Listen makes the koko server listen on TCP at addr once it is
+// initialised, such as a FreeAddr, so a test can connect to a port it knows
+// before initialisation or across a restart.
+func Listen(addr string) Option {
+	return func(o *options) { o.listen = addr }
+}
+
+// FreeAddr returns a loopback address with a TCP port that nothing listened
+// on a moment ago, for Listen.
+func FreeAddr(t testing.TB) string {
+	t.Helper()
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	if err := ln.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return addr
+}
+
 // Start starts a koko server in the test process on a temporary data
-// directory, a Root Key file made for this test outside it, and a temporary
-// Unix socket, logging at debug level, and initialises it over the socket
-// with Owner and Address. It stops when the test ends.
+// directory, a Root Key file made for this test outside it, a temporary
+// Unix socket and a loopback TCP port, logging at debug level, and
+// initialises it over the socket with Owner and Address. It stops when the
+// test ends.
 func Start(t testing.TB, opts ...Option) *Harness {
 	t.Helper()
 	var o options
@@ -102,6 +136,7 @@ func Start(t testing.TB, opts ...Option) *Harness {
 	srv, err := server.Start(t.Context(), server.Config{
 		DataDir:     o.dataDir,
 		RootKeyPath: o.rootKeyFile,
+		Listen:      cmp.Or(o.listen, listenAddr),
 		LogLevel:    slog.LevelDebug,
 		Log:         h.log,
 		SocketPath:  h.socket,
@@ -164,8 +199,10 @@ func NewRootKeyFile(t testing.TB) string {
 
 // ServerStart returns a cli.Runner.ServerRun for S1 tests of `koko server
 // run`: the koko server's real start-up, given its settings as cmd/koko gives
-// them, on a temporary socket. A koko server that starts stops at once, so
-// the command exits 0, or 1 naming why the start-up refused, and never serves.
+// them, on a temporary socket and, whatever --listen says, a loopback TCP
+// port of the system's choosing, so a test binds no port below 1024. A koko
+// server that starts stops at once, so the command exits 0, or 1 naming why
+// the start-up refused, and never serves.
 func ServerStart(t testing.TB) func(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
 	t.Helper()
 	socket := filepath.Join(ShortTempDir(t), "koko.sock")
@@ -173,6 +210,7 @@ func ServerStart(t testing.TB) func(ctx context.Context, s cli.ServerSettings, l
 		srv, err := server.Start(ctx, server.Config{
 			DataDir:     s.DataDir,
 			RootKeyPath: s.RootKeyPath,
+			Listen:      listenAddr,
 			LogLevel:    s.LogLevel,
 			Log:         log,
 			SocketPath:  socket,
@@ -257,14 +295,77 @@ func (h *Harness) countCalls() int {
 	return strings.Count(h.Log(), `msg="api call"`)
 }
 
+// Socket returns the path of the koko server's Unix socket, for a runner on
+// the koko server's own machine.
+func (h *Harness) Socket() string {
+	return h.socket
+}
+
+// Device is a device that runs koko under a HOME of its own on a machine
+// where no koko server runs, so it reaches a koko server only over the
+// Device Connection of a join.
+type Device struct {
+	t      testing.TB
+	home   string
+	runner cli.Runner
+}
+
+// NewDevice returns a device that has not joined a koko server. Its HOME
+// and the socket path it finds empty are temporary.
+func NewDevice(t testing.TB) *Device {
+	t.Helper()
+	return &Device{
+		t:      t,
+		home:   t.TempDir(),
+		runner: cli.Runner{SocketPath: filepath.Join(ShortTempDir(t), "koko.sock")},
+	}
+}
+
+// Join issues a Join Code over the Unix socket for a new device of the User
+// named user, and returns a new device joined with it.
+func (h *Harness) Join(user string) *Device {
+	h.t.Helper()
+	resp, err := h.Call(api.DeviceAdd, api.DeviceAddRequest{User: user})
+	if err != nil {
+		h.t.Fatalf("issue a Join Code for %s: %v", user, err)
+	}
+	d := NewDevice(h.t)
+	d.Koko("join", resp.JoinCode.Code).WantSuccess(h.t)
+	return d
+}
+
+// Home returns the device's HOME.
+func (d *Device) Home() string {
+	return d.home
+}
+
+// Koko runs one koko command line in process on the device, with empty
+// stdin.
+func (d *Device) Koko(args ...string) Result {
+	d.t.Helper()
+	return run(d.t, d.runner, []string{"HOME=" + d.home}, "", args...)
+}
+
+// KokoStdin runs one koko command line in process on the device, with
+// stdin as its stdin.
+func (d *Device) KokoStdin(stdin string, args ...string) Result {
+	d.t.Helper()
+	return run(d.t, d.runner, []string{"HOME=" + d.home}, stdin, args...)
+}
+
 // Run runs one koko command line in process with the runner r and the
 // environment env, and returns what it printed and its exit status.
 func Run(t testing.TB, r cli.Runner, env []string, args ...string) Result {
 	t.Helper()
+	return run(t, r, env, "", args...)
+}
+
+func run(t testing.TB, r cli.Runner, env []string, stdin string, args ...string) Result {
+	t.Helper()
 	var stdout, stderr bytes.Buffer
 	status := r.Run(t.Context(), cli.Invocation{
 		Args:   args,
-		Stdin:  strings.NewReader(""),
+		Stdin:  strings.NewReader(stdin),
 		Stdout: &stdout,
 		Stderr: &stderr,
 		Env:    env,

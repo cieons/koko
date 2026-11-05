@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -49,6 +50,13 @@ var serverCommands = []Command{
 				Env:     "KOKO_ROOT_KEY_FILE",
 				Default: defaultRootKeyFile,
 				Summary: "the Root Key's file, outside the data directory",
+			},
+			{
+				Name:    "listen",
+				Value:   "addr",
+				Env:     "KOKO_LISTEN",
+				Default: ":" + defaultListenPort,
+				Summary: "where devices reach the koko server over TCP, once it is initialised",
 			},
 			{
 				Name:    "log-level",
@@ -117,9 +125,14 @@ func serverRun(ctx context.Context, in *Input) error {
 		}
 		rootKey = filepath.Join(dir, rootKeyCredential)
 	}
+	listen := in.Flag("listen")
+	if !isListenAddr(listen) {
+		return usagef("--listen (KOKO_LISTEN) takes host:port or :port, not %q", listen)
+	}
 	return in.runner.ServerRun(ctx, ServerSettings{
 		DataDir:     in.Flag("data-dir"),
 		RootKeyPath: rootKey,
+		Listen:      listen,
 		LogLevel:    level,
 	}, in.inv.Stderr)
 }
@@ -234,4 +247,15 @@ func installError(err error) error {
 		return api.CodeAlreadyInitialised.Errorf("%s", r.Message)
 	}
 	return err
+}
+
+// isListenAddr tells whether addr is a TCP listen address: an optional host
+// and a port number, as :443 or 203.0.113.7:443.
+func isListenAddr(addr string) bool {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	n, err := strconv.ParseUint(port, 10, 16)
+	return err == nil && strconv.FormatUint(n, 10) == port
 }

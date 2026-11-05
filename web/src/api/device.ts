@@ -21,6 +21,20 @@ export interface JoinCode {
   expires_at: string;
 }
 
+/**
+ * DeviceSession is a Device Session as the API returns it: the key one
+ * device registered when it joined, under a name that never changes.
+ */
+export interface DeviceSession {
+  id: string;
+  /** User is the name of the User the device acts as. */
+  user: string;
+  /** Device is the device's name, which its Join Code bound. */
+  device: string;
+  /** CreatedAt is when the device joined, as RFC 3339 in UTC to the second. */
+  created_at: string;
+}
+
 /** DeviceAddRequest issues a Join Code for one new device. */
 export interface DeviceAddRequest {
   /**
@@ -42,9 +56,10 @@ export interface DeviceAddResponse {
 
 /**
  * DeviceAdd issues a Join Code, valid for 15 minutes, for one new device
- * of the caller's own User or, for the Owner, of any User. A device name
- * another device or valid Join Code of that User holds is refused with
- * CodeNameTaken.
+ * of the caller's own User or, for the Owner, of any User; a Member
+ * naming another User is refused with CodeOwnerOnly. A device name
+ * another live device or valid Join Code of that User holds is refused
+ * with CodeNameTaken.
  */
 export const DeviceAdd: Op<DeviceAddRequest, DeviceAddResponse> = {
   name: "device.add",

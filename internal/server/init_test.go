@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -206,15 +207,18 @@ func openKeys(t *testing.T, dataDir, keyFile string) *deployment.Keys {
 
 // Initialisation returns the Owner's first Join Code, issued over the Unix
 // socket as koko device add issues one there: for the Owner's device-1,
-// valid for 15 minutes, naming the Server Address with its port and the host
-// key initialisation made.
+// valid for 15 minutes, naming the Server Address with its port, or with the
+// port the koko server listens on when it names none, and the host key
+// initialisation made.
 func TestInitialisationIssuesTheOwnersFirstJoinCode(t *testing.T) {
+	listen := harness.FreeAddr(t)
+	_, port, _ := net.SplitHostPort(listen)
 	for _, tc := range []struct{ address, inCode string }{
-		{"koko.example.com", "koko.example.com:443"},
+		{"koko.example.com", "koko.example.com:" + port},
 		{"koko.example.com:8443", "koko.example.com:8443"},
-		{"[2001:db8::1]", "[2001:db8::1]:443"},
+		{"[2001:db8::1]", "[2001:db8::1]:" + port},
 	} {
-		h := harness.Start(t, harness.NoInit())
+		h := harness.Start(t, harness.NoInit(), harness.Listen(listen))
 		resp, err := h.Call(api.ServerInit, api.ServerInitRequest{Owner: harness.Owner, Address: tc.address})
 		if err != nil {
 			t.Fatalf("server.init: %v", err)
@@ -235,6 +239,7 @@ func TestInitialisationIssuesTheOwnersFirstJoinCode(t *testing.T) {
 		if r := h.Koko("device", "add", "device-1", "--json"); r.Status != 1 || !strings.Contains(r.Stderr, "name_taken") {
 			t.Errorf("device add device-1 after initialisation = %d %s, want name_taken", r.Status, r.Stderr)
 		}
+		h.Stop() // frees the port for the next case
 	}
 }
 

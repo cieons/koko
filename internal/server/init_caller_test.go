@@ -15,6 +15,7 @@ import (
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/store"
+	"github.com/cieons/koko/internal/server/transport"
 	"github.com/cieons/koko/internal/shared/api"
 )
 
@@ -37,8 +38,15 @@ func TestInitAnswersOnlyTheLocalCaller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := op.New(st, slog.New(slog.DiscardHandler), deployment.Initialised, time.Now)
-	registerServer(a, rootKey, device.NewIssuer(joinTarget(rootKey)))
+	log := slog.New(slog.DiscardHandler)
+	a := op.New(st, log, deployment.Initialised, time.Now)
+	tr := transport.New(a, http.NotFoundHandler(), log)
+	tcp := &tcpListener{addr: "127.0.0.1:0", transport: tr, devices: device.NewAuthenticator(st, time.Now, log)}
+	t.Cleanup(func() {
+		_ = tr.Close()
+		tcp.unbind()
+	})
+	registerServer(a, rootKey, device.NewIssuer(joinTarget(rootKey, tcp.port)), tcp, log)
 
 	call := func(caller op.Caller) *httptest.ResponseRecorder {
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, api.ServerInit.Path(),

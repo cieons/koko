@@ -1,9 +1,9 @@
 // Package server is the koko server process: what `koko server run`
 // dispatches into. It opens the store, loads the Root Key and opens the
 // koko server's own keys with it, registers every area's operations and
-// serves them, and the web front, on the Unix socket. It also serves the
-// server area's operations, such as initialisation, which act on the process
-// itself.
+// serves them, and the web front, on the Unix socket and, once the koko
+// server is initialised, to devices on TCP. It also serves the server area's
+// operations, such as initialisation, which act on the process itself.
 //
 // The packages under internal/server are the server-only group: no client
 // package imports them (docs/subsystems/code-layout.md).
@@ -45,6 +45,10 @@ type Config struct {
 	// RootKeyPath is the Root Key's file, outside DataDir. The koko server
 	// reads it at every start and never writes it.
 	RootKeyPath string
+	// Listen is the TCP listen address, such as :443, where devices reach
+	// the koko server once it is initialised. A Server Address without a
+	// port names its port.
+	Listen string
 	// LogLevel is the lowest level written to Log.
 	LogLevel slog.Level
 	// Log receives the log, one structured line per event: stderr, which
@@ -64,16 +68,19 @@ type Config struct {
 type Server struct {
 	store     *store.Store
 	transport *transport.Server
+	tcp       *tcpListener
 }
 
 // Start opens the data directory, loads the Root Key, opens the koko
 // server's own keys with it once the koko server is initialised, and listens
-// on the Unix socket; the koko server then serves until Close. It refuses to
-// start, and writes no key, when the Root Key file's path is not absolute, or
-// the file is inside the data directory, missing, does not parse, or is not
-// the Root Key the sealed data needs, naming the file. The store opens before
-// the key loads, as P0 spec: install and run orders it, so that a refusal can
-// name the Root Key the sealed data needs.
+// on the Unix socket and, once initialised, on TCP; the koko server then
+// serves until Close. It refuses to start, and writes no key, when the Root
+// Key file's path is not absolute, or the file is inside the data directory,
+// missing, does not parse, or is not the Root Key the sealed data needs,
+// naming the file. The store opens before the key loads, as P0 spec: install
+// and run orders it, so that a refusal can name the Root Key the sealed data
+// needs. An initialised koko server that cannot listen on TCP refuses to
+// start.
 func Start(ctx context.Context, cfg Config) (*Server, error) {
 	log := slog.New(slog.NewTextHandler(cfg.Log, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	// Before anything names the path: a relative one may be the key itself.
@@ -96,38 +103,50 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 		clock = time.Now
 	}
 	a := op.New(st, log, deployment.Initialised, clock)
+	// The web area's front holds the runs of koko web, so it registers its
+	// operation itself, below.
+	front := web.New(a, st, key, clock, log)
+	t := transport.New(a, front, log)
+	tcp := &tcpListener{addr: cfg.Listen, transport: t, devices: device.NewAuthenticator(st, clock, log)}
+	srv := &Server{store: st, transport: t, tcp: tcp}
 	for _, register := range areas {
 		register(a)
 	}
 	// The areas that issue Join Codes need what the process loaded to name
 	// the koko server in them.
-	issuer := device.NewIssuer(joinTarget(key))
+	issuer := device.NewIssuer(joinTarget(key, tcp.port))
 	device.Register(a, issuer)
 	user.Register(a, issuer.Issue)
-	registerServer(a, key, issuer)
-	// The web area's front holds the runs of koko web, so it registers its
-	// operation itself.
-	front := web.New(a, st, key, clock, log)
+	registerServer(a, key, issuer, tcp, log)
 	front.Register(a)
-	t := transport.New(a, front, log)
+	if keys != nil {
+		if err := tcp.bind(ctx); err != nil {
+			return nil, errors.Join(err, srv.Close())
+		}
+		if err := tcp.serve(keys.Host); err != nil {
+			return nil, errors.Join(err, srv.Close())
+		}
+	}
 	socket := cmp.Or(cfg.SocketPath, wire.SocketPath)
 	if err := t.ListenSocket(ctx, socket); err != nil {
-		return nil, errors.Join(err, t.Close(), st.Close())
+		return nil, errors.Join(err, srv.Close())
 	}
 	attrs := []any{
 		"version", build.Read().Version, "data_dir", cfg.DataDir, "root_key", key.ID(),
 		"socket", socket, "web_ui_built", webui.Built(), "initialised", keys != nil,
 	}
 	if keys != nil {
-		attrs = append(attrs, "host_key", keys.HostKeyFingerprint())
+		attrs = append(attrs, "host_key", keys.HostKeyFingerprint(), "listen", tcp.address())
 	}
 	log.Info("koko server started", attrs...)
-	return &Server{store: st, transport: t}, nil
+	return srv, nil
 }
 
 // Close stops serving, waits for calls in flight to end, and closes the store.
 func (s *Server) Close() error {
-	return errors.Join(s.transport.Close(), s.store.Close())
+	err := s.transport.Close()
+	s.tcp.unbind()
+	return errors.Join(err, s.store.Close())
 }
 
 // Run runs the koko server until ctx ends.

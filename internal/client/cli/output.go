@@ -19,10 +19,19 @@ const (
 	// codeInvalidUsage: the command line was refused before any call (exit 2).
 	codeInvalidUsage = "invalid_usage"
 	// codeNotJoined: this device has not joined a koko server, and none runs
-	// on this machine.
+	// on this machine; or the koko server it joined holds no Device Session
+	// with its key.
 	codeNotJoined = "not_joined"
 	// codeServerUnreachable: the koko server did not answer.
 	codeServerUnreachable = "server_unreachable"
+	// codeHostKeyMismatch: the koko server presented a host key other than
+	// the one pinned, from the Join Code or at the join; nothing was sent.
+	codeHostKeyMismatch = "host_key_mismatch"
+	// codeAlreadyJoined: koko join on a device that has joined a koko server.
+	codeAlreadyJoined = "already_joined"
+	// codeInvalidJoinCode: the koko server refused the Join Code: used,
+	// expired, voided or never issued, which it does not say.
+	codeInvalidJoinCode = "invalid_join_code"
 	// codeUnsupportedPlatform: the command does not run on this OS.
 	codeUnsupportedPlatform = "unsupported_platform"
 	// codePortTaken: another process holds the port the command listens on.
@@ -35,6 +44,9 @@ var cliCodes = []string{
 	codeInvalidUsage,
 	codeNotJoined,
 	codeServerUnreachable,
+	codeHostKeyMismatch,
+	codeAlreadyJoined,
+	codeInvalidJoinCode,
 	codeUnsupportedPlatform,
 	codePortTaken,
 }

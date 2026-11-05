@@ -6,6 +6,14 @@
 //
 // The Unix socket speaks SSH with "none" authentication and a host key made in
 // memory at each start; every connection on it is the Local caller.
+//
+// The TCP listener presents the koko server's sealed host key and
+// authenticates each Device Connection by its device's key, its Device
+// Session. A key no Device Session holds may join, in the same SSH
+// authentication: once the device has proved it holds the key, the koko
+// server answers with a partial success and takes a Join Code's secret as an
+// SSH password (P0 spec: people and Spaces, "Joining"). Devices answers what
+// a key is and whether a secret joins it.
 package transport
 
 import (
@@ -26,6 +34,29 @@ import (
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/shared/wire"
 )
+
+// Devices answers, for the TCP listener, what a device's key is and whether
+// a Join Code's secret makes it a Device Session. The device area answers;
+// the transport only asks.
+type Devices interface {
+	// DeviceSession returns the id of the Device Session whose key is key,
+	// or "" when no Device Session holds it.
+	DeviceSession(ctx context.Context, key ssh.PublicKey) (string, error)
+	// Join makes key, which the device has proved it holds, a Device Session
+	// through the valid Join Code whose secret the password carries
+	// (wire.JoinSecret), and returns its id. It fails for any password that
+	// is not such a secret, and logs why.
+	Join(ctx context.Context, key ssh.PublicKey, password []byte, from net.Addr) (string, error)
+}
+
+// joinRefused is the banner a failed join gets, whatever the reason: the
+// code was used, expired, voided or never issued, or the secret is not one,
+// so trying codes teaches nothing.
+const joinRefused = "koko: the Join Code is invalid or expired.\n"
+
+// deviceSessionExt carries, in a Device Connection's ssh.Permissions, the id
+// of the Device Session it authenticated as.
+const deviceSessionExt = "koko-device-session"
 
 // Server accepts SSH connections and serves their channels.
 type Server struct {
@@ -111,11 +142,61 @@ func (s *Server) ListenSocket(ctx context.Context, path string) error {
 		_ = ln.Close()
 		return errors.New("the transport is closed")
 	}
-	s.wg.Go(func() { s.accept(ln, cfg, op.Caller{Local: true}) })
+	s.wg.Go(func() { s.accept(ln, cfg, func(*ssh.ServerConn) op.Caller { return op.Caller{Local: true} }) })
 	return nil
 }
 
-func (s *Server) accept(ln net.Listener, cfg *ssh.ServerConfig, caller op.Caller) {
+// ServeTCP serves Device Connections on ln, a TCP listener, presenting
+// hostKey, the koko server's sealed host key. Each device authenticates by
+// its key, which devices says is a Device Session's, or joins (see the
+// package comment). Close closes ln.
+func (s *Server) ServeTCP(ln net.Listener, hostKey ssh.Signer, devices Devices) error {
+	cfg := &ssh.ServerConfig{
+		ServerVersion: wire.Version,
+		// Any key may try: what it is is asked only once the device has
+		// signed with it, in VerifiedPublicKeyCallback.
+		PublicKeyCallback: func(ssh.ConnMetadata, ssh.PublicKey) (*ssh.Permissions, error) {
+			return nil, nil
+		},
+		VerifiedPublicKeyCallback: func(conn ssh.ConnMetadata, key ssh.PublicKey, _ *ssh.Permissions, _ string) (*ssh.Permissions, error) {
+			ctx := context.Background()
+			id, err := devices.DeviceSession(ctx, key)
+			switch {
+			case err != nil:
+				s.log.Error("look up a device's key", "addr", conn.RemoteAddr(), "err", err)
+				return nil, err
+			case id != "":
+				return &ssh.Permissions{Extensions: map[string]string{deviceSessionExt: id}}, nil
+			}
+			// No Device Session holds the key: it may join, with a Join
+			// Code's secret as the second step.
+			return nil, &ssh.PartialSuccessError{Next: ssh.ServerAuthCallbacks{
+				PasswordCallback: func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
+					id, err := devices.Join(ctx, key, password, conn.RemoteAddr())
+					if err != nil {
+						return nil, &ssh.BannerError{Err: err, Message: joinRefused}
+					}
+					return &ssh.Permissions{Extensions: map[string]string{deviceSessionExt: id}}, nil
+				},
+			}}
+		},
+	}
+	cfg.AddHostKey(hostKey)
+	if !s.track(ln) {
+		_ = ln.Close()
+		return errors.New("the transport is closed")
+	}
+	s.wg.Go(func() {
+		s.accept(ln, cfg, func(conn *ssh.ServerConn) op.Caller {
+			return op.Caller{DeviceSession: conn.Permissions.Extensions[deviceSessionExt]}
+		})
+	})
+	return nil
+}
+
+// accept serves each connection ln accepts, as the caller callerOf names
+// once it has authenticated.
+func (s *Server) accept(ln net.Listener, cfg *ssh.ServerConfig, callerOf func(*ssh.ServerConn) op.Caller) {
 	for {
 		nc, err := ln.Accept()
 		if err != nil {
@@ -124,18 +205,19 @@ func (s *Server) accept(ln net.Listener, cfg *ssh.ServerConfig, caller op.Caller
 			}
 			return
 		}
-		s.wg.Go(func() { s.serve(nc, cfg, caller) })
+		s.wg.Go(func() { s.serve(nc, cfg, callerOf) })
 	}
 }
 
 // serve runs one SSH connection until it ends.
-func (s *Server) serve(nc net.Conn, cfg *ssh.ServerConfig, caller op.Caller) {
+func (s *Server) serve(nc net.Conn, cfg *ssh.ServerConfig, callerOf func(*ssh.ServerConn) op.Caller) {
 	conn, chans, reqs, err := ssh.NewServerConn(nc, cfg)
 	if err != nil {
-		s.log.Debug("ssh handshake failed", "err", err)
+		s.log.Debug("ssh handshake failed", "addr", nc.RemoteAddr(), "err", err)
 		_ = nc.Close()
 		return
 	}
+	caller := callerOf(conn)
 	if !s.trackConn(conn) {
 		_ = conn.Close()
 		return

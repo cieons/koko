@@ -15,11 +15,16 @@ UI's TypeScript types are generated from them
   connection on it is the Local caller, acting as the Owner
   ([ADR 0008](../adr/0008-local-callers-act-as-the-owner.md)). Source:
   [`transport.ListenSocket`](../../internal/server/transport/transport.go).
-- **Channels.** An `api@koko` channel carries HTTP/1.1 to the API. A
-  `web@koko` channel carries one browser connection of `koko web` to the web
-  front, which asks for its cookie before it hands a call to the API
-  ([`koko web` and the web front](web-front.md)). Any other channel type is
-  refused with `unknown channel type`. The transport attaches the
+- **The TCP listener**, once the koko server is initialised, speaks the same
+  SSH with the sealed host key, and every connection on it is a Device
+  Connection, authenticated by its device's key as a Device Session, or
+  joining with a Join Code's secret
+  ([the Device Connection](device-connection.md)).
+- **Channels.** On either way in, an `api@koko` channel carries HTTP/1.1 to
+  the API. A `web@koko` channel carries one browser connection of `koko web`
+  to the web front, which asks for its cookie before it hands a call to the
+  API ([`koko web` and the web front](web-front.md)). Any other channel type
+  is refused with `unknown channel type`. The transport attaches the
   connection's caller, and the connection itself, to every request
   (`op.WithCaller`, `transport.ConnectionFrom`); the API refuses a request
   without a caller.
@@ -46,6 +51,7 @@ UI's TypeScript types are generated from them
 | `unknown_field` | 400 | The body holds a field the operation does not know. |
 | `invalid_name` | 400 | A name is not a lowercase DNS label ([`name.Check`](../../internal/shared/name/name.go)). |
 | `local_only` | 403 | The operation answers only the Local caller, over the Unix socket. |
+| `owner_only` | 403 | Only the Owner may do what the call asks, such as issuing a Join Code for another User's device. |
 | `unknown_operation` | 404 | No operation is served at the path. |
 | `method_not_allowed` | 405 | The method is not `POST`. |
 | `name_taken` | 409 | A record already holds the name where names must differ: a Space or a User for a new User's name, which they share; a Space for a Space's; one of the same User's devices or valid Join Codes for a device's. |
@@ -81,10 +87,19 @@ An operation reads the time from `op.Now(ctx)`: the koko server's clock
 to the second as every stored time is, so the times one call records agree
 and a test moves them all.
 
-An operation never begins, commits or rolls back. Each call is logged at debug
-level as `api call` with its path and status; an unexpected error is logged at
-error level. Who may call an operation is decided by the access check (#39);
-until then the only caller is the Local caller, who acts as the Owner.
+An operation never begins, commits or rolls back. What must outlive the call,
+such as the TCP listener initialisation starts, waits for the transaction's
+end through `op.AfterTx`, which is told whether it committed. Each call is
+logged at debug level as `api call` with its path and status; an unexpected
+error is logged at error level.
+
+The caller (`op.Caller`) is the Local caller or a Device Connection's Device
+Session. Who it acts as comes from the current records on every call
+([`access.Who`](../../internal/server/access/access.go)): a Device Session's
+User, or the Owner for the Local caller; `user.current` answers it. Which
+operations a Member may call is decided by the access check (#39); until
+then every caller may call every operation but the Owner-only rules an
+operation holds itself, such as `device.add`'s.
 
 Closing the transport stops new connections and channels, waits up to
 `shutdownGrace` (5 s) for calls in flight, then ends every connection, so the

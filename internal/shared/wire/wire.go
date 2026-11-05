@@ -1,13 +1,17 @@
 // Package wire holds what both ends of a connection to the koko server agree
-// on: where the Unix socket is, the SSH version string, the channel types, and
-// how an HTTP/1.1 exchange runs inside a channel (ADR 0015).
+// on: where the Unix socket is, the SSH version string, the channel types,
+// how an HTTP/1.1 exchange runs inside a channel (ADR 0015), and how a join
+// carries a Join Code's secret.
 package wire
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net"
+
+	"github.com/cieons/koko/internal/shared/joincode"
 )
 
 // SocketPath is the koko server's fixed Unix socket. Every connection on it is
@@ -63,4 +67,25 @@ func Conn(ch io.ReadWriteCloser) net.Conn {
 		_ = ch.Close()
 	}()
 	return inner
+}
+
+// JoinSecret is the SSH password a join's second step sends: the Join Code's
+// secret in lowercase hex. The first step is public key authentication with
+// the device's new key, which the koko server answers with a partial success
+// (P0 spec: people and Spaces, "Joining").
+func JoinSecret(secret [joincode.SecretSize]byte) string {
+	return hex.EncodeToString(secret[:])
+}
+
+// ParseJoinSecret reads the secret from a password JoinSecret wrote; ok is
+// false for any other password.
+func ParseJoinSecret(password []byte) (secret [joincode.SecretSize]byte, ok bool) {
+	if hex.EncodedLen(len(secret)) != len(password) {
+		return secret, false
+	}
+	if _, err := hex.Decode(secret[:], password); err != nil {
+		return secret, false
+	}
+	// Only the lowercase form JoinSecret writes.
+	return secret, hex.EncodeToString(secret[:]) == string(password)
 }

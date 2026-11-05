@@ -15,6 +15,18 @@ type JoinCode struct {
 	ExpiresAt string `json:"expires_at"`
 }
 
+// DeviceSession is a Device Session as the API returns it: the key one
+// device registered when it joined, under a name that never changes.
+type DeviceSession struct {
+	ID string `json:"id"`
+	// User is the name of the User the device acts as.
+	User string `json:"user"`
+	// Device is the device's name, which its Join Code bound.
+	Device string `json:"device"`
+	// CreatedAt is when the device joined, as RFC 3339 in UTC to the second.
+	CreatedAt string `json:"created_at"`
+}
+
 // DeviceAddRequest issues a Join Code for one new device.
 type DeviceAddRequest struct {
 	// Device names the new device. Empty means device-<n>, the first such
@@ -33,9 +45,10 @@ type DeviceAddResponse struct {
 // The device operations.
 var (
 	// DeviceAdd issues a Join Code, valid for 15 minutes, for one new device
-	// of the caller's own User or, for the Owner, of any User. A device name
-	// another device or valid Join Code of that User holds is refused with
-	// CodeNameTaken.
+	// of the caller's own User or, for the Owner, of any User; a Member
+	// naming another User is refused with CodeOwnerOnly. A device name
+	// another live device or valid Join Code of that User holds is refused
+	// with CodeNameTaken.
 	DeviceAdd = Op[DeviceAddRequest, DeviceAddResponse]{Name: "device.add", Write: true}
 )
 

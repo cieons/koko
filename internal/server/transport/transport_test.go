@@ -33,7 +33,7 @@ var whoAmI = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	case c.Local:
 		_, _ = io.WriteString(w, "local")
 	default:
-		_, _ = io.WriteString(w, "not local")
+		_, _ = io.WriteString(w, "device session "+c.DeviceSession)
 	}
 })
 

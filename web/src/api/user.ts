@@ -1,7 +1,7 @@
 // Code generated from internal/shared/api/user.go by make generate; DO NOT EDIT.
 
 import type { Op } from "./api";
-import type { JoinCode } from "./device";
+import type { DeviceSession, JoinCode } from "./device";
 
 /** User is a User as the API returns it. */
 export interface User {
@@ -27,6 +27,22 @@ export interface UserInviteResponse {
   join_code: JoinCode;
 }
 
+/** UserCurrentRequest asks who the call acts as. */
+export type UserCurrentRequest = Record<string, never>;
+
+/**
+ * UserCurrentResponse is who the call acts as: its User and the Device
+ * Session it came on.
+ */
+export interface UserCurrentResponse {
+  user: User;
+  /**
+   * DeviceSession is the Device Session the call came on, left out for the
+   * Local caller, which has none and acts as the Owner.
+   */
+  device_session?: DeviceSession;
+}
+
 /**
  * UserInvite creates a Member with their Personal Space and issues their
  * first Join Code, in one transaction. A name any User, Removed ones
@@ -36,4 +52,15 @@ export const UserInvite: Op<UserInviteRequest, UserInviteResponse> = {
   name: "user.invite",
   path: "/v1/user.invite",
   write: true,
+};
+
+/**
+ * UserCurrent answers who the call acts as: the User of the Device
+ * Session it came on, or the Owner for the Local caller. `koko join`
+ * asks it, to learn the User and device name its Join Code bound.
+ */
+export const UserCurrent: Op<UserCurrentRequest, UserCurrentResponse> = {
+  name: "user.current",
+  path: "/v1/user.current",
+  write: false,
 };

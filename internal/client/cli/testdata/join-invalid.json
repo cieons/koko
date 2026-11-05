@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "invalid_join_code",
+    "message": "the Join Code is invalid or expired."
+  }
+}

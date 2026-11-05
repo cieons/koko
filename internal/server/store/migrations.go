@@ -19,6 +19,7 @@ var steps = []string{
 	"users.sql",
 	"deployment.sql",
 	"join_codes.sql",
+	"device_sessions.sql",
 }
 
 //go:embed migrations/*.sql

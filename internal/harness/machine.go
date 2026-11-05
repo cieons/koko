@@ -436,6 +436,7 @@ func (m *Machine) startService() error {
 		return server.Run(ctx, server.Config{
 			DataDir:     m.Path(s.DataDir),
 			RootKeyPath: s.RootKeyPath,
+			Listen:      s.Listen,
 			LogLevel:    s.LogLevel,
 			Log:         log,
 			SocketPath:  m.SocketPath(),

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -344,5 +345,36 @@ func TestNowIsTheClockAtTheStartOfTheCall(t *testing.T) {
 	status, body := f.post(t, noteTime.Path(), `{}`)
 	if status != http.StatusOK || body != `{"time":"2026-11-05T14:03:07Z"}` {
 		t.Errorf("note.time = %d %s, want the clock's time in UTC to the second", status, body)
+	}
+}
+
+// AfterTx runs once the call's transaction has ended, told whether it
+// committed: true for a call that succeeded, false for one whose write was
+// rolled back, so a call can start what must outlive it only once its write
+// holds, and undo what it began otherwise.
+func TestAfterTxIsToldWhetherTheCallCommitted(t *testing.T) {
+	f := newFixture(t)
+	var ended []bool
+	hooked := api.Op[noteAddRequest, noteAddResponse]{Name: "note.hooked", Write: true}
+	f.api.Handle(hooked, func(ctx context.Context, tx store.Tx, _ op.Caller, req noteAddRequest) (noteAddResponse, error) {
+		op.AfterTx(ctx, func(committed bool) { ended = append(ended, committed) })
+		if _, err := tx.ExecContext(ctx, "INSERT INTO notes (text) VALUES (?)", req.Text); err != nil {
+			return noteAddResponse{}, err
+		}
+		if req.Fail != "" {
+			return noteAddResponse{}, api.CodeNameTaken.Errorf("the note %q is taken", req.Text)
+		}
+		if len(ended) != 0 {
+			return noteAddResponse{}, errors.New("AfterTx ran inside the transaction")
+		}
+		return noteAddResponse{Text: req.Text}, nil
+	})
+	if status, body := f.post(t, hooked.Path(), `{"text": "kept"}`); status != http.StatusOK {
+		t.Fatalf("note.hooked = %d %s", status, body)
+	}
+	status, body := f.post(t, hooked.Path(), `{"text": "dropped", "fail": "yes"}`)
+	wantError(t, status, body, api.CodeNameTaken)
+	if !slices.Equal(ended, []bool{true, false}) {
+		t.Errorf("AfterTx was told %v, want [true false]: committed, then rolled back", ended)
 	}
 }

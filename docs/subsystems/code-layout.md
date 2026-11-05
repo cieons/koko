@@ -14,9 +14,9 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
-| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants and channel adapter (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`); later Attribute values | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `web`: the web front), the embedded web UI (`webui`), the Host connector (`hostconn`), the installer (`installer`); later the Gateway | client |
-| client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`); later the Device Mux, tunnel, ssh_config and device files | server |
+| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the channel adapter and how a join carries its secret (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`); later Attribute values | server, client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check, which answers who is calling (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `web`: the web front), the embedded web UI (`webui`), the Host connector (`hostconn`), the installer (`installer`); later the Gateway | client |
+| client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join (`devicefiles`); later the Device Mux, tunnel and ssh_config | server |
 
 Only [`cmd/koko`](../../cmd/koko) and the S1 harness
 ([`internal/harness`](../../internal/harness)) import both the server and the
@@ -60,6 +60,9 @@ which reads the host key with the Root Key ([Join Codes](join-codes.md#issuing))
 The `web` area's front holds the runs of `koko web` in memory and reads the
 koko server's clock, so `server.Start` makes it and it registers its own
 operation (`web.Front.Register`).
+The device area also answers the TCP listener's join step
+([`device.Authenticator`](../../internal/server/device/join.go)), which
+`server.Start` hands the transport ([the Device Connection](device-connection.md)).
 
 Error codes every area shares (`invalid_request`, `unknown_field`,
 `invalid_name`, `name_taken`, ...) are in `commonCodes`; an area adds a code of
@@ -93,8 +96,8 @@ its own only when an agent would act on it differently.
    there, without touching any operation.
 9. **The CLI's channel interface.** All CLI traffic opens its channels through
    [`serverconn.Conn`](../../internal/client/serverconn/serverconn.go): over
-   the socket now, over a direct Device Connection (#37) and through the Device
-   Mux (#49) later, so commands written before them do not change.
+   the socket and over a direct Device Connection now, and through the Device
+   Mux (#49) later, so commands written before it do not change.
 10. **Test helpers.** The S1 harness and the in-process Host (#32) grow by
     addition: a ticket adds helpers and `harness.Option`s, and never changes an
     existing helper's signature. The four test-only hooks are made by their
@@ -141,18 +144,21 @@ apart.
 [`harness.Start`](../../internal/harness/harness.go) starts a real koko server
 in the test process (a temporary data directory, a Root Key file made for the
 test by `harness.NewRootKeyFile`, a temporary socket in a short path for
-macOS's 104-byte limit, logging at debug level) and initialises it over the
-socket, with the Owner `harness.Owner` (`alice`) and the Server Address
-`harness.Address`; so `koko space ls` lists `alice`'s Personal Space, and
-initialisation's Join Code holds `alice`'s `device-1`.
+macOS's 104-byte limit, a loopback TCP port of the system's choosing,
+logging at debug level) and initialises it over the socket, with the Owner
+`harness.Owner` (`alice`) and the Server Address `harness.Address`
+(`127.0.0.1`, without a port, so its Join Codes name the port it listens
+on); so `koko space ls` lists `alice`'s Personal Space, and initialisation's
+Join Code holds `alice`'s `device-1`.
 `h.Koko(args...)` runs a command line in process through `cli.Runner` as the
 Local caller under a temporary HOME, and `h.Call(op, req)` calls an operation
 no command calls, such as `server.init`. `h.Calls()` counts the API calls the
 server answered since `Start` returned, so a refusal can be shown to make
 none. The options `harness.NoInit()`, `harness.DataDir(dir)` and
-`harness.RootKeyFile(path)` start it uninitialised or on given files, and
-`h.Stop()` stops it before the test ends, to start another on its data
-directory. The koko server's clock stands still at the second `Start` began
+`harness.RootKeyFile(path)` start it uninitialised or on given files,
+`harness.Listen(addr)` listens on TCP at a known address, such as a
+`harness.FreeAddr(t)`, and `h.Stop()` stops it before the test ends, to
+start another on its data directory. The koko server's clock stands still at the second `Start` began
 until `h.Advance(d)` moves it, so a test moves time, such as past a Join
 Code's 15 minutes, and never waits; `h.Now()` reads it.
 `h.Background(env, args...)` runs a command that runs until it is stopped,
@@ -164,9 +170,23 @@ each SHA-256 fingerprint with `SHA256:<fingerprint>` and each time with
 `<time>`; `go test -update` rewrites the files.
 [`harness.ServerStart`](../../internal/harness/harness.go) is a
 `cli.Runner.ServerRun` for S1 tests of `koko server run`: the real start-up on
-a temporary socket, stopped at once if it starts.
+a temporary socket and, whatever `--listen` says, a loopback port, stopped at
+once if it starts.
 [`harness.NewMachine`](../../internal/harness/machine.go) is the fake machine
 of `koko server install`'s system seam ([the installer](installer.md#verifying)).
+
+Devices: `harness.NewDevice(t)` is a device that has not joined, with a HOME
+of its own and nothing at its socket path, so it reaches a koko server only
+over a Device Connection; `d.Koko(args...)` and `d.KokoStdin(stdin,
+args...)` run command lines on it, and `d.Home()` is its HOME.
+`h.Join(user)` issues a Join Code for the User over the socket and returns a
+new device joined with it. `h.Socket()` is the socket's path, for a runner on
+the koko server's own machine.
+[`harness.Forward(t, target)`](../../internal/harness/forward.go) is a
+loopback TCP forwarder whose target `f.To(addr)` changes and whose
+`f.Conns()` counts its connections: initialised with its address as the
+Server Address, a koko server issues codes that lead first to an impostor and
+then to itself, and a refusal can be shown to make no connection.
 
 ## The in-process Host
 

@@ -115,3 +115,23 @@ func TestDeviceNamesArePerUser(t *testing.T) {
 		t.Errorf("device add laptop = %+v, want the Owner's laptop", jc)
 	}
 }
+
+// An Invite that expires leaves its User in place: the Invite no longer
+// joins, and the User joins with a new Join Code from device add --user.
+func TestAnExpiredInviteLeavesItsUser(t *testing.T) {
+	h := harness.Start(t)
+	r := h.Koko("user", "invite", "bob", "--json")
+	r.WantSuccess(t)
+	var inv invitation
+	if err := json.Unmarshal([]byte(r.Stdout), &inv); err != nil {
+		t.Fatal(err)
+	}
+	h.Advance(15 * time.Minute)
+	harness.NewDevice(t).Koko("join", inv.JoinCode.Code, "--json").WantError(t, 1, "invalid_join_code")
+
+	d := harness.NewDevice(t)
+	d.Koko("join", deviceAdd(t, h, "--user", "bob").Code).WantSuccess(t)
+	if c := readClientConfig(t, d); c.User != "bob" || c.Device != "device-1" {
+		t.Errorf("bob's new code joined %s's %s, want bob's device-1", c.User, c.Device)
+	}
+}

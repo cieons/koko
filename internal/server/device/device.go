@@ -1,7 +1,8 @@
 // Package device is the device area of the koko server: the Join Codes a
-// User's new devices join with (P0 spec: people and Spaces). It issues them,
-// and keeps only a hash of each code's secret, so a copy of the database
-// lets nobody join.
+// User's new devices join with, and the Device Sessions they become (P0
+// spec: people and Spaces). It issues the codes, keeping only a hash of each
+// code's secret, so a copy of the database lets nobody join; and it answers
+// what a device's key is and whether a code's secret joins it.
 package device
 
 import (
@@ -11,6 +12,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cieons/koko/internal/server/access"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/server/user"
@@ -63,23 +65,31 @@ func (i *Issuer) add(ctx context.Context, tx store.Tx, caller op.Caller, req api
 
 // Issue issues, as caller, a Join Code for one new device of the User
 // req.User names, or of the caller's own User when it names none, and binds
-// the device name req.Device to it, or device-<n> when it names none. The
-// code is valid for joincode.Lifetime from the call's time. It is returned
-// once: the koko server keeps only the hash of its secret.
+// the device name req.Device to it, or device-<n> when it names none. Only
+// the Owner names another User. The code is valid for joincode.Lifetime from
+// the call's time. It is returned once: the koko server keeps only the hash
+// of its secret.
 //
-// Every caller is the Local caller until Device Sessions exist, and the
-// Local caller's own User is the Owner (ADR 0008); the Unix socket is
-// recorded as the issuer.
+// The caller's own User is its Device Session's, or the Owner for the Local
+// caller (ADR 0008). The issuer is recorded: the caller's Device Session, or
+// the Unix socket.
 func (i *Issuer) Issue(ctx context.Context, tx store.Tx, caller op.Caller, req api.DeviceAddRequest) (api.JoinCode, error) {
-	var u api.User
-	var err error
-	if req.User == "" {
-		u, err = user.Owner(ctx, tx)
-	} else {
-		u, err = user.ByName(ctx, tx, req.User)
-	}
+	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
 		return api.JoinCode{}, err
+	}
+	u := who.User
+	if req.User != "" && req.User != u.Name {
+		if !who.IsOwner() {
+			return api.JoinCode{}, api.CodeOwnerOnly.Errorf("only the Owner issues a Join Code for another User's device; name no User to issue one for your own")
+		}
+		if u, err = user.ByName(ctx, tx, req.User); err != nil {
+			return api.JoinCode{}, err
+		}
+	}
+	var issuer *string
+	if who.DeviceSession != nil {
+		issuer = &who.DeviceSession.ID
 	}
 	now := op.Now(ctx)
 	device, err := deviceName(ctx, tx, u, req.Device, now)
@@ -104,7 +114,7 @@ func (i *Issuer) Issue(ctx context.Context, tx store.Tx, caller op.Caller, req a
 		ExpiresAt: now.Add(joincode.Lifetime).Format(time.RFC3339),
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO join_codes (id, user_id, secret_hash, device, issued_by, expires_at)
-		VALUES (?, ?, ?, ?, NULL, ?)`, jc.ID, u.ID, secretHash(c.Secret), jc.Device, jc.ExpiresAt)
+		VALUES (?, ?, ?, ?, ?, ?)`, jc.ID, u.ID, secretHash(c.Secret), jc.Device, issuer, jc.ExpiresAt)
 	if err != nil {
 		return api.JoinCode{}, fmt.Errorf("record a Join Code for %s's device %q: %w", u.Name, jc.Device, err)
 	}
@@ -112,8 +122,10 @@ func (i *Issuer) Issue(ctx context.Context, tx store.Tx, caller op.Caller, req a
 }
 
 // deviceName checks the device name given for a new device of u, or picks
-// device-<n> when none is given. A name is taken while one of u's valid Join
-// Codes holds it, so two live codes never collide.
+// device-<n> when none is given, n counting up from one past the number of
+// Device Sessions u has ever had. A name is taken while one of u's live
+// Device Sessions or valid Join Codes holds it, so two live codes never
+// collide.
 func deviceName(ctx context.Context, tx store.Tx, u api.User, given string, now time.Time) (string, error) {
 	if given != "" {
 		if err := name.Check(given); err != nil {
@@ -130,19 +142,24 @@ func deviceName(ctx context.Context, tx store.Tx, u api.User, given string, now 
 		}
 		return given, nil
 	}
-	// n starts one past the number of Device Sessions u has ever had: none
-	// yet, before any device has joined.
-	for n := 1; ; n++ {
+	var joined int
+	err = tx.QueryRowContext(ctx, "SELECT count(*) FROM device_sessions WHERE user_id = ?", u.ID).Scan(&joined)
+	if err != nil {
+		return "", fmt.Errorf("count the devices %s has had: %w", u.Name, err)
+	}
+	for n := joined + 1; ; n++ {
 		if candidate := fmt.Sprintf("device-%d", n); !held[candidate] {
 			return candidate, nil
 		}
 	}
 }
 
-// heldNames returns the device names u's valid Join Codes hold at now.
+// heldNames returns the device names u's live Device Sessions and valid Join
+// Codes hold at now.
 func heldNames(ctx context.Context, tx store.Tx, u api.User, now time.Time) (map[string]bool, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT device FROM join_codes
-		WHERE user_id = ? AND used_at IS NULL AND voided_at IS NULL AND expires_at > ?`, u.ID, now.Format(time.RFC3339))
+	rows, err := tx.QueryContext(ctx, `SELECT device FROM device_sessions WHERE user_id = ?1 AND revoked_at IS NULL
+		UNION SELECT device FROM join_codes
+		WHERE user_id = ?1 AND used_at IS NULL AND voided_at IS NULL AND expires_at > ?2`, u.ID, now.Format(time.RFC3339))
 	if err != nil {
 		return nil, fmt.Errorf("read the device names %s holds: %w", u.Name, err)
 	}

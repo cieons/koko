@@ -28,6 +28,7 @@ var mappings = [][]mapping{
 	userMappings,
 	webMappings,
 	serverMappings,
+	joinMappings,
 }
 
 // checkMappings returns one error for each API response field, reachable

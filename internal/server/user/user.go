@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cieons/koko/internal/server/access"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/space"
 	"github.com/cieons/koko/internal/server/store"
@@ -20,12 +21,6 @@ import (
 // idPrefix starts every User's id, as in user_3f9k2m7q.
 const idPrefix = "user"
 
-// The roles, as the users table and the API name them.
-const (
-	roleOwner  = "owner"
-	roleMember = "member"
-)
-
 // IssueFunc issues, as caller, a Join Code for one new device, as device.add
 // asks for one: the device area's device.Issuer.Issue.
 type IssueFunc func(ctx context.Context, tx store.Tx, caller op.Caller, req api.DeviceAddRequest) (api.JoinCode, error)
@@ -34,6 +29,16 @@ type IssueFunc func(ctx context.Context, tx store.Tx, caller op.Caller, req api.
 // User's first Join Code.
 func Register(a *op.API, issue IssueFunc) {
 	a.Handle(api.UserInvite, invite(issue))
+	a.Handle(api.UserCurrent, current)
+}
+
+// current is user.current: who the call acts as.
+func current(ctx context.Context, tx store.Tx, caller op.Caller, _ api.UserCurrentRequest) (api.UserCurrentResponse, error) {
+	who, err := access.Who(ctx, tx, caller)
+	if err != nil {
+		return api.UserCurrentResponse{}, err
+	}
+	return api.UserCurrentResponse{User: who.User, DeviceSession: who.DeviceSession}, nil
 }
 
 // invite is user.invite: in one transaction it creates the Member with their
@@ -41,7 +46,7 @@ func Register(a *op.API, issue IssueFunc) {
 // does not name.
 func invite(issue IssueFunc) op.Func[api.UserInviteRequest, api.UserInviteResponse] {
 	return func(ctx context.Context, tx store.Tx, caller op.Caller, req api.UserInviteRequest) (api.UserInviteResponse, error) {
-		u, err := add(ctx, tx, req.Name, roleMember)
+		u, err := add(ctx, tx, req.Name, api.RoleMember)
 		if err != nil {
 			return api.UserInviteResponse{}, err
 		}
@@ -58,7 +63,7 @@ func invite(issue IssueFunc) op.Func[api.UserInviteRequest, api.UserInviteRespon
 // default, because a User's name never changes. Initialisation calls it once,
 // on a koko server that holds no User and no Space yet.
 func AddOwner(ctx context.Context, tx store.Tx, owner string) error {
-	_, err := add(ctx, tx, owner, roleOwner)
+	_, err := add(ctx, tx, owner, api.RoleOwner)
 	return err
 }
 
@@ -67,7 +72,7 @@ func AddOwner(ctx context.Context, tx store.Tx, owner string) error {
 // Space holds, since Users and Spaces share one namespace.
 func add(ctx context.Context, tx store.Tx, userName, role string) (api.User, error) {
 	kind := "User"
-	if role == roleOwner {
+	if role == api.RoleOwner {
 		kind = "Owner"
 	}
 	if err := name.Check(userName); err != nil {
@@ -91,15 +96,6 @@ func add(ctx context.Context, tx store.Tx, userName, role string) (api.User, err
 	}
 	if err := space.AddPersonal(ctx, tx, u.ID, u.Name); err != nil {
 		return api.User{}, err
-	}
-	return u, nil
-}
-
-// Owner returns the Owner.
-func Owner(ctx context.Context, tx store.Tx) (api.User, error) {
-	u, err := scan(tx.QueryRowContext(ctx, "SELECT id, name, role, created_at FROM users WHERE role = ?", roleOwner))
-	if err != nil {
-		return api.User{}, fmt.Errorf("read the Owner: %w", err)
 	}
 	return u, nil
 }

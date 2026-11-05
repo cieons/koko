@@ -19,6 +19,7 @@ ADR; a proposed change lives in its issue or PR.
 | The installer: `koko server install`, the machine interface, the unit, the checks before any write, and the fake machine | [installer.md](installer.md) |
 | Join Codes: the `koko_` string, issuing them, device names, and the hash kept of each | [join-codes.md](join-codes.md) |
 | `koko web` and the web front: the listener, the `web@koko` channel, the Host guard, the token and the cookie, the port-owner lookup | [web-front.md](web-front.md) |
+| The Device Connection and joining: the TCP listener, device authentication, `koko join`, the device's files and which koko server the CLI reaches | [device-connection.md](device-connection.md) |
 
 ## Maintaining a reference
 

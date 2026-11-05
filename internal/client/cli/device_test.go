@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json/v2"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,7 +49,9 @@ func fingerprintOf(c joincode.Code) string {
 // valid for 15 minutes from its issue, naming the koko server's Server
 // Address with its listen port and its host key.
 func TestDeviceAddIssuesAJoinCodeForTheOwner(t *testing.T) {
-	h := harness.Start(t, harness.NoInit())
+	listen := harness.FreeAddr(t)
+	_, port, _ := net.SplitHostPort(listen)
+	h := harness.Start(t, harness.NoInit(), harness.Listen(listen))
 	init, err := h.Call(api.ServerInit, api.ServerInitRequest{Owner: harness.Owner, Address: harness.Address})
 	if err != nil {
 		t.Fatalf("server.init: %v", err)
@@ -69,8 +72,8 @@ func TestDeviceAddIssuesAJoinCodeForTheOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode the Join Code: %v", err)
 	}
-	if c.Address != harness.Address+":443" || fingerprintOf(c) != init.HostKeyFingerprint {
-		t.Errorf("the Join Code names %s with host key %s, want %s:443 with %s", c.Address, fingerprintOf(c), harness.Address, init.HostKeyFingerprint)
+	if c.Address != harness.Address+":"+port || fingerprintOf(c) != init.HostKeyFingerprint {
+		t.Errorf("the Join Code names %s with host key %s, want %s:%s with %s", c.Address, fingerprintOf(c), harness.Address, port, init.HostKeyFingerprint)
 	}
 }
 
@@ -162,9 +165,10 @@ func TestDeviceAddRefusesAnUnknownUser(t *testing.T) {
 	}
 }
 
-// The koko server keeps only a hash of each Join Code's secret: neither
-// koko.db and its -wal and -shm, while it runs or once it stops, nor its log
-// holds a code or its secret in any common encoding.
+// The koko server keeps only a hash of each Join Code's secret: after
+// issuing and joining, neither koko.db and its -wal and -shm, while it runs
+// or once it stops, nor its log holds a code or its secret in any common
+// encoding.
 func TestNoJoinCodeIsStoredOrLogged(t *testing.T) {
 	dataDir := t.TempDir()
 	h := harness.Start(t, harness.NoInit(), harness.DataDir(dataDir))
@@ -180,6 +184,10 @@ func TestNoJoinCodeIsStoredOrLogged(t *testing.T) {
 		t.Fatal(err)
 	}
 	codes = append(codes, inv.JoinCode.Code, deviceAdd(t, h).Code, deviceAdd(t, h, "laptop", "--user", "bob").Code)
+	// A join and a failed join with a spent code, whose secret travels in
+	// hex, leave neither in the record or the log.
+	harness.NewDevice(t).Koko("join", codes[1]).WantSuccess(t)
+	harness.NewDevice(t).Koko("join", codes[1], "--json").WantError(t, 1, "invalid_join_code")
 
 	secrets := map[string][]byte{}
 	for i, code := range codes {
@@ -241,4 +249,67 @@ func readDir(t *testing.T, dir string) map[string][]byte {
 		files[e.Name()] = b
 	}
 	return files
+}
+
+// On a joined device, koko device add issues for the device's own User: a
+// Member adds their own devices, and is refused --user for another User with
+// owner_only, which says nothing of whether that User exists. The device the
+// Member's code joins acts as the Member too.
+func TestAJoinedMemberAddsDevicesForThemselvesOnly(t *testing.T) {
+	h := harness.Start(t)
+	h.Koko("user", "invite", "bob").WantSuccess(t)
+	bob := h.Join("bob")
+
+	jc := deviceAddOn(t, bob, "laptop")
+	if jc.User != "bob" || jc.Device != "laptop" {
+		t.Errorf("bob's device add issued %+v, want a code for bob's laptop", jc)
+	}
+	if jc := deviceAddOn(t, bob, "--user", "bob"); jc.User != "bob" {
+		t.Errorf("bob's device add --user bob issued for %s", jc.User)
+	}
+	for _, other := range []string{harness.Owner, "nobody"} {
+		r := bob.Koko("device", "add", "--user", other, "--json")
+		msg := r.WantError(t, 1, "owner_only")
+		if strings.Contains(msg, other) {
+			t.Errorf("the refusal for --user %s names it: %q", other, msg)
+		}
+		if other == harness.Owner {
+			harness.Golden(t, "device-add-owner-only.json", r.Stderr)
+		}
+	}
+	laptop := harness.NewDevice(t)
+	laptop.Koko("join", jc.Code).WantSuccess(t)
+	if again := deviceAddOn(t, laptop); again.User != "bob" {
+		t.Errorf("the device bob's code joined issued for %s, want bob", again.User)
+	}
+}
+
+// The Owner's joined device issues for the Owner, and for any other User
+// with --user.
+func TestAJoinedOwnerAddsDevicesForAnyUser(t *testing.T) {
+	h := harness.Start(t)
+	h.Koko("user", "invite", "bob").WantSuccess(t)
+	alice := h.Join(harness.Owner)
+	if jc := deviceAddOn(t, alice); jc.User != harness.Owner {
+		t.Errorf("the Owner's device add issued for %s", jc.User)
+	}
+	if jc := deviceAddOn(t, alice, "--user", "bob"); jc.User != "bob" {
+		t.Errorf("the Owner's device add --user bob issued for %s", jc.User)
+	}
+}
+
+// A live Device Session holds its name as a valid Join Code does, and
+// device-<n> counts from one past the Device Sessions the User has had.
+func TestDeviceAddNamesPastLiveDeviceSessions(t *testing.T) {
+	h := harness.Start(t)
+	h.Advance(15 * time.Minute) // initialisation's code for device-1 expires
+	d := harness.NewDevice(t)
+	d.Koko("join", deviceAdd(t, h).Code).WantSuccess(t)
+	if c := readClientConfig(t, d); c.Device != "device-1" {
+		t.Fatalf("the first device joined as %q, want device-1", c.Device)
+	}
+	h.Koko("device", "add", "device-1", "--json").WantError(t, 1, "name_taken")
+	if jc := deviceAdd(t, h); jc.Device != "device-2" {
+		t.Errorf("device add after device-1 joined named the device %q, want device-2", jc.Device)
+	}
 }

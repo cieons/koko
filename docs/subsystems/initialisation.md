@@ -34,11 +34,16 @@ In one transaction, so that a refusal leaves the koko server as it was, it:
 4. creates the Owner and the Owner's Personal Space, which takes the Owner's
    name ([`user.AddOwner`](../../internal/server/user/user.go)); the name is
    checked as a User name, with no default, and refused with `invalid_name`;
-5. issues the Owner's first Join Code, for `device-1`, through the same path
+5. starts listening on TCP at `--listen`: it binds the address now, so the
+   first Join Code can name the port, and serves Device Connections once the
+   transaction commits, closing the listener if it rolls back
+   ([the Device Connection](device-connection.md#the-tcp-listener));
+6. issues the Owner's first Join Code, for `device-1`, through the same path
    as `koko device add` over the socket
-   ([Join Codes](join-codes.md#issuing)), naming the Server Address and the
-   host key made in step 3; a Server Address too long for a Join Code is
-   refused here with `invalid_address`.
+   ([Join Codes](join-codes.md#issuing)), naming the Server Address, with the
+   port it listens on when the address names none, and the host key made in
+   step 3; a Server Address too long for a Join Code is refused here with
+   `invalid_address`.
 
 No command of its own calls it: [`koko server install`](installer.md)
 does, once the koko service it started has opened its socket, and so does the
@@ -51,7 +56,7 @@ The operation framework asks
 inside each call's transaction. Until the `deployment` row exists, every
 operation but `server.init` is refused with `not_initialised` (409), and
 records nothing: no Space or other record exists without an Owner, so the
-Owner's name can never be taken before it is given.
+Owner's name can never be taken before it is given. Nothing listens on TCP.
 
 ## The record
 
@@ -68,12 +73,17 @@ Owner's name can never be taken before it is given.
 An initialised koko server opens both keys with the Root Key
 ([`loadKeys`](../../internal/server/rootkey.go)), after checking that the
 Root Key is the one they were sealed under; its refusals are in
-[the Seal](seal.md#at-start-up). Its `koko server started` log line says
-`initialised=true host_key=SHA256:...` once initialised, and
-`initialised=false` before.
+[the Seal](seal.md#at-start-up). It then listens on TCP at once, presenting
+the sealed host key, and refuses to start when it cannot. Its `koko server
+started` log line says `initialised=true host_key=SHA256:... listen=<addr>`
+once initialised, and `initialised=false` before; initialisation itself logs
+`koko server initialised` with the host key and the listen address.
 
 ## Verifying
 
+- [`listen_test.go`](../../internal/server/listen_test.go): nothing on TCP
+  before initialisation, the sealed host key once initialised and after a
+  restart, and nothing listening after a refused initialisation.
 - [`init_test.go`](../../internal/server/init_test.go), over the socket: the
   Owner and their Personal Space, the refusals before initialisation and of a
   second one, the Owner's name and the Server Address checked, the first Join

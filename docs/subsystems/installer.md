@@ -162,8 +162,8 @@ the unit loaded at the last `daemon-reload`, refuses a binary that does not
 run or a credential's missing file, makes the runtime directory, and runs the
 unit's `ExecStart` with its `Environment=` lines and `CREDENTIALS_DIRECTORY`
 through `koko server run` as an in-process koko server under the root,
-listening on a loopback port. So initialisation and the printout run for
-real. The tests cover a fresh install (files, modes, owners, the unit's
+listening on a loopback port, which its Join Codes therefore name in place
+of the unit's port. So initialisation and the printout run for real. The tests cover a fresh install (files, modes, owners, the unit's
 golden file, the `--json` golden, the koko server initialised), the order
 (checks before any write, the Root Key and the binary before the start, a
 late socket waited for), the printout for people, `--port`, `--address`,

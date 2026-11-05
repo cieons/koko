@@ -34,6 +34,7 @@ func TestServerRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
 	defaults := cli.ServerSettings{
 		DataDir:     "/var/lib/koko",
 		RootKeyPath: "/run/credentials/koko.service/root-key",
+		Listen:      ":443",
 		LogLevel:    slog.LevelInfo,
 	}
 	for _, tc := range []struct {
@@ -45,29 +46,29 @@ func TestServerRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
 		{"defaults", []string{credentialsDirectory}, nil, defaults},
 		{
 			"flags", nil,
-			[]string{"--data-dir", "/srv/koko", "--root-key-file", "/etc/koko/root.key", "--log-level", "debug"},
-			cli.ServerSettings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", LogLevel: slog.LevelDebug},
+			[]string{"--data-dir", "/srv/koko", "--root-key-file", "/etc/koko/root.key", "--listen", "203.0.113.7:8443", "--log-level", "debug"},
+			cli.ServerSettings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", Listen: "203.0.113.7:8443", LogLevel: slog.LevelDebug},
 		},
 		{
 			"flags with =", nil,
-			[]string{"--data-dir=/srv/koko", "--root-key-file=/etc/koko/root.key", "--log-level=warn"},
-			cli.ServerSettings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", LogLevel: slog.LevelWarn},
+			[]string{"--data-dir=/srv/koko", "--root-key-file=/etc/koko/root.key", "--listen=[::1]:8443", "--log-level=warn"},
+			cli.ServerSettings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", Listen: "[::1]:8443", LogLevel: slog.LevelWarn},
 		},
 		{
 			"environment",
-			[]string{"KOKO_DATA_DIR=/env/koko", "KOKO_ROOT_KEY_FILE=/env/root.key", "KOKO_LOG_LEVEL=error"},
+			[]string{"KOKO_DATA_DIR=/env/koko", "KOKO_ROOT_KEY_FILE=/env/root.key", "KOKO_LISTEN=:8443", "KOKO_LOG_LEVEL=error"},
 			nil,
-			cli.ServerSettings{DataDir: "/env/koko", RootKeyPath: "/env/root.key", LogLevel: slog.LevelError},
+			cli.ServerSettings{DataDir: "/env/koko", RootKeyPath: "/env/root.key", Listen: ":8443", LogLevel: slog.LevelError},
 		},
 		{
 			"flag over environment",
-			[]string{credentialsDirectory, "KOKO_DATA_DIR=/env/koko", "KOKO_ROOT_KEY_FILE=/env/root.key"},
-			[]string{"--data-dir", "/srv/koko", "--root-key-file", "/etc/koko/root.key"},
-			cli.ServerSettings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", LogLevel: slog.LevelInfo},
+			[]string{credentialsDirectory, "KOKO_DATA_DIR=/env/koko", "KOKO_ROOT_KEY_FILE=/env/root.key", "KOKO_LISTEN=:8443"},
+			[]string{"--data-dir", "/srv/koko", "--root-key-file", "/etc/koko/root.key", "--listen", ":9443"},
+			cli.ServerSettings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", Listen: ":9443", LogLevel: slog.LevelInfo},
 		},
 		{
 			"empty variable is unset",
-			[]string{credentialsDirectory, "KOKO_DATA_DIR=", "KOKO_ROOT_KEY_FILE="},
+			[]string{credentialsDirectory, "KOKO_DATA_DIR=", "KOKO_ROOT_KEY_FILE=", "KOKO_LISTEN="},
 			nil,
 			defaults,
 		},
@@ -102,6 +103,9 @@ func TestServerRunRefusesBadSettings(t *testing.T) {
 		{"data directory followed by a flag", nil, []string{"--data-dir", "--json"}, "--data-dir needs a value"},
 		{"data directory twice", nil, []string{"--data-dir", "/a", "--data-dir", "/b"}, "--data-dir is given twice"},
 		{"empty Root Key file", nil, []string{"--root-key-file="}, "--root-key-file needs a value; it cannot be empty"},
+		{"listen address without a port", []string{credentialsDirectory}, []string{"--listen", "0.0.0.0"}, `--listen (KOKO_LISTEN) takes host:port or :port, not "0.0.0.0"`},
+		{"listen port out of range", []string{credentialsDirectory}, []string{"--listen", ":65536"}, `--listen (KOKO_LISTEN) takes host:port or :port, not ":65536"`},
+		{"listen port by name", []string{credentialsDirectory, "KOKO_LISTEN=:https"}, nil, `--listen (KOKO_LISTEN) takes host:port or :port, not ":https"`},
 		{
 			"no Root Key file outside systemd", nil, nil,
 			"give the Root Key's file with --root-key-file or KOKO_ROOT_KEY_FILE: its default, $CREDENTIALS_DIRECTORY/root-key, needs CREDENTIALS_DIRECTORY",

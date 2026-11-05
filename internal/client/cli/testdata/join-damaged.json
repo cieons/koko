@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "invalid_usage",
+    "message": "cannot read the Join Code: the Join Code is cut short or damaged: copy all of it again"
+  }
+}

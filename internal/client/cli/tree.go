@@ -181,6 +181,7 @@ var commands = [][]Command{
 	deviceCommands,
 	userCommands,
 	webCommands,
+	joinCommands,
 }
 
 // Tree returns every command.

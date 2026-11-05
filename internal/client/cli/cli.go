@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/cieons/koko/internal/client/apiclient"
+	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/install"
@@ -59,7 +60,9 @@ type ServerSettings struct {
 	DataDir string
 	// RootKeyPath is the Root Key's file, never the key itself.
 	RootKeyPath string
-	LogLevel    slog.Level
+	// Listen is the TCP listen address, such as :443.
+	Listen   string
+	LogLevel slog.Level
 }
 
 // Invocation is one command line with its streams and environment.
@@ -179,20 +182,59 @@ func (in *Input) server(ctx context.Context) (serverconn.Conn, error) {
 	return in.conn, nil
 }
 
-// connect reaches the koko server over its Unix socket.
+// connect reaches the koko server: over its Unix socket when the socket is
+// at its fixed path, and otherwise the koko server this device joined, over
+// a direct Device Connection.
 func (in *Input) connect(ctx context.Context) error {
 	path := cmp.Or(in.runner.SocketPath, wire.SocketPath)
 	conn, err := serverconn.DialSocket(ctx, path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return &cliError{code: codeNotJoined, message: fmt.Sprintf(
-			"this device has not joined a koko server, and no koko server runs on this machine (nothing at %s)", path)}
+		if conn, err = in.dialJoined(ctx, path); err != nil {
+			return err
+		}
 	case err != nil:
 		return &cliError{code: codeServerUnreachable, message: fmt.Sprintf(
 			"cannot reach the koko server on its Unix socket %s: %v", path, err)}
 	}
 	in.conn, in.api = conn, apiclient.New(conn)
 	return nil
+}
+
+// dialJoined opens a direct Device Connection to the koko server this
+// device joined, on a machine whose Unix socket path holds nothing.
+func (in *Input) dialJoined(ctx context.Context, socket string) (serverconn.Conn, error) {
+	c, key, err := devicefiles.Read(in.inv.getenv("HOME"))
+	switch {
+	case errors.Is(err, devicefiles.ErrNotJoined):
+		return nil, &cliError{code: codeNotJoined, message: fmt.Sprintf(
+			"this device has not joined a koko server, and no koko server runs on this machine (nothing at %s): join one with koko join <join-code>", socket)}
+	case err != nil:
+		return nil, err
+	}
+	conn, err := serverconn.DialDevice(ctx, serverconn.Device{Address: c.ServerAddress, HostKeys: c.HostKeys, Key: key})
+	if err != nil {
+		return nil, deviceConnError(c.ServerAddress, err)
+	}
+	return conn, nil
+}
+
+// deviceConnError gives a Device Connection that failed to the koko server
+// at address the CLI's code for it.
+func deviceConnError(address string, err error) error {
+	if e, ok := errors.AsType[*serverconn.HostKeyMismatchError](err); ok {
+		return &cliError{code: codeHostKeyMismatch, message: e.Error() +
+			"; koko sent nothing past the SSH key exchange, since something else may be answering at that address"}
+	}
+	if errors.Is(err, serverconn.ErrUnknownKey) {
+		return &cliError{code: codeNotJoined, message: fmt.Sprintf(
+			"the koko server at %s holds no Device Session with this device's key, so this device is not joined to it", address)}
+	}
+	if e, ok := errors.AsType[*serverconn.RefusedError](err); ok {
+		return &cliError{code: codeNotJoined, message: fmt.Sprintf("the koko server at %s refused this device: %v", address, e)}
+	}
+	return &cliError{code: codeServerUnreachable, message: fmt.Sprintf(
+		"cannot reach the koko server at %s: %v; if it has moved, take its new address with koko connect <host:port>", address, err)}
 }
 
 func (in *Input) close() {
