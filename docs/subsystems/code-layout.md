@@ -14,8 +14,8 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
-| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the wire constants and channel adapter (`wire`), the build report (`build`); later the Join Code codec, Attribute values, the resumable stream, the port-owner lookup | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the Root Key and the Seal (`seal`), one package per area (`space`), the embedded web UI (`webui`); later the Gateway, Host connector, installer | client |
+| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the wire constants and channel adapter (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`); later the Join Code codec, Attribute values, the resumable stream, the port-owner lookup | server, client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the Root Key and the Seal (`seal`), one package per area (`space`), the embedded web UI (`webui`), the Host connector (`hostconn`); later the Gateway, installer | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`); later the Device Mux, tunnel, ssh_config and device files | server |
 
 Only [`cmd/koko`](../../cmd/koko) and the S1 harness
@@ -120,7 +120,7 @@ apart.
 | --- | --- | --- |
 | The socket path | `server.Config.SocketPath`, `cli.Runner.SocketPath` | #27 |
 | The fake terminal | `cli.Runner.Terminal` | #28 |
-| The P0 timing constants | | #32 |
+| The P0 timing constants | `hostconn.Connector.Timings`, a [`timing.Timings`](../../internal/shared/timing/timing.go), where a ticket that uses a new timing adds its constant and field | #32 |
 | The clock | | #36 |
 
 ## The S1 harness
@@ -137,3 +137,17 @@ numbered placeholder (`"space_<1>"`); `go test -update` rewrites the files.
 [`harness.ServerStart`](../../internal/harness/harness.go) is a
 `cli.Runner.ServerRun` for S1 tests of `koko server run`: the real start-up on
 a temporary socket, stopped at once if it starts.
+
+## The in-process Host
+
+[`sshhost.Start`](../../internal/harness/sshhost/sshhost.go) starts an
+`x/crypto/ssh` server on a loopback port that stands in for a Host or a Relay:
+one Host Account (`sshhost.Account`, `deploy`) with a home directory and an
+`authorized_keys` file read afresh at each login, password login over
+`password` or `keyboard-interactive`, its own host keys, and `direct-tcpip`
+forwarding, as a Relay's sshd does. `ResetFirst`, `StallFirst`, `SlowLogins`
+and `DropConns` break it as a network path or a slow PAM stack would.
+`Logins()` and `Requests()` record what it received; `Conns()` and `Open()`
+count its connections. It refuses every session request for now; the ticket
+that needs exec or a subsystem adds it, by addition like the harness.
+`sshhost.NewKey` makes ed25519, ECDSA and RSA keys for tests.

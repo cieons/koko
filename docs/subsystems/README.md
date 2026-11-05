@@ -13,6 +13,7 @@ ADR; a proposed change lives in its issue or PR.
 | The store: SQLite, transactions, migrations and record ids | [store.md](store.md) |
 | The Seal: the Root Key's file, sealed values, and the Root Key at start-up | [seal.md](seal.md) |
 | The web UI build: Node, the embedded app and placeholder, the generated types, page tests | [web-ui.md](web-ui.md) |
+| The Host connector: logging in to a Host through its Relay, the pinned host key and connect retries | [host-connector.md](host-connector.md) |
 
 ## Maintaining a reference
 
