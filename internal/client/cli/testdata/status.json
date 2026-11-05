@@ -1,0 +1,14 @@
+{
+  "server_address": "<server address>",
+  "device_session": {
+    "id": "device_<1>",
+    "user": "alice",
+    "device": "device-2"
+  },
+  "socket": null,
+  "cli_version": "<version>",
+  "server_version": "<version>",
+  "server_error": null,
+  "revocation": null,
+  "include_warning": null
+}

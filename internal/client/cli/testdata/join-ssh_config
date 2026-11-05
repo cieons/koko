@@ -1,0 +1,12 @@
+# Written by koko; it rewrites this file. Your own entries go in ~/.ssh/config.
+Host *.koko
+  ProxyCommand "<koko>" tunnel '%h'
+  HostKeyAlias koko
+  UserKnownHostsFile "<home>/.ssh/koko/known_hosts"
+  StrictHostKeyChecking yes
+  UpdateHostKeys no
+  PreferredAuthentications none
+  ForwardAgent no
+  User koko
+  ServerAliveInterval 30
+  ServerAliveCountMax 4

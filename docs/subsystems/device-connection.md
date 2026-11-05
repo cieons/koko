@@ -1,8 +1,9 @@
 # The Device Connection and joining
 
 How a device reaches the koko server over TCP, how a new device joins with a
-Join Code, what a joined device keeps, and how a Device Session is used and
-revoked. The design is P0 spec: reach ("The Device Connection") and P0 spec:
+Join Code, what a joined device keeps, how ssh is pointed at koko, and how
+a Device Session is used and revoked. The design is P0 spec: reach ("The
+Device Connection", "Device files and ssh integration") and P0 spec:
 people and Spaces ("Joining", "Device Sessions"); why devices join with a
 one-time code is
 [ADR 0013](../adr/0013-devices-join-with-a-one-time-join-code.md).
@@ -75,9 +76,10 @@ one-time code ([`join`](../../internal/client/cli/join.go)):
    before any connection ([Join Codes](join-codes.md#the-string)).
 2. It refuses, with `already_joined`, while this device is joined, and says
    to revoke this device's Device Session first.
-3. It makes a new ed25519 key and writes it into `~/.ssh/koko/` under a
-   temporary name, so a device that cannot keep its files learns it before it
-   spends the code.
+3. It renders koko's ssh_config ([ssh](#ssh)), makes a new ed25519 key and
+   writes it into `~/.ssh/koko/` under a temporary name, so a device that
+   cannot keep its files, or whose paths ssh would misread, learns it before
+   it spends the code.
 4. It connects to the code's address and checks the host key against the
    code's fingerprint before it authenticates; a mismatch fails with
    `host_key_mismatch`, naming both keys, and the code stays usable.
@@ -89,17 +91,22 @@ one-time code ([`join`](../../internal/client/cli/join.go)):
    connection drops the call, the call is sent again, once, on a new Device
    Connection with the key, now a Device Session
    ([the API client](api.md#the-api-client)).
-7. It puts the key in place and writes the client config, which marks the
-   device joined, removes any revocation record, then prints the Server
-   Address and the Device Session: `{"server_address", "device_session"}`
-   with `--json`, the Device Session as `koko device ls --json` prints one.
+7. It puts the key in place, writes koko's known_hosts and ssh_config
+   ([ssh](#ssh)), then the client config, which marks the device joined,
+   and removes any revocation record.
+8. Unless `--no-ssh-config`, it puts the Include line first in
+   `~/.ssh/config`, then checks it as `koko status` does ([ssh](#ssh)). A
+   file it leaves alone, or a line below a `Host` line, does not fail the
+   join, which has happened: it says why, and how to fix it.
+9. It prints the Server Address and the Device Session, and with `--json`
+   that warning ([the CLI](cli.md#the-commands-so-far)).
 
 **A failed join leaves nothing it wrote:** the staged key is removed, and so
 are `~/.ssh` and `~/.ssh/koko/` when the join made them and they are empty
 (a `~/.ssh/koko/` that was there stays, made private). A join that fails
 after the koko server accepted the code (`user.current` lost on both
 connections, before step 7) says that the code is spent and which Device
-Session to revoke, when it knows.
+Session to revoke, when it knows. Step 7 failing removes what it wrote.
 
 ## The device's files
 
@@ -112,7 +119,9 @@ device removes it there.
 | `~/.ssh/koko/` | 0700 | koko's directory, made private even when it was there; `~/.ssh`, when koko makes it, is 0700 too |
 | `~/.ssh/koko/device_key` | 0600 | the device's private key: OpenSSH-format ed25519, unencrypted, since `koko tunnel` cannot prompt |
 | `~/.ssh/koko/client.json` | 0600 | the client config, below |
-| `~/.ssh/koko/revoked.json` | 0600 | the revocation record, in place of the key and the client config once the device learns that its Device Session was Revoked ([On the device](#on-the-device)) |
+| `~/.ssh/koko/known_hosts` | 0600 | the host keys the client config pins, one line each under the alias `koko` ([ssh](#ssh)) |
+| `~/.ssh/koko/ssh_config` | 0600 | koko's own ssh_config ([ssh](#ssh)) |
+| `~/.ssh/koko/revoked.json` | 0600 | the revocation record, in place of the key, the client config and known_hosts once the device learns that its Device Session was Revoked ([On the device](#on-the-device)) |
 
 The client config is JSON: `server_address` (`host:port`), `host_keys` (the
 pinned host keys, each written as in `authorized_keys`; a Device Connection
@@ -126,6 +135,51 @@ The revocation record is JSON: `server_address`, `user`, `device`,
 `device_session` (the Revoked one's id) and `learned_at`, when the device
 learned it, by its own clock, RFC 3339 in UTC. One that cannot be read or
 parsed fails the command naming the file.
+
+## ssh
+
+[`devicefiles`](../../internal/client/devicefiles/ssh.go) also holds koko's
+ssh integration (P0 spec: reach, "Device files and ssh integration").
+
+- **koko's ssh_config** (`devicefiles.WriteSSHConfig`) is rewritten whole
+  and atomically (a new file renamed over it), mode 0600: a comment, then a
+  `Host` line naming `*.koko` and the bare names it is given, then the
+  block, as [a join writes it](../../internal/client/cli/testdata/join-ssh_config).
+  The ProxyCommand runs the binary that wrote the file: by the path a PATH
+  lookup of `koko` finds when that is the same file, such as a package
+  manager's link that outlives an upgrade, and otherwise by the path the OS
+  gives for it, which on Linux has every symlink resolved. known_hosts' path
+  is resolved from `HOME`. Both are absolute and double-quoted, and a path
+  holding `"`, `$`, `` ` ``, `\`, `%` or a control character is refused,
+  since ssh or the shell running ProxyCommand would read it otherwise; a
+  join renders the file before it connects, so such a path refuses the join
+  while its code stays usable. A bare name must be a name (a DNS label).
+  Every keyword is one OpenSSH 7.3 knows. A name list too long for one
+  `Host` line is split across blocks identical but for their names, so that
+  no line passes 1 KiB, newline included
+  ([golden](../../internal/client/devicefiles/testdata/ssh_config-split)).
+  A join writes no bare names.
+- **known_hosts** holds each host key the client config pins, as
+  `koko <key>`, mode 0600. P0 has one koko server per device, so every line
+  in it is that koko server's.
+- **The Include line** (`devicefiles.AddInclude`): `Include
+  ~/.ssh/koko/ssh_config` goes first in `~/.ssh/config`, which is made with
+  mode 0600 when absent, or rewritten atomically as the line followed by
+  its bytes as they were, keeping its mode. A file that includes koko's
+  ssh_config already, anywhere, is left alone; so is one that is a symlink,
+  not a regular file (never read, since a named pipe would never end),
+  read-only (no write bit, or this user cannot open it for writing; the
+  check sits behind the per-OS file, and Windows rewrites none), or that
+  cannot be read or written, and then the error says why, with the line to
+  add. An `Include` names koko's ssh_config when one of its arguments,
+  bare or double-quoted, resolved as OpenSSH does (`~/` from `HOME`, a
+  relative path from `~/.ssh`) and read as a glob, matches that file;
+  keywords are case-insensitive, and `=` may follow one.
+- **The check** (`devicefiles.CheckInclude`), for `koko status` and after
+  `koko join`: the Include line is missing, or it comes after the first
+  `Host` or `Match` line, where ssh reads it only for that block's hosts; a
+  `~/.ssh/config` that cannot be read, or is not a regular file, is reported
+  as such, not as missing.
 
 ## Which koko server the CLI reaches
 
@@ -187,8 +241,10 @@ A command reaching the koko server over its Device Connection
 revocation from the banner, and `koko device revoke` of this device's own
 Device Session learns it from the answer. Either way the device runs the
 revocation cleanup ([`devicefiles.Revoke`](../../internal/client/devicefiles/devicefiles.go)):
-it writes the revocation record, then deletes the client config and the
-device's key, and the command fails with `revoked`, or says that it was this
+it writes the revocation record, then deletes the client config, the
+device's key and koko's known_hosts, and rewrites koko's ssh_config without
+bare names: `*.koko` still runs `koko tunnel`, which explains the
+revocation. The command fails with `revoked`, or says that it was this
 device. From then on every command that would reach the joined koko server
 explains the revocation from the record, with `revoked`, until the next
 `koko join`, which the record does not block and which removes it.
@@ -218,6 +274,19 @@ key logs `revoked device refused` with the Device Session and the address.
   files, `koko join -`, a damaged code with no connection made, a mismatch
   and the same code joining the right koko server, used, expired and wrong
   codes alike, a second join refused, the log lines.
+- [`sshconfig_test.go`](../../internal/client/cli/sshconfig_test.go): a
+  join's ssh_config (golden) and known_hosts, the Include line when
+  `~/.ssh/config` is absent, the user's, already includes it (however
+  written, or below a `Host` line, with the warning), is a symlink, is
+  read-only or is not a regular file, `--no-ssh-config`, a HOME ssh would
+  misread refused before the code is spent, and the revocation cleanup of
+  the bare names and known_hosts;
+  [`devicefiles/ssh_test.go`](../../internal/client/devicefiles/ssh_test.go):
+  the 1 KiB split (golden), the keywords and paths, the ProxyCommand's path
+  by PATH, and the refusals.
+- [`status_test.go`](../../internal/client/cli/status_test.go): `koko
+  status` joined, over the socket, not joined, revoked and unreachable, and
+  its Include warnings.
 - [`retry_test.go`](../../internal/client/cli/retry_test.go)
   `TestAJoinWhoseCallIsCutStillJoins`: `user.current` cut mid-flight and sent
   again on a Device Connection of the new key.

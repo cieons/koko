@@ -1,0 +1,10 @@
+{
+  "server_address": null,
+  "device_session": null,
+  "socket": "<socket>",
+  "cli_version": "<version>",
+  "server_version": "<version>",
+  "server_error": null,
+  "revocation": null,
+  "include_warning": null
+}

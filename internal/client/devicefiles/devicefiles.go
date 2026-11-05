@@ -2,7 +2,9 @@
 // joined, in ~/.ssh/koko/ (mode 0700): its private key, an unencrypted
 // OpenSSH-format ed25519 key (0600), and the client config (0600), which
 // names the Server Address, the host keys pinned for it, and the User and
-// device name the device joined as (P0 spec: people and Spaces, "Joining").
+// device name the device joined as (P0 spec: people and Spaces, "Joining");
+// and koko's ssh_config and known_hosts (0600), with the Include line in
+// ~/.ssh/config that makes ssh read the former (P0 spec: reach).
 //
 // It is the one place a device's join is written and read, so whatever ends
 // a join on the device (the revocation cleanup, leaving) removes it here.
@@ -134,16 +136,21 @@ func Read(home string) (Config, ssh.Signer, error) {
 // temporary name. Exactly one of Commit and Abort follows.
 type Staged struct {
 	home string
+	// sshConfig is koko's ssh_config, rendered by Stage for Commit to write.
+	sshConfig []byte
 	// tmpKey is the key's temporary file.
 	tmpKey string
 	// made lists the directories Stage made, deepest last.
 	made []string
+	// wrote lists the files Commit made that were not there before.
+	wrote []string
 }
 
-// Stage begins a join on the device whose home directory is home: it makes
-// ~/.ssh and ~/.ssh/koko when they are missing, makes ~/.ssh/koko private
-// to this user, and writes key there under a temporary name. So a device
-// that cannot keep its files learns it before it spends a Join Code.
+// Stage begins a join on the device whose home directory is home: it
+// renders koko's ssh_config, makes ~/.ssh and ~/.ssh/koko when they are
+// missing, makes ~/.ssh/koko private to this user, and writes key there
+// under a temporary name. So a device that cannot keep its files, or whose
+// paths ssh would misread, learns it before it spends a Join Code.
 func Stage(home string, key ed25519.PrivateKey) (*Staged, error) {
 	if err := checkHome(home); err != nil {
 		return nil, err
@@ -157,6 +164,10 @@ func Stage(home string, key ed25519.PrivateKey) (*Staged, error) {
 }
 
 func (s *Staged) stage(key ed25519.PrivateKey) error {
+	var err error
+	if s.sshConfig, err = renderSSHConfig(s.home, nil); err != nil {
+		return err
+	}
 	for _, d := range []string{filepath.Dir(dir(s.home)), dir(s.home)} {
 		err := os.Mkdir(d, 0o700)
 		switch {
@@ -180,7 +191,9 @@ func (s *Staged) stage(key ed25519.PrivateKey) error {
 }
 
 // Commit completes the join with the client config c: it puts the key in
-// place, then writes the client config, which marks the device joined.
+// place, writes koko's known_hosts with the host keys c pins and koko's
+// ssh_config without bare names, then writes the client config, which marks
+// the device joined.
 func (s *Staged) Commit(c Config) error {
 	keyPath := filepath.Join(dir(s.home), keyFile)
 	if err := os.Rename(s.tmpKey, keyPath); err != nil {
@@ -188,6 +201,15 @@ func (s *Staged) Commit(c Config) error {
 		return fmt.Errorf("put this device's key in place: %w", err)
 	}
 	s.tmpKey = ""
+	for _, f := range []struct {
+		name string
+		data []byte
+	}{{knownHostsFile, knownHosts(c.HostKeys)}, {sshConfigFile, s.sshConfig}} {
+		if err := s.write(f.name, f.data); err != nil {
+			s.undo(keyPath)
+			return fmt.Errorf("write koko's %s: %w", f.name, err)
+		}
+	}
 	cj := configJSON{ServerAddress: c.ServerAddress, User: c.User, Device: c.Device, DeviceSession: c.DeviceSession}
 	for _, k := range c.HostKeys {
 		cj.HostKeys = append(cj.HostKeys, string(bytes.TrimSpace(ssh.MarshalAuthorizedKey(k))))
@@ -238,8 +260,11 @@ type revocationJSON struct {
 // Revoke is the revocation cleanup on the device whose home directory is
 // home, once it learns at learned that the Device Session its client config
 // c names was Revoked: it writes the revocation record (0600), then deletes
-// the client config, so the device is no longer joined, and the device's
-// key, whose copies are now useless.
+// the client config, so the device is no longer joined, the device's key,
+// whose copies are now useless, and koko's known_hosts, whose lines are all
+// that koko server's (P0 has one per device). Last it rewrites koko's
+// ssh_config without bare names: *.koko still runs koko tunnel, which
+// explains the revocation from the record.
 func Revoke(home string, c Config, learned time.Time) error {
 	if err := checkHome(home); err != nil {
 		return err
@@ -264,12 +289,12 @@ func Revoke(home string, c Config, learned time.Time) error {
 	if err != nil {
 		return fmt.Errorf("write the revocation record: %w", err)
 	}
-	for _, f := range []string{configFile, keyFile} {
+	for _, f := range []string{configFile, keyFile, knownHostsFile} {
 		if err := os.Remove(filepath.Join(dir(home), f)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("delete the files of this device's Revoked Device Session: %w", err)
 		}
 	}
-	return nil
+	return WriteSSHConfig(home, nil)
 }
 
 // ReadRevocation returns the revocation record the device whose home
@@ -305,9 +330,30 @@ func ReadRevocation(home string) (Revocation, error) {
 	}, nil
 }
 
-// undo removes the key Commit put in place at keyPath, then aborts.
+// write writes data as koko's file name, 0600 and atomically, and notes it
+// for undo when it was not there before.
+func (s *Staged) write(name string, data []byte) error {
+	path := filepath.Join(dir(s.home), name)
+	_, err := os.Lstat(path)
+	existed := err == nil
+	if err := replace(path, data, 0o600); err != nil {
+		return err
+	}
+	if !existed {
+		s.wrote = append(s.wrote, path)
+	}
+	return nil
+}
+
+// undo removes what Commit made, the key it put in place at keyPath and the
+// files it wrote that were not there before, then aborts. A file it
+// rewrote, such as the ssh_config an earlier revocation left, keeps the
+// bytes it wrote, which route the same names.
 func (s *Staged) undo(keyPath string) {
 	_ = os.Remove(keyPath)
+	for _, f := range s.wrote {
+		_ = os.Remove(f)
+	}
 	s.Abort()
 }
 

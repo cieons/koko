@@ -180,7 +180,10 @@ Not a contract: a write says what it did (`Added Space ops (space_3f9k2m7q).`,
 (`NAME  ID`), or a sentence when empty. A
 command that issues a Join Code says for whom and until when, then prints the
 one `koko join koko_...` line to paste on the new device. `koko join` says
-which koko server it joined, as whose device. `koko device ls` names who
+which koko server it joined, as whose device, then any Include warning.
+`koko status` lists its
+fields one per line (`Server Address:`, `User:`, `Device:`, `Unix socket:`,
+`koko server:`, `This CLI:`, `Revoked:`), then any Include warning. `koko device ls` names who
 added each device as `<user>/<device>` or `unix socket`, and adds a REVOKED
 column when it lists a Revoked one; `koko device revoke` says which device it
 revoked, and when it was this device, that koko deleted its files.
@@ -200,10 +203,11 @@ revoked, and when it was this device, that koko deleted its files.
 | `koko device add [<device>] [--user <user>]` | irreversible | `device.add` | the Join Code: `{"id", "code", "user", "device", "expires_at"}` |
 | `koko device ls [--user <user>] [--all]` | read | `device.list` | an array of Device Sessions, by User and then in the order they joined: `{"id", "user", "device", "added_by", "created_at", "last_used_at", "revoked_at"}`, where `added_by` is `{"id", "user", "device"}` of the Device Session that issued its Join Code, or `null` for the Unix socket; a Device Session's id is `device_...` |
 | `koko device revoke <device>` or `<user>/<device>` `[--last]` | irreversible | `device.revoke` | the Device Session it Revoked, as `device ls` prints one ([revoking](device-connection.md#revoking)) |
-| `koko join <join-code>` or `koko join -` | irreversible | `user.current`, after joining in SSH authentication | `{"server_address", "device_session"}`, the Device Session as `device ls` prints one |
+| `koko join <join-code>` or `koko join -` `[--no-ssh-config]` | irreversible | `user.current`, after joining in SSH authentication | `{"server_address", "device_session", "include_warning"}`, the Device Session as `device ls` prints one, and `include_warning` as `koko status` prints it right after the join, or `null` with `--no-ssh-config` |
 | `koko secret ls [<space>]` | read | `secret.list` | an array of Secrets, never a value: `{"id", "space", "name", "created_at", "updated_at"}` ([Secrets](secrets.md)) |
 | `koko secret show <space>/<secret>` | irreversible | `secret.show` | the Secret with its value, `"value_base64"`, the one `--json` that holds a value; without `--json`, the value's bytes alone |
 | `koko secret add <space>/<secret> [--from-file <file>]` | reversible | `secret.add` | the Secret it stored, without its value |
+| `koko status` | read | none: the koko server's version comes from its report | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_error", "revocation", "include_warning"}`, below |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
 | `koko server run [--data-dir <dir>] [--root-key-file <file>] [--listen <addr>] [--log-level <level>]` | irreversible | none | nothing on success |
@@ -234,3 +238,23 @@ The flag takes the file's absolute path, never the key, and the koko server
 refuses to start without a usable Root Key ([the Seal](seal.md#at-start-up)). The koko
 server logs to stderr in slog's text format (`time=... level=INFO msg=...
 key=value`), one line per event, for journald to keep.
+
+`koko status` ([`status`](../../internal/client/cli/status.go)) reaches the
+koko server as any command does, which may run the revocation cleanup,
+then reads the device's files. Every field is always there:
+`server_address` and `device_session` are this device's join, the Device
+Session as `{"id", "user", "device"}` (as `device ls` names one in
+`added_by`), both `null` when it has not joined; `socket` is the Unix socket
+path when commands reach the koko server on its own machine, as the Local
+caller; `cli_version` is this koko's version and `server_version` the one
+the koko server reported on connecting, or `null`; `server_error` is the
+error object (`{"code", "message"}`) any command that calls the koko server
+would fail with now, such as `not_joined`, `revoked` or
+`server_unreachable`, or `null`; `revocation` is the revocation record,
+`{"server_address", "device_session", "learned_at"}` with the Device Session
+in the same shape, or `null`; and `include_warning` says why ssh does not
+read koko's ssh_config for every host and how to fix it (the Include line
+missing or below a `Host` or `Match` line, or `~/.ssh/config` left alone or
+unreadable, [the device's ssh](device-connection.md#ssh)), or is `null`,
+also when the device has not joined. It exits 0 whether or not the koko
+server answered, and 1 only when the device's own files cannot be read.

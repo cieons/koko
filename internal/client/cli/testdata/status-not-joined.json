@@ -1,0 +1,13 @@
+{
+  "server_address": null,
+  "device_session": null,
+  "socket": null,
+  "cli_version": "<version>",
+  "server_version": null,
+  "server_error": {
+    "code": "not_joined",
+    "message": "this device has not joined a koko server, and no koko server runs on this machine (nothing at <socket>): join one with koko join <join-code>"
+  },
+  "revocation": null,
+  "include_warning": null
+}

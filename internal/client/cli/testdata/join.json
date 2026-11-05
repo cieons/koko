@@ -8,5 +8,6 @@
     "created_at": "<time>",
     "last_used_at": "<time>",
     "revoked_at": null
-  }
+  },
+  "include_warning": null
 }

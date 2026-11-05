@@ -21,7 +21,7 @@ ADR; a proposed change lives in its issue or PR.
 | The release and `install.sh`: the assets and their names, `make dist`, the release workflow, and what `install.sh` checks before it runs the binary | [release.md](release.md) |
 | Join Codes: the `koko_` string, issuing them, device names, and the hash kept of each | [join-codes.md](join-codes.md) |
 | `koko web` and the web front: the listener, the `web@koko` channel, the Host guard, the token and the cookie, the port-owner lookup | [web-front.md](web-front.md) |
-| The Device Connection and joining: the TCP listener, device authentication, `koko join`, the device's files, which koko server the CLI reaches, last used, revoking a Device Session, the access-change signal and the revocation record | [device-connection.md](device-connection.md) |
+| The Device Connection and joining: the TCP listener, device authentication, `koko join`, the device's files, koko's ssh_config, known_hosts and the Include line, which koko server the CLI reaches, last used, revoking a Device Session, the access-change signal and the revocation record | [device-connection.md](device-connection.md) |
 | The access check and Spaces: who is calling, the rule, unseen equals unknown, memberships, what a Space holds, the access matrix | [access.md](access.md) |
 | The record: a Host's fields and their rules, Attributes and the Note, the host operations, the one leak | [record.md](record.md) |
 | Secrets: the record and its name rule, the commands and the one that prints a value, values in JSON, access, sealing | [secrets.md](secrets.md) |

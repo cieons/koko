@@ -136,6 +136,9 @@ type Input struct {
 	// joined is the client config of this device, when the connection is
 	// its Device Connection.
 	joined *devicefiles.Config
+	// socket is the path of the Unix socket the connection went over, when
+	// it did.
+	socket string
 }
 
 // Arg returns the positional argument with this name, as typed.
@@ -222,6 +225,7 @@ func (in *Input) connect(ctx context.Context) (serverconn.Conn, error) {
 		return nil, &cliError{code: codeServerUnreachable, message: fmt.Sprintf(
 			"cannot reach the koko server on its Unix socket %s: %v", path, err)}
 	}
+	in.socket = path
 	return conn, nil
 }
 
@@ -242,7 +246,7 @@ func (in *Input) dialJoined(ctx context.Context, socket string) (serverconn.Conn
 	conn, err := serverconn.DialDevice(ctx, serverconn.Device{Address: c.ServerAddress, HostKeys: c.HostKeys, Key: key})
 	if e, ok := errors.AsType[*serverconn.RevokedError](err); ok {
 		if err := devicefiles.Revoke(home, c, time.Now()); err != nil {
-			return nil, api.CodeRevoked.Errorf("%v, but koko could not delete this device's key and client config: %v", e, err)
+			return nil, api.CodeRevoked.Errorf("%v, but koko could not finish clearing this device's files of it: %v", e, err)
 		}
 		return nil, api.CodeRevoked.Errorf("%v, so koko deleted this device's key and client config; %s", e, rejoin(c.ServerAddress))
 	}

@@ -193,6 +193,7 @@ var commands = [][]Command{
 	joinCommands,
 	hostCommands,
 	secretCommands,
+	statusCommands,
 }
 
 // Tree returns every command.

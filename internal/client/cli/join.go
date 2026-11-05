@@ -24,6 +24,11 @@ var joinCommands = []Command{
 		Verb:    "join",
 		Summary: "Join this device to a koko server with a Join Code, or with - to read the code from stdin",
 		Args:    []Arg{{Name: "join-code"}},
+		Flags: []Flag{{
+			Name:    "no-ssh-config",
+			Bool:    true,
+			Summary: "leave ~/.ssh/config alone: ssh then reads koko's ssh_config only once you include it",
+		}},
 		// It spends a one-time Join Code (P0 spec: overview).
 		Tier: Irreversible,
 		// The join itself is SSH authentication, not an operation; once
@@ -38,11 +43,19 @@ var joinCommands = []Command{
 type joined struct {
 	ServerAddress string            `json:"server_address"`
 	DeviceSession deviceSessionJSON `json:"device_session"`
+	// IncludeWarning is status's include_warning after the join: why ssh
+	// does not read koko's ssh_config for every host, such as an Include
+	// line koko could not add, and how to fix it. Null when it does, or
+	// --no-ssh-config left ~/.ssh/config alone on purpose.
+	IncludeWarning *string `json:"include_warning"`
 }
 
 func (j joined) Human(w io.Writer) error {
-	_, err := fmt.Fprintf(w, "Joined the koko server at %s as %s's device %s.\n",
-		j.ServerAddress, j.DeviceSession.User, j.DeviceSession.Device)
+	if _, err := fmt.Fprintf(w, "Joined the koko server at %s as %s's device %s.\n",
+		j.ServerAddress, j.DeviceSession.User, j.DeviceSession.Device); err != nil || j.IncludeWarning == nil {
+		return err
+	}
+	_, err := fmt.Fprintf(w, "%s.\n", *j.IncludeWarning)
 	return err
 }
 
@@ -122,7 +135,20 @@ func join(ctx context.Context, in *Input) (joined, error) {
 	if err != nil {
 		return joined{}, fmt.Errorf("the Join Code joined this device as %s's device %s, but koko could not keep its files (%w); the code is spent: ask for a new one, and revoke %s/%s", d.User, d.Device, err, d.User, d.Device)
 	}
-	return joined{ServerAddress: code.Address, DeviceSession: deviceSessionFromAPI(d)}, nil
+	out := joined{ServerAddress: code.Address, DeviceSession: deviceSessionFromAPI(d)}
+	// The device has joined: ssh not reading koko's ssh_config yet changes
+	// nothing about that, so the join says why and goes on. A line it finds
+	// below a Host or Match line it leaves there, and warns as status does.
+	if !in.Bool("no-ssh-config") {
+		err := devicefiles.AddInclude(home)
+		if err == nil {
+			err = devicefiles.CheckInclude(home)
+		}
+		if err != nil {
+			out.IncludeWarning = new(err.Error())
+		}
+	}
+	return out, nil
 }
 
 // joinCode reads the Join Code: the argument, or stdin for "-", which keeps
