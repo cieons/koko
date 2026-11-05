@@ -41,7 +41,7 @@ var hostCommands = []Command{
 		Verb:    "ls",
 		Summary: "List the Hosts you can see that match every filter term, such as expires_at.le=+30d auto_renew=no",
 		Flags:   []Flag{{Name: "with-note", Bool: true, Summary: "Include each Host's Note"}},
-		Filters: true,
+		Filters: api.HostListFields,
 		Tier:    Read,
 		Op:      api.HostList,
 		Run:     action(hostLs),
@@ -312,6 +312,13 @@ func (a addedHosts) MarshalJSONTo(enc *jsontext.Encoder) error {
 	return json.MarshalEncode(enc, a.hosts)
 }
 
+// jsonShape is what koko skill documents: one Host, or an array of them for
+// an array on stdin.
+func (addedHosts) jsonShape() string {
+	h := shape(reflect.TypeFor[hostJSON]())
+	return h + " | [" + h + "]"
+}
+
 func (a addedHosts) Human(w io.Writer) error {
 	for _, h := range a.hosts {
 		if _, err := fmt.Fprintf(w, "Added Host %s (%s) to Space %s.\n", h.Name, h.ID, h.Space); err != nil {
@@ -397,11 +404,11 @@ func (l hostList) Human(w io.Writer) error {
 }
 
 func hostLs(ctx context.Context, in *Input) (hostList, error) {
-	filters, err := readFilters(in, api.HostListFields)
+	filters, err := readFilters(in)
 	if err != nil {
 		return nil, err
 	}
-	sort, err := readSort(in, api.HostListFields)
+	sort, err := readSort(in)
 	if err != nil {
 		return nil, err
 	}

@@ -247,7 +247,9 @@ refused with exit 2 before any call.
 ([`readFilters`](../../internal/client/cli/filter.go)): `key=value`,
 `key!=value`, `key.lt=value`, `key.le=value`, `key.gt=value`, `key.ge=value`,
 `key.has` and `key.lacks`, ANDed, and `--sort key` or `--sort key.desc`,
-repeatable. It checks each term's syntax, key and value as the koko server
+repeatable. Its entry in the command tree carries `api.HostListFields` as
+its `Filters`, which `readFilters` and `readSort` check against and `koko
+skill` lists. It checks each term's syntax, key and value as the koko server
 would and refuses a bad one with exit 2 before any call:
 `koko host ls expires_at.le=+30d auto_renew=no --sort expires_at` lists the
 Hosts due for renewal, soonest first.
@@ -264,7 +266,8 @@ takes a new name without a Host. `--json` prints the CLI's own Service,
 table (`NAME PORTS ID`, the name as `<host>/<service>` and the ports as
 `ports=` takes them, `-` for none) followed, with `--with-note`, by each
 Service's Note. `koko service ls` takes the filter terms and `--sort` of
-`koko host ls`, on its own keys: `koko service ls host=web1` lists one Host's
+`koko host ls`, on its own keys (its entry's `Filters`,
+`api.ServiceListFields`): `koko service ls host=web1` lists one Host's
 Services, and `koko service ls kind=proxy` every Service of a kind.
 
 `koko attr ls` prints what `attr.list` answers, as a bare array of `{"key",

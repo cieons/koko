@@ -13,12 +13,17 @@ joined from each area's `<area>Commands`. An entry
 the positional arguments (each plain, qualified, or qualified and allowed
 bare; each required, or optional after every required one, shown as
 `[<device>]`; the last, if plain, may take many words, one or more, shown as
-`<user>...`), the flags (each with its `KOKO_*` variable, default and choices),
-whether it takes `key=value` pairs and `--unset`, whether it reads a secret
-input (`ReadsSecret`), the risk tier (required),
+`<user>...`; each may list the only values it takes, its choices), the flags
+(each with its `KOKO_*` variable, default and choices), whether it takes
+`key=value` pairs and `--unset`, the fields a list filters and sorts on
+(`Filters`, with their types), whether it reads a secret input
+(`ReadsSecret`), the risk tier (required),
 Owner-only, the API operation it calls and its `Run`, made with `action(f)`
 from a function returning the command's `--json` type, which is also its
-shape. Every command takes `--json`, which is not listed.
+shape. Every command takes `--json`, which is not listed. The parser, `koko
+help`, `koko completion` and `koko skill` are all generated from the tree
+([below](#koko-skill-koko-help-and-koko-completion)), so a command added to
+it reaches all four; a command's `Run` gets the tree through its `Input`.
 [`tree_test.go`](../../internal/client/cli/tree_test.go) checks every entry: a
 tier, a summary, a unique path, sound arguments and flags (neither `--json`
 nor `--unset` listed, `--unset` only beside pairs, and many words only for
@@ -38,10 +43,13 @@ arguments and flags, or refuses the command line with exit 2 and the code
 - an unknown flag, a flag given twice, a value flag without a value or with an
   empty one, a value outside the flag's choices (from the flag or its
   variable), and `--json` or a boolean flag given a value;
+- `--help`, before the command path or as an unknown flag after it,
+  pointing to `koko help` and the command path typed;
 - a missing, an empty or an extra argument, so `koko space add "$NAME"` with
   `NAME` unset never reaches the koko server; an optional argument may be
   left out, but given empty it is refused too; an argument that takes many
-  words needs one, refuses an empty one, and leaves no word extra;
+  words needs one, refuses an empty one, and leaves no word extra; and an
+  argument outside its choices;
 - a qualified name (`<space>/<secret>`, `<host>/<service>`, `<user>/<device>`)
   with a part missing or empty, or a part that holds `/`; one that may be bare
   (`[<user>/]<device>`) is also taken without its `/`;
@@ -50,13 +58,15 @@ arguments and flags, or refuses the command line with exit 2 and the code
   clears it), a key given twice, `--unset` of one key twice, and a key both set
   and unset.
 
-A list with `Filters`, such as `host ls`, reads every word holding `=` or
-`.` as a filter term (`price.gt=10`, `region!=eu`, `price.has`) and takes
-`--sort <key>[.desc]`, repeatable; `Input.Terms` and `Input.Sorts` return
-them in order. Reading a term (its operator, key and value, by the key's
-type) is the command's, through `readFilters` and `readSort`
-([the record](record.md#filtering-and-sorting)), which refuse a bad one with
-exit 2 before any call.
+A list with `Filters`, such as `host ls` with `api.HostListFields`, reads
+every word holding `=` or `.` as a filter term (`price.gt=10`, `region!=eu`,
+`price.has`) and takes `--sort <key>[.desc]`, repeatable; `Input.Terms` and
+`Input.Sorts` return them in order. Reading a term (its operator, key and
+value, by the key's type) is the command's, through `readFilters` and
+`readSort`, which check it against the command's `Filters`
+([the record](record.md#filtering-and-sorting)) and refuse a bad one with
+exit 2 before any call. `filterTerms` lists the forms of a term, for `koko
+skill` and the refusals.
 
 A command that reads a secret input (`ReadsSecret`, such as `secret add`)
 refuses an extra argument, and an unknown flag that does not start with
@@ -213,6 +223,73 @@ revoked, and when it was this device, that koko deleted its files. `koko
 user ls` adds a REMOVED column when it lists a Removed User, and `koko user
 remove` says whether it deleted the User, freeing the name, or Removed them.
 
+## `koko skill`, `koko help` and `koko completion`
+
+Three commands describe the command tree, from the binary alone: they call
+no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
+
+- **`koko skill`** prints the reference for agents of this build, in
+  Markdown: the rules of the command line, every command under its risk tier
+  (by tier, then path) with its usage, its flags, its arguments' choices,
+  the fields a list filters on and the shape of its `--json`, then the
+  filter syntax (`filterTerms` and the relative dates), the value types, the
+  Preset Attributes (`record.Presets`), every error code (`api.Codes`, then
+  the CLI's `cliCodes`) and the exit statuses (`exitStatuses`). A read
+  command whose path is a prefix of a riskier one is named, as `koko skill`
+  of `koko skill install`. A shape is written from the command's `--json`
+  type by [`shape`](../../internal/client/cli/shape.go) as encoding/json/v2
+  marshals it (`string`, `number`, `boolean`, `T | null`, `[T]`,
+  `{"key": T}`, `"key"?: T` for a member that may be left out, `{<key>: T}`
+  for a map, and `string | number` for an Attribute value); a type that
+  marshals itself, such as `host add`'s one Host or array of Hosts, says its
+  shape through a `jsonShape` method (`shaped`), and a test refuses one that
+  does not; the text spells
+  each shape out once and names the first command that printed it after
+  that. With `--json` it prints the same data:
+  `{"version", "commands": [...], "filters": {"terms": [{"term",
+  "matches"}], "relative_dates"}, "presets": [{"key", "type", "values",
+  "min"}], "error_codes": [{"code", "from"}], "exit_statuses": [{"status",
+  "means"}]}`, `from` `"server"` or `"cli"`. A command is `{"command",
+  "usage", "summary", "tier", "owner_only", "args": [{"arg", "choices"}],
+  "flags": [{"flag", "summary", "env", "default", "choices",
+  "repeatable"}], "filters", "json"}`, `filters` the list's fields as
+  `presets` writes a key, or `null`, and `json` the shape, or `null` for a
+  command that prints nothing. Its tests check properties (every command of
+  the tree under its tier with its flags and shape, every error code, every
+  Preset, the exit statuses), never the whole output (rule 11 in [code
+  layout](code-layout.md#rules-for-working-in-parallel)).
+- **`koko skill install [--dir <dir>]`** writes the stub `SKILL.md`, whose
+  bytes are fixed, into `<dir>/koko/`, a directory koko owns, so it never
+  overwrites another skill's `SKILL.md`; `<dir>` is the agent's skills
+  directory, `~/.claude/skills` when `--dir` is not given (refused with exit
+  2 when `HOME` is unset) ([ADR
+  0032](../adr/0032-skill-install-writes-a-koko-directory-in-the-skills-directory.md)).
+  It writes through a temporary file, synced and renamed over the stub, mode
+  `0644`, and leaves every other file in the directory as it was. The stub holds the name, a description and "run `koko skill`", so it
+  never goes stale across upgrades.
+- **`koko help`** lists every command with its arguments and summary. `koko
+  help <words>` shows the command the words name in full (usage, summary,
+  tier, flags with their variables, defaults and choices, the fields a list
+  filters on, and the longer commands its path starts, as `koko skill
+  install` of `koko skill`), or else lists every command whose path starts
+  with them. Words that start no command are refused with exit 2, as the
+  parser refuses them.
+  With `--json`, an array of the commands, each as `koko skill --json`
+  describes one.
+- **`koko completion <shell>`** prints a script for `bash` or `zsh`
+  ([`completion.go`](../../internal/client/cli/completion.go)), the login
+  shells of the Linux and macOS the CLI runs on, loaded with `eval
+  "$(koko completion bash)"`, or for zsh after `compinit` or saved as
+  `_koko` in `$fpath`. The script holds the tree as case tables
+  (`_koko_next`, `_koko_flags`, `_koko_value`, `_koko_arg`) and one walk over
+  the words typed (`_koko_complete`), all in what bash 3.2 and zsh share,
+  and completes command words, flags (`--json` among them), a flag's
+  choices, a file or directory for a flag whose value is a `file` or `dir`,
+  and an argument's choices; it completes no record name, which only the
+  koko server knows, and a flag's value only after a space, not after
+  `--name=`. A shell is one entry of `shellScripts`, its head and driver.
+  Its tests run the script in bash, and in zsh where it is installed.
+
 ## The commands so far
 
 | Command | Tier | Calls | `--json` |
@@ -262,6 +339,10 @@ remove` says whether it deleted the User, freeing the name, or Removed them.
 | `koko service rename <host>/<service> <new-name>` | reversible | `service.rename` | the Service under its new name, on the same Host |
 | `koko service rm <host>/<service>` | irreversible | `service.remove` | the Service it deleted, as it was |
 | `koko attr ls` | read | `attr.list` | an array of every Preset, then every other key in use on what the caller can see: `{"key", "type", "values", "min", "preset", "in_use"}` ([the record](record.md#attributes-and-the-preset-attributes)) |
+| `koko skill` | read | none | `{"version", "commands", "filters", "presets", "error_codes", "exit_statuses"}`, [below](#koko-skill-koko-help-and-koko-completion) |
+| `koko skill install [--dir <dir>]` | reversible | none | `{"path"}`, the stub's absolute path |
+| `koko help [<command>...]` | read | none | an array of the commands shown, each as `koko skill` describes one |
+| `koko completion <shell>` | read | none | `{"shell", "script"}`; without `--json`, the script alone |
 
 `koko server run` takes `--data-dir` (`KOKO_DATA_DIR`, default
 `/var/lib/koko`), `--root-key-file` (`KOKO_ROOT_KEY_FILE`, default

@@ -40,7 +40,7 @@ func TestCommandTreeEntries(t *testing.T) {
 		if c.Unset && !c.Pairs {
 			t.Errorf("%s takes --unset but no key=value pairs", path)
 		}
-		if c.Filters && c.Pairs {
+		if c.Filters != nil && c.Pairs {
 			t.Errorf("%s takes both filter terms and key=value pairs, which the parser cannot tell apart", path)
 		}
 		var names []string

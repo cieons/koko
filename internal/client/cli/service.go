@@ -35,7 +35,7 @@ var serviceCommands = []Command{
 		Verb:    "ls",
 		Summary: "List the Services on every Host you can see that match every filter term, such as host=web1 kind=proxy",
 		Flags:   []Flag{{Name: "with-note", Bool: true, Summary: "Include each Service's Note"}},
-		Filters: true,
+		Filters: api.ServiceListFields,
 		Tier:    Read,
 		Op:      api.ServiceList,
 		Run:     action(serviceLs),
@@ -289,11 +289,11 @@ func (s serviceJSON) note() (string, bool) {
 }
 
 func serviceLs(ctx context.Context, in *Input) (serviceList, error) {
-	filters, err := readFilters(in, api.ServiceListFields)
+	filters, err := readFilters(in)
 	if err != nil {
 		return nil, err
 	}
-	sort, err := readSort(in, api.ServiceListFields)
+	sort, err := readSort(in)
 	if err != nil {
 		return nil, err
 	}

@@ -8,19 +8,46 @@ import (
 	"github.com/cieons/koko/internal/shared/record"
 )
 
+// filterTerm is one form of a filter term: how it is written, the API
+// operator it reads as, and what it matches.
+type filterTerm struct {
+	form    string
+	op      string
+	matches string
+}
+
+// filterTerms are the forms of a filter term, for koko skill and for
+// messages; readTerm reads each into its operator.
+var filterTerms = []filterTerm{
+	{"key=value", api.FilterEq, "the key's value equals value"},
+	{"key!=value", api.FilterNe, "the key's value differs from value, or the record lacks the key"},
+	{"key.lt=value", api.FilterLt, "the key's value is less than value"},
+	{"key.le=value", api.FilterLe, "the key's value is at most value"},
+	{"key.gt=value", api.FilterGt, "the key's value is greater than value"},
+	{"key.ge=value", api.FilterGe, "the key's value is at least value"},
+	{"key.has", api.FilterHas, "the record has the key"},
+	{"key.lacks", api.FilterLacks, "the record lacks the key"},
+}
+
 // termForms names the filter terms, for messages.
-const termForms = "key=value, key!=value, key.lt=value, key.le=value, key.gt=value, key.ge=value, key.has or key.lacks"
+var termForms = func() string {
+	forms := make([]string, len(filterTerms))
+	for i, f := range filterTerms {
+		forms[i] = f.form
+	}
+	return strings.Join(forms[:len(forms)-1], ", ") + " or " + forms[len(forms)-1]
+}()
 
 // readFilters reads the filter terms of a list command into the API's,
-// checking each against fields, the fields the list filters on with their
-// types, and the Attribute key rules. It refuses before any call a
-// malformed term, a key the list does not take and a value not of its key's
-// type, and resolves a relative date in the caller's time zone, since the
-// API compares only absolute dates. No term needs quoting in a shell.
-func readFilters(in *Input, fields map[string]record.Type) ([]api.Filter, error) {
+// checking each against the fields the list filters on (Command.Filters)
+// with their types, and the Attribute key rules. It refuses before any call
+// a malformed term, a key the list does not take and a value not of its
+// key's type, and resolves a relative date in the caller's time zone, since
+// the API compares only absolute dates. No term needs quoting in a shell.
+func readFilters(in *Input) ([]api.Filter, error) {
 	var filters []api.Filter
 	for _, word := range in.Terms() {
-		f, err := readTerm(in, fields, word)
+		f, err := readTerm(in, in.line.cmd.Filters, word)
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +100,8 @@ func readTerm(in *Input, fields map[string]record.Type, word string) (api.Filter
 // readSort reads the values of --sort, key or key.desc, into the API's sort
 // keys, refusing before any call a key the list does not take, and a key
 // sorted by twice.
-func readSort(in *Input, fields map[string]record.Type) ([]api.SortKey, error) {
+func readSort(in *Input) ([]api.SortKey, error) {
+	fields := in.line.cmd.Filters
 	var keys []api.SortKey
 	for _, s := range in.Sorts() {
 		key, desc := strings.CutSuffix(s, ".desc")

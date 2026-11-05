@@ -91,6 +91,10 @@ _Avoid_: master key, encryption key, data key, KEK
 A sensitive value the koko server holds in one Space and shows only when asked to by name.
 _Avoid_: credential, password
 
+**Skill**:
+The reference for agents that `koko skill` prints, generated from the binary's own command tree; the `SKILL.md` that `koko skill install` writes is only a stub that says to run it.
+_Avoid_: manual, agent docs, prompt
+
 ### People
 
 **User**:

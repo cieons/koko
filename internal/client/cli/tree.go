@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/record"
 )
 
 // Command is one entry of the command tree: everything the parser, help,
@@ -33,11 +34,13 @@ type Command struct {
 	// Unset makes the command take --unset <key>, repeatable, to clear a
 	// field or Attribute. It is not listed in Flags.
 	Unset bool
-	// Filters makes a list take filter terms beside its arguments, each a
-	// word holding '=' or '.' (price.gt=10, region!=eu, expires_at.le=+30d,
-	// price.has), and --sort <key>[.desc], repeatable, which is not listed in
-	// Flags. Reading the terms is the command's (readFilters).
-	Filters bool
+	// Filters, when set, makes a list take filter terms beside its
+	// arguments, each a word holding '=' or '.' (price.gt=10, region!=eu,
+	// expires_at.le=+30d, price.has), and --sort <key>[.desc], repeatable,
+	// which is not listed in Flags. It holds the fields the list filters and
+	// sorts on, by key, with the types of their values; every other key is
+	// an Attribute key. Reading the terms is the command's (readFilters).
+	Filters map[string]record.Type
 	// ReadsSecret says the command reads a secret input (Input.ReadSecret),
 	// such as a Secret value, which is never an argument: a word its command
 	// line does not expect is refused without being repeated, since it may
@@ -83,6 +86,9 @@ type Arg struct {
 	// as <Name>..., such as the Users of space member add; Input.Args
 	// returns them in order.
 	Many bool
+	// Choices, when set, are the only values accepted, such as the shells
+	// of koko completion.
+	Choices []string
 }
 
 // Pair is a key=value word, cut at its first '='.
@@ -202,6 +208,7 @@ var commands = [][]Command{
 	attrCommands,
 	enrollCommands,
 	serviceCommands,
+	skillCommands,
 }
 
 // Tree returns every command.

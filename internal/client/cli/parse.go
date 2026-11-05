@@ -35,9 +35,12 @@ type qualifiedName struct {
 // supplies the KOKO_* equivalents of flags that were not given.
 func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, error) {
 	if len(argv) == 0 {
-		return nil, usagef("give a command: koko <noun> <verb>, such as koko space ls")
+		return nil, usagef("give a command: koko <noun> <verb>, such as koko space ls; koko help lists them")
 	}
 	cmd, path, early, rest := locate(tree, argv)
+	if slices.Contains(early, "--help") {
+		return nil, noHelpFlag(path)
+	}
 	if cmd == nil {
 		return nil, unknownCommand(tree, path, rest)
 	}
@@ -51,7 +54,7 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 	for i := 0; i < len(rest); i++ {
 		tok := rest[i]
 		if !isFlag(tok) {
-			if cmd.Filters && strings.ContainsAny(tok, "=.") {
+			if cmd.Filters != nil && strings.ContainsAny(tok, "=.") {
 				p.terms = append(p.terms, tok)
 				continue
 			}
@@ -83,6 +86,8 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 		}
 		f := cmd.flag(name)
 		switch {
+		case f == nil && name == "help" && !hasValue:
+			return nil, noHelpFlag(path)
 		case f == nil:
 			return nil, usagef("unknown flag --%s for koko %s", name, cmd.Path())
 		case p.flags[name] != "":
@@ -137,6 +142,9 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 		a := cmd.Args[min(i, len(cmd.Args)-1)]
 		if v == "" {
 			return nil, usagef("%s cannot be empty in koko %s", a.usage(), cmd.Path())
+		}
+		if err := checkChoice(a.Choices, v, a.usage()); err != nil {
+			return nil, err
 		}
 		if a.Many {
 			p.many = append(p.many, v)
@@ -217,6 +225,12 @@ func locate(tree []Command, argv []string) (cmd *Command, path, early, rest []st
 		path = next
 	}
 	return find(tree, path), path, early, argv[i:]
+}
+
+// noHelpFlag refuses --help, where the parser would refuse it as an unknown
+// flag, pointing to koko help for the command path typed.
+func noHelpFlag(path []string) error {
+	return usagef("there is no --help flag: run %s", shellJoin(append([]string{"koko", "help"}, path...)))
 }
 
 // unknownCommand says why argv names no command, and what the koko it began
@@ -310,7 +324,7 @@ func (c *Command) flag(name string) *Flag {
 	if c.Unset && name == unsetFlag.Name {
 		return &unsetFlag
 	}
-	if c.Filters && name == sortFlag.Name {
+	if c.Filters != nil && name == sortFlag.Name {
 		return &sortFlag
 	}
 	i := slices.IndexFunc(c.Flags, func(f Flag) bool { return f.Name == name })
@@ -323,8 +337,14 @@ func (c *Command) flag(name string) *Flag {
 // check refuses a value outside the flag's choices; source names where the
 // value came from: the flag or its environment variable.
 func (f *Flag) check(value, source string) error {
-	if len(f.Choices) > 0 && !slices.Contains(f.Choices, value) {
-		return usagef("%s must be one of %s, not %q", source, strings.Join(f.Choices, ", "), value)
+	return checkChoice(f.Choices, value, source)
+}
+
+// checkChoice refuses a value outside choices, when there are any; source
+// names where the value was given.
+func checkChoice(choices []string, value, source string) error {
+	if len(choices) > 0 && !slices.Contains(choices, value) {
+		return usagef("%s must be one of %s, not %q", source, strings.Join(choices, ", "), value)
 	}
 	return nil
 }

@@ -63,6 +63,16 @@ const (
 	exitRefused = 2
 )
 
+// exitStatuses are the exit statuses with what each means, for koko skill;
+// a command that adds one, such as koko exec's, adds its line.
+var exitStatuses = []exitStatusJSON{
+	{exitOK, "success"},
+	{exitFailed, "the operation failed; the error's code says why"},
+	{exitRefused, "the command line was refused before any call to the koko server, such as for an unknown flag, " +
+		"a bad filter term, a flag before the command path, JSON on stdin that does not parse or has an unknown field, " +
+		"or a secret input missing without a terminal"},
+}
+
 // cliError is a failure the CLI reports with one of its own codes.
 type cliError struct {
 	code    string

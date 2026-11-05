@@ -163,7 +163,7 @@ func (t Type) Parse(s string) (Value, error) {
 		return Value{text: d}, err
 	case KindEnum:
 		if !slices.Contains(t.values, s) {
-			return Value{}, fmt.Errorf("%q is not one of %s", s, t.describeValues())
+			return Value{}, fmt.Errorf("%q is not one of %s", s, t.DescribeValues())
 		}
 		return Value{text: s}, nil
 	}
@@ -212,9 +212,9 @@ func ParseDate(s string) (string, error) {
 	return s, nil
 }
 
-// describeValues names an enum's values: all of them, or what they are when
-// they are too many to list.
-func (t Type) describeValues() string {
+// DescribeValues names an enum's values for people: all of them, or what
+// they are when they are too many to list, such as the ISO 4217 codes.
+func (t Type) DescribeValues() string {
 	return cmp.Or(t.about, strings.Join(t.values, ", "))
 }
 

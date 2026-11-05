@@ -1,0 +1,22 @@
+[
+  {
+    "command": "skill install",
+    "usage": "koko skill install [--dir <dir>]",
+    "summary": "Write the stub SKILL.md that tells an agent to run koko skill, as <dir>/koko/SKILL.md",
+    "tier": "reversible",
+    "owner_only": false,
+    "args": [],
+    "flags": [
+      {
+        "flag": "--dir <dir>",
+        "summary": "The agent's skills directory, in which koko writes koko/SKILL.md; ~/.claude/skills when not given",
+        "env": null,
+        "default": null,
+        "choices": null,
+        "repeatable": false
+      }
+    ],
+    "filters": null,
+    "json": "{\"path\": string}"
+  }
+]

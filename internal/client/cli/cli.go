@@ -134,7 +134,8 @@ func (r *Runner) Run(ctx context.Context, inv Invocation) int {
 	if slices.Equal(inv.Args, []string{devicemux.Arg}) {
 		return r.runDeviceMux(ctx, &inv)
 	}
-	p, err := parse(Tree(), inv.Args, inv.getenv)
+	tree := Tree()
+	p, err := parse(tree, inv.Args, inv.getenv)
 	if err != nil {
 		return writeError(inv.Stderr, err, wantsJSON(inv.Args))
 	}
@@ -142,7 +143,7 @@ func (r *Runner) Run(ctx context.Context, inv Invocation) int {
 	if err != nil {
 		return writeError(inv.Stderr, err, p.json)
 	}
-	in := &Input{inv: &inv, runner: r, line: p, log: log}
+	in := &Input{inv: &inv, runner: r, line: p, log: log, tree: tree}
 	defer in.close()
 	res, err := p.cmd.Run.run(ctx, in)
 	if err != nil {
@@ -166,6 +167,9 @@ type Input struct {
 	// log is the command's own log on stderr, at the level KOKO_LOG_LEVEL
 	// names (info by default), for what only someone debugging wants.
 	log *slog.Logger
+	// tree is the command tree the command line was parsed against, for the
+	// commands generated from it, such as koko skill.
+	tree []Command
 
 	// api calls the koko server, dialling it on the first call; nil until
 	// then.
