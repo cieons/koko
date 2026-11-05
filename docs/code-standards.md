@@ -12,7 +12,7 @@ moves here.
 | A change holds on the whole path. | Follow it from the CLI or API input to the end effect: callers, stored state, files written, effects on remote hosts. One correct function doesn't make the operation correct. |
 | A fix reaches every sibling. | Grep for the same pattern across subcommands, API handlers, transports and access modes, and fix each one in the same change. |
 | A failed read or parse means "unknown". | It never means empty, absent or equal. A file that doesn't parse is copied aside before koko writes over it. |
-| Secrets stay out of output. | Secrets, the koko key and Device Session tokens appear in no CLI output, log line, error message or test fixture, except from a command whose purpose is to show one. |
+| Secrets stay out of output. | Secrets, the koko key, a device's private key, Join Codes and `koko web` tokens appear in no CLI output, log line, error message or test fixture, except from a command whose purpose is to show one. |
 | koko writes only files it owns. | On a user's machine koko writes its own files (an include target, its skill file, its state) and joins them to the user's files with one include line. The user's own content stays byte-for-byte. |
 
 ## Tests
@@ -47,7 +47,7 @@ The subject names the area, then says what the user now sees, as plain
 behaviour:
 
 ```
-gateway: a revoked token ends the open tunnel instead of the next one (#12)
+gateway: a revoked Device Session ends the open Tunnel instead of the next one (#12)
 ```
 
 The area is the subsystem (`cli`, `api`, `gateway`, `tunnel`, `enroll`,

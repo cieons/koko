@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0012
+---
+
 # One HTTPS port; Tunnels over WSS
 
 The koko server listens on one HTTPS port. The CLI reaches the Gateway through

@@ -52,7 +52,7 @@ One running deployment of koko, holding the record, the Secrets and the Gateway.
 _Avoid_: asset server, daemon, backend
 
 **Gateway**:
-The part of the koko server that ends every incoming SSH connection and opens its own to the Host.
+The part of the koko server that ends every SSH Session and opens its own SSH connection to the Host.
 _Avoid_: bastion, jump host, proxy
 
 **koko key**:
@@ -86,19 +86,27 @@ The Space every User has to themselves, where what they record goes by default.
 _Avoid_: home, private space
 
 **Invite**:
-A one-time link that lets a person join a koko server as a User.
-_Avoid_: enroll, signup, registration
+A Join Code the Owner issues to bring a new person in as a User.
+_Avoid_: enroll, signup, registration, invite link
 
 ### Access
 
+**Join Code**:
+A one-time code that lets one device join a koko server for a User; it names the koko server and pins its host key.
+_Avoid_: token, pairing code, invite code, enrollment code
+
 **Device Session**:
-The revocable identity one device holds after signing in to a koko server.
+The key one device registered when it joined a koko server: the revocable identity that device acts as.
 _Avoid_: session (alone), login, token
+
+**Device Connection**:
+An SSH connection from a device to the koko server, authenticated by that device's Device Session.
+_Avoid_: tunnel, session, link
 
 **SSH Session**:
 One SSH connection through the Gateway to a Host.
 _Avoid_: session (alone), connection
 
 **Tunnel**:
-A stream from the CLI to the koko server over its one HTTPS port, carrying an SSH Session or a port forward.
+A channel the CLI opens on a Device Connection to carry one SSH Session to the Gateway.
 _Avoid_: websocket, channel, stream

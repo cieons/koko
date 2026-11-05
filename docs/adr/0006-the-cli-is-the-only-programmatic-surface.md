@@ -1,11 +1,11 @@
 # The CLI is the only programmatic surface
 
 Scripts and agents drive koko through one CLI, which calls the same API over a
-Unix socket on the koko server and over HTTPS from anywhere else. The binary
-prints its own agent skill (`koko skill`), generated from the command tree and
-versioned with the release, so a new feature reaches agents the moment the
-binary ships. The web UI is a second client of the same API, for people:
-recording Hosts, accepting an Invite, confirming a device sign-in.
+Unix socket on the koko server and over a Device Connection from anywhere else
+(ADR 0012). The binary prints its own agent skill (`koko skill`), generated
+from the command tree and versioned with the release, so a new feature reaches
+agents the moment the binary ships. The web UI is a second client of the same
+API, for people, and is reached only through `koko web` (ADR 0012).
 
 ## Considered Options
 

@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0013
+---
+
 # A Tunnel's Device Session authenticates its SSH Session
 
 A device signs in once with the OAuth device-authorization flow and holds a
