@@ -114,8 +114,9 @@ type unitFile struct {
 var _ installer.Machine = (*Machine)(nil)
 
 // skeleton is what a fresh machine's root holds: the system directories
-// install writes into.
-var skeleton = []string{"/etc/systemd/system", "/usr/local/bin", "/var/lib", "/run"}
+// install writes into, and /run/systemd/system, which tells that systemd
+// runs the machine.
+var skeleton = []string{"/etc/systemd/system", "/usr/local/bin", "/var/lib", "/run/systemd/system"}
 
 // NewMachine makes a fresh fake machine: a root holding only the system
 // directories, systemd 252, an ext4 filesystem, SourceIP on the default

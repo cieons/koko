@@ -68,6 +68,8 @@ const (
 	// minSystemd is the oldest systemd whose LoadCredential= the unit can
 	// use.
 	minSystemd = 247
+	// systemdRunDir is there only while systemd runs the machine.
+	systemdRunDir = "/run/systemd/system"
 )
 
 // Machine is everything install reaches on the machine beyond its files.
@@ -182,6 +184,13 @@ func (in *Installer) path(p string) string {
 // koko server, a port another process holds, and on a fresh koko server a
 // Server Address devices could not reach. It returns what install is to do.
 func (in *Installer) check(ctx context.Context, req install.Request) (plan, error) {
+	// systemd runs the machine when it has made this directory, as
+	// sd_booted(3) tells; in a container whose init is something else,
+	// systemctl may still be there, and would fail only at daemon-reload,
+	// after the writes.
+	if info, err := os.Stat(in.path(systemdRunDir)); err != nil || !info.IsDir() {
+		return plan{}, refuse(install.Unsupported, "the koko server runs only on Linux with systemd, and systemd is not running this machine (there is no %s)", systemdRunDir)
+	}
 	version, err := in.Machine.SystemdVersion(ctx)
 	if err != nil {
 		return plan{}, fmt.Errorf("find systemd's version, which must be %d or later: %w", minSystemd, err)

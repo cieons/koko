@@ -369,6 +369,30 @@ func TestServerInstallRefusesAPrivateSourceIP(t *testing.T) {
 	}
 }
 
+// On a machine whose init is not systemd, as in a container, systemctl may
+// still be there to tell its version: install tells that systemd is not
+// running as sd_booted does, by /run/systemd/system, and refuses before it
+// asks the machine anything or writes anything.
+func TestServerInstallRefusesWithoutSystemdRunning(t *testing.T) {
+	m := harness.NewMachine(t)
+	if err := os.Remove(m.Path("/run/systemd/system")); err != nil {
+		t.Fatal(err)
+	}
+	fresh := m.Files()
+	msg := m.Koko("server", "install", "--owner", "alice", "--json").WantError(t, 1, "unsupported_platform")
+	for _, want := range []string{"systemd is not running", "nothing was written"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message %q does not say %q", msg, want)
+		}
+	}
+	if files := m.Files(); !slices.Equal(files, fresh) {
+		t.Errorf("the refusal wrote: %v", files)
+	}
+	if calls := m.Calls(); len(calls) != 0 {
+		t.Errorf("install asked the machine %v", callNames(calls))
+	}
+}
+
 // A flag value that could never work is refused before install asks the
 // machine anything.
 func TestServerInstallRefusesBadFlags(t *testing.T) {

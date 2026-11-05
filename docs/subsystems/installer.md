@@ -55,6 +55,11 @@ In this order ([`Installer.Install`](../../internal/server/installer/installer.g
 1. **Every check, before any write.** Each refusal below says "nothing was
    written"; all but the schema's are an `install.Refusal`, whose reason the
    CLI turns into its code:
+   - systemd not running the machine, as `sd_booted(3)` tells it: no
+     `/run/systemd/system` directory under the root, as in a container
+     whose init is something else, where `systemctl` may still be there and
+     would fail only at `daemon-reload`, after the writes:
+     `unsupported_platform`, before install asks the machine anything;
    - systemd older than 247, which `LoadCredential=` needs:
      `unsupported_platform`;
    - a data directory on a network filesystem (NFS, SMB, Ceph, 9p, sshfs and
@@ -262,7 +267,8 @@ systemd did not tell it):
 [`server_install_test.go`](../../internal/client/cli/server_install_test.go)
 runs `koko server install` through the CLI on
 [`harness.NewMachine`](../../internal/harness/machine.go), a fake machine: a
-temporary root holding only the system directories, and fakes that answer
+temporary root holding only the system directories (`/run/systemd/system`
+among them, as systemd runs the machine), and fakes that answer
 what the test sets (systemd's version, the filesystem type, the processes on
 ports, the source IP) and record every call with the files under the root at
 that moment. Its `systemctl` acts as systemd does with the unit: it runs only
@@ -279,9 +285,9 @@ of the unit's port. So initialisation and the printout run for real. The tests c
 golden file, the `--json` golden, the koko server initialised), the order
 (checks before any write, the Root Key and the binary before the start, a
 late socket waited for), the printout for people, `--port`, `--address`,
-every refusal writing nothing, private source IPs, bad flags, running again
-after a refused address and after a service that never opened its socket,
-and a Root Key file there already.
+every refusal writing nothing, systemd not running, private source IPs, bad
+flags, running again after a refused address and after a service that never
+opened its socket, and a Root Key file there already.
 [`server_upgrade_test.go`](../../internal/client/cli/server_upgrade_test.go)
 tests the upgrade on an initialised koko server: the new release's binary,
 the unit written again, the restart, the record kept, the `--json` goldens;
