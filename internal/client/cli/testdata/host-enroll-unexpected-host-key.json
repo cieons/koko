@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "unexpected_host_key",
+    "message": "the host key of web1 does not match the one pinned at Enroll (pinned SHA256:<fingerprint>, offered SHA256:<fingerprint>); koko did not log in. If web1 was rebuilt, pin its new key with --host-key <the fingerprint its provider shows>, or with --replace-host-key, which trusts whatever key it offers"
+  }
+}

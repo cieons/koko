@@ -32,6 +32,7 @@ var mappings = [][]mapping{
 	hostMappings,
 	secretMappings,
 	attrMappings,
+	enrollMappings,
 }
 
 // checkMappings returns one error for each API response field, reachable

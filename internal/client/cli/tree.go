@@ -200,6 +200,7 @@ var commands = [][]Command{
 	secretCommands,
 	statusCommands,
 	attrCommands,
+	enrollCommands,
 }
 
 // Tree returns every command.

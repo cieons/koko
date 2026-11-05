@@ -1,0 +1,14 @@
+{
+  "id": "host_<1>",
+  "name": "web1",
+  "space": "alice",
+  "address": "127.0.0.1",
+  "port": <port>,
+  "account": "deploy",
+  "state": "managed",
+  "host_key": "SHA256:<fingerprint>",
+  "attributes": {},
+  "note": null,
+  "created_at": "<time>",
+  "updated_at": "<time>"
+}

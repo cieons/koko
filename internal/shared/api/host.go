@@ -229,9 +229,14 @@ var (
 	// CodeInvalidValue: a field, an Attribute or the Note, or a value given
 	// for one, breaks its rule; the message names which and why.
 	CodeInvalidValue = Code{"invalid_value", http.StatusBadRequest}
+	// CodeHostWasManaged: host.remove of a Host that has been Managed, as
+	// its pinned host key shows: such a Host is kept on record, never
+	// deleted.
+	CodeHostWasManaged = Code{"host_was_managed", http.StatusConflict}
 )
 
 var hostCodes = []Code{
 	CodeUnknownHost,
 	CodeInvalidValue,
+	CodeHostWasManaged,
 }

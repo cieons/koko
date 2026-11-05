@@ -67,18 +67,25 @@ func newKeyedWrite(caller Caller, key, name string, body []byte) keyedWrite {
 	return w
 }
 
-// findResponse returns the response stored for w's key, now, when it was
-// stored for w's request; found is false when the key has none. The same
-// key with another request is refused with CodeIdempotencyKeyReused. It
-// first forgets every response kept past responseKept, so an expired key is
-// free again.
+// findResponse returns the response stored for w's key, now, as
+// lookupResponse does, inside a write's transaction. It first forgets every
+// response kept past responseKept, so an expired key is free again.
 func (a *API) findResponse(ctx context.Context, tx store.Tx, w keyedWrite, now time.Time) (body []byte, found bool, err error) {
 	if _, err := tx.ExecContext(ctx, "DELETE FROM idempotency_keys WHERE expires_at <= ?", now.Format(time.RFC3339)); err != nil {
 		return nil, false, fmt.Errorf("forget the expired responses of Idempotency-Keys: %w", err)
 	}
+	return a.lookupResponse(ctx, tx, w, now)
+}
+
+// lookupResponse returns the response stored for w's key and not expired
+// by now, when it was stored for w's request; found is false when the key
+// has none. The same key with another request is refused with
+// CodeIdempotencyKeyReused. It writes nothing, so a read-only transaction
+// may ask it, as a prepared write does before it prepares.
+func (a *API) lookupResponse(ctx context.Context, tx store.Tx, w keyedWrite, now time.Time) (body []byte, found bool, err error) {
 	var sealed []byte
-	err = tx.QueryRowContext(ctx, "SELECT sealed FROM idempotency_keys WHERE caller = ? AND idempotency_key = ?",
-		w.key.caller, w.key.key).Scan(&sealed)
+	err = tx.QueryRowContext(ctx, "SELECT sealed FROM idempotency_keys WHERE caller = ? AND idempotency_key = ? AND expires_at > ?",
+		w.key.caller, w.key.key, now.Format(time.RFC3339)).Scan(&sealed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil
 	}

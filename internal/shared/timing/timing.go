@@ -25,6 +25,11 @@ const (
 	// koko service it started to open its Unix socket. A start-up, migration
 	// and snapshot included, takes seconds; one that refuses never opens it.
 	InstallSocketWait = 30 * time.Second
+	// EnrollAddKey bounds how long Enroll, once logged in to a Host, waits
+	// for the Host to append the koko key to its authorized_keys: a shell
+	// command that takes milliseconds, so a Host that has not answered by
+	// then never will.
+	EnrollAddKey = 30 * time.Second
 )
 
 // Timings is the timing-constants hook. Each field is named after its
@@ -34,6 +39,7 @@ type Timings struct {
 	HostConnectAttempt time.Duration
 	HostConnectWait    time.Duration
 	InstallSocketWait  time.Duration
+	EnrollAddKey       time.Duration
 }
 
 // Resolve returns t with each zero field set to the product's constant.
@@ -41,5 +47,6 @@ func (t Timings) Resolve() Timings {
 	t.HostConnectAttempt = cmp.Or(t.HostConnectAttempt, HostConnectAttempt)
 	t.HostConnectWait = cmp.Or(t.HostConnectWait, HostConnectWait)
 	t.InstallSocketWait = cmp.Or(t.InstallSocketWait, InstallSocketWait)
+	t.EnrollAddKey = cmp.Or(t.EnrollAddKey, EnrollAddKey)
 	return t
 }

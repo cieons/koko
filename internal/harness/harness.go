@@ -30,6 +30,7 @@ import (
 	"github.com/cieons/koko/internal/server"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/timing"
 )
 
 // What Start initialises its koko server with.
@@ -68,6 +69,14 @@ type options struct {
 	dataDir     string
 	rootKeyFile string
 	listen      string
+	timings     timing.Timings
+}
+
+// Timings starts the koko server with t through the timing-constants hook,
+// so a test waits milliseconds where the product waits seconds, such as
+// between attempts to connect to a Host.
+func Timings(t timing.Timings) Option {
+	return func(o *options) { o.timings = t }
 }
 
 // NoInit leaves the koko server as Start finds it, without initialising it.
@@ -142,6 +151,7 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		Log:         h.log,
 		SocketPath:  h.socket,
 		Clock:       h.clock.Now,
+		Timings:     o.timings,
 	})
 	if err != nil {
 		t.Fatalf("start the koko server: %v", err)

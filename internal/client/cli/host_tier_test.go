@@ -14,6 +14,7 @@ func TestHostCommandsSitInTheirTiers(t *testing.T) {
 		"host rename": Reversible,
 		"host move":   Reversible,
 		"host rm":     Irreversible,
+		"host enroll": Irreversible,
 	}
 	for _, c := range Tree() {
 		if c.Noun != "host" {

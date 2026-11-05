@@ -10,7 +10,10 @@
 //
 // An operation never begins, commits or rolls back: it gets a store.Tx, and
 // the transaction commits only when the operation returns no error. It reads
-// the time from Now, which the framework fixes once per call.
+// the time from Now, which the framework fixes once per call. A write whose
+// work takes long, such as logging in to a Host, does that work in a Prepare
+// before its transaction (HandlePrepared), so it never holds the store's
+// write lock while it waits.
 package op
 
 import (
@@ -91,8 +94,33 @@ func AfterTx(ctx context.Context, f func(committed bool)) {
 // Func carries out one operation inside its transaction.
 type Func[Req, Resp any] func(ctx context.Context, tx store.Tx, caller Caller, req Req) (Resp, error)
 
-// call is one decoded request, ready to run in its transaction.
-type call func(ctx context.Context, tx store.Tx, caller Caller) (any, error)
+// Prepare is the part of a write that runs before its transaction, outside
+// any, so that it may take long, as logging in to a Host does, without
+// holding the store's write lock, which every other write would wait for
+// and give up on after SQLite's busy timeout. It reads through read, each
+// time in a read-only transaction of its own, and returns what the write's
+// transaction needs. It runs once per write: a retry answered with the
+// stored response never prepares again, and a write's caller dropping does
+// not cancel it. A Prepare that fails ends the write, which applies and
+// stores nothing.
+type Prepare[Req, Prep any] func(ctx context.Context, read Read, caller Caller, req Req) (Prep, error)
+
+// PreparedFunc carries out a prepared write inside its transaction, given
+// what its Prepare returned. The record may have changed since Prepare read
+// it, so it checks again what it relies on.
+type PreparedFunc[Req, Prep, Resp any] func(ctx context.Context, tx store.Tx, caller Caller, req Req, prep Prep) (Resp, error)
+
+// Read runs fn in a read-only transaction that the framework opens and
+// finishes, for a Prepare.
+type Read func(fn func(tx store.Tx) error) error
+
+// call is one decoded request, ready to run.
+type call struct {
+	// prepare, when set, runs before the write's transaction, outside any.
+	prepare func(ctx context.Context, read Read, caller Caller) error
+	// run carries the call out inside its transaction.
+	run func(ctx context.Context, tx store.Tx, caller Caller) (any, error)
+}
 
 type operation struct {
 	write bool
@@ -147,25 +175,61 @@ func New(s *store.Store, rootKey *seal.RootKey, log *slog.Logger, initialised fu
 // registers its operations from its own Register function; registering a
 // name twice panics.
 func (a *API) Handle[Req, Resp any](o api.Op[Req, Resp], fn Func[Req, Resp], opts ...Option) {
-	if _, ok := a.ops[o.Name]; ok {
-		panic(fmt.Sprintf("op: operation %s registered twice", o.Name))
+	a.register(o.Name, o.Write, func(body []byte) (call, error) {
+		req, err := decode[Req](body)
+		if err != nil {
+			return call{}, err
+		}
+		return call{run: func(ctx context.Context, tx store.Tx, caller Caller) (any, error) {
+			return fn(ctx, tx, caller, req)
+		}}, nil
+	}, opts)
+}
+
+// HandlePrepared registers the write o in two parts: prepare, before the
+// write's transaction and outside any, then fn inside it with what prepare
+// returned. Registering a read this way panics: a read holds no lock.
+func (a *API) HandlePrepared[Req, Prep, Resp any](o api.Op[Req, Resp], prepare Prepare[Req, Prep], fn PreparedFunc[Req, Prep, Resp], opts ...Option) {
+	if !o.Write {
+		panic(fmt.Sprintf("op: %s is a read, which needs no Prepare", o.Name))
 	}
-	entry := operation{
-		write: o.Write,
-		bind: func(body []byte) (call, error) {
-			var req Req
-			if err := json.Unmarshal(body, &req, json.RejectUnknownMembers(true)); err != nil {
-				return nil, err
-			}
-			return func(ctx context.Context, tx store.Tx, caller Caller) (any, error) {
-				return fn(ctx, tx, caller, req)
-			}, nil
-		},
+	a.register(o.Name, o.Write, func(body []byte) (call, error) {
+		req, err := decode[Req](body)
+		if err != nil {
+			return call{}, err
+		}
+		var prep Prep
+		return call{
+			prepare: func(ctx context.Context, read Read, caller Caller) (err error) {
+				prep, err = prepare(ctx, read, caller, req)
+				return err
+			},
+			run: func(ctx context.Context, tx store.Tx, caller Caller) (any, error) {
+				return fn(ctx, tx, caller, req, prep)
+			},
+		}, nil
+	}, opts)
+}
+
+// register adds the operation name, whose request bodies bind decodes,
+// changed by opts.
+func (a *API) register(name string, write bool, bind func(body []byte) (call, error), opts []Option) {
+	if _, ok := a.ops[name]; ok {
+		panic(fmt.Sprintf("op: operation %s registered twice", name))
 	}
+	entry := operation{write: write, bind: bind}
 	for _, opt := range opts {
 		opt(&entry)
 	}
-	a.ops[o.Name] = entry
+	a.ops[name] = entry
+}
+
+// decode reads a request body into its type, refusing a member the type
+// does not know.
+func decode[Req any](body []byte) (Req, error) {
+	var req Req
+	err := json.Unmarshal(body, &req, json.RejectUnknownMembers(true))
+	return req, err
 }
 
 // Names returns the names of the registered operations, sorted: what the
@@ -249,19 +313,31 @@ func (a *API) serve(r *http.Request) (body []byte, replayed bool, err error) {
 			f(committed)
 		}
 	}()
+	if c.prepare != nil {
+		// A prepared write prepares outside any transaction, unless an
+		// earlier attempt has stored its response already.
+		err := a.store.Read(ctx, func(tx store.Tx) (err error) {
+			if err := a.checkInitialised(ctx, tx, o); err != nil {
+				return err
+			}
+			body, replayed, err = a.lookupResponse(ctx, tx, write, now)
+			return err
+		})
+		if err != nil || replayed {
+			return body, replayed, err
+		}
+		read := func(fn func(store.Tx) error) error { return a.store.Read(ctx, fn) }
+		if err := c.prepare(ctx, read, caller); err != nil {
+			return nil, false, err
+		}
+	}
 	run := a.store.Read
 	if o.write {
 		run = a.store.Write
 	}
 	err = run(ctx, func(tx store.Tx) error {
-		if !o.beforeInit {
-			ok, err := a.initialised(ctx, tx)
-			if err != nil {
-				return fmt.Errorf("tell whether the koko server is initialised: %w", err)
-			}
-			if !ok {
-				return api.CodeNotInitialised.Errorf("the koko server is not initialised yet: koko server install --owner <owner> initialises it")
-			}
+		if err := a.checkInitialised(ctx, tx, o); err != nil {
+			return err
 		}
 		if o.write {
 			stored, found, err := a.findResponse(ctx, tx, write, now)
@@ -270,7 +346,7 @@ func (a *API) serve(r *http.Request) (body []byte, replayed bool, err error) {
 				return err
 			}
 		}
-		resp, err := c(ctx, tx, caller)
+		resp, err := c.run(ctx, tx, caller)
 		if err != nil {
 			return err
 		}
@@ -286,6 +362,22 @@ func (a *API) serve(r *http.Request) (body []byte, replayed bool, err error) {
 	})
 	committed = err == nil
 	return body, replayed, err
+}
+
+// checkInitialised refuses, inside tx, a call to o while the koko server is
+// not initialised, unless o answers before initialisation.
+func (a *API) checkInitialised(ctx context.Context, tx store.Tx, o operation) error {
+	if o.beforeInit {
+		return nil
+	}
+	ok, err := a.initialised(ctx, tx)
+	if err != nil {
+		return fmt.Errorf("tell whether the koko server is initialised: %w", err)
+	}
+	if !ok {
+		return api.CodeNotInitialised.Errorf("the koko server is not initialised yet: koko server install --owner <owner> initialises it")
+	}
+	return nil
 }
 
 // decodeError turns a request that does not decode into its coded error.

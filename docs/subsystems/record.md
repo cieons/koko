@@ -26,7 +26,7 @@ Stored in `hosts`, with its Attributes in `host_attributes`
 | `address` | An IP address without a zone, kept in its canonical form (`2001:db8::1`), or a DNS name, kept in lowercase: labels of letters, digits and `-`, 253 characters at most, the last not all digits. Not unique. |
 | `port` | 1 to 65535; 22 when not given. Not unique. |
 | `account` | The Host Account: 1 to 32 of `a-z`, `A-Z`, `0-9`, `.`, `_` and `-`, not starting with `-`. No default. |
-| `state` | `registered`, `managed` or `retired`, set only by koko. Every Host is Registered until Enroll and retiring set the others. |
+| `state` | `registered`, `managed` or `retired`, set only by koko. Every Host is Registered until Enroll makes it Managed ([Enroll](enroll.md)), and retiring sets the third. A change of address or port keeps a Host Managed, since its pin proves the Host wherever it answers; a change of Host Account sends it back to Registered, keeping its pin, since the koko key went only to the old Host Account. |
 | `host_key` | The pinned host key's SHA-256 fingerprint, `SHA256:...`, or `null` for a Host with no pin. Stored as the key in SSH wire format, which Enroll writes. |
 | `attributes` | Values by key, each of its key's type ([Attributes](#attributes-and-the-preset-attributes)). A key is snake_case (`a-z`, `0-9`, `_`, starting with a letter, 1 to 63 characters) and not a field's name: `id`, `name`, `space`, `address`, `port`, `account`, `relay`, `state`, `host_key`, `host`, `ports`, `attributes`, `note`, `created_at` or `updated_at`. |
 | `note` | 1 byte to 64 KiB of UTF-8 on any number of lines, with no control character but tab, line feed and carriage return; `null` for none. |
@@ -134,8 +134,16 @@ to run too, so the two resolvers cannot drift.
 | `host.set` | Sets the address, port, Host Account, Attributes and Note it names, and clears the Attribute keys in `unset`, the Note for `note`, and the port back to 22 for `port`; nothing else changes. It refuses a request that changes nothing, a key both set and cleared, and clearing the address or the Host Account ([`record.Required`](../../internal/shared/record/record.go)). It takes no `name`, `space` or `state`. |
 | `host.rename` | A new name, checked as on `host.add`; the id and everything else stay. |
 | `host.move` | Another Space, with the Attributes and Note; the name stays. |
-| `host.remove` | Deletes the Host with its Attributes and Note; answers it as it was. |
+| `host.remove` | Deletes the Host with its Attributes and Note; answers it as it was. A Host with a pin has been Managed, and is refused with `host_was_managed`: it stays on record. |
+| `host.enroll` | Makes the Host Managed with its pinned host key ([Enroll](enroll.md)). |
 | `attr.list` | Every Preset with its type, an enum's values and a number's least value, in the order of the Preset table, then every other key in use on what the caller can see, by key; each says whether it is a Preset and whether something the caller can see has it. A key held only in a Space the caller cannot act in is answered as if nothing held it. Each area whose records hold Attributes lists its keys through an `attr.Keys`, Hosts through `host.AttributeKeys`, Retired ones among them. |
+
+Enroll reads what logging in to a Host needs through
+[`host.ReachOf`](../../internal/server/host/reach.go) (address, port, Host
+Account, state and pin, under the same access check), and records the
+Registered to Managed transition through `host.Enrolled`, which refuses with
+`host_changed` a Host whose Host Account, state or pin changed while Enroll
+logged in to it.
 
 - **Naming a Host.** A request names a Host by its name, which names only a
   Host that is not Retired, or by its id (`host_...`), which names any.
@@ -189,6 +197,9 @@ named by its count, first and last.
   the caller cannot see answering as unknown, the Spaces a move needs,
   concurrent adds of one name, the Note from a file and from stdin, and
   `space show` and `space rm` counting Hosts.
+- [`internal/client/cli/enroll_test.go`](../../internal/client/cli/enroll_test.go):
+  the state table through the real `koko host enroll`, and `host rm` refused
+  once a Host has a pin.
 - [`internal/server/host/host_test.go`](../../internal/server/host/host_test.go):
   the koko server's own checks on raw `host.add` and `host.set` calls, a batch
   added all or none, and which answers carry the Note.

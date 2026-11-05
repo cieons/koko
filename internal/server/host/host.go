@@ -79,10 +79,12 @@ func AttributeKeys(ctx context.Context, tx store.Tx, scope access.Scope) ([]stri
 	return keys, nil
 }
 
-// stored is a Host as stored: the API's Host, and the id of its Space.
+// stored is a Host as stored: the API's Host, the id of its Space, and its
+// pinned host key, nil for none.
 type stored struct {
 	api.Host
 	spaceID string
+	pin     ssh.PublicKey
 }
 
 // selectHosts reads the Hosts, each with the name of its Space, in the order
@@ -104,6 +106,7 @@ func scan(row interface{ Scan(...any) error }) (stored, error) {
 		if err != nil {
 			return stored{}, fmt.Errorf("read the pinned host key of %s: %w", h.ID, err)
 		}
+		h.pin = pub
 		h.HostKey = new(ssh.FingerprintSHA256(pub))
 	}
 	h.Attributes = map[string]record.Value{}
@@ -485,15 +488,20 @@ func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequ
 	if v.port != nil {
 		h.Port = *v.port
 	}
-	if v.account != nil {
+	if v.account != nil && *v.account != h.Account {
 		h.Account = *v.account
+		// The koko key went only to the old Host Account. The pin stays,
+		// so the next Enroll checks that the same Host answers.
+		if h.State == api.HostManaged {
+			h.State = api.HostRegistered
+		}
 	}
 	if v.note != nil {
 		h.Note = *v.note
 	}
 
-	_, err = tx.ExecContext(ctx, "UPDATE hosts SET address = ?, port = ?, account = ?, note = ?, updated_at = ? WHERE id = ?",
-		h.Address, h.Port, h.Account, sql.NullString{String: h.Note, Valid: h.Note != ""}, op.Now(ctx).Format(time.RFC3339), h.ID)
+	_, err = tx.ExecContext(ctx, "UPDATE hosts SET address = ?, port = ?, account = ?, state = ?, note = ?, updated_at = ? WHERE id = ?",
+		h.Address, h.Port, h.Account, h.State, sql.NullString{String: h.Note, Valid: h.Note != ""}, op.Now(ctx).Format(time.RFC3339), h.ID)
 	if err != nil {
 		return api.HostSetResponse{}, fmt.Errorf("change the Host %s: %w", h.Name, err)
 	}
@@ -551,11 +559,16 @@ func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRe
 	return api.HostMoveResponse{Host: moved.Host}, err
 }
 
-// remove is host.remove: the Host goes, with its Attributes and Note.
+// remove is host.remove: the Host goes, with its Attributes and Note. A Host
+// that has been Managed, which its pin shows, is kept on record instead.
 func remove(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRemoveRequest) (api.HostRemoveResponse, error) {
 	_, h, err := target(ctx, tx, caller, req.Host)
 	if err != nil {
 		return api.HostRemoveResponse{}, err
+	}
+	if h.pin != nil {
+		return api.HostRemoveResponse{}, api.CodeHostWasManaged.Errorf(
+			"%s has been Managed, so koko keeps its record: a Host that was ever Managed is never deleted", h.Name)
 	}
 	// Its Attributes go with it (ON DELETE CASCADE).
 	if _, err := tx.ExecContext(ctx, "DELETE FROM hosts WHERE id = ?", h.ID); err != nil {

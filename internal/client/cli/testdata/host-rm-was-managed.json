@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "host_was_managed",
+    "message": "web1 has been Managed, so koko keeps its record: a Host that was ever Managed is never deleted"
+  }
+}

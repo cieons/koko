@@ -6,6 +6,7 @@
 // code has a message in its area's file.
 
 import enDevice from "./en/device";
+import enEnroll from "./en/enroll";
 import enErrors from "./en/errors";
 import enHost from "./en/host";
 import enSecret from "./en/secret";
@@ -15,6 +16,7 @@ import enSpace from "./en/space";
 import enUser from "./en/user";
 import enWeb from "./en/web";
 import zhDevice from "./zh-CN/device";
+import zhEnroll from "./zh-CN/enroll";
 import zhErrors from "./zh-CN/errors";
 import zhHost from "./zh-CN/host";
 import zhSecret from "./zh-CN/secret";
@@ -34,6 +36,7 @@ const en = {
   ...enSpace,
   ...enUser,
   ...enWeb,
+  ...enEnroll,
 };
 
 /** MessageKey is the key of a message, such as "shell.language". */
@@ -52,6 +55,7 @@ const zhCN: Catalogue = {
   ...zhSpace,
   ...zhUser,
   ...zhWeb,
+  ...zhEnroll,
 };
 
 /** The languages the web UI ships, English first: the default. */

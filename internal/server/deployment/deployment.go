@@ -168,6 +168,20 @@ func HostKey(ctx context.Context, tx store.Tx, rootKey *seal.RootKey) (ssh.Publi
 	return pub, nil
 }
 
+// KokoKey opens the koko key with rootKey and returns its public key, which
+// Enroll appends to a Host Account's authorized_keys.
+func KokoKey(ctx context.Context, tx store.Tx, rootKey *seal.RootKey) (ssh.PublicKey, error) {
+	priv, err := openKey(ctx, tx, rootKey, kindKoko)
+	if err != nil {
+		return nil, err
+	}
+	pub, err := ssh.NewPublicKey(priv.Public())
+	if err != nil {
+		return nil, fmt.Errorf("read the koko key's public key: %w", err)
+	}
+	return pub, nil
+}
+
 // openKey opens the koko server's own key of this kind with rootKey. It
 // fails, naming the key, when it is missing or does not open.
 func openKey(ctx context.Context, tx store.Tx, rootKey *seal.RootKey, kind string) (ed25519.PrivateKey, error) {

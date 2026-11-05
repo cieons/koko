@@ -22,6 +22,7 @@ import (
 	"github.com/cieons/koko/internal/server/attr"
 	"github.com/cieons/koko/internal/server/deployment"
 	"github.com/cieons/koko/internal/server/device"
+	"github.com/cieons/koko/internal/server/enroll"
 	"github.com/cieons/koko/internal/server/host"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
@@ -33,6 +34,7 @@ import (
 	"github.com/cieons/koko/internal/server/web"
 	"github.com/cieons/koko/internal/server/webui"
 	"github.com/cieons/koko/internal/shared/build"
+	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -87,6 +89,10 @@ type Config struct {
 	// time the koko server records or compares, such as a Join Code's
 	// expiry, comes from it. No flag or environment variable sets it.
 	Clock func() time.Time
+	// Timings is the timing-constants hook, for tests only: the zero
+	// Timings is the product's, such as how long logging in to a Host may
+	// take. No flag or environment variable sets it.
+	Timings timing.Timings
 }
 
 // Server is a running koko server.
@@ -150,6 +156,8 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	changes.Subscribe(func(c access.Change) { t.CloseDeviceSessions(c.Revoked...) })
 	// The secret area seals and opens every value with the Root Key.
 	secret.Register(a, key)
+	// Enroll opens the koko key with the Root Key, and logs in to Hosts.
+	enroll.Register(a, key, cfg.Timings, log)
 	// The areas that issue Join Codes need what the process loaded to name
 	// the koko server in them.
 	issuer := device.NewIssuer(joinTarget(key, tcp.port))

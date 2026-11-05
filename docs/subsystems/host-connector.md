@@ -66,7 +66,8 @@ stops the waits at once.
 A failure on the Relay's leg comes wrapped in a `*RelayError`: logging in to
 the Relay, or losing the Relay's connection while reaching the Host through
 it. Any other error is the Host's leg. An error's text names addresses and
-the Host Account: it is for the log, not for a message to a User.
+the Host Account: it is for the log, and for Enroll's own caller, who can
+act on the Host ([Enroll](enroll.md)); never for a message to anyone else.
 
 ## Timings in tests
 

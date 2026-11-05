@@ -15,7 +15,7 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
 | shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the version and operations report, the channel adapter and how a join carries its secret (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`), the record's value rules: a Host's fields, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`) | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `host`, `attr`, `secret`, `web`: the web front), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), the installer (`installer`); later the Gateway | client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `host`, `attr`, `secret`, `web`: the web front), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`); later the Gateway | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join, koko's ssh_config and known_hosts, and the Include line (`devicefiles`); later the Device Mux and tunnel | server |
 
 Only [`cmd/koko`](../../cmd/koko) and the S1 harness
@@ -35,7 +35,9 @@ command is a client command that reaches the koko server over the socket.
 ## Where an area adds its parts
 
 An area is one of `space`, `user`, `device`, `host`, `service`, `attr`,
-`secret`, `server`, `reach`, `web` and `skill`. Each adds its parts in files of
+`secret`, `server`, `reach`, `enroll`, `web` and `skill`. `enroll` is the
+part of reach that is `koko host enroll`, kept apart so the reach tickets that
+run beside it never share its files. Each adds its parts in files of
 its own; a central list holds one line per area, which the area's first ticket
 adds. A rebase conflict in a central list is a one-line addition: keep both
 lines.
@@ -67,7 +69,9 @@ which reads the host key with the Root Key ([Join Codes](join-codes.md#issuing))
 Personal Space holds a record ([Users](users.md#removing)).
 `space` takes `user.ByName`, since `user` imports `space` (every User gets a
 Personal Space), and the `holdings` list. `secret` takes the Root Key, which
-seals and opens every value ([Secrets](secrets.md#sealing)).
+seals and opens every value ([Secrets](secrets.md#sealing)). `enroll` takes
+the Root Key, which opens the koko key, and the timing-constants hook
+([Enroll](enroll.md)).
 The `web` area's front holds the runs of `koko web` in memory and reads the
 koko server's clock, so `server.Start` makes it and it registers its own
 operation (`web.Front.Register`).
@@ -156,7 +160,7 @@ apart.
 | --- | --- | --- |
 | The socket path | `server.Config.SocketPath`, `cli.Runner.SocketPath` | #27 |
 | The fake terminal | `cli.Runner.Terminal` | #28 |
-| The P0 timing constants | `hostconn.Connector.Timings` and `installer.Installer.Timings`, each a [`timing.Timings`](../../internal/shared/timing/timing.go), where a ticket that uses a new timing adds its constant and field | #32 |
+| The P0 timing constants | `hostconn.Connector.Timings`, `installer.Installer.Timings` and `server.Config.Timings` (the harness's `harness.Timings(timings)`), each a [`timing.Timings`](../../internal/shared/timing/timing.go), where a ticket that uses a new timing adds its constant and field | #32 |
 | The clock | `server.Config.Clock`, which every operation reads once per call through `op.Now`, and `cli.Runner.Clock`, which a relative date counts from; the harness's `h.Now()`, `h.Advance(d)` and `h.SetNow(t)` | #36, the CLI's side #51 |
 
 ## The S1 harness
@@ -182,7 +186,8 @@ server answered since `Start` returned, so a refusal can be shown to make
 none. The options `harness.NoInit()`, `harness.DataDir(dir)` and
 `harness.RootKeyFile(path)` start it uninitialised or on given files,
 `harness.Listen(addr)` listens on TCP at a known address, such as a
-`harness.FreeAddr(t)`, and `h.Stop()` stops it before the test ends, to
+`harness.FreeAddr(t)`, `harness.Timings(timings)` shrinks the P0 timings it uses,
+such as the wait between attempts to connect to a Host, and `h.Stop()` stops it before the test ends, to
 start another on its data directory. The koko server's clock stands still at the second `Start` began
 until `h.Advance(d)` moves it, so a test moves time, such as past a Join
 Code's 15 minutes, and never waits; `h.SetNow(t)` sets it to a given
@@ -233,6 +238,10 @@ one Host Account (`sshhost.Account`, `deploy`) with a home directory and an
 forwarding, as a Relay's sshd does. `ResetFirst`, `StallFirst`, `SlowLogins`
 and `DropConns` break it as a network path or a slow PAM stack would.
 `Logins()` and `Requests()` record what it received; `Conns()` and `Open()`
-count its connections. It refuses every session request for now; the ticket
-that needs exec or a subsystem adds it, by addition like the harness.
-`sshhost.NewKey` makes ed25519, ECDSA and RSA keys for tests.
+count its connections. It runs a session's exec request as sshd does,
+through `/bin/sh -c`, as a local process in the Host Account's home
+directory (`Home()`) with `HOME` set to it, its stdio on the channel, and
+sends the exit status; it refuses every other session request for now, and
+the ticket that needs a shell, a pty or a subsystem adds it, by addition like
+the harness. `AuthorizedKeys()` reads the Host Account's `authorized_keys`
+as it is. `sshhost.NewKey` makes ed25519, ECDSA and RSA keys for tests.

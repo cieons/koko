@@ -97,6 +97,7 @@ var operations = [][]Operation{
 	hostOperations,
 	secretOperations,
 	attrOperations,
+	enrollOperations,
 }
 
 // Operations returns every API operation.

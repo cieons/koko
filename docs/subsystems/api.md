@@ -103,6 +103,13 @@ first call, through the dial it was given, and for each call:
 | `request_too_large` | 413 | The body is over 16 MiB. |
 | `unsupported_media_type` | 415 | The body is not `application/json`. |
 | `idempotency_key_reused` | 422 | The caller's `Idempotency-Key` came with another request (another operation or body) within the last 10 minutes. |
+| `unexpected_host_key` | 409 | Enroll met a host key other than the pinned one, or the one `host_key` names, and did not log in; the message holds both fingerprints ([Enroll](enroll.md)). |
+| `login_refused` | 403 | The Host refused the password or private key given to Enroll. |
+| `host_unreachable` | 502 | Enroll could not connect to the Host, after retrying network errors. |
+| `key_not_added` | 502 | Enroll logged in but could not append the koko key to the Host Account's `authorized_keys`. |
+| `already_managed` | 409 | Enroll of a Managed Host without `host_key` or `replace_host_key`. |
+| `host_changed` | 409 | The Host's Host Account, state or pin changed while Enroll logged in to it, so it recorded nothing. |
+| `host_was_managed` | 409 | `host.remove` of a Host that has been Managed, as its pin shows ([the record](record.md#operations)). |
 | `internal_error` | 500 | Anything the server did not expect; the message says to read the log, which holds the cause. |
 
 An area adds its codes beside its types (see
@@ -137,6 +144,19 @@ request decoded into its Go type, the caller and a `store.Tx`. The framework:
 A write runs on a context its caller's drop does not cancel
 (`context.WithoutCancel`): it runs to its end and stores its response for the
 caller's retry.
+
+**A prepared write.** A write whose work takes long, such as logging in to a
+Host (`host.enroll`), registers with `a.HandlePrepared(o, prepare, fn)`. Its
+`prepare` runs after the wait for a retry's first attempt and before the
+write's transaction, outside any, reading through `op.Read`, which runs each
+read in a read-only transaction of its own: so it never holds SQLite's write
+lock, which every other write would wait for and give up on after 5 s. A
+read-only transaction first checks initialisation and looks up the stored
+response, so a retry answered with it never prepares again. Then `fn` runs in
+the write's transaction as any operation does, given what `prepare` returned,
+and checks again what it relies on, since the record may have changed
+meanwhile. A `prepare` that fails ends the write, which applies and stores
+nothing; a caller's drop cancels neither part.
 
 An operation reads the time from `op.Now(ctx)`: the koko server's clock
 (`server.Config.Clock`, the clock hook) read once when the call began, in UTC
@@ -217,6 +237,10 @@ over the table `idempotency_keys`; the design is P0 spec: reach and
   its stored response committing together (a store that fails, a response
   that cannot be encoded); a stored response outliving a restart; a write
   not cancelled when its caller drops.
+- [`internal/server/op/prepare_test.go`](../../internal/server/op/prepare_test.go):
+  a prepared write holding no lock while it prepares, a retry answered
+  without preparing again, a failed `prepare` storing nothing, a `prepare`
+  not cancelled when its caller drops, and none before initialisation.
 - [`internal/server/transport/transport_test.go`](../../internal/server/transport/transport_test.go):
   SSH on the socket, the version string, the report sent unasked before any
   channel, the Local caller, refused channel types, a new host key at each

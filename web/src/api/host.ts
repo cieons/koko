@@ -254,3 +254,10 @@ export const CodeUnknownHost = "unknown_host";
  * for one, breaks its rule; the message names which and why.
  */
 export const CodeInvalidValue = "invalid_value";
+
+/**
+ * CodeHostWasManaged: host.remove of a Host that has been Managed, as
+ * its pinned host key shows: such a Host is kept on record, never
+ * deleted.
+ */
+export const CodeHostWasManaged = "host_was_managed";

@@ -29,6 +29,10 @@ _Avoid_: onboard, adopt, provision
 **Managed**:
 A Host koko can log in to with its koko key.
 
+**Pinned host key**:
+The one host key koko accepts from a Host, pinned when it is first Enrolled and replaced only by Enrolling it again with `--host-key` or `--replace-host-key`; a Host keeps it when it goes back to Registered.
+_Avoid_: known host, trusted key, fingerprint (alone)
+
 **Relay**:
 A Host the Gateway passes through to reach another Host.
 _Avoid_: jump host, bastion

@@ -1,8 +1,9 @@
 // Package sshhost is the in-process Host: an SSH server in the test process
 // that stands in for a Host or a Relay. It has one Host Account with a home
 // directory and an authorized_keys file of its own, password and key login,
-// host keys of its own, and a record of what it receives. It listens on
-// loopback only and stops when the test ends.
+// host keys of its own, exec requests run as local processes in that home
+// directory, and a record of what it receives. It listens on loopback only
+// and stops when the test ends.
 //
 // Like the S1 harness, it grows by addition: add Options and methods, and
 // never change an existing one's signature (docs/subsystems/code-layout.md).
@@ -17,9 +18,12 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -177,6 +181,26 @@ func (h *Host) Port() int {
 // HostKeys gave it others.
 func (h *Host) HostKey() ssh.PublicKey {
 	return h.hostKeys[0]
+}
+
+// Home is the Host Account's home directory, where an exec request runs and
+// ~/.ssh/authorized_keys lives, for a test to set up or inspect.
+func (h *Host) Home() string {
+	return h.home
+}
+
+// AuthorizedKeys returns the Host Account's authorized_keys file as it is
+// now, byte for byte, or nil when there is none.
+func (h *Host) AuthorizedKeys() []byte {
+	h.t.Helper()
+	b, err := os.ReadFile(h.authorizedKeysPath())
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		h.t.Fatalf("read the in-process Host's authorized_keys: %v", err)
+	}
+	return b
 }
 
 // Conns counts the TCP connections the Host has accepted.
@@ -390,8 +414,9 @@ func (h *Host) serve(nc net.Conn, config *ssh.ServerConfig) {
 	}
 }
 
-// session accepts a session channel and records its requests, refusing each:
-// a later ticket that needs exec or a subsystem adds it here.
+// session accepts a session channel and records its requests. It runs the
+// first exec request (exec), and refuses every other request: a later
+// ticket that needs a shell, a pty or a subsystem adds it here.
 func (h *Host) session(nch ssh.NewChannel) {
 	h.recordChannel(nch, "")
 	ch, reqs, err := nch.Accept()
@@ -400,8 +425,59 @@ func (h *Host) session(nch ssh.NewChannel) {
 	}
 	h.wg.Go(func() {
 		defer func() { _ = ch.Close() }()
-		h.refuse(reqs)
+		started := false
+		for r := range reqs {
+			h.record(Request{Type: r.Type, Payload: r.Payload})
+			var command struct{ Command string }
+			ok := r.Type == "exec" && !started && ssh.Unmarshal(r.Payload, &command) == nil
+			_ = r.Reply(ok, nil)
+			if ok {
+				started = true
+				h.wg.Go(func() { h.exec(ch, command.Command) })
+			}
+		}
 	})
+}
+
+// exec runs command as sshd runs an exec request: through the Host
+// Account's shell, here /bin/sh, as a local process in the Host Account's
+// home directory with HOME set to it, its stdin, stdout and stderr on the
+// channel. It then sends the command's exit status and closes the channel.
+func (h *Host) exec(ch ssh.Channel, command string) {
+	defer func() { _ = ch.Close() }()
+	cmd := exec.CommandContext(h.t.Context(), "/bin/sh", "-c", command)
+	cmd.Dir = h.home
+	cmd.Env = []string{"HOME=" + h.home, "USER=" + Account, "LOGNAME=" + Account, "SHELL=/bin/sh", "PATH=" + os.Getenv("PATH")}
+	cmd.Stdout, cmd.Stderr = ch, ch.Stderr()
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return
+	}
+	if err := cmd.Start(); err != nil {
+		_, _ = fmt.Fprintf(ch.Stderr(), "sh: %v\n", err)
+		sendExitStatus(ch, 127)
+		return
+	}
+	// The command may end before the client closes its stdin, so nothing
+	// waits for this copy, which ends when the channel does.
+	h.wg.Go(func() {
+		_, _ = io.Copy(stdin, ch)
+		_ = stdin.Close()
+	})
+	status := 0
+	if err := cmd.Wait(); err != nil {
+		status = 255
+		if ee, ok := errors.AsType[*exec.ExitError](err); ok && ee.ExitCode() >= 0 {
+			status = ee.ExitCode()
+		}
+	}
+	sendExitStatus(ch, status)
+}
+
+// sendExitStatus tells the client an exec request's exit status, as sshd
+// does before it closes the channel.
+func sendExitStatus(ch ssh.Channel, status int) {
+	_, _ = ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{uint32(status)}))
 }
 
 // refuse records each request and refuses it.
