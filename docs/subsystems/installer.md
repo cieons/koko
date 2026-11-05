@@ -287,7 +287,11 @@ golden file, the `--json` golden, the koko server initialised), the order
 late socket waited for), the printout for people, `--port`, `--address`,
 every refusal writing nothing, systemd not running, private source IPs, bad
 flags, running again after a refused address and after a service that never
-opened its socket, and a Root Key file there already.
+opened its socket, and a Root Key file there already. Only a service that
+never opens its socket (`NoSocket`) has install wait less than the product's
+30 s, `harness.NoSocketWait`: no wait would see that socket, so a short one
+fails no slower machine, and every socket that does open is waited for as
+on a real machine.
 [`server_upgrade_test.go`](../../internal/client/cli/server_upgrade_test.go)
 tests the upgrade on an initialised koko server: the new release's binary,
 the unit written again, the restart, the record kept, the `--json` goldens;

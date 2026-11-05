@@ -440,11 +440,11 @@ func TestServerInstallAgainAfterARefusedAddress(t *testing.T) {
 
 // A run whose service never opens its socket gives up, naming where to look,
 // and the next run reuses the Root Key the first wrote, as nothing is
-// sealed under it yet, and finishes the job.
+// sealed under it yet, and finishes the job, waiting for a service that
+// takes longer to open its socket than the first run waited.
 func TestServerInstallAgainAfterTheServiceDidNotStart(t *testing.T) {
 	m := harness.NewMachine(t)
 	m.NoSocket = true
-	m.SocketWait = 200 * time.Millisecond
 	r := m.Koko("server", "install", "--owner", "alice", "--json")
 	msg := r.WantError(t, 1, "internal_error")
 	if !strings.Contains(msg, "/run/koko/koko.sock") || !strings.Contains(msg, "journalctl -u koko") {
@@ -455,7 +455,7 @@ func TestServerInstallAgainAfterTheServiceDidNotStart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m.NoSocket = false
+	m.NoSocket, m.StartDelay = false, 2*harness.NoSocketWait
 	out := install(t, m, "--owner", "alice")
 	wantInitialised(t, m, "alice")
 	if again, err := os.ReadFile(m.Path("/etc/koko/root.key")); err != nil || string(again) != string(key) {

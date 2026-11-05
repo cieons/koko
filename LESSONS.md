@@ -43,6 +43,16 @@ under every later push, so no push to `main` had its tests run on Linux.
 **Evidence:** f42c347 (#42); check run 42033632619 and every run on `main`
 after it; #76
 
+### A test shortens a wait only where what it waits for never comes
+
+**Why:** `TestServerInstallAgainAfterTheServiceDidNotStart` set the fake
+machine's socket wait to 200 ms for a koko service that never opens its
+socket, and the setting stayed for the test's next run, whose real koko
+server then had to open its socket within 200 ms. Under CI load it took
+longer, and `main` went red at 68c9ad8, which touched nothing near the test.
+**Seen:** 1 (2026-11-06)
+**Evidence:** 3cae7b1 (#38); check run 42081318152 on 68c9ad8; #77
+
 ## Moved to the code standards
 
 _None yet._

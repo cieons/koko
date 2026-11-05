@@ -29,6 +29,12 @@ import (
 // 5737), so it reaches no one.
 const SourceIP = "203.0.113.7"
 
+// NoSocketWait is how long install waits, through the timing hook, for the
+// socket of a koko service that never opens it (Machine.NoSocket), in place
+// of timing.InstallSocketWait. No wait would see that socket, so a short one
+// fails no slower machine; every other run waits the product's time.
+const NoSocketWait = 200 * time.Millisecond
+
 // servicePID is the process ID a fake machine's systemd gives the koko
 // service while it runs.
 const servicePID = 4242
@@ -61,11 +67,9 @@ type Machine struct {
 	// systemctl has started it.
 	StartDelay time.Duration
 	// NoSocket makes the koko service start but never open its socket, as
-	// one whose start-up refuses does under Restart=on-failure.
+	// one whose start-up refuses does under Restart=on-failure. Install
+	// then waits NoSocketWait for it.
 	NoSocket bool
-	// SocketWait is how long install waits for the socket, through the
-	// timing hook; zero means the product's timing.
-	SocketWait time.Duration
 
 	t      testing.TB
 	root   string
@@ -153,7 +157,10 @@ func NewMachine(t testing.TB) *Machine {
 // its root.
 func (m *Machine) Koko(args ...string) Result {
 	m.t.Helper()
-	inst := &installer.Installer{Machine: m, Binary: m.binary, Timings: timing.Timings{InstallSocketWait: m.SocketWait}}
+	inst := &installer.Installer{Machine: m, Binary: m.binary}
+	if m.NoSocket {
+		inst.Timings = timing.Timings{InstallSocketWait: NoSocketWait}
+	}
 	return Run(m.t, cli.Runner{ServerInstall: inst.Install, ServerUninstall: inst.Uninstall, SocketPath: m.SocketPath()}, []string{"HOME=" + m.home}, args...)
 }
 
