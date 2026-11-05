@@ -207,3 +207,23 @@ export const SpaceMemberRemove: Op<SpaceMemberRemoveRequest, SpaceMemberRemoveRe
   path: "/v1/space.member.remove",
   write: true,
 };
+
+/**
+ * CodeUnknownSpace: no Space the caller can act in has the name given.
+ * A Space the caller cannot act in answers exactly as one that does not
+ * exist.
+ */
+export const CodeUnknownSpace = "unknown_space";
+
+/**
+ * CodePersonalSpace: a Personal Space cannot be renamed, removed or
+ * given Members while its User exists.
+ */
+export const CodePersonalSpace = "personal_space";
+
+/**
+ * CodeSpaceNotEmpty: a Space that still holds a record, such as a Host,
+ * Retired ones included, or a Secret, cannot be removed; move or remove
+ * what it holds first.
+ */
+export const CodeSpaceNotEmpty = "space_not_empty";

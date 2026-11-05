@@ -105,3 +105,19 @@ export const SecretAdd: Op<SecretAddRequest, SecretAddResponse> = {
   path: "/v1/secret.add",
   write: true,
 };
+
+/** CodeUnknownSecret: the Space holds no Secret with the name given. */
+export const CodeUnknownSecret = "unknown_secret";
+
+/**
+ * CodeValueTooLarge: a Secret value is over SecretMaxSize; koko never
+ * stores one cut short.
+ */
+export const CodeValueTooLarge = "value_too_large";
+
+/**
+ * CodeSecretUnreadable: a Secret's sealed value does not open under the
+ * Root Key, for its own record: the database was edited or damaged. The
+ * error names the Secret, never a value.
+ */
+export const CodeSecretUnreadable = "secret_unreadable";

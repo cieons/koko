@@ -7,11 +7,15 @@ package api_test
 
 import (
 	"flag"
+	"fmt"
 	"maps"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/cieons/koko/internal/shared/api"
 )
 
 // tsDir is where the generated files live, from this package's directory.
@@ -44,6 +48,37 @@ func TestTypeScriptTypes(t *testing.T) {
 	for _, name := range slices.Sorted(maps.Keys(got)) {
 		if _, ok := want[name]; !ok {
 			t.Errorf("web/src/api/%s is not generated from internal/shared/api: run make generate to remove it", name)
+		}
+	}
+}
+
+// Every registered error code is a constant of the file that declares it, so
+// the web UI names codes from the generated files and its catalogue
+// completeness test finds every one.
+func TestTypeScriptErrorCodes(t *testing.T) {
+	files, err := generateTypeScript(".")
+	if err != nil {
+		t.Fatalf("generate the TypeScript types: %v", err)
+	}
+	for _, tc := range []struct {
+		file, line string
+	}{
+		{"errors.ts", `export const CodeNameTaken = "name_taken";`},
+		{"space.ts", `export const CodeUnknownSpace = "unknown_space";`},
+		{"device.ts", `export const CodeRevoked = "revoked";`},
+		{"web.ts", `export const CodeCookieRequired = "cookie_required";`},
+	} {
+		if !slices.Contains(strings.Split(files[tc.file], "\n"), tc.line) {
+			t.Errorf("%s lacks the line %s", tc.file, tc.line)
+		}
+	}
+	for _, c := range api.Codes() {
+		n := 0
+		for _, content := range files {
+			n += strings.Count(content, fmt.Sprintf(" = %q;\n", c.Name))
+		}
+		if n != 1 {
+			t.Errorf("code %s: written %d times, want once", c.Name, n)
 		}
 	}
 }

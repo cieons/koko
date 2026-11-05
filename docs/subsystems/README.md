@@ -13,6 +13,7 @@ ADR; a proposed change lives in its issue or PR.
 | The store: SQLite, transactions, migrations and record ids | [store.md](store.md) |
 | The Seal: the Root Key's file, sealed values, and the Root Key at start-up | [seal.md](seal.md) |
 | The web UI build: Node, the embedded app and placeholder, the generated types, page tests | [web-ui.md](web-ui.md) |
+| The web UI shell: routing, the header and who the web UI acts as, language and catalogues, the API client, confirmations, edit forms, notices | [web-shell.md](web-shell.md) |
 | The Host connector: logging in to a Host through its Relay, the pinned host key and connect retries | [host-connector.md](host-connector.md) |
 | The resumable stream: the byte stream beneath a Tunnel, its frames, offset exchange and replay buffer | [resumable-stream.md](resumable-stream.md) |
 | Initialisation: the Owner, the koko server's own keys and the Server Address, what answers before it, and `server show` and `server set` after | [initialisation.md](initialisation.md) |

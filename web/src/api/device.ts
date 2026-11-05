@@ -155,3 +155,24 @@ export const DeviceRevoke: Op<DeviceRevokeRequest, DeviceRevokeResponse> = {
   path: "/v1/device.revoke",
   write: true,
 };
+
+/**
+ * CodeRevoked: the call came on a Device Session that is Revoked. The
+ * CLI also answers it for a device whose Device Session the koko server
+ * refused as Revoked, and for one that keeps the record of it.
+ */
+export const CodeRevoked = "revoked";
+
+/**
+ * CodeUnknownDevice: the caller has no live Device Session by the name
+ * given that it may revoke; another User's, for a Member, is answered
+ * the same.
+ */
+export const CodeUnknownDevice = "unknown_device";
+
+/**
+ * CodeLastDeviceSession: the call would revoke the Owner's last live
+ * Device Session without confirming it, which would leave the Owner
+ * only the koko server's own machine to add a device from.
+ */
+export const CodeLastDeviceSession = "last_device_session";

@@ -43,6 +43,8 @@ lines.
 | Part | The area's own file | The central list |
 | --- | --- | --- |
 | API types, operations (`api.Op`) and error codes (`api.Code`) | `internal/shared/api/<area>.go`, with `<area>Operations` and, if it has codes of its own, `<area>Codes` | `operations` in [`api.go`](../../internal/shared/api/api.go), `codes` in [`errors.go`](../../internal/shared/api/errors.go) |
+| The web UI's messages, the messages for the area's error codes among them (rule 5) | `web/src/i18n/en/<area>.ts` and `web/src/i18n/zh-CN/<area>.ts` | the imports and spreads in [`catalogues.ts`](../../web/src/i18n/catalogues.ts) |
+| The web UI's pages | `web/src/pages/<area>/`, with `<area>Routes` in its `routes.ts` | `routes` in [`web/src/routes.ts`](../../web/src/routes.ts) |
 | The web UI's TypeScript types | `web/src/api/<area>.ts`, written by `make generate` from `<area>.go` ([web-ui.md](web-ui.md#generated-types)) | none |
 | Server operations | `internal/server/<area>/`, with `Register(*op.API)`, or a `Register` that also takes what the process loaded (below) | `areas` in [`server.go`](../../internal/server/server.go), or one call in `server.Start` for a `Register` that takes more |
 | Commands and their `--json` types | `internal/client/cli/<area>.go`, with `<area>Commands` | `commands` in [`tree.go`](../../internal/client/cli/tree.go) |
@@ -95,7 +97,8 @@ its own only when an agent would act on it differently.
    conflict, re-run the generator (`make generate`); never hand-merge.
 5. **Message catalogues.** One English and one Simplified Chinese file per
    area, so each page ticket adds its own pair; the messages for an area's API
-   error codes go in that pair. The completeness test (#46) spans every pair.
+   error codes go in that pair. The completeness test spans every pair
+   ([the web UI shell](web-shell.md#language)).
 6. **The access matrix.** Each area keeps its rows in a test file of its own;
    the matrix test fails for any registered operation without a row
    ([the access matrix](access.md#the-access-matrix)).

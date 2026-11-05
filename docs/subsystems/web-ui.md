@@ -43,8 +43,12 @@ Serving it on `web@koko` is the [web front](web-front.md)'s job.
   `space.ts`. A file holds what the API carries of that Go file's
   declarations, with their doc comments: the request, response and record
   types as `encoding/json/v2` shapes them, each operation as an `Op` value
-  (`SpaceAdd`, with its name, path and whether it writes), and `Op` itself in
-  `api.ts`. A type from another file is imported.
+  (`SpaceAdd`, with its name, path and whether it writes), each registered
+  error code as a string constant under its Go name
+  (`export const CodeUnknownSpace = "unknown_space";`), and `Op` itself in
+  `api.ts`. A type from another file is imported. An operation or a
+  registered error code that no `var` of package api declares as an `Op` or
+  `Code` literal is refused.
 - The generator is test code,
   [`tsgen_test.go`](../../internal/shared/api/tsgen_test.go), so none of it
   ships. The files are committed, and
@@ -66,13 +70,18 @@ Vitest and React Testing Library run the pages in jsdom; `make test` runs
 them after the Go tests, under the same temporary HOME. A page test gets
 [`fakeApi()`](../../web/src/test/fakeApi.ts), which stands in for `fetch` until
 the test ends. `api.on(SpaceList, handler)` answers an operation, typed by
-the generated types, and `api.calls` records each request (method, path and
-parsed body). An operation without a handler answers
-`unknown_operation`, as the koko server does. So a page test runs the web UI's
-own client, [`call`](../../web/src/client.ts), which posts JSON to the
-operation's `path` and throws an `ApiError` with the code when it is refused.
-It is the seed of the shell's API client, which adds the retry and
-`Idempotency-Key`.
+the generated types, and `api.calls` records each request (method, path,
+parsed body and headers). A handler may answer later, with a promise, and
+refuses a call by throwing `refusal(code, status)`; an operation without a
+handler answers
+`unknown_operation`, as the koko server does. `api.drop(n)` fails the next `n`
+requests as a dropped connection does, and `api.drop()` every one, as when
+`koko web` stopped, until `api.drop(0)`. So a page test runs the web UI's own
+client ([the shell](web-shell.md#calls)), with its retry and
+`Idempotency-Key`. The setup puts each test back at `/` with an empty
+`localStorage`, and stands in for the `showModal` and `close` of a
+`<dialog>`, which jsdom lacks; a test sends Escape as the dialog's `cancel`
+event.
 
 ## Verifying
 
@@ -83,7 +92,7 @@ It is the seed of the shell's API client, which adds the retry and
 - [`internal/server/webui_test.go`](../../internal/server/webui_test.go): the
   start log says `web_ui_built`.
 - [`internal/shared/api/typescript_test.go`](../../internal/shared/api/typescript_test.go):
-  the generated files are up to date, and the generator's mapping and
+  the generated files are up to date, every registered error code is a
+  constant of the file that declares it, and the generator's mapping and
   refusals.
-- [`web/src/App.test.tsx`](../../web/src/App.test.tsx): a page renders
-  against the fake API.
+- The page tests are listed in [the web UI shell](web-shell.md#verifying).

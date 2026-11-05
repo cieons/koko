@@ -9,6 +9,28 @@ export interface FakeCall {
   path: string;
   /** The parsed JSON body, or undefined when there was none. */
   request: unknown;
+  /** The request's headers, by lowercase name. */
+  headers: Record<string, string>;
+}
+
+/**
+ * Refusal is what a handler throws to refuse a call, as the koko server
+ * refuses one: the fake answers the error object with the code and status.
+ */
+class Refusal extends Error {
+  readonly code: string;
+  readonly status: number;
+
+  constructor(code: string, status: number) {
+    super(`the fake API refused with ${code}`);
+    this.code = code;
+    this.status = status;
+  }
+}
+
+/** refusal makes the Refusal a handler throws to refuse with code. */
+export function refusal(code: string, status = 400): Refusal {
+  return new Refusal(code, status);
 }
 
 /**
@@ -19,27 +41,56 @@ export interface FakeCall {
  */
 export class FakeApi {
   readonly calls: FakeCall[] = [];
-  readonly #handlers = new Map<string, (request: unknown) => unknown>();
+  readonly #handlers = new Map<string, (request: unknown) => unknown | Promise<unknown>>();
+  #drops = 0;
 
-  /** on answers every call of op with what handler returns. */
-  on<Req, Resp>(op: Op<Req, Resp>, handler: (request: Req) => Resp): void {
+  /**
+   * on answers every call of op with what handler returns, or once the
+   * promise it returns settles; a handler that throws a refusal refuses the
+   * call.
+   */
+  on<Req, Resp>(op: Op<Req, Resp>, handler: (request: Req) => Resp | Promise<Resp>): void {
     this.#handlers.set(op.path, (request) => handler(request as Req));
+  }
+
+  /**
+   * drop makes the next times requests, of any operation, fail as a dropped
+   * connection does: fetch rejects with a TypeError. Each is still recorded
+   * in calls. With no count every request fails, as when koko web stopped,
+   * until drop(0).
+   */
+  drop(times = Infinity): void {
+    this.#drops = times;
   }
 
   /** fetch answers one request, as the koko server's API would. */
   readonly fetch = async (path: string, init: RequestInit = {}): Promise<Response> => {
     const body = typeof init.body === "string" ? init.body : "";
     const request: unknown = body === "" ? undefined : JSON.parse(body);
-    this.calls.push({ method: init.method ?? "GET", path, request });
+    const headers = Object.fromEntries(new Headers(init.headers).entries());
+    this.calls.push({ method: init.method ?? "GET", path, request, headers });
+    if (this.#drops > 0) {
+      this.#drops--;
+      throw new TypeError("Failed to fetch");
+    }
     const handler = this.#handlers.get(path);
     if (!handler) {
-      const refusal: ErrorResponse = {
-        error: { code: "unknown_operation", message: `the fake API has no handler for ${path}` },
-      };
-      return Response.json(refusal, { status: 404 });
+      return refuse(new Refusal("unknown_operation", 404), `the fake API has no handler for ${path}`);
     }
-    return Response.json(handler(request));
+    try {
+      return Response.json(await handler(request));
+    } catch (error) {
+      if (error instanceof Refusal) {
+        return refuse(error, error.message);
+      }
+      throw error;
+    }
   };
+}
+
+function refuse({ code, status }: Refusal, message: string): Response {
+  const answer: ErrorResponse = { error: { code, message } };
+  return Response.json(answer, { status });
 }
 
 /** fakeApi puts a new FakeApi in place of fetch until the test ends. */

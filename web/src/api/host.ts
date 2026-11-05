@@ -215,3 +215,16 @@ export const HostRemove: Op<HostRemoveRequest, HostRemoveResponse> = {
   path: "/v1/host.remove",
   write: true,
 };
+
+/**
+ * CodeUnknownHost: no Host the caller can see has the name or id given.
+ * A Host in a Space the caller cannot act in answers exactly as one
+ * that does not exist.
+ */
+export const CodeUnknownHost = "unknown_host";
+
+/**
+ * CodeInvalidValue: a field, an Attribute or the Note, or a value given
+ * for one, breaks its rule; the message names which and why.
+ */
+export const CodeInvalidValue = "invalid_value";

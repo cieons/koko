@@ -3,7 +3,8 @@ package api_test
 // The generator of the web UI's TypeScript types. Each Go file of package api
 // becomes one TypeScript file in web/src/api, holding what the API carries of
 // the declarations in it: its request, response and record types as the
-// API's JSON (encoding/json/v2) shapes them, and its operations.
+// API's JSON (encoding/json/v2) shapes them, its operations, and its
+// registered error codes.
 
 import (
 	"encoding"
@@ -37,6 +38,10 @@ func generateTypeScript(dir string) (map[string]string, error) {
 	for _, o := range api.Operations() {
 		ops[o.Info().Name] = o.Info()
 	}
+	codes := map[string]bool{}
+	for _, c := range api.Codes() {
+		codes[c.Name] = true
+	}
 	structs := map[string]reflect.Type{}
 	for _, o := range ops {
 		collectStructs(o.Request, structs)
@@ -46,6 +51,7 @@ func generateTypeScript(dir string) (map[string]string, error) {
 
 	out := map[string]string{}
 	found := map[string]bool{}
+	foundCodes := map[string]bool{}
 	for _, f := range src.files {
 		w := &tsWriter{module: f.module, src: src, imports: map[string]map[string]bool{}}
 		for _, d := range f.decls {
@@ -55,6 +61,11 @@ func generateTypeScript(dir string) (map[string]string, error) {
 				if o, ok := ops[d.opName]; ok {
 					found[d.opName] = true
 					err = w.op(d, o)
+				}
+			case declCode:
+				if codes[d.code] {
+					foundCodes[d.code] = true
+					w.code(d)
 				}
 			case declType:
 				if d.name == "Op" {
@@ -71,9 +82,18 @@ func generateTypeScript(dir string) (map[string]string, error) {
 			out[f.module+".ts"] = w.String()
 		}
 	}
-	for _, name := range slices.Sorted(maps.Keys(ops)) {
-		if !found[name] {
-			return nil, fmt.Errorf("operation %s: no var declares it as an Op literal in internal/shared/api", name)
+	for _, registered := range []struct {
+		kind, literal string
+		names         []string
+		found         map[string]bool
+	}{
+		{"operation", "an Op", slices.Sorted(maps.Keys(ops)), found},
+		{"error code", "a Code", slices.Sorted(maps.Keys(codes)), foundCodes},
+	} {
+		for _, name := range registered.names {
+			if !registered.found[name] {
+				return nil, fmt.Errorf("%s %s: no var declares it as %s literal in internal/shared/api", registered.kind, name, registered.literal)
+			}
 		}
 	}
 	return out, nil
@@ -105,13 +125,15 @@ type declKind int
 const (
 	declType declKind = iota
 	declOp
+	declCode
 )
 
 // goDecl is one declaration of package api the generator may write.
 type goDecl struct {
 	kind      declKind
-	name      string            // the Go name: Space, SpaceAdd
+	name      string            // the Go name: Space, SpaceAdd, CodeUnknownSpace
 	opName    string            // an operation's name, such as space.add
+	code      string            // an error code's name, such as unknown_space
 	doc       string            // the doc comment's text
 	fieldDocs map[string]string // a struct's field docs, by Go field name
 }
@@ -165,6 +187,8 @@ func parseSource(dir string) (*source, error) {
 						}
 						if op := opLiteral(s.Values[i]); op != "" {
 							gf.decls = append(gf.decls, goDecl{kind: declOp, name: n.Name, opName: op, doc: specDoc(gd, s.Doc)})
+						} else if code := codeLiteral(s.Values[i]); code != "" {
+							gf.decls = append(gf.decls, goDecl{kind: declCode, name: n.Name, code: code, doc: specDoc(gd, s.Doc)})
 						}
 					}
 				}
@@ -212,21 +236,45 @@ func opLiteral(e ast.Expr) string {
 	if id, ok := typ.X.(*ast.Ident); !ok || id.Name != "Op" {
 		return ""
 	}
-	for _, el := range lit.Elts {
-		kv, ok := el.(*ast.KeyValueExpr)
-		if !ok {
-			continue
-		}
-		key, ok := kv.Key.(*ast.Ident)
-		val, isLit := kv.Value.(*ast.BasicLit)
-		if ok && key.Name == "Name" && isLit && val.Kind == token.STRING {
-			name, err := strconv.Unquote(val.Value)
-			if err == nil {
-				return name
+	return literalName(lit)
+}
+
+// codeLiteral returns the Name of a Code{...} literal, such as
+// Code{"unknown_space", http.StatusNotFound}, or "" when e is not one.
+func codeLiteral(e ast.Expr) string {
+	lit, ok := e.(*ast.CompositeLit)
+	if !ok {
+		return ""
+	}
+	if id, ok := lit.Type.(*ast.Ident); !ok || id.Name != "Code" {
+		return ""
+	}
+	return literalName(lit)
+}
+
+// literalName returns the string a struct literal gives its Name field, the
+// first of both Op and Code: by key, or as its first element when the
+// literal names no fields. It is "" when the literal gives no string.
+func literalName(lit *ast.CompositeLit) string {
+	var name ast.Expr
+	for i, el := range lit.Elts {
+		if kv, ok := el.(*ast.KeyValueExpr); ok {
+			if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "Name" {
+				name = kv.Value
 			}
+		} else if i == 0 {
+			name = el
 		}
 	}
-	return ""
+	val, ok := name.(*ast.BasicLit)
+	if !ok || val.Kind != token.STRING {
+		return ""
+	}
+	s, err := strconv.Unquote(val.Value)
+	if err != nil {
+		return ""
+	}
+	return s
 }
 
 // The mapping: Go types to TypeScript types, as encoding/json/v2 shapes them.
@@ -438,6 +486,14 @@ func (w *tsWriter) op(d goDecl, o api.OpInfo) error {
 	fmt.Fprintf(&w.body, "export const %s: Op<%s, %s> = {\n  name: %q,\n  path: %q,\n  write: %t,\n};\n",
 		d.name, req, resp, o.Name, api.PathPrefix+o.Name, o.Write)
 	return nil
+}
+
+// code writes an error code as a string constant under its Go name, which
+// the web UI compares an ApiError's code with.
+func (w *tsWriter) code(d goDecl) {
+	w.blank()
+	jsdoc(&w.body, "", d.doc)
+	fmt.Fprintf(&w.body, "export const %s = %q;\n", d.name, d.code)
 }
 
 // opInterface writes the TypeScript twin of Op, which a client calls with.

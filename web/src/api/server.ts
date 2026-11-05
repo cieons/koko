@@ -133,3 +133,12 @@ export const ServerSet: Op<ServerSetRequest, ServerSetResponse> = {
   path: "/v1/server.set",
   write: true,
 };
+
+/**
+ * CodeAlreadyInitialised: the koko server is initialised already, so its
+ * Owner and its keys stay as they are.
+ */
+export const CodeAlreadyInitialised = "already_initialised";
+
+/** CodeInvalidAddress: a Server Address is not host or host:port. */
+export const CodeInvalidAddress = "invalid_address";

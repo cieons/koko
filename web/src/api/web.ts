@@ -28,3 +28,10 @@ export const WebStart: Op<WebStartRequest, WebStartResponse> = {
   path: "/v1/web.start",
   write: false,
 };
+
+/**
+ * CodeCookieRequired: a request on a web@koko channel came without a
+ * valid cookie of this run of koko web; open the address koko web
+ * prints.
+ */
+export const CodeCookieRequired = "cookie_required";

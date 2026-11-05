@@ -64,3 +64,6 @@ export const UserCurrent: Op<UserCurrentRequest, UserCurrentResponse> = {
   path: "/v1/user.current",
   write: false,
 };
+
+/** CodeUnknownUser: no User has the name given. */
+export const CodeUnknownUser = "unknown_user";
