@@ -1,0 +1,17 @@
+{
+  "id": "host_<1>",
+  "name": "web1",
+  "space": "alice",
+  "address": "203.0.113.10",
+  "port": 2222,
+  "account": "deploy",
+  "state": "registered",
+  "host_key": null,
+  "attributes": {
+    "provider": "hetzner",
+    "region": "fsn1"
+  },
+  "note": "Set up for the shop.\nRuns nginx and the API.\n",
+  "created_at": "<time>",
+  "updated_at": "<time>"
+}

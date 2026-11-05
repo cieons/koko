@@ -5,6 +5,7 @@
   "members": [],
   "counts": {
     "hosts": 0,
+    "retired_hosts": 0,
     "secrets": 0
   }
 }

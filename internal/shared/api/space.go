@@ -35,8 +35,12 @@ type SpaceMember struct {
 // SpaceCounts are how many records of each kind a Space holds. A Space that
 // holds any cannot be removed.
 type SpaceCounts struct {
-	Hosts   int `json:"hosts"`
-	Secrets int `json:"secrets"`
+	// Hosts counts the Hosts that are not Retired, which ordinary lists
+	// show.
+	Hosts int `json:"hosts"`
+	// RetiredHosts counts the Retired Hosts, which a Space keeps as history.
+	RetiredHosts int `json:"retired_hosts"`
+	Secrets      int `json:"secrets"`
 }
 
 // SpaceAddRequest records a shared Space under a new name.

@@ -1,0 +1,203 @@
+package api
+
+import "net/http"
+
+// The states of a Host, as Host.State names them. Only koko sets a Host's
+// state: Enroll makes it Managed, and retiring makes it Retired.
+const (
+	HostRegistered = "registered"
+	HostManaged    = "managed"
+	HostRetired    = "retired"
+)
+
+// Host is a Host as the API returns it.
+type Host struct {
+	ID string `json:"id"`
+	// Name is the Host's SSH Name, a lowercase DNS label unique among the
+	// Hosts that are not Retired, whatever Space each is in.
+	Name string `json:"name"`
+	// Space is the name of the Space the Host is in.
+	Space   string `json:"space"`
+	Address string `json:"address"`
+	Port    int    `json:"port"`
+	// Account is the Host Account koko logs in as.
+	Account string `json:"account"`
+	// State is HostRegistered, HostManaged or HostRetired.
+	State string `json:"state"`
+	// HostKey is the pinned host key's SHA-256 fingerprint, as OpenSSH
+	// prints it ("SHA256:..."), or null for a Host with no pin.
+	HostKey *string `json:"host_key"`
+	// Attributes are the Host's Attributes, by key.
+	Attributes map[string]string `json:"attributes"`
+	// Note is the Host's Note, left out when the Host has none. host.list
+	// leaves every Note out unless with_note asks for them.
+	Note string `json:"note,omitempty"`
+	// CreatedAt and UpdatedAt are RFC 3339 in UTC to the second.
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// NewHost is a Host to record.
+type NewHost struct {
+	// Name is a lowercase DNS label no Host that is not Retired holds.
+	Name string `json:"name"`
+	// Space names the Space to record the Host in; left out, the Host goes
+	// to the caller's Personal Space.
+	Space *string `json:"space,omitzero"`
+	// Address is an IP address or a DNS name (package record).
+	Address string `json:"address"`
+	// Port is 1 to 65535; left out, it is 22.
+	Port *int `json:"port,omitzero"`
+	// Account is the Host Account, which has no default.
+	Account string `json:"account"`
+	// Attributes are free-text values by key (package record).
+	Attributes map[string]string `json:"attributes,omitempty"`
+	// Note, when given, is the Host's Note: never empty.
+	Note *string `json:"note,omitzero"`
+}
+
+// HostAddRequest records Hosts, all or none.
+type HostAddRequest struct {
+	// Hosts are the Hosts to record, at least one, in one transaction.
+	Hosts []NewHost `json:"hosts"`
+}
+
+// HostAddResponse is the Hosts host.add recorded, in the order asked.
+type HostAddResponse struct {
+	Hosts []Host `json:"hosts"`
+}
+
+// HostListRequest asks for every Host the caller can see.
+type HostListRequest struct {
+	// WithNote asks for each Host's Note.
+	WithNote bool `json:"with_note,omitzero"`
+}
+
+// HostListResponse holds every Host the caller can see, by name.
+type HostListResponse struct {
+	Hosts []Host `json:"hosts"`
+}
+
+// HostShowRequest names a Host to show, by its name or its id.
+type HostShowRequest struct {
+	Host string `json:"host"`
+}
+
+// HostShowResponse is the Host host.show names.
+type HostShowResponse struct {
+	Host Host `json:"host"`
+}
+
+// HostSetRequest changes the fields and Attributes of a Host that it names,
+// and only those.
+type HostSetRequest struct {
+	// Host names the Host, by its name or its id.
+	Host string `json:"host"`
+	// Address, Port and Account, when given, replace the Host's.
+	Address *string `json:"address,omitzero"`
+	Port    *int    `json:"port,omitzero"`
+	Account *string `json:"account,omitzero"`
+	// Attributes set these Attributes, by key, leaving the others.
+	Attributes map[string]string `json:"attributes,omitempty"`
+	// Note, when given, replaces the Host's Note: never empty.
+	Note *string `json:"note,omitzero"`
+	// Unset clears these Attribute keys, the Note for "note", and sets the
+	// port back to 22 for "port". A key the Host lacks is already clear.
+	Unset []string `json:"unset,omitempty"`
+}
+
+// HostSetResponse is the Host as host.set left it.
+type HostSetResponse struct {
+	Host Host `json:"host"`
+}
+
+// HostRenameRequest gives a Host a new name, its SSH Name.
+type HostRenameRequest struct {
+	// Host names the Host, by its name or its id.
+	Host string `json:"host"`
+	// NewName is a name no Host that is not Retired holds.
+	NewName string `json:"new_name"`
+}
+
+// HostRenameResponse is the Host under its new name.
+type HostRenameResponse struct {
+	Host Host `json:"host"`
+}
+
+// HostMoveRequest moves a Host to another Space.
+type HostMoveRequest struct {
+	// Host names the Host, by its name or its id.
+	Host string `json:"host"`
+	// Space names the Space to move it to.
+	Space string `json:"space"`
+}
+
+// HostMoveResponse is the Host in its new Space.
+type HostMoveResponse struct {
+	Host Host `json:"host"`
+}
+
+// HostRemoveRequest names a Host to delete.
+type HostRemoveRequest struct {
+	// Host names the Host, by its name or its id.
+	Host string `json:"host"`
+}
+
+// HostRemoveResponse is the Host host.remove deleted, as it was.
+type HostRemoveResponse struct {
+	Host Host `json:"host"`
+}
+
+// The host operations. Space membership decides each of them: a Host in a
+// Space the caller cannot act in answers exactly as one that does not
+// exist, with CodeUnknownHost, and a Space they cannot act in as an unknown
+// one, with CodeUnknownSpace.
+var (
+	// HostAdd records Hosts, all or none, each in the Space it names or the
+	// caller's Personal Space. A name a Host that is not Retired holds is
+	// refused with CodeNameTaken, whatever Space holds it, and with the
+	// same message whichever one does; a value that breaks its rule with
+	// CodeInvalidValue.
+	HostAdd = Op[HostAddRequest, HostAddResponse]{Name: "host.add", Write: true}
+	// HostList lists the Hosts the caller can see.
+	HostList = Op[HostListRequest, HostListResponse]{Name: "host.list"}
+	// HostShow shows a Host with its Note.
+	HostShow = Op[HostShowRequest, HostShowResponse]{Name: "host.show"}
+	// HostSet changes the fields, Attributes and Note it names, and only
+	// those, so two callers changing different keys never undo each other.
+	HostSet = Op[HostSetRequest, HostSetResponse]{Name: "host.set", Write: true}
+	// HostRename gives a Host a new name, refused with CodeNameTaken as
+	// host.add refuses one.
+	HostRename = Op[HostRenameRequest, HostRenameResponse]{Name: "host.rename", Write: true}
+	// HostMove moves a Host, with its Attributes and Note, to another Space;
+	// the caller must be able to act in both. Its name stays.
+	HostMove = Op[HostMoveRequest, HostMoveResponse]{Name: "host.move", Write: true}
+	// HostRemove deletes a Host, with its Attributes and Note.
+	HostRemove = Op[HostRemoveRequest, HostRemoveResponse]{Name: "host.remove", Write: true}
+)
+
+var hostOperations = []Operation{
+	HostAdd,
+	HostList,
+	HostShow,
+	HostSet,
+	HostRename,
+	HostMove,
+	HostRemove,
+}
+
+// The record's codes, which Hosts and Services share.
+var (
+	// CodeUnknownHost: no Host the caller can see has the name or id given.
+	// A Host in a Space the caller cannot act in answers exactly as one
+	// that does not exist.
+	CodeUnknownHost = Code{"unknown_host", http.StatusNotFound}
+	// CodeInvalidValue: a field, an Attribute or the Note, or a value given
+	// for one, breaks its rule; the message names which and why.
+	CodeInvalidValue = Code{"invalid_value", http.StatusBadRequest}
+)
+
+var hostCodes = []Code{
+	CodeUnknownHost,
+	CodeInvalidValue,
+}

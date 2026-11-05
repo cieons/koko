@@ -141,13 +141,17 @@ status. A command reaches the koko server only on its first `in.Call`, so
   write prints the record it made or changed. An `rm` prints the record it
   removed, as it was, in the shape its `ls` prints, so a script keeps the
   id of what is gone.
-- Indented by two spaces, one value, ending in a newline.
+- Indented by two spaces, one value, ending in a newline. The members of a
+  map, such as a Host's `attributes`, are sorted by key, so one record always
+  prints the same.
 - Every record carries an `id`: its kind, `_` and 8 lowercase Crockford base32
   characters, such as `space_3f9k2m7q`. No name holds `_`.
 - Timestamps, when a record has them, are RFC 3339 in UTC to the second, as
   `2026-11-05T14:03:07Z`.
 - Every field of a record is always there: one with no value is `null`, as
-  a Device Session's `revoked_at` while it is live.
+  a Device Session's `revoked_at` while it is live. The one exception is a
+  Host's `note` in `host ls`, left out unless `--with-note` asks for it, so
+  that lists stay small.
 - **The mapping test**
   ([`mapping_test.go`](../../internal/client/cli/mapping_test.go)) fails when a
   field of an API response a command reads is neither in the CLI's type under
@@ -173,7 +177,7 @@ revoked, and when it was this device, that koko deleted its files.
 | --- | --- | --- | --- |
 | `koko space add <space>` (Owner) | reversible | `space.add` | the Space: `{"id", "name", "personal"}` |
 | `koko space ls` | read | `space.list` | an array of the Spaces the caller can act in |
-| `koko space show <space>` | read | `space.show` | the Space with its Members and counts: `{"id", "name", "personal", "members": [{"id", "name"}], "counts": {"hosts", "secrets"}}`; a member's `id` is the User's |
+| `koko space show <space>` | read | `space.show` | the Space with its Members and counts: `{"id", "name", "personal", "members": [{"id", "name"}], "counts": {"hosts", "retired_hosts", "secrets"}}`; a member's `id` is the User's |
 | `koko space rename <space> <new-name>` (Owner) | reversible | `space.rename` | the Space under its new name |
 | `koko space rm <space>` (Owner) | irreversible | `space.remove` | the Space it removed, as it was |
 | `koko space member add <space> <user>...` (Owner) | reversible | `space.member.add` | the Space with its Members after the change, as `space show` prints it |
@@ -190,6 +194,13 @@ revoked, and when it was this device, that koko deleted its files.
 | `koko server uninstall` | irreversible | none | `{"removed", "data_dir", "root_key_file", "system_user", "listen_port"}` ([the installer](installer.md#uninstall)) |
 | `koko server show` | read | `server.show` | `{"address", "listen_port", "host_key_fingerprint", "version", "root_key_file", "root_key_id", "data_dir"}` ([the deployment afterwards](initialisation.md#the-deployment-afterwards)) |
 | `koko server set address=<host[:port]>` (Owner, over the Unix socket only) | reversible | `server.set` | the settings as `server show` prints them, as the change left them |
+| `koko host add <host> address=<address> account=<account> [port=<port>] [space=<space>] [<key>=<value>...] [--note-file <file\|->]` | reversible | `host.add` | the Host: `{"id", "name", "space", "address", "port", "account", "state", "host_key", "attributes": {...}, "note", "created_at", "updated_at"}` ([the record](record.md)) |
+| `koko host ls [--with-note]` | read | `host.list` | an array of the Hosts the caller can see, by name, without `"note"` unless `--with-note` |
+| `koko host show <host>` | read | `host.show` | the Host |
+| `koko host set <host> [<key>=<value>...] [--unset <key>]... [--note-file <file\|->]` | reversible | `host.set` | the Host as the change left it |
+| `koko host rename <host> <new-name>` | reversible | `host.rename` | the Host under its new name |
+| `koko host move <host> <space>` | reversible | `host.move` | the Host in its new Space |
+| `koko host rm <host>` | irreversible | `host.remove` | the Host it deleted, as it was |
 
 `koko server run` takes `--data-dir` (`KOKO_DATA_DIR`, default
 `/var/lib/koko`), `--root-key-file` (`KOKO_ROOT_KEY_FILE`, default

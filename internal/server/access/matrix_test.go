@@ -23,6 +23,7 @@ var areaRows = [][]row{
 	deviceRows,
 	serverRows,
 	webRows,
+	hostRows,
 }
 
 // A row states, for one operation, the answer each caller gets.
@@ -36,6 +37,11 @@ type row struct {
 	request func(target string) any
 	// want is each caller's answer; a row states every caller's.
 	want map[caller]answer
+	// setup, when set, records what the call needs before it is made, as
+	// the Local caller, given the name of the target Space, which it records
+	// into: a Host for host.show, say. It runs only where the target Space
+	// is recorded, so the twin of an unknown answer holds none of it.
+	setup func(f *fixture, target string)
 }
 
 func (r row) String() string {
@@ -184,6 +190,8 @@ func TestAccessMatrix(t *testing.T) {
 type fixture struct {
 	t *testing.T
 	h *harness.Harness
+	// withTarget says ops is recorded.
+	withTarget bool
 }
 
 func newFixture(t *testing.T, withTarget bool) *fixture {
@@ -196,12 +204,16 @@ func newFixture(t *testing.T, withTarget bool) *fixture {
 		h.Koko("space", "add", targetSpace).WantSuccess(t)
 		h.Koko("space", "member", "add", targetSpace, "bob").WantSuccess(t)
 	}
-	return &fixture{t: t, h: h}
+	return &fixture{t: t, h: h, withTarget: withTarget}
 }
 
-// send makes r's call as c, joining a device of c's User for it.
+// send makes r's call as c, joining a device of c's User for it, after r's
+// setup where c's target Space is recorded.
 func (f *fixture) send(c caller, r row) (int, []byte) {
 	f.t.Helper()
+	if r.setup != nil && (f.withTarget || c.target() != targetSpace) {
+		r.setup(f, c.target())
+	}
 	body, err := json.Marshal(r.request(c.target()))
 	if err != nil {
 		f.t.Fatalf("encode the request of %s: %v", r, err)

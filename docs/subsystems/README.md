@@ -22,6 +22,7 @@ ADR; a proposed change lives in its issue or PR.
 | `koko web` and the web front: the listener, the `web@koko` channel, the Host guard, the token and the cookie, the port-owner lookup | [web-front.md](web-front.md) |
 | The Device Connection and joining: the TCP listener, device authentication, `koko join`, the device's files, which koko server the CLI reaches, last used, revoking a Device Session, the access-change signal and the revocation record | [device-connection.md](device-connection.md) |
 | The access check and Spaces: who is calling, the rule, unseen equals unknown, memberships, what a Space holds, the access matrix | [access.md](access.md) |
+| The record: a Host's fields and their rules, Attributes and the Note, the host operations, the one leak | [record.md](record.md) |
 
 ## Maintaining a reference
 

@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "invalid_usage",
+    "message": "koko host add needs the Host Account koko logs in as, which has no default: give account=<user>"
+  }
+}

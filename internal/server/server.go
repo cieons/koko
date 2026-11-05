@@ -21,6 +21,7 @@ import (
 	"github.com/cieons/koko/internal/server/access"
 	"github.com/cieons/koko/internal/server/deployment"
 	"github.com/cieons/koko/internal/server/device"
+	"github.com/cieons/koko/internal/server/host"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/space"
@@ -35,12 +36,16 @@ import (
 
 // areas registers each area's operations; an area's first ticket adds its
 // line.
-var areas = []func(*op.API){}
+var areas = []func(*op.API){
+	host.Register,
+}
 
 // holdings counts what each area records in a Space, for space show's
 // counts and space rm's refusal of a Space that is not empty; an area whose
 // records live in a Space, such as Hosts or Secrets, adds its line.
-var holdings = []space.Holding{}
+var holdings = []space.Holding{
+	host.Holding,
+}
 
 // Config is what the koko server starts with.
 type Config struct {

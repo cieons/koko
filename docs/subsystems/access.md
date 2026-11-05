@@ -33,7 +33,8 @@ membership.
   is the lookup that does so for every operation that names a Space, with
   `unknown_space`; an area whose records live in a Space looks the Space up
   through it, and leaves records in an unseen Space out of every list, count
-  and filter through `Identity.Spaces`.
+  and filter through `Identity.Spaces`. A record the call names no Space for
+  goes to the caller's Personal Space, which `space.Personal` returns.
 - **Owner-only before anything else.** An operation only the Owner may make
   asks `access.OwnerOnly` before it reads anything the call names, so a Member
   gets the same `owner_only` for a name that is taken, free, unseen or
@@ -79,14 +80,15 @@ asking each area through one small interface: a
 the area's own fields of `api.SpaceCounts` for one Space. The space area
 never reads another area's records. `space show` and `space rm` read the
 same counts, so a record `space rm` must keep a Space for but `space show`
-should count apart, such as a Retired Host if #47 so decides, takes a field
-of its own (`retired_hosts`).
+should count apart takes a field of its own: `hosts` counts the Hosts that
+are not Retired, as ordinary lists show them, and `retired_hosts` the
+Retired ones ([`host.Holding`](../../internal/server/host/host.go)).
 
 An area whose records live in a Space (Hosts, #47; Secrets, #48) writes its
 `Holding` in its own package and adds one line to `holdings` in
 [`server.go`](../../internal/server/server.go). `api.SpaceCounts` already has
-`hosts` and `secrets`, 0 until their area counts them; `space rm` refuses
-while any count is above 0, and its message names each.
+`secrets`, 0 until its area counts it; `space rm` refuses while any count is
+above 0, and its message names each, as in "2 Hosts and 1 Retired Host".
 
 ## The access matrix
 
@@ -105,7 +107,11 @@ states.
   access check lets through and the operation refuses by a rule of its own.
 - **Rows.** Each area keeps its rows in `matrix_<area>_test.go` and adds one
   line to `areaRows`. A row gives the operation, its request for a target
-  Space's name, and every caller's answer. An operation in `api.Operations`
+  Space's name, and every caller's answer. A row whose call needs a record,
+  such as a Host for `host.show`, gives a `setup` that records it into the
+  target Space as the Local caller; it runs only where that Space is
+  recorded, so the twin of an `unknown` answer holds nothing of it. An
+  operation in `api.Operations`
   without a row, or a row without an answer for every caller, fails
   `TestEveryOperationHasRowsInTheAccessMatrix`; and
   [`TestTheServerServesExactlyTheDeclaredOperations`](../../internal/server/operations_test.go)

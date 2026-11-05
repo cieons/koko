@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "unknown_host",
+    "message": "no Host is named \"web1\""
+  }
+}

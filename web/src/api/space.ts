@@ -41,7 +41,13 @@ export interface SpaceMember {
  * holds any cannot be removed.
  */
 export interface SpaceCounts {
+  /**
+   * Hosts counts the Hosts that are not Retired, which ordinary lists
+   * show.
+   */
   hosts: number;
+  /** RetiredHosts counts the Retired Hosts, which a Space keeps as history. */
+  retired_hosts: number;
   secrets: number;
 }
 

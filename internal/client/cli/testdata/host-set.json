@@ -1,0 +1,17 @@
+{
+  "id": "host_<1>",
+  "name": "web1",
+  "space": "bob",
+  "address": "203.0.113.99",
+  "port": 2222,
+  "account": "admin",
+  "state": "registered",
+  "host_key": null,
+  "attributes": {
+    "provider": "hetzner",
+    "region": "nbg1"
+  },
+  "note": "Kept.",
+  "created_at": "<time>",
+  "updated_at": "<time>"
+}

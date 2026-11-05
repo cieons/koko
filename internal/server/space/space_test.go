@@ -28,19 +28,20 @@ var addOwner = api.Op[struct{}, struct{}]{Name: "test.owner", Write: true}
 type holdings struct {
 	mu      sync.Mutex
 	hosts   map[string]int
+	retired map[string]int
 	secrets map[string]int
 }
 
-func (h *holdings) set(spaceID string, hosts, secrets int) {
+func (h *holdings) set(spaceID string, hosts, retired, secrets int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.hosts[spaceID], h.secrets[spaceID] = hosts, secrets
+	h.hosts[spaceID], h.retired[spaceID], h.secrets[spaceID] = hosts, retired, secrets
 }
 
 func (h *holdings) countHosts(_ context.Context, _ store.Tx, spaceID string, c *api.SpaceCounts) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	c.Hosts = h.hosts[spaceID]
+	c.Hosts, c.RetiredHosts = h.hosts[spaceID], h.retired[spaceID]
 	return nil
 }
 
@@ -78,7 +79,7 @@ func TestASpaceThatHoldsRecordsIsNotRemoved(t *testing.T) {
 	}
 	a := op.New(st, rootKey, slog.New(slog.DiscardHandler),
 		func(context.Context, store.Tx) (bool, error) { return true, nil }, time.Now)
-	h := &holdings{hosts: map[string]int{}, secrets: map[string]int{}}
+	h := &holdings{hosts: map[string]int{}, retired: map[string]int{}, secrets: map[string]int{}}
 	space.Register(a, user.ByName, []space.Holding{h.countHosts, h.countSecrets})
 	a.Handle(addOwner, func(ctx context.Context, tx store.Tx, _ op.Caller, _ struct{}) (struct{}, error) {
 		return struct{}{}, user.AddOwner(ctx, tx, "alice")
@@ -93,35 +94,38 @@ func TestASpaceThatHoldsRecordsIsNotRemoved(t *testing.T) {
 	}
 	id := added.Space.ID
 
-	h.set(id, 2, 1)
+	h.set(id, 2, 1, 1)
 	status, body = call(t, a, api.SpaceShow.Path(), `{"name": "ops"}`)
 	var shown api.SpaceShowResponse
 	if err := json.Unmarshal([]byte(body), &shown); status != http.StatusOK || err != nil {
 		t.Fatalf("space.show ops: %d %s", status, body)
 	}
-	if want := (api.SpaceCounts{Hosts: 2, Secrets: 1}); shown.Space.Counts != want {
+	if want := (api.SpaceCounts{Hosts: 2, RetiredHosts: 1, Secrets: 1}); shown.Space.Counts != want {
 		t.Errorf("space.show ops counts %+v, want %+v", shown.Space.Counts, want)
 	}
 	for _, tc := range []struct {
-		hosts, secrets int
-		left           string
+		hosts, retired, secrets int
+		left                    string
 	}{
-		{2, 1, "2 Hosts and 1 Secret"},
-		{1, 0, "1 Host"},
-		{0, 3, "3 Secrets"},
+		{2, 0, 1, "2 Hosts and 1 Secret"},
+		{1, 0, 0, "1 Host"},
+		{0, 0, 3, "3 Secrets"},
+		{0, 1, 0, "1 Retired Host"},
+		{1, 2, 0, "1 Host and 2 Retired Hosts"},
 	} {
-		h.set(id, tc.hosts, tc.secrets)
+		h.set(id, tc.hosts, tc.retired, tc.secrets)
 		status, body := call(t, a, api.SpaceRemove.Path(), `{"name": "ops"}`)
 		if want := "the Space ops still holds " + tc.left + ": move or remove them first"; status != api.CodeSpaceNotEmpty.Status ||
 			!strings.Contains(body, `"code":"space_not_empty"`) || !strings.Contains(body, want) {
-			t.Errorf("space.remove of ops holding %d Hosts and %d Secrets = %d %s, want space_not_empty saying %q", tc.hosts, tc.secrets, status, body, want)
+			t.Errorf("space.remove of ops holding %d Hosts, %d Retired Hosts and %d Secrets = %d %s, want space_not_empty saying %q",
+				tc.hosts, tc.retired, tc.secrets, status, body, want)
 		}
 	}
 	if status, body := call(t, a, api.SpaceShow.Path(), `{"name": "ops"}`); status != http.StatusOK {
 		t.Errorf("space.show ops after the refusals = %d %s, want it still there", status, body)
 	}
 
-	h.set(id, 0, 0)
+	h.set(id, 0, 0, 0)
 	if status, body := call(t, a, api.SpaceRemove.Path(), `{"name": "ops"}`); status != http.StatusOK || !strings.Contains(body, id) {
 		t.Errorf("space.remove of the empty ops = %d %s, want it removed", status, body)
 	}

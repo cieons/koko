@@ -139,9 +139,10 @@ func classify(err error) (int, api.Error) {
 }
 
 // encodeJSON writes v as the CLI's --json: indented by two spaces, ending in
-// a newline.
+// a newline, with the members of a map, such as a Host's Attributes, sorted
+// by key, so the same record always prints the same.
 func encodeJSON(w io.Writer, v any) error {
-	b, err := json.Marshal(v, jsontext.WithIndent("  "))
+	b, err := json.Marshal(v, jsontext.WithIndent("  "), json.Deterministic(true))
 	if err != nil {
 		return err
 	}

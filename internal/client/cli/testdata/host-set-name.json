@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "invalid_usage",
+    "message": "name=: koko host set does not rename a Host; write koko host rename <host> <new-name>"
+  }
+}

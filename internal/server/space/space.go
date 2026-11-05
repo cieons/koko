@@ -150,6 +150,7 @@ func held(c api.SpaceCounts) string {
 		one, several string
 	}{
 		{c.Hosts, "Host", "Hosts"},
+		{c.RetiredHosts, "Retired Host", "Retired Hosts"},
 		{c.Secrets, "Secret", "Secrets"},
 	} {
 		switch {
@@ -243,6 +244,17 @@ func ByName(ctx context.Context, tx store.Tx, who access.Identity, spaceName str
 		return api.Space{}, err
 	case !can:
 		return api.Space{}, unknown
+	}
+	return s, nil
+}
+
+// Personal returns the Personal Space of the caller's User, where what they
+// record goes when they name no Space; the Owner's for the Local caller.
+func Personal(ctx context.Context, tx store.Tx, who access.Identity) (api.Space, error) {
+	s := api.Space{Personal: true}
+	err := tx.QueryRowContext(ctx, "SELECT id, name FROM spaces WHERE user_id = ?", who.User.ID).Scan(&s.ID, &s.Name)
+	if err != nil {
+		return api.Space{}, fmt.Errorf("read the Personal Space of %s: %w", who.User.Name, err)
 	}
 	return s, nil
 }

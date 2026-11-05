@@ -1,0 +1,14 @@
+{
+  "id": "host_<1>",
+  "name": "web1",
+  "space": "alice",
+  "address": "203.0.113.10",
+  "port": 22,
+  "account": "deploy",
+  "state": "registered",
+  "host_key": null,
+  "attributes": {},
+  "note": null,
+  "created_at": "<time>",
+  "updated_at": "<time>"
+}

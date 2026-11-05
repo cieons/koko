@@ -109,10 +109,12 @@ type spaceMemberJSON struct {
 	Name string `json:"name"`
 }
 
-// spaceCountsJSON is how many Hosts and Secrets a Space holds.
+// spaceCountsJSON is how many Hosts and Secrets a Space holds: Hosts that
+// are not Retired, and Retired ones apart.
 type spaceCountsJSON struct {
-	Hosts   int `json:"hosts"`
-	Secrets int `json:"secrets"`
+	Hosts        int `json:"hosts"`
+	RetiredHosts int `json:"retired_hosts"`
+	Secrets      int `json:"secrets"`
 }
 
 func spaceDetailFromAPI(d api.SpaceDetail) spaceDetailJSON {
@@ -125,7 +127,7 @@ func spaceDetailFromAPI(d api.SpaceDetail) spaceDetailJSON {
 		Name:     d.Name,
 		Personal: d.Personal,
 		Members:  members,
-		Counts:   spaceCountsJSON{Hosts: d.Counts.Hosts, Secrets: d.Counts.Secrets},
+		Counts:   spaceCountsJSON{Hosts: d.Counts.Hosts, RetiredHosts: d.Counts.RetiredHosts, Secrets: d.Counts.Secrets},
 	}
 }
 
@@ -185,8 +187,8 @@ func (s shownSpace) Human(w io.Writer) error {
 	if s.Personal {
 		kind = "Personal"
 	}
-	_, err := fmt.Fprintf(w, "Space %s (%s), %s\nMembers: %s\nHosts: %d\nSecrets: %d\n",
-		s.Name, s.ID, kind, spaceDetailJSON(s).memberList(), s.Counts.Hosts, s.Counts.Secrets)
+	_, err := fmt.Fprintf(w, "Space %s (%s), %s\nMembers: %s\nHosts: %d\nRetired Hosts: %d\nSecrets: %d\n",
+		s.Name, s.ID, kind, spaceDetailJSON(s).memberList(), s.Counts.Hosts, s.Counts.RetiredHosts, s.Counts.Secrets)
 	return err
 }
 
