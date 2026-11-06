@@ -40,7 +40,10 @@ var hostCommands = []Command{
 		Noun:    "host",
 		Verb:    "ls",
 		Summary: "List the Hosts you can see that match every filter term, such as expires_at.le=+30d auto_renew=no",
-		Flags:   []Flag{{Name: "with-note", Bool: true, Summary: "Include each Host's Note"}},
+		Flags: []Flag{
+			{Name: "with-note", Bool: true, Summary: "Include each Host's Note"},
+			{Name: "all", Bool: true, Summary: "Include the Retired Hosts, which state=retired lists alone"},
+		},
 		Filters: api.HostListFields,
 		Tier:    Read,
 		Op:      api.HostList,
@@ -84,6 +87,15 @@ var hostCommands = []Command{
 		Tier:    Reversible,
 		Op:      api.HostMove,
 		Run:     action(hostMove),
+	},
+	{
+		Noun:    "host",
+		Verb:    "retire",
+		Summary: "Retire a Host that is gone: it leaves host ls and frees its name, and keeps its record, which its id names from then on",
+		Args:    []Arg{{Name: "host"}},
+		Tier:    Irreversible,
+		Op:      api.HostRetire,
+		Run:     action(hostRetire),
 	},
 	{
 		Noun:    "host",
@@ -168,6 +180,7 @@ var hostMappings = []mapping{
 	{api: reflect.TypeFor[api.HostSetResponse]()},
 	{api: reflect.TypeFor[api.HostRenameResponse]()},
 	{api: reflect.TypeFor[api.HostMoveResponse]()},
+	{api: reflect.TypeFor[api.HostRetireResponse]()},
 	{api: reflect.TypeFor[api.HostRemoveResponse]()},
 	{api: reflect.TypeFor[api.Host](), cli: reflect.TypeFor[hostJSON]()},
 }
@@ -237,7 +250,7 @@ func hostFieldRefusal(written, key, verb string) error {
 	case "space":
 		return usagef("%s: koko host %s does not move a Host; write koko host move <host> <space>", written, verb)
 	case "state":
-		return usagef("%s: koko sets a Host's state itself", written)
+		return usagef("%s: koko sets a Host's state itself; to retire a Host that is gone, write koko host retire <host>", written)
 	case "note":
 		return usagef("%s: the Note is read from a file with --note-file <file>, or from stdin with --note-file -", written)
 	}
@@ -413,7 +426,7 @@ func hostLs(ctx context.Context, in *Input) (hostList, error) {
 		return nil, err
 	}
 	withNote := in.Bool("with-note")
-	resp, err := in.Call(ctx, api.HostList, api.HostListRequest{Filters: filters, Sort: sort, WithNote: withNote})
+	resp, err := in.Call(ctx, api.HostList, api.HostListRequest{Filters: filters, Sort: sort, WithNote: withNote, All: in.Bool("all")})
 	if err != nil {
 		return nil, err
 	}
@@ -574,6 +587,23 @@ func hostMove(ctx context.Context, in *Input) (movedHost, error) {
 		return movedHost{}, err
 	}
 	return movedHost(hostFromAPI(resp.Host)), nil
+}
+
+// retiredHost is what host retire prints: the Host as it left it, Retired,
+// Note and all.
+type retiredHost hostJSON
+
+func (h retiredHost) Human(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "Retired Host %s (%s); name it by its id from now on.\n", h.Name, h.ID)
+	return err
+}
+
+func hostRetire(ctx context.Context, in *Input) (retiredHost, error) {
+	resp, err := in.Call(ctx, api.HostRetire, api.HostRetireRequest{Host: in.Arg("host")})
+	if err != nil {
+		return retiredHost{}, err
+	}
+	return retiredHost(hostFromAPI(resp.Host)), nil
 }
 
 // removedHost is what host rm prints: the Host it deleted, as it was, Note

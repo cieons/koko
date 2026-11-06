@@ -212,8 +212,8 @@ func keyInput(key []byte, refusedAs, whenEncrypted string) (input, error) {
 }
 
 // enrollable refuses to Enroll a Host whose state does not allow it: a
-// Registered Host Enrolls, and a Managed one only to pin a new host key
-// (P0 spec: the record).
+// Registered Host Enrolls, a Managed one only to pin a new host key, and a
+// Retired one never (P0 spec: the record).
 func enrollable(h host.Reach, req api.HostEnrollRequest) error {
 	switch {
 	case h.State == api.HostRegistered:
@@ -223,6 +223,8 @@ func enrollable(h host.Reach, req api.HostEnrollRequest) error {
 	case h.State == api.HostManaged:
 		return api.CodeAlreadyManaged.Errorf(
 			"%s is Managed already, and koko logs in to it with the koko key: Enroll a Managed Host again only to pin a new host key, with --host-key SHA256:... or --replace-host-key", h.Name)
+	case h.State == api.HostRetired:
+		return api.CodeHostRetired.Errorf("%s (%s) is Retired, so it is gone and koko never logs in to it", h.Name, h.ID)
 	}
 	return fmt.Errorf("enroll %s: a Host in the state %q cannot be Enrolled", h.Name, h.State)
 }

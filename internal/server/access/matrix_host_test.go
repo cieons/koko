@@ -45,7 +45,7 @@ var hostRows = []row{
 	},
 	{
 		op:      api.HostList,
-		request: func(string) any { return api.HostListRequest{WithNote: true} },
+		request: func(string) any { return api.HostListRequest{WithNote: true, All: true} },
 		want:    anyoneAnswers,
 	},
 	{
@@ -85,6 +85,12 @@ var hostRows = []row{
 		want: map[caller]answer{
 			ownerDevice: allowed, local: allowed, member: unseenSpace, personal: unseenSpace, outsider: unknown,
 		},
+	},
+	{
+		op:      api.HostRetire,
+		setup:   addWeb1,
+		request: func(string) any { return api.HostRetireRequest{Host: "web1"} },
+		want:    hostAnswers,
 	},
 	{
 		op:      api.HostRemove,

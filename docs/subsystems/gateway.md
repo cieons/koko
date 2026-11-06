@@ -206,8 +206,8 @@ stdout, stderr and status, the words as the Host ran them, no pty, the koko
 key as the Host Account; through the Device Mux, opening no Device
 Connection of its own; both forms of the SSH Name; an unknown name and an
 unseen Host refused alike with no connection to the Host, a Registered Host
-refused; 255 for each failure of koko's own and for a command a signal
-ended; Ctrl-C; a koko server stop; the log lines without the command's
+refused, a Retired Host's old name refused as unknown; 255 for each failure
+of koko's own and for a command a signal ended; Ctrl-C; a koko server stop; the log lines without the command's
 text; and a Tunnel counting as a use of its Device Session.
 [`wire/tunnel_test.go`](../../internal/shared/wire/tunnel_test.go) pins the
 open payload's bytes.

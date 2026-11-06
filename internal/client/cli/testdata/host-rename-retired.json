@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "host_retired",
+    "message": "web1 (host_<id>) is Retired and holds its name no more, so it is not renamed: a Retired Host takes only changes to its Attributes and Note, and moves"
+  }
+}

@@ -115,8 +115,9 @@ with the old and the new fingerprint.
 A Registered Host Enrolls, with a pin when a change of its Host Account
 sent it back there ([the record](record.md#a-host)). A Managed one Enrolls
 again only with `host_key` or `replace_host_key`, to pin a new host key;
-without them it is refused with `already_managed`. A Retired Host cannot be
-Enrolled; its refusal comes with retiring.
+without them it is refused with `already_managed`. A Retired Host is never
+Enrolled: it is refused with `host_retired`, whatever the flags, before any
+login ([retiring a Host](record.md#retiring-a-host)).
 
 ## What changes on the Host
 

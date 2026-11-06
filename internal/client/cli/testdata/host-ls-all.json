@@ -1,0 +1,28 @@
+[
+  {
+    "id": "host_<1>",
+    "name": "db1",
+    "space": "alice",
+    "address": "203.0.113.10",
+    "port": 22,
+    "account": "deploy",
+    "state": "registered",
+    "host_key": null,
+    "attributes": {},
+    "created_at": "<time>",
+    "updated_at": "<time>"
+  },
+  {
+    "id": "host_<2>",
+    "name": "web1",
+    "space": "alice",
+    "address": "203.0.113.10",
+    "port": 22,
+    "account": "deploy",
+    "state": "retired",
+    "host_key": null,
+    "attributes": {},
+    "created_at": "<time>",
+    "updated_at": "<time>"
+  }
+]

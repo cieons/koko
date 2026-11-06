@@ -4,7 +4,7 @@ import "testing"
 
 // Each host command sits in the tier P0 spec: the record gives it, so an
 // agent's harness allows host ls and host show by prefix and asks before
-// host rm.
+// host retire and host rm.
 func TestHostCommandsSitInTheirTiers(t *testing.T) {
 	want := map[string]Tier{
 		"host ls":     Read,
@@ -13,6 +13,7 @@ func TestHostCommandsSitInTheirTiers(t *testing.T) {
 		"host set":    Reversible,
 		"host rename": Reversible,
 		"host move":   Reversible,
+		"host retire": Irreversible,
 		"host rm":     Irreversible,
 		"host enroll": Irreversible,
 	}

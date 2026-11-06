@@ -124,6 +124,7 @@ first call, through the dial it was given, and for each call:
 | `already_managed` | 409 | Enroll of a Managed Host without `host_key` or `replace_host_key`. |
 | `host_changed` | 409 | The Host's Host Account, state or pin changed while Enroll logged in to it, so it recorded nothing. |
 | `host_was_managed` | 409 | `host.remove` of a Host that has been Managed, as its pin shows ([the record](record.md#operations)). |
+| `host_retired` | 409 | A Retired Host was asked for a change it does not take, or to be Enrolled or retired again ([retiring a Host](record.md#retiring-a-host)). |
 | `internal_error` | 500 | Anything the server did not expect; the message says to read the log, which holds the cause. |
 
 An area adds its codes beside its types (see

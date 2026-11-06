@@ -49,6 +49,7 @@ func Register(a *op.API, services ServicesOf) {
 	a.Handle(api.HostSet, set)
 	a.Handle(api.HostRename, rename)
 	a.Handle(api.HostMove, move)
+	a.Handle(api.HostRetire, retire)
 	a.Handle(api.HostRemove, remove)
 }
 
@@ -96,11 +97,32 @@ func Find(ctx context.Context, tx store.Tx, who access.Identity, ref string) (ap
 	return h.Host, err
 }
 
+// Ref returns what names the Host h in a request: its name, or its id once
+// it is Retired and holds its name no more.
+func Ref(h api.Host) string {
+	if h.State == api.HostRetired {
+		return h.ID
+	}
+	return h.Name
+}
+
 // Names returns the name of each Host in the Spaces scope holds, by id,
-// Retired ones among them, for the service area's lists: a Service is seen
-// by whoever sees its Host.
+// Retired ones among them, for the service area: a Service is seen by
+// whoever sees its Host.
 func Names(ctx context.Context, tx store.Tx, scope access.Scope) (map[string]string, error) {
-	rows, err := tx.QueryContext(ctx, "SELECT id, name, space_id FROM hosts")
+	return names(ctx, tx, scope, "SELECT id, name, space_id FROM hosts")
+}
+
+// ListedNames returns Names without the Retired Hosts, for the service
+// area's lists, which leave a Retired Host's Services out with it.
+func ListedNames(ctx context.Context, tx store.Tx, scope access.Scope) (map[string]string, error) {
+	return names(ctx, tx, scope, "SELECT id, name, space_id FROM hosts WHERE state <> 'retired'")
+}
+
+// names returns the name of each Host that stmt selects, as id, name and
+// the id of its Space, in the Spaces scope holds, by id.
+func names(ctx context.Context, tx store.Tx, scope access.Scope, stmt string) (map[string]string, error) {
+	rows, err := tx.QueryContext(ctx, stmt)
 	if err != nil {
 		return nil, fmt.Errorf("list the names of the Hosts: %w", err)
 	}
@@ -427,9 +449,9 @@ func hostLookup(h api.Host) query.Lookup {
 	}
 }
 
-// list is host.list: the Hosts that are not Retired in the Spaces the caller
-// can act in and match the filter, by the sort keys, then by name and id,
-// with their Notes only when asked for.
+// list is host.list: the Hosts in the Spaces the caller can act in that
+// match the filter, by the sort keys, then by name and id, with the Retired
+// ones and the Notes only when asked for.
 func list(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostListRequest) (api.HostListResponse, error) {
 	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
@@ -443,7 +465,11 @@ func list(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostListRe
 	if err != nil {
 		return api.HostListResponse{}, err
 	}
-	rows, err := tx.QueryContext(ctx, selectHosts+" WHERE h.state <> 'retired'")
+	stmt := selectHosts
+	if !req.All {
+		stmt += " WHERE h.state <> 'retired'"
+	}
+	rows, err := tx.QueryContext(ctx, stmt)
 	if err != nil {
 		return api.HostListResponse{}, fmt.Errorf("list the Hosts: %w", err)
 	}
@@ -514,8 +540,13 @@ func show(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostShowRe
 	return api.HostShowResponse{Host: h.Host, Services: s}, err
 }
 
+// retiredTakes ends each refusal of a change to a Retired Host, saying what
+// it does take.
+const retiredTakes = "a Retired Host takes only changes to its Attributes and Note, and moves"
+
 // set is host.set: it changes the fields, Attributes and Note the request
-// names, and only those.
+// names, and only those. A Retired Host keeps its address, port and Host
+// Account as they were.
 func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequest) (api.HostSetResponse, error) {
 	who, h, err := target(ctx, tx, caller, req.Host)
 	if err != nil {
@@ -524,6 +555,10 @@ func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequ
 	v := values{address: req.Address, port: req.Port, account: req.Account, attributes: req.Attributes, note: req.Note}
 	if v.address == nil && v.port == nil && v.account == nil && len(v.attributes) == 0 && v.note == nil && len(req.Unset) == 0 {
 		return api.HostSetResponse{}, api.CodeInvalidRequest.Errorf("name at least one field, Attribute or Note of %s to change", h.Name)
+	}
+	if h.State == api.HostRetired && (v.address != nil || v.port != nil || v.account != nil || slices.Contains(req.Unset, "port")) {
+		return api.HostSetResponse{}, api.CodeHostRetired.Errorf(
+			"%s (%s) is Retired, so its address, port and Host Account stay as they were: %s", h.Name, h.ID, retiredTakes)
 	}
 	if err := v.check(h.Name); err != nil {
 		return api.HostSetResponse{}, err
@@ -585,11 +620,15 @@ func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequ
 }
 
 // rename is host.rename: the Host takes a new name, its SSH Name, and keeps
-// its id and everything else.
+// its id and everything else. A Retired Host holds no name to change.
 func rename(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRenameRequest) (api.HostRenameResponse, error) {
 	who, h, err := target(ctx, tx, caller, req.Host)
 	if err != nil {
 		return api.HostRenameResponse{}, err
+	}
+	if h.State == api.HostRetired {
+		return api.HostRenameResponse{}, api.CodeHostRetired.Errorf(
+			"%s (%s) is Retired and holds its name no more, so it is not renamed: %s", h.Name, h.ID, retiredTakes)
 	}
 	if err := name.Check(req.NewName); err != nil {
 		return api.HostRenameResponse{}, api.CodeInvalidName.Errorf("invalid Host name: %v", err)
@@ -626,17 +665,42 @@ func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRe
 	return api.HostMoveResponse{Host: moved.Host}, err
 }
 
+// retire is host.retire: the Host becomes Retired, which is terminal, and
+// keeps its record, Attributes, Note, Services, Space and pin. Its name is
+// free from then on, since only a Host that is not Retired holds one
+// (checkFree, and the index hosts_live_name), so only its id names it.
+func retire(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRetireRequest) (api.HostRetireResponse, error) {
+	who, h, err := target(ctx, tx, caller, req.Host)
+	if err != nil {
+		return api.HostRetireResponse{}, err
+	}
+	if h.State == api.HostRetired {
+		return api.HostRetireResponse{}, api.CodeHostRetired.Errorf("%s (%s) is Retired already", h.Name, h.ID)
+	}
+	_, err = tx.ExecContext(ctx, "UPDATE hosts SET state = ?, updated_at = ? WHERE id = ?", api.HostRetired, op.Now(ctx).Format(time.RFC3339), h.ID)
+	if err != nil {
+		return api.HostRetireResponse{}, fmt.Errorf("retire the Host %s: %w", h.Name, err)
+	}
+	retired, err := find(ctx, tx, who, h.ID)
+	return api.HostRetireResponse{Host: retired.Host}, err
+}
+
 // remove is host.remove: the Host goes, with its Attributes, Note and
 // Services. A Host that has been Managed, which its pin shows, is kept on
-// record instead.
+// record instead, and retiring it is the way on unless it is Retired
+// already.
 func remove(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRemoveRequest) (api.HostRemoveResponse, error) {
 	_, h, err := target(ctx, tx, caller, req.Host)
 	if err != nil {
 		return api.HostRemoveResponse{}, err
 	}
 	if h.pin != nil {
+		var wayOn string
+		if h.State != api.HostRetired {
+			wayOn = fmt.Sprintf(". Retire it instead, with koko host retire %s, which frees its name", h.Name)
+		}
 		return api.HostRemoveResponse{}, api.CodeHostWasManaged.Errorf(
-			"%s has been Managed, so koko keeps its record: a Host that was ever Managed is never deleted", h.Name)
+			"%s has been Managed, so koko keeps its record: a Host that was ever Managed is never deleted%s", h.Name, wayOn)
 	}
 	// Its Attributes and Services go with it (ON DELETE CASCADE).
 	if _, err := tx.ExecContext(ctx, "DELETE FROM hosts WHERE id = ?", h.ID); err != nil {

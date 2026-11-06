@@ -95,6 +95,11 @@ export interface HostListRequest {
   sort?: SortKey[];
   /** WithNote asks for each Host's Note. */
   with_note?: boolean;
+  /**
+   * All adds the Retired Hosts, which the filters then take as any other
+   * Host: state=retired keeps only them.
+   */
+  all?: boolean;
 }
 
 /**
@@ -173,6 +178,20 @@ export interface HostMoveResponse {
   host: Host;
 }
 
+/** HostRetireRequest names a Host to retire. */
+export interface HostRetireRequest {
+  /** Host names the Host, by its name or its id. */
+  host: string;
+}
+
+/**
+ * HostRetireResponse is the Host as host.retire left it: Retired, and
+ * named by its id alone from then on.
+ */
+export interface HostRetireResponse {
+  host: Host;
+}
+
 /** HostRemoveRequest names a Host to delete. */
 export interface HostRemoveRequest {
   /** Host names the Host, by its name or its id. */
@@ -241,6 +260,19 @@ export const HostMove: Op<HostMoveRequest, HostMoveResponse> = {
   write: true,
 };
 
+/**
+ * HostRetire makes a Registered or Managed Host Retired, which is
+ * terminal. It keeps its record, Attributes, Note, Services, Space and
+ * pin, leaves host.list unless all asks for it, and frees its name, so
+ * that only its id names it. A Host Retired already is refused with
+ * CodeHostRetired.
+ */
+export const HostRetire: Op<HostRetireRequest, HostRetireResponse> = {
+  name: "host.retire",
+  path: "/v1/host.retire",
+  write: true,
+};
+
 /** HostRemove deletes a Host, with its Attributes, Note and Services. */
 export const HostRemove: Op<HostRemoveRequest, HostRemoveResponse> = {
   name: "host.remove",
@@ -273,3 +305,11 @@ export const CodeHostWasManaged = "host_was_managed";
  * for different reasons; the error's items give each its own code.
  */
 export const CodeInvalidBatch = "invalid_batch";
+
+/**
+ * CodeHostRetired: the call would do what a Retired Host does not take:
+ * change its address, port or Host Account, rename it, Enroll it,
+ * retire it again, or change its Services. A Retired Host takes only
+ * changes to its Attributes and Note, and moves.
+ */
+export const CodeHostRetired = "host_retired";

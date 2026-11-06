@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "host_retired",
+    "message": "web1 (host_<id>) is Retired, so its address, port and Host Account stay as they were: a Retired Host takes only changes to its Attributes and Note, and moves"
+  }
+}

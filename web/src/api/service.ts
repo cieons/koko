@@ -12,7 +12,11 @@ export interface Service {
   id: string;
   /** Name is a lowercase DNS label, unique on its Host. */
   name: string;
-  /** Host is the name of the Host the Service runs on. */
+  /**
+   * Host is the name of the Host the Service runs on, or its id once the
+   * Host is Retired and holds its name no more, so that <host>/<service>
+   * always names the Service.
+   */
   host: string;
   /**
    * Ports are the ports the Service listens on, each written

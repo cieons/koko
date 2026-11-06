@@ -89,6 +89,9 @@ type HostListRequest struct {
 	Sort []SortKey `json:"sort,omitempty"`
 	// WithNote asks for each Host's Note.
 	WithNote bool `json:"with_note,omitzero"`
+	// All adds the Retired Hosts, which the filters then take as any other
+	// Host: state=retired keeps only them.
+	All bool `json:"all,omitzero"`
 }
 
 // HostListFields are the fields host.list filters and sorts on, by key, with
@@ -176,6 +179,18 @@ type HostMoveResponse struct {
 	Host Host `json:"host"`
 }
 
+// HostRetireRequest names a Host to retire.
+type HostRetireRequest struct {
+	// Host names the Host, by its name or its id.
+	Host string `json:"host"`
+}
+
+// HostRetireResponse is the Host as host.retire left it: Retired, and
+// named by its id alone from then on.
+type HostRetireResponse struct {
+	Host Host `json:"host"`
+}
+
 // HostRemoveRequest names a Host to delete.
 type HostRemoveRequest struct {
 	// Host names the Host, by its name or its id.
@@ -211,6 +226,12 @@ var (
 	// HostMove moves a Host, with its Attributes, Note and Services, to
 	// another Space; the caller must be able to act in both. Its name stays.
 	HostMove = Op[HostMoveRequest, HostMoveResponse]{Name: "host.move", Write: true}
+	// HostRetire makes a Registered or Managed Host Retired, which is
+	// terminal. It keeps its record, Attributes, Note, Services, Space and
+	// pin, leaves host.list unless all asks for it, and frees its name, so
+	// that only its id names it. A Host Retired already is refused with
+	// CodeHostRetired.
+	HostRetire = Op[HostRetireRequest, HostRetireResponse]{Name: "host.retire", Write: true}
 	// HostRemove deletes a Host, with its Attributes, Note and Services.
 	HostRemove = Op[HostRemoveRequest, HostRemoveResponse]{Name: "host.remove", Write: true}
 )
@@ -222,6 +243,7 @@ var hostOperations = []Operation{
 	HostSet,
 	HostRename,
 	HostMove,
+	HostRetire,
 	HostRemove,
 }
 
@@ -241,6 +263,11 @@ var (
 	// CodeInvalidBatch: a batch host.add whose Hosts at fault are at fault
 	// for different reasons; the error's items give each its own code.
 	CodeInvalidBatch = Code{"invalid_batch", http.StatusBadRequest}
+	// CodeHostRetired: the call would do what a Retired Host does not take:
+	// change its address, port or Host Account, rename it, Enroll it,
+	// retire it again, or change its Services. A Retired Host takes only
+	// changes to its Attributes and Note, and moves.
+	CodeHostRetired = Code{"host_retired", http.StatusConflict}
 )
 
 var hostCodes = []Code{
@@ -248,6 +275,7 @@ var hostCodes = []Code{
 	CodeInvalidValue,
 	CodeHostWasManaged,
 	CodeInvalidBatch,
+	CodeHostRetired,
 }
 
 // HostBatchError is the refusal of a host.add of n Hosts, n above 1, for the

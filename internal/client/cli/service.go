@@ -85,8 +85,8 @@ var serviceCommands = []Command{
 type serviceJSON struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
-	// Host is the name of the Host it runs on, so <host>/<service> names
-	// it.
+	// Host is the name of the Host it runs on, or the Host's id once it is
+	// Retired, so <host>/<service> names it.
 	Host string `json:"host"`
 	// Ports are the ports it listens on, each <port>/<protocol> as in
 	// 443/tcp, by port and then protocol; [] for none.

@@ -30,7 +30,7 @@ Stored in `hosts`, with its Attributes in `host_attributes`
 | `address` | An IP address without a zone, kept in its canonical form (`2001:db8::1`), or a DNS name, kept in lowercase: labels of letters, digits and `-`, 253 characters at most, the last not all digits. Not unique. |
 | `port` | 1 to 65535; 22 when not given. Not unique. |
 | `account` | The Host Account: 1 to 32 of `a-z`, `A-Z`, `0-9`, `.`, `_` and `-`, not starting with `-`. No default. |
-| `state` | `registered`, `managed` or `retired`, set only by koko. Every Host is Registered until Enroll makes it Managed ([Enroll](enroll.md)), and retiring sets the third. A change of address or port keeps a Host Managed, since its pin proves the Host wherever it answers; a change of Host Account sends it back to Registered, keeping its pin, since the koko key went only to the old Host Account. |
+| `state` | `registered`, `managed` or `retired`, set only by koko. Every Host is Registered until Enroll makes it Managed ([Enroll](enroll.md)), and `host retire` makes it Retired, which is terminal ([retiring a Host](#retiring-a-host)). A change of address or port keeps a Host Managed, since its pin proves the Host wherever it answers; a change of Host Account sends it back to Registered, keeping its pin, since the koko key went only to the old Host Account. |
 | `host_key` | The pinned host key's SHA-256 fingerprint, `SHA256:...`, or `null` for a Host with no pin. Stored as the key in SSH wire format, which Enroll writes. |
 | `attributes` | Values by key, each of its key's type ([Attributes](#attributes-and-the-preset-attributes)). A key is snake_case (`a-z`, `0-9`, `_`, starting with a letter, 1 to 63 characters) and not a field's name: `id`, `name`, `space`, `address`, `port`, `account`, `relay`, `state`, `host_key`, `host`, `ports`, `attributes`, `note`, `created_at` or `updated_at`. |
 | `note` | 1 byte to 64 KiB of UTF-8 on any number of lines, with no control character but tab, line feed and carriage return; `null` for none. |
@@ -42,21 +42,61 @@ write, whichever client sent it, and refuses with `invalid_value`, or
 `invalid_name` for a name ([the codes](api.md#calls)). An empty value and an
 empty Note are refused, so clearing is always `--unset`.
 
+### Retiring a Host
+
+`host.retire` makes a Registered or Managed Host Retired, for a Host that is
+gone. It keeps its record: its id, Attributes, Note, Services, Space and
+pin, and the name it had, which it no longer holds. From then on:
+
+- **Its name is free.** Only a Host that is not Retired holds a name (the
+  `name` rule above), so a new Host can be `web1` again, and `web1` names
+  that one. Only its id names the Retired Host, in every request, its
+  Services' `<host>/<service>` among them, and a Service answers its
+  `host` as that id ([`host.Ref`](../../internal/server/host/host.go)).
+- **Lists leave it out.** `host.list` lists it only with `all`, and then
+  takes it as any other Host, so `state=retired` keeps only the Retired ones.
+  `service.list` leaves its Services out with it, with or without filters
+  ([`host.ListedNames`](../../internal/server/host/host.go)). `host.show` by
+  its id shows it with its Services, and `service.show` shows one. A Space
+  counts it apart ([what a Space holds](access.md#what-a-space-holds)), and
+  `attr.list` still counts its keys and its Services' ([operations](#operations)).
+- **It takes only changes to its Attributes and Note, and moves**: `host.set`
+  of them alone, and `host.move`. Everything else is refused with
+  `host_retired`, whose message names it by name and id, and changes
+  nothing: `host.set` naming the address, port or Host Account, or clearing
+  the port, even beside changes it takes; `host.rename`; `host.retire`
+  again; `host.enroll`, before any login; and `service.add`, `service.set`,
+  `service.rename` and `service.remove` on it, since its Services are kept
+  as they were with it.
+- **`host.remove`** goes by the pin, as for any Host: a Retired Host that was
+  never Managed is deleted with its Services, and one with a pin is refused
+  with `host_was_managed`. For a Host that is not Retired, that refusal
+  names `koko host retire` as the way on.
+- **Nothing reaches it.** The Gateway resolves only names, which name no
+  Retired Host, so its old name answers as one no Host holds
+  ([the Gateway](gateway.md)).
+
+Not yet: a Relay in use cannot be retired once Relays exist (#72), retiring
+does not yet end a live SSH Session (#68), and the CLI does not yet rewrite
+the bare-name list after it (#69).
+
 ## A Service
 
 What runs on one Host, stored in `services`, with its ports in
 `service_ports` and its Attributes in `service_attributes`
 ([`services.sql`](../../internal/server/store/migrations/services.sql)). A
 Service is keyed by its Host's id, so it lives in its Host's Space, moves and
-renames with it, and goes when `host rm` deletes it (`ON DELETE CASCADE`). It
-never moves to another Host: to change Host, record it again. People and
-agents record Services; koko discovers nothing itself.
+renames with it, goes when `host rm` deletes it (`ON DELETE CASCADE`), and
+is hidden and kept as it was with a Retired Host ([retiring a
+Host](#retiring-a-host)). It never moves to another Host: to change Host,
+record it again. People and agents record Services; koko discovers nothing
+itself.
 
 | Field | Rule |
 | --- | --- |
 | `id` | `service_` and 8 characters, set by koko. |
 | `name` | A lowercase DNS label ([`name.Check`](../../internal/shared/name/name.go)), unique on its Host, so `nginx` can run on many Hosts; the unique index on `(host_id, name)` backs the check, which runs inside the write's transaction. Written with its Host as `<host>/<service>`, where a Host id stands for the Host's name. |
-| `host` | The name of the Host it runs on. |
+| `host` | The name of the Host it runs on, or the Host's id once it is Retired, so that `<host>/<service>` always names the Service. |
 | `ports` | A set, which may be empty, of `<port>/<protocol>` strings: a port 1 to 65535, then `tcp` or `udp` in lowercase; `443` alone is `443/tcp` ([`record.ParseServicePorts`](../../internal/shared/record/ports.go), [ADR 0031](../adr/0031-a-services-port-is-written-as-one-string.md)). Answered by port and then protocol, `[]` for none. A port given twice, as `443` and `443/tcp`, is refused; other Services' ports, on the Host or elsewhere, are not checked. |
 | `attributes`, `note`, `created_at`, `updated_at` | As on a Host. |
 
@@ -161,15 +201,16 @@ to run too, so the two resolvers cannot drift.
 | Operation | Does |
 | --- | --- |
 | `host.add` | Records the Hosts in `hosts`, all or none, each Registered. One Host at fault is refused with its own error; in a batch of several, every Host is checked and the refusal lists each one at fault ([a refused batch](#a-refused-batch)). |
-| `host.list` | Every Host the caller can see that is not Retired and matches the filters, by the sort keys and then by name, in natural order, and id ([filtering and sorting](#filtering-and-sorting)); the Notes only with `with_note`. |
+| `host.list` | Every Host the caller can see that matches the filters, the Retired ones only with `all`, by the sort keys and then by name, in natural order, and id ([filtering and sorting](#filtering-and-sorting)); the Notes only with `with_note`. |
 | `host.show` | One Host, with its Services as `services`, by name in natural order, without their Notes, which the service area lists for it ([where an area adds its parts](code-layout.md#where-an-area-adds-its-parts)). |
-| `host.set` | Sets the address, port, Host Account, Attributes and Note it names, and clears the Attribute keys in `unset`, the Note for `note`, and the port back to 22 for `port`; nothing else changes. It refuses a request that changes nothing, a key both set and cleared, and clearing the address or the Host Account ([`record.Required`](../../internal/shared/record/record.go)). It takes no `name`, `space` or `state`. |
-| `host.rename` | A new name, checked as on `host.add`; the id and everything else stay. |
-| `host.move` | Another Space, with the Attributes, Note and Services; the name stays. |
-| `host.remove` | Deletes the Host with its Attributes, Note and Services; answers it as it was. A Host with a pin has been Managed, and is refused with `host_was_managed`: it stays on record. |
+| `host.set` | Sets the address, port, Host Account, Attributes and Note it names, and clears the Attribute keys in `unset`, the Note for `note`, and the port back to 22 for `port`; nothing else changes. It refuses a request that changes nothing, a key both set and cleared, and clearing the address or the Host Account ([`record.Required`](../../internal/shared/record/record.go)). It takes no `name`, `space` or `state`, and on a Retired Host only Attributes and the Note ([retiring a Host](#retiring-a-host)). |
+| `host.rename` | A new name, checked as on `host.add`; the id and everything else stay. A Retired Host is refused with `host_retired`. |
+| `host.move` | Another Space, with the Attributes, Note and Services; the name stays. A Retired Host moves too. |
+| `host.retire` | Makes a Registered or Managed Host Retired, keeping its record, and answers it so; one Retired already is refused with `host_retired` ([retiring a Host](#retiring-a-host)). |
+| `host.remove` | Deletes the Host with its Attributes, Note and Services; answers it as it was. A Host with a pin has been Managed, and is refused with `host_was_managed`: it stays on record, and retiring it is the way on. |
 | `host.enroll` | Makes the Host Managed with its pinned host key ([Enroll](enroll.md)). |
-| `service.add` | Records a Service on a Host, with its ports, none when left out. |
-| `service.list` | Every Service on the Hosts the caller can see that matches the filters, by the sort keys and then by Host name, name and id ([filtering and sorting](#filtering-and-sorting)); the Notes only with `with_note`. |
+| `service.add` | Records a Service on a Host, with its ports, none when left out. On a Retired Host it, `service.set`, `service.rename` and `service.remove` are refused with `host_retired`. |
+| `service.list` | Every Service that matches the filters, on the Hosts the caller can see that are not Retired, by the sort keys and then by Host name, name and id ([filtering and sorting](#filtering-and-sorting)); the Notes only with `with_note`. |
 | `service.show` | One Service. |
 | `service.set` | Sets the ports (replacing the whole set), Attributes and Note it names, and clears the Attribute keys in `unset`, the Note for `note`, and every port for `ports`; nothing else changes. It refuses a request that changes nothing, a key both set and cleared, and `"ports": []`, since clearing is `unset`. It takes no `new_name` and no Host. |
 | `service.rename` | A new name on the same Host, checked as on `service.add`; the id and everything else stay. |
@@ -193,7 +234,7 @@ logged in to it.
 - **Naming a Service.** A request names a Service by its Host, `host`, named
   as above, and its `name` on that Host. A Service is seen by whoever sees
   its Host ([`host.Find`](../../internal/server/host/host.go), and
-  `host.Names` for the lists): on a Host the caller cannot see, every service
+  `host.ListedNames` for the lists): on a Host the caller cannot see, every service
   operation answers `unknown_host`, exactly as for a Host that does not
   exist, and on one they can see, a name the Host has no Service of answers
   `unknown_service`. A name another Service on the Host holds is refused
@@ -228,10 +269,10 @@ transaction.
 
 ## The CLI
 
-`koko host add`, `ls`, `show`, `set`, `rename`, `move` and `rm` ([the commands
-so far](cli.md#the-commands-so-far)). Fields and Attributes are both
+`koko host add`, `ls`, `show`, `set`, `rename`, `move`, `retire` and `rm`
+([the commands so far](cli.md#the-commands-so-far)). Fields and Attributes are both
 `key=value`; `koko host set` refuses `name=`, `space=` and `state=`, naming
-`koko host rename` and `koko host move`. `--note-file <file>` reads the Note from a file
+`koko host rename`, `koko host move` and `koko host retire`. `--note-file <file>` reads the Note from a file
 and `--note-file -` from stdin, which it refuses when stdin is a terminal.
 `--json` prints the CLI's own Host, `hostJSON`, with its Attributes in their
 own object, each in its JSON type, and `note` a string or `null`, which `ls`
@@ -242,6 +283,12 @@ ports, after its Attributes; `show --json` stays the Host as `ls` prints
 one, and `koko service ls host=<host> --json` lists its Services. A Preset's
 value that does not parse, and a relative date that does not resolve, are
 refused with exit 2 before any call.
+
+`koko host retire <host>` prints the Host as it left it, Retired, in `host
+show`'s shape, Note and all, as `rm` prints the Host it deleted; for people,
+`Retired Host web1 (host_...); name it by its id from now on.` `koko host ls
+--all` adds the Retired Hosts, and `koko host ls --all state=retired` lists
+only them; without `--all`, `state=retired` matches nothing.
 
 `koko host ls` takes filter terms that need no quoting in a shell
 ([`readFilters`](../../internal/client/cli/filter.go)): `key=value`,
@@ -322,6 +369,14 @@ recorded in one `host.add` call, all or none.
 - [`internal/client/cli/enroll_test.go`](../../internal/client/cli/enroll_test.go):
   the state table through the real `koko host enroll`, and `host rm` refused
   once a Host has a pin.
+- [`internal/client/cli/host_retire_test.go`](../../internal/client/cli/host_retire_test.go):
+  `koko host retire` with its goldens, a Registered and a Managed Host
+  retiring, its name taken by a new Host while its id shows it, `host ls
+  --all` and `--all state=retired`, each change a Retired Host refuses and
+  takes, Enroll refused without a connection, `host rm` by the pin, its
+  Services hidden from `service ls` and kept as they were, and `space show`
+  and `space rm` counting it. `exec_test.go` refuses its old name as no
+  Host's.
 - [`internal/server/host/host_test.go`](../../internal/server/host/host_test.go):
   the koko server's own checks on raw `host.add` and `host.set` calls, a batch
   added all or none, and which answers carry the Note.

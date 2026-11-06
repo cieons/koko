@@ -13,7 +13,9 @@ type Service struct {
 	ID string `json:"id"`
 	// Name is a lowercase DNS label, unique on its Host.
 	Name string `json:"name"`
-	// Host is the name of the Host the Service runs on.
+	// Host is the name of the Host the Service runs on, or its id once the
+	// Host is Retired and holds its name no more, so that <host>/<service>
+	// always names the Service.
 	Host string `json:"host"`
 	// Ports are the ports the Service listens on, each written
 	// <port>/<protocol>, such as 443/tcp or 51820/udp, by port and then

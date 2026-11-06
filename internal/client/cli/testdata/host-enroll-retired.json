@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "host_retired",
+    "message": "web1 (host_<id>) is Retired, so it is gone and koko never logs in to it"
+  }
+}

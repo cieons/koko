@@ -357,11 +357,12 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
 | `koko server set address=<host[:port]>` (Owner, over the Unix socket only) | reversible | `server.set` | the settings as `server show` prints them, as the change left them |
 | `koko host add <host> address=<address> account=<account> [port=<port>] [space=<space>] [<key>=<value>...] [--note-file <file\|->]` | reversible | `host.add` | the Host: `{"id", "name", "space", "address", "port", "account", "state", "host_key", "attributes": {...}, "note", "created_at", "updated_at"}` ([the record](record.md)) |
 | `koko host add`, with Hosts as JSON on stdin | reversible | `host.add` | the Host, for one object on stdin, or an array of the Hosts, for an array, in the order given ([Hosts as JSON on stdin](record.md#hosts-as-json-on-stdin)) |
-| `koko host ls [<filter>...] [--sort <key>[.desc]]... [--with-note]` | read | `host.list` | an array of the Hosts the caller can see that match every filter term, by the sort keys and then by name, without `"note"` unless `--with-note` ([filtering and sorting](record.md#filtering-and-sorting)) |
+| `koko host ls [<filter>...] [--sort <key>[.desc]]... [--with-note] [--all]` | read | `host.list` | an array of the Hosts the caller can see that match every filter term, by the sort keys and then by name, without `"note"` unless `--with-note`, and without the Retired Hosts unless `--all` ([filtering and sorting](record.md#filtering-and-sorting)) |
 | `koko host show <host>` | read | `host.show` | the Host; its Services print for people only |
 | `koko host set <host> [<key>=<value>...] [--unset <key>]... [--note-file <file\|->]` | reversible | `host.set` | the Host as the change left it |
 | `koko host rename <host> <new-name>` | reversible | `host.rename` | the Host under its new name |
 | `koko host move <host> <space>` | reversible | `host.move` | the Host in its new Space |
+| `koko host retire <host>` | irreversible | `host.retire` | the Host as it left it, Retired, which only its id names from then on ([retiring a Host](record.md#retiring-a-host)) |
 | `koko host rm <host>` | irreversible | `host.remove` | the Host it deleted, as it was, its Services deleted with it |
 | `koko host enroll <host> [--password-stdin \| --key <file> \| --secret <space>/<secret>] [--host-key <fingerprint> \| --replace-host-key]` | irreversible | `host.enroll` | the Host, Managed, with its pinned `host_key` ([Enroll](enroll.md)) |
 | `koko exec <host> <command...>` | irreversible | none: it opens a `tunnel@koko` channel | none: the command's stdout, stderr and exit status ([`koko exec`](gateway.md#koko-exec)) |

@@ -283,6 +283,20 @@ func TestExecRefusesARegisteredHost(t *testing.T) {
 	}
 }
 
+// A Retired Host holds no name, so the Gateway refuses the name it had as
+// one no Host holds, without a connection to it.
+func TestExecRefusesARetiredHostsName(t *testing.T) {
+	h := harness.Start(t)
+	host := managedHost(t, h, "web1")
+	h.Koko("host", "retire", "web1").WantSuccess(t)
+	conns := host.Conns()
+
+	wantRefused(t, h.Koko("exec", "web1", "true"), "koko: no Host is named \"web1\".\n")
+	if got := host.Conns(); got != conns {
+		t.Errorf("the Host received %d connections once Retired, want none", got-conns)
+	}
+}
+
 // koko exec runs one command on a Managed Host through the Gateway: it
 // forwards stdin, keeps stdout and stderr apart, allocates no pty and exits
 // with the remote status. The Gateway logs in as the Host Account with the

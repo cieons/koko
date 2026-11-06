@@ -38,7 +38,7 @@ A Host the Gateway passes through to reach another Host.
 _Avoid_: jump host, bastion
 
 **Retired**:
-A Host that no longer exists, kept as history, left out of ordinary lists, and no longer holding its name.
+A Host that no longer exists, kept as history with its Services, left out of ordinary lists with them, and no longer holding its name, so only its id names it.
 _Avoid_: deleted, archived
 
 **Service**:

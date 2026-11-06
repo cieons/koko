@@ -42,7 +42,7 @@ func Register(a *op.API) {
 }
 
 // AttributeKeys lists the Attribute keys in use on the Services of the
-// Hosts in the Spaces scope holds, for attr.list.
+// Hosts in the Spaces scope holds, Retired ones among them, for attr.list.
 func AttributeKeys(ctx context.Context, tx store.Tx, scope access.Scope) ([]string, error) {
 	hosts, err := host.Names(ctx, tx, scope)
 	if err != nil {
@@ -117,6 +117,16 @@ func hostOf(ctx context.Context, tx store.Tx, caller op.Caller, ref string) (api
 	return host.Find(ctx, tx, who, ref)
 }
 
+// writable refuses, with api.CodeHostRetired, a write to the Services of
+// the Host h when it is Retired: they are part of the history it keeps as
+// it was. Reading them stays open.
+func writable(h api.Host) error {
+	if h.State == api.HostRetired {
+		return api.CodeHostRetired.Errorf("the Host %s (%s) is Retired, so its Services stay as they were", h.Name, h.ID)
+	}
+	return nil
+}
+
 // find returns the Service named serviceName on the Host h, which the
 // caller can see, with its ports and Attributes.
 func find(ctx context.Context, tx store.Tx, h api.Host, serviceName string) (stored, error) {
@@ -130,7 +140,7 @@ func find(ctx context.Context, tx store.Tx, h api.Host, serviceName string) (sto
 	case err != nil:
 		return stored{}, fmt.Errorf("read the Service %s: %w", qualified(h.Name, serviceName), err)
 	}
-	s.Host = h.Name
+	s.Host = host.Ref(h)
 	if err := readPortsAndAttributes(ctx, tx, map[string]*api.Service{s.ID: &s.Service}); err != nil {
 		return stored{}, err
 	}
@@ -152,7 +162,7 @@ func OfHost(ctx context.Context, tx store.Tx, h api.Host) ([]api.Service, error)
 		if err != nil {
 			return nil, fmt.Errorf("list the Services of %s: %w", h.Name, err)
 		}
-		s.Host, s.Note = h.Name, ""
+		s.Host, s.Note = host.Ref(h), ""
 		services = append(services, s.Service)
 	}
 	if err := rows.Err(); err != nil {
@@ -331,10 +341,14 @@ func nullNote(note string) sql.NullString {
 	return sql.NullString{String: note, Valid: note != ""}
 }
 
-// add is service.add: it records a Service on a Host the caller can see.
+// add is service.add: it records a Service on a Host the caller can see
+// that is not Retired (writable).
 func add(ctx context.Context, tx store.Tx, caller op.Caller, req api.ServiceAddRequest) (api.ServiceAddResponse, error) {
 	h, err := hostOf(ctx, tx, caller, req.Host)
 	if err != nil {
+		return api.ServiceAddResponse{}, err
+	}
+	if err := writable(h); err != nil {
 		return api.ServiceAddResponse{}, err
 	}
 	if err := checkName(req.Name); err != nil {
@@ -382,9 +396,10 @@ func serviceLookup(s api.Service) query.Lookup {
 	}
 }
 
-// list is service.list: the Services on the Hosts in the Spaces the caller
-// can act in that match the filter, by the sort keys, then by Host name,
-// name and id, with their Notes only when asked for.
+// list is service.list: the Services on the Hosts that are not Retired in
+// the Spaces the caller can act in that match the filter, by the sort keys,
+// then by Host name, name and id, with their Notes only when asked for. A
+// Retired Host's Services are hidden with it.
 func list(ctx context.Context, tx store.Tx, caller op.Caller, req api.ServiceListRequest) (api.ServiceListResponse, error) {
 	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
@@ -398,7 +413,7 @@ func list(ctx context.Context, tx store.Tx, caller op.Caller, req api.ServiceLis
 	if err != nil {
 		return api.ServiceListResponse{}, err
 	}
-	hosts, err := host.Names(ctx, tx, scope)
+	hosts, err := host.ListedNames(ctx, tx, scope)
 	if err != nil {
 		return api.ServiceListResponse{}, err
 	}
@@ -444,10 +459,14 @@ func show(ctx context.Context, tx store.Tx, caller op.Caller, req api.ServiceSho
 
 // set is service.set: it changes the ports, Attributes and Note the request
 // names, and only those. A Service's Host never changes, and its name only
-// through service.rename.
+// through service.rename. A Retired Host's Services do not change
+// (writable).
 func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.ServiceSetRequest) (api.ServiceSetResponse, error) {
 	h, s, err := target(ctx, tx, caller, req.Host, req.Name)
 	if err != nil {
+		return api.ServiceSetResponse{}, err
+	}
+	if err := writable(h); err != nil {
 		return api.ServiceSetResponse{}, err
 	}
 	service := qualified(s.Host, s.Name)
@@ -500,10 +519,13 @@ func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.ServiceSetR
 }
 
 // rename is service.rename: the Service takes a new name on its Host and
-// keeps its id and everything else.
+// keeps its id and everything else, unless the Host is Retired (writable).
 func rename(ctx context.Context, tx store.Tx, caller op.Caller, req api.ServiceRenameRequest) (api.ServiceRenameResponse, error) {
 	h, s, err := target(ctx, tx, caller, req.Host, req.Name)
 	if err != nil {
+		return api.ServiceRenameResponse{}, err
+	}
+	if err := writable(h); err != nil {
 		return api.ServiceRenameResponse{}, err
 	}
 	if err := checkName(req.NewName); err != nil {
@@ -521,10 +543,13 @@ func rename(ctx context.Context, tx store.Tx, caller op.Caller, req api.ServiceR
 }
 
 // remove is service.remove: the Service goes, with its ports, Attributes and
-// Note, and is answered as it was.
+// Note, and is answered as it was, unless its Host is Retired (writable).
 func remove(ctx context.Context, tx store.Tx, caller op.Caller, req api.ServiceRemoveRequest) (api.ServiceRemoveResponse, error) {
-	_, s, err := target(ctx, tx, caller, req.Host, req.Name)
+	h, s, err := target(ctx, tx, caller, req.Host, req.Name)
 	if err != nil {
+		return api.ServiceRemoveResponse{}, err
+	}
+	if err := writable(h); err != nil {
 		return api.ServiceRemoveResponse{}, err
 	}
 	// Its ports and Attributes go with it (ON DELETE CASCADE).

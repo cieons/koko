@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "host_retired",
+    "message": "the Host web1 (host_<id>) is Retired, so its Services stay as they were"
+  }
+}
