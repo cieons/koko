@@ -1,0 +1,14 @@
+{
+  "server_address": "<new address>",
+  "previous_address": "<old address>",
+  "host_keys": [
+    "SHA256:<fingerprint>"
+  ],
+  "server_version": "<version>",
+  "device_mux": {
+    "socket": "<socket>",
+    "state": "connected",
+    "since": "<time>",
+    "last_error": null
+  }
+}

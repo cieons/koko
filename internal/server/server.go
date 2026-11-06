@@ -148,6 +148,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	// Each connection is reported every operation registered below.
 	report := func() wire.Report { return wire.Report{Version: version, Operations: a.Names()} }
 	t := transport.New(a, front, report, log)
+	t.UseTimings(cfg.Timings)
 	// The Gateway takes every tunnel@koko channel; it opens the host key and
 	// the koko key with the Root Key, and logs in to Hosts.
 	gw := gateway.New(st, key, cfg.Timings, log)

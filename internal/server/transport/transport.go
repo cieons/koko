@@ -39,6 +39,8 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/server/op"
+	"github.com/cieons/koko/internal/shared/liveness"
+	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -100,6 +102,10 @@ type Server struct {
 	// tunnels takes the tunnel@koko channels; nil refuses them as an
 	// unknown channel type. HandleTunnels sets it before any way in opens.
 	tunnels Tunnels
+	// timings are the P0 timings, resolved: how long a Device Connection
+	// goes quiet before it is probed, and before it is declared dead.
+	// UseTimings sets them before any way in opens.
+	timings timing.Timings
 
 	mu        sync.Mutex
 	closed    bool
@@ -122,6 +128,7 @@ func New(api, web http.Handler, report func() wire.Report, log *slog.Logger) *Se
 		api:     newChannelServer(api, wire.ChannelAPI, log),
 		web:     newChannelServer(web, wire.ChannelWeb, log),
 		report:  report,
+		timings: timing.Timings{}.Resolve(),
 		conns:   map[*Connection]struct{}{},
 		revoked: map[string]bool{},
 	}
@@ -136,6 +143,13 @@ func New(api, web http.Handler, report func() wire.Report, log *slog.Logger) *Se
 // as an unknown channel type.
 func (s *Server) HandleTunnels(t Tunnels) {
 	s.tunnels = t
+}
+
+// UseTimings makes the transport run with t, the koko server's
+// timing-constants hook, whose zero value is the product's. Call it before
+// ServeTCP.
+func (s *Server) UseTimings(t timing.Timings) {
+	s.timings = t.Resolve()
 }
 
 // Connection is one SSH connection to the koko server, as the requests on its
@@ -312,6 +326,7 @@ func (s *Server) ServeTCP(ln net.Listener, hostKey ssh.Signer, devices Devices) 
 				return op.Caller{DeviceSession: conn.Permissions.Extensions[deviceSessionExt]}
 			},
 			devices: devices,
+			watch:   true,
 		})
 	})
 	return nil
@@ -325,6 +340,10 @@ type wayIn struct {
 	// devices is the device area the TCP listener asks; nil on the Unix
 	// socket, which has no Device Session.
 	devices Devices
+	// watch probes each connection once it goes quiet, and closes it as
+	// dead once it stays quiet (package liveness): a Device Connection's
+	// network path can die without a word, a Unix socket's cannot.
+	watch bool
 }
 
 // accept serves each connection ln accepts, the way w says.
@@ -344,6 +363,11 @@ func (s *Server) accept(ln net.Listener, w wayIn) {
 // serve runs one SSH connection until it ends. Each channel a Device
 // Connection opens uses its Device Session.
 func (s *Server) serve(nc net.Conn, w wayIn) {
+	var watched *liveness.Conn
+	if w.watch {
+		watched = liveness.NewConn(nc)
+		nc = watched
+	}
 	conn, chans, reqs, err := ssh.NewServerConn(nc, w.cfg)
 	if err != nil {
 		s.log.Debug("ssh handshake failed", "addr", nc.RemoteAddr(), "err", err)
@@ -371,6 +395,9 @@ func (s *Server) serve(nc net.Conn, w wayIn) {
 		return
 	}
 	s.wg.Go(func() { ssh.DiscardRequests(reqs) })
+	if watched != nil {
+		s.wg.Go(func() { s.watch(connection, watched) })
+	}
 	for nch := range chans {
 		cc := &callerConn{caller: caller, conn: connection}
 		kind := nch.ChannelType()
@@ -411,6 +438,19 @@ func (s *Server) serve(nc net.Conn, w wayIn) {
 		cc.Conn = wire.Conn(ch)
 		dest.channels.push(cc)
 	}
+}
+
+// watch probes the Device Connection c, over lc, once nothing has come from
+// the device for timing.ServerProbe, and closes it as dead once nothing has
+// for timing.ServerDead, until it ends.
+func (s *Server) watch(c *Connection, lc *liveness.Conn) {
+	err := lc.Watch(c.ssh, s.timings.ServerProbe, s.timings.ServerDead, nil, c.ctx.Done())
+	if err == nil {
+		return
+	}
+	s.log.Info("device connection closed", "device_session", c.caller.DeviceSession,
+		"addr", c.ssh.RemoteAddr(), "reason", "dead", "err", err)
+	_ = c.ssh.Close()
 }
 
 // shutdownGrace bounds how long Close, and the closing of a Revoked Device

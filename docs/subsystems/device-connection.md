@@ -25,6 +25,16 @@ one-time code is
   ([`transport.ServeTCP`](../../internal/server/transport/transport.go)).
   `web.start` answers only the Local caller, so the web front serves a
   Device Connection nothing yet.
+- **Liveness.** The koko server notes when bytes last came from each Device
+  Connection ([`liveness`](../../internal/shared/liveness/liveness.go)):
+  after `timing.ServerProbe` (15 s) without any it sends
+  `keepalive@openssh.com` wanting a reply, which the CLI's connection
+  answers, and after `timing.ServerDead` (45 s) it declares the connection
+  dead and closes it, logging `device connection closed` with `reason=dead`
+  ([`transport.Server.watch`](../../internal/server/transport/transport.go)).
+  The Unix socket's connections are not probed: a local socket does not die
+  without a word. The device probes from its side sooner
+  ([the Device Mux](device-mux.md#liveness-and-reconnecting)).
 
 ## Authentication
 
@@ -82,14 +92,18 @@ one-time code ([`join`](../../internal/client/cli/join.go)):
    it spends the code.
 4. It connects to the code's address and checks the host key against the
    code's fingerprint before it authenticates; a mismatch fails with
-   `host_key_mismatch`, naming both keys, and the code stays usable.
+   `host_key_mismatch`, naming both keys, and the code stays usable. It
+   waits at most `timing.CommandWait` for the connection and the report,
+   and tries once: a join cut after the koko server took the code cannot
+   join again.
 5. It authenticates in the two steps above
    ([`serverconn.Join`](../../internal/client/serverconn/serverconn.go)); the
    banner of a refusal is the error, with `invalid_join_code`.
 6. On that connection it calls `user.current`, which names the User and the
    device name the code bound, and the Device Session's id. When the
-   connection drops the call, the call is sent again, once, on a new Device
-   Connection with the key, now a Device Session
+   connection drops the call, or sent no report, the call is sent again,
+   once, on a new Device Connection with the key, now a Device Session,
+   opened as the direct path opens one
    ([the API client](api.md#the-api-client)).
 7. It puts the key in place, writes koko's known_hosts and ssh_config
    ([ssh](#ssh)), then the client config, which marks the device joined,
@@ -197,6 +211,43 @@ command does not know which it has. A failure is `not_joined`,
 `revoked`, `server_unreachable` or `host_key_mismatch`, as [the CLI](cli.md#the-runner-and-the-output-layer)
 describes them.
 
+A command waits at most `timing.CommandWait` (15 s) for its connection and
+the koko server's report on it, which `Input.connect` waits for before the
+first call: over the socket, through the Device Mux, which tries meanwhile,
+and on the direct path, which tries again with the Device Mux's backoff
+([the direct path](device-mux.md#which-way-a-command-goes)). Then it fails
+with `server_unreachable`, `cannot reach the koko server at <address>`,
+whose hint names `koko connect <host:port>`. A call cut mid-flight is sent
+again on a connection dialled the same way, so its one resend waits for the
+reconnect ([the API client](api.md#the-api-client)).
+
+## `koko connect`
+
+`koko connect [<host:port>]`, in the reversible tier
+([`connectDevice`](../../internal/client/cli/connect.go)), checks this
+device's Device Connection:
+
+- It reaches the koko server this device joined as any command does, never
+  over the Unix socket, starting the Device Mux when none runs, and prints
+  the Server Address, the fingerprints of the pinned host keys, one of which
+  the koko server answered with, its version and the Device Mux, as `koko
+  status` shows it, or `null` on the direct path
+  ([the CLI](cli.md#the-commands-so-far)).
+- **Given an address**, which must name its port (exit 2 otherwise, as for
+  one that is no Server Address), it first opens a direct Device Connection
+  there with the device's key and pinned host keys, waiting and trying as
+  the direct path does, and only once the koko server answered there saves
+  the address in the client config
+  ([`devicefiles.SetServerAddress`](../../internal/client/devicefiles/devicefiles.go));
+  the pinned host keys, and so known_hosts, stay. A host key that is not
+  pinned is refused with `host_key_mismatch`, an address nothing answers at
+  with `server_unreachable`, and a koko server that does not know the key
+  with `not_joined`, each saying that the device keeps the address it has;
+  a Revoked key runs the revocation cleanup, since a pinned host key
+  answered. Nothing else moves a device to another address. The Device Mux
+  takes the new address at the next Device Connection it opens; one it holds
+  already reaches the same koko server.
+
 ## Last used
 
 A Device Session is used each time a Device Connection it authenticated
@@ -280,6 +331,9 @@ Neither ever holds a code or its secret. Each revocation logs
 Device Connection it closes logs `device connection closed` with the Device
 Session, the address and `reason=revoked`; and each later try of the Revoked
 key logs `revoked device refused` with the Device Session and the address.
+A Device Connection declared dead logs `device connection closed` with the
+Device Session, the address, `reason=dead` and the error, `no answer for
+<time>`.
 
 ## Verifying
 
@@ -306,6 +360,17 @@ key logs `revoked device refused` with the Device Session and the address.
 - [`connect_test.go`](../../internal/client/cli/connect_test.go): the pinned
   list of one and of several keys, an unknown key, `server_unreachable` with
   its hint, and the socket winning over the joined koko server.
+- [`connect_command_test.go`](../../internal/client/cli/connect_command_test.go):
+  `koko connect` through a Device Mux it starts (golden) and direct; a new
+  address refused where another host key answers, where nothing answers and
+  without a port, and taken where the pinned one answers (golden), the
+  host keys kept and no connection to the old address after; and the P0
+  restore: a stopped koko server's data directory copied and started
+  elsewhere with the same Root Key, which a joined device reaches with its
+  pin after `koko connect <host:port>`.
+- [`reconnect_test.go`](../../internal/client/cli/reconnect_test.go): the
+  15 s wait, and the koko server's probe and dead close
+  ([the Device Mux](device-mux.md#verifying)).
 - [`device_test.go`](../../internal/client/cli/device_test.go): a joined
   Member issues for themselves only, names held by live Device Sessions, and
   nothing of a code in the record or the log after joining; `koko device ls`

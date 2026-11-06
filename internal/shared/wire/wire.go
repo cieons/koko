@@ -46,6 +46,12 @@ const RequestReport = "report@koko"
 // its next connection.
 const RequestRevoked = "revoked@koko"
 
+// RequestDisconnected is the SSH global request a Device Mux sends each
+// command connected to it, wanting no reply and with no payload, just before
+// koko disconnect stops it: what it carried ends on purpose, and an SSH
+// Session among it ends for good rather than Resume.
+const RequestDisconnected = "disconnected@koko"
+
 // Report is the koko server's version and operations report. Within /v1 a
 // koko server only adds operations, so a CLI calls an operation only when
 // the report lists it, and otherwise says the koko server is too old.

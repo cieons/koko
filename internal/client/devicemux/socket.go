@@ -48,6 +48,32 @@ func Socket(getenv func(string) string) (string, error) {
 	return path, nil
 }
 
+// Sockets returns the sockets of every Device Mux of this OS user, of every
+// build and every home, in koko's runtime directory (Socket), for koko
+// disconnect: what a Device Mux that runs listens on, and what one that
+// crashed left. It fails when the directory is refused, or the OS has no
+// Device Mux yet.
+func Sockets(getenv func(string) string) ([]string, error) {
+	dir, err := runtimeDir(getenv)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensurePrivate(dir); err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("list the runtime directory %s: %w", dir, err)
+	}
+	var sockets []string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".sock") {
+			sockets = append(sockets, filepath.Join(dir, e.Name()))
+		}
+	}
+	return sockets, nil
+}
+
 // Name is the name of build b's Device Mux, which its socket, lock and log
 // carry: the version, then the start of the VCS revision unless the version
 // holds it already, as a pseudo-version does. So a CLI reaches only a Device

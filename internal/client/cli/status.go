@@ -143,10 +143,10 @@ func status(ctx context.Context, in *Input) (statusJSON, error) {
 		}
 	}
 	if m := in.deviceMux; m != nil {
-		s.DeviceMux = &deviceMuxJSON{Socket: m.socket, State: "connected", Since: m.state.Since.UTC().Format(time.RFC3339)}
+		s.DeviceMux = m.json()
 		if !m.state.Connected {
 			// What failed its last try is what failed status's connection.
-			s.DeviceMux.State, s.DeviceMux.LastError = "reconnecting", s.ServerError
+			s.DeviceMux.LastError = s.ServerError
 		}
 	}
 

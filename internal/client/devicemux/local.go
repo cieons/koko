@@ -58,15 +58,25 @@ type State struct {
 //     both ways, half-closes included, until either end closes. A channel
 //     open while it holds no Device Connection waits for its next one.
 //   - When the koko server revokes its Device Session, it sends each open
-//     connection wire.RequestRevoked before it closes it.
+//     connection wire.RequestRevoked before it closes it, and when koko
+//     disconnect stops it, wire.RequestDisconnected.
 //
 // Only commands of the same build reach a Device Mux, so this needs no
-// compatibility rules.
+// compatibility rules, but for one exchange, which koko disconnect has with
+// a Device Mux of any build and which therefore never changes: a
+// connection whose SSH user name is disconnectUser, which no home is, asks
+// the Device Mux to stop, and the Device Mux answers in the banner,
+// {"state": "stopped", "commands": <n>}, the number of commands connected
+// to it, which it ends (Stop).
+
+// disconnectUser is the SSH user name with which koko disconnect asks a
+// Device Mux to stop. A home is an absolute path, so it is never one.
+const disconnectUser = "disconnect"
 
 // stateJSON is the banner a Device Mux sends: its state.
 type stateJSON struct {
-	// State is "connected", "reconnecting", or "elsewhere" to a command of
-	// another home.
+	// State is "connected", "reconnecting", "elsewhere" to a command of
+	// another home, or "stopped" to koko disconnect.
 	State string `json:"state"`
 	// Since is when it connected, or began reconnecting, RFC 3339 in UTC.
 	Since string `json:"since,omitempty"`
@@ -74,16 +84,30 @@ type stateJSON struct {
 	Error *errorJSON `json:"error,omitzero"`
 	// Home is the home whose device it carries, when it is elsewhere.
 	Home string `json:"home,omitempty"`
+	// Commands is how many commands were connected to it when koko
+	// disconnect stopped it, which it ends.
+	Commands *int `json:"commands,omitzero"`
+}
+
+// encode writes sj as a banner.
+func (sj stateJSON) encode() string {
+	b, err := json.Marshal(sj)
+	if err != nil {
+		panic(fmt.Sprintf("devicemux: encode the state: %v", err)) // strings and numbers only: never fails
+	}
+	return string(b)
 }
 
 // elsewhere is the banner a Device Mux answers a command of another home
 // with: the home whose device it carries.
 func elsewhere(home string) string {
-	b, err := json.Marshal(stateJSON{State: "elsewhere", Home: home})
-	if err != nil {
-		panic(fmt.Sprintf("devicemux: encode the state: %v", err)) // strings only: never fails
-	}
-	return string(b)
+	return stateJSON{State: "elsewhere", Home: home}.encode()
+}
+
+// stopped is the banner a Device Mux answers koko disconnect with: it
+// stopped, ending the n commands connected to it.
+func stopped(n int) string {
+	return stateJSON{State: "stopped", Commands: &n}.encode()
 }
 
 // errorJSON is an error serverconn.DialDevice fails with, or
@@ -110,11 +134,7 @@ func (s State) banner() string {
 	} else {
 		sj.Error = encodeError(s.Err)
 	}
-	b, err := json.Marshal(sj)
-	if err != nil {
-		panic(fmt.Sprintf("devicemux: encode the state: %v", err)) // strings only: never fails
-	}
-	return string(b)
+	return sj.encode()
 }
 
 func encodeError(err error) *errorJSON {
@@ -218,4 +238,39 @@ func Dial(ctx context.Context, socket, home string) (serverconn.Conn, State, err
 		return nil, State{}, fmt.Errorf("%w at %s: %w", ErrNotRunning, socket, err)
 	}
 	return conn, st, nil
+}
+
+// Stop asks the Device Mux at socket, of any build, to stop, as koko
+// disconnect does, and returns how many commands it carried, which it
+// ends: SSH Sessions, koko web runs and calls in flight. When none
+// answers at socket, such as one that is stopping already, or the socket a
+// crashed one left, the error wraps ErrNotRunning.
+func Stop(ctx context.Context, socket string) (int, error) {
+	var d net.Dialer
+	nc, err := d.DialContext(ctx, "unix", socket)
+	if err != nil {
+		return 0, fmt.Errorf("%w at %s: %w", ErrNotRunning, socket, err)
+	}
+	var banner string
+	conn, err := serverconn.Handshake(ctx, nc, socket, &ssh.ClientConfig{
+		User:            disconnectUser,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // its private directory is its pin
+		BannerCallback: func(message string) error {
+			banner = message
+			return nil
+		},
+	})
+	if err == nil {
+		// A Device Mux never lets koko disconnect in.
+		_ = conn.Close()
+		err = errors.New("it let koko disconnect in")
+	}
+	if banner == "" {
+		return 0, fmt.Errorf("%w at %s: %w", ErrNotRunning, socket, err)
+	}
+	var sj stateJSON
+	if err := json.Unmarshal([]byte(banner), &sj); err != nil || sj.State != "stopped" || sj.Commands == nil {
+		return 0, fmt.Errorf("the Device Mux at %s did not stop: it answered %q", socket, banner)
+	}
+	return *sj.Commands, nil
 }

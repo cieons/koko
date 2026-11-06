@@ -20,6 +20,7 @@ import (
 	"github.com/cieons/koko/internal/harness/sshhost"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/joincode"
+	"github.com/cieons/koko/internal/shared/timing"
 )
 
 // joinedOut is what koko join --json prints.
@@ -206,14 +207,7 @@ func TestTheHarnessJoinsADeviceForATestUser(t *testing.T) {
 // initialisation returned.
 func initThrough(t *testing.T) (*harness.Harness, *harness.Forwarder, string, api.ServerInitResponse) {
 	t.Helper()
-	listen := harness.FreeAddr(t)
-	h := harness.Start(t, harness.NoInit(), harness.Listen(listen))
-	fwd := harness.Forward(t, listen)
-	init, err := h.Call(api.ServerInit, api.ServerInitRequest{Owner: harness.Owner, Address: fwd.Addr()})
-	if err != nil {
-		t.Fatalf("server.init: %v", err)
-	}
-	return h, fwd, listen, init
+	return initThroughWith(t, timing.Timings{})
 }
 
 // wantNothingLeft fails the test unless the device holds no ~/.ssh, as

@@ -249,6 +249,7 @@ var commands = [][]Command{
 	skillCommands,
 	execCommands,
 	tunnelCommands,
+	connectCommands,
 }
 
 // Tree returns every command.

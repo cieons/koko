@@ -20,10 +20,12 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/shared/joincode"
+	"github.com/cieons/koko/internal/shared/liveness"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -40,7 +42,9 @@ type Conn interface {
 	OpenChannel(ctx context.Context, kind string, payload []byte) (io.ReadWriteCloser, error)
 	// Wait blocks until the connection has ended, and returns why: an error
 	// wrapping ErrRevoked when the koko server ended it because its Device
-	// Session was Revoked.
+	// Session was Revoked, ErrDisconnected when koko disconnect stopped the
+	// Device Mux it went through, and a *liveness.DeadError when nothing
+	// came from the koko server for too long.
 	Wait() error
 	// Close ends the connection and every channel on it.
 	Close() error
@@ -49,6 +53,10 @@ type Conn interface {
 // ErrRevoked says the koko server ended a Device Connection because its
 // Device Session was Revoked (wire.RequestRevoked).
 var ErrRevoked = errors.New("the koko server ended the connection: this device's Device Session was revoked")
+
+// ErrDisconnected says koko disconnect stopped the Device Mux a connection
+// went through (wire.RequestDisconnected).
+var ErrDisconnected = errors.New("koko disconnect stopped the Device Mux")
 
 // user is the SSH user name koko sends; it identifies nobody.
 const user = "koko"
@@ -77,6 +85,14 @@ func DialSocket(ctx context.Context, path string) (Conn, error) {
 // Device Mux takes the command's home there), and returns the Conn on it.
 // It gives up when ctx ends. On failure it closes nc.
 func Handshake(ctx context.Context, nc net.Conn, addr string, cfg *ssh.ClientConfig) (Conn, error) {
+	c, err := handshake(ctx, nc, addr, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+func handshake(ctx context.Context, nc net.Conn, addr string, cfg *ssh.ClientConfig) (*sshConn, error) {
 	stop := context.AfterFunc(ctx, func() { _ = nc.Close() })
 	defer stop()
 	cfg.User, cfg.ClientVersion = cmp.Or(cfg.User, user), wire.Version
@@ -97,6 +113,14 @@ type Device struct {
 	HostKeys []ssh.PublicKey
 	// Key is the device's private key, its Device Session's.
 	Key ssh.Signer
+	// Probe and Dead, when not zero, watch the connection's liveness
+	// (package liveness): after Probe without a byte from the koko server it
+	// probes it, and after Dead without any it closes the connection, whose
+	// Wait then returns a *liveness.DeadError.
+	Probe, Dead time.Duration
+	// ProbeNow, when not nil, makes it probe at once each time a value
+	// arrives, as on a wake or a route change.
+	ProbeNow <-chan struct{}
 }
 
 // ErrUnknownKey says the koko server holds no Device Session with the
@@ -152,7 +176,15 @@ func (e *RevokedError) Error() string {
 // *RefusedError, or with the error of a koko server it could not reach.
 func DialDevice(ctx context.Context, d Device) (Conn, error) {
 	var banner string
-	client, err := dialTCP(ctx, d.Address, &ssh.ClientConfig{
+	var watched *liveness.Conn
+	wrap := func(nc net.Conn) net.Conn {
+		if d.Probe == 0 {
+			return nc
+		}
+		watched = liveness.NewConn(nc)
+		return watched
+	}
+	client, err := dialTCP(ctx, d.Address, wrap, &ssh.ClientConfig{
 		HostKeyCallback: Pinned(d.Address, d.HostKeys),
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(d.Key)},
 		AuthCallback: func(c *ssh.ClientAuthContext) (ssh.AuthMethod, error) {
@@ -178,7 +210,21 @@ func DialDevice(ctx context.Context, d Device) (Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	if watched != nil {
+		go client.watch(watched, d.Probe, d.Dead, d.ProbeNow)
+	}
 	return client, nil
+}
+
+// Permanent tells whether err, which DialDevice failed with, is one trying
+// again will not change: a host key mismatch, a key the koko server does
+// not know or knows as Revoked, or a refusal. Any other, such as a koko
+// server it cannot reach, may pass.
+func Permanent(err error) bool {
+	_, mismatch := errors.AsType[*HostKeyMismatchError](err)
+	_, revoked := errors.AsType[*RevokedError](err)
+	_, refused := errors.AsType[*RefusedError](err)
+	return mismatch || revoked || refused || errors.Is(err, ErrUnknownKey)
 }
 
 // Pinned checks the host key the koko server at address presents against
@@ -221,7 +267,7 @@ func Join(ctx context.Context, address string, fingerprint [sha256.Size]byte, ke
 		return nil
 	}
 	var banner string
-	client, err := dialTCP(ctx, address, &ssh.ClientConfig{
+	client, err := dialTCP(ctx, address, nil, &ssh.ClientConfig{
 		HostKeyCallback: check,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(key),
@@ -247,15 +293,19 @@ func Join(ctx context.Context, address string, fingerprint [sha256.Size]byte, ke
 }
 
 // dialTCP connects to the koko server at address and runs the SSH
-// handshake with cfg, as user koko with koko's version string, or gives up
-// when ctx ends.
-func dialTCP(ctx context.Context, address string, cfg *ssh.ClientConfig) (Conn, error) {
+// handshake with cfg, as user koko with koko's version string, over the
+// connection wrap returns for it (nil for itself), or gives up when ctx
+// ends.
+func dialTCP(ctx context.Context, address string, wrap func(net.Conn) net.Conn, cfg *ssh.ClientConfig) (*sshConn, error) {
 	var d net.Dialer
 	nc, err := d.DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, err
 	}
-	return Handshake(ctx, nc, address, cfg)
+	if wrap != nil {
+		nc = wrap(nc)
+	}
+	return handshake(ctx, nc, address, cfg)
 }
 
 // trimBanner turns a koko server's banner, such as "koko: the Join Code is
@@ -280,6 +330,11 @@ type sshConn struct {
 	// revoked tells that the koko server said, before it ended the
 	// connection, that its Device Session was Revoked.
 	revoked bool
+	// disconnected tells that the Device Mux said, before it ended the
+	// connection, that koko disconnect stopped it.
+	disconnected bool
+	// dead is why the liveness watch ended the connection, if it did.
+	dead error
 }
 
 // newSSHConn returns a Conn over an SSH connection that has authenticated.
@@ -319,6 +374,10 @@ func (c *sshConn) takeRequests(reqs <-chan *ssh.Request) {
 		case wire.RequestRevoked:
 			c.mu.Lock()
 			c.revoked = true
+			c.mu.Unlock()
+		case wire.RequestDisconnected:
+			c.mu.Lock()
+			c.disconnected = true
 			c.mu.Unlock()
 		}
 		if r.WantReply {
@@ -382,10 +441,28 @@ func (c *sshConn) Wait() error {
 	<-c.requestsDone
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.revoked {
+	switch {
+	case c.revoked:
 		return ErrRevoked
+	case c.disconnected:
+		return ErrDisconnected
+	case c.dead != nil:
+		return c.dead
 	}
 	return err
+}
+
+// watch watches the connection's liveness over lc until it ends, and closes
+// it, noting why, when nothing has come from the koko server for too long.
+func (c *sshConn) watch(lc *liveness.Conn, probe, dead time.Duration, probeNow <-chan struct{}) {
+	err := lc.Watch(c.client, probe, dead, probeNow, c.requestsDone)
+	if err == nil {
+		return
+	}
+	c.mu.Lock()
+	c.dead = err
+	c.mu.Unlock()
+	_ = c.client.Close()
 }
 
 func (c *sshConn) Close() error {

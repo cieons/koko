@@ -14,7 +14,7 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
-| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the version and operations report, the channel adapter, how a join carries its secret and what a Tunnel's two ends agree on (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`), the record's value rules: a Host's fields, a Service's ports, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`) | server, client |
+| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the version and operations report, the channel adapter, how a join carries its secret and what a Tunnel's two ends agree on (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the liveness watch of an SSH connection, which both ends of a Device Connection run (`liveness`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`), the record's value rules: a Host's fields, a Service's ports, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`) | server, client |
 | server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `host`, `service`, `attr`, `secret`, `web`: the web front), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`), the Gateway (`gateway`) | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join, koko's ssh_config and known_hosts, and the Include line (`devicefiles`), the Device Mux and the client of its local protocol (`devicemux`), the device end of a Tunnel (`tunnel`) | server |
 
@@ -169,7 +169,7 @@ apart.
 | --- | --- | --- |
 | The socket path | `server.Config.SocketPath`, `cli.Runner.SocketPath` | #27 |
 | The fake terminal | `cli.Runner.Terminal` | #28 |
-| The P0 timing constants | `hostconn.Connector.Timings`, `installer.Installer.Timings`, `server.Config.Timings` (the harness's `harness.Timings(timings)`), `cli.Runner.Timings` and `devicemux.Config.Timings` (the harness's `harness.NewMuxDevice(t, timings)`), each a [`timing.Timings`](../../internal/shared/timing/timing.go), where a ticket that uses a new timing adds its constant and field | #32 |
+| The P0 timing constants | `hostconn.Connector.Timings`, `installer.Installer.Timings`, `server.Config.Timings` (the harness's `harness.Timings(timings)`), `cli.Runner.Timings` and `devicemux.Config.Timings` (the harness's `harness.NewMuxDevice(t, timings)` and `d.UseTimings(timings)`), each a [`timing.Timings`](../../internal/shared/timing/timing.go), where a ticket that uses a new timing adds its constant and field; it also carries the wake and route-change signals the Device Mux probes on (`Timings.Wake`, `Timings.RouteChange`) | #32 |
 | The clock | `server.Config.Clock`, which every operation reads once per call through `op.Now`, and `cli.Runner.Clock`, which a relative date counts from; the harness's `h.Now()`, `h.Advance(d)` and `h.SetNow(t)` | #36, the CLI's side #51 |
 
 ## The S1 harness
@@ -227,8 +227,10 @@ of its own and nothing at its socket path, so it reaches a koko server only
 over a Device Connection; `d.Koko(args...)` and `d.KokoStdin(stdin,
 args...)` run command lines on it, `d.Home()` is its HOME, and `d.Dial()`
 opens a Device Connection from its files and holds it until the test ends,
-as a long-lived connection would. Its runner starts no Device Mux, so its
-commands take the direct path.
+as a long-lived connection would, probing nothing itself.
+`d.UseTimings(timings)` gives its commands a timing-constants hook, such
+as a short wait for a koko server that does not answer. Its runner starts
+no Device Mux, so its commands take the direct path.
 [`harness.NewMuxDevice(t, timings)`](../../internal/harness/devicemux.go)
 is such a device whose commands go through a Device Mux once it joins: each
 one it starts runs in the test process as `koko device-mux`, with a
@@ -253,7 +255,9 @@ then to itself, and a refusal can be shown to make no connection.
 `f.CutWhen(cut)` is its fault injection: the first bytes the koko server
 sends once `cut` returns true are dropped with their connection, so a test
 cuts a call after the koko server has logged its answer and before the
-answer arrives.
+answer arrives. `f.Stall()` makes the connections it carries pass nothing
+more, either way, without closing them, as a network path that went dead
+does, while connections it accepts after pass as before.
 
 ## The in-process Host
 

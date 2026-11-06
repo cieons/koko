@@ -210,30 +210,52 @@ func (s *Staged) Commit(c Config) error {
 			return fmt.Errorf("write koko's %s: %w", f.name, err)
 		}
 	}
-	cj := configJSON{ServerAddress: c.ServerAddress, User: c.User, Device: c.Device, DeviceSession: c.DeviceSession}
-	for _, k := range c.HostKeys {
-		cj.HostKeys = append(cj.HostKeys, string(bytes.TrimSpace(ssh.MarshalAuthorizedKey(k))))
-	}
-	b, err := json.Marshal(cj, jsontext.WithIndent("  "))
-	if err != nil {
+	if err := writeConfig(s.home, c); err != nil {
 		s.undo(keyPath)
-		return fmt.Errorf("encode the client config: %w", err)
-	}
-	tmp, err := writeTemp(dir(s.home), "."+configFile+"-*", append(b, '\n'))
-	if err == nil {
-		if err = os.Rename(tmp, filepath.Join(dir(s.home), configFile)); err != nil {
-			_ = os.Remove(tmp)
-		}
-	}
-	if err != nil {
-		s.undo(keyPath)
-		return fmt.Errorf("write the client config: %w", err)
+		return err
 	}
 	// The join holds: a revocation record of an earlier join explains
 	// nothing any more. A record left behind is harmless, since the client
 	// config is read first.
 	_ = os.Remove(filepath.Join(dir(s.home), revocationFile))
 	return nil
+}
+
+// writeConfig writes c as the client config of the device whose home is
+// home, atomically: a new file renamed over the old.
+func writeConfig(home string, c Config) error {
+	cj := configJSON{ServerAddress: c.ServerAddress, User: c.User, Device: c.Device, DeviceSession: c.DeviceSession}
+	for _, k := range c.HostKeys {
+		cj.HostKeys = append(cj.HostKeys, string(bytes.TrimSpace(ssh.MarshalAuthorizedKey(k))))
+	}
+	b, err := json.Marshal(cj, jsontext.WithIndent("  "))
+	if err != nil {
+		return fmt.Errorf("encode the client config: %w", err)
+	}
+	tmp, err := writeTemp(dir(home), "."+configFile+"-*", append(b, '\n'))
+	if err == nil {
+		if err = os.Rename(tmp, filepath.Join(dir(home), configFile)); err != nil {
+			_ = os.Remove(tmp)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("write the client config: %w", err)
+	}
+	return nil
+}
+
+// SetServerAddress makes address, host:port, the Server Address of the join
+// the device whose home is home holds, and keeps the rest of its client
+// config, for koko connect <host:port> once the koko server answered there
+// with a pinned host key. The pinned host keys, and so known_hosts, do not
+// change. It fails with ErrNotJoined when the device holds no join.
+func SetServerAddress(home, address string) error {
+	c, _, err := Read(home)
+	if err != nil {
+		return err
+	}
+	c.ServerAddress = address
+	return writeConfig(home, c)
 }
 
 // Revocation is the record a device keeps once it learns that its Device

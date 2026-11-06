@@ -405,6 +405,13 @@ func (h *Harness) Join(user string) *Device {
 	return d
 }
 
+// UseTimings makes the device's commands run with t as their
+// timing-constants hook, such as a short wait for a koko server that does
+// not answer.
+func (d *Device) UseTimings(t timing.Timings) {
+	d.runner.Timings = t
+}
+
 // Home returns the device's HOME.
 func (d *Device) Home() string {
 	return d.home

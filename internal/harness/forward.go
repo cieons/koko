@@ -2,9 +2,9 @@ package harness
 
 import (
 	"context"
-	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -14,7 +14,8 @@ import (
 // Server Address issues Join Codes that lead wherever the test points it:
 // first to an impostor, then to the koko server itself; and a test sees that
 // a refusal made no connection. It also cuts a connection when the test
-// arms it to (CutWhen), as a network drop does.
+// arms it to (CutWhen), as a network drop does, and stalls the connections
+// it carries (Stall), as a network path that went dead does.
 type Forwarder struct {
 	ln net.Listener
 	// stop ends the dials in progress when the forwarder stops.
@@ -27,7 +28,10 @@ type Forwarder struct {
 	// cut, when armed, says when to cut the next connection whose target
 	// sends anything.
 	cut func() bool
-	wg  sync.WaitGroup
+	// stalls holds, for each connection it carries, whether Stall stalled
+	// it.
+	stalls map[*atomic.Bool]struct{}
+	wg     sync.WaitGroup
 }
 
 // Forward starts a Forwarder to target, a host:port, which stops when the
@@ -40,7 +44,7 @@ func Forward(t testing.TB, target string) *Forwarder {
 		t.Fatal(err)
 	}
 	ctx, stop := context.WithCancel(context.Background())
-	f := &Forwarder{ln: ln, stop: stop, target: target, open: map[net.Conn]struct{}{}}
+	f := &Forwarder{ln: ln, stop: stop, target: target, open: map[net.Conn]struct{}{}, stalls: map[*atomic.Bool]struct{}{}}
 	f.wg.Go(func() { f.accept(ctx) })
 	t.Cleanup(f.close)
 	return f
@@ -74,6 +78,18 @@ func (f *Forwarder) CutWhen(cut func() bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cut = cut
+}
+
+// Stall makes every connection the forwarder carries now pass nothing more,
+// either way, without closing it, as a network path that went dead does:
+// what either end sends is lost, and neither end hears of it. Connections it
+// accepts after pass as before, as on the device's new path.
+func (f *Forwarder) Stall() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for s := range f.stalls {
+		s.Store(true)
+	}
 }
 
 // cutNow tells whether an armed cut falls now, and spends it if so. It asks
@@ -118,27 +134,35 @@ func (f *Forwarder) pass(ctx context.Context, in net.Conn, target string) {
 	if err != nil {
 		return
 	}
+	stalled := new(atomic.Bool)
 	f.mu.Lock()
 	f.open[out] = struct{}{}
+	f.stalls[stalled] = struct{}{}
 	f.mu.Unlock()
 	defer f.forget(out)
+	defer func() {
+		f.mu.Lock()
+		delete(f.stalls, stalled)
+		f.mu.Unlock()
+	}()
 	done := make(chan struct{}, 2)
-	f.wg.Go(func() { _, _ = io.Copy(out, in); done <- struct{}{} })
-	f.wg.Go(func() { f.back(in, out); done <- struct{}{} })
+	f.wg.Go(func() { f.relay(out, in, stalled, false); done <- struct{}{} })
+	f.wg.Go(func() { f.relay(in, out, stalled, true); done <- struct{}{} })
 	<-done
 }
 
-// back copies what the target sends on out to in, until either side ends or
-// an armed cut falls on it.
-func (f *Forwarder) back(in, out net.Conn) {
+// relay passes what arrives on from to to, until either side ends, or, when
+// cuttable, as for what the target sends back, an armed cut falls on it.
+// Once stalled, what arrives is dropped.
+func (f *Forwarder) relay(to, from net.Conn, stalled *atomic.Bool, cuttable bool) {
 	buf := make([]byte, 32<<10)
 	for {
-		n, err := out.Read(buf)
-		if n > 0 {
-			if f.cutNow() {
+		n, err := from.Read(buf)
+		if n > 0 && !stalled.Load() {
+			if cuttable && f.cutNow() {
 				return
 			}
-			if _, err := in.Write(buf[:n]); err != nil {
+			if _, err := to.Write(buf[:n]); err != nil {
 				return
 			}
 		}

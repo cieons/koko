@@ -23,6 +23,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"github.com/cieons/koko/internal/client/apiclient"
 	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/client/devicemux"
@@ -275,15 +277,24 @@ func (in *Input) client() *apiclient.Client {
 }
 
 // connect reaches the koko server: over its Unix socket when the socket is
-// at its fixed path, and otherwise the koko server this device joined, over
-// a direct Device Connection.
+// at its fixed path, and otherwise the koko server this device joined. It
+// returns once the koko server's report has come, and waits for the
+// connection and the report at most timing.CommandWait, so a command is
+// never stuck (P0 spec: reach).
 func (in *Input) connect(ctx context.Context) (serverconn.Conn, error) {
 	path := cmp.Or(in.runner.SocketPath, wire.SocketPath)
-	conn, err := serverconn.DialSocket(ctx, path)
+	socketCtx, cancel := context.WithTimeout(ctx, in.runner.Timings.Resolve().CommandWait)
+	defer cancel()
+	conn, err := serverconn.DialSocket(socketCtx, path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return in.dialJoined(ctx, path)
-	case err != nil:
+	case err == nil:
+		if _, err = conn.Report(socketCtx); err != nil {
+			_ = conn.Close()
+		}
+	}
+	if err != nil {
 		return nil, &cliError{code: codeServerUnreachable, message: fmt.Sprintf(
 			"cannot reach the koko server on its Unix socket %s: %v", path, err)}
 	}
@@ -296,7 +307,14 @@ func (in *Input) connect(ctx context.Context) (serverconn.Conn, error) {
 // direct Device Connection of its own when no Device Mux can carry the
 // command (viaDeviceMux). When the koko server refuses the device's key as
 // a Revoked Device Session's, the revocation cleanup runs; a device that
-// holds the revocation record instead of a join is told why from it.
+// holds the revocation record instead of a join is told why from it. socket
+// is the Unix socket's path that held nothing, which a device that has not
+// joined is told of, or "" when the socket was not looked for.
+//
+// It waits at most timing.CommandWait for the Device Connection: a Device
+// Mux answers within it, and the direct path, should the command take it
+// after trying the Device Mux, has what is left of it. Starting a Device
+// Mux, or one that does not answer, may add timing.DeviceMuxStart.
 func (in *Input) dialJoined(ctx context.Context, socket string) (serverconn.Conn, error) {
 	home := in.inv.getenv("HOME")
 	c, key, err := devicefiles.Read(home)
@@ -306,19 +324,18 @@ func (in *Input) dialJoined(ctx context.Context, socket string) (serverconn.Conn
 	case err != nil:
 		return nil, err
 	}
+	t := in.runner.Timings.Resolve()
+	start := time.Now()
+	ctx, cancel := context.WithDeadline(ctx, start.Add(t.CommandWait+t.DeviceMuxStart))
+	defer cancel()
 	conn, err := in.viaDeviceMux(ctx)
 	if errors.Is(err, errDirect) {
-		conn, err = serverconn.DialDevice(ctx, serverconn.Device{Address: c.ServerAddress, HostKeys: c.HostKeys, Key: key})
+		direct, cancel := context.WithDeadline(ctx, start.Add(t.CommandWait))
+		defer cancel()
+		conn, err = in.dialDirect(direct, c.ServerAddress, c, key)
 	}
 	if e, ok := errors.AsType[*serverconn.RevokedError](err); ok {
-		if _, _, err := devicefiles.Read(home); errors.Is(err, devicefiles.ErrNotJoined) {
-			// The Device Mux ran the cleanup already.
-			return nil, notJoined(home, socket)
-		}
-		if err := devicefiles.Revoke(home, c, time.Now()); err != nil {
-			return nil, api.CodeRevoked.Errorf("%v, but koko could not finish clearing this device's files of it: %v", e, err)
-		}
-		return nil, api.CodeRevoked.Errorf("%v, so koko deleted this device's key and client config; %s", e, rejoin(c.ServerAddress))
+		return nil, revoked(home, socket, c, e)
 	}
 	if errors.Is(err, devicefiles.ErrNotJoined) {
 		// The Device Mux found the join gone since it was read above.
@@ -331,11 +348,76 @@ func (in *Input) dialJoined(ctx context.Context, socket string) (serverconn.Conn
 	return conn, nil
 }
 
+// dialDirect opens a direct Device Connection to the koko server at
+// address, with the join c and the device's key, and waits for its report:
+// the direct path, and koko connect's try of a new address. While it cannot
+// reach the koko server it tries again, as the Device Mux does, after
+// timing.ReconnectFirst and then twice the last wait, up to
+// timing.ReconnectMax, for at most timing.CommandWait, each try lasting at
+// most timing.DeviceConnectAttempt; a failure trying again does not change
+// ends it at once. The connection probes the koko server as the Device
+// Mux's does.
+func (in *Input) dialDirect(ctx context.Context, address string, c devicefiles.Config, key ssh.Signer) (serverconn.Conn, error) {
+	t := in.runner.Timings.Resolve()
+	ctx, cancel := context.WithTimeout(ctx, t.CommandWait)
+	defer cancel()
+	d := serverconn.Device{Address: address, HostKeys: c.HostKeys, Key: key, Probe: t.DeviceProbe, Dead: t.DeviceDead}
+	try := func() (serverconn.Conn, error) {
+		ctx, cancel := context.WithTimeout(ctx, t.DeviceConnectAttempt)
+		defer cancel()
+		conn, err := serverconn.DialDevice(ctx, d)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := conn.Report(ctx); err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
+		return conn, nil
+	}
+	var wait time.Duration
+	for {
+		conn, err := try()
+		if err == nil {
+			return conn, nil
+		}
+		if serverconn.Permanent(err) {
+			return nil, err
+		}
+		wait = t.NextReconnect(wait)
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, err
+		case <-timer.C:
+		}
+	}
+}
+
+// revoked runs the revocation cleanup on the device whose home is home,
+// once the koko server refused its key as the key of the Revoked Device
+// Session e names, with the join c, unless the Device Mux ran it already,
+// and says so.
+func revoked(home, socket string, c devicefiles.Config, e *serverconn.RevokedError) error {
+	if _, _, err := devicefiles.Read(home); errors.Is(err, devicefiles.ErrNotJoined) {
+		// The Device Mux ran the cleanup already.
+		return notJoined(home, socket)
+	}
+	if err := devicefiles.Revoke(home, c, time.Now()); err != nil {
+		return api.CodeRevoked.Errorf("%v, but koko could not finish clearing this device's files of it: %v", e, err)
+	}
+	return api.CodeRevoked.Errorf("%v, so koko deleted this device's key and client config; %s", e, rejoin(c.ServerAddress))
+}
+
 // notJoined is why a device that holds no join reaches no koko server: its
-// revocation record, when it keeps one, or that it never joined one.
+// revocation record, when it keeps one, or that it never joined one, and,
+// unless socket is "", that nothing is at the Unix socket's path socket.
 func notJoined(home, socket string) error {
 	r, err := devicefiles.ReadRevocation(home)
 	switch {
+	case errors.Is(err, fs.ErrNotExist) && socket == "":
+		return &cliError{code: codeNotJoined, message: "this device has not joined a koko server: join one with koko join <join-code>"}
 	case errors.Is(err, fs.ErrNotExist):
 		return &cliError{code: codeNotJoined, message: fmt.Sprintf(
 			"this device has not joined a koko server, and no koko server runs on this machine (nothing at %s): join one with koko join <join-code>", socket)}

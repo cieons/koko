@@ -24,7 +24,11 @@ then, on a joined device, this build's Device Mux
 3. A Device Mux that answers decides the outcome: the command goes through
    it, or fails with the error it answered, mapped as a direct connection's
    would be (`not_joined`, `revoked`, `server_unreachable`,
-   `host_key_mismatch`).
+   `host_key_mismatch`). A Device Mux answers within `timing.CommandWait`
+   (15 s), the longest it waits for its Device Connection
+   ([the local protocol](#the-local-protocol)); a command gives up on one
+   that has not answered `timing.DeviceMuxStart` after that, and waits for
+   the report it sends next within the same bound.
 
 **The direct path.** The command opens its own Device Connection
 (`serverconn.DialDevice`), with the same code, and logs one debug line on
@@ -35,7 +39,16 @@ is set, the runtime directory is refused, the OS has no Device Mux yet
 ([one device, one home](#the-local-protocol)), or the Device Mux it
 started exited, as in a sandbox that lets it start but not listen, or did
 not answer in time. A runner without `StartDeviceMux`, as in most S1 tests,
-always goes direct.
+always goes direct. On the direct path the command
+([`Input.dialDirect`](../../internal/client/cli/cli.go)) waits for the
+Device Connection as a Device Mux would: while it cannot reach the koko
+server it tries again after `timing.ReconnectFirst` (250 ms), doubling the
+wait up to `timing.ReconnectMax` (5 s), each try lasting at most
+`timing.DeviceConnectAttempt`, for what is left of `timing.CommandWait`
+since the command began to connect, report included, and a failure trying
+again does not change (`serverconn.Permanent`: a host key mismatch, an
+unknown or Revoked key, a refusal) ends it at once; its Device Connection probes the koko server as
+the Device Mux's does ([liveness](#liveness-and-reconnecting)).
 
 `koko join` starts this build's Device Mux once the device has joined, and
 does not wait for it, so the next command finds the Device Connection open;
@@ -95,8 +108,10 @@ The koko server's own SSH, as on its Unix socket
   `{"state": "elsewhere", "home"}` at once (`devicemux.ErrOtherHome`), and
   that command goes direct.
 - At the start of the authentication the Device Mux makes sure it holds a
-  Device Connection, opening one when it has none (one try at a time, which
-  every command waiting shares), and sends its state as the banner, JSON:
+  Device Connection, waiting up to `timing.CommandWait` while it reconnects
+  ([liveness](#liveness-and-reconnecting)), and less when a try fails for a
+  reason trying again does not change, and sends its state as the banner,
+  JSON:
   `{"state": "connected"|"reconnecting", "since": <RFC 3339>, "error":
   {"kind", "message", ...}}`. `error` comes only while reconnecting; its
   `kind` is `host_key_mismatch` (with `address`, `presented`, `pinned`),
@@ -124,14 +139,65 @@ The koko server's own SSH, as on its Unix socket
   next one.
 - When the koko server revokes its Device Session, it sends each open
   connection `revoked@koko` before closing it, so `Conn.Wait` returns
-  `serverconn.ErrRevoked`.
+  `serverconn.ErrRevoked`; when `koko disconnect` stops it, it sends
+  `disconnected@koko` ([`wire.RequestDisconnected`](../../internal/shared/wire/wire.go)),
+  and `Conn.Wait` returns `serverconn.ErrDisconnected`, so what the command
+  carried ends for good.
+- **The one exchange every build answers alike**
+  ([ADR 0034](../adr/0034-koko-disconnect-stops-a-device-mux-of-any-build-through-one-fixed-exchange.md)):
+  a connection whose SSH user name is `disconnect`, which no home is, asks
+  the Device Mux to stop. It answers in the banner,
+  `{"state": "stopped", "commands": <n>}`, the commands it carried, past
+  the authentication (one still connecting gets no state, and starts a new
+  Device Mux), refuses the authentication, and stops
+  ([`devicemux.Stop`](../../internal/client/devicemux/local.go) is the
+  asking side). The rest of the local protocol may change with any build.
+
+## Liveness and reconnecting
+
+The timings are the reach spec's ("Liveness and timings"), constants in
+[`timing`](../../internal/shared/timing/timing.go) that tests shrink
+through the timing-constants hook.
+
+- **Probing.** Its Device Connection notes when bytes last came from the
+  koko server ([`liveness`](../../internal/shared/liveness/liveness.go)):
+  after `timing.DeviceProbe` (5 s) without any it sends
+  `keepalive@openssh.com` wanting a reply, which any SSH server answers, a
+  refusal included, and after `timing.DeviceDead` (15 s) it declares the
+  connection dead and closes it, which drops it with the error `no answer
+  for <time>`. The koko server probes from its side too
+  ([the Device Connection](device-connection.md#the-tcp-listener)).
+- **Probing at once.** On a wake from sleep, which it tells by the wall
+  clock having moved more than `timing.WakeCheck` (1 s) further than the
+  monotonic clock between two looks a `WakeCheck` apart, and on a change of
+  the device's routes (a routing socket on macOS, netlink on Linux:
+  `watchRoutes` in `route_darwin.go` and `route_linux.go`, none elsewhere),
+  it probes at once; that probe has `DeviceDead - DeviceProbe` (10 s) to be
+  answered, as a probe sent after `DeviceProbe` has. Tests inject both
+  signals through `timing.Timings.Wake` and `RouteChange`. While it
+  reconnects, either signal makes it try again at once.
+- **Reconnecting.** When its Device Connection drops, and when it starts, it
+  tries to open one at once. While tries fail and something waits for a
+  Device Connection (a command connecting, a channel opening), it tries
+  again after `timing.ReconnectFirst` (250 ms), doubling the wait up to
+  `timing.ReconnectMax` (5 s); it stops once a try succeeds, fails for a
+  reason trying again does not change, or nothing waits any more, when its
+  wait ends. Each try lasts at most `timing.DeviceConnectAttempt` (10 s),
+  TCP, SSH handshake and report, so an address that drops packets holds up
+  no later try, and reads the device's files afresh, so it takes an address
+  `koko connect` saved. Every command and channel waiting shares the
+  tries.
+- **What waits, and how long.** A command connecting, and a channel it
+  opens while the Device Mux holds no Device Connection, wait up to
+  `timing.CommandWait` (15 s), then get the state, reconnecting with the
+  last try's error; a try that fails for a reason trying again does not
+  change answers them at once.
 
 ## State and exit
 
 - **Connected**, since it opened its Device Connection, or **reconnecting**
   since it dropped (or since the first try failed), with the last try's
-  error. In P0 it tries again only when a command connects or opens a
-  channel; probing, backoff and the 15 s wait are #54's.
+  error.
 - **Idle exit.** It exits `timing.DeviceMuxIdle` (10 minutes) after the
   last command left: a command, `koko web` or `koko tunnel` connected keeps
   it running, with or without a channel open, so `koko web` between browser
@@ -145,6 +211,16 @@ The koko server's own SSH, as on its Unix socket
   cleanup is done, then tells each command and exits. A command it cut off
   finds the revocation record when it tries again. A device whose join is
   gone when it reconnects (`not_joined`) stops it too.
+- **koko disconnect.** `koko disconnect` ([`disconnect`](../../internal/client/cli/connect.go))
+  lists every socket in the runtime directory
+  ([`devicemux.Sockets`](../../internal/client/devicemux/socket.go)), every
+  build's and every home's, asks each to stop through the exchange above,
+  and prints how many commands each carried, which it ended: SSH Sessions,
+  `koko web` runs and calls in flight alike. A socket nothing answers at,
+  such as one a crashed Device Mux left, is passed over; one that answers
+  anything else fails the command once it has asked every other, naming
+  that socket and saying what it stopped. The next command starts a new
+  Device Mux.
 - On stopping it closes its listener, which removes the socket, then every
   connection, then releases the lock.
 
@@ -153,9 +229,12 @@ The koko server's own SSH, as on its Unix socket
 One line per event on its stderr (the log beside its socket), at the level
 `KOKO_LOG_LEVEL` names, info by default: `device mux started` (version,
 revision, pid, socket), `device connection opened` (server, server
-version), `cannot open a Device Connection` and `device connection
-dropped` (server, error), the revocation cleanup done or failed, `refused a
-connection from another OS user`, and `device mux stopped` with its reason.
+version), `cannot open a Device Connection` (each try) and `device
+connection dropped` (server, error, such as `no answer for 15s`), the
+revocation cleanup done or failed, `refused a connection from another OS
+user`, `koko disconnect stops the device mux` (commands), and `device mux
+stopped` with its reason; at debug level, `probing the Device Connection
+at once` (reason: wake or route change) and `no route-change watch`.
 
 ## Verifying
 
@@ -171,6 +250,24 @@ connection from another OS user`, and `device mux stopped` with its reason.
   `KOKO_LOG_LEVEL` refused; a call cut under it retried and applied once;
   channels across a drop, an open the drop cut not sent twice, a refusal
   passed back, and its report.
+- [`reconnect_test.go`](../../internal/client/cli/reconnect_test.go) (S1,
+  the timings shrunk, a [`harness.Forward`](../../internal/harness/forward.go)
+  stalled or pointed elsewhere): a command waiting at most
+  `timing.CommandWait` on the direct path and through the Device Mux, then
+  `server_unreachable`; a connection that never reports given up on; a cut
+  call's retry waiting for the koko server and applying once; the Device
+  Mux keeping a quiet Device Connection alive by its probes and replacing a
+  stalled one; the koko server's probe and dead close; one try at once
+  after a drop, then backoff only while a command waits; a wake and a route
+  change probing at once, and a wake cutting the wait between tries short.
+  [`liveness_test.go`](../../internal/shared/liveness/liveness_test.go)
+  tests the probe and dead rules at the module's own interface.
+- [`disconnect_test.go`](../../internal/client/cli/disconnect_test.go):
+  `koko disconnect` stopping the Device Mux with its count (golden), each
+  command told, none running (golden), the next command starting a new
+  one, the Device Mux of another build stopped beside it, a stale socket
+  passed over, and one that answers but does not stop failing the command
+  only after the others stopped.
 
 The peer-credential refusal of another OS user, and a runtime directory
 another user owns, are not tested: both need a second OS user, which a

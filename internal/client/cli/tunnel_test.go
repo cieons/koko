@@ -599,10 +599,13 @@ func TestKokoTunnelSaysWhyInOneLineBeforeTheDeviceConnection(t *testing.T) {
 	line = wantTunnelLine(t, "the revocation record", laptop.Koko("tunnel", "web1.koko"))
 	harness.Golden(t, "tunnel-revoked-record", strings.ReplaceAll(line, server, "<server address>"))
 
+	// A short wait for the koko server: it never answers again.
+	short := timing.Timings{CommandWait: 200 * time.Millisecond}
 	stopped := harness.Start(t)
 	away := stopped.Join(harness.Owner)
+	away.UseTimings(short)
 	server = readClientConfig(t, away).ServerAddress
-	muxed := harness.NewMuxDevice(t, timing.Timings{})
+	muxed := harness.NewMuxDevice(t, short)
 	muxed.Koko("join", deviceAdd(t, stopped, "laptop").Code).WantSuccess(t)
 	waitLog(t, muxed, `msg="device connection opened"`)
 	stopped.Stop()

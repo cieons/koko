@@ -95,21 +95,31 @@ func join(ctx context.Context, in *Input) (joined, error) {
 	if err != nil {
 		return joined{}, fmt.Errorf("cannot keep this device's files, so koko did not connect and the Join Code stays usable: %w", err)
 	}
-	conn, hostKey, err := serverconn.Join(ctx, code.Address, code.Fingerprint, signer, code.Secret)
+	// It waits for the koko server as any command does, but tries once: a
+	// join cut after the koko server took the code cannot join again.
+	dialing, cancel := context.WithTimeout(ctx, in.runner.Timings.Resolve().CommandWait)
+	defer cancel()
+	conn, hostKey, err := serverconn.Join(dialing, code.Address, code.Fingerprint, signer, code.Secret)
 	if err != nil {
 		staged.Abort()
 		return joined{}, joinError(code.Address, err)
 	}
 	// The call goes on the connection that joined, which the client then
 	// owns; sent again after a drop, on a Device Connection of the key the
-	// join made a Device Session.
+	// join made a Device Session, which waits for the koko server as the
+	// direct path does. A connection that joined but sends no report is
+	// such a drop.
 	joining := conn
+	if _, err := conn.Report(dialing); err != nil {
+		_ = conn.Close()
+		joining = nil
+	}
 	c := apiclient.New(func(ctx context.Context) (serverconn.Conn, error) {
 		if first := joining; first != nil {
 			joining = nil
 			return first, nil
 		}
-		again, err := serverconn.DialDevice(ctx, serverconn.Device{Address: code.Address, HostKeys: []ssh.PublicKey{hostKey}, Key: signer})
+		again, err := in.dialDirect(ctx, code.Address, devicefiles.Config{HostKeys: []ssh.PublicKey{hostKey}}, signer)
 		if err != nil {
 			return nil, deviceConnError(code.Address, err)
 		}

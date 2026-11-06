@@ -345,6 +345,8 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
 | `koko secret rename <space>/<secret> <new-name>` | reversible | `secret.rename` | the Secret under its new name |
 | `koko secret move <space>/<secret> <space>` | reversible | `secret.move` | the Secret in its new Space |
 | `koko secret rm <space>/<secret>` | irreversible | `secret.remove` | the Secret it deleted, as it was, without its value |
+| `koko connect [<host:port>]` | reversible | none: the koko server's version comes from its report | `{"server_address", "previous_address", "host_keys", "server_version", "device_mux"}`: the Server Address the client config now holds, the one `<host:port>` replaced or `null`, the fingerprints of the pinned host keys, the koko server's version, and the Device Mux as `koko status` shows it, or `null` on the direct path ([`koko connect`](device-connection.md#koko-connect)) |
+| `koko disconnect` | reversible | none | `{"device_muxes": [{"socket", "commands_ended"}], "commands_ended"}`: each Device Mux it stopped, by socket, with how many commands were connected to it, which ended, and the sum ([`koko disconnect`](device-mux.md#state-and-exit)) |
 | `koko status` | read | none: the koko server's version comes from its report | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_error", "device_mux", "revocation", "include_warning"}`, below |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |

@@ -9,12 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/harness/sshhost"
+	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -56,6 +58,14 @@ func TestCallThatCannotBeCarriedIsServerUnreachable(t *testing.T) {
 // ends.
 func refuseChannels(t *testing.T, path string) {
 	t.Helper()
+	fakeSocket(t, path, true)
+}
+
+// fakeSocket serves SSH with none authentication on path, sends the report
+// a koko server sends when report is set, and refuses every channel, until
+// the test ends.
+func fakeSocket(t *testing.T, path string, report bool) {
+	t.Helper()
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -89,8 +99,10 @@ func refuseChannels(t *testing.T, path string) {
 				continue
 			}
 			go ssh.DiscardRequests(reqs)
-			report := wire.Report{Version: "v0.1.0", Operations: []string{"space.list"}}
-			_, _, _ = conn.SendRequest(wire.RequestReport, false, report.Marshal())
+			if report {
+				r := wire.Report{Version: "v0.1.0", Operations: []string{"space.list"}}
+				_, _, _ = conn.SendRequest(wire.RequestReport, false, r.Marshal())
+			}
 			for nch := range chans {
 				_ = nch.Reject(ssh.Prohibited, "no channels here")
 			}
@@ -156,6 +168,7 @@ func TestDeviceConnectionWithAnUnknownKeyIsNotJoined(t *testing.T) {
 func TestJoinedDeviceWhoseServerIsDownIsServerUnreachable(t *testing.T) {
 	h := harness.Start(t)
 	d := h.Join(harness.Owner)
+	d.UseTimings(timing.Timings{CommandWait: 200 * time.Millisecond})
 	h.Stop()
 	msg := d.Koko("space", "ls", "--json").WantError(t, 1, "server_unreachable")
 	if !strings.Contains(msg, "koko connect <host:port>") || !strings.Contains(msg, readClientConfig(t, d).ServerAddress) {

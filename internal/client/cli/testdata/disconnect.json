@@ -1,0 +1,9 @@
+{
+  "device_muxes": [
+    {
+      "socket": "<socket>",
+      "commands_ended": 2
+    }
+  ],
+  "commands_ended": 2
+}

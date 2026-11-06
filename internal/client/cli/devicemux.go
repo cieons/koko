@@ -89,9 +89,9 @@ func (in *Input) deviceMuxSocket() (string, error) {
 	return socket, nil
 }
 
-// dialDeviceMuxAt connects to the Device Mux at socket, and notes the state
-// it answered in, for koko status. One of another home fails wrapping
-// errDirect.
+// dialDeviceMuxAt connects to the Device Mux at socket, waits for the
+// report it sends at once, and notes the state it answered in, for koko
+// status. One of another home fails wrapping errDirect.
 func (in *Input) dialDeviceMuxAt(ctx context.Context, socket string) (serverconn.Conn, error) {
 	conn, state, err := devicemux.Dial(ctx, socket, in.inv.getenv("HOME"))
 	switch {
@@ -100,7 +100,23 @@ func (in *Input) dialDeviceMuxAt(ctx context.Context, socket string) (serverconn
 	case !errors.Is(err, devicemux.ErrNotRunning):
 		in.deviceMux = &deviceMuxSeen{socket: socket, state: state}
 	}
+	if err == nil {
+		if _, err = conn.Report(ctx); err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("the Device Mux at %s sent no report: %w", socket, err)
+		}
+	}
 	return conn, err
+}
+
+// json is the Device Mux m as koko status and koko connect show it, from
+// the state it answered in.
+func (m *deviceMuxSeen) json() *deviceMuxJSON {
+	j := &deviceMuxJSON{Socket: m.socket, State: "connected", Since: m.state.Since.UTC().Format(time.RFC3339)}
+	if !m.state.Connected {
+		j.State = "reconnecting"
+	}
+	return j
 }
 
 // startDeviceMux starts this build's Device Mux once koko join has joined,

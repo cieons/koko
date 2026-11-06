@@ -64,7 +64,11 @@ first call, through the dial it was given, and for each call:
 - when the connection drops the call (no channel opened, or no answer
   came), closes that connection, dials a new one and sends the call once
   more, a write with the same key, so the write applies once; when that one
-  drops too, the call fails wrapping `apiclient.ErrUnreachable`.
+  drops too, the call fails wrapping `apiclient.ErrUnreachable`. The CLI's
+  dial waits up to `timing.CommandWait` for the Device Connection, trying
+  meanwhile ([which koko server the CLI reaches](device-connection.md#which-koko-server-the-cli-reaches)),
+  so the one resend waits for the reconnect rather than fail at once on a
+  network that is still coming back.
 
 ## Calls
 

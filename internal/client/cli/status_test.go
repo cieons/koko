@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cieons/koko/internal/client/devicemux"
 	"github.com/cieons/koko/internal/harness"
@@ -166,6 +167,7 @@ func TestStatusShowsTheRevocationRecord(t *testing.T) {
 func TestStatusWhenTheKokoServerIsUnreachable(t *testing.T) {
 	h := harness.Start(t)
 	d := h.Join(harness.Owner)
+	d.UseTimings(timing.Timings{CommandWait: 200 * time.Millisecond})
 	h.Stop()
 	s, _ := status(t, d.Koko)
 	if s.ServerError == nil || s.ServerError.Code != "server_unreachable" || s.ServerVersion != nil || s.ServerAddress == nil {
@@ -178,7 +180,7 @@ func TestStatusWhenTheKokoServerIsUnreachable(t *testing.T) {
 // the koko server stops, the Device Mux is reconnecting since the drop, and
 // its last error is what status's own connection failed with.
 func TestStatusShowsTheDeviceMux(t *testing.T) {
-	h, _, d := muxDevice(t, timing.Timings{})
+	h, _, d := muxDevice(t, timing.Timings{CommandWait: 200 * time.Millisecond})
 	c := readClientConfig(t, d)
 	socket := filepath.Join(d.RuntimeDir(), "koko", devicemux.Name(build.Read())+".sock")
 	s, out := status(t, d.Koko, c.ServerAddress, "<server address>", socket, "<socket>")
