@@ -263,10 +263,12 @@ func TestTheDeviceMuxReconnectsAtOnceThenBacksOffWhileACommandWaits(t *testing.T
 		}
 		want = min(2*want, most)
 	}
+	// A try begun while the command still waited may land after it gave
+	// up, and no other: the loop looks for what waits before each try.
 	n := len(r.times())
 	time.Sleep(5 * most)
-	if m := len(r.times()); m != n {
-		t.Errorf("the Device Mux tried %d more times once the command had given up, want none", m-n)
+	if m := len(r.times()); m-n > 1 {
+		t.Errorf("the Device Mux tried %d more times once the command had given up, want at most the one under way", m-n)
 	}
 }
 

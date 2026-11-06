@@ -63,7 +63,8 @@ upgrade test, in turn, read the koko server's start from its log once
 install returned, though the koko server logs it just after its socket
 accepts: 3 failures under load.
 **Seen:** 1 (2026-11-06)
-**Evidence:** 3cae7b1 (#38); 4232f09 (#43); #77; ecff11b (#49); #78
+**Evidence:** 3cae7b1 (#38); 4232f09 (#43); #77; ecff11b (#49); #78;
+c152887 (#54); check runs 42166495220 and 42167225724
 
 ### A channel closes only once every request on it has its answer
 
@@ -90,6 +91,16 @@ with a command that ends with it, such as `cat`, whose stdin closes when
 the SSH Session ends, or `exec` the command so the kill reaches it.
 **Seen:** 1 (2026-11-06)
 **Evidence:** 0ac2b3d (#64); check run 42166495220; 2e5b9f4 (#59)
+
+### A change that makes something happen by itself re-reads every test that counts it
+
+**Why:** #54 made the Device Mux reconnect at once after a drop, where it
+had reconnected only when a command asked. `TestTheDeviceMuxCarriesChannelsAcrossADrop`
+counted the Device Connections right after a drop, as the old behaviour
+left them; it passed locally whenever the reconnect lost the race, failed
+on both CI runners, and left `main` red at c152887.
+**Seen:** 1 (2026-11-06)
+**Evidence:** c152887 (#54); check runs 42166495220 and 42167225724
 
 ## Moved to the code standards
 

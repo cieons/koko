@@ -356,10 +356,11 @@ func TestACallCutUnderTheDeviceMuxIsRetriedAndAppliesOnce(t *testing.T) {
 
 // A command stays connected to the Device Mux through a dropped Device
 // Connection. An open the drop cut after it reached the koko server fails,
-// since the koko server may have acted on it, and is not sent again; the
-// next goes on the Device Mux's next Device Connection. A channel the koko
-// server refuses comes back refused with the koko server's own message, and
-// the report is the koko server's.
+// since the koko server may have acted on it, and is not sent again on the
+// Device Connection the Device Mux opens at once after the drop; the next
+// open goes on that one. A channel the koko server refuses comes back
+// refused with the koko server's own message, and the report is the koko
+// server's.
 func TestTheDeviceMuxCarriesChannelsAcrossADrop(t *testing.T) {
 	_, fwd, d := muxDevice(t, timing.Timings{})
 	conn := d.DialMux()
@@ -375,11 +376,9 @@ func TestTheDeviceMuxCarriesChannelsAcrossADrop(t *testing.T) {
 	fwd.CutWhen(func() bool { return true })
 	if ch, err := conn.OpenChannel(t.Context(), wire.ChannelAPI, nil); err == nil {
 		_ = ch.Close()
-		t.Fatalf("a channel whose open the drop cut opened, want it refused")
+		t.Fatalf("a channel whose open the drop cut opened, want it refused: it was sent again")
 	}
-	if n := fwd.Conns(); n != 2 {
-		t.Errorf("the device made %d connections, want 2: the open the drop cut was sent again", n)
-	}
+	waitLogs(t, d, `msg="device connection opened"`, 2)
 	ch, err := conn.OpenChannel(t.Context(), wire.ChannelAPI, nil)
 	if err != nil {
 		t.Fatalf("a channel opened after the drop: %v; the Device Mux logged:\n%s", err, d.MuxLog())
