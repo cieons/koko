@@ -23,6 +23,7 @@ func main() {
 		ServerInstall:   serverInstall,
 		ServerUninstall: serverUninstall,
 		StartDeviceMux:  devicemux.Spawn,
+		Signals:         notify,
 	}
 	status := r.Run(ctx, cli.Invocation{
 		Args:   os.Args[1:],
@@ -33,4 +34,11 @@ func main() {
 	})
 	stop()
 	os.Exit(status)
+}
+
+// notify relays the signals sigs this process receives to c until stop is
+// called, for a command that handles a signal itself (cli.Runner.Signals).
+func notify(c chan<- os.Signal, sigs ...os.Signal) (stop func()) {
+	signal.Notify(c, sigs...)
+	return func() { signal.Stop(c) }
 }

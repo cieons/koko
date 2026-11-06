@@ -23,7 +23,9 @@ from a function returning the command's `--json` type, which is also its
 shape. Every command takes `--json`, which is not listed, except one with
 `RemoteCommand`, whose last argument is a command it runs on a Host as ssh
 does, `koko exec`; its `Run` is a `remoteAction`, returning the remote
-command's exit status. The parser, `koko help`, `koko completion` and `koko
+command's exit status; and one with `Stdio`, which carries a byte stream on
+its stdin and stdout for the program that runs it, `koko tunnel`, ssh's
+ProxyCommand; its `Run` is a `quietAction`. The parser, `koko help`, `koko completion` and `koko
 skill` are all generated from the tree
 ([below](#koko-skill-koko-help-and-koko-completion)), so a command added to
 it reaches all four; a command's `Run` gets the tree through its `Input`.
@@ -32,7 +34,8 @@ tier, a summary, a unique path, sound arguments and flags (neither `--json`
 nor `--unset` listed, `--unset` only beside pairs, and many words only for
 the last argument, unqualified), an operation that `api.Operations` lists,
 and for `RemoteCommand` many words last, no flags, pairs, filters, secret
-input or shape, and a `remoteAction`.
+input or shape, and a `remoteAction`; for `Stdio`, no many words, flags,
+pairs, filters, secret input, remote command or shape.
 
 ## The parser
 
@@ -47,7 +50,9 @@ arguments and flags, or refuses the command line with exit 2 and the code
 - an unknown command, naming what the typed words could continue with;
 - an unknown flag, a flag given twice, a value flag without a value or with an
   empty one, a value outside the flag's choices (from the flag or its
-  variable), and `--json` or a boolean flag given a value;
+  variable), `--json` or a boolean flag given a value, and `--json` to a
+  command with `Stdio` (`koko tunnel takes no flags, not even --json`),
+  which `koko help` and `koko skill` leave out of the commands that take it;
 - `--help`, before the command path or as an unknown flag after it,
   pointing to `koko help` and the command path typed;
 - a missing, an empty or an extra argument, so `koko space add "$NAME"` with
@@ -194,6 +199,12 @@ status. A command reaches the koko server only on its first `in.Call`, so
   far, such as the direct path's one. `koko device-mux`, the
   Device Mux's entry point, is no command of the tree
   ([the Device Mux](device-mux.md#starting-the-lock-and-the-socket)).
+- **Signals:** SIGINT and SIGTERM end a command's context (`cmd/koko`'s
+  `signal.NotifyContext`), as Ctrl-C ends `koko web`. A command that
+  handles a signal itself asks `cli.Runner.Signals` for it, which
+  `cmd/koko` sets to `signal.Notify` and the S1 harness to the signals a
+  test sends (`p.Signal`): so far `koko tunnel`, which ends on SIGHUP and
+  SIGTERM and ignores its context ([`koko tunnel`](gateway.md#koko-tunnel)).
 
 ## `--json`
 
@@ -301,7 +312,8 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
   `_koko` in `$fpath`. The script holds the tree as case tables
   (`_koko_next`, `_koko_flags`, `_koko_value`, `_koko_arg`) and one walk over
   the words typed (`_koko_complete`), all in what bash 3.2 and zsh share,
-  and completes command words, flags (`--json` among them), a flag's
+  and completes command words, flags (`--json` among them, for each command
+  that takes it), a flag's
   choices, a file or directory for a flag whose value is a `file` or `dir`,
   and an argument's choices; it completes no record name, which only the
   koko server knows, and a flag's value only after a space, not after
@@ -351,6 +363,7 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
 | `koko host rm <host>` | irreversible | `host.remove` | the Host it deleted, as it was, its Services deleted with it |
 | `koko host enroll <host> [--password-stdin \| --key <file> \| --secret <space>/<secret>] [--host-key <fingerprint> \| --replace-host-key]` | irreversible | `host.enroll` | the Host, Managed, with its pinned `host_key` ([Enroll](enroll.md)) |
 | `koko exec <host> <command...>` | irreversible | none: it opens a `tunnel@koko` channel | none: the command's stdout, stderr and exit status ([`koko exec`](gateway.md#koko-exec)) |
+| `koko tunnel <ssh-name>` | irreversible | none: it opens a `tunnel@koko` channel | none: ssh's connection on its stdin and stdout, as its ProxyCommand ([`koko tunnel`](gateway.md#koko-tunnel)) |
 | `koko service add <host>/<service> [ports=<port>[/<protocol>],...] [<key>=<value>...] [--note-file <file\|->]` | reversible | `service.add` | the Service: `{"id", "name", "host", "ports": ["443/tcp", ...], "attributes": {...}, "note", "created_at", "updated_at"}` ([the record](record.md#a-service)) |
 | `koko service ls [<filter>...] [--sort <key>[.desc]]... [--with-note]` | read | `service.list` | an array of the Services on the Hosts the caller can see that match every filter term, by the sort keys and then by Host and name, without `"note"` unless `--with-note` |
 | `koko service show <host>/<service>` | read | `service.show` | the Service |

@@ -18,6 +18,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -61,6 +62,12 @@ type Runner struct {
 	// binary, detached (devicemux.Spawn); the S1 harness runs one in the test
 	// process. Where it is nil, commands open their own Device Connection.
 	StartDeviceMux func(ctx context.Context, socket string, env []string) (exited <-chan struct{}, err error)
+
+	// Signals relays to c the signals sigs the process receives until stop
+	// is called, for a command that handles a signal itself, as koko tunnel
+	// does SIGHUP. cmd/koko sets it to signal.Notify; the S1 harness relays
+	// the signals a test sends. Where it is nil, no command gets one.
+	Signals func(c chan<- os.Signal, sigs ...os.Signal) (stop func())
 
 	// SocketPath is the socket-path hook, for tests only: empty means the
 	// fixed wire.SocketPath. No flag or environment variable sets it.

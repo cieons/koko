@@ -99,6 +99,9 @@ type commandJSON struct {
 	// takes no flag, not even --json, and every word after its other
 	// arguments is that command's.
 	remote bool
+	// stdio says the command carries a byte stream on its stdio (Stdio):
+	// it takes no flag, not even --json.
+	stdio bool
 	// longer are the paths of the longer commands this one's path starts,
 	// which koko help names beside it.
 	longer []string
@@ -210,6 +213,7 @@ func commandOf(c *Command) commandJSON {
 		Tier:      c.Tier.String(),
 		tier:      c.Tier,
 		remote:    c.RemoteCommand,
+		stdio:     c.Stdio,
 		OwnerOnly: c.OwnerOnly,
 		Args:      []argJSON{},
 		Flags:     []flagJSON{},
@@ -346,8 +350,13 @@ func (s skillJSON) Human(w io.Writer) error {
 			p("  shell. It takes no flag, not even `--json`, passes stdin, stdout and stderr through, and exits\n")
 			p("  with the command's status, or %d when there is none or koko itself failed.\n", exitRemote)
 		}
+		if c.stdio {
+			p("- `%s` is the ProxyCommand of koko's ssh_config, for ssh, not for direct use: it\n", c.Usage)
+			p("  carries ssh's connection to the Host on its stdin and stdout, and takes no flag, not even\n")
+			p("  `--json`. Run `ssh <host>.koko`, or `koko exec`, instead.\n")
+		}
 	}
-	p("- Every command %stakes `--json`. On success stdout holds the result; on\n", butRemote(s.Commands, "`"))
+	p("- Every command %stakes `--json`. On success stdout holds the result; on\n", butNoJSON(s.Commands, "`"))
 	p("  failure stdout is empty and stderr holds the error, with `--json` as\n")
 	p("  `{\"error\": {\"code\": ..., \"message\": ...}}`. A refused\n")
 	p("  batch, such as several Hosts on stdin, adds `\"items\"`, each `{\"index\", \"code\", \"message\"}`:\n")

@@ -78,6 +78,9 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 			return nil, usagef("unknown flag %s for koko %s", tok, cmd.Path())
 		}
 		if name == "json" {
+			if !cmd.takesJSON() {
+				return nil, usagef("koko %s takes no flags, not even --json: %s", cmd.Path(), usageLine(cmd))
+			}
 			if hasValue {
 				return nil, usagef("--json takes no value")
 			}

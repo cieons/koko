@@ -112,6 +112,16 @@ func (t *Tunnel) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// CloseWrite half-closes the Tunnel: the Gateway reads what was sent
+// before, then EOF, and the Tunnel still carries what the Gateway sends.
+func (t *Tunnel) CloseWrite() error {
+	err := t.stream.CloseWrite()
+	if err != nil {
+		err = t.cause(err)
+	}
+	return err
+}
+
 // Close ends the Tunnel for good, telling the Gateway.
 func (t *Tunnel) Close() error {
 	return t.stream.Close()

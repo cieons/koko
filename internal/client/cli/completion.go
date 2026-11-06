@@ -56,7 +56,8 @@ func completion(_ context.Context, in *Input) (completionJSON, error) {
 //
 //   - _koko_next: the words that can follow the path, such as the verbs of
 //     a noun;
-//   - _koko_flags: the flags of the command at the path, --json among them;
+//   - _koko_flags: the flags of the command at the path, --json among them
+//     for a command that takes it;
 //   - _koko_value: for a flag that takes a value, its choices, or :file,
 //     :dir or :value (any value) when it has none; nothing for one that
 //     takes no value;
@@ -79,7 +80,9 @@ func writeCompletionTables(b *strings.Builder, tree []Command) {
 			}
 		}
 		path := c.Path()
-		flags[path] = []string{"--json"}
+		if c.takesJSON() {
+			flags[path] = []string{"--json"}
+		}
 		for _, f := range c.flags() {
 			flags[path] = append(flags[path], "--"+f.Name)
 			if !f.Bool {

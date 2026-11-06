@@ -177,6 +177,9 @@ another user owns, are not tested: both need a second OS user, which a
 test run as one user cannot be, and a hook to fake one would be a fifth
 test-only hook (code layout, rule 10). `peerUID` reading the connecting
 user's id is tested.
+- [`tunnel_test.go`](../../internal/client/cli/tunnel_test.go): `koko
+  tunnel`'s Tunnel riding the Device Mux's Device Connection, and an open SSH
+  Session keeping the Device Mux from idling out.
 - [`status_test.go`](../../internal/client/cli/status_test.go): `koko
   status` connected (golden) and reconnecting, and `null` on the direct
   path.

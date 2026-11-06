@@ -203,6 +203,13 @@ Code's 15 minutes, and never waits; `h.SetNow(t)` sets it to a given
 instant, such as a leap day, and `h.Now()` reads it.
 `h.Background(env, args...)` runs a command that runs until it is stopped,
 such as `koko web`, with `WaitStdout`, `Stop` (as Ctrl-C) and `Wait`.
+`h.Proxy(args...)` and `d.Proxy(env, args...)` run one as ssh runs its
+ProxyCommand, such as `koko tunnel`: `p.Conn()` joins its stdout and stdin
+into one connection for an SSH client, `p.Signal(sig)` sends it a signal
+through `cli.Runner.Signals`, `p.Interrupt()` ends its context as Ctrl-C
+does, `p.Done()` is closed once it exits, and `p.Wait()` returns its stderr
+and exit status; when the test ends
+it is stopped as ssh stops it, its pipes closed and a SIGHUP sent.
 [`harness.Golden`](../../internal/harness/golden.go)
 compares output with `testdata/<name>` after replacing each record id with a
 numbered placeholder (`"space_<1>"`), each Join Code with `koko_<code>`,
@@ -258,11 +265,19 @@ one Host Account (`sshhost.Account`, `deploy`) with a home directory and an
 forwarding, as a Relay's sshd does. `ResetFirst`, `StallFirst`, `SlowLogins`
 and `DropConns` break it as a network path or a slow PAM stack would.
 `Logins()` and `Requests()` record what it received; `Conns()` and `Open()`
-count its connections. It runs a session's exec request as sshd does,
-through `/bin/sh -c`, as a local process in the Host Account's home
-directory (`Home()`) with `HOME` set to it, its stdio on the channel, and
-sends the exit status, or `exit-signal` when a signal ended the command; it
-refuses every other session request for now, and
-the ticket that needs a shell, a pty or a subsystem adds it, by addition like
-the harness. `AuthorizedKeys()` reads the Host Account's `authorized_keys`
+count its connections. It runs a session's command as sshd does: an exec
+request through `/bin/sh -c`, a shell request as `/bin/sh` reading its
+stdin, and a subsystem that a `Subsystem(name, command)` option names
+through `/bin/sh -c`; each a local process in the Host Account's home
+directory (`Home()`) with `HOME` set to it, the variables of the session's
+`env` requests and `TERM` from its `pty-req` (it allocates no terminal), its
+stdio on the channel. It sends the exit status, or `exit-signal` when a
+signal ended the command, sends the command a `signal` request's signal,
+takes a `window-change`, and refuses every other session request. It
+forwards `-L` to a Unix socket (`direct-streamlocal@openssh.com`), and takes
+`-R` from a loopback TCP port or a Unix socket (`tcpip-forward`,
+`streamlocal-forward@openssh.com` and their cancels), carrying each
+connection back in a `forwarded-tcpip` or
+`forwarded-streamlocal@openssh.com` channel; it refuses every other global
+request. `AuthorizedKeys()` reads the Host Account's `authorized_keys`
 as it is. `sshhost.NewKey` makes ed25519, ECDSA and RSA keys for tests.

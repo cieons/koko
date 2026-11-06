@@ -54,6 +54,11 @@ type Command struct {
 	// (exitRemote), so that it does not pass for the remote command's own
 	// status. Its Run is a remoteAction.
 	RemoteCommand bool
+	// Stdio says the command carries a byte stream on its stdin and stdout
+	// for the program that runs it, as koko tunnel carries ssh's connection
+	// as its ProxyCommand: it prints no result, so it takes no flag, not
+	// even --json, and its Run is a quietAction.
+	Stdio bool
 	// Tier is the command's risk tier (ADR 0019). It is required.
 	Tier Tier
 	// OwnerOnly says only the Owner may run the command, for help and koko
@@ -74,6 +79,12 @@ func (c *Command) Path() string {
 
 func (c *Command) words() []string {
 	return strings.Fields(c.Path())
+}
+
+// takesJSON says whether the command takes --json: every command but one
+// that runs a remote command or carries a byte stream on its stdio.
+func (c *Command) takesJSON() bool {
+	return !c.RemoteCommand && !c.Stdio
 }
 
 // Arg is a positional argument.
@@ -237,6 +248,7 @@ var commands = [][]Command{
 	serviceCommands,
 	skillCommands,
 	execCommands,
+	tunnelCommands,
 }
 
 // Tree returns every command.

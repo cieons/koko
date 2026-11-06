@@ -64,24 +64,24 @@ func (l helpList) Human(w io.Writer) error {
 		_, _ = fmt.Fprintf(tw, "  %s\t%s\n", strings.Join(args, " "), c.Summary)
 	}
 	_, _ = fmt.Fprintln(tw)
-	_, _ = fmt.Fprintf(tw, "Every command %stakes --json. Run koko help <command> for its flags,\n", butRemote(l, ""))
+	_, _ = fmt.Fprintf(tw, "Every command %stakes --json. Run koko help <command> for its flags,\n", butNoJSON(l, ""))
 	_, _ = fmt.Fprintln(tw, "and koko skill for the reference for agents.")
 	return tw.Flush()
 }
 
-// butRemote names the commands of cs that run a remote command, which take
-// no --json, each between quote, as "but koko exec ", or "" for none.
-func butRemote(cs []commandJSON, quote string) string {
-	var remote []string
+// butNoJSON names the commands of cs that take no --json, each between
+// quote, as "but koko exec and koko tunnel ", or "" for none.
+func butNoJSON(cs []commandJSON, quote string) string {
+	var noJSON []string
 	for _, c := range cs {
-		if c.remote {
-			remote = append(remote, quote+"koko "+c.Command+quote)
+		if c.remote || c.stdio {
+			noJSON = append(noJSON, quote+"koko "+c.Command+quote)
 		}
 	}
-	if len(remote) == 0 {
+	if len(noJSON) == 0 {
 		return ""
 	}
-	return "but " + strings.Join(remote, " and ") + " "
+	return "but " + strings.Join(noJSON, " and ") + " "
 }
 
 // help writes one command in full, for people.
@@ -99,10 +99,14 @@ func (c commandJSON) help(w io.Writer) error {
 			_, _ = fmt.Fprintf(tw, "\n%s is one of %s.\n", a.Arg, strings.Join(*a.Choices, ", "))
 		}
 	}
-	if c.remote {
+	switch {
+	case c.remote:
 		_, _ = fmt.Fprintf(tw, "\nIt takes no flag, not even --json: every word after %s is the command's, as typed,\n"+
 			"joined with spaces for the Host Account's shell, as ssh joins them.\n", c.Args[len(c.Args)-2].Arg)
-	} else {
+	case c.stdio:
+		_, _ = fmt.Fprintln(tw, "\nIt takes no flag, not even --json: ssh runs it as the ProxyCommand of koko's ssh_config,\n"+
+			"and it carries ssh's connection on its stdin and stdout.")
+	default:
 		_, _ = fmt.Fprintln(tw, "\nFlags:")
 		for _, f := range c.Flags {
 			_, _ = fmt.Fprintf(tw, "  %s\t%s%s\n", f.Flag, f.Summary, f.details())

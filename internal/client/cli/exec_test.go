@@ -133,12 +133,12 @@ func TestHelpSaysKokoExecTakesNoFlags(t *testing.T) {
 	}
 	r = harness.Run(t, offline(t), nil, "help")
 	r.WantSuccess(t)
-	if !strings.Contains(r.Stdout, "Every command but koko exec takes --json.") {
+	if !strings.Contains(r.Stdout, "Every command but koko exec and koko tunnel takes --json.") {
 		t.Errorf("koko help = %q, want it to leave koko exec out of the commands that take --json", r.Stdout)
 	}
 	r = harness.Run(t, offline(t), nil, "skill")
 	r.WantSuccess(t)
-	if !strings.Contains(r.Stdout, "- Every command but `koko exec` takes `--json`.") || !strings.Contains(r.Stdout, "every word after\n  `<host>` is the command's") {
+	if !strings.Contains(r.Stdout, "- Every command but `koko exec` and `koko tunnel` takes `--json`.") || !strings.Contains(r.Stdout, "every word after\n  `<host>` is the command's") {
 		t.Errorf("koko skill does not say how koko exec takes its words:\n%s", r.Stdout)
 	}
 }

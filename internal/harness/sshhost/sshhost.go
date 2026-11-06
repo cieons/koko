@@ -1,9 +1,10 @@
 // Package sshhost is the in-process Host: an SSH server in the test process
 // that stands in for a Host or a Relay. It has one Host Account with a home
 // directory and an authorized_keys file of its own, password and key login,
-// host keys of its own, exec requests run as local processes in that home
-// directory, and a record of what it receives. It listens on loopback only
-// and stops when the test ends.
+// host keys of its own, sessions whose commands run as local processes in
+// that home directory, the forwards sshd allows by default, and a record of
+// what it receives. It listens on loopback only and stops when the test
+// ends.
 //
 // Like the S1 harness, it grows by addition: add Options and methods, and
 // never change an existing one's signature (docs/subsystems/code-layout.md).
@@ -93,6 +94,20 @@ type settings struct {
 	resetFirst          int
 	stallFirst          int
 	slowLogins          time.Duration
+	// subsystems are the commands that serve each subsystem, by name.
+	subsystems map[string]string
+}
+
+// Subsystem lets a session ask for the subsystem name, which the Host runs
+// as command through /bin/sh -c, as sshd runs the command of a Subsystem
+// line, such as the sftp-server that serves "sftp".
+func Subsystem(name, command string) Option {
+	return func(s *settings) {
+		if s.subsystems == nil {
+			s.subsystems = map[string]string{}
+		}
+		s.subsystems[name] = command
+	}
 }
 
 // Password lets the Host Account log in with password over the "password"
@@ -401,13 +416,15 @@ func (h *Host) serve(nc net.Conn, config *ssh.ServerConfig) {
 		return
 	}
 	defer func() { _ = conn.Close() }()
-	h.wg.Go(func() { h.refuse(reqs) })
+	h.wg.Go(func() { h.globalRequests(conn, reqs) })
 	for nch := range chans {
 		switch nch.ChannelType() {
 		case "session":
 			h.session(nch)
 		case "direct-tcpip":
 			h.directTCPIP(nch)
+		case "direct-streamlocal@openssh.com":
+			h.directStreamLocal(nch)
 		default:
 			h.recordChannel(nch, "")
 			_ = nch.Reject(ssh.UnknownChannelType, "unknown channel type")
@@ -415,9 +432,12 @@ func (h *Host) serve(nc net.Conn, config *ssh.ServerConfig) {
 	}
 }
 
-// session accepts a session channel and records its requests. It runs the
-// first exec request (exec), and refuses every other request: a later
-// ticket that needs a shell, a pty or a subsystem adds it here.
+// session accepts a session channel and records its requests. As sshd
+// does, it takes env requests and a pty-req before the command, setting the
+// variables, and TERM to the terminal the pty-req names (it allocates no
+// terminal), then runs the first exec, shell or known subsystem request as
+// the session's command (run), sends a signal request's signal to that
+// command, and takes a window-change. It refuses every other request.
 func (h *Host) session(nch ssh.NewChannel) {
 	h.recordChannel(nch, "")
 	ch, reqs, err := nch.Accept()
@@ -426,39 +446,85 @@ func (h *Host) session(nch ssh.NewChannel) {
 	}
 	h.wg.Go(func() {
 		defer func() { _ = ch.Close() }()
+		var env []string
 		started := false
+		var cmd *exec.Cmd
 		for r := range reqs {
 			h.record(Request{Type: r.Type, Payload: r.Payload})
-			var command struct{ Command string }
-			ok := r.Type == "exec" && !started && ssh.Unmarshal(r.Payload, &command) == nil
-			_ = r.Reply(ok, nil)
-			if ok {
-				started = true
-				h.wg.Go(func() { h.exec(ch, command.Command) })
+			var argv []string
+			ok := false
+			switch r.Type {
+			case "env":
+				var v struct{ Name, Value string }
+				if ok = !started && ssh.Unmarshal(r.Payload, &v) == nil; ok {
+					env = append(env, v.Name+"="+v.Value)
+				}
+			case "pty-req":
+				var pty struct {
+					Term                         string
+					Columns, Rows, Width, Height uint32
+					Modes                        string
+				}
+				if ok = !started && ssh.Unmarshal(r.Payload, &pty) == nil; ok {
+					env = append(env, "TERM="+pty.Term)
+				}
+			case "window-change":
+				ok = true
+			case "exec":
+				var command struct{ Command string }
+				if ssh.Unmarshal(r.Payload, &command) == nil {
+					argv = []string{"-c", command.Command}
+				}
+			case "shell":
+				argv = []string{}
+			case "subsystem":
+				var subsystem struct{ Name string }
+				if ssh.Unmarshal(r.Payload, &subsystem) == nil && h.settings.subsystems[subsystem.Name] != "" {
+					argv = []string{"-c", h.settings.subsystems[subsystem.Name]}
+				}
+			case "signal":
+				var signal struct{ Signal string }
+				ok = cmd != nil && ssh.Unmarshal(r.Payload, &signal) == nil && sendSignal(cmd, signal.Signal)
 			}
+			if argv != nil && !started {
+				ok, started = true, true
+				cmd = h.start(ch, argv, env)
+			}
+			_ = r.Reply(ok, nil)
 		}
 	})
 }
 
-// exec runs command as sshd runs an exec request: through the Host
-// Account's shell, here /bin/sh, as a local process in the Host Account's
-// home directory with HOME set to it, its stdin, stdout and stderr on the
-// channel. It then sends the command's exit status, or the signal that ended
-// it, and closes the channel.
-func (h *Host) exec(ch ssh.Channel, command string) {
-	defer func() { _ = ch.Close() }()
-	cmd := exec.CommandContext(h.t.Context(), "/bin/sh", "-c", command)
+// sendSignal sends the command the signal named name, without its "SIG", as
+// sshd sends a signal request's, and says whether it knows the name.
+func sendSignal(cmd *exec.Cmd, name string) bool {
+	for sig, n := range signalNames {
+		if n == name {
+			return cmd.Process.Signal(sig) == nil
+		}
+	}
+	return false
+}
+
+// start starts a session's command as sshd does: /bin/sh, the Host
+// Account's shell, with argv, as a local process in the Host Account's home
+// directory with HOME set to it and the variables env, its stdin, stdout and
+// stderr on the channel. Once the command ends, it sends the exit status,
+// or the signal that ended it, and closes the channel (finish).
+func (h *Host) start(ch ssh.Channel, argv, env []string) *exec.Cmd {
+	cmd := exec.CommandContext(h.t.Context(), "/bin/sh", argv...)
 	cmd.Dir = h.home
-	cmd.Env = []string{"HOME=" + h.home, "USER=" + Account, "LOGNAME=" + Account, "SHELL=/bin/sh", "PATH=" + os.Getenv("PATH")}
+	cmd.Env = append([]string{"HOME=" + h.home, "USER=" + Account, "LOGNAME=" + Account, "SHELL=/bin/sh", "PATH=" + os.Getenv("PATH")}, env...)
 	cmd.Stdout, cmd.Stderr = ch, ch.Stderr()
 	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return
+	if err == nil {
+		err = cmd.Start()
 	}
-	if err := cmd.Start(); err != nil {
+	if err != nil {
 		_, _ = fmt.Fprintf(ch.Stderr(), "sh: %v\n", err)
 		sendExitStatus(ch, 127)
-		return
+		_ = ch.Close()
+		return nil
 	}
 	// The command may end before the client closes its stdin, so nothing
 	// waits for this copy, which ends when the channel does.
@@ -466,6 +532,14 @@ func (h *Host) exec(ch ssh.Channel, command string) {
 		_, _ = io.Copy(stdin, ch)
 		_ = stdin.Close()
 	})
+	h.wg.Go(func() { h.finish(ch, cmd) })
+	return cmd
+}
+
+// finish waits for a session's command, then sends its exit status, or the
+// signal that ended it, and closes the channel.
+func (h *Host) finish(ch ssh.Channel, cmd *exec.Cmd) {
+	defer func() { _ = ch.Close() }()
 	status := 0
 	if err := cmd.Wait(); err != nil {
 		status = 255
@@ -509,11 +583,159 @@ func sendExitStatus(ch ssh.Channel, status int) {
 	_, _ = ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{uint32(status)}))
 }
 
-// refuse records each request and refuses it.
-func (h *Host) refuse(reqs <-chan *ssh.Request) {
+// globalRequests records each request on a connection and answers it. It
+// takes the -R forwards, from a TCP port or a Unix socket, and their
+// cancels, as sshd does by default (AllowTcpForwarding and
+// AllowStreamLocalForwarding), and refuses every other request. The
+// forwards end with the connection.
+func (h *Host) globalRequests(conn ssh.Conn, reqs <-chan *ssh.Request) {
+	f := &forwards{h: h, conn: conn, listeners: map[string]net.Listener{}}
+	defer f.close()
 	for r := range reqs {
 		h.record(Request{Type: r.Type, Payload: r.Payload})
-		_ = r.Reply(false, nil)
+		var tcp struct {
+			Addr string
+			Port uint32
+		}
+		var unix struct{ SocketPath string }
+		ok, reply := false, []byte(nil)
+		switch r.Type {
+		case "tcpip-forward":
+			if ssh.Unmarshal(r.Payload, &tcp) == nil {
+				ok, reply = f.listenTCP(tcp.Addr, tcp.Port)
+			}
+		case "cancel-tcpip-forward":
+			ok = ssh.Unmarshal(r.Payload, &tcp) == nil && f.cancel(tcpForward(tcp.Addr, tcp.Port))
+		case "streamlocal-forward@openssh.com":
+			ok = ssh.Unmarshal(r.Payload, &unix) == nil && f.listenUnix(unix.SocketPath)
+		case "cancel-streamlocal-forward@openssh.com":
+			ok = ssh.Unmarshal(r.Payload, &unix) == nil && f.cancel("unix:"+unix.SocketPath)
+		}
+		_ = r.Reply(ok, reply)
+	}
+}
+
+// forwards are the -R forwards one connection asked the Host for: a
+// listener for each, by what it was asked for.
+type forwards struct {
+	h    *Host
+	conn ssh.Conn
+
+	mu sync.Mutex
+	// closed refuses forwards once the connection has ended.
+	closed    bool
+	listeners map[string]net.Listener
+}
+
+// tcpForward is how a -R forward from a TCP port is named, in its request
+// and its cancel alike.
+func tcpForward(addr string, port uint32) string {
+	return "tcp:" + net.JoinHostPort(addr, strconv.FormatUint(uint64(port), 10))
+}
+
+// listenTCP takes a tcpip-forward for addr and port: as sshd does without
+// GatewayPorts, it listens on loopback whatever address was asked, on port,
+// or a port of the system's choosing for 0, which the reply then names. It
+// carries each connection it accepts back to the client in a
+// forwarded-tcpip channel naming addr and the port.
+func (f *forwards) listenTCP(addr string, port uint32) (bool, []byte) {
+	var lc net.ListenConfig
+	ln, err := lc.Listen(f.h.t.Context(), "tcp", net.JoinHostPort("127.0.0.1", strconv.FormatUint(uint64(port), 10)))
+	if err != nil {
+		return false, nil
+	}
+	bound := uint32(ln.Addr().(*net.TCPAddr).Port)
+	if !f.add(tcpForward(addr, bound), ln) {
+		return false, nil
+	}
+	f.h.wg.Go(func() {
+		f.serve(ln, "forwarded-tcpip", func(nc net.Conn) []byte {
+			from := nc.RemoteAddr().(*net.TCPAddr)
+			return ssh.Marshal(struct {
+				Addr       string
+				Port       uint32
+				OriginAddr string
+				OriginPort uint32
+			}{addr, bound, from.IP.String(), uint32(from.Port)})
+		})
+	})
+	if port != 0 {
+		return true, nil
+	}
+	return true, ssh.Marshal(struct{ Port uint32 }{bound})
+}
+
+// listenUnix takes a streamlocal-forward@openssh.com for the Unix socket
+// path: it listens there, and carries each connection it accepts back to
+// the client in a forwarded-streamlocal@openssh.com channel naming path.
+func (f *forwards) listenUnix(path string) bool {
+	var lc net.ListenConfig
+	ln, err := lc.Listen(f.h.t.Context(), "unix", path)
+	if err != nil {
+		return false
+	}
+	if !f.add("unix:"+path, ln) {
+		return false
+	}
+	payload := ssh.Marshal(struct{ SocketPath, Reserved string }{path, ""})
+	f.h.wg.Go(func() {
+		f.serve(ln, "forwarded-streamlocal@openssh.com", func(net.Conn) []byte { return payload })
+	})
+	return true
+}
+
+// add keeps ln as the forward named name, unless the connection has ended
+// or the name is taken, when it closes ln.
+func (f *forwards) add(name string, ln net.Listener) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, taken := f.listeners[name]; f.closed || taken {
+		_ = ln.Close()
+		return false
+	}
+	f.listeners[name] = ln
+	return true
+}
+
+// cancel ends the forward named name, and says whether there was one.
+func (f *forwards) cancel(name string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ln, ok := f.listeners[name]
+	if ok {
+		_ = ln.Close()
+		delete(f.listeners, name)
+	}
+	return ok
+}
+
+// close ends every forward, and refuses new ones.
+func (f *forwards) close() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closed = true
+	for _, ln := range f.listeners {
+		_ = ln.Close()
+	}
+	clear(f.listeners)
+}
+
+// serve carries each connection ln accepts back to the client, in a channel
+// of type kind with the payload payloadOf gives, until ln is closed.
+func (f *forwards) serve(ln net.Listener, kind string, payloadOf func(net.Conn) []byte) {
+	for {
+		nc, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		f.h.wg.Go(func() {
+			ch, reqs, err := f.conn.OpenChannel(kind, payloadOf(nc))
+			if err != nil {
+				_ = nc.Close()
+				return
+			}
+			f.h.splice(ch, reqs, nc)
+		})
 	}
 }
 
@@ -547,13 +769,47 @@ func (h *Host) directTCPIP(nch ssh.NewChannel) {
 		_ = tc.Close()
 		return
 	}
+	h.splice(ch, reqs, tc)
+}
+
+// directStreamLocal forwards a direct-streamlocal@openssh.com channel to the
+// Unix socket it names, as sshd does for -L to a Unix socket.
+func (h *Host) directStreamLocal(nch ssh.NewChannel) {
+	var p struct {
+		SocketPath string
+		Reserved0  string
+		Reserved1  uint32
+	}
+	if err := ssh.Unmarshal(nch.ExtraData(), &p); err != nil {
+		_ = nch.Reject(ssh.ConnectionFailed, "malformed direct-streamlocal@openssh.com request")
+		return
+	}
+	h.recordChannel(nch, p.SocketPath)
+	var d net.Dialer
+	uc, err := d.DialContext(h.t.Context(), "unix", p.SocketPath)
+	if err != nil {
+		_ = nch.Reject(ssh.ConnectionFailed, err.Error())
+		return
+	}
+	ch, reqs, err := nch.Accept()
+	if err != nil {
+		_ = uc.Close()
+		return
+	}
+	h.splice(ch, reqs, uc)
+}
+
+// splice carries the bytes of a forwarding channel and its connection both
+// ways, closing each once the other has ended, and refuses the channel's
+// requests.
+func (h *Host) splice(ch ssh.Channel, reqs <-chan *ssh.Request, nc net.Conn) {
 	h.wg.Go(func() { ssh.DiscardRequests(reqs) })
 	h.wg.Go(func() {
-		_, _ = io.Copy(tc, ch)
-		_ = tc.Close()
+		_, _ = io.Copy(nc, ch)
+		_ = nc.Close()
 	})
 	h.wg.Go(func() {
-		_, _ = io.Copy(ch, tc)
+		_, _ = io.Copy(ch, nc)
 		_ = ch.Close()
 	})
 }

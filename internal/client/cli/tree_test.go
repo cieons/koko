@@ -46,6 +46,9 @@ func TestCommandTreeEntries(t *testing.T) {
 		if c.RemoteCommand && (c.many() == nil || len(c.Flags) > 0 || c.Pairs || c.Unset || len(c.Filters) > 0 || c.ReadsSecret || c.Run.Shape() != nil) {
 			t.Errorf("%s runs a remote command, which takes the words after its other arguments as typed: it takes no flags, pairs, filters or secret, and prints nothing of its own", path)
 		}
+		if c.Stdio && (c.RemoteCommand || c.many() != nil || len(c.Flags) > 0 || c.Pairs || c.Unset || len(c.Filters) > 0 || c.ReadsSecret || c.Run.Shape() != nil) {
+			t.Errorf("%s carries a byte stream on its stdio: it takes no flags, pairs, filters, secret or remote command, and prints no result", path)
+		}
 		if c.RemoteCommand != c.Run.remote {
 			t.Errorf("%s: a command runs a remote command exactly when its Run is a remoteAction, which exits 255 for koko's own failures", path)
 		}

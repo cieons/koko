@@ -476,7 +476,10 @@ func TestCompletionCompletesEveryCommandFromTheTree(t *testing.T) {
 		for j := range w {
 			queries = append(queries, query{words: append(slices.Clone(w[:j]), ""), want: w[j : j+1]})
 		}
-		flags := []string{"--json"}
+		var flags []string
+		if c.takesJSON() {
+			flags = append(flags, "--json")
+		}
 		for _, f := range c.flags() {
 			flags = append(flags, "--"+f.Name)
 		}

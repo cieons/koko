@@ -1,0 +1,1 @@
+koko: the koko server at <server address> presented the host key SHA256:<fingerprint>, not the pinned SHA256:<fingerprint>; koko sent nothing past the SSH key exchange, since something else may be answering at that address

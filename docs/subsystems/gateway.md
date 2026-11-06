@@ -1,4 +1,4 @@
-# The Gateway, the Tunnel and `koko exec`
+# The Gateway, the Tunnel, `koko exec` and `koko tunnel`
 
 The Gateway ends every SSH Session and logs in to the Host with the koko
 key, which never leaves the koko server
@@ -77,10 +77,22 @@ each channel it opens is opened on the Host with the same type and payload,
 or refused with the Host's own reason. The two channels are relayed both
 ways: data and extended data (stderr), the EOF that half-closes a
 direction, and each request with the reply the other side gives, such as
-`exec`, `env`, `pty-req`, `exit-status` and `exit-signal`. A channel closes
-once its source has closed. The Gateway refuses the client's global
-requests, and the Host's client refuses the Host's global requests and the
-channels the Host opens.
+`exec`, `shell`, `subsystem`, `env`, `pty-req`, `window-change`, `signal`,
+`exit-status` and `exit-signal`. So `-L` and `-D` (`direct-tcpip`) and `-L`
+to a Unix socket (`direct-streamlocal@openssh.com`) reach the Host as any
+channel does, and the Host's sshd policy decides.
+
+`-R` takes a global request and a channel the Host opens. The Gateway
+passes the client's `tcpip-forward`, `streamlocal-forward@openssh.com` and
+their cancels (`forwardRequests`) on to the Host, in order, and answers each
+with the Host's reply, such as the port the Host chose for port 0. It opens
+on the client each `forwarded-tcpip` and `forwarded-streamlocal@openssh.com`
+channel the Host opens (`forwardedChannels`), with its payload, and relays
+the two as above, or refuses the Host's with the client's reason. It
+refuses every other global request of the client's itself, which answers
+OpenSSH's `keepalive@openssh.com`: the Host never sees the client's
+keepalives. The Host's client refuses the Host's global requests and every
+other channel the Host opens.
 
 An SSH Session ends when the client closes its connection, the Host closes
 its own, the Tunnel's channel fails (nothing Resumes a Tunnel yet), or the
@@ -137,7 +149,56 @@ but with Go's SSH client and no OpenSSH, Include line or terminal:
   Tunnel, or an interruption ([the CLI](cli.md#the-runner-and-the-output-layer)).
 - It forwards no signal: Ctrl-C ends the SSH Session and says so.
 
+## `koko tunnel`
+
+`koko tunnel <ssh-name>` ([`tunnel.go`](../../internal/client/cli/tunnel.go)),
+irreversible, is the ProxyCommand of koko's ssh_config
+([the device's ssh](device-connection.md#ssh)) and not for direct use. It
+takes exactly one argument, the SSH Name as ssh passes `%h`, and no flag, not
+even `--json` (`Command.Stdio`, [the CLI](cli.md#the-command-tree)).
+
+- It reaches the koko server as every command does, through the
+  [Device Mux](device-mux.md) or direct, or over the Unix socket as the
+  Local caller, opens a Tunnel to the SSH Name, and relays the stream on its
+  stdin and stdout. ssh's own SSH client runs inside it against the
+  Gateway, which presents the koko server's host key, the one koko's
+  known_hosts pins under the alias `koko`; koko tunnel checks no key itself.
+- **Before the Tunnel opens**, a failure is the one `koko: ` line, exit 1,
+  that every command prints for the same code, word for word: not joined
+  (naming the socket path it found empty), the revocation record (when koko
+  learned it), Revoked (and that koko deleted the device's key), the koko
+  server unreachable (naming `koko connect <host:port>`) and its host key not
+  the pinned one (naming both). ssh then adds `Connection closed by UNKNOWN
+  port 65535` and exits 255.
+- **Once it is open**, the Gateway's refusals are banners in ssh's own
+  output, and koko tunnel prints nothing. When the Gateway closes the
+  Tunnel it exits 0. When the Tunnel's channel fails, it prints `koko: lost
+  the connection to the koko server at 12:01:07; the SSH Session to web1
+  could not be resumed` and exits 1 (nothing Resumes a Tunnel yet).
+- **stdin's EOF** half-closes the Tunnel; koko tunnel relays what the
+  Gateway still sends until the Gateway closes it.
+- **Signals**, through `cli.Runner.Signals`, which `cmd/koko` sets to
+  `signal.Notify`: it ignores SIGINT, which ssh also gets when Ctrl-C is
+  pressed without a tty, and which ends every other command's context; on
+  SIGHUP, which ssh sends its ProxyCommand when it exits, or SIGTERM, it
+  sends what is unsent and a close frame, then exits 0, so the Gateway ends
+  the SSH Session as the client's close (`reason="client closed"`).
+- A running koko tunnel stays connected to the Device Mux, so an open SSH
+  Session keeps the Device Mux from idling out.
+
 ## Verifying
+
+[`tunnel_test.go`](../../internal/client/cli/tunnel_test.go) drives `koko
+tunnel` with an `x/crypto/ssh` client over its stdio (`h.Proxy`,
+`d.Proxy`), against the S1 koko server and in-process Hosts: exec, a shell
+with env, a pty and a window change, a signal and the sftp subsystem; `-L`
+and `-D` to a TCP port, `-L` to a Unix socket, and `-R` from a TCP port and
+a Unix socket with their cancels; each failure before the Device Connection
+as one line (golden files `tunnel-*`; unreachable also through the Device
+Mux), and the lost Tunnel's line; stdin's EOF; SIGINT ignored; SIGHUP and
+SIGTERM sending a close frame, over the Unix socket, a direct Device
+Connection and the Device Mux; the Device Mux kept from idling out; and the
+command line, help, skill and completion.
 
 [`exec_test.go`](../../internal/client/cli/exec_test.go) drives `koko exec`
 against the S1 koko server and in-process Hosts: the command's stdin,
