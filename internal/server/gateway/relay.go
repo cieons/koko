@@ -177,11 +177,13 @@ func (s *sshSession) pair(clientCh ssh.Channel, clientReqs <-chan *ssh.Request, 
 		ssh.DiscardRequests(hostReqs)
 		return
 	}
+	// Each is held while its side's request is passed on and answered.
+	var clientAsks, hostAsks sync.Mutex
 	var wg sync.WaitGroup
-	wg.Go(func() { forward(hostCh, clientCh, clientReqs, nil) })
+	wg.Go(func() { forward(hostCh, clientCh, clientReqs, nil, &clientAsks, &hostAsks) })
 	wg.Go(func() {
 		defer s.fromHost.Done()
-		forward(clientCh, hostCh, hostReqs, s.sawHostRequest)
+		forward(clientCh, hostCh, hostReqs, s.sawHostRequest, &hostAsks, &clientAsks)
 	})
 	wg.Wait()
 }
@@ -250,9 +252,12 @@ func (s *sshSession) exit() []any {
 
 // forward relays to dst what src sends: its data and extended data, the EOF
 // that half-closes it, once both have ended, and each request, answered with
-// dst's reply when src wants one; saw, unless nil, sees each request first.
-// Once src is closed it closes dst.
-func forward(dst, src ssh.Channel, reqs <-chan *ssh.Request, saw func(*ssh.Request)) {
+// dst's reply when src wants one, holding srcAsks meanwhile; saw, unless nil,
+// sees each request first. Once src is closed it closes dst, but only while
+// dstAsks is free: the other direction may still be answering a request of
+// dst's, such as an exec the Host answered just before a command that ended
+// at once closed its channel, and an answer after dst is closed is lost.
+func forward(dst, src ssh.Channel, reqs <-chan *ssh.Request, saw func(*ssh.Request), srcAsks, dstAsks *sync.Mutex) {
 	var data sync.WaitGroup
 	data.Go(func() { _, _ = io.Copy(dst, src) })
 	data.Go(func() { _, _ = io.Copy(dst.Stderr(), src.Stderr()) })
@@ -268,11 +273,16 @@ func forward(dst, src ssh.Channel, reqs <-chan *ssh.Request, saw func(*ssh.Reque
 		if saw != nil {
 			saw(r)
 		}
+		srcAsks.Lock()
 		ok, err := dst.SendRequest(r.Type, r.WantReply, r.Payload)
 		if r.WantReply {
 			_ = r.Reply(ok && err == nil, nil)
 		}
+		srcAsks.Unlock()
 	}
 	<-eof
+	// The other direction's wait ends: its dst is this src, which has closed.
+	dstAsks.Lock()
 	_ = dst.Close()
+	dstAsks.Unlock()
 }

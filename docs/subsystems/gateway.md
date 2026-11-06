@@ -80,7 +80,11 @@ direction, and each request with the reply the other side gives, such as
 `exec`, `shell`, `subsystem`, `env`, `pty-req`, `window-change`, `signal`,
 `exit-status` and `exit-signal`. So `-L` and `-D` (`direct-tcpip`) and `-L`
 to a Unix socket (`direct-streamlocal@openssh.com`) reach the Host as any
-channel does, and the Host's sshd policy decides.
+channel does, and the Host's sshd policy decides. A channel closes once its
+twin has closed, but only once a request it asked, which the other
+direction is passing on, has its answer: an exec the Host answered just
+before a command that ended at once closed its channel still gets its
+answer, which would be lost after the close.
 
 `-R` takes a global request and a channel the Host opens. The Gateway
 passes the client's `tcpip-forward`, `streamlocal-forward@openssh.com` and

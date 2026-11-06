@@ -65,6 +65,19 @@ accepts: 3 failures under load.
 **Seen:** 1 (2026-11-06)
 **Evidence:** 3cae7b1 (#38); 4232f09 (#43); #77; ecff11b (#49); #78
 
+### A channel closes only once every request on it has its answer
+
+**Why:** an SSH answer sent after its channel closed is dropped, and the
+side that asked sees `EOF` or a refusal. The in-process Host started an
+exec's command before answering it, so an `echo` that ended at once closed
+the channel first, and the Gateway refused the exec: CI on `main` went red
+at 0ac2b3d. The Gateway, in turn, closed the client's channel as soon as the
+Host's closed, while the Host's answer to the client's exec was still being
+passed back: 1 in about 1,600 runs of the exec tests in a Linux container
+got `EOF`.
+**Seen:** 1 (2026-11-06)
+**Evidence:** 0ac2b3d (#64); 2e5b9f4 (#59); check run 42164460501
+
 ## Moved to the code standards
 
 _None yet._
