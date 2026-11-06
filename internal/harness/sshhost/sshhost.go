@@ -436,7 +436,7 @@ func (h *Host) serve(nc net.Conn, config *ssh.ServerConfig) {
 // does, it takes env requests and a pty-req before the command, setting the
 // variables, and TERM to the terminal the pty-req names (it allocates no
 // terminal), then runs the first exec, shell or known subsystem request as
-// the session's command (run), sends a signal request's signal to that
+// the session's command (start), sends a signal request's signal to that
 // command, and takes a window-change. It refuses every other request.
 func (h *Host) session(nch ssh.NewChannel) {
 	h.recordChannel(nch, "")
@@ -486,11 +486,17 @@ func (h *Host) session(nch ssh.NewChannel) {
 				var signal struct{ Signal string }
 				ok = cmd != nil && ssh.Unmarshal(r.Payload, &signal) == nil && sendSignal(cmd, signal.Signal)
 			}
-			if argv != nil && !started {
+			start := argv != nil && !started
+			if start {
 				ok, started = true, true
+			}
+			// The reply goes first: a command that ends at once closes the
+			// channel, and a reply after that is lost. The command still
+			// starts before the next request, such as a signal, is read.
+			_ = r.Reply(ok, nil)
+			if start {
 				cmd = h.start(ch, argv, env)
 			}
-			_ = r.Reply(ok, nil)
 		}
 	})
 }
