@@ -16,6 +16,7 @@ import (
 
 	"github.com/cieons/koko/internal/harness/sshhost"
 	"github.com/cieons/koko/internal/server/hostconn"
+	"github.com/cieons/koko/internal/shared/liveness"
 	"github.com/cieons/koko/internal/shared/timing"
 )
 
@@ -528,6 +529,71 @@ func TestAPasswordIsSentOnce(t *testing.T) {
 	}
 	if got := h.Logins(); len(got) != 1 {
 		t.Errorf("the Host received logins %+v, want one", got)
+	}
+}
+
+// The connector probes a Host it hears nothing from, and ends the connection
+// once the Host has sent nothing for HostDead, which Broken then says;
+// Broken tells a Host that closed the connection too, and says nothing of a
+// connection Close closed.
+func TestBrokenSaysWhyTheConnectionEnded(t *testing.T) {
+	key := sshhost.NewKey(t, ssh.KeyAlgoED25519)
+	login := hostconn.KeyLogin(key)
+	// Long enough that a Host still answering is never taken for silent
+	// under load.
+	const dead = 1500 * time.Millisecond
+	c := hostconn.Connector{Timings: timing.Timings{HostProbe: 20 * time.Millisecond, HostDead: dead}}
+	connect := func(h *sshhost.Host) *hostconn.Conn {
+		t.Helper()
+		conn, err := c.Connect(t.Context(), target(h, login, hostconn.PinKey(h.HostKey())), nil)
+		if err != nil {
+			t.Fatalf("Connect: %v", err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		if err := conn.Broken(); err != nil {
+			t.Errorf("a live connection is Broken: %v", err)
+		}
+		return conn
+	}
+	// ended waits for conn to end, failing the test after 10 s.
+	ended := func(conn *hostconn.Conn, what string) {
+		t.Helper()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			_ = conn.Wait()
+		}()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%s: the connection did not end within 10 s", what)
+		}
+	}
+
+	silent := sshhost.Start(t, sshhost.AuthorizedKey(key.PublicKey()))
+	conn := connect(silent)
+	eventually(t, func() bool {
+		return slices.ContainsFunc(silent.Requests(), func(r sshhost.Request) bool { return r.Type == "keepalive@openssh.com" })
+	}, "a quiet Host received no keepalive@openssh.com within 5 s")
+	silent.Freeze()
+	ended(conn, "a Host that stopped answering")
+	if e, ok := errors.AsType[*liveness.DeadError](conn.Broken()); !ok || e.Quiet != dead {
+		t.Errorf("a Host that stopped answering: Broken = %v, want no answer for %v", conn.Broken(), dead)
+	}
+
+	closing := sshhost.Start(t, sshhost.AuthorizedKey(key.PublicKey()))
+	conn = connect(closing)
+	closing.DropConns()
+	ended(conn, "a Host that closed the connection")
+	if err := conn.Broken(); err == nil {
+		t.Error("a Host that closed the connection: Broken = nil, want why")
+	}
+
+	conn = connect(closing)
+	_ = conn.Close()
+	ended(conn, "a connection Close closed")
+	if err := conn.Broken(); err != nil {
+		t.Errorf("a connection Close closed: Broken = %v, want nil", err)
 	}
 }
 

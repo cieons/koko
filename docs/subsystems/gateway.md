@@ -37,6 +37,11 @@ is P0 spec: reach, "The Tunnel on the wire", "The Gateway" and "`koko exec`".
   (`wire.TunnelCiphers`), the koko server's sealed host key, the one Join
   Codes pin, and `none` authentication. koko's own clients ask for the user
   name `koko` (`wire.TunnelUser`).
+- **The close frame's reason**, when the Gateway closes a Tunnel, is empty
+  or the notice of [how the SSH Session ended](#when-an-ssh-session-ends):
+  one sentence for the person, without `koko: `, such as `the koko server
+  is restarting; this SSH Session has ended.`; `koko exec` prints it as its
+  error when the SSH Session's stderr did not show it.
 
 ## Opening an SSH Session
 
@@ -50,25 +55,39 @@ For each `tunnel@koko` channel ([`Gateway.Open`](../../internal/server/gateway/g
    is allowed when the caller may act in the Host's Space and the Host is
    Managed.
 3. It accepts the channel, puts the Tunnel in the registry under a new id,
-   and sends the id.
+   and sends the id. An allowed SSH Session of a Device Session counts
+   against its limit, 64 at once, attached or Detached (`maxSSHSessions`),
+   from then until its Tunnel ends; the 65th is refused, and dials no Host.
+   The Local caller has no Device Session and no limit.
 4. When the SSH Session is allowed, it dials the Host through the
    [Host connector](host-connector.md), as the Host Account with the koko key
    and the Host's pinned host key, while the client's SSH handshake runs.
-5. The client's `none` waits for the dial. Every refusal is a banner on the
-   refused `none`, which `koko exec` prints as its error and ssh in its own
-   output:
+5. The client's `none` takes the SSH user name `koko`, which koko's
+   ssh_config and `koko exec` ask for, or the Host Account's own name, and
+   no other, so a later release may give other names a meaning. It then
+   waits for the dial. Every refusal is a banner on the refused `none`,
+   which `koko exec` prints as its error and ssh in its own output, checked
+   in this order:
 
 | When | Banner |
 | --- | --- |
 | No Host the caller can see has the name: none has it, it is in a Space the caller cannot act in, or the SSH Name is not a Host name. A Retired Host holds no name. | `koko: no Host is named "web1".` |
 | The Host is Registered | `koko: web1 is Registered: koko logs in to it only once it is Enrolled, with koko host enroll web1.` |
 | The access check refuses the caller, such as a Revoked Device Session | `koko: ` and the refusal's message |
-| The Host connector failed: unreachable after its retries, the login refused, or a host key mismatch | `koko: koko could not connect to web1; this SSH Session did not start.` |
+| The Device Session has 64 SSH Sessions open | `koko: this Device Session already has 64 SSH Sessions open, the most koko allows; this SSH Session did not start.` |
+| Another user name, such as `root@web1.koko` | `koko: web1 is reached as its Host Account "deploy"; leave out "root@".` |
+| The Host is down: the connector's 3 attempts each met a network error | `koko: web1 is down or unreachable: koko could not connect to it; this SSH Session did not start.` |
+| The Host's host key is not the pinned one | `koko: the host key of web1 does not match the one pinned at Enroll (pinned SHA256:…, offered SHA256:…); koko did not log in. If web1 was rebuilt, pin its new key with koko host enroll web1 --host-key <the fingerprint its provider shows>, or with --replace-host-key, which trusts whatever key it offers.` |
+| The Host refused the koko key | `koko: web1 refused the koko key for its Host Account "deploy"; this SSH Session did not start.` |
+| The connector failed otherwise | `koko: koko could not connect to web1; this SSH Session did not start.` |
 
 The first row is the same byte for byte for a name nobody holds and for a
-Host the caller cannot see, so the Gateway tells nothing of Hosts outside
-the caller's Spaces. The connector's error, which names addresses, goes to
-the log only.
+Host the caller cannot see, whatever user name they ask for, so the Gateway
+tells nothing of Hosts outside the caller's Spaces; the user name is
+checked only for a Host they may reach. The connector's error, which names
+addresses, goes to the log only. Only a network error is retried
+([the Host connector](host-connector.md#retries-and-failures)), so a host
+key mismatch or a refused key costs one connection.
 
 ## Relaying
 
@@ -86,6 +105,14 @@ direction is passing on, has its answer: an exec the Host answered just
 before a command that ended at once closed its channel still gets its
 answer, which would be lost after the close.
 
+Agent forwarding (`auth-agent-req@openssh.com`, P2) and X11 forwarding
+(`x11-req`, which koko leaves out) are refused on a session channel by the
+Gateway itself (`refusedRequests`), so the Host never sees them, each with
+one line on that session channel's stderr: `koko: agent forwarding is not available
+through koko.` and `koko: X11 forwarding is not available through koko.`
+ssh asks for an agent without wanting a reply, so the line is all it shows.
+The session carries on.
+
 `-R` takes a global request and a channel the Host opens. The Gateway
 passes the client's `tcpip-forward`, `streamlocal-forward@openssh.com` and
 their cancels (`forwardRequests`) on to the Host, in order, and answers each
@@ -98,13 +125,39 @@ OpenSSH's `keepalive@openssh.com`: the Host never sees the client's
 keepalives. The Host's client refuses the Host's global requests and every
 other channel the Host opens.
 
-An SSH Session ends when the client closes its connection, the Host closes
-its own, the Tunnel's channel fails (nothing Resumes a Tunnel yet), or the
-koko server stops. When the Host closed first, what it sent before, an
-`exit-status` included, is passed on to the client first. The Gateway then
-closes both connections and the stream, and takes the Tunnel out of the
-registry. A koko server stop closes the Gateway beside the transport, so a
-connection too stalled to take a Tunnel's close cannot hold it up.
+## When an SSH Session ends
+
+An SSH Session ends when the client closes its connection, the Host's
+connection ends, the Tunnel's channel fails (nothing Resumes a Tunnel yet),
+or the koko server stops. When the Host's connection ended first, what the
+Host sent before, an `exit-status` included, is passed on to the client
+first. Some ends come with a notice (`ending`): the Gateway writes it as one
+`koko: ` line on the stderr of each session channel the client has open, so
+ssh shows it in its own output, then closes the Tunnel's stream with the
+notice as its close frame's reason, for a client with no session open, such
+as one still in its handshake. It then closes both connections and takes
+the Tunnel out of the registry.
+
+| End | Notice | `reason` in the log |
+| --- | --- | --- |
+| The client closed its connection | none | `client closed` |
+| The Host leg broke: the [Host connector](host-connector.md#keeping-a-connection-alive) heard nothing for 60 s, its probes unanswered | `lost the connection to web1 (no answer for 60 s); this SSH Session has ended.` | `Host leg lost` |
+| The Host, or the network beneath, closed its connection | `web1 closed the connection.` | `Host closed` |
+| The koko server stops cleanly, as for an upgrade | `the koko server is restarting; this SSH Session has ended.` | `server stopping` |
+| The Tunnel's channel failed | none | `device connection lost` |
+
+A channel the Host's connection took down is left open for the notice
+(`Conn.Broken` tells it from one the Host closed), and its EOF and close
+follow it. The Gateway waits for the notice's writes until they are done or
+the Tunnel's stream is off its channel, which a stalled client's never
+takes them from.
+
+On a clean stop, [`server.Close`](../../internal/server/server.go) first
+closes the Gateway, which ends every Tunnel with the restart notice, and
+only then the transport, which closes the Device Connections, so `koko
+tunnel` exits at once rather than taking the stop for a drop. A connection
+too stalled to take its Tunnel's close within `timing.StopNotice` (5 s) is
+closed anyway, which ends the Tunnel.
 
 ## Logging
 
@@ -113,15 +166,25 @@ One line per event, never an exec's command text:
 - `ssh session started`: `tunnel`, `user`, `device_session` (the Device
   Session's id, or `unix socket`), `host`, `host_id` and `addr`, where the
   connection came from.
-- `ssh session ended`: the same but `addr`, then `duration`,
+- `ssh session request`: `tunnel`, `host` and `request`, once per SSH
+  Session for each kind: `shell`, `exec` (never its text), `subsystem` with
+  `subsystem`, its name, and each forward's `target`: `-L` with the address
+  on the Host's side a `direct-tcpip` (`-L` or `-D`) or
+  `direct-streamlocal@openssh.com` channel opens, `-R` with the address a
+  `tcpip-forward` or `streamlocal-forward@openssh.com` asks the Host to
+  listen on. A busy forward is logged once per target.
+- `ssh session ended`: the same as the start but `addr`, then `duration`,
   `bytes_from_device` and `bytes_to_device` (the Tunnel's bytes each way),
-  `exit_status` and `exit_signal` when the Host sent them, and `reason`:
-  `client closed`, `Host closed`, `device connection lost` or
-  `server stopping`.
+  `exit_status` and `exit_signal` when the Host sent them, and `reason`, as
+  the table above says.
 - `ssh session refused`: `tunnel`, `name` (the SSH Name asked for),
-  `device_session`, `addr` and `reason`; at warning level, with `err`, when
-  the Host connector failed. A client that leaves before its `none` is
-  logged at debug level as `ssh session ended before it started`.
+  `device_session`, `addr` and `reason`: `unknown host`, the access check's
+  code, `host registered`, `ssh session limit`, `user name` with `ssh_user`,
+  the name asked for; and at warning level, since the Owner may have to act,
+  `host unreachable`, `login refused` or `host connection failed` with
+  `err`, and `host key mismatch` with `pinned` and `offered`, the two
+  fingerprints. A client that leaves before its `none` is logged at debug
+  level as `ssh session ended before it started`.
 - `tunnel refused`: `device_session`, `addr` and `err`, for a payload the
   Gateway does not take, and with `name` before initialisation.
 - `open a Tunnel`, at error level, with `device_session`, `addr`, `name`
@@ -151,6 +214,10 @@ but with Go's SSH client and no OpenSSH, Include line or terminal:
   itself fails, as ssh does: a command a signal ended (it names the signal),
   a refused command line, no koko server, a refused SSH Session, a lost
   Tunnel, or an interruption ([the CLI](cli.md#the-runner-and-the-output-layer)).
+- When the Gateway ends the SSH Session with a notice, such as that the
+  koko server is restarting, the notice's line is on its stderr already, as
+  the session's, so it exits 255 and adds nothing; a notice that did not
+  reach the session, one still opening, say, is its error.
 - It forwards no signal: Ctrl-C ends the SSH Session and says so.
 
 ## `koko tunnel`
@@ -175,8 +242,9 @@ even `--json` (`Command.Stdio`, [the CLI](cli.md#the-command-tree)).
   the pinned one (naming both). ssh then adds `Connection closed by UNKNOWN
   port 65535` and exits 255.
 - **Once it is open**, the Gateway's refusals are banners in ssh's own
-  output, and koko tunnel prints nothing. When the Gateway closes the
-  Tunnel it exits 0. When the Tunnel's channel fails, it prints `koko: lost
+  output, and its notices lines on the session channels' stderr, and koko tunnel
+  prints nothing. When the Gateway closes the Tunnel, a koko server stop
+  included, it exits 0. When the Tunnel's channel fails, it prints `koko: lost
   the connection to the koko server at 12:01:07; the SSH Session to web1
   could not be resumed` and exits 1 (nothing Resumes a Tunnel yet).
 - **stdin's EOF** half-closes the Tunnel; koko tunnel relays what the
@@ -211,7 +279,17 @@ key as the Host Account; through the Device Mux, opening no Device
 Connection of its own; both forms of the SSH Name; an unknown name and an
 unseen Host refused alike with no connection to the Host, a Registered Host
 refused, a Retired Host's old name refused as unknown; 255 for each failure
-of koko's own and for a command a signal ended; Ctrl-C; a koko server stop; the log lines without the command's
-text; and a Tunnel counting as a use of its Device Session.
+of koko's own and for a command a signal ended; Ctrl-C; a koko server stop
+and its notice; the log lines without the command's text; and a Tunnel
+counting as a use of its Device Session.
+[`gateway_test.go`](../../internal/client/cli/gateway_test.go) drives the
+Gateway through both: the user names it takes and the banner for any other,
+which an unseen Host never gets; each Host connector refusal, a network
+error retried and nothing else; the 64-SSH-Session limit; agent and X11
+forwarding refused; `direct-tcpip` refused on a Device Connection and the
+Unix socket; a quiet Host probed, a blip passing, a silent Host's lost line
+and a closing Host's line through `koko exec` and ssh; the restart notice
+over the Unix socket, a direct Device Connection and the Device Mux, and
+`koko tunnel` exiting 0 at once; and each kind of request logged once.
 [`wire/tunnel_test.go`](../../internal/shared/wire/tunnel_test.go) pins the
 open payload's bytes.

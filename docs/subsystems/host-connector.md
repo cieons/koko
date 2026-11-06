@@ -69,9 +69,29 @@ it. Any other error is the Host's leg. An error's text names addresses and
 the Host Account: it is for the log, and for Enroll's own caller, who can
 act on the Host ([Enroll](enroll.md)); never for a message to anyone else.
 
+## Keeping a connection alive
+
+Once a leg, the Relay's or the Host's, is logged in, the connector watches
+the bytes that arrive on it with
+[`liveness`](../../internal/shared/liveness/liveness.go), as both ends of a
+Device Connection do. After `timing.HostProbe` (15 s) without one, it sends
+a `keepalive@openssh.com` wanting a reply; any byte that arrives, a reply
+or a refusal included, counts. After `timing.HostDead` (60 s) without any,
+it ends the connection.
+
+[`Conn.Broken`](../../internal/server/hostconn/hostconn.go) says why a
+connection ended, unless `Close` ended it: a `*liveness.DeadError`, its
+`Quiet` the 60 s, when the connector ended it, or the error the network
+or the other end ended it with, such as `io.EOF` for a Host that closed it,
+wrapped in a `*RelayError` for the Relay's leg. It is nil while the
+connection lives and after `Close`. It is set before the SSH client above
+learns of the end, so a channel that ends because its connection did already
+sees it: the Gateway relies on that to tell a broken Host leg from a channel
+the Host closed ([the Gateway](gateway.md#when-an-ssh-session-ends)).
+
 ## Timings in tests
 
-The connect timings come through the timing-constants hook,
+The connect and keepalive timings come through the timing-constants hook,
 [`timing.Timings`](../../internal/shared/timing/timing.go), set as
 `Connector.Timings`; its zero value is the product. See
 [code layout](code-layout.md#test-only-hooks).
@@ -82,5 +102,7 @@ The connect timings come through the timing-constants hook,
 `Connect` against in-process Hosts
 ([`sshhost`](../../internal/harness/sshhost/sshhost.go)), each behaviour seen
 from the Host's side: what logins it received and how often it was connected
-to. [`retryable_test.go`](../../internal/server/hostconn/retryable_test.go)
+to, the keepalives a quiet Host receives, and `Broken` for a Host that stops
+answering, one that closes the connection, and a connection `Close` closed.
+[`retryable_test.go`](../../internal/server/hostconn/retryable_test.go)
 covers the network errors loopback cannot cause, such as an unreachable host.

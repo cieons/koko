@@ -68,6 +68,14 @@ func ParseTunnelPayload(b []byte) (kind, sshName string, err error) {
 	return p.Kind, open.Name, nil
 }
 
+// TunnelNoticeLine is how the Gateway writes the notice of an SSH Session's
+// end, one sentence, on the stderr of each of its session channels, the
+// notice also being its Tunnel's close-frame reason: koko exec, which shows
+// that stderr, so knows whether the notice reached it.
+func TunnelNoticeLine(notice string) string {
+	return "koko: " + notice + "\n"
+}
+
 // TunnelHost returns the Host name an SSH Name names: the name itself, or
 // the name a trailing ".koko" follows, so web1 and web1.koko name the same
 // Host.

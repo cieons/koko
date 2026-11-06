@@ -3,21 +3,38 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
+	"maps"
+	"net"
 	"slices"
+	"strconv"
 	"sync"
 
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/server/hostconn"
+	"github.com/cieons/koko/internal/shared/liveness"
+	"github.com/cieons/koko/internal/shared/resumable"
+	"github.com/cieons/koko/internal/shared/wire"
 )
 
 // sshSession is one SSH Session the Gateway relays: the client's connection
-// inside its Tunnel on one side, the Gateway's own to the Host on the other.
+// inside its Tunnel on one side, the Gateway's own to the Host named
+// hostName on the other. stream is the Tunnel's, which the SSH Session's end
+// closes.
 type sshSession struct {
-	host *hostconn.Conn
+	host     *hostconn.Conn
+	hostName string
+	stream   *resumable.Stream
+	// log logs the SSH Session's requests, with its Tunnel and Host.
+	log *slog.Logger
 
 	mu sync.Mutex
+	// logged holds each kind of request logged, with its subsystem or
+	// target.
+	logged map[string]bool
 	// exitStatus and exitSignal are what the Host last sent on a channel to
 	// say how a command ended.
 	exitStatus *uint32
@@ -27,13 +44,72 @@ type sshSession struct {
 	// what the Host sent before it ended.
 	hostClosed bool
 	fromHost   sync.WaitGroup
+	// sessionChannels are the client's session channels open, where an
+	// ending's notice goes.
+	sessionChannels map[ssh.Channel]struct{}
 }
 
-// Why an SSH Session ended, besides the Tunnel's own end.
-const (
-	clientClosed = "client closed"
-	hostClosed   = "Host closed"
-)
+// logRequest logs a request of the client's, the first of each kind
+// (request) and target or subsystem (attrs) in the SSH Session, so a busy
+// forward is logged once; never a command's text.
+func (s *sshSession) logRequest(request string, attrs ...any) {
+	key := fmt.Sprint(request, attrs)
+	s.mu.Lock()
+	seen := s.logged[key]
+	s.logged[key] = true
+	s.mu.Unlock()
+	if !seen {
+		s.log.Info("ssh session request", append([]any{"request", request}, attrs...)...)
+	}
+}
+
+// forwardTarget returns where a forward goes, as the payload of the channel
+// or global request of kind that asks for it says: for -L, and -D, the
+// address on the Host's side the channel opens (direct-tcpip and
+// direct-streamlocal@openssh.com); for -R, the address the Host listens on
+// (tcpip-forward and streamlocal-forward@openssh.com). ok is false for any
+// other kind, or a payload that does not parse.
+func forwardTarget(kind string, payload []byte) (target string, ok bool) {
+	switch kind {
+	case "direct-tcpip", "tcpip-forward":
+		var p struct {
+			Host string
+			Port uint32
+			Rest []byte `ssh:"rest"`
+		}
+		if ssh.Unmarshal(payload, &p) != nil {
+			return "", false
+		}
+		return net.JoinHostPort(p.Host, strconv.FormatUint(uint64(p.Port), 10)), true
+	case "direct-streamlocal@openssh.com", "streamlocal-forward@openssh.com":
+		var p struct {
+			Path string
+			Rest []byte `ssh:"rest"`
+		}
+		if ssh.Unmarshal(payload, &p) != nil {
+			return "", false
+		}
+		return p.Path, true
+	}
+	return "", false
+}
+
+// clientClosed ends an SSH Session whose client closed its connection.
+var clientClosed = &ending{reason: "client closed"}
+
+// hostEnding says why the Host's connection ended, once it has: the
+// connector found the Host silent, or the Host, or the network beneath it,
+// ended it. Each notice names the Host.
+func (s *sshSession) hostEnding() *ending {
+	if e, ok := errors.AsType[*liveness.DeadError](s.host.Broken()); ok {
+		return &ending{
+			reason: "Host leg lost",
+			notice: fmt.Sprintf("lost the connection to %s (no answer for %s s); this SSH Session has ended.",
+				s.hostName, strconv.FormatFloat(e.Quiet.Seconds(), 'f', -1, 64)),
+		}
+	}
+	return &ending{reason: "Host closed", notice: s.hostName + " closed the connection."}
+}
 
 // forwardRequests are the client's global requests the Gateway passes on to
 // the Host, with the Host's reply: the -R forwards, from a TCP port or a
@@ -48,6 +124,16 @@ var forwardRequests = []string{
 	"cancel-streamlocal-forward@openssh.com",
 }
 
+// refusedRequests are the session requests the Gateway refuses itself, so
+// the Host never sees them, with the line it writes to the session channel's
+// stderr for each: agent forwarding, which is P2, and X11 forwarding, which koko
+// leaves out. ssh asks for an agent without wanting a reply, so the line is
+// all it shows.
+var refusedRequests = map[string]string{
+	"auth-agent-req@openssh.com": "koko: agent forwarding is not available through koko.\n",
+	"x11-req":                    "koko: X11 forwarding is not available through koko.\n",
+}
+
 // forwardedChannels are the channels the Host opens for the client's -R
 // forwards, which the Gateway carries back to the client. The Host's client
 // refuses every other channel the Host opens.
@@ -57,11 +143,14 @@ var forwardedChannels = []string{"forwarded-tcpip", "forwarded-streamlocal@opens
 // for it, and relays the two both ways, until the client or the Host closes
 // its connection, or ctx ends with the Tunnel. It passes the client's -R
 // forwards on to the Host (forwardRequests), and opens on the client each
-// channel the Host opens for one, as the Host asked for it. When the Host
-// closed first, what it sent before is passed on to the client first. It
-// then closes both and returns why the SSH Session ended. The Host's own
-// global requests are answered by the Host's client, which refuses them.
-func (s *sshSession) relay(ctx context.Context, client *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request) string {
+// channel the Host opens for one, as the Host asked for it. When the Host's
+// connection ended first, what it sent before is passed on to the client
+// first. An ending with a notice, such as the Host's or the koko server
+// stopping, then tells it to each session channel (tell), and closes the Tunnel's
+// stream with it. It then closes both connections and returns why the SSH
+// Session ended. The Host's own global requests are answered by the Host's
+// client, which refuses them.
+func (s *sshSession) relay(ctx context.Context, client *ssh.ServerConn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request) *ending {
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	// Before any forward reaches the Host, so none of its channels is
@@ -73,21 +162,21 @@ func (s *sshSession) relay(ctx context.Context, client *ssh.ServerConn, chans <-
 	wg.Go(func() { s.globalRequests(reqs) })
 	wg.Go(func() { each(chans, s.channel) })
 
-	ended := make(chan string, 2)
+	ended := make(chan *ending, 2)
 	wg.Go(func() {
 		_ = client.Wait()
 		ended <- clientClosed
 	})
 	wg.Go(func() {
 		_ = s.host.Wait()
-		ended <- hostClosed
+		ended <- s.hostEnding()
 	})
-	var why string
+	var end *ending
 	select {
-	case why = <-ended:
+	case end = <-ended:
 	case <-ctx.Done():
 	}
-	if why == hostClosed {
+	if end != nil && end != clientClosed {
 		drained := make(chan struct{})
 		wg.Go(func() {
 			s.mu.Lock()
@@ -104,11 +193,38 @@ func (s *sshSession) relay(ctx context.Context, client *ssh.ServerConn, chans <-
 	if ctx.Err() != nil {
 		// The Tunnel's end, such as the koko server stopping, also closes
 		// the client's connection: its cause is why.
-		why = context.Cause(ctx).Error()
+		end = endingOf(context.Cause(ctx))
 	}
+	if end.notice != "" {
+		s.tell(wire.TunnelNoticeLine(end.notice), &wg)
+	}
+	_ = s.stream.CloseWithReason(end.notice)
 	_ = client.Close()
 	_ = s.host.Close()
-	return why
+	return end
+}
+
+// tell writes line to the stderr of each session channel the client has
+// open, and returns once the writes are done, or once the Tunnel's stream is
+// off its channel, which a stalled client never takes them from. wg waits
+// for the writes still running.
+func (s *sshSession) tell(line string, wg *sync.WaitGroup) {
+	s.mu.Lock()
+	open := slices.Collect(maps.Keys(s.sessionChannels))
+	s.mu.Unlock()
+	var writes sync.WaitGroup
+	for _, ch := range open {
+		writes.Go(func() { _, _ = io.WriteString(ch.Stderr(), line) })
+	}
+	written := make(chan struct{})
+	wg.Go(func() {
+		writes.Wait()
+		close(written)
+	})
+	select {
+	case <-written:
+	case <-s.stream.Detached():
+	}
 }
 
 // each runs serve on every channel chans brings, each in a goroutine of its
@@ -125,6 +241,9 @@ func each(chans <-chan ssh.NewChannel, serve func(ssh.NewChannel)) {
 // and with the same payload, and relays the two until both are closed. A
 // channel the Host refuses is refused to the client with the Host's reason.
 func (s *sshSession) channel(nch ssh.NewChannel) {
+	if target, ok := forwardTarget(nch.ChannelType(), nch.ExtraData()); ok {
+		s.logRequest("-L", "target", target)
+	}
 	hostCh, hostReqs, err := s.host.OpenChannel(nch.ChannelType(), nch.ExtraData())
 	if err != nil {
 		if e, ok := errors.AsType[*ssh.OpenChannelError](err); ok {
@@ -140,7 +259,38 @@ func (s *sshSession) channel(nch ssh.NewChannel) {
 		ssh.DiscardRequests(hostReqs)
 		return
 	}
-	s.pair(clientCh, clientReqs, hostCh, hostReqs)
+	var pass func(*ssh.Request) bool
+	if nch.ChannelType() == "session" {
+		pass = func(r *ssh.Request) bool { return s.sessionRequest(clientCh, r) }
+		s.mu.Lock()
+		s.sessionChannels[clientCh] = struct{}{}
+		s.mu.Unlock()
+		defer func() {
+			s.mu.Lock()
+			delete(s.sessionChannels, clientCh)
+			s.mu.Unlock()
+		}()
+	}
+	s.pair(clientCh, clientReqs, pass, hostCh, hostReqs)
+}
+
+// sessionRequest says whether a request on the client's session channel ch
+// passes to the Host. It writes the line of a refused one (refusedRequests)
+// to the channel's stderr, and logs the command it asks for: a shell, an
+// exec, without its text, or a subsystem by name.
+func (s *sshSession) sessionRequest(ch ssh.Channel, r *ssh.Request) bool {
+	if line, refused := refusedRequests[r.Type]; refused {
+		_, _ = io.WriteString(ch.Stderr(), line)
+		return false
+	}
+	var subsystem struct{ Name string }
+	switch {
+	case r.Type == "shell" || r.Type == "exec":
+		s.logRequest(r.Type)
+	case r.Type == "subsystem" && ssh.Unmarshal(r.Payload, &subsystem) == nil:
+		s.logRequest(r.Type, "subsystem", subsystem.Name)
+	}
+	return true
 }
 
 // forwarded opens on the client the channel the Host opens for one of the
@@ -163,14 +313,16 @@ func (s *sshSession) forwarded(client ssh.Conn, nch ssh.NewChannel) {
 		ssh.DiscardRequests(clientReqs)
 		return
 	}
-	s.pair(clientCh, clientReqs, hostCh, hostReqs)
+	s.pair(clientCh, clientReqs, nil, hostCh, hostReqs)
 }
 
 // pair relays a channel of the client's and its twin on the Host both ways
 // until both are closed, counting the Host's direction among the channels
-// passing on what the Host sends. Once the Host's connection has ended, it
-// closes both instead.
-func (s *sshSession) pair(clientCh ssh.Channel, clientReqs <-chan *ssh.Request, hostCh ssh.Channel, hostReqs <-chan *ssh.Request) {
+// passing on what the Host sends. pass, unless nil, decides which of the
+// client's requests reach the Host. Should the Host's connection break, the
+// client's channel is left open for the relay's end, which tells why on it.
+// Once the Host's connection has ended, it closes both instead.
+func (s *sshSession) pair(clientCh ssh.Channel, clientReqs <-chan *ssh.Request, pass func(*ssh.Request) bool, hostCh ssh.Channel, hostReqs <-chan *ssh.Request) {
 	if !s.startFromHost() {
 		_ = clientCh.Close()
 		_ = hostCh.Close()
@@ -180,10 +332,15 @@ func (s *sshSession) pair(clientCh ssh.Channel, clientReqs <-chan *ssh.Request, 
 	// Each is held while its side's request is passed on and answered.
 	var clientAsks, hostAsks sync.Mutex
 	var wg sync.WaitGroup
-	wg.Go(func() { forward(hostCh, clientCh, clientReqs, nil, &clientAsks, &hostAsks) })
+	wg.Go(func() { forward(hostCh, clientCh, clientReqs, pass, nil, &clientAsks, &hostAsks) })
 	wg.Go(func() {
 		defer s.fromHost.Done()
-		forward(clientCh, hostCh, hostReqs, s.sawHostRequest, &hostAsks, &clientAsks)
+		saw := func(r *ssh.Request) bool {
+			s.sawHostRequest(r)
+			return true
+		}
+		broke := func() bool { return s.host.Broken() != nil }
+		forward(clientCh, hostCh, hostReqs, saw, broke, &hostAsks, &clientAsks)
 	})
 	wg.Wait()
 }
@@ -197,6 +354,9 @@ func (s *sshSession) globalRequests(reqs <-chan *ssh.Request) {
 		if !slices.Contains(forwardRequests, r.Type) {
 			_ = r.Reply(false, nil)
 			continue
+		}
+		if target, ok := forwardTarget(r.Type, r.Payload); ok {
+			s.logRequest("-R", "target", target)
 		}
 		ok, payload, err := s.host.SendRequest(r.Type, r.WantReply, r.Payload)
 		_ = r.Reply(ok && err == nil, payload)
@@ -252,26 +412,33 @@ func (s *sshSession) exit() []any {
 
 // forward relays to dst what src sends: its data and extended data, the EOF
 // that half-closes it, once both have ended, and each request, answered with
-// dst's reply when src wants one, holding srcAsks meanwhile; saw, unless nil,
-// sees each request first. Once src is closed it closes dst, but only while
-// dstAsks is free: the other direction may still be answering a request of
-// dst's, such as an exec the Host answered just before a command that ended
-// at once closed its channel, and an answer after dst is closed is lost.
-func forward(dst, src ssh.Channel, reqs <-chan *ssh.Request, saw func(*ssh.Request), srcAsks, dstAsks *sync.Mutex) {
+// dst's reply when src wants one, holding srcAsks meanwhile; pass, unless
+// nil, sees each request first, and one it does not pass is refused. Once
+// src is closed it closes dst, but only while dstAsks is free: the other
+// direction may still be answering a request of dst's, such as an exec the
+// Host answered just before a command that ended at once closed its
+// channel, and an answer after dst is closed is lost. When broke, unless
+// nil, says src's data ended because its connection broke, dst is left as
+// it is instead, for the relay's end to write its notice to.
+func forward(dst, src ssh.Channel, reqs <-chan *ssh.Request, pass func(*ssh.Request) bool, broke func() bool, srcAsks, dstAsks *sync.Mutex) {
 	var data sync.WaitGroup
 	data.Go(func() { _, _ = io.Copy(dst, src) })
 	data.Go(func() { _, _ = io.Copy(dst.Stderr(), src.Stderr()) })
-	eof := make(chan struct{})
+	eof := make(chan bool, 1)
 	go func() {
 		data.Wait()
-		_ = dst.CloseWrite()
-		close(eof)
+		keep := broke != nil && broke()
+		if !keep {
+			_ = dst.CloseWrite()
+		}
+		eof <- keep
 	}()
 	// The requests end once src is closed, or its connection is; those it
 	// sent before stay to be read.
 	for r := range reqs {
-		if saw != nil {
-			saw(r)
+		if pass != nil && !pass(r) {
+			_ = r.Reply(false, nil)
+			continue
 		}
 		srcAsks.Lock()
 		ok, err := dst.SendRequest(r.Type, r.WantReply, r.Payload)
@@ -280,9 +447,11 @@ func forward(dst, src ssh.Channel, reqs <-chan *ssh.Request, saw func(*ssh.Reque
 		}
 		srcAsks.Unlock()
 	}
-	<-eof
-	// The other direction's wait ends: its dst is this src, which has closed.
-	dstAsks.Lock()
-	_ = dst.Close()
-	dstAsks.Unlock()
+	if keep := <-eof; !keep {
+		// The other direction's wait ends: its dst is this src, which has
+		// closed.
+		dstAsks.Lock()
+		_ = dst.Close()
+		dstAsks.Unlock()
+	}
 }

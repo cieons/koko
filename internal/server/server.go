@@ -107,6 +107,8 @@ type Server struct {
 	tcp       *tcpListener
 	// api serves every operation the areas registered.
 	api *op.API
+	// stopNotice bounds how long Close waits for the Gateway's notices.
+	stopNotice time.Duration
 }
 
 // Start opens the data directory, loads the Root Key, opens the koko
@@ -154,7 +156,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	gw := gateway.New(st, key, cfg.Timings, log)
 	t.HandleTunnels(gw)
 	tcp := &tcpListener{addr: cfg.Listen, transport: t, devices: device.NewAuthenticator(st, clock, log)}
-	srv := &Server{store: st, transport: t, gateway: gw, tcp: tcp, api: a}
+	srv := &Server{store: st, transport: t, gateway: gw, tcp: tcp, api: a, stopNotice: cfg.Timings.Resolve().StopNotice}
 	for _, register := range areas {
 		register(a)
 	}
@@ -208,13 +210,25 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	return srv, nil
 }
 
-// Close stops serving, waits for calls in flight to end, ends every SSH
-// Session, and closes the store.
+// Close ends every SSH Session, telling each that the koko server is
+// restarting, stops serving, waits for calls in flight to end, and closes the
+// store.
 func (s *Server) Close() error {
-	// The Gateway ends its SSH Sessions beside the transport's close, which
-	// ends a connection too stalled to take a Tunnel's close.
+	// The Gateway first gives each SSH Session its notice and closes its
+	// Tunnel with it, then the transport closes the connections, so that
+	// each device learns why at once rather than as a drop. A connection too
+	// stalled to take its Tunnel's close within stopNotice holds up neither:
+	// the transport closes it anyway, which ends the Tunnel.
 	var closing sync.WaitGroup
-	closing.Go(s.gateway.Close)
+	gatewayClosed := make(chan struct{})
+	closing.Go(func() {
+		defer close(gatewayClosed)
+		s.gateway.Close()
+	})
+	select {
+	case <-gatewayClosed:
+	case <-time.After(s.stopNotice):
+	}
 	err := s.transport.Close()
 	closing.Wait()
 	s.tcp.unbind()

@@ -414,6 +414,10 @@ func (s *Server) serve(nc net.Conn, w wayIn) {
 			dest, cc.webPort = s.web, port
 		case kind == wire.ChannelTunnel && s.tunnels != nil:
 			// The Gateway takes it, below.
+		case kind == "direct-tcpip":
+			// What ssh -J and -W open: taking it later is an addition.
+			_ = nch.Reject(ssh.Prohibited, "only the koko CLI opens Tunnels to Hosts: use ssh <host>.koko or koko exec <host> <command>")
+			continue
 		default:
 			_ = nch.Reject(ssh.UnknownChannelType, fmt.Sprintf("koko serves no %q channel", kind))
 			continue

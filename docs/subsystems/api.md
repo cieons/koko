@@ -25,8 +25,12 @@ UI's TypeScript types are generated from them
   to the web front, which asks for its cookie before it hands a call to the
   API ([`koko web` and the web front](web-front.md)). A `tunnel@koko`
   channel carries one SSH Session to the Gateway, which the transport hands
-  it with the connection ([the Gateway](gateway.md)). Any other channel type
-  is refused with `unknown channel type`. The transport attaches the
+  it with the connection ([the Gateway](gateway.md)). A `direct-tcpip`
+  channel, which `ssh -J` and `-W` open, is refused as administratively
+  prohibited with `only the koko CLI opens Tunnels to Hosts: use ssh
+  <host>.koko or koko exec <host> <command>`; taking it later is an
+  addition. Any other channel type is refused with `unknown channel type`.
+  The transport attaches the
   connection's caller, and the connection itself, to every request
   (`op.WithCaller`, `transport.ConnectionFrom`); the API refuses a request
   without a caller.

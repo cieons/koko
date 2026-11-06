@@ -1,15 +1,18 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/client/tunnel"
+	"github.com/cieons/koko/internal/shared/resumable"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -58,7 +61,8 @@ func execute(ctx context.Context, in *Input) (int, error) {
 	if err != nil {
 		return 0, sessionError(hostName, t, err)
 	}
-	s.Stdin, s.Stdout, s.Stderr = in.inv.Stdin, in.inv.Stdout, in.inv.Stderr
+	stderr := &tailWriter{w: in.inv.Stderr}
+	s.Stdin, s.Stdout, s.Stderr = in.inv.Stdin, in.inv.Stdout, stderr
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -77,6 +81,14 @@ func execute(ctx context.Context, in *Input) (int, error) {
 		return 0, fmt.Errorf("the command on %s was ended by SIG%s", hostName, exit.Signal())
 	case exited:
 		return exit.ExitStatus(), nil
+	}
+	if notice := gatewayNotice(t); notice != "" {
+		if stderr.endsWith(wire.TunnelNoticeLine(notice)) {
+			// The Gateway wrote why on the command's stderr, as ssh shows
+			// it: 255 says that koko failed, and nothing more is needed.
+			return exitRemote, nil
+		}
+		return 0, errors.New(notice)
 	}
 	if _, ok := errors.AsType[*ssh.ExitMissingError](err); ok {
 		return 0, fmt.Errorf("the command on %s ended without an exit status", hostName)
@@ -131,10 +143,46 @@ func (in *Input) dialGateway(ctx context.Context, t *tunnel.Tunnel, sshName stri
 }
 
 // sessionError says why the SSH Session to hostName failed with err: the
-// Tunnel t beneath it lost its channel, or the SSH Session itself failed.
+// Gateway ended it with a notice, the Tunnel t beneath it lost its channel,
+// or the SSH Session itself failed.
 func sessionError(hostName string, t *tunnel.Tunnel, err error) error {
+	if notice := gatewayNotice(t); notice != "" {
+		return errors.New(notice)
+	}
 	if lost, ok := errors.AsType[*tunnel.LostError](t.Err()); ok {
 		return fmt.Errorf("%w; the SSH Session to %s could not be resumed", lost, hostName)
 	}
 	return fmt.Errorf("the SSH Session to %s failed: %w", hostName, err)
+}
+
+// gatewayNotice returns the notice the Gateway closed the Tunnel t with,
+// such as that the koko server is restarting, or "" for none.
+func gatewayNotice(t *tunnel.Tunnel) string {
+	if e, ok := errors.AsType[*resumable.PeerClosedError](t.Err()); ok {
+		return e.Reason
+	}
+	return ""
+}
+
+// tailWriter writes to w and keeps the last bytes written, so koko exec can
+// tell whether the Gateway's notice is the last line its stderr shows.
+type tailWriter struct {
+	w    io.Writer
+	tail []byte
+}
+
+// tailSize is more than a notice line takes.
+const tailSize = 1024
+
+func (t *tailWriter) Write(p []byte) (int, error) {
+	n, err := t.w.Write(p)
+	t.tail = append(t.tail, p[:n]...)
+	if over := len(t.tail) - tailSize; over > 0 {
+		t.tail = bytes.Clone(t.tail[over:])
+	}
+	return n, err
+}
+
+func (t *tailWriter) endsWith(line string) bool {
+	return bytes.HasSuffix(t.tail, []byte(line))
 }

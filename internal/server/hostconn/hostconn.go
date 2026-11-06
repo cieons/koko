@@ -13,11 +13,13 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/cieons/koko/internal/shared/liveness"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -110,12 +112,18 @@ func PasswordLogin(password string) Login {
 // Conn is a logged-in SSH connection to a Host, through its Relay if it has
 // one. Close it with Conn.Close, which also closes the Relay's connection;
 // the embedded Client's own Close does not.
+//
+// The connector watches each leg (package liveness): after Timings.HostProbe
+// without a byte from the other end it sends a keepalive@openssh.com,
+// wanting a reply, and after Timings.HostDead without any it ends the
+// connection, which Broken then tells.
 type Conn struct {
 	*ssh.Client
 	// HostKey is the host key the Host offered: the pinned one, or, with no
 	// pin, the key Enroll pins.
 	HostKey ssh.PublicKey
-	relay   *ssh.Client
+	conn    *watchedConn
+	relay   *leg
 }
 
 // Close closes the connection to the Host, then the one to its Relay.
@@ -125,6 +133,98 @@ func (c *Conn) Close() error {
 		err = errors.Join(err, c.relay.Close())
 	}
 	return err
+}
+
+// Broken returns why the connection ended, if something other than Close
+// ended it: a *liveness.DeadError, its Quiet Timings.HostDead, when the
+// connector ended it after its probe went unanswered, or what the network or
+// the other end ended it with, such as io.EOF for a Host that closed it; a
+// *RelayError wraps an end on the Relay's leg. It returns nil while the
+// connection lives, and once Close has closed it. A channel on the
+// connection that ends because the connection did already sees it non-nil.
+func (c *Conn) Broken() error {
+	if c.relay != nil {
+		if err := c.relay.conn.broken(); err != nil {
+			return &RelayError{Err: err}
+		}
+	}
+	return c.conn.broken()
+}
+
+// leg is one logged-in SSH connection the connector made: to a Host, or to
+// its Relay.
+type leg struct {
+	*ssh.Client
+	conn *watchedConn
+}
+
+// watchedConn is the byte stream beneath a leg: it notes when bytes last
+// arrived, for liveness.Conn.Watch, and why it ended, before the SSH client
+// above it learns of the end.
+type watchedConn struct {
+	*liveness.Conn
+	// done is closed once the connection has ended, err saying why.
+	done chan struct{}
+	mu   sync.Mutex
+	err  error
+}
+
+// errClosed is a connection the connector itself closed.
+var errClosed = errors.New("closed by koko")
+
+func watch(nc net.Conn) *watchedConn {
+	return &watchedConn{Conn: liveness.NewConn(nc), done: make(chan struct{})}
+}
+
+func (c *watchedConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if err != nil {
+		c.end(err)
+	}
+	return n, err
+}
+
+func (c *watchedConn) Write(p []byte) (int, error) {
+	n, err := c.Conn.Write(p)
+	if err != nil {
+		c.end(err)
+	}
+	return n, err
+}
+
+func (c *watchedConn) Close() error {
+	c.end(errClosed)
+	return c.Conn.Close()
+}
+
+// end records err as why the connection ended, unless it had ended.
+func (c *watchedConn) end(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.err == nil {
+		c.err = err
+		close(c.done)
+	}
+}
+
+// broken returns why the connection ended, or nil while it lives or once
+// the connector closed it.
+func (c *watchedConn) broken() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if errors.Is(c.err, errClosed) {
+		return nil
+	}
+	return c.err
+}
+
+// keepAlive watches l, as Conn says, until its connection ends. A dead one
+// is noted as dead for dead, the rule it broke, before it is closed.
+func keepAlive(l *leg, probe, dead time.Duration) {
+	if err := l.conn.Watch(l.Client, probe, dead, nil, l.conn.done); err != nil {
+		l.conn.end(&liveness.DeadError{Quiet: dead})
+		_ = l.Close()
+	}
 }
 
 // ErrLoginRefused is a login the Host turned down after its host key passed:
@@ -169,16 +269,16 @@ func (e *RelayError) Unwrap() error { return e.Err }
 // have a pin: it is always Managed.
 func (c *Connector) Connect(ctx context.Context, host Target, relay *Target) (*Conn, error) {
 	dial := dialTCP
-	var via *ssh.Client
+	var via *leg
 	if relay != nil {
 		if relay.Pin.isZero() {
 			return nil, &RelayError{Err: fmt.Errorf("the Relay at %s has no pinned host key", relay.addr())}
 		}
-		client, _, err := c.login(ctx, *relay, dialTCP)
+		l, _, err := c.login(ctx, *relay, dialTCP)
 		if err != nil {
 			return nil, &RelayError{Err: fmt.Errorf("log in to the Relay at %s as %q: %w", relay.addr(), relay.Account, err)}
 		}
-		via = client
+		via = l
 		dial = func(ctx context.Context, addr string) (net.Conn, error) {
 			nc, err := via.DialContext(ctx, "tcp", addr)
 			if _, refused := errors.AsType[*ssh.OpenChannelError](err); err != nil && !refused && ctx.Err() == nil {
@@ -189,7 +289,7 @@ func (c *Connector) Connect(ctx context.Context, host Target, relay *Target) (*C
 			return nc, err
 		}
 	}
-	client, key, err := c.login(ctx, host, dial)
+	l, key, err := c.login(ctx, host, dial)
 	if err != nil {
 		if via != nil {
 			_ = via.Close()
@@ -199,7 +299,7 @@ func (c *Connector) Connect(ctx context.Context, host Target, relay *Target) (*C
 		}
 		return nil, fmt.Errorf("log in to %s as %q: %w", host.addr(), host.Account, err)
 	}
-	return &Conn{Client: client, HostKey: key, relay: via}, nil
+	return &Conn{Client: l.Client, HostKey: key, conn: l.conn, relay: via}, nil
 }
 
 // relayLostError is a Relay connection that ended while the connector was
@@ -224,15 +324,17 @@ func dialTCP(ctx context.Context, addr string) (net.Conn, error) {
 const attempts = 3
 
 // login logs in to t, retrying an attempt that ends in a network error before
-// the login, so a key or a password is offered at most once.
-func (c *Connector) login(ctx context.Context, t Target, dial dialFunc) (*ssh.Client, ssh.PublicKey, error) {
+// the login, so a key or a password is offered at most once, and keeps the
+// connection alive from then on.
+func (c *Connector) login(ctx context.Context, t Target, dial dialFunc) (*leg, ssh.PublicKey, error) {
 	timings := c.Timings.Resolve()
 	wait := timings.HostConnectWait
 	for n := 1; ; n++ {
-		client, key, retry, err := attempt(ctx, t, dial, timings.HostConnectAttempt)
+		l, key, retry, err := attempt(ctx, t, dial, timings.HostConnectAttempt)
 		switch {
 		case err == nil:
-			return client, key, nil
+			go keepAlive(l, timings.HostProbe, timings.HostDead)
+			return l, key, nil
 		case !retry || ctx.Err() != nil:
 			return nil, nil, err
 		case n == attempts:
@@ -251,7 +353,7 @@ func (c *Connector) login(ctx context.Context, t Target, dial dialFunc) (*ssh.Cl
 // failed one is worth another. Under a fingerprint-only pin, a Host that
 // offers another key is asked again without that key's type, until it offers
 // the pinned key or has no other.
-func attempt(ctx context.Context, t Target, dial dialFunc, timeout time.Duration) (*ssh.Client, ssh.PublicKey, bool, error) {
+func attempt(ctx context.Context, t Target, dial dialFunc, timeout time.Duration) (*leg, ssh.PublicKey, bool, error) {
 	actx, cancel := context.WithTimeoutCause(ctx, timeout,
 		fmt.Errorf("no answer within %v: %w", timeout, os.ErrDeadlineExceeded))
 	defer cancel()
@@ -284,7 +386,7 @@ func attempt(ctx context.Context, t Target, dial dialFunc, timeout time.Duration
 // handshake opens a stream with dial and runs the SSH handshake over it,
 // login included, asking for the host key algorithms given. It ends when
 // actx does.
-func handshake(ctx, actx context.Context, t Target, dial dialFunc, algorithms []string) (*ssh.Client, ssh.PublicKey, bool, error) {
+func handshake(ctx, actx context.Context, t Target, dial dialFunc, algorithms []string) (*leg, ssh.PublicKey, bool, error) {
 	// failed says why the handshake ended: the caller gave up, the attempt
 	// ran out of time, or err.
 	failed := func(err error) error {
@@ -298,11 +400,12 @@ func handshake(ctx, actx context.Context, t Target, dial dialFunc, algorithms []
 		}
 	}
 
-	nc, err := dial(actx, t.addr())
+	dialled, err := dial(actx, t.addr())
 	if err != nil {
 		err = failed(err)
 		return nil, nil, retryable(err), err
 	}
+	nc := watch(dialled)
 	// The handshake takes no context: closing the connection ends it.
 	stop := context.AfterFunc(actx, func() { _ = nc.Close() })
 	var offered ssh.PublicKey
@@ -329,7 +432,7 @@ func handshake(ctx, actx context.Context, t Target, dial dialFunc, algorithms []
 	}
 	switch {
 	case err == nil:
-		return ssh.NewClient(conn, chans, reqs), offered, false, nil
+		return &leg{Client: ssh.NewClient(conn, chans, reqs), conn: nc}, offered, false, nil
 	case offered == nil:
 		return nil, nil, retryable(err), err
 	case retryable(err):

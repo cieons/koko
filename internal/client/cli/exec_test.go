@@ -170,7 +170,7 @@ func TestExecExits255WhenKokoItselfFails(t *testing.T) {
 		{h.Koko, []string{"exec", "", "true"}, "koko: <host> cannot be empty in koko exec\n"},
 		{h.Koko, []string{"exec", "--help"}, "koko: there is no --help flag: run koko help exec\n"},
 		{h.Koko, []string{"--help", "exec", "web1", "true"}, "koko: there is no --help flag: run koko help exec\n"},
-		{h.Koko, []string{"exec", "web2", "true"}, "koko: koko could not connect to web2; this SSH Session did not start.\n"},
+		{h.Koko, []string{"exec", "web2", "true"}, "koko: web2 is down or unreachable: koko could not connect to it; this SSH Session did not start.\n"},
 	} {
 		wantRefused(t, tc.run(tc.args...), tc.says)
 	}
@@ -181,7 +181,7 @@ func TestExecExits255WhenKokoItselfFails(t *testing.T) {
 	if got := host.Conns(); got != conns {
 		t.Errorf("web1 received %d connections, want none", got-conns)
 	}
-	waitServerLog(t, h, `level=WARN msg="ssh session refused" tunnel=[0-9a-f]{32} name=web2 device_session="unix socket" addr=\S+ reason="host connection failed" err=`)
+	waitServerLog(t, h, `level=WARN msg="ssh session refused" tunnel=[0-9a-f]{32} name=web2 device_session="unix socket" addr=\S+ reason="host unreachable" err=`)
 }
 
 // A command a signal ends has no exit status: koko exec exits 255, as ssh
@@ -204,8 +204,9 @@ func TestExecEndsTheSSHSessionWhenInterrupted(t *testing.T) {
 	waitServerLog(t, h, `msg="ssh session ended" .* reason="client closed"\n`)
 }
 
-// A koko server stop ends every SSH Session at once: koko exec exits 255 as
-// soon as it loses its Tunnel, and the koko server logs the end.
+// A koko server stop ends every SSH Session at once, saying the koko server
+// is restarting: koko exec shows the Gateway's line and exits 255, adding
+// nothing, and the koko server logs the end.
 func TestAKokoServerStopEndsTheSSHSession(t *testing.T) {
 	h := harness.Start(t)
 	managedHost(t, h, "web1")
@@ -213,10 +214,10 @@ func TestAKokoServerStopEndsTheSSHSession(t *testing.T) {
 	waitServerLog(t, h, `msg="ssh session started"`)
 
 	h.Stop()
-	if r := p.Wait(); r.Status != 255 || r.Stdout != "" || !strings.HasPrefix(r.Stderr, "koko: ") {
-		t.Errorf("exit status %d, stdout %q, stderr %q; want 255 and why", r.Status, r.Stdout, r.Stderr)
+	if r := p.Wait(); r.Status != 255 || r.Stdout != "" || r.Stderr != "koko: the koko server is restarting; this SSH Session has ended.\n" {
+		t.Errorf("exit status %d, stdout %q, stderr %q; want 255 and the restart notice", r.Status, r.Stdout, r.Stderr)
 	}
-	waitServerLog(t, h, `msg="ssh session ended" .* reason=`)
+	waitServerLog(t, h, `msg="ssh session ended" .* reason="server stopping"\n`)
 }
 
 // An SSH Session uses its Device Session, as a command does, which moves

@@ -55,6 +55,10 @@ type Host struct {
 	conns    int
 	logins   []Login
 	requests []Request
+	// resetNext counts the connections still to reset, as ResetNext asked.
+	resetNext int
+	// thawed is closed while the Host is not frozen (Freeze).
+	thawed chan struct{}
 }
 
 // Login is one login attempt the Host received.
@@ -163,7 +167,8 @@ func Start(t testing.TB, opts ...Option) *Host {
 	if len(s.hostKeys) == 0 {
 		s.hostKeys = []ssh.Signer{NewKey(t, ssh.KeyAlgoED25519)}
 	}
-	h := &Host{t: t, settings: s, home: t.TempDir(), open: map[net.Conn]struct{}{}}
+	h := &Host{t: t, settings: s, home: t.TempDir(), open: map[net.Conn]struct{}{}, thawed: make(chan struct{})}
+	close(h.thawed)
 	for _, k := range s.hostKeys {
 		h.hostKeys = append(h.hostKeys, k.PublicKey())
 	}
@@ -234,6 +239,77 @@ func (h *Host) DropConns() {
 	for nc := range h.open {
 		_ = nc.Close()
 	}
+}
+
+// ResetNext makes the Host reset the next n TCP connections it accepts
+// before the SSH version exchange, as a network path that drops for a moment
+// does, such as once it has been Enrolled.
+func (h *Host) ResetNext(n int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.resetNext = n
+}
+
+// Freeze makes the Host stop reading and writing on every connection, as a
+// Host whose network path stops passing packets does, until Thaw: what
+// arrives meanwhile waits, and nothing is lost. DropConns and the test's end
+// still close a frozen connection at once; a client's close is noticed only
+// at Thaw.
+func (h *Host) Freeze() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	select {
+	case <-h.thawed:
+		h.thawed = make(chan struct{})
+	default:
+	}
+}
+
+// Thaw lets a frozen Host carry on with every connection where it stopped.
+func (h *Host) Thaw() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	select {
+	case <-h.thawed:
+	default:
+		close(h.thawed)
+	}
+}
+
+// waitThawed waits until the Host is not frozen, or closed is.
+func (h *Host) waitThawed(closed <-chan struct{}) {
+	h.mu.Lock()
+	thawed := h.thawed
+	h.mu.Unlock()
+	select {
+	case <-thawed:
+	case <-closed:
+	}
+}
+
+// hostConn is a connection the Host accepted, which stops reading and
+// writing while the Host is frozen.
+type hostConn struct {
+	net.Conn
+	h      *Host
+	once   sync.Once
+	closed chan struct{}
+}
+
+func (c *hostConn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	c.h.waitThawed(c.closed)
+	return n, err
+}
+
+func (c *hostConn) Write(p []byte) (int, error) {
+	c.h.waitThawed(c.closed)
+	return c.Conn.Write(p)
+}
+
+func (c *hostConn) Close() error {
+	c.once.Do(func() { close(c.closed) })
+	return c.Conn.Close()
 }
 
 // Open counts the Host's connections still open: those a client has not
@@ -374,10 +450,11 @@ func (h *Host) record(r Request) {
 
 func (h *Host) accept(config *ssh.ServerConfig) {
 	for {
-		nc, err := h.listener.Accept()
+		tcp, err := h.listener.Accept()
 		if err != nil {
 			return
 		}
+		nc := &hostConn{Conn: tcp, h: h, closed: make(chan struct{})}
 		h.mu.Lock()
 		if h.stopped {
 			h.mu.Unlock()
@@ -387,12 +464,16 @@ func (h *Host) accept(config *ssh.ServerConfig) {
 		h.conns++
 		n := h.conns
 		h.open[nc] = struct{}{}
+		reset := h.resetNext > 0
+		if reset {
+			h.resetNext--
+		}
 		h.mu.Unlock()
 		h.wg.Go(func() {
 			defer h.forget(nc)
 			switch {
-			case n <= h.settings.resetFirst:
-				_ = nc.(*net.TCPConn).SetLinger(0)
+			case reset || n <= h.settings.resetFirst:
+				_ = tcp.(*net.TCPConn).SetLinger(0)
 			case n <= h.settings.stallFirst:
 				_, _ = io.Copy(io.Discard, nc)
 			default:

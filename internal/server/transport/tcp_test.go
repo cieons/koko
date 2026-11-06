@@ -269,7 +269,7 @@ func TestDeviceConnectionRefusesOtherChannelTypes(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	for _, kind := range []string{"session", "direct-tcpip"} {
+	for _, kind := range []string{"session", "direct-streamlocal@openssh.com"} {
 		_, err := conn.OpenChannel(t.Context(), kind, nil)
 		if oce, ok := errors.AsType[*ssh.OpenChannelError](err); !ok || oce.Reason != ssh.UnknownChannelType {
 			t.Errorf("open %q: err = %v, want an unknown channel type refusal", kind, err)

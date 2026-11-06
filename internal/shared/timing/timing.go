@@ -21,6 +21,17 @@ const (
 	// HostConnectWait is the wait before the second attempt to connect to a
 	// Host or a Relay; it doubles before the third.
 	HostConnectWait = time.Second
+	// HostProbe is how long a connection to a Host or a Relay goes without a
+	// byte from it before the koko server probes it with
+	// keepalive@openssh.com, wanting a reply, and HostDead before the koko
+	// server ends it.
+	HostProbe = 15 * time.Second
+	HostDead  = 60 * time.Second
+	// StopNotice bounds how long a koko server stop waits for its Tunnels to
+	// take the Gateway's restart notice, which takes a round trip, before it
+	// closes the connections beneath them anyway, which a connection too
+	// stalled to take it would never let it do.
+	StopNotice = 5 * time.Second
 	// InstallSocketWait bounds how long koko server install waits for the
 	// koko service it started to open its Unix socket. A start-up, migration
 	// and snapshot included, takes seconds; one that refuses never opens it.
@@ -81,6 +92,9 @@ const (
 type Timings struct {
 	HostConnectAttempt   time.Duration
 	HostConnectWait      time.Duration
+	HostProbe            time.Duration
+	HostDead             time.Duration
+	StopNotice           time.Duration
 	InstallSocketWait    time.Duration
 	EnrollAddKey         time.Duration
 	DeviceMuxIdle        time.Duration
@@ -108,6 +122,9 @@ type Timings struct {
 func (t Timings) Resolve() Timings {
 	t.HostConnectAttempt = cmp.Or(t.HostConnectAttempt, HostConnectAttempt)
 	t.HostConnectWait = cmp.Or(t.HostConnectWait, HostConnectWait)
+	t.HostProbe = cmp.Or(t.HostProbe, HostProbe)
+	t.HostDead = cmp.Or(t.HostDead, HostDead)
+	t.StopNotice = cmp.Or(t.StopNotice, StopNotice)
 	t.InstallSocketWait = cmp.Or(t.InstallSocketWait, InstallSocketWait)
 	t.EnrollAddKey = cmp.Or(t.EnrollAddKey, EnrollAddKey)
 	t.DeviceMuxIdle = cmp.Or(t.DeviceMuxIdle, DeviceMuxIdle)

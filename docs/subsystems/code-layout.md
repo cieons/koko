@@ -83,9 +83,10 @@ The device area also answers the TCP listener's join step
 The Gateway is no area: it serves no operation but takes the transport's
 `tunnel@koko` channels, so `server.Start` makes it with the store, the Root
 Key and the timing-constants hook, hands it the transport
-(`transport.Server.HandleTunnels`), and closes it beside the transport,
-which ends a connection too stalled to take a Tunnel's close
-([the Gateway](gateway.md)).
+(`transport.Server.HandleTunnels`), and closes it before the transport, so
+each SSH Session gets the restart notice before its Device Connection
+closes, waiting at most `timing.StopNotice` for a connection too stalled to
+take it ([the Gateway](gateway.md#when-an-ssh-session-ends)).
 `server.Start` also makes the access-change signal
 ([`access.Signal`](../../internal/server/access/signal.go)) and subscribes
 the transport to it: an area whose operations withdraw access takes the
@@ -266,8 +267,10 @@ does, while connections it accepts after pass as before.
 one Host Account (`sshhost.Account`, `deploy`) with a home directory and an
 `authorized_keys` file read afresh at each login, password login over
 `password` or `keyboard-interactive`, its own host keys, and `direct-tcpip`
-forwarding, as a Relay's sshd does. `ResetFirst`, `StallFirst`, `SlowLogins`
-and `DropConns` break it as a network path or a slow PAM stack would.
+forwarding, as a Relay's sshd does. `ResetFirst`, `StallFirst`, `SlowLogins`,
+`ResetNext(n)` (once it is Enrolled, say), `DropConns` and `Freeze` (until
+`Thaw`, reading and writing nothing on any connection) break it as a
+network path or a slow PAM stack would.
 `Logins()` and `Requests()` record what it received; `Conns()` and `Open()`
 count its connections. It runs a session's command as sshd does: an exec
 request through `/bin/sh -c`, a shell request as `/bin/sh` reading its

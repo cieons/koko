@@ -187,9 +187,11 @@ func wantReport(t *testing.T, kind string, wantReply bool, payload []byte) {
 	wantTestReport(t, r)
 }
 
+// Any other channel type is refused as unknown; direct-tcpip gets a message
+// of its own (TestTheKokoServerRefusesDirectTCPIP in the CLI's tests).
 func TestOtherChannelTypesAreRefused(t *testing.T) {
 	c, _ := dial(t, startSocket(t, whoAmI))
-	for _, kind := range []string{"session", "direct-tcpip", "web@koko-not"} {
+	for _, kind := range []string{"session", "direct-streamlocal@openssh.com", "web@koko-not"} {
 		_, _, err := c.OpenChannel(kind, nil)
 		oce, ok := errors.AsType[*ssh.OpenChannelError](err)
 		if !ok || oce.Reason != ssh.UnknownChannelType {
