@@ -198,7 +198,7 @@ func TestExecExits255WhenASignalEndsTheCommand(t *testing.T) {
 func TestExecEndsTheSSHSessionWhenInterrupted(t *testing.T) {
 	h := harness.Start(t)
 	managedHost(t, h, "web1")
-	p := h.Background(nil, "exec", "web1", "sleep 30")
+	p := h.Background(nil, "exec", "web1", "exec sleep 30")
 	waitServerLog(t, h, `msg="ssh session started"`)
 	wantRefused(t, p.Stop(), "koko: interrupted, so koko ended the SSH Session to web1\n")
 	waitServerLog(t, h, `msg="ssh session ended" .* reason="client closed"\n`)
@@ -209,7 +209,7 @@ func TestExecEndsTheSSHSessionWhenInterrupted(t *testing.T) {
 func TestAKokoServerStopEndsTheSSHSession(t *testing.T) {
 	h := harness.Start(t)
 	managedHost(t, h, "web1")
-	p := h.Background(nil, "exec", "web1", "sleep 30")
+	p := h.Background(nil, "exec", "web1", "exec sleep 30")
 	waitServerLog(t, h, `msg="ssh session started"`)
 
 	h.Stop()

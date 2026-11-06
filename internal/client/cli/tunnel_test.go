@@ -477,7 +477,9 @@ func TestKokoTunnelSendsACloseFrameOnSIGHUPAndSIGTERM(t *testing.T) {
 			tunnelHost(t, h, "web1")
 			p := tc.proxy(h)
 			c := sshOver(t, p, "web1", gatewayHostKey(t, h))
-			if err := openSession(t, c).Start("sleep 30"); err != nil {
+			// cat runs until the SSH Session ends and closes its stdin, so
+			// nothing on the Host outlives the test.
+			if err := openSession(t, c).Start("cat"); err != nil {
 				t.Fatal(err)
 			}
 			waitServerLog(t, h, `msg="ssh session started"`)

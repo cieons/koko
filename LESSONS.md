@@ -78,6 +78,19 @@ got `EOF`.
 **Seen:** 1 (2026-11-06)
 **Evidence:** 0ac2b3d (#64); 2e5b9f4 (#59); check run 42164460501
 
+### A command a test runs on the in-process Host ends when its SSH Session does
+
+**Why:** the in-process Host runs a command through `/bin/sh -c`, and the
+test's end kills only that shell. On Linux, dash forks `sleep 30` rather
+than exec'ing it, so the sleep held the command's stdout and the Host's
+cleanup waited 30 s for it. Four subtests that kept a session open with
+`sleep 30` cost 2 minutes, two `koko exec` tests 1 more, and the cli
+package passed its 5-minute limit in CI at c152887. Keep a session open
+with a command that ends with it, such as `cat`, whose stdin closes when
+the SSH Session ends, or `exec` the command so the kill reaches it.
+**Seen:** 1 (2026-11-06)
+**Evidence:** 0ac2b3d (#64); check run 42166495220; 2e5b9f4 (#59)
+
 ## Moved to the code standards
 
 _None yet._
