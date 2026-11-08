@@ -129,7 +129,8 @@ other channel the Host opens.
 
 An SSH Session ends when the client closes its connection, the Host's
 connection ends, the Tunnel's channel fails (nothing Resumes a Tunnel yet),
-or the koko server stops. When the Host's connection ended first, what the
+its access is withdrawn ([below](#access-during-a-live-ssh-session)), or the
+koko server stops. When the Host's connection ended first, what the
 Host sent before, an `exit-status` included, is passed on to the client
 first. Some ends come with a notice (`ending`): the Gateway writes it as one
 `koko: ` line on the stderr of each session channel the client has open, so
@@ -145,6 +146,12 @@ the Tunnel out of the registry.
 | The Host, or the network beneath, closed its connection | `web1 closed the connection.` | `Host closed` |
 | The koko server stops cleanly, as for an upgrade | `the koko server is restarting; this SSH Session has ended.` | `server stopping` |
 | The Tunnel's channel failed | none | `device connection lost` |
+| Its Device Session was Revoked | `access to web1 was withdrawn: this device's Device Session was Revoked; this SSH Session is closed.` | `revoked` |
+| Its User was Removed | `access to web1 was withdrawn: bob was Removed; this SSH Session is closed.` | `user removed` |
+| The Host was Retired | `access to web1 was withdrawn: web1 was Retired; this SSH Session is closed.` | `host retired` |
+| The Host went back to Registered | `access to web1 was withdrawn; this SSH Session is closed.` | `host registered` |
+| The caller can no longer act in the Host's Space: they were taken out of it, or it was moved to one they cannot act in | `access to web1 was withdrawn; this SSH Session is closed.` | `access withdrawn` |
+| The koko server could not read the record to check access again | `the koko server could not check access to web1, so this SSH Session is closed; its log says why.` | `access check failed` |
 
 A channel the Host's connection took down is left open for the notice
 (`Conn.Broken` tells it from one the Host closed), and its EOF and close
@@ -158,6 +165,45 @@ only then the transport, which closes the Device Connections, so `koko
 tunnel` exits at once rather than taking the stop for a drop. A connection
 too stalled to take its Tunnel's close within `timing.StopNotice` (5 s) is
 closed anyway, which ends the Tunnel.
+
+## Access during a live SSH Session
+
+A live SSH Session goes on only while a new one would be allowed (P0 spec:
+reach, "Access during a live SSH Session"). The Gateway learns of each
+change that can withdraw access once it commits, through the
+[access-change signal](device-connection.md#revoking), which
+[`server.Start`](../../internal/server/server.go) hands to
+[`Gateway.Withdraw`](../../internal/server/gateway/withdraw.go). Each
+SSH Session that ends gives its notice as any ending does
+([above](#when-an-ssh-session-ends)), the rows from "Revoked" on.
+
+- **A Revoked Device Session's** SSH Sessions end at once, without a read:
+  a Revoked Device Session never comes back. Its notice names the
+  revocation, or the User's removal when `user.remove` Revoked it, and
+  reaches the client before its Device Connections close
+  ([revoking](device-connection.md#revoking)).
+- **Any other change** names the Hosts it may have put out of a caller's
+  reach (`host.move` to another Space, `host.retire`, and `host.set` sending
+  a Managed Host back to Registered), or the live Device Sessions of each
+  User `space.member.remove` took out of a Space. The Gateway checks each
+  SSH Session to one of those Hosts or of one of those Device Sessions
+  again, in one read-only transaction, by the rule that admits a new one
+  ([`host.ReachOf`](../../internal/server/host/reach.go) by the Host's id,
+  so a rename changes nothing, and the Host Managed), and ends each one it
+  would now refuse. A Retired Host is named as such only to a caller who
+  can still see it.
+- **The notice names the Host** by the name the SSH Session was opened
+  with, and says nothing more for a Host the caller can no longer see, so it
+  tells of no later name and of no Space.
+- **Changes that keep access** publish nothing or pass the check, and
+  interrupt nothing: a rename, the address, port, Note and Attributes, a
+  move to a Space the caller still acts in, another Device Session's
+  revocation.
+- **An SSH Session admitted across a change**, its admission read before
+  the change committed and its Tunnel registered after the Gateway took it,
+  is checked again once registered, so none slips between the two.
+- **A failed read** ends each SSH Session it was checking, as it would
+  refuse a new one, and is logged ([logging](#logging)).
 
 ## Logging
 
@@ -190,6 +236,13 @@ One line per event, never an exec's command text:
 - `open a Tunnel`, at error level, with `device_session`, `addr`, `name`
   and `err`, when the koko server could not read what admitting a Tunnel
   needs; the channel is refused saying the log tells why.
+- `access checked again`, at debug level, with `ssh_sessions`, how many
+  live SSH Sessions an access change had checked again, and `ended`, how
+  many of them it ended.
+- `check access during an SSH Session`, at error level, with `err`, when
+  the koko server could not read the record to check live SSH Sessions
+  again after an access change; each ends with `reason="access check
+  failed"`.
 
 ## `koko exec`
 
@@ -291,5 +344,10 @@ Unix socket; a quiet Host probed, a blip passing, a silent Host's lost line
 and a closing Host's line through `koko exec` and ssh; the restart notice
 over the Unix socket, a direct Device Connection and the Device Mux, and
 `koko tunnel` exiting 0 at once; and each kind of request logged once.
+[`access_live_test.go`](../../internal/client/cli/access_live_test.go)
+holds live SSH Sessions through ssh and `koko exec` across each change that
+withdraws access, each ending with its line, the Revoked one before the
+Device Connection closes, while those that keep access, the Owner's among
+them, go on; and across each change that keeps access, which ends none.
 [`wire/tunnel_test.go`](../../internal/shared/wire/tunnel_test.go) pins the
 open payload's bytes.

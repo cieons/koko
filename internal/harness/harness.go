@@ -448,6 +448,14 @@ func (d *Device) KokoStdin(stdin string, args ...string) Result {
 	return run(d.t, d.runner, d.environ(), stdin, args...)
 }
 
+// Background starts one koko command line in process on the device, as
+// KokoEnv does but returning at once, for a command that runs until it is
+// stopped, such as a koko exec that keeps its SSH Session open.
+func (d *Device) Background(env []string, args ...string) *Process {
+	d.t.Helper()
+	return background(d.t, d.runner, d.environ(env...), args...)
+}
+
 // Run runs one koko command line in process with the runner r and the
 // environment env, and returns what it printed and its exit status.
 func Run(t testing.TB, r cli.Runner, env []string, args ...string) Result {

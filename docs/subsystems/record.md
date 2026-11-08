@@ -30,7 +30,7 @@ Stored in `hosts`, with its Attributes in `host_attributes`
 | `address` | An IP address without a zone, kept in its canonical form (`2001:db8::1`), or a DNS name, kept in lowercase: labels of letters, digits and `-`, 253 characters at most, the last not all digits. Not unique. |
 | `port` | 1 to 65535; 22 when not given. Not unique. |
 | `account` | The Host Account: 1 to 32 of `a-z`, `A-Z`, `0-9`, `.`, `_` and `-`, not starting with `-`. No default. |
-| `state` | `registered`, `managed` or `retired`, set only by koko. Every Host is Registered until Enroll makes it Managed ([Enroll](enroll.md)), and `host retire` makes it Retired, which is terminal ([retiring a Host](#retiring-a-host)). A change of address or port keeps a Host Managed, since its pin proves the Host wherever it answers; a change of Host Account sends it back to Registered, keeping its pin, since the koko key went only to the old Host Account. |
+| `state` | `registered`, `managed` or `retired`, set only by koko. Every Host is Registered until Enroll makes it Managed ([Enroll](enroll.md)), and `host retire` makes it Retired, which is terminal ([retiring a Host](#retiring-a-host)). A change of address or port keeps a Host Managed, since its pin proves the Host wherever it answers; a change of Host Account sends it back to Registered, keeping its pin, since the koko key went only to the old Host Account, and ends its live SSH Sessions ([the Gateway](gateway.md#access-during-a-live-ssh-session)). |
 | `host_key` | The pinned host key's SHA-256 fingerprint, `SHA256:...`, or `null` for a Host with no pin. Stored as the key in SSH wire format, which Enroll writes. |
 | `attributes` | Values by key, each of its key's type ([Attributes](#attributes-and-the-preset-attributes)). A key is snake_case (`a-z`, `0-9`, `_`, starting with a letter, 1 to 63 characters) and not a field's name: `id`, `name`, `space`, `address`, `port`, `account`, `relay`, `state`, `host_key`, `host`, `ports`, `attributes`, `note`, `created_at` or `updated_at`. |
 | `note` | 1 byte to 64 KiB of UTF-8 on any number of lines, with no control character but tab, line feed and carriage return; `null` for none. |
@@ -76,9 +76,11 @@ pin, and the name it had, which it no longer holds. From then on:
   Retired Host, so its old name answers as one no Host holds
   ([the Gateway](gateway.md)).
 
-Not yet: a Relay in use cannot be retired once Relays exist (#72), retiring
-does not yet end a live SSH Session (#68), and the CLI does not yet rewrite
-the bare-name list after it (#69).
+Retiring ends every live SSH Session to the Host, each with a line naming
+the retirement ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
+
+Not yet: a Relay in use cannot be retired once Relays exist (#72), and the
+CLI does not yet rewrite the bare-name list after it (#69).
 
 ## A Service
 
@@ -205,7 +207,7 @@ to run too, so the two resolvers cannot drift.
 | `host.show` | One Host, with its Services as `services`, by name in natural order, without their Notes, which the service area lists for it ([where an area adds its parts](code-layout.md#where-an-area-adds-its-parts)). |
 | `host.set` | Sets the address, port, Host Account, Attributes and Note it names, and clears the Attribute keys in `unset`, the Note for `note`, and the port back to 22 for `port`; nothing else changes. It refuses a request that changes nothing, a key both set and cleared, and clearing the address or the Host Account ([`record.Required`](../../internal/shared/record/record.go)). It takes no `name`, `space` or `state`, and on a Retired Host only Attributes and the Note ([retiring a Host](#retiring-a-host)). |
 | `host.rename` | A new name, checked as on `host.add`; the id and everything else stay. A Retired Host is refused with `host_retired`. |
-| `host.move` | Another Space, with the Attributes, Note and Services; the name stays. A Retired Host moves too. |
+| `host.move` | Another Space, with the Attributes, Note and Services; the name stays. A Retired Host moves too. It ends each live SSH Session to the Host of a caller who cannot act in the new Space ([the Gateway](gateway.md#access-during-a-live-ssh-session)). |
 | `host.retire` | Makes a Registered or Managed Host Retired, keeping its record, and answers it so; one Retired already is refused with `host_retired` ([retiring a Host](#retiring-a-host)). |
 | `host.remove` | Deletes the Host with its Attributes, Note and Services; answers it as it was. A Host with a pin has been Managed, and is refused with `host_was_managed`: it stays on record, and retiring it is the way on. |
 | `host.enroll` | Makes the Host Managed with its pinned host key ([Enroll](enroll.md)). |

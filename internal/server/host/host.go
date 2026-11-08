@@ -39,17 +39,24 @@ const idPrefix = "host"
 type ServicesOf func(ctx context.Context, tx store.Tx, h api.Host) ([]api.Service, error)
 
 // Register adds the host operations to the API; services lists a Host's
-// Services for host.show.
-func Register(a *op.API, services ServicesOf) {
+// Services for host.show, and each write that may put a Host out of a
+// caller's reach is announced on changes once it commits.
+func Register(a *op.API, services ServicesOf, changes *access.Signal) {
 	a.Handle(api.HostAdd, add)
 	a.Handle(api.HostList, list)
 	a.Handle(api.HostShow, func(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostShowRequest) (api.HostShowResponse, error) {
 		return show(ctx, tx, caller, req, services)
 	})
-	a.Handle(api.HostSet, set)
+	a.Handle(api.HostSet, func(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequest) (api.HostSetResponse, error) {
+		return set(ctx, tx, caller, req, changes)
+	})
 	a.Handle(api.HostRename, rename)
-	a.Handle(api.HostMove, move)
-	a.Handle(api.HostRetire, retire)
+	a.Handle(api.HostMove, func(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRequest) (api.HostMoveResponse, error) {
+		return move(ctx, tx, caller, req, changes)
+	})
+	a.Handle(api.HostRetire, func(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRetireRequest) (api.HostRetireResponse, error) {
+		return retire(ctx, tx, caller, req, changes)
+	})
 	a.Handle(api.HostRemove, remove)
 }
 
@@ -546,8 +553,9 @@ const retiredTakes = "a Retired Host takes only changes to its Attributes and No
 
 // set is host.set: it changes the fields, Attributes and Note the request
 // names, and only those. A Retired Host keeps its address, port and Host
-// Account as they were.
-func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequest) (api.HostSetResponse, error) {
+// Account as they were. A Managed Host whose Host Account changes goes back
+// to Registered, which it announces on changes, so its SSH Sessions end.
+func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequest, changes *access.Signal) (api.HostSetResponse, error) {
 	who, h, err := target(ctx, tx, caller, req.Host)
 	if err != nil {
 		return api.HostSetResponse{}, err
@@ -596,6 +604,7 @@ func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequ
 		// so the next Enroll checks that the same Host answers.
 		if h.State == api.HostManaged {
 			h.State = api.HostRegistered
+			changes.Publish(ctx, access.Change{Hosts: []string{h.ID}})
 		}
 	}
 	if v.note != nil {
@@ -645,8 +654,10 @@ func rename(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRena
 }
 
 // move is host.move: the Host goes to another Space with its Attributes and
-// Note, keeping its name. The caller must be able to act in both Spaces.
-func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRequest) (api.HostMoveResponse, error) {
+// Note, keeping its name. The caller must be able to act in both Spaces. It
+// announces the move on changes, so each SSH Session to the Host of a caller
+// who cannot act in the new Space ends.
+func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRequest, changes *access.Signal) (api.HostMoveResponse, error) {
 	who, h, err := target(ctx, tx, caller, req.Host)
 	if err != nil {
 		return api.HostMoveResponse{}, err
@@ -660,6 +671,7 @@ func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRe
 		if err != nil {
 			return api.HostMoveResponse{}, fmt.Errorf("move the Host %s to %s: %w", h.Name, to.Name, err)
 		}
+		changes.Publish(ctx, access.Change{Hosts: []string{h.ID}})
 	}
 	moved, err := find(ctx, tx, who, h.ID)
 	return api.HostMoveResponse{Host: moved.Host}, err
@@ -668,8 +680,9 @@ func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRe
 // retire is host.retire: the Host becomes Retired, which is terminal, and
 // keeps its record, Attributes, Note, Services, Space and pin. Its name is
 // free from then on, since only a Host that is not Retired holds one
-// (checkFree, and the index hosts_live_name), so only its id names it.
-func retire(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRetireRequest) (api.HostRetireResponse, error) {
+// (checkFree, and the index hosts_live_name), so only its id names it. It
+// announces the retirement on changes, so its SSH Sessions end.
+func retire(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRetireRequest, changes *access.Signal) (api.HostRetireResponse, error) {
 	who, h, err := target(ctx, tx, caller, req.Host)
 	if err != nil {
 		return api.HostRetireResponse{}, err
@@ -681,6 +694,7 @@ func retire(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostReti
 	if err != nil {
 		return api.HostRetireResponse{}, fmt.Errorf("retire the Host %s: %w", h.Name, err)
 	}
+	changes.Publish(ctx, access.Change{Hosts: []string{h.ID}})
 	retired, err := find(ctx, tx, who, h.ID)
 	return api.HostRetireResponse{Host: retired.Host}, err
 }

@@ -107,8 +107,16 @@ type Server struct {
 	tcp       *tcpListener
 	// api serves every operation the areas registered.
 	api *op.API
-	// stopNotice bounds how long Close waits for the Gateway's notices.
+	// stopNotice bounds how long Close, and a revocation, wait for the
+	// Gateway's notices.
 	stopNotice time.Duration
+	// revoking holds each revocation whose Device Connections wait for the
+	// notices of its SSH Sessions before they close. Close sets closing,
+	// under mu, before it waits for revoking, so that no revocation a call
+	// the transport cut still commits joins it after.
+	mu       sync.Mutex
+	closing  bool
+	revoking sync.WaitGroup
 }
 
 // Start opens the data directory, loads the Root Key, opens the koko
@@ -160,15 +168,16 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	for _, register := range areas {
 		register(a)
 	}
-	space.Register(a, user.ByName, holdings)
+	// The access-change signal: once a change that withdraws access
+	// commits, the Gateway ends the SSH Sessions it withdrew access from, and
+	// the transport closes the Device Connections it Revoked.
+	var changes access.Signal
+	changes.Subscribe(srv.withdraw)
+	space.Register(a, user.ByName, holdings, &changes)
 	// host show lists a Host's Services, which the service area reads,
 	// since it imports the host area.
-	host.Register(a, service.OfHost)
+	host.Register(a, service.OfHost, &changes)
 	attr.Register(a, attrKeys)
-	// The access-change signal: once a change that withdraws access
-	// commits, the transport closes the Device Connections it Revoked.
-	var changes access.Signal
-	changes.Subscribe(func(c access.Change) { t.CloseDeviceSessions(c.Revoked...) })
 	// The secret area seals and opens every value with the Root Key.
 	secret.Register(a, key)
 	// Enroll opens the koko key with the Root Key, and logs in to Hosts.
@@ -231,8 +240,38 @@ func (s *Server) Close() error {
 	}
 	err := s.transport.Close()
 	closing.Wait()
+	s.mu.Lock()
+	s.closing = true
+	s.mu.Unlock()
+	s.revoking.Wait()
 	s.tcp.unbind()
 	return errors.Join(err, s.store.Close())
+}
+
+// withdraw acts on a change that withdrew access, once it has committed: the
+// Gateway ends each SSH Session it withdrew access from, and the transport
+// then closes the Device Connections of each Device Session it Revoked. As
+// on a stop, it waits for the Gateway's notices first, so that each device
+// learns why rather than seeing a drop, but no longer than stopNotice, as a
+// connection too stalled to take its notice must close anyway. Once Close
+// has closed the transport, every connection is closed already.
+func (s *Server) withdraw(c access.Change) {
+	told := s.gateway.Withdraw(c)
+	if len(c.Revoked) == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closing {
+		return
+	}
+	s.revoking.Go(func() {
+		select {
+		case <-told:
+		case <-time.After(s.stopNotice):
+		}
+		s.transport.CloseDeviceSessions(c.Revoked...)
+	})
 }
 
 // Run runs the koko server until ctx ends.

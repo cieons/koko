@@ -203,7 +203,8 @@ func (r remover) remove(ctx context.Context, tx store.Tx, caller op.Caller, req 
 // them Removed, keeping the record so their name is never used again. Once
 // it commits, each revocation and the removal are logged, by being what
 // removed them, and the access-change signal names the Device Sessions it
-// Revoked, so their Device Connections close.
+// Revoked, as a Removed User's, so their SSH Sessions end and their Device
+// Connections close.
 func (r remover) removeJoined(ctx context.Context, tx store.Tx, u api.User, by string) (api.User, error) {
 	now := op.Now(ctx).Format(time.RFC3339)
 	revoked, err := revokeAll(ctx, tx, u, now)
@@ -233,7 +234,7 @@ func (r remover) removeJoined(ctx context.Context, tx store.Tx, u api.User, by s
 	}
 	r.afterCommit(ctx, "user removed", "user", u.Name, "user_id", u.ID, "device_sessions_revoked", len(revoked),
 		"join_codes_voided", codes, "removed_by", by)
-	r.changes.Publish(ctx, access.Change{Revoked: ids})
+	r.changes.Publish(ctx, access.Change{Revoked: ids, Removed: true})
 	u.RemovedAt = now
 	return u, nil
 }

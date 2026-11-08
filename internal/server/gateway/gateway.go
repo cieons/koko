@@ -13,8 +13,9 @@
 // them. Once the client is in, each channel it opens is opened on the Host as
 // asked, and the two are relayed both ways: every byte, EOF and request but
 // agent and X11 forwarding (relay.go). An SSH Session that ends for a
-// reason the client did not see coming, the Host's or the koko server's,
-// tells it in one line on the stderr of each of its session channels.
+// reason the client did not see coming, the Host's, the koko server's or
+// its access withdrawn (withdraw.go), tells it in one line on the stderr of
+// each of its session channels.
 //
 // The Tunnel registry holds every Tunnel the Gateway accepted, by its id,
 // for as long as it lives.
@@ -67,6 +68,9 @@ type Gateway struct {
 	// that the access check admitted, attached or Detached: from then until
 	// the Tunnel ends, its dial to the Host included.
 	sshSessions map[string]int
+	// withdrawals counts the access changes Withdraw took, so that a Tunnel
+	// admitted across one is checked again once it is in the registry.
+	withdrawals uint64
 	wg          sync.WaitGroup
 }
 
@@ -106,6 +110,12 @@ type tunnel struct {
 	end context.CancelCauseFunc
 	// limited says the Tunnel counts against its Device Session's limit.
 	limited bool
+	// hostID and hostName are the Host the access check admitted the SSH
+	// Session to, by its id and by its name then, and user the name of the
+	// User it acts as; hostID is empty for an SSH Session refused.
+	hostID, hostName, user string
+	// done is closed once the Tunnel has left the registry.
+	done chan struct{}
 }
 
 // ending is why the Gateway ends an SSH Session, as its log line's reason
@@ -183,6 +193,7 @@ func (g *Gateway) serve(c *transport.Connection, nch ssh.NewChannel) {
 		return
 	}
 	hostName := wire.TunnelHost(sshName)
+	seen := g.withdrawalsTaken()
 	a, err := g.admit(c.Context(), caller, hostName)
 	if errors.Is(err, errNotInitialised) {
 		g.log.Info("tunnel refused", append(from, "name", sshName, "err", err)...)
@@ -201,7 +212,7 @@ func (g *Gateway) serve(c *transport.Connection, nch ssh.NewChannel) {
 	}
 	g.wg.Go(func() { ssh.DiscardRequests(reqs) })
 
-	t, limit, ok := g.register(caller, c.RemoteAddr(), resumable.New(ch), a.refused == nil)
+	t, limit, ok := g.register(caller, c.RemoteAddr(), resumable.New(ch), a, seen)
 	if !ok {
 		_ = t.stream.CloseWithReason(errStopping.notice)
 		return
@@ -232,11 +243,13 @@ func (g *Gateway) serve(c *transport.Connection, nch ssh.NewChannel) {
 }
 
 // register puts a new Tunnel on stream in the registry, under a new id. One
-// the access check admitted counts against its Device Session's limit,
-// unless the Device Session has maxSSHSessions already, when register
-// returns the refusal. It fails once the Gateway is closing.
-func (g *Gateway) register(caller op.Caller, from net.Addr, stream *resumable.Stream, admitted bool) (*tunnel, *refusal, bool) {
-	t := &tunnel{caller: caller, from: from, stream: stream}
+// the access check admitted, as a says, counts against its Device Session's
+// limit, unless the Device Session has maxSSHSessions already, when register
+// returns the refusal. Withdraw could not see one admitted across an access
+// change, a change it took after the first seen, so register has it checked
+// again. It fails once the Gateway is closing.
+func (g *Gateway) register(caller op.Caller, from net.Addr, stream *resumable.Stream, a admission, seen uint64) (*tunnel, *refusal, bool) {
+	t := &tunnel{caller: caller, from: from, stream: stream, done: make(chan struct{})}
 	_, _ = rand.Read(t.id[:]) // never fails
 	t.ctx, t.end = context.WithCancelCause(context.Background())
 	g.mu.Lock()
@@ -246,24 +259,37 @@ func (g *Gateway) register(caller op.Caller, from net.Addr, stream *resumable.St
 		return t, nil, false
 	}
 	g.tunnels[t.id] = t
-	ds := caller.DeviceSession
-	switch {
-	case ds == "" || !admitted:
-	case g.sshSessions[ds] >= maxSSHSessions:
-		return t, &refusal{
-			banner: fmt.Sprintf("koko: this Device Session already has %d SSH Sessions open, the most koko allows; this SSH Session did not start.\n", maxSSHSessions),
-			reason: "ssh session limit",
-		}, true
-	default:
+	if a.refused != nil {
+		return t, nil, true
+	}
+	if ds := caller.DeviceSession; ds != "" {
+		if g.sshSessions[ds] >= maxSSHSessions {
+			return t, &refusal{
+				banner: fmt.Sprintf("koko: this Device Session already has %d SSH Sessions open, the most koko allows; this SSH Session did not start.\n", maxSSHSessions),
+				reason: "ssh session limit",
+			}, true
+		}
 		g.sshSessions[ds]++
 		t.limited = true
 	}
+	t.hostID, t.hostName, t.user = a.host.ID, a.host.Name, a.who.User.Name
+	if g.withdrawals != seen {
+		g.wg.Go(func() { g.recheck([]*tunnel{t}) })
+	}
 	return t, nil, true
+}
+
+// withdrawalsTaken returns how many access changes Withdraw has taken.
+func (g *Gateway) withdrawalsTaken() uint64 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.withdrawals
 }
 
 func (g *Gateway) unregister(t *tunnel) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	close(t.done)
 	delete(g.tunnels, t.id)
 	if ds := t.caller.DeviceSession; t.limited {
 		if g.sshSessions[ds]--; g.sshSessions[ds] == 0 {

@@ -56,9 +56,12 @@ refused with `owner_only` before the name is read.
   4. marks them Removed, keeping the row.
 
   Once it commits, the access-change signal names the Device Sessions it
-  Revoked, so their Device Connections close
-  ([revoking](device-connection.md#revoking)); later consumers end their live
-  SSH Sessions and `koko web` cookies through the same Device Sessions. Who
+  Revoked, as a Removed User's, so their live SSH Sessions end, each with
+  a line naming the removal
+  ([the Gateway](gateway.md#access-during-a-live-ssh-session)), and their
+  Device Connections then close ([revoking](device-connection.md#revoking));
+  a later consumer ends their `koko web` cookies through the same Device
+  Sessions. Who
   is calling then refuses each of them with `revoked`, by its device's name,
   so a Removed User's devices learn of it as of any revocation
   ([on the device](device-connection.md#on-the-device)).

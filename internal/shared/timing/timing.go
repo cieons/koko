@@ -30,7 +30,9 @@ const (
 	// StopNotice bounds how long a koko server stop waits for its Tunnels to
 	// take the Gateway's restart notice, which takes a round trip, before it
 	// closes the connections beneath them anyway, which a connection too
-	// stalled to take it would never let it do.
+	// stalled to take it would never let it do. A revocation waits as long
+	// for its SSH Sessions' notice before it closes their Device
+	// Connections.
 	StopNotice = 5 * time.Second
 	// InstallSocketWait bounds how long koko server install waits for the
 	// koko service it started to open its Unix socket. A start-up, migration

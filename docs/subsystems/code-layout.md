@@ -70,7 +70,8 @@ Personal Space holds a record ([Users](users.md#removing)).
 `space` takes `user.ByName`, since `user` imports `space` (every User gets a
 Personal Space), and the `holdings` list. `host` takes `service.OfHost`,
 since `service` imports `host` (a Service lives in its Host's Space), so
-that `host show` lists a Host's Services. `secret` takes the Root Key, which
+that `host show` lists a Host's Services. Both also take the access-change
+signal (below). `secret` takes the Root Key, which
 seals and opens every value ([Secrets](secrets.md#sealing)). `enroll` takes
 the Root Key, which opens the koko key, and the timing-constants hook
 ([Enroll](enroll.md)).
@@ -89,8 +90,10 @@ closes, waiting at most `timing.StopNotice` for a connection too stalled to
 take it ([the Gateway](gateway.md#when-an-ssh-session-ends)).
 `server.Start` also makes the access-change signal
 ([`access.Signal`](../../internal/server/access/signal.go)) and subscribes
-the transport to it: an area whose operations withdraw access takes the
-signal in its `Register`, as `device` and `user` do, and publishes on it; a later
+the koko server's `withdraw` to it, which hands each change to the Gateway
+and then to the transport ([revoking](device-connection.md#revoking)): an
+area whose operations withdraw access takes the signal in its `Register`, as
+`device`, `user`, `space` and `host` do, and publishes on it; a later
 consumer subscribes in `server.Start` (rule 12).
 
 Error codes every area shares (`invalid_request`, `unknown_field`,
@@ -226,7 +229,9 @@ of `koko server install`'s system seam ([the installer](installer.md#verifying))
 Devices: `harness.NewDevice(t)` is a device that has not joined, with a HOME
 of its own and nothing at its socket path, so it reaches a koko server only
 over a Device Connection; `d.Koko(args...)` and `d.KokoStdin(stdin,
-args...)` run command lines on it, `d.Home()` is its HOME, and `d.Dial()`
+args...)` run command lines on it, `d.Background(env, args...)` one that
+runs until it is stopped, such as a `koko exec` holding its SSH Session
+open, `d.Home()` is its HOME, and `d.Dial()`
 opens a Device Connection from its files and holds it until the test ends,
 as a long-lived connection would, probing nothing itself.
 `d.UseTimings(timings)` gives its commands a timing-constants hook, such

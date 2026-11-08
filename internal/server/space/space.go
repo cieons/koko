@@ -40,12 +40,14 @@ type UserFunc func(ctx context.Context, tx store.Tx, userName string) (api.User,
 type area struct {
 	user     UserFunc
 	holdings []Holding
+	changes  *access.Signal
 }
 
 // Register adds the space operations to the API; user finds the Users a
-// call names, and holdings count what the other areas record in a Space.
-func Register(a *op.API, user UserFunc, holdings []Holding) {
-	s := &area{user: user, holdings: holdings}
+// call names, holdings count what the other areas record in a Space, and
+// each User taken out of a Space is announced on changes once it commits.
+func Register(a *op.API, user UserFunc, holdings []Holding, changes *access.Signal) {
+	s := &area{user: user, holdings: holdings, changes: changes}
 	a.Handle(api.SpaceAdd, add)
 	a.Handle(api.SpaceList, list)
 	a.Handle(api.SpaceShow, s.show)
@@ -288,17 +290,37 @@ func (s *area) memberAdd(ctx context.Context, tx store.Tx, caller op.Caller, req
 
 // memberRemove is space.member.remove: it takes the Users out of a Space,
 // all or none, leaving a User who is not a Member as they are, as a Removed
-// User never is.
+// User never is. Once it commits, the access-change signal names the live
+// Device Sessions of each User it took out, so that their SSH Sessions to
+// the Space's Hosts end.
 func (s *area) memberRemove(ctx context.Context, tx store.Tx, caller op.Caller, req api.SpaceMemberRemoveRequest) (api.SpaceMemberRemoveResponse, error) {
 	sp, users, err := s.members(ctx, tx, caller, req.Space, req.Users)
 	if err != nil {
 		return api.SpaceMemberRemoveResponse{}, err
 	}
+	var narrowed []string
 	for _, u := range users {
-		_, err := tx.ExecContext(ctx, "DELETE FROM memberships WHERE space_id = ? AND user_id = ?", sp.ID, u.ID)
+		res, err := tx.ExecContext(ctx, "DELETE FROM memberships WHERE space_id = ? AND user_id = ?", sp.ID, u.ID)
 		if err != nil {
 			return api.SpaceMemberRemoveResponse{}, fmt.Errorf("take %s out of %s: %w", u.Name, sp.Name, err)
 		}
+		taken, err := res.RowsAffected()
+		if err != nil {
+			return api.SpaceMemberRemoveResponse{}, fmt.Errorf("take %s out of %s: %w", u.Name, sp.Name, err)
+		}
+		if taken == 0 {
+			continue
+		}
+		live, err := access.DeviceSessions(ctx, tx, "u.id = ? AND d.revoked_at IS NULL", u.ID)
+		if err != nil {
+			return api.SpaceMemberRemoveResponse{}, err
+		}
+		for _, d := range live {
+			narrowed = append(narrowed, d.ID)
+		}
+	}
+	if len(narrowed) > 0 {
+		s.changes.Publish(ctx, access.Change{Narrowed: narrowed})
 	}
 	d, err := s.detail(ctx, tx, sp)
 	return api.SpaceMemberRemoveResponse{Space: d}, err

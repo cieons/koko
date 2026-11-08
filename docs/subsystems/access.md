@@ -12,8 +12,10 @@ and [ADR 0008](../adr/0008-local-callers-act-as-the-owner.md); the source is
 decides access. No other package reads roles or memberships to decide what a
 caller may do. Every answer is read from the current records, inside the
 call's transaction, so a change (a membership, a revocation) holds from the
-next call. Every operation asks who is calling, even one every caller may
-make, such as `server.show`, so a Revoked Device Session is refused
+next call, and a live SSH Session lasts only while a new one would be allowed
+([the Gateway](gateway.md#access-during-a-live-ssh-session)). Every
+operation asks who is calling, even one every caller may make, such as
+`server.show`, so a Revoked Device Session is refused
 ([revoking](device-connection.md#revoking)).
 
 | Question | Answer |
@@ -70,7 +72,9 @@ membership.
   `space.member.remove` leaves them out like any User who is not a Member. A User already a Member stays one, and a User who is not a
   Member stays out, so the call states the Members after it and a retry is
   harmless. Both answer the Space with its Members, in `space.show`'s shape.
-  An invited User who has not joined can be made a Member.
+  An invited User who has not joined can be made a Member. Taking a User out
+  ends their live SSH Sessions to the Space's Hosts
+  ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
 - **Removing.** `space.remove` refuses a Space that holds any record, with
   `space_not_empty` naming what is left, and otherwise removes it with its
   memberships, answering the Space as it was.

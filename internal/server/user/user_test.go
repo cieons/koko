@@ -35,7 +35,7 @@ func TestUserInviteIsOneTransaction(t *testing.T) {
 	}
 	a := op.New(st, rootKey, slog.New(slog.DiscardHandler),
 		func(context.Context, store.Tx) (bool, error) { return true, nil }, time.Now)
-	space.Register(a, user.ByName, nil)
+	space.Register(a, user.ByName, nil, &access.Signal{})
 	// Only the Owner invites, so the Local caller needs an Owner to act as.
 	addOwner := api.Op[struct{}, struct{}]{Name: "test.owner", Write: true}
 	a.Handle(addOwner, func(ctx context.Context, tx store.Tx, _ op.Caller, _ struct{}) (struct{}, error) {

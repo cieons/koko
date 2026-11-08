@@ -278,8 +278,13 @@ A Revoked Device Session's name is free again for a new device, but
 
 Once the transaction commits, the revocation is logged and announced on the
 **access-change signal** ([`access.Signal`](../../internal/server/access/signal.go)),
-which names the Device Sessions a committed change affects. `server.Start`
-subscribes the transport, which closes their Device Connections
+which names the Device Sessions and the Hosts a committed change affects.
+`server.Start` subscribes the koko server's `withdraw`
+([`server.go`](../../internal/server/server.go)): the Gateway first ends
+the Revoked Device Sessions' SSH Sessions, each with its notice
+([the Gateway](gateway.md#access-during-a-live-ssh-session)), and once
+they have ended, or `timing.StopNotice` (5 s) has passed, the transport
+closes their Device Connections
 ([`transport.Server.CloseDeviceSessions`](../../internal/server/transport/transport.go)):
 each one once the calls in flight on it have answered (so a device that
 revoked itself gets its answer), at most 5 s later, and any connection of
@@ -291,10 +296,12 @@ on a close; the device's `serverconn.Conn.Wait` then returns
 `serverconn.ErrRevoked`. A device that misses it learns the same from the
 Revoked banner on its next connection.
 Removing a User revokes each of their live Device Sessions in the same way,
-and names them all as Revoked on the signal ([Users](users.md#removing)).
-Later changes that withdraw access (a Member taken out of a Space, a Host's
-access withdrawn) add fields to `access.Change`; later consumers (the
-Gateway, the web front's cookies) subscribe.
+and names them all as Revoked on the signal, as a Removed User's
+([Users](users.md#removing)). The other changes that withdraw access, a
+Member taken out of a Space and a Host put out of a caller's reach, name
+what they affect in fields of `access.Change` of their own, which only the
+Gateway acts on. A later consumer, such as the web front's cookies,
+subscribes beside it.
 
 ## On the device
 
