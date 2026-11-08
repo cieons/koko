@@ -194,8 +194,9 @@ can load is refused with exit 2 where a relative date needs it, rather than
 read as UTC. The cases are one table,
 [`internal/client/cli/testdata/relative-dates.json`](../../internal/client/cli/testdata/relative-dates.json)
 (`case`, `now` in RFC 3339, `tz`, `date`, and `want`, or `null` for a date
-refused), which the CLI's S1 tests run and the web UI's Hosts list (#71) is
-to run too, so the two resolvers cannot drift.
+refused), which the CLI's S1 tests run and the web UI's resolver runs too
+([the record's pages](record-pages.md#relative-dates)), so the two
+resolvers cannot drift.
 
 ## Operations
 

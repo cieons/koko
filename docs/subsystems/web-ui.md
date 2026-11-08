@@ -104,5 +104,6 @@ that User, on a Device Session of their laptop unless another is given, and
   constant of the file that declares it, and the generator's mapping and
   refusals.
 - The shell's page tests are listed in [the web UI shell](web-shell.md#verifying),
-  and those of the Spaces, People and Devices pages in
-  [their reference](people-pages.md#verifying).
+  those of the Spaces, People and Devices pages in
+  [their reference](people-pages.md#verifying), and those of the Hosts list
+  in [the record's pages](record-pages.md#verifying).

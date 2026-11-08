@@ -41,7 +41,7 @@ test("a Member sees no People page, nor a link to it", async () => {
   renderAt("/spaces");
   await screen.findByRole("heading", { name: "Spaces" });
 
-  expect(nav().getAllByRole("link").map((a) => a.textContent)).toEqual(["Spaces", "Devices"]);
+  expect(nav().getAllByRole("link").map((a) => a.textContent)).toEqual(["Hosts", "Spaces", "Devices"]);
 
   act(() => navigate("/people"));
 

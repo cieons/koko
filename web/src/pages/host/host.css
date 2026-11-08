@@ -1,0 +1,49 @@
+/* The Hosts list: the filter builder, its terms, the column picker and sortable headers. */
+
+.filter-builder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 1rem 0;
+}
+
+.terms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.terms li {
+  padding: 0.125rem 0.25rem 0.125rem 0.5rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+}
+
+.terms button {
+  margin-left: 0.25rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 1rem 0;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+}
+
+th button.sort {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
