@@ -45,10 +45,16 @@ func checkDataDir(dataDir string, types filesystem.Types) error {
 			dataDir, is, fsType)}
 	}
 	if err := probeWrite(dir); err != nil {
-		return fmt.Errorf("the koko server runs as uid %d and gid %d, which cannot write %s: give it to that user and group, or start the koko server as a user who can write it (%w)",
-			os.Geteuid(), os.Getegid(), where, err)
+		return cannotWrite(where, err)
 	}
 	return nil
+}
+
+// cannotWrite is start-up's refusal of a directory where, which probeWrite
+// could not write, naming the uid and gid the process runs as.
+func cannotWrite(where string, err error) error {
+	return fmt.Errorf("the koko server runs as uid %d and gid %d, which cannot write %s: give it to that user and group, or start the koko server as a user who can write it (%w)",
+		os.Geteuid(), os.Getegid(), where, err)
 }
 
 // probeWrite tells whether this process can make a file in dir by making

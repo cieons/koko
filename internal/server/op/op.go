@@ -302,17 +302,11 @@ func (a *API) serve(r *http.Request) (body []byte, replayed bool, err error) {
 		defer leave()
 	}
 
-	now := a.clock().UTC().Truncate(time.Second)
-	ctx = context.WithValue(ctx, nowKey{}, now)
-	var hooks []func(bool)
-	ctx = context.WithValue(ctx, afterTxKey{}, &hooks)
+	ctx, finish := a.begin(ctx)
+	now := Now(ctx)
 	committed := false
 	// Deferred, so an operation that panics still undoes what it began.
-	defer func() {
-		for _, f := range hooks {
-			f(committed)
-		}
-	}()
+	defer func() { finish(committed) }()
 	if c.prepare != nil {
 		// A prepared write prepares outside any transaction, unless an
 		// earlier attempt has stored its response already.
@@ -362,6 +356,20 @@ func (a *API) serve(r *http.Request) (body []byte, replayed bool, err error) {
 	})
 	committed = err == nil
 	return body, replayed, err
+}
+
+// begin starts a call's context: it fixes the call's time from the koko
+// server's clock, for Now, and holds its AfterTx hooks, which finish runs
+// once the call's transaction has ended, told whether it committed.
+func (a *API) begin(ctx context.Context) (_ context.Context, finish func(committed bool)) {
+	ctx = context.WithValue(ctx, nowKey{}, a.clock().UTC().Truncate(time.Second))
+	var hooks []func(bool)
+	ctx = context.WithValue(ctx, afterTxKey{}, &hooks)
+	return ctx, func(committed bool) {
+		for _, f := range hooks {
+			f(committed)
+		}
+	}
 }
 
 // checkInitialised refuses, inside tx, a call to o while the koko server is

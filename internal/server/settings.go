@@ -70,8 +70,8 @@ func (s *settings) set(ctx context.Context, tx store.Tx, _ op.Caller, req api.Se
 			return api.ServerSetResponse{}, err
 		}
 		// After the write, which a refusal rolls back.
-		if err := joincode.CheckAddress(serveraddr.WithPort(*req.Address, s.listenPort())); err != nil {
-			return api.ServerSetResponse{}, api.CodeInvalidAddress.Errorf("a Join Code cannot carry the Server Address: %v", err)
+		if err := checkJoinCodeAddress(*req.Address, s.listenPort()); err != nil {
+			return api.ServerSetResponse{}, err
 		}
 	}
 	srv, err := s.read(ctx, tx)
@@ -79,6 +79,15 @@ func (s *settings) set(ctx context.Context, tx store.Tx, _ op.Caller, req api.Se
 		return api.ServerSetResponse{}, err
 	}
 	return api.ServerSetResponse{Server: srv}, nil
+}
+
+// checkJoinCodeAddress refuses, with invalid_address, a Server Address a
+// Join Code cannot carry, with listenPort written when it names no port.
+func checkJoinCodeAddress(address string, listenPort int) error {
+	if err := joincode.CheckAddress(serveraddr.WithPort(address, listenPort)); err != nil {
+		return api.CodeInvalidAddress.Errorf("a Join Code cannot carry the Server Address: %v", err)
+	}
+	return nil
 }
 
 // read returns the koko server's deployment, as stored and as the process
