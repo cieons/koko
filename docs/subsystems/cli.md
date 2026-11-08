@@ -408,11 +408,13 @@ error object (`{"code", "message"}`) any command that calls the koko server
 would fail with now, such as `not_joined`, `revoked` or
 `server_unreachable`, or `null`; `device_mux` is the
 [Device Mux](device-mux.md) status reached the koko server through,
-`{"socket", "state", "since", "last_error"}`, where `state` is `connected`
-(since it opened its Device Connection, `last_error` `null`) or
-`reconnecting` (since its Device Connection dropped or its first try
-failed, `last_error` the error object of its last try, as `server_error`
-shows it), or `null` when status went another way (the Unix socket, the
+`{"socket", "state", "since", "last_error", "waiting_to_resume"}`, where
+`state` is `connected` (since it opened its Device Connection, `last_error`
+`null`) or `reconnecting` (since its Device Connection dropped or its first
+try failed, `last_error` the error object of its last try, as
+`server_error` shows it), and `waiting_to_resume` counts the SSH Sessions
+through it whose Tunnels wait to Resume, which the human form shows on a
+`Resuming:` line when there are any; or `null` when status went another way (the Unix socket, the
 direct path) or found no join; `revocation` is the revocation record,
 `{"server_address", "device_session", "learned_at"}` with the Device Session
 in the same shape, or `null`; and `include_warning` says why ssh does not

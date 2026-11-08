@@ -13,7 +13,8 @@
     "socket": "<socket>",
     "state": "connected",
     "since": "<time>",
-    "last_error": null
+    "last_error": null,
+    "waiting_to_resume": 0
   },
   "revocation": null,
   "include_warning": null

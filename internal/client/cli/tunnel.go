@@ -8,7 +8,9 @@ import (
 	"os"
 	"syscall"
 
+	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/client/tunnel"
+	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/resumable"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -27,9 +29,10 @@ var tunnelCommands = []Command{
 
 // proxySSH is koko tunnel, the ProxyCommand of koko's ssh_config: it relays
 // a Tunnel to the Host the SSH Name names on stdin and stdout, for ssh's SSH
-// Session to the Gateway (docs/subsystems/gateway.md, "koko tunnel"). It
-// ignores SIGINT, which ends ctx, and ends on SIGHUP or SIGTERM with a close
-// frame.
+// Session to the Gateway (docs/subsystems/gateway.md, "koko tunnel"). The
+// Tunnel Resumes across a drop, and koko tunnel fails, saying why in one
+// line, only when it cannot. It ignores SIGINT, which ends ctx, and ends on
+// SIGHUP or SIGTERM with a close frame.
 func proxySSH(ctx context.Context, in *Input) error {
 	sshName := in.Arg("ssh-name")
 	hostName := wire.TunnelHost(sshName)
@@ -55,7 +58,7 @@ func proxySSH(ctx context.Context, in *Input) error {
 	case err != nil:
 		return err
 	}
-	t, err := tunnel.Open(ctx, conn, sshName)
+	t, err := tunnel.Open(ctx, conn, sshName, in.redial, in.runner.Timings)
 	switch {
 	case err != nil && ctx.Err() != nil:
 		return nil
@@ -88,4 +91,25 @@ func proxySSH(ctx context.Context, in *Input) error {
 		return fmt.Errorf("relay the Tunnel to %s: %w", hostName, err)
 	}
 	return nil
+}
+
+// redial reaches the koko server again, as the command first did, for a
+// Tunnel of koko tunnel or koko exec to Resume on once the connection it
+// opened on has ended: over the Unix socket, through this build's Device
+// Mux, starting a new one should the old one have crashed, or direct. It
+// runs beside the command, so it notes nothing on in. A failure that no
+// try will change, as the device is no longer joined, its Device Session
+// was Revoked, or the koko server presents a host key other than the
+// pinned one, wraps tunnel.ErrFinal; the Tunnel tries again after any
+// other.
+func (in *Input) redial(ctx context.Context) (serverconn.Conn, error) {
+	conn, err := in.unconnected().connect(ctx)
+	if err != nil {
+		switch _, e := classify(err); e.Code {
+		case codeNotJoined, api.CodeRevoked.Name, codeHostKeyMismatch:
+			return nil, fmt.Errorf("%w: %w", tunnel.ErrFinal, err)
+		}
+		return nil, err
+	}
+	return conn, nil
 }

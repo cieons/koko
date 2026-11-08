@@ -24,10 +24,11 @@ type connectOut struct {
 	HostKeys        []string `json:"host_keys"`
 	ServerVersion   string   `json:"server_version"`
 	DeviceMux       *struct {
-		Socket    string    `json:"socket"`
-		State     string    `json:"state"`
-		Since     string    `json:"since"`
-		LastError *errorOut `json:"last_error"`
+		Socket          string    `json:"socket"`
+		State           string    `json:"state"`
+		Since           string    `json:"since"`
+		LastError       *errorOut `json:"last_error"`
+		WaitingToResume int       `json:"waiting_to_resume"`
 	} `json:"device_mux"`
 }
 

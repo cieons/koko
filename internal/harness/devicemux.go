@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"io"
+	"maps"
 	"strings"
 	"sync"
 	"testing"
@@ -19,9 +20,11 @@ type muxes struct {
 	runtime string
 	log     *syncBuffer
 
-	mu    sync.Mutex
-	stops []context.CancelFunc
-	wg    sync.WaitGroup
+	mu sync.Mutex
+	// running holds the stop of each Device Mux still running, by the
+	// channel closed once it exits.
+	running map[chan struct{}]context.CancelFunc
+	wg      sync.WaitGroup
 }
 
 // NewMuxDevice returns a device that has not joined a koko server, as
@@ -64,12 +67,20 @@ func NewMuxDeviceBeside(t testing.TB, other *Device) *Device {
 func (d *Device) startMux(_ context.Context, _ string, env []string) (<-chan struct{}, error) {
 	ctx, stop := context.WithCancel(context.Background())
 	m := d.muxes
-	m.mu.Lock()
-	m.stops = append(m.stops, stop)
-	m.mu.Unlock()
 	exited := make(chan struct{})
+	m.mu.Lock()
+	if m.running == nil {
+		m.running = map[chan struct{}]context.CancelFunc{}
+	}
+	m.running[exited] = stop
+	m.mu.Unlock()
 	m.wg.Go(func() {
 		defer close(exited)
+		defer func() {
+			m.mu.Lock()
+			delete(m.running, exited)
+			m.mu.Unlock()
+		}()
 		defer stop()
 		d.runner.Run(ctx, cli.Invocation{
 			Args:   []string{devicemux.Arg},
@@ -86,7 +97,7 @@ func (d *Device) startMux(_ context.Context, _ string, env []string) (<-chan str
 // s.
 func (m *muxes) stop(t testing.TB) {
 	m.mu.Lock()
-	for _, stop := range m.stops {
+	for _, stop := range m.running {
 		stop()
 	}
 	m.mu.Unlock()
@@ -99,6 +110,26 @@ func (m *muxes) stop(t testing.TB) {
 	case <-done:
 	case <-time.After(waitFor):
 		t.Errorf("a Device Mux did not stop within %v; it logged:\n%s", waitFor, m.log.String())
+	}
+}
+
+// KillMux stops every Device Mux the device runs as a crash would, as its
+// commands and the koko server see it: their connections and its Device
+// Connection close at once, nothing sent on them first. It returns once
+// they have exited; a command then starts a new one.
+func (d *Device) KillMux() {
+	d.t.Helper()
+	m := d.muxes
+	m.mu.Lock()
+	running := maps.Clone(m.running)
+	m.mu.Unlock()
+	for exited, stop := range running {
+		stop()
+		select {
+		case <-exited:
+		case <-time.After(waitFor):
+			d.t.Fatalf("a Device Mux did not stop within %v; it logged:\n%s", waitFor, m.log.String())
+		}
 	}
 }
 

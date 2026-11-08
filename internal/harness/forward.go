@@ -15,7 +15,8 @@ import (
 // first to an impostor, then to the koko server itself; and a test sees that
 // a refusal made no connection. It also cuts a connection when the test
 // arms it to (CutWhen), as a network drop does, and stalls the connections
-// it carries (Stall), as a network path that went dead does.
+// it carries (Stall), as a network path that went dead does, and passes on
+// no close of theirs either (Partition).
 type Forwarder struct {
 	ln net.Listener
 	// stop ends the dials in progress when the forwarder stops.
@@ -28,10 +29,15 @@ type Forwarder struct {
 	// cut, when armed, says when to cut the next connection whose target
 	// sends anything.
 	cut func() bool
-	// stalls holds, for each connection it carries, whether Stall stalled
-	// it.
-	stalls map[*atomic.Bool]struct{}
-	wg     sync.WaitGroup
+	// carried holds the faults of each connection it carries.
+	carried map[*faults]struct{}
+	wg      sync.WaitGroup
+}
+
+// faults says how one connection a Forwarder carries is broken: stalled
+// passes nothing more, and partitioned does not pass on a close either.
+type faults struct {
+	stalled, partitioned atomic.Bool
 }
 
 // Forward starts a Forwarder to target, a host:port, which stops when the
@@ -44,7 +50,7 @@ func Forward(t testing.TB, target string) *Forwarder {
 		t.Fatal(err)
 	}
 	ctx, stop := context.WithCancel(context.Background())
-	f := &Forwarder{ln: ln, stop: stop, target: target, open: map[net.Conn]struct{}{}, stalls: map[*atomic.Bool]struct{}{}}
+	f := &Forwarder{ln: ln, stop: stop, target: target, open: map[net.Conn]struct{}{}, carried: map[*faults]struct{}{}}
 	f.wg.Go(func() { f.accept(ctx) })
 	t.Cleanup(f.close)
 	return f
@@ -87,8 +93,22 @@ func (f *Forwarder) CutWhen(cut func() bool) {
 func (f *Forwarder) Stall() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for s := range f.stalls {
-		s.Store(true)
+	for c := range f.carried {
+		c.stalled.Store(true)
+	}
+}
+
+// Partition stalls every connection the forwarder carries now, as Stall
+// does, and passes on no close either: an end that finds its connection
+// dead and closes it leaves the other end holding its own, as when a
+// network path dies with nothing on it to tell either end, which each finds
+// dead by itself. Connections it accepts after pass as before.
+func (f *Forwarder) Partition() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for c := range f.carried {
+		c.partitioned.Store(true)
+		c.stalled.Store(true)
 	}
 }
 
@@ -126,7 +146,7 @@ func (f *Forwarder) accept(ctx context.Context) {
 }
 
 // pass copies bytes both ways between in and a new connection to target
-// until either side ends.
+// until either side ends, or, once partitioned, both.
 func (f *Forwarder) pass(ctx context.Context, in net.Conn, target string) {
 	defer f.forget(in)
 	var d net.Dialer
@@ -134,31 +154,34 @@ func (f *Forwarder) pass(ctx context.Context, in net.Conn, target string) {
 	if err != nil {
 		return
 	}
-	stalled := new(atomic.Bool)
+	c := &faults{}
 	f.mu.Lock()
 	f.open[out] = struct{}{}
-	f.stalls[stalled] = struct{}{}
+	f.carried[c] = struct{}{}
 	f.mu.Unlock()
 	defer f.forget(out)
 	defer func() {
 		f.mu.Lock()
-		delete(f.stalls, stalled)
+		delete(f.carried, c)
 		f.mu.Unlock()
 	}()
 	done := make(chan struct{}, 2)
-	f.wg.Go(func() { f.relay(out, in, stalled, false); done <- struct{}{} })
-	f.wg.Go(func() { f.relay(in, out, stalled, true); done <- struct{}{} })
+	f.wg.Go(func() { f.relay(out, in, c, false); done <- struct{}{} })
+	f.wg.Go(func() { f.relay(in, out, c, true); done <- struct{}{} })
 	<-done
+	if c.partitioned.Load() {
+		<-done
+	}
 }
 
 // relay passes what arrives on from to to, until either side ends, or, when
 // cuttable, as for what the target sends back, an armed cut falls on it.
 // Once stalled, what arrives is dropped.
-func (f *Forwarder) relay(to, from net.Conn, stalled *atomic.Bool, cuttable bool) {
+func (f *Forwarder) relay(to, from net.Conn, c *faults, cuttable bool) {
 	buf := make([]byte, 32<<10)
 	for {
 		n, err := from.Read(buf)
-		if n > 0 && !stalled.Load() {
+		if n > 0 && !c.stalled.Load() {
 			if cuttable && f.cutNow() {
 				return
 			}

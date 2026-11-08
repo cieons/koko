@@ -134,6 +134,15 @@ var refusedRequests = map[string]string{
 	"x11-req":                    "koko: X11 forwarding is not available through koko.\n",
 }
 
+// hostKeepalive is the request with which a Host's sshd that sets
+// ClientAliveInterval probes a quiet client, on an open channel if it has
+// one, and wanting a reply. The Gateway answers it on the channel itself,
+// refusing it, which sshd takes as the answer, as OpenSSH's client does: a
+// Detached client could not answer before sshd gave up on it. On the
+// connection the Host's client refuses it, as every global request of the
+// Host's.
+const hostKeepalive = "keepalive@openssh.com"
+
 // forwardedChannels are the channels the Host opens for the client's -R
 // forwards, which the Gateway carries back to the client. The Host's client
 // refuses every other channel the Host opens.
@@ -374,6 +383,9 @@ func (s *sshSession) pair(clientCh ssh.Channel, clientReqs <-chan *ssh.Request, 
 	wg.Go(func() {
 		defer s.fromHost.Done()
 		saw := func(r *ssh.Request) bool {
+			if r.Type == hostKeepalive {
+				return false
+			}
 			s.sawHostRequest(r)
 			return true
 		}

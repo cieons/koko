@@ -26,8 +26,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -98,6 +100,8 @@ type settings struct {
 	resetFirst          int
 	stallFirst          int
 	slowLogins          time.Duration
+	clientAliveInterval time.Duration
+	clientAliveCountMax int
 	// subsystems are the commands that serve each subsystem, by name.
 	subsystems map[string]string
 }
@@ -155,6 +159,17 @@ func SlowLogins(d time.Duration) Option {
 // until the client gives up, as an unanswering network path does.
 func StallFirst(n int) Option {
 	return func(s *settings) { s.stallFirst = n }
+}
+
+// ClientAlive makes the Host probe a quiet client as sshd's
+// ClientAliveInterval and ClientAliveCountMax do: once interval has passed
+// without a byte from the client, it sends keepalive@openssh.com wanting a
+// reply, on an open session channel if it has one and on the connection
+// otherwise, and when countMax have gone unanswered in a row and the client
+// is quiet still, it ends the connection. Any reply, a refusal included,
+// answers.
+func ClientAlive(interval time.Duration, countMax int) Option {
+	return func(s *settings) { s.clientAliveInterval, s.clientAliveCountMax = interval, countMax }
 }
 
 // Start starts a Host on a loopback port. It stops when the test ends.
@@ -294,11 +309,17 @@ type hostConn struct {
 	h      *Host
 	once   sync.Once
 	closed chan struct{}
+	// lastRead is when a byte last came from the client, in Unix
+	// nanoseconds, for ClientAlive.
+	lastRead atomic.Int64
 }
 
 func (c *hostConn) Read(p []byte) (int, error) {
 	n, err := c.Conn.Read(p)
 	c.h.waitThawed(c.closed)
+	if n > 0 {
+		c.lastRead.Store(time.Now().UnixNano())
+	}
 	return n, err
 }
 
@@ -455,6 +476,7 @@ func (h *Host) accept(config *ssh.ServerConfig) {
 			return
 		}
 		nc := &hostConn{Conn: tcp, h: h, closed: make(chan struct{})}
+		nc.lastRead.Store(time.Now().UnixNano())
 		h.mu.Lock()
 		if h.stopped {
 			h.mu.Unlock()
@@ -491,17 +513,21 @@ func (h *Host) forget(nc net.Conn) {
 }
 
 // serve runs one SSH connection until the client or the test ends it.
-func (h *Host) serve(nc net.Conn, config *ssh.ServerConfig) {
+func (h *Host) serve(nc *hostConn, config *ssh.ServerConfig) {
 	conn, chans, reqs, err := ssh.NewServerConn(nc, config)
 	if err != nil {
 		return
 	}
 	defer func() { _ = conn.Close() }()
 	h.wg.Go(func() { h.globalRequests(conn, reqs) })
+	open := &openSessions{}
+	if h.settings.clientAliveInterval > 0 {
+		h.wg.Go(func() { h.probeClient(conn, nc, open) })
+	}
 	for nch := range chans {
 		switch nch.ChannelType() {
 		case "session":
-			h.session(nch)
+			h.session(nch, open)
 		case "direct-tcpip":
 			h.directTCPIP(nch)
 		case "direct-streamlocal@openssh.com":
@@ -518,15 +544,18 @@ func (h *Host) serve(nc net.Conn, config *ssh.ServerConfig) {
 // variables, and TERM to the terminal the pty-req names (it allocates no
 // terminal), then runs the first exec, shell or known subsystem request as
 // the session's command (start), sends a signal request's signal to that
-// command, and takes a window-change. It refuses every other request.
-func (h *Host) session(nch ssh.NewChannel) {
+// command, and takes a window-change. It refuses every other request. The
+// channel is among the connection's open sessions until it closes.
+func (h *Host) session(nch ssh.NewChannel, open *openSessions) {
 	h.recordChannel(nch, "")
 	ch, reqs, err := nch.Accept()
 	if err != nil {
 		return
 	}
+	open.add(ch)
 	h.wg.Go(func() {
 		defer func() { _ = ch.Close() }()
+		defer open.remove(ch)
 		var env []string
 		started := false
 		var cmd *exec.Cmd
@@ -580,6 +609,71 @@ func (h *Host) session(nch ssh.NewChannel) {
 			}
 		}
 	})
+}
+
+// openSessions are the session channels open on one connection, where a
+// ClientAlive probe goes, the oldest first, as sshd sends it on the first
+// open channel it finds.
+type openSessions struct {
+	mu       sync.Mutex
+	channels []ssh.Channel
+}
+
+func (o *openSessions) add(ch ssh.Channel) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.channels = append(o.channels, ch)
+}
+
+func (o *openSessions) remove(ch ssh.Channel) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.channels = slices.DeleteFunc(o.channels, func(c ssh.Channel) bool { return c == ch })
+}
+
+func (o *openSessions) first() ssh.Channel {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if len(o.channels) == 0 {
+		return nil
+	}
+	return o.channels[0]
+}
+
+// probeClient probes the client of conn, whose bytes come over nc, as
+// ClientAlive says, until the connection ends.
+func (h *Host) probeClient(conn *ssh.ServerConn, nc *hostConn, open *openSessions) {
+	interval, countMax := h.settings.clientAliveInterval, h.settings.clientAliveCountMax
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	var unanswered atomic.Int32
+	for {
+		select {
+		case <-ticker.C:
+		case <-nc.closed:
+			return
+		}
+		if time.Since(time.Unix(0, nc.lastRead.Load())) < interval {
+			continue
+		}
+		if unanswered.Add(1) > int32(countMax) {
+			_ = conn.Close()
+			return
+		}
+		// The reply may never come: each probe waits for it apart, until
+		// the connection ends.
+		h.wg.Go(func() {
+			var err error
+			if ch := open.first(); ch != nil {
+				_, err = ch.SendRequest("keepalive@openssh.com", true, nil)
+			} else {
+				_, _, err = conn.SendRequest("keepalive@openssh.com", true, nil)
+			}
+			if err == nil {
+				unanswered.Store(0)
+			}
+		})
+	}
 }
 
 // sendSignal sends the command the signal named name, without its "SIG", as

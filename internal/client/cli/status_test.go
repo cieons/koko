@@ -32,10 +32,11 @@ type statusOut struct {
 	ServerVersion *string           `json:"server_version"`
 	ServerError   *errorOut         `json:"server_error"`
 	DeviceMux     *struct {
-		Socket    string    `json:"socket"`
-		State     string    `json:"state"`
-		Since     string    `json:"since"`
-		LastError *errorOut `json:"last_error"`
+		Socket          string    `json:"socket"`
+		State           string    `json:"state"`
+		Since           string    `json:"since"`
+		LastError       *errorOut `json:"last_error"`
+		WaitingToResume int       `json:"waiting_to_resume"`
 	} `json:"device_mux"`
 	Revocation *struct {
 		ServerAddress string           `json:"server_address"`

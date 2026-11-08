@@ -32,6 +32,8 @@ func TestZeroTimingsAreTheProductsConstants(t *testing.T) {
 		DeviceConnectAttempt: 10 * time.Second,
 		WakeCheck:            time.Second,
 		BareNameRefresh:      10 * time.Minute,
+		Grace:                time.Minute,
+		ResumeExchange:       5 * time.Second,
 	}
 	if got != want {
 		t.Errorf("Timings{}.Resolve() = %+v, want %+v", got, want)
@@ -61,6 +63,8 @@ func TestASetTimingReplacesOnlyItsConstant(t *testing.T) {
 		DeviceConnectAttempt: 10 * time.Second,
 		WakeCheck:            time.Second,
 		BareNameRefresh:      10 * time.Minute,
+		Grace:                time.Minute,
+		ResumeExchange:       5 * time.Second,
 	}
 	if got != want {
 		t.Errorf("Resolve() = %+v, want %+v", got, want)

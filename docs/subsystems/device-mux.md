@@ -113,7 +113,9 @@ The koko server's own SSH, as on its Unix socket
   reason trying again does not change, and sends its state as the banner,
   JSON:
   `{"state": "connected"|"reconnecting", "since": <RFC 3339>, "error":
-  {"kind", "message", ...}}`. `error` comes only while reconnecting; its
+  {"kind", "message", ...}, "resuming": <n>}`. `resuming`, the Tunnels
+  through it waiting to Resume (below), comes only when there are any.
+  `error` comes only while reconnecting; its
   `kind` is `host_key_mismatch` (with `address`, `presented`, `pinned`),
   `unknown_key`, `revoked` (with `device`), `refused`, `not_joined` or
   `failed`, and [`devicemux.Dial`](../../internal/client/devicemux/local.go)
@@ -124,19 +126,32 @@ The koko server's own SSH, as on its Unix socket
 - It sends the report of its Device Connection as `report@koko`, and again
   on every open connection whenever it opens a new Device Connection, so
   `serverconn.Conn.Report` holds the latest.
-- It carries each channel a command opens, of any type, onto its Device
+- It carries each channel a command opens, of any type but its own
+  `resuming@koko` (below), onto its Device
   Connection with the same open payload, unparsed, and passes a refusal
   back with the koko server's reason and message. Bytes go both ways,
   half-closes included, until both directions end or the Device Connection
   does. It holds no Tunnel state.
 - When the Device Connection drops, the channels on it end, so an API call
   in flight fails as a drop and [the API client](api.md#the-api-client)
-  sends it once more; commands stay connected, and a channel opened next
-  waits for the next Device Connection. An open is sent once: one the drop
+  sends it once more, and a Tunnel's process Resumes it
+  ([the device end of a Tunnel](gateway.md#the-device-end-of-a-tunnel));
+  commands stay connected, and a channel opened next waits for the next
+  Device Connection. An open is sent once: one the drop
   cut after it went out is refused, since the koko server may have acted on
   it, as on a Tunnel's open; only one that never went out, the Device
   Connection having ended before the Device Mux let go of it, goes on the
   next one.
+- **Waiting to Resume.** A command holds a `resuming@koko` channel open on
+  the Device Mux while one of its Tunnels waits to Resume
+  ([`devicemux.Conn.WaitingToResume`](../../internal/client/devicemux/local.go)).
+  The Device Mux carries it to no koko server, and counts each one open in
+  its state, so `koko status` shows how many SSH Sessions wait to Resume,
+  and among what waits for a Device Connection, so it keeps reconnecting,
+  with its backoff, for as long as one is open. One whose command exits,
+  or whose Device Mux crashed, is no longer counted; the command tells the
+  next Device Mux it reaches. A Tunnel on the direct path is counted
+  nowhere.
 - When the koko server revokes its Device Session, it sends each open
   connection `revoked@koko` before closing it, so `Conn.Wait` returns
   `serverconn.ErrRevoked`; when `koko disconnect` stops it, it sends
@@ -228,7 +243,8 @@ ssh_config following the record
 - **Idle exit.** It exits `timing.DeviceMuxIdle` (10 minutes) after the
   last command left: a command, `koko web` or `koko tunnel` connected keeps
   it running, with or without a channel open, so `koko web` between browser
-  connections counts as open (#62); its own bare-name refresh does not. A
+  connections counts as open (#62), and so does a Tunnel waiting to Resume,
+  whose process stays connected; its own bare-name refresh does not. A
   command that connects as it idles out is refused, and starts a new one.
 - **Revocation.** On the revocation disconnect
   ([`wire.RequestRevoked`](../../internal/shared/wire/wire.go)), or the
@@ -314,6 +330,11 @@ user's id is tested.
 - [`tunnel_test.go`](../../internal/client/cli/tunnel_test.go): `koko
   tunnel`'s Tunnel riding the Device Mux's Device Connection, and an open SSH
   Session keeping the Device Mux from idling out.
+- [`resume_test.go`](../../internal/client/cli/resume_test.go): a Tunnel
+  Resuming through the Device Mux across a cut and a stall, and through a
+  new one after it was killed (`d.KillMux()`); a Tunnel waiting to Resume
+  keeping it from idling out and counted in `koko status`; and `koko
+  disconnect` ending an SSH Session without a Resume.
 - [`status_test.go`](../../internal/client/cli/status_test.go): `koko
   status` connected (golden) and reconnecting, and `null` on the direct
   path.

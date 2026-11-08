@@ -2,6 +2,7 @@ package wire_test
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/cieons/koko/internal/shared/wire"
@@ -14,19 +15,36 @@ func TestATunnelOpenPayloadIsTwoSSHStrings(t *testing.T) {
 	if got := wire.TunnelOpen("web1.koko"); !bytes.Equal(got, want) {
 		t.Fatalf("TunnelOpen(web1.koko) = %q, want %q", got, want)
 	}
-	kind, sshName, err := wire.ParseTunnelPayload(want)
-	if err != nil || kind != wire.TunnelKindOpen || sshName != "web1.koko" {
-		t.Errorf("ParseTunnelPayload = %q, %q, %v; want open, web1.koko", kind, sshName, err)
+	p, err := wire.ParseTunnelPayload(want)
+	if err != nil || p != (wire.TunnelPayload{Kind: wire.TunnelKindOpen, SSHName: "web1.koko"}) {
+		t.Errorf("ParseTunnelPayload = %+v, %v; want open, web1.koko", p, err)
 	}
 }
 
-// Another kind comes back unread, for the Gateway to refuse until it takes
-// it; a payload that is no kind, or an "open" that is not one SSH Name, is
-// refused.
+// A tunnel@koko "resume" payload is the SSH string "resume", the 16 bytes
+// of the Tunnel id, and the offset the device has received as a uint64, as
+// every CLI that ever Resumes a Tunnel writes it, byte for byte.
+func TestATunnelResumePayloadIsTheKindTheIDAndTheOffset(t *testing.T) {
+	id := [wire.TunnelIDSize]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}
+	want := []byte("\x00\x00\x00\x06resume" +
+		"\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff" +
+		"\x00\x00\x00\x01\x00\x00\x00\x10")
+	if got := wire.TunnelResume(id, 1<<32+16); !bytes.Equal(got, want) {
+		t.Fatalf("TunnelResume = %q, want %q", got, want)
+	}
+	p, err := wire.ParseTunnelPayload(want)
+	if err != nil || p != (wire.TunnelPayload{Kind: wire.TunnelKindResume, ID: id, Received: 1<<32 + 16}) {
+		t.Errorf("ParseTunnelPayload = %+v, %v; want the resume with its id and offset", p, err)
+	}
+}
+
+// Another kind comes back unread, for the Gateway to refuse; a payload that
+// is no kind, an "open" that is not one SSH Name, or a "resume" that is not
+// an id and an offset, is refused.
 func TestATunnelPayloadIsReadByItsKind(t *testing.T) {
-	kind, sshName, err := wire.ParseTunnelPayload([]byte("\x00\x00\x00\x06resume\x01\x02\x03"))
-	if err != nil || kind != "resume" || sshName != "" {
-		t.Errorf("a resume payload: %q, %q, %v; want the kind alone", kind, sshName, err)
+	p, err := wire.ParseTunnelPayload([]byte("\x00\x00\x00\x05later\x01\x02\x03"))
+	if err != nil || p != (wire.TunnelPayload{Kind: "later"}) {
+		t.Errorf("a payload of another kind: %+v, %v; want the kind alone", p, err)
 	}
 	for _, b := range [][]byte{
 		nil,
@@ -34,9 +52,12 @@ func TestATunnelPayloadIsReadByItsKind(t *testing.T) {
 		[]byte("\x00\x00\x00\x04open"),
 		[]byte("\x00\x00\x00\x04open\x00\x00\x00\x04web1\x00"),
 		[]byte("\x00\x00\x00\x04open\x00\x00\x00\x09web1"),
+		[]byte("\x00\x00\x00\x06resume"),
+		[]byte("\x00\x00\x00\x06resume" + strings.Repeat("\x01", wire.TunnelIDSize) + "\x00\x00\x00\x00\x00\x00\x00"),
+		[]byte("\x00\x00\x00\x06resume" + strings.Repeat("\x01", wire.TunnelIDSize+8+1)),
 	} {
-		if kind, _, err := wire.ParseTunnelPayload(b); err == nil {
-			t.Errorf("ParseTunnelPayload(%q) = %q, want a refusal", b, kind)
+		if p, err := wire.ParseTunnelPayload(b); err == nil {
+			t.Errorf("ParseTunnelPayload(%q) = %+v, want a refusal", b, p)
 		}
 	}
 }

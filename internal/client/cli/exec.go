@@ -43,7 +43,7 @@ func execute(ctx context.Context, in *Input) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	t, err := tunnel.Open(ctx, conn, sshName)
+	t, err := tunnel.Open(ctx, conn, sshName, in.redial, in.runner.Timings)
 	switch {
 	case err != nil && ctx.Err() != nil:
 		return 0, interrupted(hostName)
@@ -143,13 +143,17 @@ func (in *Input) dialGateway(ctx context.Context, t *tunnel.Tunnel, sshName stri
 }
 
 // sessionError says why the SSH Session to hostName failed with err: the
-// Gateway ended it with a notice, the Tunnel t beneath it lost its channel,
-// or the SSH Session itself failed.
+// Gateway ended it with a notice, koko disconnect ended the Tunnel t
+// beneath it, which does not Resume, t lost its channel and could not
+// Resume, or the SSH Session itself failed.
 func sessionError(hostName string, t *tunnel.Tunnel, err error) error {
 	if notice := gatewayNotice(t); notice != "" {
 		return errors.New(notice)
 	}
 	if lost, ok := errors.AsType[*tunnel.LostError](t.Err()); ok {
+		if errors.Is(lost, serverconn.ErrDisconnected) {
+			return fmt.Errorf("koko disconnect ended the SSH Session to %s", hostName)
+		}
 		return fmt.Errorf("%w; the SSH Session to %s could not be resumed", lost, hostName)
 	}
 	return fmt.Errorf("the SSH Session to %s failed: %w", hostName, err)

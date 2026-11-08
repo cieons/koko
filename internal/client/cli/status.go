@@ -77,6 +77,9 @@ type deviceMuxJSON struct {
 	// LastError is why its last try to open a Device Connection failed,
 	// while it reconnects, as server_error shows it; null while connected.
 	LastError *errorJSON `json:"last_error"`
+	// WaitingToResume counts the SSH Sessions through it whose Tunnels wait
+	// to Resume.
+	WaitingToResume int `json:"waiting_to_resume"`
 }
 
 // revocationJSON is the revocation record: which Device Session of which
@@ -110,6 +113,12 @@ func (s statusJSON) Human(w io.Writer) error {
 			line("Device Mux", "%s since %s (%s): %s", m.State, m.Since, m.Socket, m.LastError.Message)
 		} else {
 			line("Device Mux", "%s since %s (%s)", m.State, m.Since, m.Socket)
+		}
+		switch n := m.WaitingToResume; {
+		case n == 1:
+			line("Resuming", "1 SSH Session waits to Resume")
+		case n > 1:
+			line("Resuming", "%d SSH Sessions wait to Resume", n)
 		}
 	}
 	line("This CLI", "koko %s", s.CLIVersion)

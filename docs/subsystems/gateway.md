@@ -23,10 +23,13 @@ is P0 spec: reach, "The Tunnel on the wire", "The Gateway" and "`koko exec`".
   then what the kind carries. `open` (`wire.TunnelOpen`) carries one SSH
   string, the SSH Name as typed; the Gateway drops a trailing `.koko`
   (`wire.TunnelHost`), so `web1` and `web1.koko` name the same Host. For
-  example, `00 00 00 04 "open" 00 00 00 09 "web1.koko"`. A payload that is
-  no kind, or an `open` with anything but one SSH Name, is refused at the
-  channel open; so is any other kind, until the Gateway takes it (`resume`
-  comes with resumption).
+  example, `00 00 00 04 "open" 00 00 00 09 "web1.koko"`. `resume`
+  (`wire.TunnelResume`) carries the Tunnel id's 16 bytes as they are, then
+  the offset the device has received of the stream, the id's 16 bytes
+  included, as a uint64: `00 00 00 06 "resume"`, 16 bytes, then 8 bytes,
+  big-endian. A payload that is no kind, an `open` with anything but one
+  SSH Name, a `resume` with anything but an id and an offset, and any other
+  kind are refused at the channel open, with reason `connect failed`.
 - **The Tunnel id.** The Gateway picks 128 random bits for each Tunnel it
   accepts and sends them as the first 16 bytes of the stream
   (`wire.TunnelIDSize`), so in its first frame, before the SSH Session's
@@ -126,14 +129,68 @@ the two as above, or refuses the Host's with the client's reason. It
 refuses every other global request of the client's itself, which answers
 OpenSSH's `keepalive@openssh.com`: the Host never sees the client's
 keepalives. The Host's client refuses the Host's global requests and every
-other channel the Host opens.
+other channel the Host opens. The Host's own `keepalive@openssh.com`, which
+an sshd that sets `ClientAliveInterval` sends a quiet client, wanting a
+reply, on an open channel if it has one (`hostKeepalive`), the Gateway
+refuses on that channel itself, never passing it to the client: sshd takes
+any reply as the answer, and a Detached client could not give one before
+sshd gave up on it. On the connection, the Host's client refuses it as any
+global request of the Host's.
+
+## Detach and Resume
+
+Only the device's leg Resumes
+([ADR 0021](../adr/0021-an-ssh-session-survives-a-network-drop-by-resuming-its-tunnel.md));
+the Gateway's side is [`resume.go`](../../internal/server/gateway/resume.go).
+
+- **Detached.** When a Tunnel's channel fails, as when the koko server
+  declares its Device Connection dead (`timing.ServerDead`, 45 s, [the
+  Device Connection](device-connection.md#the-tcp-listener)), or the
+  connection closes, the Tunnel is Detached (`ssh session detached`). Its SSH
+  Session and the Host connection carry on: what the Host sends waits in the
+  stream's replay buffer, which blocks the relay once full
+  ([the resumable stream](resumable-stream.md)), and the Host's keepalives
+  are answered as above. The grace, `timing.Grace` (1 minute), starts then;
+  when it runs out, the Tunnel ends (`grace over`). A Detached Tunnel still
+  counts against its Device Session's 64.
+- **A resume** is a `tunnel@koko` channel whose payload names the Tunnel
+  and carries the device's received offset. The Gateway takes it from the
+  Device Session that opened the Tunnel only, on any of its connections,
+  from any address, or for the Local caller's Tunnel, over the Unix socket.
+  It accepts the channel, answers with its own received offset and resends
+  from the device's ([the resumable stream](resumable-stream.md#on-the-wire)),
+  stops the grace and logs `ssh session resumed` with the address the
+  resume came from. The last attach wins: a resume also takes the Tunnel
+  off a channel the koko server has not yet found dead, as when the device
+  found a stalled path dead first, or moved to another network, and that
+  Tunnel is never Detached. A command that ends while its Tunnel is
+  Detached, its output and exit status passed on into the stream, reaches
+  the device with the Resume. The Host's connection ending while the Tunnel
+  is Detached ends the Tunnel, whose resume is then refused.
+- **Withdrawn access** ends a Detached Tunnel as it ends an attached one
+  ([below](#access-during-a-live-ssh-session)); its resume is then refused.
+- **A refused resume** is the channel open's refusal with reason
+  `administratively prohibited` (`ssh.Prohibited`), which no other refusal
+  of a `tunnel@koko` channel has, by the Gateway or by a Device Mux, so the
+  device gives up rather than try again: the koko server holds no Tunnel of
+  this Device Session with that id, as when its grace ran out or the koko
+  server restarted. The message is `the koko server holds no such Tunnel of
+  this device: its grace ran out, or the koko server restarted`
+  (`unknownTunnel`), the same for a Tunnel id another Device Session
+  offers, so a stolen id is of no use. Every other refusal, such as the
+  koko server stopping, is `connect failed`, and the device tries again.
+- **A resume that fails** once the channel is accepted, as when the device
+  is gone again before the answer, leaves the Tunnel Detached, its grace
+  running (`ssh session resume failed`); an offset outside the replay buffer ends
+  the stream and the SSH Session.
 
 ## When an SSH Session ends
 
 An SSH Session ends when the client closes its connection, the Host's
-connection ends, the Tunnel's channel fails (nothing Resumes a Tunnel yet),
-its access is withdrawn ([below](#access-during-a-live-ssh-session)), or the
-koko server stops. When the Host's connection ended first, what the
+connection ends, its Tunnel stays Detached for the whole grace
+([Detach and Resume](#detach-and-resume)), its access is withdrawn
+([below](#access-during-a-live-ssh-session)), or the koko server stops.
+When the Host's connection ended first, what the
 Host sent before, an `exit-status` included, is passed on to the client
 first. Some ends come with a notice (`ending`): the Gateway writes it as one
 `koko: ` line on the stderr of each session channel the client has open, so
@@ -148,7 +205,7 @@ the Tunnel out of the registry.
 | The Host leg broke: the [Host connector](host-connector.md#keeping-a-connection-alive) heard nothing for 60 s, its probes unanswered | `lost the connection to web1 (no answer for 60 s); this SSH Session has ended.` | `Host leg lost` |
 | The Host, or the network beneath, closed its connection | `web1 closed the connection.` | `Host closed` |
 | The koko server stops cleanly, as for an upgrade | `the koko server is restarting; this SSH Session has ended.` | `server stopping` |
-| The Tunnel's channel failed | none | `device connection lost` |
+| The Tunnel stayed Detached for the whole grace | none | `grace over` |
 | Its Device Session was Revoked | `access to web1 was withdrawn: this device's Device Session was Revoked; this SSH Session is closed.` | `revoked` |
 | Its User was Removed | `access to web1 was withdrawn: bob was Removed; this SSH Session is closed.` | `user removed` |
 | The Host was Retired | `access to web1 was withdrawn: web1 was Retired; this SSH Session is closed.` | `host retired` |
@@ -234,6 +291,13 @@ One line per event, never an exec's command text:
   `err`, and `host key mismatch` with `pinned` and `offered`, the two
   fingerprints. A client that leaves before its `none` is logged at debug
   level as `ssh session ended before it started`.
+- `ssh session detached`: `tunnel` and `device_session`, when the grace
+  starts.
+- `ssh session resumed`: `tunnel`, `device_session` and `addr`, where the
+  resume came from: on TCP, a new address at each Device Connection.
+- `ssh session resume refused`: `tunnel` (the id the resume named),
+  `device_session`, `addr` and `reason` (`unknown tunnel`); `ssh session
+  resume failed`, the same with `err`, for one that failed once accepted.
 - `tunnel refused`: `device_session`, `addr` and `err`, for a payload the
   Gateway does not take, and with `name` before initialisation.
 - `open a Tunnel`, at error level, with `device_session`, `addr`, `name`
@@ -266,10 +330,13 @@ but with Go's SSH client and no OpenSSH, Include line or terminal:
   ([ADR 0033](../adr/0033-koko-exec-joins-its-words-as-ssh-does-and-forwards-no-signal.md)).
   It sends one `exec` request and no pty, passes stdin to the command, and
   stdout and stderr apart.
+- Its Tunnel Resumes as koko tunnel's does ([below](#the-device-end-of-a-tunnel)),
+  so a command in flight carries on across a drop.
 - It exits with the command's status, and 255 when there is none or koko
   itself fails, as ssh does: a command a signal ended (it names the signal),
-  a refused command line, no koko server, a refused SSH Session, a lost
-  Tunnel, or an interruption ([the CLI](cli.md#the-runner-and-the-output-layer)).
+  a refused command line, no koko server, a refused SSH Session, a Tunnel
+  that could not Resume or that koko disconnect ended, or an interruption
+  ([the CLI](cli.md#the-runner-and-the-output-layer)).
 - When the Gateway ends the SSH Session with a notice, such as that the
   koko server is restarting, the notice's line is on its stderr already, as
   the session's, so it exits 255 and adds nothing; a notice that did not
@@ -300,9 +367,12 @@ even `--json` (`Command.Stdio`, [the CLI](cli.md#the-command-tree)).
 - **Once it is open**, the Gateway's refusals are banners in ssh's own
   output, and its notices lines on the session channels' stderr, and koko tunnel
   prints nothing. When the Gateway closes the Tunnel, a koko server stop
-  included, it exits 0. When the Tunnel's channel fails, it prints `koko: lost
-  the connection to the koko server at 12:01:07; the SSH Session to web1
-  could not be resumed` and exits 1 (nothing Resumes a Tunnel yet).
+  included, it exits 0. When the Tunnel's channel fails, it Resumes, and
+  prints nothing ([below](#the-device-end-of-a-tunnel)). When it cannot
+  Resume, it prints `koko: lost the connection to the koko server at
+  12:01:07; the SSH Session to web1 could not be resumed` and exits 1; when
+  koko disconnect ended it, `koko: koko disconnect ended the SSH Session to
+  web1`, and exits 1.
 - **stdin's EOF** half-closes the Tunnel; koko tunnel relays what the
   Gateway still sends until the Gateway closes it.
 - **Signals**, through `cli.Runner.Signals`, which `cmd/koko` sets to
@@ -312,7 +382,47 @@ even `--json` (`Command.Stdio`, [the CLI](cli.md#the-command-tree)).
   sends what is unsent and a close frame, then exits 0, so the Gateway ends
   the SSH Session as the client's close (`reason="client closed"`).
 - A running koko tunnel stays connected to the Device Mux, so an open SSH
-  Session keeps the Device Mux from idling out.
+  Session, or one waiting to Resume, keeps the Device Mux from idling out.
+
+## The device end of a Tunnel
+
+[`tunnel.Tunnel`](../../internal/client/tunnel/tunnel.go), which koko
+tunnel and koko exec share, Resumes its Tunnel each time the stream's
+channel fails, so the SSH Session above it only freezes; ssh's stdio stays
+open meanwhile.
+
+- **Which connection.** It resumes on the connection it opened on while
+  that lasts: through a Device Mux, which closes the Tunnel's channel when
+  its Device Connection drops, the resume's open waits for the Device Mux's
+  next Device Connection, and is sent again each time the Device Mux
+  refuses it after `timing.CommandWait`, which keeps the Device Mux
+  reconnecting. Once that connection has ended, as when the Device Mux
+  crashed or a direct Device Connection died, it reaches the koko server
+  again as the command did (`Input.redial`): over the Unix socket, through
+  this build's Device Mux, starting a new one, or with `KOKO_DIRECT=1`
+  direct, over a Device Connection of its own, which it closes when done.
+- **Trying again.** Each try begins at least a wait after the last one
+  began, the wait `timing.ReconnectFirst` (250 ms) at first and doubling
+  up to `timing.ReconnectMax` (5 s), so a try that took longer, as one
+  waiting out a Device Mux's `timing.CommandWait` does, is followed at
+  once. Once its channel is open, the koko server's answer must come
+  within `timing.ResumeExchange` (5 s), or the channel is closed and the
+  resume sent again.
+- **Giving up.** It ends with a `*tunnel.LostError`, at the time it lost
+  the channel, when the koko server refuses the resume
+  ([above](#detach-and-resume)), when the connection's end says nothing
+  would reach the koko server again (`serverconn.ErrDisconnected` from
+  koko disconnect, `serverconn.ErrRevoked`), when reaching it anew fails
+  for a reason trying again does not change (`tunnel.ErrFinal`: not
+  joined, Revoked, a host key not the pinned one), or when the channel
+  failed before the Tunnel's id came. Nothing else ends it, so a koko
+  server out of reach is waited for.
+- **Closing** a Detached Tunnel, as on SIGHUP, sends no close frame, as
+  there is no channel to send it on: the Gateway holds the SSH Session
+  until its grace ends.
+- **Waiting to Resume** through a Device Mux, it says so to the Device Mux
+  (`devicemux.Conn.WaitingToResume`), which counts it for `koko status`
+  ([the Device Mux](device-mux.md#the-local-protocol)).
 
 ## Verifying
 
@@ -323,7 +433,7 @@ with env, a pty and a window change, a signal and the sftp subsystem; `-L`
 and `-D` to a TCP port, `-L` to a Unix socket, and `-R` from a TCP port and
 a Unix socket with their cancels; each failure before the Device Connection
 as one line (golden files `tunnel-*`; unreachable also through the Device
-Mux), and the lost Tunnel's line; stdin's EOF; SIGINT ignored; SIGHUP and
+Mux), and the line of a Tunnel whose grace ran out; stdin's EOF; SIGINT ignored; SIGHUP and
 SIGTERM sending a close frame, over the Unix socket, a direct Device
 Connection and the Device Mux; the Device Mux kept from idling out; and the
 command line, help, skill and completion.
@@ -352,8 +462,27 @@ holds live SSH Sessions through ssh and `koko exec` across each change that
 withdraws access, each ending with its line, the Revoked one before the
 Device Connection closes, while those that keep access, the Owner's among
 them, go on; and across each change that keeps access, which ends none.
+[`resume_test.go`](../../internal/client/cli/resume_test.go) drops the
+Device Connection beneath an SSH Session with a
+[`harness.Forward`](../../internal/harness/forward.go), cut, which both
+ends see at once, or stalled with no close passed on (`f.Partition()`),
+which the device finds dead first, so its resume from a new address wins
+over the channel the koko server still holds: a shell through koko tunnel
+and the Device Mux, and a 4 MiB upload and download through koko exec on
+the direct path, carry on intact, and the log shows the Resume from a new
+address, and no Detach after a stall; a command that ends while Detached,
+the device kept from reconnecting until the Detach is logged, gives koko
+exec, through the Device Mux, its output and exit status on the Resume; a
+half-close before a stall
+survives it; killing the Device Mux ends no
+SSH Session, which Resumes through a new Device Mux, and with
+`KOKO_DIRECT=1` over a Device Connection of its own; a Tunnel waiting to
+Resume keeps the Device Mux from idling out and shows in `koko status`;
+`koko disconnect` ends an SSH Session without a Resume; a Host with
+`ClientAliveInterval` (`sshhost.ClientAlive`) keeps a Detached SSH
+Session; and another Device Session's resume is refused.
 [`gateway/relay_test.go`](../../internal/server/gateway/relay_test.go)
 writes lines on a session channel's stderr from several goroutines beside
 its EOF, which `go test -race` fails unless they take turns.
 [`wire/tunnel_test.go`](../../internal/shared/wire/tunnel_test.go) pins the
-open payload's bytes.
+`open` and `resume` payloads' bytes.

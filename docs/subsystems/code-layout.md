@@ -242,7 +242,9 @@ is such a device whose commands go through a Device Mux once it joins: each
 one it starts runs in the test process as `koko device-mux`, with a
 temporary runtime directory (`TMPDIR` and `XDG_RUNTIME_DIR`, `d.RuntimeDir()`)
 and `timings` as its timing hook, logs to `d.MuxLog()` and stops when the
-test ends. `d.KokoEnv(env, args...)` runs a command line with more
+test ends; `d.KillMux()` stops those running as a crash would, as their
+commands and the koko server see it, their connections closed with
+nothing sent first. `d.KokoEnv(env, args...)` runs a command line with more
 variables, such as `KOKO_DIRECT=1`, and `d.DialMux()` connects to the
 Device Mux as a command does and holds the connection.
 `harness.NewMuxDeviceBeside(t, d)` is another home of `d`'s OS user: a
@@ -263,7 +265,8 @@ sends once `cut` returns true are dropped with their connection, so a test
 cuts a call after the koko server has logged its answer and before the
 answer arrives. `f.Stall()` makes the connections it carries pass nothing
 more, either way, without closing them, as a network path that went dead
-does, while connections it accepts after pass as before.
+does, while connections it accepts after pass as before; `f.Partition()`
+also passes on no close, so each end finds its connection dead by itself.
 
 ## The in-process Host
 
@@ -275,7 +278,9 @@ one Host Account (`sshhost.Account`, `deploy`) with a home directory and an
 forwarding, as a Relay's sshd does. `ResetFirst`, `StallFirst`, `SlowLogins`,
 `ResetNext(n)` (once it is Enrolled, say), `DropConns` and `Freeze` (until
 `Thaw`, reading and writing nothing on any connection) break it as a
-network path or a slow PAM stack would.
+network path or a slow PAM stack would. `ClientAlive(interval, countMax)`
+probes a quiet client with `keepalive@openssh.com` and ends the connection
+when it leaves them unanswered, as sshd's `ClientAliveInterval` does.
 `Logins()` and `Requests()` record what it received; `Conns()` and `Open()`
 count its connections. It runs a session's command as sshd does: an exec
 request through `/bin/sh -c`, a shell request as `/bin/sh` reading its

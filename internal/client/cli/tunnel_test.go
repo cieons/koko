@@ -542,21 +542,30 @@ func TestKokoTunnelTakesOneSSHNameAndNoFlags(t *testing.T) {
 	}
 }
 
-// When the Device Connection beneath an open SSH Session drops, the Tunnel
-// is lost, since nothing Resumes it yet: koko tunnel says so in one line and
-// fails, and ssh's connection ends. The line's wording is #73's.
+// When the Tunnel beneath an open SSH Session cannot Resume, as when the
+// koko server was out of reach until its grace ran out, koko tunnel says so
+// in one line and fails, and ssh's connection ends. The line's wording, and
+// the reasons it gives, are #73's.
 func TestKokoTunnelSaysWhenItLostTheKokoServer(t *testing.T) {
-	h, fwd, _, init := initThrough(t)
+	timings := resumeServer
+	timings.Grace = 200 * time.Millisecond
+	h, fwd, listen, init := initThroughWith(t, timings)
 	d := harness.NewDevice(t)
+	d.UseTimings(resumeDevice)
 	d.Koko("join", init.JoinCode.Code).WantSuccess(t)
 	tunnelHost(t, h, "web1")
 	p := d.Proxy(nil, "tunnel", "web1.koko")
 	c := sshOver(t, p, "web1.koko", gatewayHostKey(t, h))
 
+	// The cut falls on the koko server's next bytes, such as its probe of
+	// the quiet device, which then finds nothing to reconnect to.
+	fwd.To(recordTries(t).addr())
 	fwd.CutWhen(func() bool { return true })
+	waitServerLog(t, h, `msg="ssh session ended" .* reason="grace over"\n`)
+	fwd.To(listen)
 	if s, err := c.NewSession(); err == nil {
 		_ = s.Close()
-		t.Errorf("a session opened through a Tunnel whose Device Connection dropped")
+		t.Errorf("a session opened through a Tunnel whose grace ran out")
 	}
 	r := p.Wait()
 	if !strings.HasPrefix(r.Stderr, "koko: lost the connection to the koko server") || strings.Count(r.Stderr, "\n") != 1 || r.Status == 0 {

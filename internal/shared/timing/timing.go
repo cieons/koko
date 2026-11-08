@@ -91,6 +91,15 @@ const (
 	// its first Device Connection, before it refreshes them again: so a Host
 	// someone else records becomes a bare name by itself.
 	BareNameRefresh = 10 * time.Minute
+	// Grace is how long the Gateway holds a Detached SSH Session, and its
+	// Host connection, for the device to Resume its Tunnel, from when the
+	// Tunnel's channel failed: as when the koko server declared its Device
+	// Connection dead.
+	Grace = time.Minute
+	// ResumeExchange bounds how long the device waits for the koko server's
+	// answer to a resume once its channel opened; past it, the device tries
+	// again, on the next Device Connection should this one have died.
+	ResumeExchange = 5 * time.Second
 )
 
 // Timings is the timing-constants hook. Each field is named after its
@@ -116,6 +125,8 @@ type Timings struct {
 	DeviceConnectAttempt time.Duration
 	WakeCheck            time.Duration
 	BareNameRefresh      time.Duration
+	Grace                time.Duration
+	ResumeExchange       time.Duration
 
 	// Wake and RouteChange stand in for the Device Mux's watches of the
 	// device waking from sleep and of a change of its network routes: each
@@ -147,6 +158,8 @@ func (t Timings) Resolve() Timings {
 	t.DeviceConnectAttempt = cmp.Or(t.DeviceConnectAttempt, DeviceConnectAttempt)
 	t.WakeCheck = cmp.Or(t.WakeCheck, WakeCheck)
 	t.BareNameRefresh = cmp.Or(t.BareNameRefresh, BareNameRefresh)
+	t.Grace = cmp.Or(t.Grace, Grace)
+	t.ResumeExchange = cmp.Or(t.ResumeExchange, ResumeExchange)
 	return t
 }
 

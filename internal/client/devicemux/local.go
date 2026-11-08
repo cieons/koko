@@ -32,6 +32,8 @@ type State struct {
 	Connected bool
 	Since     time.Time
 	Err       error
+	// Resuming counts the Tunnels through it that wait to Resume.
+	Resuming int
 }
 
 // The local protocol between a command and the Device Mux is the koko
@@ -52,11 +54,15 @@ type State struct {
 //   - It then sends the report of its Device Connection as the koko server
 //     does (wire.RequestReport), and again, on every open connection,
 //     whenever it opens a new Device Connection.
-//   - It carries every channel the command opens, of any type, onto its
-//     Device Connection with the same open payload, unparsed, and passes a
-//     refusal back with the koko server's reason and message. Its bytes go
-//     both ways, half-closes included, until either end closes. A channel
-//     open while it holds no Device Connection waits for its next one.
+//   - It carries every channel the command opens, of any type but
+//     channelResuming, onto its Device Connection with the same open
+//     payload, unparsed, and passes a refusal back with the koko server's
+//     reason and message. Its bytes go both ways, half-closes included,
+//     until either end closes. A channel open while it holds no Device
+//     Connection waits for its next one.
+//   - A command holds a channelResuming open on it while one of its Tunnels
+//     waits to Resume (Conn.WaitingToResume). The Device Mux carries it
+//     nowhere, and counts it in its state, for koko status.
 //   - When the koko server revokes its Device Session, it sends each open
 //     connection wire.RequestRevoked before it closes it, and when koko
 //     disconnect stops it, wire.RequestDisconnected.
@@ -73,6 +79,10 @@ type State struct {
 // Device Mux to stop. A home is an absolute path, so it is never one.
 const disconnectUser = "disconnect"
 
+// channelResuming is the channel a command holds open on the Device Mux
+// while one of its Tunnels waits to Resume.
+const channelResuming = "resuming@koko"
+
 // stateJSON is the banner a Device Mux sends: its state.
 type stateJSON struct {
 	// State is "connected", "reconnecting", "elsewhere" to a command of
@@ -87,6 +97,9 @@ type stateJSON struct {
 	// Commands is how many commands were connected to it when koko
 	// disconnect stopped it, which it ends.
 	Commands *int `json:"commands,omitzero"`
+	// Resuming counts the Tunnels through it that wait to Resume, when
+	// connected or reconnecting.
+	Resuming int `json:"resuming,omitzero"`
 }
 
 // encode writes sj as a banner.
@@ -128,7 +141,7 @@ type errorJSON struct {
 
 // banner encodes s as the banner a Device Mux sends.
 func (s State) banner() string {
-	sj := stateJSON{State: "reconnecting", Since: s.Since.UTC().Format(time.RFC3339Nano)}
+	sj := stateJSON{State: "reconnecting", Since: s.Since.UTC().Format(time.RFC3339Nano), Resuming: s.Resuming}
 	if s.Connected {
 		sj.State = "connected"
 	} else {
@@ -171,12 +184,12 @@ func parseState(banner string) (State, error) {
 	}
 	switch sj.State {
 	case "connected":
-		return State{Connected: true, Since: since}, nil
+		return State{Connected: true, Since: since, Resuming: sj.Resuming}, nil
 	case "reconnecting":
 		if sj.Error == nil {
 			return State{}, errors.New("read the Device Mux's state: it is reconnecting and says not why")
 		}
-		return State{Since: since, Err: sj.Error.decode()}, nil
+		return State{Since: since, Err: sj.Error.decode(), Resuming: sj.Resuming}, nil
 	}
 	return State{}, fmt.Errorf("read the Device Mux's state: it is %q", sj.State)
 }
@@ -237,7 +250,23 @@ func Dial(ctx context.Context, socket, home string) (serverconn.Conn, State, err
 	case err != nil:
 		return nil, State{}, fmt.Errorf("%w at %s: %w", ErrNotRunning, socket, err)
 	}
-	return conn, st, nil
+	return Conn{conn}, st, nil
+}
+
+// Conn is a command's connection through the Device Mux, as Dial returns it.
+type Conn struct {
+	serverconn.Conn
+}
+
+// WaitingToResume tells the Device Mux that a Tunnel on the connection
+// waits to Resume, until stop is called or the connection ends, so that
+// koko status counts it.
+func (c Conn) WaitingToResume(ctx context.Context) (stop func()) {
+	ch, err := c.OpenChannel(ctx, channelResuming, nil)
+	if err != nil {
+		return func() {}
+	}
+	return func() { _ = ch.Close() }
 }
 
 // Stop asks the Device Mux at socket, of any build, to stop, as koko

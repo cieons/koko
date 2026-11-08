@@ -18,7 +18,9 @@
 // each of its session channels.
 //
 // The Tunnel registry holds every Tunnel the Gateway accepted, by its id,
-// for as long as it lives.
+// for as long as it lives: a Tunnel whose channel fails is Detached, and
+// lives for the grace, for the device to Resume it on another channel
+// (resume.go).
 package gateway
 
 import (
@@ -59,6 +61,8 @@ type Gateway struct {
 	rootKey   *seal.RootKey
 	connector hostconn.Connector
 	log       *slog.Logger
+	// timings are the P0 timings, resolved: the grace among them.
+	timings timing.Timings
 
 	mu     sync.Mutex
 	closed bool
@@ -87,6 +91,7 @@ func New(st *store.Store, rootKey *seal.RootKey, timings timing.Timings, log *sl
 		rootKey:     rootKey,
 		connector:   hostconn.Connector{Timings: timings},
 		log:         log,
+		timings:     timings.Resolve(),
 		tunnels:     map[tunnelID]*tunnel{},
 		sshSessions: map[string]int{},
 	}
@@ -116,6 +121,15 @@ type tunnel struct {
 	hostID, hostName, user string
 	// done is closed once the Tunnel has left the registry.
 	done chan struct{}
+
+	// mu guards the Tunnel's Detach and Resume (resume.go): watched is the
+	// channel watched for its end, resuming counts the resumes moving the
+	// Tunnel onto a channel, and grace, while the Tunnel is Detached, ends
+	// it unless a resume comes first.
+	mu       sync.Mutex
+	watched  <-chan struct{}
+	resuming int
+	grace    *time.Timer
 }
 
 // ending is why the Gateway ends an SSH Session, as its log line's reason
@@ -141,9 +155,8 @@ func endingOf(cause error) *ending {
 
 // Why a Tunnel ends, besides its client or its Host closing the SSH Session.
 var (
-	// errLost: the Tunnel's channel failed. Until Tunnels Resume, that ends
-	// the Tunnel and its SSH Session.
-	errLost = &ending{reason: "device connection lost"}
+	// errGraceOver: the Tunnel stayed Detached for the whole grace.
+	errGraceOver = &ending{reason: "grace over"}
 	// errStopping: the koko server is stopping, as for an upgrade.
 	errStopping = &ending{reason: "server stopping", notice: "the koko server is restarting; this SSH Session has ended."}
 	// errEnded: the SSH Session has ended, or never started.
@@ -179,19 +192,25 @@ func (g *Gateway) Close() {
 	g.wg.Wait()
 }
 
-// serve serves one Tunnel from its channel open until it ends.
+// serve serves one Tunnel from its channel open until it ends, or Resumes
+// the one a resume names (resume.go).
 func (g *Gateway) serve(c *transport.Connection, nch ssh.NewChannel) {
 	caller := c.Caller()
 	from := []any{"device_session", deviceSession(caller), "addr", c.RemoteAddr()}
-	kind, sshName, err := wire.ParseTunnelPayload(nch.ExtraData())
-	if err == nil && kind != wire.TunnelKindOpen {
-		err = fmt.Errorf("this koko server takes no tunnel@koko %q", kind)
+	p, err := wire.ParseTunnelPayload(nch.ExtraData())
+	if err == nil && p.Kind != wire.TunnelKindOpen && p.Kind != wire.TunnelKindResume {
+		err = fmt.Errorf("this koko server takes no tunnel@koko %q", p.Kind)
 	}
 	if err != nil {
 		g.log.Info("tunnel refused", append(from, "err", err)...)
 		_ = nch.Reject(ssh.ConnectionFailed, err.Error())
 		return
 	}
+	if p.Kind == wire.TunnelKindResume {
+		g.resume(c, nch, p)
+		return
+	}
+	sshName := p.SSHName
 	hostName := wire.TunnelHost(sshName)
 	seen := g.withdrawalsTaken()
 	a, err := g.admit(c.Context(), caller, hostName)
@@ -221,15 +240,8 @@ func (g *Gateway) serve(c *transport.Connection, nch ssh.NewChannel) {
 	if limit != nil {
 		a.refused = limit
 	}
-	// Until Tunnels Resume, losing the channel ends the Tunnel. Whatever ends
-	// it closes its stream, which a client in its handshake waits on, and
-	// which also ends this watch.
-	g.wg.Go(func() {
-		<-t.stream.Detached()
-		if t.stream.Err() == nil {
-			t.end(errLost)
-		}
-	})
+	// Losing its channel Detaches the Tunnel for the grace.
+	g.watch(t)
 	// Until its SSH Session starts, the Tunnel's end closes the stream at
 	// once, with the end's notice; once it has started, the relay gives the
 	// notice first.
@@ -287,6 +299,7 @@ func (g *Gateway) withdrawalsTaken() uint64 {
 }
 
 func (g *Gateway) unregister(t *tunnel) {
+	t.stopGrace()
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	close(t.done)

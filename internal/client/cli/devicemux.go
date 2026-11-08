@@ -112,7 +112,7 @@ func (in *Input) dialDeviceMuxAt(ctx context.Context, socket string) (serverconn
 // json is the Device Mux m as koko status and koko connect show it, from
 // the state it answered in.
 func (m *deviceMuxSeen) json() *deviceMuxJSON {
-	j := &deviceMuxJSON{Socket: m.socket, State: "connected", Since: m.state.Since.UTC().Format(time.RFC3339)}
+	j := &deviceMuxJSON{Socket: m.socket, State: "connected", Since: m.state.Since.UTC().Format(time.RFC3339), WaitingToResume: m.state.Resuming}
 	if !m.state.Connected {
 		j.State = "reconnecting"
 	}

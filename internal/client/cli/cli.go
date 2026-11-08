@@ -194,6 +194,13 @@ type Input struct {
 	deviceMux *deviceMuxSeen
 }
 
+// unconnected returns an Input of the same command line that has reached
+// nothing yet: the fields above api, without those that note what a
+// connection reached, for a connection made beside the command's own.
+func (in *Input) unconnected() *Input {
+	return &Input{inv: in.inv, runner: in.runner, line: in.line, log: in.log, tree: in.tree}
+}
+
 // Arg returns the positional argument with this name, as typed.
 func (in *Input) Arg(name string) string {
 	return in.line.args[name]

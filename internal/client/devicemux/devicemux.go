@@ -172,8 +172,9 @@ type deviceMux struct {
 	// tried is closed, and replaced, each time a try to open a Device
 	// Connection ends.
 	tried chan struct{}
-	// waiting counts the commands and channels waiting for a Device
-	// Connection; the reconnect loop keeps trying while there are any.
+	// waiting counts the commands, channels and Tunnels waiting to Resume
+	// that wait for a Device Connection; the reconnect loop keeps trying
+	// while there are any.
 	waiting int
 	// state is what commands are told on connecting: whether it is
 	// connected, since when, and why its last try failed.
@@ -182,6 +183,8 @@ type deviceMux struct {
 	// connects; the Device Mux idles out only with none.
 	commands map[*commandConn]struct{}
 	idle     *time.Timer
+	// resuming counts the Tunnels of the commands that wait to Resume.
+	resuming int
 }
 
 // deviceConn is one Device Connection the Device Mux opened.
@@ -519,6 +522,9 @@ func (m *deviceMux) serve(nc net.Conn) {
 				return ""
 			}
 			bound = d
+			m.mu.Lock()
+			st.Resuming = m.resuming
+			m.mu.Unlock()
 			return st.banner()
 		},
 		NoClientAuthCallback: func(ssh.ConnMetadata) (*ssh.Permissions, error) {
@@ -548,8 +554,36 @@ func (m *deviceMux) serve(nc net.Conn) {
 	m.wg.Go(func() { c.sendReports() })
 
 	for nch := range chans {
+		if nch.ChannelType() == channelResuming {
+			m.wg.Go(func() { m.countResuming(nch) })
+			continue
+		}
 		m.wg.Go(func() { m.carry(nch) })
 	}
+}
+
+// countResuming counts a Tunnel of the command's that waits to Resume, for
+// as long as the command holds the channelResuming it opened. The Tunnel
+// waits for a Device Connection meanwhile, so the reconnect loop keeps
+// trying, with its backoff, between the opens its resume sends.
+func (m *deviceMux) countResuming(nch ssh.NewChannel) {
+	ch, reqs, err := nch.Accept()
+	if err != nil {
+		return
+	}
+	m.wg.Go(func() { ssh.DiscardRequests(reqs) })
+	m.mu.Lock()
+	m.resuming++
+	m.waiting++
+	m.reconnect()
+	m.mu.Unlock()
+	// Until the command closes it, or its connection ends.
+	_, _ = io.Copy(io.Discard, ch)
+	_ = ch.Close()
+	m.mu.Lock()
+	m.resuming--
+	m.waiting--
+	m.mu.Unlock()
 }
 
 // stopsQuietly tells whether the Device Mux is stopping for a reason a
