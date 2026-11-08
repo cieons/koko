@@ -80,6 +80,19 @@ function clockAt(instant: string): void {
   });
 }
 
+/**
+ * advanceCountdown moves the stopped clock on by ms once the shown Join
+ * Code's countdown runs: React starts its interval, the page's only one, in
+ * an effect that may run only after the line shows, and a clock moved on
+ * before then moves no countdown (#79). It looks with vi.waitUntil, on the
+ * real clock, since a testing-library wait starts a faked interval of its
+ * own; an interval of 0 keeps vi.waitUntil from moving the faked clock.
+ */
+async function advanceCountdown(ms: number): Promise<void> {
+  await vi.waitUntil(() => vi.getTimerCount() > 0, { interval: 0, message: "the Join Code's countdown never started" });
+  act(() => vi.advanceTimersByTime(ms));
+}
+
 /** issueAsBob renders the Devices page as bob on his laptop and adds a device, whose Join Code is joinCode. */
 async function issueAsBob(joinCode: JoinCode = desktopCode): Promise<{ api: FakeApi; shown: HTMLElement }> {
   const api = fakeApi();
@@ -133,7 +146,7 @@ test("adding a device never asks, and shows its koko join line once, with copy a
   expect(shown.textContent).toContain("It expires in 15:00.");
   expect(screen.getByRole<HTMLInputElement>("textbox", { name: "Device name (optional)" }).value).toBe("");
 
-  act(() => vi.advanceTimersByTime(61_000));
+  await advanceCountdown(61_000);
   expect(shown.textContent).toContain("It expires in 13:59.");
 
   fireEvent.click(within(shown).getByRole("button", { name: "Copy" }));
@@ -184,9 +197,9 @@ test("a Join Code that expired is no longer shown, and the page says to issue a 
   clockAt("2026-11-06T09:00:00Z");
   const { api, shown } = await issueAsBob();
 
-  act(() => vi.advanceTimersByTime(14 * 60_000 + 59_000));
+  await advanceCountdown(14 * 60_000 + 59_000);
   expect(shown.textContent).toContain("It expires in 0:01.");
-  act(() => vi.advanceTimersByTime(1_000));
+  await advanceCountdown(1_000);
 
   await waitFor(() => expect(shown.textContent).toBe("This Join Code expired. Add a device again for a new one."));
   expect(document.body.textContent).not.toContain(desktopCode.code);

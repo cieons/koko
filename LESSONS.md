@@ -61,10 +61,14 @@ machine stretches the moment between, and `server.init` dialled into it and
 got `connection refused`: 4 of 240 runs of the install test under load. The
 upgrade test, in turn, read the koko server's start from its log once
 install returned, though the koko server logs it just after its socket
-accepts: 3 failures under load.
-**Seen:** 1 (2026-11-06)
+accepts: 3 failures under load. The Devices page's countdown test, in
+turn, moved its faked clock on once the Join Code line showed, though
+React starts the countdown's interval in an effect it may run just after:
+CI on `main` went red at 4b0d50b, which touched nothing under `web/`.
+**Seen:** 2 (2026-11-06, 2026-11-08)
 **Evidence:** 3cae7b1 (#38); 4232f09 (#43); #77; ecff11b (#49); #78;
-c152887 (#54); check runs 42166495220 and 42167225724
+c152887 (#54); check runs 42166495220 and 42167225724; 4f5156b (#60);
+#79; check run 42436925411
 
 ### A channel closes only once every request on it has its answer
 
