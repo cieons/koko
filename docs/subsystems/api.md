@@ -209,6 +209,15 @@ Closing the transport stops new connections and channels, waits up to
 `shutdownGrace` (5 s) for calls in flight, then ends every connection, so the
 store is never closed under a running transaction.
 
+On a stop and on a revocation ([revoking](device-connection.md#revoking)),
+the transport ends a connection only once the other end has read what was
+sent on it: it half-closes the connection and waits up to `shutdownGrace`
+for the other end to close its own
+([`closeOnceSent`](../../internal/server/transport/transport.go)), so a slow
+link loses neither an answer's tail nor the revocation disconnect. A stop
+may therefore take `shutdownGrace` for calls in flight and as long again
+for a stalled device.
+
 ## Idempotency-Key
 
 The store is [`op/idempotency.go`](../../internal/server/op/idempotency.go),
@@ -266,6 +275,10 @@ over the table `idempotency_keys`; the design is P0 spec: reach and
   SSH on the socket, the version string, the report sent unasked before any
   channel, the Local caller, refused channel types, a new host key at each
   start, mode 0666.
+- [`internal/server/transport/close_test.go`](../../internal/server/transport/close_test.go):
+  a device on a slow link that sends while its connection closes gets in
+  full the answer to its last call before a stop, and the answer to the
+  call revoking its own Device Session with the revocation disconnect.
 - [`internal/server/report_test.go`](../../internal/server/report_test.go):
   the koko server reports every operation and its build's version.
 - [`internal/client/cli/skew_test.go`](../../internal/client/cli/skew_test.go):

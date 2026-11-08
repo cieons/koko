@@ -155,8 +155,10 @@ func (s *Server) UseTimings(t timing.Timings) {
 // Connection is one SSH connection to the koko server, as the requests on its
 // channels see it.
 type Connection struct {
-	ctx    context.Context
-	ssh    ssh.Conn
+	ctx context.Context
+	ssh ssh.Conn
+	// nc is the connection beneath ssh, which closeOnceSent half-closes.
+	nc     *halfCloser
 	caller op.Caller
 
 	mu sync.Mutex
@@ -363,6 +365,8 @@ func (s *Server) accept(ln net.Listener, w wayIn) {
 // serve runs one SSH connection until it ends. Each channel a Device
 // Connection opens uses its Device Session.
 func (s *Server) serve(nc net.Conn, w wayIn) {
+	beneath := &halfCloser{Conn: nc}
+	nc = beneath
 	var watched *liveness.Conn
 	if w.watch {
 		watched = liveness.NewConn(nc)
@@ -377,11 +381,20 @@ func (s *Server) serve(nc net.Conn, w wayIn) {
 	caller := w.callerOf(conn)
 	ctx, ended := context.WithCancel(context.Background())
 	defer ended()
-	connection := &Connection{ctx: ctx, ssh: conn, caller: caller}
+	connection := &Connection{ctx: ctx, ssh: conn, nc: beneath, caller: caller}
 	if !s.trackConn(connection) {
 		if s.isRevoked(caller.DeviceSession) {
-			// It authenticated while its revocation committed.
+			// It authenticated while its revocation committed. Its requests
+			// and channels are read until it closes, so none holds it up.
+			s.wg.Go(func() { ssh.DiscardRequests(reqs) })
+			s.wg.Go(func() {
+				for nch := range chans {
+					_ = nch.Reject(ssh.Prohibited, "this device's Device Session is revoked")
+				}
+			})
 			disconnectRevoked(conn)
+			s.closeOnceSent(conn, beneath)
+			return
 		}
 		_ = conn.Close()
 		return
@@ -458,7 +471,8 @@ func (s *Server) watch(c *Connection, lc *liveness.Conn) {
 }
 
 // shutdownGrace bounds how long Close, and the closing of a Revoked Device
-// Session's connection, wait for calls in flight.
+// Session's connection, wait for calls in flight, and then for each device
+// to close its end (closeOnceSent).
 const shutdownGrace = 5 * time.Second
 
 // CloseDeviceSessions closes the Device Connections of the Device Sessions
@@ -483,7 +497,8 @@ func (s *Server) CloseDeviceSessions(ids ...string) {
 }
 
 // closeRevoked closes c, a Revoked Device Session's connection, once its
-// calls in flight have answered, at most shutdownGrace from now.
+// calls in flight have answered, at most shutdownGrace from now, and sends
+// the device every byte before the close.
 func (s *Server) closeRevoked(c *Connection) {
 	select {
 	case <-c.drain():
@@ -494,7 +509,64 @@ func (s *Server) closeRevoked(c *Connection) {
 	s.log.Info("device connection closed", "device_session", c.caller.DeviceSession,
 		"addr", c.ssh.RemoteAddr(), "reason", "revoked")
 	disconnectRevoked(c.ssh)
-	_ = c.ssh.Close()
+	s.closeOnceSent(c.ssh, c.nc)
+}
+
+// closeOnceSent closes conn, an SSH connection over nc, once the device has
+// read what was sent on it: it half-closes nc and waits, at most
+// shutdownGrace, for the device to close its end, as x/crypto/ssh does on
+// reading the FIN. A close at once resets the connection when the device
+// sends after it, such as window adjusts, and drops what it had not read.
+func (s *Server) closeOnceSent(conn ssh.Conn, nc *halfCloser) {
+	ended := make(chan struct{})
+	s.wg.Go(func() {
+		defer close(ended)
+		// A connection that cannot be half-closed closes at once. A write
+		// stalled on a device that reads nothing holds up the half-close
+		// until conn.Close, below, ends the write.
+		if nc.CloseWrite() == nil {
+			_ = conn.Wait()
+		}
+	})
+	select {
+	case <-ended:
+	case <-time.After(shutdownGrace):
+	}
+	_ = conn.Close()
+}
+
+// halfCloser is the connection beneath a connection's SSH, whose half-close
+// waits for any write in progress: a channel's close, which wire.Conn sends
+// from a goroutine of its own as Close ends the channel, reset the
+// connection on macOS when the half-close met it.
+type halfCloser struct {
+	net.Conn
+	// mu is held across each write and the half-close; shut tells that the
+	// half-close is done.
+	mu   sync.Mutex
+	shut bool
+}
+
+func (c *halfCloser) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Conn.Write(p)
+}
+
+// CloseWrite half-closes the connection once no write is in progress; once
+// it has, it does nothing.
+func (c *halfCloser) CloseWrite() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.shut {
+		return nil
+	}
+	cw, ok := c.Conn.(interface{ CloseWrite() error })
+	if !ok {
+		return errors.ErrUnsupported
+	}
+	c.shut = true
+	return cw.CloseWrite()
 }
 
 // disconnectRevoked tells a Revoked Device Session's connection why it is
@@ -514,7 +586,8 @@ func (s *Server) isRevoked(id string) bool {
 }
 
 // Close stops listening and accepting channels, waits up to shutdownGrace for
-// calls in flight to finish, then ends every connection and waits for its
+// calls in flight to finish, then ends every connection, sending each device
+// every byte before the close (closeOnceSent), and waits for its
 // goroutines.
 func (s *Server) Close() error {
 	s.mu.Lock()
@@ -536,9 +609,11 @@ func (s *Server) Close() error {
 			errs = append(errs, fmt.Errorf("%s requests still running after %v were cut: %w", cs.kind, shutdownGrace, err), cs.http.Close())
 		}
 	}
+	var ending sync.WaitGroup
 	for _, c := range conns {
-		_ = c.ssh.Close()
+		ending.Go(func() { s.closeOnceSent(c.ssh, c.nc) })
 	}
+	ending.Wait()
 	s.wg.Wait()
 	return errors.Join(errs...)
 }

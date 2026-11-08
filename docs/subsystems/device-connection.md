@@ -356,8 +356,10 @@ before it closes one, it sends the **revocation disconnect**, the SSH
 global request [`wire.RequestRevoked`](../../internal/shared/wire/wire.go)
 (`revoked@koko`, no payload, no reply wanted), since SSH carries no reason
 on a close; the device's `serverconn.Conn.Wait` then returns
-`serverconn.ErrRevoked`. A device that misses it learns the same from the
-Revoked banner on its next connection.
+`serverconn.ErrRevoked`. The close waits for the device to read what came
+before it ([closing a connection](api.md#the-operation-framework)). A
+device that misses it learns the same from the Revoked banner on its next
+connection.
 Removing a User revokes each of their live Device Sessions in the same way,
 and names them all as Revoked on the signal, as a Removed User's
 ([Users](users.md#removing)). The other changes that withdraw access, a
@@ -509,4 +511,5 @@ Device Session, the address, `reason=dead` and the error, `no answer for
 - [`tcp_test.go`](../../internal/server/transport/tcp_test.go): the
   transport's authentication and join step with the client's dialer, the
   Revoked banner only after the signature, and closing a Device Session's
-  connections while refusing its new ones.
+  connections while refusing its new ones; and the answer and the
+  revocation disconnect over a slow link ([the API](api.md#verifying)).
