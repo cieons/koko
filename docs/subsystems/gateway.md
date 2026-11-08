@@ -111,7 +111,10 @@ Gateway itself (`refusedRequests`), so the Host never sees them, each with
 one line on that session channel's stderr: `koko: agent forwarding is not available
 through koko.` and `koko: X11 forwarding is not available through koko.`
 ssh asks for an agent without wanting a reply, so the line is all it shows.
-The session carries on.
+The session carries on. Such a line, and an ending's notice
+([below](#when-an-ssh-session-ends)), take turns with what the Host sends
+to the same stderr and with the EOF passed on from the Host
+(`sessionChannel`), and none follows that EOF.
 
 `-R` takes a global request and a channel the Host opens. The Gateway
 passes the client's `tcpip-forward`, `streamlocal-forward@openssh.com` and
@@ -349,5 +352,8 @@ holds live SSH Sessions through ssh and `koko exec` across each change that
 withdraws access, each ending with its line, the Revoked one before the
 Device Connection closes, while those that keep access, the Owner's among
 them, go on; and across each change that keeps access, which ends none.
+[`gateway/relay_test.go`](../../internal/server/gateway/relay_test.go)
+writes lines on a session channel's stderr from several goroutines beside
+its EOF, which `go test -race` fails unless they take turns.
 [`wire/tunnel_test.go`](../../internal/shared/wire/tunnel_test.go) pins the
 open payload's bytes.

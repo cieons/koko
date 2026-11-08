@@ -261,6 +261,7 @@ func (s *sshSession) channel(nch ssh.NewChannel) {
 	}
 	var pass func(*ssh.Request) bool
 	if nch.ChannelType() == "session" {
+		clientCh = &sessionChannel{Channel: clientCh}
 		pass = func(r *ssh.Request) bool { return s.sessionRequest(clientCh, r) }
 		s.mu.Lock()
 		s.sessionChannels[clientCh] = struct{}{}
@@ -272,6 +273,43 @@ func (s *sshSession) channel(nch ssh.NewChannel) {
 		}()
 	}
 	s.pair(clientCh, clientReqs, pass, hostCh, hostReqs)
+}
+
+// sessionChannel is a session channel of the client's. Its stderr takes the
+// lines the Gateway writes itself, a refused request's and an ending's
+// notice, beside what the Host's twin sends there, while the Host's
+// direction may be passing on its EOF; x/crypto's channel takes neither two
+// writes to one stream at once nor a write beside its CloseWrite, so these
+// take turns, and no line follows the EOF.
+type sessionChannel struct {
+	ssh.Channel
+	mu  sync.Mutex
+	eof bool
+}
+
+func (c *sessionChannel) Stderr() io.ReadWriter { return sessionStderr{c} }
+
+func (c *sessionChannel) CloseWrite() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.eof = true
+	return c.Channel.CloseWrite()
+}
+
+// sessionStderr is a sessionChannel's stderr, whose writes take turns.
+type sessionStderr struct {
+	c *sessionChannel
+}
+
+func (s sessionStderr) Read(p []byte) (int, error) { return s.c.Channel.Stderr().Read(p) }
+
+func (s sessionStderr) Write(p []byte) (int, error) {
+	s.c.mu.Lock()
+	defer s.c.mu.Unlock()
+	if s.c.eof {
+		return 0, io.EOF
+	}
+	return s.c.Channel.Stderr().Write(p)
 }
 
 // sessionRequest says whether a request on the client's session channel ch
