@@ -117,10 +117,23 @@ snapshot, and keeps only the latest one.
 
 ## Going back
 
-To go back to the koko you upgraded from, put the snapshot in place, then
-install the older release. An upgrade that left no `koko.db.before-<n>`
-changed no schema: then just install the older release, the last line
-below. On the machine, as root:
+To go back to the koko you upgraded from, install its release. On the
+machine, as root:
+
+```sh
+curl -fsSL https://github.com/cieons/koko/releases/download/v0.3.0/install.sh | env KOKO_VERSION=v0.3.0 sh -s --
+```
+
+with the version you upgraded from in place of `v0.3.0`. When the upgrade
+changed no schema, that is all. When it did, the older koko refuses to
+install over the newer database and writes nothing, while the newer koko
+server keeps running. Its refusal names the snapshot to put in place:
+
+```text
+koko: /var/lib/koko/koko.db: it is at schema version 14, which this koko (schema version 13) predates: run the newer koko that migrated it, or go back by putting koko.db.before-14 in place of koko.db; nothing was written
+```
+
+Put it in place, then install the older release again:
 
 ```sh
 systemctl stop koko
@@ -128,15 +141,14 @@ cd /var/lib/koko
 mkdir /var/lib/koko-newer
 mv koko.db /var/lib/koko-newer/
 mv koko.db-wal koko.db-shm /var/lib/koko-newer/ 2>/dev/null # there only after a crash
-mv koko.db.before-* koko.db
+mv koko.db.before-<n> koko.db
 curl -fsSL https://github.com/cieons/koko/releases/download/v0.3.0/install.sh | env KOKO_VERSION=v0.3.0 sh -s --
 ```
 
-with the version you upgraded from in place of `v0.3.0`. Anything written
-after the upgrade is lost with the newer database, which stays in
+with the snapshot the refusal named in place of `koko.db.before-<n>`, and
+the same version as above in place of `v0.3.0`. Anything written after the
+upgrade is lost with the newer database, which stays in
 `/var/lib/koko-newer`.
-An older koko refuses to install over a database newer than itself before
-it writes anything, naming the snapshot to put in place.
 
 ## Keeping the Root Key
 

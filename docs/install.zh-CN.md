@@ -72,7 +72,19 @@ curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | 
 
 ## 回退
 
-要回到升级前的 koko，先把快照放回原位，再安装旧的发布版本。如果升级没有留下 `koko.db.before-<n>`，说明它没有更改 schema：这时只需安装旧的发布版本，即下面的最后一行。在这台机器上以 root 运行：
+要回到升级前的 koko，安装它的发布版本。在这台机器上以 root 运行：
+
+```sh
+curl -fsSL https://github.com/cieons/koko/releases/download/v0.3.0/install.sh | env KOKO_VERSION=v0.3.0 sh -s --
+```
+
+把 `v0.3.0` 换成你升级前的版本。如果升级没有更改 schema，这样就完成了。如果更改了，较旧的 koko 会拒绝安装到较新的数据库上，不写入任何东西，较新的 koko 服务器仍在运行。它的拒绝信息会指出应放回原位的快照：
+
+```text
+koko: /var/lib/koko/koko.db: it is at schema version 14, which this koko (schema version 13) predates: run the newer koko that migrated it, or go back by putting koko.db.before-14 in place of koko.db; nothing was written
+```
+
+把它放回原位，然后再安装一次旧的发布版本：
 
 ```sh
 systemctl stop koko
@@ -80,11 +92,11 @@ cd /var/lib/koko
 mkdir /var/lib/koko-newer
 mv koko.db /var/lib/koko-newer/
 mv koko.db-wal koko.db-shm /var/lib/koko-newer/ 2>/dev/null # there only after a crash
-mv koko.db.before-* koko.db
+mv koko.db.before-<n> koko.db
 curl -fsSL https://github.com/cieons/koko/releases/download/v0.3.0/install.sh | env KOKO_VERSION=v0.3.0 sh -s --
 ```
 
-把 `v0.3.0` 换成你升级前的版本。升级之后写入的内容会随较新的数据库一起丢失，那个数据库留在 `/var/lib/koko-newer` 中。较旧的 koko 不会安装到比它新的数据库上：它在写入任何东西之前就拒绝，并指出应放回原位的快照。
+把 `koko.db.before-<n>` 换成拒绝信息指出的快照，把 `v0.3.0` 换成上面的同一个版本。升级之后写入的内容会随较新的数据库一起丢失，那个数据库留在 `/var/lib/koko-newer` 中。
 
 ## 保管根密钥
 
