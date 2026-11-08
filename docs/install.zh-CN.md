@@ -130,24 +130,32 @@ koko 还没有备份命令。在 koko 服务器停止时复制的数据目录，
 
 ## 在容器中运行
 
-镜像 `ghcr.io/cieons/koko` 让 koko 服务器在没有 systemd 的地方运行，比如在 Docker 里和你的其他容器放在一起。每个发布版本都会推送 amd64 和 arm64 的镜像，里面是该版本自己的 `koko-linux-<arch>` 二进制文件。容器只在把它唯一的目录交给 uid 65532 时以 root 运行，之后以 uid 65532 提供服务，不持有任何 capability。这样设计的原因见 [ADR 0037](adr/0037-the-container-keeps-its-data-and-its-root-key-in-one-directory.md) 和 [ADR 0038](adr/0038-a-container-initialises-at-its-first-start-and-gives-its-first-join-code-to-docker-exec.md)（英文）。
+镜像 `ghcr.io/cieons/koko` 让 koko 服务器在没有 systemd 的地方运行，比如在 Docker 里和你的其他容器放在一起。每个发布版本都会推送 amd64 和 arm64 的镜像，里面是该版本自己的 `koko-linux-<arch>` 二进制文件。容器从一开始就以 uid 65532 运行，从不以 root 运行，不持有任何 capability，koko 也不会更改任何文件的属主。这样设计的原因见 [ADR 0037](adr/0037-the-container-keeps-its-data-and-its-root-key-in-one-directory.md)、[ADR 0038](adr/0038-a-container-initialises-at-its-first-start-and-gives-its-first-join-code-to-docker-exec.md) 和 [ADR 0039](adr/0039-the-container-runs-as-uid-65532-from-the-start-and-koko-changes-no-owner.md)（英文）。
 
 ### Docker 宿主机的要求
 
 - 带 Compose v2（`docker compose`）的 Docker，amd64 或 arm64。
-- 一个给 koko 用的目录，下文为 `/srv/koko`，位于本地文件系统上，不能是 NFS 或其他网络文件系统：koko 服务器会在启动时拒绝它。
+- 一个 koko 专用、你能写入的文件夹，下文为 `/srv/koko`（`sudo install -d -o "$USER" /srv/koko`），位于本地文件系统上，不能是 NFS 或其他网络文件系统：koko 服务器会在启动时拒绝它。整个部署都在里面：Compose 文件、它的 `.env`，以及保存容器全部数据的 `state/`。
 - 一个空闲的 TCP 端口用来发布，下文为 7822。**在你的厂商的防火墙中开放它**，koko 自己不会开放任何端口。
 
-Docker 宿主机上不需要准备别的：不需要用户，不需要密钥，也不需要目录。`/srv/koko` 不存在时 Docker 会创建它，容器会把它交给 uid 65532，权限 0700，所以在 Docker 宿主机上只有 root 能读取它。
+Docker 宿主机上不需要准备用户或密钥，只需要在首次启动前准备一次 `state/`，属主为 uid 65532，权限 0700，这样在 Docker 宿主机上只有 root 能读取它。在 `/srv/koko` 中运行：
+
+```sh
+sudo install -d -o 65532 -g 65532 -m 0700 state
+```
+
+如果不做这一步，Docker 会以 root 创建 `state/`，权限 0755，koko 服务器会拒绝启动，不写入任何东西，并指出这个目录以及它运行所用的 uid 和 gid 65532。如果什么都不想准备，就改用命名卷：用 `koko:/koko` 代替 `./state:/koko`，并在文件末尾加上 `volumes: {koko: {}}`。Docker 会用镜像中的 `/koko` 填充新建的卷，它的属主已经是 uid 65532，并把卷保存在 Docker 自己的目录下（`docker volume inspect`）。下文的命令都在 `/srv/koko` 中运行，并以 `state/` 为例。
 
 ### 启动
 
-把 [`release/compose.yaml`](../release/compose.yaml) 保存为单独目录中的 `compose.yaml`：
+把 [`release/compose.yaml`](../release/compose.yaml) 保存为 `/srv/koko` 中的 `compose.yaml`：
 
 ```yaml
 # The koko server in a container: see docs/install.md, "In a container".
-# Before the first start, beside this file:
+# Keep this file in a folder of its own, such as /srv/koko, and there,
+# before the first start:
 #   echo KOKO_VERSION=0.2.0 > .env    # the release to run, without its v
+#   sudo install -d -o 65532 -g 65532 -m 0700 state    # what koko keeps
 # After it: docker exec koko koko device add    # your first Join Code
 services:
   koko:
@@ -155,14 +163,13 @@ services:
     container_name: koko
     restart: unless-stopped
     stop_grace_period: 30s
-    # Root only long enough to give /koko to uid 65532, then never again.
+    # uid 65532 from the start, with no capability and none to gain.
     cap_drop: [ALL]
-    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     security_opt: [no-new-privileges:true]
     ports:
       - "7822:7822"        # with another host port, name it in KOKO_ADDRESS
     volumes:
-      - /srv/koko:/koko    # the data and the Root Key; Docker makes it if missing
+      - ./state:/koko      # the data and the Root Key, beside this file: make it with install -d (above), or use a named volume
     environment:
       KOKO_OWNER: alice                  # read only at the first start
       KOKO_ADDRESS: koko.example.com     # host[:published port]; read only at the first start
@@ -172,28 +179,28 @@ services:
 
 ```sh
 echo KOKO_VERSION=0.2.0 > .env     # the release to run, without its v
+sudo install -d -o 65532 -g 65532 -m 0700 state   # once, unless you took a named volume
 docker compose up -d
 docker exec koko koko device add   # your first Join Code
 ```
 
-`KOKO_VERSION` 是必填的，所以容器运行的总是你选定的发布版本。首次启动时，koko 服务器会生成根密钥 `/srv/koko/root.key`，并完成自身的初始化。之后 `docker logs koko` 会显示 `koko server initialised`，以及主机密钥的指纹、监听地址、根密钥的路径和 id，还有接下来要运行的 `koko device add` 命令。日志里不会出现根密钥或加入码。没有 `KOKO_ADDRESS` 的全新 koko 服务器会拒绝启动，并指出这个设置：容器自己的 IP 是私有的，没有设备能访问它。
+`KOKO_VERSION` 是必填的，所以容器运行的总是你选定的发布版本。首次启动时，koko 服务器会生成根密钥 `state/root.key`，并完成自身的初始化。之后 `docker logs koko` 会显示 `koko server initialised`，以及主机密钥的指纹、监听地址、根密钥的路径和 id，还有接下来要运行的 `koko device add` 命令。日志里不会出现根密钥或加入码。没有 `KOKO_ADDRESS` 的全新 koko 服务器会拒绝启动，并指出这个设置：容器自己的 IP 是私有的，没有设备能访问它。
 
 `koko device add` 会打印你的第一个加入码，只能使用一次，15 分钟内有效，以及在你的电脑上配合它运行的 `koko join` 命令（[你电脑上的 CLI](#你电脑上的-cli)）。加入码丢了或过期了？再运行一次同样的命令，丢失了所有设备之后也是这样。
 
-不用 Compose 时，用 `docker run` 运行同样的容器：
+不用 Compose 时，在 `/srv/koko` 中用 `docker run` 运行同样的容器：
 
 ```sh
 docker run -d --name koko --restart unless-stopped --stop-timeout 30 \
-  --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
-  --cap-add SETGID --cap-add SETUID --security-opt no-new-privileges:true \
-  -p 7822:7822 -v /srv/koko:/koko \
+  --cap-drop ALL --security-opt no-new-privileges:true \
+  -p 7822:7822 -v "$PWD/state:/koko" \
   -e KOKO_OWNER=alice -e KOKO_ADDRESS=koko.example.com \
   ghcr.io/cieons/koko:0.2.0
 ```
 
 ### 所有者命令
 
-`docker exec koko koko <command>` 在容器内运行 koko CLI，它通过 koko 服务器的 Unix socket 以本地调用方（Local caller）的身份访问服务器，本地调用方以所有者的身份行事。所以所有者不需要设备就能操作：
+`docker exec koko koko <command>` 以镜像的 uid 65532 在容器内运行 koko CLI，它通过 koko 服务器的 Unix socket 以本地调用方（Local caller）的身份访问服务器，本地调用方以所有者的身份行事。所以所有者不需要设备就能操作：
 
 ```sh
 docker exec koko koko server show
@@ -221,22 +228,22 @@ Docker 宿主机自己的 shell 不是本地调用方，因为 socket 留在容�
 
 ### 备份和根密钥
 
-`/srv/koko` 保存容器的全部数据：根密钥 `root.key`，一行写明了它自己 id 的文本；以及数据目录 `data/`，里面有 `koko.db` 和最新的快照 `koko.db.before-<n>`。
+`state/` 保存容器的全部数据：根密钥 `state/root.key`，一行写明了它自己 id 的文本；以及数据目录 `state/data/`，里面有 `koko.db` 和最新的快照 `koko.db.before-<n>`。
 
-根密钥封存了每个机密以及 koko 服务器自己的密钥。单独的 `data/` 副本不会泄露任何机密或私钥。**整个目录的副本会把记录和它的密钥放在一起**，而且 koko 进程可以读取、更改或删除 `root.key`，在 systemd 安装的 koko 服务器上这是做不到的。所以：
+根密钥封存了每个机密以及 koko 服务器自己的密钥。单独的 `state/data/` 副本不会泄露任何机密或私钥。**整个 `state/` 的副本会把记录和它的密钥放在一起**，而且 koko 进程可以读取、更改或删除 `root.key`，在 systemd 安装的 koko 服务器上这是做不到的。所以：
 
-1. 首次启动后立即把 `root.key` 复制到这台机器之外，比如放进密码管理器。它只有一行：`sudo cat /srv/koko/root.key`。`docker exec koko koko server show` 会打印它的 id。
-2. 单独备份 `data/`，在容器停止时以 root 复制（`docker compose stop`，之后 `docker compose start`）。这份副本放在哪里都可以。
-3. 整个目录的副本，只放在你愿意存放这些机密本身的地方。
+1. 首次启动后立即把 `root.key` 复制到这台机器之外，比如放进密码管理器。它只有一行：`sudo cat state/root.key`。`docker exec koko koko server show` 会打印它的 id。
+2. 单独备份 `state/data/`，在容器停止时以 root 复制（`docker compose stop`，之后 `docker compose start`）。这份副本放在哪里都可以。
+3. 整个 `state/` 的副本，只放在你愿意存放这些机密本身的地方。
 4. 机器的磁盘快照同时包含两者，但你的厂商本来就控制着这台机器。
 
-koko 服务器从不在已封存的数据上生成根密钥：缺失或不对的 `root.key` 会在启动时被拒绝，并指出数据需要的 id。如果它的所有副本都丢了，出路和[没有根密钥时](#没有根密钥时)一样：把 `data/` 移到一边，从头开始。
+koko 服务器从不在已封存的数据上生成根密钥：缺失或不对的 `root.key` 会在启动时被拒绝，并指出数据需要的 id。如果它的所有副本都丢了，出路和[没有根密钥时](#没有根密钥时)一样：把 `state/data/` 移到一边，从头开始。
 
 ### 升级容器
 
-修改 `.env` 中的 `KOKO_VERSION`，然后再运行一次 `docker compose up -d`。Compose 会拉取新镜像并替换容器，容器的记录、所有者、服务器地址和密钥都保留在 `/srv/koko` 中。每个打开的 SSH 会话都会结束，并显示一行提示，说明 koko 服务器正在重启。当新版 koko 更改了数据库的 schema 时，koko 服务器会先把原来的数据库复制到 `/srv/koko/data/koko.db.before-<n>`，并且只保留最新的一份快照。
+修改 `.env` 中的 `KOKO_VERSION`，然后再运行一次 `docker compose up -d`。Compose 会拉取新镜像并替换容器，容器的记录、所有者、服务器地址和密钥都保留在 `state/` 中。每个打开的 SSH 会话都会结束，并显示一行提示，说明 koko 服务器正在重启。当新版 koko 更改了数据库的 schema 时，koko 服务器会先把原来的数据库复制到 `state/data/koko.db.before-<n>`，并且只保留最新的一份快照。
 
-使用 `docker run` 时，运行 `docker stop koko` 和 `docker rm koko`，它们会保留 `/srv/koko`，然后用新版本运行 `docker run` 命令。
+使用 `docker run` 时，运行 `docker stop koko` 和 `docker rm koko`，它们会保留 `state/`，然后用新版本运行 `docker run` 命令。
 
 ### 在容器中回退
 
@@ -244,37 +251,38 @@ koko 服务器从不在已封存的数据上生成根密钥：缺失或不对的
 
 ```sh
 docker compose down
-mkdir /srv/koko-newer
-mv /srv/koko/data/koko.db /srv/koko-newer/
-mv /srv/koko/data/koko.db-wal /srv/koko/data/koko.db-shm /srv/koko-newer/ 2>/dev/null # there only after a crash
-mv /srv/koko/data/koko.db.before-<n> /srv/koko/data/koko.db
+mkdir newer
+mv state/data/koko.db newer/
+mv state/data/koko.db-wal state/data/koko.db-shm newer/ 2>/dev/null # there only after a crash
+mv state/data/koko.db.before-<n> state/data/koko.db
 docker compose up -d
 ```
 
-把 `koko.db.before-<n>` 换成拒绝信息指出的快照。升级之后写入的内容会随较新的数据库一起丢失，那个数据库留在 `/srv/koko-newer` 中。
+把 `koko.db.before-<n>` 换成拒绝信息指出的快照。升级之后写入的内容会随较新的数据库一起丢失，那个数据库留在 `newer/` 中。
 
 ### 恢复或迁移容器
 
-1. 在旧机器上：`docker compose down`，然后以 root 把 `/srv/koko` 作为整个目录复制出来。也可以只复制 `data/`，和你的 `root.key` 副本放在一起：恢复需要两者都在。
-2. 在新机器上把两者都放回 `/srv/koko`，`root.key` 放在 `data/` 旁边，属主是谁都可以：容器启动时会把它们交给 uid 65532。
+1. 在旧机器上：`docker compose down`，然后以 root 把 `/srv/koko` 作为整个文件夹复制出来，这样 Compose 文件和 `.env` 会和 `state/` 一起迁移。也可以只复制 `state/data/`，和你的 `root.key` 副本放在一起：恢复需要两者都在。
+2. 在新机器上把它们放回 `/srv/koko`：整个文件夹，或者 `compose.yaml`、`.env`、`state/data/` 和 `state/root.key`。然后在 `/srv/koko` 中以 root 把 `state/` 交给 uid 65532，因为 koko 不会更改属主：`chown -R 65532:65532 state` 和 `chmod 0700 state`。
 3. 在那里用同样的 `compose.yaml` 和 `.env` 运行 `docker compose up -d`。
 
-主机密钥封存在 `data/` 中一起迁移，所以设备仍然信任 koko 服务器。如果它的地址变了，运行 `docker exec koko koko server set address=<host[:port]>`，并在每台设备上运行 `koko connect <host:port>`。
+主机密钥封存在 `state/data/` 中一起迁移，所以设备仍然信任 koko 服务器。如果它的地址变了，运行 `docker exec koko koko server set address=<host[:port]>`，并在每台设备上运行 `koko connect <host:port>`。
 
 ### 从 systemd 迁移过来
 
-`koko server uninstall` 会停止已安装的 koko 服务器，并保留它的数据目录和根密钥。以 root 把它们放进容器的目录（其中还没有 `data/`）：
+`koko server uninstall` 会停止已安装的 koko 服务器，并保留它的数据目录和根密钥。在 `/srv/koko` 中以 root 把它们放进容器的 `state/`（其中还没有 `data/`）：
 
 ```sh
 koko server uninstall
-mkdir -p /srv/koko
-cp -a /var/lib/koko /srv/koko/data
-cp /etc/koko/root.key /srv/koko/root.key
+install -d -o 65532 -g 65532 -m 0700 state
+cp -a /var/lib/koko state/data
+cp /etc/koko/root.key state/root.key
+chown -R 65532:65532 state
 ```
 
 然后按上文启动 Compose 文件，不需要 `docker exec … device add`：已加入的设备仍然可用。把 `KOKO_OWNER` 和 `KOKO_ADDRESS` 设为它的所有者和服务器地址，否则每次启动都会记录一条警告，说明它们不同。如果已安装的 koko 服务器监听的不是 7822 端口，就发布那个端口（443 就是 `"443:7822"`），并且当它的服务器地址没有写明端口时，在 `KOKO_ADDRESS` 中写上端口，并运行 `docker exec koko koko server set address=koko.example.com:443`。
 
-反过来迁移时，把 `data/` 放到 `/var/lib/koko`，把 `root.key` 放到 `/etc/koko/root.key`，然后从第 2 步开始按[恢复到另一台机器](#恢复到另一台机器)操作；如果发布的端口不是 7822，就把 `--port` 设为那个端口。
+反过来迁移时，把 `state/data/` 放到 `/var/lib/koko`，把 `state/root.key` 放到 `/etc/koko/root.key`，然后从第 2 步开始按[恢复到另一台机器](#恢复到另一台机器)操作；如果发布的端口不是 7822，就把 `--port` 设为那个端口。
 
 ### 校验镜像
 
@@ -286,10 +294,10 @@ gh attestation verify oci://ghcr.io/cieons/koko:0.2.0 --repo cieons/koko
 
 镜像中的 `/usr/local/bin/koko` 与发布版本的 `koko-linux-<arch>` 逐字节相同，就是 `SHA256SUMS` 列出的那个文件。
 
-### 以 uid 65532 启动
+### Kubernetes 与其他用户
 
-在不允许镜像以 root 启动的地方，比如 Kubernetes 的 `runAsNonRoot`，从一开始就以 uid 65532 运行它，并使用 uid 65532 已经能写入的目录：在 Compose 文件中写 `user: "65532:65532"`，或者 `docker run --user 65532:65532`，或者在 pod 中设置 `runAsUser: 65532`、`runAsGroup: 65532` 和 `fsGroup: 65532`。Docker 宿主机上的目录要先以 root 创建：`install -d -o 65532 -g 65532 -m 0700 /srv/koko`。这时 koko 服务器什么都不准备，也不降权，不需要任何 capability。它无法写入的目录会在启动时被拒绝，并指出这个目录以及它运行所用的 uid 和 gid。其他 uid 只有在 `/koko` 和镜像的 `/run/koko` 都能被它写入时才可用。
+镜像的用户是数字 65532，所以 Kubernetes 的 `runAsNonRoot` 可以直接接受它；让它的卷可以被 uid 65532 写入，比如用 `fsGroup: 65532`。koko 服务器无法写入的目录会在启动时被拒绝，并指出这个目录以及它运行所用的 uid 和 gid；koko 服务器也拒绝以 root 运行，所以不要传 `--user 0` 或 `user: root`。其他 uid 只有在 `/koko` 和 `/run/koko` 都能被它写入时才可用，比如在 `/run/koko` 上挂载一个属于它的 tmpfs。
 
 ### 把根密钥分开存放
 
-要让根密钥不在你备份的目录中，从别处以只读方式挂载它，并让 `KOKO_ROOT_KEY_FILE` 指向它。首次启动后，运行 `docker compose down`，然后以 root 把 `/srv/koko/root.key` 移到一个单独的目录，比如 `/etc/koko-key/root.key`（先 `mkdir /etc/koko-key`），属主仍是 uid 65532，并对它执行 `chmod 0400`。然后在 `volumes:` 中加上 `/etc/koko-key/root.key:/run/secrets/koko-root.key:ro`，在 `environment:` 中加上 `KOKO_ROOT_KEY_FILE: /run/secrets/koko-root.key`，再运行 `docker compose up -d`。koko 服务器不会改动只读挂载上的文件；它无法读取的文件会在启动时被拒绝。
+要让根密钥不在你备份的目录中，从别处以只读方式挂载它，并让 `KOKO_ROOT_KEY_FILE` 指向它。首次启动后，运行 `docker compose down`，然后以 root 把 `state/root.key` 移到一个单独的目录，比如 `/etc/koko-key/root.key`（先 `mkdir /etc/koko-key`），属主仍是 uid 65532，并对它执行 `chmod 0400`。然后在 `volumes:` 中加上 `/etc/koko-key/root.key:/run/secrets/koko-root.key:ro`，在 `environment:` 中加上 `KOKO_ROOT_KEY_FILE: /run/secrets/koko-root.key`，再运行 `docker compose up -d`。koko 服务器只读取它；它无法读取的文件会在启动时被拒绝。

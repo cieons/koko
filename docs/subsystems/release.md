@@ -33,19 +33,20 @@ step, so building for the other architecture needs no emulation:
 
 | What | Value |
 | --- | --- |
-| Base | `gcr.io/distroless/static-debian12`, the variant whose default user is root, pinned by digest; [Dependabot](../../.github/dependabot.yml) opens a pull request when the digest moves |
+| Base | `gcr.io/distroless/static-debian12:nonroot`, pinned by digest; [Dependabot](../../.github/dependabot.yml) opens a pull request when the digest moves |
+| User | the base's default, the numeric `65532` (`nonroot` in its `/etc/passwd`, home `/home/nonroot`), from the start: the image never runs as root and holds no capability ([ADR 0039](../adr/0039-the-container-runs-as-uid-65532-from-the-start-and-koko-changes-no-owner.md)) |
 | Binary | `/usr/local/bin/koko`: the release's `koko-linux-<arch>`, copied from `dist/`, never rebuilt: the binary `SHA256SUMS` lists, whose version the release checks is the tag |
 | Entrypoint, command | `["koko"]`, `["server", "run"]` |
-| Environment | `KOKO_DATA_DIR=/koko/data`, `KOKO_ROOT_KEY_FILE=/koko/root.key`, `KOKO_RUN_AS=65532:65532` |
+| Environment | `KOKO_DATA_DIR=/koko/data`, `KOKO_ROOT_KEY_FILE=/koko/root.key` |
 | Directories | `/koko` (0700, uid and gid 65532), a `VOLUME`, so a container without a mount keeps its data in an anonymous volume, which outlives `docker rm`; `/run/koko` (0755, 65532), the socket's directory |
 | Port | `EXPOSE 7822` |
 | Labels | `org.opencontainers.image.source`, `.version` (the tag without its `v`, or `git describe` elsewhere), `.revision` (the commit), `.licenses` (`Apache-2.0`) |
 
-The image starts as root and sets `KOKO_RUN_AS`, the user `koko server run`
-is to give `/koko` to and then run as. `koko server run` reads it only once
-the root-then-uid-65532 change (#96) lands, and no release is tagged before
-the container check (#97) gates it, so no image that serves as root is ever
-pushed.
+`koko server run` changes no file's owner. A named volume on `/koko` starts as a copy
+of the image's, uid 65532's already; a bind mount must be made 65532's on
+the Docker host first (`install -d -o 65532 -g 65532 -m 0700`), or start-up
+refuses it as a directory it cannot write. `koko server run` refuses to run
+as root ([the Seal](seal.md#at-start-up)), so `--user 0` does not start.
 
 **Tags.** A release `vX.Y.Z` pushes the tag `X.Y.Z`, without the `v`, and
 moves `latest` to it, unless the version has a pre-release part
@@ -181,8 +182,8 @@ checks it by hand. `make image` is checked by hand too, until the container
 check does it: the archive's index lists `linux/amd64` and `linux/arm64`
 only; in each platform's layers, `/usr/local/bin/koko` has the SHA-256
 `dist/SHA256SUMS` lists, `/koko` is 0700 and `/run/koko` 0755, both
-65532's; and its config holds the entrypoint, command, environment,
-volume, port and labels above.
+65532's; and its config holds the user `65532`, the entrypoint, command,
+environment, volume, port and labels above.
 
 ## The real-systemd check
 

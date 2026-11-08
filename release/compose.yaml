@@ -1,6 +1,8 @@
 # The koko server in a container: see docs/install.md, "In a container".
-# Before the first start, beside this file:
+# Keep this file in a folder of its own, such as /srv/koko, and there,
+# before the first start:
 #   echo KOKO_VERSION=0.2.0 > .env    # the release to run, without its v
+#   sudo install -d -o 65532 -g 65532 -m 0700 state    # what koko keeps
 # After it: docker exec koko koko device add    # your first Join Code
 services:
   koko:
@@ -8,14 +10,13 @@ services:
     container_name: koko
     restart: unless-stopped
     stop_grace_period: 30s
-    # Root only long enough to give /koko to uid 65532, then never again.
+    # uid 65532 from the start, with no capability and none to gain.
     cap_drop: [ALL]
-    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     security_opt: [no-new-privileges:true]
     ports:
       - "7822:7822"        # with another host port, name it in KOKO_ADDRESS
     volumes:
-      - /srv/koko:/koko    # the data and the Root Key; Docker makes it if missing
+      - ./state:/koko      # the data and the Root Key, beside this file: make it with install -d (above), or use a named volume
     environment:
       KOKO_OWNER: alice                  # read only at the first start
       KOKO_ADDRESS: koko.example.com     # host[:published port]; read only at the first start
