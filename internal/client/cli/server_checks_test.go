@@ -175,3 +175,49 @@ func TestServerRunRefusesADataDirectoryItCannotWrite(t *testing.T) {
 		})
 	}
 }
+
+// koko server run refuses to run as root, wherever it runs, when its real,
+// effective or saved uid is 0, before anything is written, naming the fix
+// (ADR 0039). Started as another user, it starts as before.
+func TestServerRunRefusesRoot(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name                   string
+		real, effective, saved int
+		ids                    string
+	}{
+		{"real uid 0", 0, 1000, 1000, "uid are 0, 1000 and 1000"},
+		{"effective uid 0", 1000, 0, 1000, "uid are 1000, 0 and 1000"},
+		{"saved uid 0", 1000, 1000, 0, "uid are 1000, 1000 and 0"},
+		{"all three 0", 0, 0, 0, "uid are 0, 0 and 0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			socket := filepath.Join(harness.ShortTempDir(t), "koko.sock")
+			before := files(t, root)
+			msg := serverRunWith(t, filepath.Join(root, "data"), harness.SocketPath(socket), harness.ProcessUIDs(tc.real, tc.effective, tc.saved)).
+				WantError(t, 2, "invalid_usage")
+			for _, want := range []string{"does not run as root", tc.ids, "a user who is not root", "uid 65532", "--user 0"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("message %q does not say %q", msg, want)
+				}
+			}
+			if after := files(t, root); !slices.Equal(after, before) {
+				t.Errorf("the refused start wrote files: %v, before %v", after, before)
+			}
+			if _, err := os.Lstat(socket); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("the refused start left something at its socket: %v", err)
+			}
+		})
+	}
+	// Before every other check: root is told it is root even with a Root
+	// Key path that is not absolute.
+	msg := harness.Run(t, cli.Runner{ServerRun: harness.ServerStartWith(t, harness.ProcessUIDs(0, 0, 0))}, nil,
+		"server", "run", "--json", "--data-dir", t.TempDir(), "--root-key-file", "root.key").WantError(t, 2, "invalid_usage")
+	if !strings.Contains(msg, "does not run as root") {
+		t.Errorf("root with a relative Root Key path: message %q does not say it does not run as root", msg)
+	}
+	if r := serverRunWith(t, filepath.Join(t.TempDir(), "data"), harness.ProcessUIDs(65532, 65532, 65532)); r.Status != 0 {
+		t.Errorf("started as uid 65532: exit status %d, stderr %q", r.Status, r.Stderr)
+	}
+}

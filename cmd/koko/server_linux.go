@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/server"
 	"github.com/cieons/koko/internal/server/filesystem"
@@ -26,6 +28,7 @@ func serverRun(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
 		LogLevel:      s.LogLevel,
 		Log:           log,
 		Filesystems:   filesystem.System,
+		ProcessUIDs:   unix.Getresuid,
 	})
 }
 

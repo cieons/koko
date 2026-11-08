@@ -21,6 +21,19 @@ import (
 // neither, which start-up reads as unknown, never as dead.
 const socketDialWait = time.Second
 
+// refuseRoot refuses a koko server whose real, effective or saved uid is 0,
+// so that none ever serves as root or could become root again, wherever it
+// runs (ADR 0039). It writes nothing, and names the fix.
+func refuseRoot(uids func() (real, effective, saved int)) error {
+	r, e, s := uids()
+	if r != 0 && e != 0 && s != 0 {
+		return nil
+	}
+	return &install.Refusal{Reason: install.Usage, Message: fmt.Sprintf(
+		"koko server run does not run as root, and its real, effective and saved uid are %d, %d and %d: start it as a user who is not root, such as the koko user its systemd unit runs as, or, in a container, as the image's uid 65532, without --user 0 or user: root",
+		r, e, s)}
+}
+
 // checkDataDir refuses a data directory on a network filesystem, where
 // SQLite's WAL does not work, and one this process cannot write; before the
 // data directory exists, the directory it would be made in is checked

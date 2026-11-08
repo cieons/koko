@@ -37,6 +37,7 @@ func TestStartRefusesADatabaseANewerKokoMigrated(t *testing.T) {
 		RootKeyPath: harness.NewRootKeyFile(t),
 		Log:         io.Discard,
 		Filesystems: harness.LocalDisk{},
+		ProcessUIDs: harness.NotRoot,
 		SocketPath:  socket,
 	})
 	if err == nil {

@@ -99,6 +99,11 @@ type Config struct {
 	// start-up refuses on a network filesystem: filesystem.System on a
 	// machine, a fake in tests, so they read no real /proc. It must be set.
 	Filesystems filesystem.Types
+	// ProcessUIDs returns the process's real, effective and saved uid,
+	// from which start-up refuses root: unix.Getresuid on a machine, a fake
+	// in tests, so that they run alike as root and as any other user. It
+	// must be set.
+	ProcessUIDs func() (real, effective, saved int)
 
 	// SocketPath is the socket-path hook, for tests only: empty means the
 	// fixed wire.SocketPath. No flag or environment variable sets it.
@@ -146,11 +151,20 @@ type Server struct {
 // can name the Root Key the sealed data needs. An initialised koko server
 // that cannot listen on TCP refuses to start.
 //
+// It refuses to start as root, before anything else, and writes nothing
+// (ADR 0039).
+//
 // Given an Owner and a Server Address, a fresh koko server makes its
 // missing Root Key and initialises itself before the socket opens; an
 // initialised one warns when they differ from its record (ADR 0038).
 func Start(ctx context.Context, cfg Config) (*Server, error) {
 	log := slog.New(slog.NewTextHandler(cfg.Log, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	if cfg.ProcessUIDs == nil {
+		return nil, errors.New("start the koko server: Config.ProcessUIDs is not set")
+	}
+	if err := refuseRoot(cfg.ProcessUIDs); err != nil {
+		return nil, err
+	}
 	// Before anything names the path: a relative one may be the key itself.
 	if err := seal.CheckPath(cfg.RootKeyPath); err != nil {
 		return nil, err

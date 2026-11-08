@@ -33,6 +33,7 @@ func TestTheServerServesExactlyTheDeclaredOperations(t *testing.T) {
 		LogLevel:    slog.LevelError,
 		Log:         io.Discard,
 		Filesystems: localDisk{},
+		ProcessUIDs: notRoot,
 		SocketPath:  filepath.Join(socketDir, "koko.sock"),
 	})
 	if err != nil {
@@ -61,4 +62,12 @@ func (localDisk) FilesystemType(path string) (string, error) {
 		return "", err
 	}
 	return "ext4", nil
+}
+
+// notRoot is a Config.ProcessUIDs whose process runs as uid 1000, so that a
+// koko server a test starts runs alike in a test run as root. It is
+// harness.NotRoot, which this package's tests cannot import, since the
+// harness imports this package.
+func notRoot() (real, effective, saved int) {
+	return 1000, 1000, 1000
 }

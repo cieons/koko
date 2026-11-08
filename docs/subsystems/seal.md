@@ -67,7 +67,16 @@ would let one sealed value open as another's.
 ## At start-up
 
 [`server.Start`](../../internal/server/server.go) takes the Root Key's path
-from `koko server run --root-key-file` ([the CLI](cli.md)), and:
+from `koko server run --root-key-file` ([the CLI](cli.md)). Before anything
+else, it refuses to run as root, wherever it runs
+([ADR 0039](../adr/0039-the-container-runs-as-uid-65532-from-the-start-and-koko-changes-no-owner.md)): when the
+process's real, effective or saved uid is 0, which it reads through
+`Config.ProcessUIDs` (`unix.Getresuid` in `cmd/koko`), it refuses with exit
+2 (`invalid_usage`), naming the three uids and the fix: start it as a user
+who is not root, such as the `koko` user its systemd unit runs as, or in a
+container as the image's uid 65532, without `--user 0` or `user: root`
+([`refuseRoot`](../../internal/server/startup.go)). It writes nothing, and
+nothing changes for a koko server started as any other user. Then it:
 
 1. refuses a path that is not absolute, without naming it;
 2. refuses a path inside the data directory, or the directory itself,
@@ -146,9 +155,11 @@ relative path without printing it, a file inside the data directory (through
 `..` and symlinks too) leaving every file as it was, a missing file writing
 nothing in its place, and a file that does not parse leaving it unchanged.
 [`server_checks_test.go`](../../internal/client/cli/server_checks_test.go)
-covers steps 3 to 6 through the same start-up (`harness.ServerStartWith`): a
-data directory on NFS in a faked mount table (`harness.Mountinfo`), existing
-or not, and a read-only data directory or parent of a missing one, are
+covers the refusal of root and steps 3 to 6 through the same start-up
+(`harness.ServerStartWith`): a real, effective or saved uid of 0, faked
+with `harness.ProcessUIDs`, is refused writing nothing, before even a
+relative Root Key path, and uid 65532 starts; a data directory on NFS in a
+faked mount table (`harness.Mountinfo`), existing or not, and a read-only data directory or parent of a missing one, are
 refused writing nothing; a stale socket file is taken over and served on; a
 second start beside a running koko server refuses naming the socket while
 the first keeps serving; and a file that is not a socket is left as it is.

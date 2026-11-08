@@ -238,7 +238,10 @@ file, and `harness.Mountinfo(path)`, a file in `/proc/self/mountinfo`'s
 format, such as one that puts the data directory on NFS. Every koko server
 the harness starts reads its mounts from that file, or else from
 `harness.LocalDisk`, on which every path is on ext4, so no test reads the
-real `/proc`.
+real `/proc`. Each also reads the process's real, effective and saved uid
+from `harness.ProcessUIDs(real, effective, saved)`, such as 0 to be
+refused as root, or else from `harness.NotRoot`, uid 1000, so a test runs
+alike as root.
 [`harness.NewMachine`](../../internal/harness/machine.go) is the fake machine
 of `koko server install`'s system seam ([the installer](installer.md#verifying)).
 

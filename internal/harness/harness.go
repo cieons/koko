@@ -76,6 +76,7 @@ type options struct {
 	socket      string
 	timings     timing.Timings
 	filesystems filesystem.Types
+	processUIDs func() (real, effective, saved int)
 }
 
 // Mountinfo makes the koko server read the machine's mounts from path, a
@@ -103,6 +104,30 @@ func (o *options) filesystemsOrLocalDisk() filesystem.Types {
 		return LocalDisk{}
 	}
 	return o.filesystems
+}
+
+// ProcessUIDs makes the koko server's start-up read the process's real,
+// effective and saved uid as these, such as 0 for root. Without it, they are
+// NotRoot's, so a koko server the harness starts runs alike in a test run as
+// root.
+func ProcessUIDs(real, effective, saved int) Option {
+	return func(o *options) {
+		o.processUIDs = func() (int, int, int) { return real, effective, saved }
+	}
+}
+
+// NotRoot is a server.Config.ProcessUIDs whose process runs as uid 1000, a
+// user who is not root.
+func NotRoot() (real, effective, saved int) {
+	return 1000, 1000, 1000
+}
+
+// processUIDsOrNotRoot is the uids o names, or NotRoot.
+func (o *options) processUIDsOrNotRoot() func() (int, int, int) {
+	if o.processUIDs == nil {
+		return NotRoot
+	}
+	return o.processUIDs
 }
 
 // Timings starts the koko server with t through the timing-constants hook,
@@ -229,6 +254,7 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		LogLevel:    slog.LevelDebug,
 		Log:         h.log,
 		Filesystems: o.filesystemsOrLocalDisk(),
+		ProcessUIDs: o.processUIDsOrNotRoot(),
 		SocketPath:  h.socket,
 		Clock:       h.clock.Now,
 		Timings:     o.timings,
@@ -297,7 +323,7 @@ func ServerStart(t testing.TB) func(ctx context.Context, s cli.ServerSettings, l
 
 // ServerStartWith is ServerStart with the options that apply to a start-up
 // given its settings: SocketPath, to start beside a koko server serving
-// there or on a stale socket file, and Mountinfo.
+// there or on a stale socket file, Mountinfo and ProcessUIDs.
 func ServerStartWith(t testing.TB, opts ...Option) func(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
 	t.Helper()
 	config := settingsConfig(t, opts)
@@ -334,7 +360,7 @@ func settingsConfig(t testing.TB, opts []Option) func(cli.ServerSettings, io.Wri
 		opt(&o)
 	}
 	socket := cmp.Or(o.socket, filepath.Join(ShortTempDir(t), "koko.sock"))
-	filesystems := o.filesystemsOrLocalDisk()
+	filesystems, uids := o.filesystemsOrLocalDisk(), o.processUIDsOrNotRoot()
 	return func(s cli.ServerSettings, log io.Writer) server.Config {
 		return server.Config{
 			DataDir:       s.DataDir,
@@ -346,6 +372,7 @@ func settingsConfig(t testing.TB, opts []Option) func(cli.ServerSettings, io.Wri
 			LogLevel:      s.LogLevel,
 			Log:           log,
 			Filesystems:   filesystems,
+			ProcessUIDs:   uids,
 			SocketPath:    socket,
 		}
 	}

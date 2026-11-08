@@ -628,6 +628,7 @@ func (m *Machine) startService() error {
 			LogLevel:      s.LogLevel,
 			Log:           log,
 			Filesystems:   LocalDisk{},
+			ProcessUIDs:   NotRoot,
 			SocketPath:    m.SocketPath(),
 		})
 	}

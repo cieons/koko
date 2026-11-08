@@ -406,7 +406,9 @@ left to it under systemd, the file is a copy of `/etc/koko/root.key`, the
 file the unit's `LoadCredential=` names, which `koko server show` names as
 the Root Key's file.
 The flag takes the file's absolute path, never the key, and the koko server
-refuses to start without a usable Root Key ([the Seal](seal.md#at-start-up)). The koko
+refuses to start without a usable Root Key ([the Seal](seal.md#at-start-up)).
+`koko server run` refuses to run as root, with exit 2, naming the fix
+([the Seal](seal.md#at-start-up)). The koko
 server logs to stderr in slog's text format (`time=... level=INFO msg=...
 key=value`), one line per event, for journald to keep.
 
