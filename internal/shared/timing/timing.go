@@ -108,7 +108,9 @@ const (
 	// PassOn bounds how long the Device Mux, once a Device Connection has
 	// ended, lets each channel on it pass on to its command what the koko
 	// server sent before, such as the answer to the call that revoked this
-	// device, for a command that does not read.
+	// device, for a command that does not read. On koko disconnect it
+	// bounds, too, how long the Device Mux waits for the Tunnels it carries
+	// to pass on their close frames.
 	PassOn = 5 * time.Second
 )
 

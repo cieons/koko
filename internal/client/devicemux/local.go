@@ -65,7 +65,9 @@ type State struct {
 //     nowhere, and counts it in its state, for koko status.
 //   - When the koko server revokes its Device Session, it sends each open
 //     connection wire.RequestRevoked before it closes it, and when koko
-//     disconnect stops it, wire.RequestDisconnected.
+//     disconnect stops it, wire.RequestDisconnected, after which it waits,
+//     within timing.PassOn, for the Tunnels' channels, which their commands
+//     close with a close frame.
 //
 // Only commands of the same build reach a Device Mux, so this needs no
 // compatibility rules, but for one exchange, which koko disconnect has with

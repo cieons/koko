@@ -160,8 +160,8 @@ The koko server's own SSH, as on its Unix socket
   connection `revoked@koko` before closing it, so `Conn.Wait` returns
   `serverconn.ErrRevoked`; when `koko disconnect` stops it, it sends
   `disconnected@koko` ([`wire.RequestDisconnected`](../../internal/shared/wire/wire.go)),
-  and `Conn.Wait` returns `serverconn.ErrDisconnected`, so what the command
-  carried ends for good.
+  which closes `Conn.Disconnected` at once, and `Conn.Wait` then returns
+  `serverconn.ErrDisconnected`, so what the command carried ends for good.
 - **The one exchange every build answers alike**
   ([ADR 0034](../adr/0034-koko-disconnect-stops-a-device-mux-of-any-build-through-one-fixed-exchange.md)):
   a connection whose SSH user name is `disconnect`, which no home is, asks
@@ -274,7 +274,15 @@ ssh_config following the record
   (`stopDeviceMuxes`) before it deletes the device's files
   ([`koko leave`](device-connection.md#on-the-device)).
 - On stopping it closes its listener, which removes the socket, then every
-  connection, then releases the lock.
+  connection, then releases the lock. When koko disconnect stopped it, it
+  first tells each command (`disconnected@koko`), then waits, within
+  `timing.PassOn` (5 s) in all, for the `tunnel@koko` channels it carries
+  to end, which their commands close for good on being told
+  ([the device end of a Tunnel](gateway.md#the-device-end-of-a-tunnel)).
+  The other channels, `api@koko` and `web@koko`, end with it, so it waits
+  for none of them, and with no SSH Session open it stops at once. While
+  it waits it holds its lock, so a Device Mux a command starts meanwhile
+  waits for it, within `timing.DeviceMuxStart`.
 
 ## Logging
 
@@ -343,7 +351,8 @@ user's id is tested.
   Resuming through the Device Mux across a cut and a stall, and through a
   new one after it was killed (`d.KillMux()`); a Tunnel waiting to Resume
   keeping it from idling out and counted in `koko status`; and `koko
-  disconnect` ending an SSH Session without a Resume.
+  disconnect` ending koko tunnel's and koko exec's SSH Sessions as the
+  client's close, never Detached, without a Resume.
 - [`status_test.go`](../../internal/client/cli/status_test.go): `koko
   status` connected (golden) and reconnecting, and `null` on the direct
   path.

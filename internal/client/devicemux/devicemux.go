@@ -160,10 +160,11 @@ type deviceMux struct {
 	hostKey ssh.Signer
 	wg      sync.WaitGroup
 	// pipes counts the channels it carries, which closeAll waits for on a
-	// revocation. A channel joins it only under mu while the Device Mux is
-	// not stopping, and a revocation stops it under mu, so none joins once
-	// closeAll may wait.
-	pipes sync.WaitGroup
+	// revocation, and tunnels those of them that are a Tunnel's, which it
+	// waits for on koko disconnect. A channel joins them only under mu while
+	// the Device Mux is not stopping, and whatever stops it does so under
+	// mu, so none joins once closeAll may wait.
+	pipes, tunnels sync.WaitGroup
 
 	// retryNow cuts the reconnect loop's wait short, on a wake or a route
 	// change.
@@ -635,10 +636,14 @@ func (m *deviceMux) carry(nch ssh.NewChannel) {
 		case <-m.ctx.Done():
 		}
 	}
+	tunnel := nch.ChannelType() == wire.ChannelTunnel
 	m.mu.Lock()
 	stopping := m.ctx.Err() != nil
 	if !stopping {
 		m.pipes.Add(1)
+		if tunnel {
+			m.tunnels.Add(1)
+		}
 	}
 	m.mu.Unlock()
 	if stopping {
@@ -647,6 +652,9 @@ func (m *deviceMux) carry(nch ssh.NewChannel) {
 		return
 	}
 	defer m.pipes.Done()
+	if tunnel {
+		defer m.tunnels.Done()
+	}
 	ch, reqs, err := nch.Accept()
 	if err != nil {
 		_ = remote.Close()
@@ -767,7 +775,12 @@ func (m *deviceMux) idleOut() {
 // first, as the koko server told the Device Mux, and so does koko
 // disconnect, so what they carried ends for good. On a revocation, whose
 // Device Connection has ended, it first waits for the channels, which pass
-// on what the koko server sent before it, each within timing.PassOn.
+// on what the koko server sent before it, each within timing.PassOn. On
+// koko disconnect it then waits, within timing.PassOn in all, for the
+// Tunnels' channels, each of which its command closes with a close frame on
+// being told, so the Gateway ends their SSH Sessions as the client's close
+// rather than at the grace; the other channels, which end with the Device
+// Mux, it does not wait for.
 func (m *deviceMux) closeAll(cause error) {
 	type conns struct {
 		nc  net.Conn
@@ -791,10 +804,30 @@ func (m *deviceMux) closeAll(cause error) {
 		case errors.Is(cause, errDisconnected):
 			_, _, _ = c.ssh.SendRequest(wire.RequestDisconnected, false, nil)
 		}
+	}
+	if errors.Is(cause, errDisconnected) {
+		waitAtMost(&m.tunnels, m.timings.PassOn)
+	}
+	for _, c := range commands {
 		_ = c.nc.Close()
 	}
 	if d != nil {
 		_ = d.conn.Close()
+	}
+}
+
+// waitAtMost waits for wg, or for wait, whichever ends first.
+func waitAtMost(wg *sync.WaitGroup, wait time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
 	}
 }
 

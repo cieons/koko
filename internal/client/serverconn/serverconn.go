@@ -47,6 +47,11 @@ type Conn interface {
 	// Device Mux it went through, and a *liveness.DeadError when nothing
 	// came from the koko server for too long.
 	Wait() error
+	// Disconnected returns a channel closed as soon as the Device Mux the
+	// connection goes through says that koko disconnect stopped it
+	// (wire.RequestDisconnected), before the connection ends; never closed
+	// on a connection that goes through no Device Mux.
+	Disconnected() <-chan struct{}
 	// Close ends the connection and every channel on it.
 	Close() error
 }
@@ -324,6 +329,9 @@ type sshConn struct {
 	// requestsDone is closed once the connection has ended and every global
 	// request it carried has been taken.
 	requestsDone chan struct{}
+	// disconnected is closed once the Device Mux said that koko disconnect
+	// stopped it; only takeRequests closes it.
+	disconnected chan struct{}
 
 	mu        sync.Mutex
 	report    wire.Report
@@ -331,9 +339,6 @@ type sshConn struct {
 	// revoked tells that the koko server said, before it ended the
 	// connection, that its Device Session was Revoked.
 	revoked bool
-	// disconnected tells that the Device Mux said, before it ended the
-	// connection, that koko disconnect stopped it.
-	disconnected bool
 	// dead is why the liveness watch ended the connection, if it did.
 	dead error
 }
@@ -349,6 +354,7 @@ func newSSHConn(conn ssh.Conn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Req
 		client:       ssh.NewClient(sshconn.Wrap(conn), chans, none),
 		reported:     make(chan struct{}),
 		requestsDone: make(chan struct{}),
+		disconnected: make(chan struct{}),
 	}
 	go c.takeRequests(reqs)
 	return c
@@ -377,9 +383,9 @@ func (c *sshConn) takeRequests(reqs <-chan *ssh.Request) {
 			c.revoked = true
 			c.mu.Unlock()
 		case wire.RequestDisconnected:
-			c.mu.Lock()
-			c.disconnected = true
-			c.mu.Unlock()
+			if !isClosed(c.disconnected) {
+				close(c.disconnected)
+			}
 		}
 		if r.WantReply {
 			_ = r.Reply(false, nil)
@@ -445,12 +451,26 @@ func (c *sshConn) Wait() error {
 	switch {
 	case c.revoked:
 		return ErrRevoked
-	case c.disconnected:
+	case isClosed(c.disconnected):
 		return ErrDisconnected
 	case c.dead != nil:
 		return c.dead
 	}
 	return err
+}
+
+func (c *sshConn) Disconnected() <-chan struct{} {
+	return c.disconnected
+}
+
+// isClosed tells whether ch is closed.
+func isClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
 }
 
 // watch watches the connection's liveness over lc until it ends, and closes

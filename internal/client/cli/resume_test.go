@@ -413,31 +413,49 @@ func aTunnelWaitingToResumeKeepsTheDeviceMuxAndShowsInKokoStatus(t *testing.T) {
 	})
 }
 
-// koko disconnect ends an SSH Session for good: koko tunnel says that koko
-// disconnect ended it, and the Tunnel does not Resume, so the SSH Session
-// ends once its grace runs out.
+// koko disconnect ends an SSH Session for good, koko tunnel's and koko
+// exec's alike: each says that koko disconnect ended it, and its Tunnel
+// closes with a close frame before the Device Mux closes the Device
+// Connection, so the Gateway ends the SSH Session as the client's close at
+// once, never Detached, and nothing Resumes. The grace is short, so a
+// Tunnel left Detached would end at it within the test.
 func kokoDisconnectEndsAnSSHSessionWithoutAResume(t *testing.T) {
 	timings := resumeServer
 	timings.Grace = 300 * time.Millisecond
 	s := resumeHost(t, timings)
 	d := harness.NewMuxDevice(t, resumeDevice)
 	d.Koko("join", s.joinCode).WantSuccess(t)
-	p := d.Proxy(nil, "tunnel", "web1.koko")
-	say := shell(t, sshOver(t, p, "web1.koko", gatewayHostKey(t, s.h)))
+	tunnel := d.Proxy(nil, "tunnel", "web1.koko")
+	say := shell(t, sshOver(t, tunnel, "web1.koko", gatewayHostKey(t, s.h)))
 	if got := say("echo one"); got != "one\n" {
 		t.Fatalf("the shell printed %q, want one", got)
 	}
+	exec := d.Proxy(nil, "exec", "web1", "cat")
+	waitServerLog(t, s.h, `msg="ssh session request" .* request=exec\n`)
 
-	if out, _ := kokoDisconnect(t, d); out.CommandsEnded != 1 {
-		t.Errorf("koko disconnect ended %d commands, want koko tunnel", out.CommandsEnded)
+	if out, _ := kokoDisconnect(t, d); out.CommandsEnded != 2 {
+		t.Errorf("koko disconnect ended %d commands, want koko tunnel and koko exec", out.CommandsEnded)
 	}
-	if r := p.Wait(); r.Status != 1 || r.Stderr != "koko: koko disconnect ended the SSH Session to web1\n" {
+	const line = "koko: koko disconnect ended the SSH Session to web1\n"
+	if r := tunnel.Wait(); r.Status != 1 || r.Stderr != line {
 		t.Errorf("koko tunnel exited %d with stderr %q, want 1 and that koko disconnect ended it", r.Status, r.Stderr)
 	}
-	wantDetached(t, s.h)
-	waitServerLog(t, s.h, `msg="ssh session ended" .* reason="grace over"\n`)
-	if strings.Contains(s.h.Log(), "ssh session resume") {
-		t.Errorf("a Tunnel koko disconnect ended tried to Resume:\n%s", s.h.Log())
+	if r := exec.Wait(); r.Status != 255 || r.Stderr != line {
+		t.Errorf("koko exec exited %d with stderr %q, want 255 and that koko disconnect ended it", r.Status, r.Stderr)
+	}
+	ended := regexp.MustCompile(`msg="ssh session ended" .* reason="([^"]*)"\n`)
+	var reasons [][]string
+	eventually(t, "both SSH Sessions end", func() bool {
+		reasons = ended.FindAllStringSubmatch(s.h.Log(), -1)
+		return len(reasons) == 2
+	})
+	for _, r := range reasons {
+		if r[1] != "client closed" {
+			t.Errorf("an SSH Session koko disconnect ended ended with reason %q, want the client's close:\n%s", r[1], s.h.Log())
+		}
+	}
+	if log := s.h.Log(); strings.Contains(log, "ssh session detached") || strings.Contains(log, "ssh session resume") {
+		t.Errorf("a Tunnel koko disconnect ended was Detached or tried to Resume:\n%s", log)
 	}
 }
 

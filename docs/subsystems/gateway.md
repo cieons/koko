@@ -426,8 +426,8 @@ even `--json` (`Command.Stdio`, [the CLI](cli.md#the-command-tree)).
   prints nothing ([below](#the-device-end-of-a-tunnel)). When it cannot
   Resume, it prints [the line that says so](#when-a-tunnel-cannot-resume)
   and exits 1, and ssh, its connection gone, ends with 255; when koko
-  disconnect ended it, `koko: koko disconnect ended the SSH Session to
-  web1`, and exits 1.
+  disconnect ended it ([below](#the-device-end-of-a-tunnel)), `koko: koko
+  disconnect ended the SSH Session to web1`, and exits 1.
 - **stdin's EOF** half-closes the Tunnel; koko tunnel relays what the
   Gateway still sends until the Gateway closes it.
 - **Signals**, through `cli.Runner.Signals`, which `cmd/koko` sets to
@@ -481,9 +481,17 @@ open meanwhile.
   That time is the device's awake time: it is counted on the monotonic
   clock, which stands still while the device sleeps, so a laptop that
   slept through the night still tries for 2 minutes once it wakes.
-- **Closing** a Detached Tunnel, as on SIGHUP, sends no close frame, as
-  there is no channel to send it on: the Gateway holds the SSH Session
-  until its grace ends.
+- **koko disconnect.** When the Device Mux it goes through says that koko
+  disconnect stopped it (`serverconn.Conn.Disconnected`), it stops any
+  Resume and closes for good, sending what is unsent and a close frame
+  while the Device Mux waits for its channel
+  ([the Device Mux](device-mux.md#state-and-exit)), so the Gateway ends
+  the SSH Session as the client's close (`reason="client closed"`), never
+  Detached. It then ends with a `*tunnel.LostError` wrapping
+  `serverconn.ErrDisconnected`.
+- **Closing** a Detached Tunnel, as on SIGHUP or koko disconnect, sends no
+  close frame, as there is no channel to send it on: the Gateway holds the
+  SSH Session until its grace ends.
 - **Waiting to Resume** through a Device Mux, it says so to the Device Mux
   (`devicemux.Conn.WaitingToResume`), which counts it for `koko status`
   ([the Device Mux](device-mux.md#the-local-protocol)).
@@ -575,7 +583,8 @@ survives it; killing the Device Mux ends no
 SSH Session, which Resumes through a new Device Mux, and with
 `KOKO_DIRECT=1` over a Device Connection of its own; a Tunnel waiting to
 Resume keeps the Device Mux from idling out and shows in `koko status`;
-`koko disconnect` ends an SSH Session without a Resume; a Host with
+`koko disconnect` ends koko tunnel's and koko exec's SSH Sessions as the
+client's close, never Detached, and without a Resume; a Host with
 `ClientAliveInterval` (`sshhost.ClientAlive`) keeps a Detached SSH
 Session; and another Device Session's resume is refused.
 [`resume_refused_test.go`](../../internal/client/cli/resume_refused_test.go)

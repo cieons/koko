@@ -138,6 +138,7 @@ func Open(ctx context.Context, conn serverconn.Conn, sshName string, redial Dial
 	}
 	t.ctx, t.stop = context.WithCancel(context.Background())
 	go t.resumeAcrossDrops()
+	go t.endOnDisconnect(t.conn)
 	stop := context.AfterFunc(ctx, func() { _ = t.stream.Close() })
 	_, err = io.ReadFull(t.stream, t.id[:])
 	if !stop() {
@@ -270,10 +271,41 @@ func (t *Tunnel) connection(ctx context.Context) (*connection, error) {
 	t.mu.Lock()
 	t.conn = next
 	t.mu.Unlock()
+	go t.endOnDisconnect(next)
 	if c.own {
 		_ = c.Close()
 	}
 	return next, nil
+}
+
+// endOnDisconnect ends the Tunnel for good once koko disconnect stops the
+// Device Mux that c goes through, while c has not ended: it stops a Resume
+// under way, letting a resume the koko server took finish, and closes the
+// stream, which sends a close frame on its channel, if it is on one, before
+// the Device Mux closes the Device Connection, so the Gateway ends the SSH
+// Session as the client's close rather than hold it Detached for the grace.
+// The Tunnel then fails with a *LostError wrapping
+// serverconn.ErrDisconnected.
+func (t *Tunnel) endOnDisconnect(c *connection) {
+	select {
+	case <-c.Disconnected():
+	case <-c.ended:
+		return
+	case <-t.ctx.Done():
+		return
+	}
+	t.stop()
+	<-t.resumerDone
+	if t.stream.Err() != nil {
+		// It ended already, as the Gateway closed it, say.
+		return
+	}
+	t.mu.Lock()
+	if t.lost == nil {
+		t.lost = &LostError{At: time.Now(), Err: serverconn.ErrDisconnected}
+	}
+	t.mu.Unlock()
+	_ = t.stream.Close()
 }
 
 // resumeOn sends a resume, naming the Tunnel and the offset received of its
