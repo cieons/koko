@@ -36,6 +36,11 @@ type Server struct {
 	// HostKeyFingerprint is the SHA-256 fingerprint of the host key devices
 	// pin from their Join Codes, as OpenSSH prints it.
 	HostKeyFingerprint string `json:"host_key_fingerprint"`
+	// HostKey is that host key itself, written as in authorized_keys
+	// without a comment ("ssh-ed25519 AAAA..."): the Gateway presents it
+	// inside every Tunnel, so koko ssh setup writes it into koko's
+	// known_hosts on the koko server's own machine, where nothing joins.
+	HostKey string `json:"host_key"`
 	// Version is the koko server's version, as `koko version` names its
 	// own: a release such as v0.3.0, a pseudo-version, or "(devel)".
 	Version string `json:"version"`

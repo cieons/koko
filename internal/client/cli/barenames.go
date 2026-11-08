@@ -12,7 +12,8 @@ import (
 
 // writeBareNames rewrites the bare names in koko's ssh_config on the device
 // whose home is home, from the Hosts its User can see now, through c, a
-// client of the device's Device Connection (P0 spec: reach, "Bare names").
+// client of the device's Device Connection, or of the Unix socket after koko
+// ssh setup (P0 spec: reach, "Bare names").
 // What asked for it has happened by then, a join or a change to a Host, so
 // a failure does not fail the command: it says so on stderr, since ssh
 // <host>.koko reaches every Host meanwhile.
@@ -38,11 +39,14 @@ func bareNames(resp api.HostListResponse) []string {
 
 // rewriteBareNamesAfterHostChange runs writeBareNames after the caller's
 // own host add, rename, move, retire or rm, so that the change takes effect
-// at once. Only a joined device's Device Connection has a list to rewrite:
-// over the Unix socket the caller is the Local caller, whose machine joined
-// nothing.
+// at once. A joined device's Device Connection always has a list to
+// rewrite. Over the Unix socket the caller is the Local caller, on the koko
+// server's own machine, where nothing joins: there it rewrites one only for
+// an OS user whose koko ssh setup wrote koko's ssh_config, and writes none
+// into a home that never asked for it.
 func (in *Input) rewriteBareNamesAfterHostChange(ctx context.Context) {
-	if in.joined != nil {
-		writeBareNames(ctx, in.client(), in.inv.getenv("HOME"), in.inv.Stderr)
+	home := in.inv.getenv("HOME")
+	if in.joined != nil || (in.socket != "" && devicefiles.HasSSHConfig(home)) {
+		writeBareNames(ctx, in.client(), home, in.inv.Stderr)
 	}
 }

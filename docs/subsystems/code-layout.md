@@ -18,6 +18,10 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 | server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), one package per area (`space`, `user`, `device`, `host`, `service`, `attr`, `secret`, `web`: the web front), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`), the Gateway (`gateway`) | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join, koko's ssh_config and known_hosts, and the Include line (`devicefiles`), the Device Mux and the client of its local protocol (`devicemux`), the device end of a Tunnel (`tunnel`) | server |
 
+A package that holds only tests is in no group, since only non-test
+dependencies count: so far the real-OpenSSH test's
+[`internal/client/openssh`](#the-real-openssh-test).
+
 Only [`cmd/koko`](../../cmd/koko) and the S1 harness
 ([`internal/harness`](../../internal/harness)) import both the server and the
 client groups, and no product code imports the harness. Test files may import
@@ -165,14 +169,16 @@ its own only when an agent would act on it differently.
 
 ## Test-only hooks
 
-A hook is a field of the product's own configuration that `cmd/koko` never
-sets and no flag or environment variable exposes; its zero value means the
-product's constant. Fields rather than package variables keep parallel tests
-apart.
+A hook is a field of the product's own configuration that no flag or
+environment variable exposes, and that `cmd/koko` never sets but from a
+value linked in at build time, which only a test's own build links in: so
+far the socket path, for [the real-OpenSSH test](#the-real-openssh-test).
+Its zero value means the product's constant. Fields rather than package
+variables keep parallel tests apart.
 
 | Hook | Where | Made by |
 | --- | --- | --- |
-| The socket path | `server.Config.SocketPath`, `cli.Runner.SocketPath` | #27 |
+| The socket path | `server.Config.SocketPath`, `cli.Runner.SocketPath` (the harness's `harness.SocketPath(path)`); `cmd/koko` sets the latter from `main.socketPath`, which only [the real-OpenSSH test](#the-real-openssh-test)'s build sets, with `-ldflags -X`, and every other build leaves empty | #27 |
 | The fake terminal | `cli.Runner.Terminal` | #28 |
 | The P0 timing constants | `hostconn.Connector.Timings`, `installer.Installer.Timings`, `server.Config.Timings` (the harness's `harness.Timings(timings)`), `cli.Runner.Timings` and `devicemux.Config.Timings` (the harness's `harness.NewMuxDevice(t, timings)` and `d.UseTimings(timings)`), each a [`timing.Timings`](../../internal/shared/timing/timing.go), where a ticket that uses a new timing adds its constant and field; it also carries the wake and route-change signals the Device Mux probes on (`Timings.Wake`, `Timings.RouteChange`) | #32 |
 | The clock | `server.Config.Clock`, which every operation reads once per call through `op.Now`, and `cli.Runner.Clock`, which a relative date counts from; the harness's `h.Now()`, `h.Advance(d)` and `h.SetNow(t)` | #36, the CLI's side #51 |
@@ -199,6 +205,8 @@ no command calls, such as `server.init`. `h.Calls()` counts the API calls the
 server answered since `Start` returned, so a refusal can be shown to make
 none. The options `harness.NoInit()`, `harness.DataDir(dir)` and
 `harness.RootKeyFile(path)` start it uninitialised or on given files,
+`harness.SocketPath(path)` serves its Unix socket at a given short path,
+such as the one a koko binary built for a test reaches,
 `harness.Listen(addr)` listens on TCP at a known address, such as a
 `harness.FreeAddr(t)`, `harness.Timings(timings)` shrinks the P0 timings it uses,
 such as the wait between attempts to connect to a Host, and `h.Stop()` stops it before the test ends, to
@@ -316,6 +324,42 @@ process. Every test is one of three kinds:
 linter finds a `Test` function in `internal/client/cli` that neither calls
 `t.Parallel()` nor is one Go refuses to run in parallel. The `unused` linter
 finds a real-time test left out of `realTime`.
+
+## The real-OpenSSH test
+
+[`internal/client/openssh`](../../internal/client/openssh/openssh_test.go)
+runs the system's OpenSSH through koko end to end (P0 spec: reach, "Real
+OpenSSH"). It is a package of its own, holding only tests, so that its
+build of koko and the processes it runs count against no other package's
+5-minute limit; it builds only on Unix (`//go:build unix`), since it runs
+each process in a session of its own, with no controlling terminal, so
+that anything that would prompt fails rather than hangs.
+
+- **The tools.** `ssh`, `scp`, `sftp` and `rsync` from `PATH`, OpenSSH 9.0
+  or later (whose scp speaks SFTP and takes `-O`), and `sftp-server` from
+  where Debian, Fedora, Arch and macOS put it. A missing one fails the
+  test, never skips it; CI's Ubuntu job installs them
+  (`.github/workflows/check.yml`), and macOS ships them.
+- **The koko binary.** It builds `cmd/koko` once, with `-race` exactly
+  when the test runs with it, so the build takes the packages `go test`
+  compiled from the cache, and with `-ldflags -X main.socketPath=<path>`,
+  a short temporary path, so the binary never reaches a koko server
+  running on the machine. Every koko command and every ProxyCommand runs
+  that binary: the join writes it into koko's ssh_config.
+- **Each OS user** is a temporary HOME, a runtime directory under `/tmp`
+  for its Device Mux (macOS's `TMPDIR` is too long a path for the Device
+  Mux's socket), a key of its own and a stand-in ssh-agent that counts
+  connections. Every OpenSSH command gets `-F` pointed at koko's
+  ssh_config under that HOME, since OpenSSH finds `~` from the password
+  database, not from `HOME`, and `-o IdentityFile=<the user's key>`, which
+  also keeps ssh from reading the default keys in the real `~/.ssh`. The
+  user's Device Mux is stopped with `koko disconnect` when the test ends,
+  and a command the test ends kills its whole process group, ssh's
+  ProxyCommand included.
+- **The order.** The joined device's part runs first, its subtests in
+  parallel; then the koko server's machine's part starts a koko server
+  with `harness.SocketPath` at the binary's socket path, which from then
+  on every command of that binary reaches.
 
 ## The in-process Host
 

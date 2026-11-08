@@ -190,11 +190,12 @@ ssh integration (P0 spec: reach, "Device files and ssh integration").
   ([the bare-name refresh](device-mux.md#the-bare-name-refresh)).
   A Host someone else records, or one in a Space the User is added to, is
   reachable as `web1.koko` at once, since the Gateway checks access at each
-  SSH Session, and as bare `web1` after the next refresh. The CLI writes
-  them only on a joined device's Device Connection: over the Unix socket
-  the caller is the Local caller, on a machine that joined nothing, and no
-  ssh_config is written (who writes one on the koko server's own machine
-  is #67's). A join or a Host change whose bare names cannot be
+  SSH Session, and as bare `web1` after the next refresh. Over the Unix
+  socket the caller is the Local caller, on the koko server's own machine,
+  where nothing joins: there the Host changes rewrite them only for an OS
+  user whose [`koko ssh setup`](#on-the-koko-servers-own-machine) wrote
+  koko's ssh_config, and write none into a home that never asked for it
+  (`devicefiles.HasSSHConfig`). A join or a Host change whose bare names cannot be
   written still holds and exits 0, and says so in one line on stderr,
   `koko: could not rewrite the bare names in koko's ssh_config (<why>);
   until koko does, reach a Host as ssh <host>.koko`.
@@ -215,10 +216,47 @@ ssh integration (P0 spec: reach, "Device files and ssh integration").
   relative path from `~/.ssh`) and read as a glob, matches that file;
   keywords are case-insensitive, and `=` may follow one.
 - **The check** (`devicefiles.CheckInclude`), for `koko status` and after
-  `koko join`: the Include line is missing, or it comes after the first
+  `koko join` and `koko ssh setup`: the Include line is missing, or it comes after the first
   `Host` or `Match` line, where ssh reads it only for that block's hosts; a
   `~/.ssh/config` that cannot be read, or is not a regular file, is reported
   as such, not as missing.
+
+### On the koko server's own machine
+
+Nothing joins on the koko server's own machine, yet `ssh web1.koko` works
+there over the Unix socket, as the Local caller, once the OS user running
+it has run **`koko ssh setup`** ([`sshSetup`](../../internal/client/cli/sshsetup.go)),
+in the reversible tier, once (P0 spec: reach, story 65). Each OS user who
+wants it runs it for themselves: it writes only under their own HOME, and
+nothing outside it. `koko server install` says so in one line.
+
+1. On a joined device it is refused with `already_joined` before any call:
+   `koko join` wrote koko's ssh files there, and `koko status` says
+   whether ssh reads them.
+2. It reaches the koko server as any command does: with no join, only the
+   Unix socket does, so a machine without one fails with `not_joined`,
+   naming `koko join` and the socket's path.
+3. It reads the koko server's host key from `server.show` (`host_key`,
+   [the deployment](initialisation.md#the-deployment-afterwards)), the key
+   the Gateway presents inside every Tunnel, and lists the Hosts, which for
+   the Local caller, who acts as the Owner, is every Host but the Retired.
+   A koko server that names no host key, one older than `host_key`, fails
+   it with `server_too_old`.
+4. It makes `~/.ssh` and `~/.ssh/koko/` as a join does, writes koko's
+   known_hosts with that key under the alias `koko` and koko's ssh_config
+   with those bare names
+   ([`devicefiles.SetUpSSH`](../../internal/client/devicefiles/ssh.go)),
+   then puts the Include line first in `~/.ssh/config` and checks it, by
+   the join's rules: a file it leaves alone does not fail it, and the
+   warning says why and which line to add.
+5. It prints the path of koko's ssh_config, then that `ssh <host>.koko`
+   now reaches a Host through koko, or the Include warning in its place;
+   with `--json`, `{"ssh_config", "include_warning"}`.
+
+Run again, it writes the same files anew. No Device Mux runs there, so
+nothing refreshes the bare names in the background: a Host someone else
+records is reachable as `name.koko` at once, and as its bare name after the
+user's own next Host change over the socket or the next `koko ssh setup`.
 
 ## Which koko server the CLI reaches
 
@@ -419,6 +457,16 @@ Device Session, the address, `reason=dead` and the error, `no answer for
   Host someone else recorded since; none written over the Unix socket; a
   change whose bare names cannot be written holding, with its line on
   stderr; and the Device Mux's refresh ([the Device Mux](device-mux.md#verifying)).
+- [`sshsetup_test.go`](../../internal/client/cli/sshsetup_test.go): `koko
+  ssh setup` over the Unix socket (golden): koko's ssh_config with every
+  Host but the Retired, known_hosts with the host key `server.show` names,
+  the Include line, the modes, nothing of a join, the bare names rewritten
+  by a Host change over the socket, and the same files when run again; a
+  read-only `~/.ssh/config` left alone with its warning; refused on a
+  joined device with no call made, and `not_joined` with no koko server.
+- [`openssh_test.go`](../../internal/client/openssh/openssh_test.go): the
+  system's OpenSSH through koko's ssh_config, on a joined device and on the
+  koko server's own machine ([the Gateway](gateway.md#verifying)).
 - [`status_test.go`](../../internal/client/cli/status_test.go): `koko
   status` joined, over the socket, not joined, revoked and unreachable, and
   its Include warnings.

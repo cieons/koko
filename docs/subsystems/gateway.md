@@ -534,6 +534,24 @@ SIGTERM sending a close frame, over the Unix socket, a direct Device
 Connection and the Device Mux; the Device Mux kept from idling out; and the
 command line, help, skill and completion.
 
+[`openssh_test.go`](../../internal/client/openssh/openssh_test.go), the
+real-OpenSSH test ([code layout](code-layout.md#the-real-openssh-test)),
+runs the system's `ssh`, `scp` (SFTP and `-O`), `sftp`, `rsync`, `-L` (to a
+TCP port and a Unix socket), `-D` and `-R` (from a TCP port and a Unix
+socket) with `-F` pointed at koko's ssh_config under a temporary HOME,
+through a koko binary built for the test, its `koko tunnel` and its real
+Device Mux process, against the S1 koko server and in-process Hosts serving
+sftp through the system's `sftp-server`: checksums both ways, exit statuses,
+stdin and stderr, bare names, the banners for an unknown name, an unseen
+Host and a Host that is down, which Host requests scp made, that ssh
+authenticates with one `none` request, offers the user's own key to nothing,
+never connects to their agent and names nothing in the real `~/.ssh` in its
+`-v` output, and that `koko disconnect` with an SSH Session open finds the
+one Device Mux with that session's `koko tunnel` connected to it. On the
+koko server's own machine it runs `koko ssh setup`, then `ssh web1.koko` and
+bare `ssh web1` over the Unix socket, as the Local caller, with no Device
+Mux.
+
 [`exec_test.go`](../../internal/client/cli/exec_test.go) drives `koko exec`
 against the S1 koko server and in-process Hosts: the command's stdin,
 stdout, stderr and status, the words as the Host ran them, no pty, the koko

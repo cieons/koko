@@ -94,6 +94,7 @@ loaded and runs with. Each returns `{"server": {...}}`
 | `address` | the Server Address as stored: without a port, its port is `listen_port` |
 | `listen_port` | the TCP port the koko server listens on |
 | `host_key_fingerprint` | the host key devices pin, as OpenSSH prints its SHA-256 fingerprint |
+| `host_key` | that host key itself, as in `authorized_keys` without a comment, which [`koko ssh setup`](device-connection.md#on-the-koko-servers-own-machine) writes into koko's known_hosts; `koko server show` prints only its fingerprint |
 | `version` | the koko server's version, as `koko version` names its own |
 | `root_key_file`, `root_key_id` | the Root Key's file as the Owner keeps it, and the id it names; never the key |
 | `data_dir` | the data directory, as `koko server run` was given it |

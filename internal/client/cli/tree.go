@@ -251,6 +251,7 @@ var commands = [][]Command{
 	tunnelCommands,
 	connectCommands,
 	leaveCommands,
+	sshSetupCommands,
 }
 
 // Tree returns every command.

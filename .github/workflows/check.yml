@@ -43,4 +43,12 @@ jobs:
         with:
           version: v2.15.0
           install-only: true
+      # The real-OpenSSH test (internal/client/openssh) runs the system's
+      # ssh, scp, sftp, sftp-server and rsync, and fails rather than skips
+      # without one; macOS ships them all.
+      - name: Install the OpenSSH client, sftp-server and rsync
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-client openssh-sftp-server rsync
       - run: make check

@@ -37,7 +37,9 @@ const (
 	// codePortTaken: another process holds the port the command listens on.
 	codePortTaken = "port_taken"
 	// codeServerTooOld: the koko server does not serve the command's
-	// operation, so it is older than the CLI; nothing was sent.
+	// operation, so it is older than the CLI, and nothing was sent; or it
+	// answered without a field the command needs, as koko ssh setup needs
+	// server.show's host_key.
 	codeServerTooOld = "server_too_old"
 )
 

@@ -54,6 +54,13 @@ export interface Server {
    */
   host_key_fingerprint: string;
   /**
+   * HostKey is that host key itself, written as in authorized_keys
+   * without a comment ("ssh-ed25519 AAAA..."): the Gateway presents it
+   * inside every Tunnel, so koko ssh setup writes it into koko's
+   * known_hosts on the koko server's own machine, where nothing joins.
+   */
+  host_key: string;
+  /**
    * Version is the koko server's version, as `koko version` names its
    * own: a release such as v0.3.0, a pseudo-version, or "(devel)".
    */

@@ -177,7 +177,13 @@ var serverMappings = []mapping{
 	{api: reflect.TypeFor[api.ServerInitResponse](), cli: reflect.TypeFor[installedJSON]()},
 	{api: reflect.TypeFor[api.ServerShowResponse]()},
 	{api: reflect.TypeFor[api.ServerSetResponse]()},
-	{api: reflect.TypeFor[api.Server](), cli: reflect.TypeFor[serverJSON]()},
+	{
+		api: reflect.TypeFor[api.Server](),
+		cli: reflect.TypeFor[serverJSON](),
+		omitted: map[string]string{
+			"host_key": "koko server show names the host key by its fingerprint, as a Join Code pins it; koko ssh setup writes the key itself into koko's known_hosts",
+		},
+	},
 }
 
 // installedJSON is what koko server install prints once the koko server
@@ -210,7 +216,8 @@ type installedJSON struct {
 	DevicesMustConnect string `json:"devices_must_connect,omitempty"`
 }
 
-// Human writes where the koko server is and what to open, then on a fresh
+// Human writes where the koko server is, what to open and how to ssh from
+// its own machine, then on a fresh
 // machine what to keep and the first Join Code, and after an upgrade that
 // moved the port devices connect to, what they must do.
 func (r installedJSON) Human(w io.Writer) error {
@@ -225,6 +232,7 @@ Server Address:  %s
 Host key:        %s
 Root Key:        %s (%s)
 Firewall:        open TCP port %d in your provider's firewall; koko opens none itself
+ssh here:        run koko ssh setup once as each user who runs ssh <host>.koko on this machine
 `, serveraddr.WithPort(r.Address, r.ListenPort), r.HostKeyFingerprint, r.RootKeyFile, r.RootKeyID, r.ListenPort)
 	switch {
 	case !r.Upgraded:

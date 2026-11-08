@@ -77,6 +77,52 @@ func WriteSSHConfig(home string, names []string) (wrote bool, err error) {
 	return replaceChanged(filepath.Join(dir(home), sshConfigFile), b)
 }
 
+// SetUpSSH writes koko's ssh files for the OS user whose home directory is
+// home on the koko server's own machine, where nothing joins, for koko ssh
+// setup: it makes ~/.ssh (0700) when it is missing and ~/.ssh/koko private
+// to this user, as a join does, writes koko's known_hosts with hostKeys,
+// the host keys the Gateway presents, then koko's ssh_config with the bare
+// names given, as WriteSSHConfig does. Written again, it rewrites both.
+func SetUpSSH(home string, hostKeys []ssh.PublicKey, names []string) error {
+	if err := checkHome(home); err != nil {
+		return err
+	}
+	// Rendered first, so that a path ssh would misread writes nothing.
+	b, err := renderSSHConfig(home, names)
+	if err != nil {
+		return err
+	}
+	if _, err := makeDir(home); err != nil {
+		return err
+	}
+	if err := replace(filepath.Join(dir(home), knownHostsFile), knownHosts(hostKeys), 0o600); err != nil {
+		return fmt.Errorf("write koko's %s: %w", knownHostsFile, err)
+	}
+	_, err = replaceChanged(SSHConfigPath(home), b)
+	return err
+}
+
+// SSHConfigPath returns the path of koko's ssh_config for the OS user whose
+// home directory is home.
+func SSHConfigPath(home string) string {
+	return filepath.Join(dir(home), sshConfigFile)
+}
+
+// HasSSHConfig tells whether koko's ssh_config may be there for the OS user
+// whose home directory is home, as a join or koko ssh setup leaves it: over
+// the Unix socket, the caller's own Host changes rewrite its bare names only
+// then, so a command there never writes into a home that did not ask for
+// koko's ssh files. Only a file that is not there, or a HOME koko never
+// writes under, counts as none: one koko cannot look at may be there, and
+// the rewrite then says why it failed.
+func HasSSHConfig(home string) bool {
+	if checkHome(home) != nil {
+		return false
+	}
+	_, err := os.Lstat(SSHConfigPath(home))
+	return !errors.Is(err, fs.ErrNotExist)
+}
+
 // RefreshSSHConfig rewrites koko's ssh_config as WriteSSHConfig does, for
 // the Device Mux's bare-name refresh, but its ProxyCommand runs koko by the
 // path the file names already, when it names one koko would write: which

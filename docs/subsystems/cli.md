@@ -174,14 +174,16 @@ status. A command reaches the koko server only on its first `in.Call`, so
   koko server refused as Revoked or that keeps the record of it
   ([the device](device-connection.md#on-the-device)), `already_joined`
   (`koko join` on a joined device, naming `koko device revoke` and `koko
-  leave`),
+  leave`; `koko ssh setup` on one, naming `koko join`),
   `invalid_join_code` (the koko server refused the Join Code, used, expired
   or never issued alike), `unsupported_platform` (`koko server run`,
   `install` or `uninstall` outside Linux, or a machine install cannot use),
   `port_taken` (another process holds the port `koko web` or `koko server
   install` listens on), `server_too_old` (the koko server's report does not
   list the command's operation; the message names the koko server's version
-  and the command, and nothing was sent), and `internal_error` for a failure
+  and the command, and nothing was sent; or, so far for `koko ssh setup`
+  only, the koko server answered without a field the command needs, which
+  names it), and `internal_error` for a failure
   it did not expect.
 - **A drop:** a call the connection drops is sent once more on a new
   connection, a write with the same `Idempotency-Key`, so it applies once
@@ -348,6 +350,7 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
 | `koko secret rm <space>/<secret>` | irreversible | `secret.remove` | the Secret it deleted, as it was, without its value |
 | `koko connect [<host:port>]` | reversible | none: the koko server's version comes from its report | `{"server_address", "previous_address", "host_keys", "server_version", "device_mux"}`: the Server Address the client config now holds, the one `<host:port>` replaced or `null`, the fingerprints of the pinned host keys, the koko server's version, and the Device Mux as `koko status` shows it, or `null` on the direct path ([`koko connect`](device-connection.md#koko-connect)) |
 | `koko disconnect` | reversible | none | `{"device_muxes": [{"socket", "commands_ended"}], "commands_ended"}`: each Device Mux it stopped, by socket, with how many commands were connected to it, which ended, and the sum ([`koko disconnect`](device-mux.md#state-and-exit)) |
+| `koko ssh setup` | reversible | `server.show`, then `host.list` | `{"ssh_config", "include_warning"}`: the path of koko's ssh_config it wrote for this OS user on the koko server's own machine, and `include_warning` as `koko status` prints it ([on the koko server's own machine](device-connection.md#on-the-koko-servers-own-machine)) |
 | `koko leave` | irreversible | none: it never contacts the koko server | `{"server_address", "device_session"}`: the koko server the device left and its Device Session there, left behind, as `koko status` names one ([`koko leave`](device-connection.md#on-the-device)) |
 | `koko status` | read | none: the koko server's version comes from its report | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_error", "device_mux", "revocation", "include_warning"}`, below |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |

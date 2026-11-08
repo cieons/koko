@@ -237,6 +237,7 @@ func TestServerInstallForPeople(t *testing.T) {
 		"Root Key:        /etc/koko/root.key (" + id + ")\n",
 		"Keep a copy of /etc/koko/root.key off this machine",
 		"open TCP port 443 in your provider's firewall",
+		"run koko ssh setup once as each user who runs ssh <host>.koko on this machine\n",
 		"within 15 minutes",
 		"On alice's new device device-1, before ",
 		"\nkoko join koko_",

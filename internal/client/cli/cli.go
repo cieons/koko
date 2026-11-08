@@ -72,7 +72,9 @@ type Runner struct {
 	Signals func(c chan<- os.Signal, sigs ...os.Signal) (stop func())
 
 	// SocketPath is the socket-path hook, for tests only: empty means the
-	// fixed wire.SocketPath. No flag or environment variable sets it.
+	// fixed wire.SocketPath. No flag or environment variable sets it;
+	// cmd/koko sets it from a value only the real-OpenSSH test's build
+	// links in, empty in every other build.
 	SocketPath string
 
 	// Timings is the timing-constants hook, for tests only: the zero

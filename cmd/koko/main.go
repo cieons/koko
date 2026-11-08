@@ -16,6 +16,13 @@ import (
 	"github.com/cieons/koko/internal/client/devicemux"
 )
 
+// socketPath is the path of the koko server's Unix socket, for the
+// real-OpenSSH test only, which builds this binary with -ldflags "-X
+// main.socketPath=<path>" so that it reaches the test's koko server there
+// and never one running on the machine. Every other build leaves it empty:
+// the fixed path (cli.Runner.SocketPath, the socket-path hook).
+var socketPath string
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	r := cli.Runner{
@@ -24,6 +31,7 @@ func main() {
 		ServerUninstall: serverUninstall,
 		StartDeviceMux:  devicemux.Spawn,
 		Signals:         notify,
+		SocketPath:      socketPath,
 	}
 	status := r.Run(ctx, cli.Invocation{
 		Args:   os.Args[1:],

@@ -200,8 +200,11 @@ installer's own:
 
 The Server Address with its port, the host key's fingerprint, the Root Key's
 path and id with the reminder to keep a copy off the machine, the port to
-open in the provider's firewall, and the first Join Code, for the Owner's
-`device-1`, with its 15 minutes and the `koko join` line. Never the Root Key.
+open in the provider's firewall, the line saying to run [`koko ssh
+setup`](device-connection.md#on-the-koko-servers-own-machine) once as each
+user who runs `ssh <host>.koko` on that machine, and the first Join Code,
+for the Owner's `device-1`, with its 15 minutes and the `koko join` line.
+Never the Root Key.
 With `--json`:
 
 ```json

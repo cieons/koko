@@ -72,6 +72,7 @@ type options struct {
 	dataDir     string
 	rootKeyFile string
 	listen      string
+	socket      string
 	timings     timing.Timings
 }
 
@@ -104,6 +105,14 @@ func RootKeyFile(path string) Option {
 // before initialisation or across a restart.
 func Listen(addr string) Option {
 	return func(o *options) { o.listen = addr }
+}
+
+// SocketPath makes the koko server serve its Unix socket at path, instead
+// of at a new temporary path, such as the path a koko binary built for a
+// test reaches its koko server at. The path must be short enough for a Unix
+// socket (macOS allows 104 bytes), and nothing may be there.
+func SocketPath(path string) Option {
+	return func(o *options) { o.socket = path }
 }
 
 // FreeAddr returns a loopback address with a TCP port that nothing listened
@@ -174,9 +183,12 @@ func Start(t testing.TB, opts ...Option) *Harness {
 	if o.rootKeyFile == "" {
 		o.rootKeyFile = NewRootKeyFile(t)
 	}
+	if o.socket == "" {
+		o.socket = filepath.Join(ShortTempDir(t), "koko.sock")
+	}
 	h := &Harness{
 		t:      t,
-		socket: filepath.Join(ShortTempDir(t), "koko.sock"),
+		socket: o.socket,
 		home:   t.TempDir(),
 		log:    &syncBuffer{},
 		clock:  &clock{now: time.Now().UTC().Truncate(time.Second)},

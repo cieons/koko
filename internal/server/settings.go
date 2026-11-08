@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 
@@ -95,6 +96,7 @@ func (s *settings) read(ctx context.Context, tx store.Tx) (api.Server, error) {
 		Address:            address,
 		ListenPort:         s.listenPort(),
 		HostKeyFingerprint: ssh.FingerprintSHA256(hostKey),
+		HostKey:            strings.TrimSpace(string(ssh.MarshalAuthorizedKey(hostKey))),
 		Version:            s.version,
 		RootKeyFile:        s.rootKeyFile,
 		RootKeyID:          s.rootKey.ID(),
