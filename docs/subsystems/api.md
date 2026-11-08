@@ -15,6 +15,8 @@ UI's TypeScript types are generated from them
   connection on it is the Local caller, acting as the Owner
   ([ADR 0008](../adr/0008-local-callers-act-as-the-owner.md)). Source:
   [`transport.ListenSocket`](../../internal/server/transport/transport.go).
+  Start-up takes over a stale socket file there and refuses to start beside
+  a koko server that answers on it ([the Seal](seal.md#at-start-up), step 5).
 - **The TCP listener**, once the koko server is initialised, speaks the same
   SSH with the sealed host key, and every connection on it is a Device
   Connection, authenticated by its device's key as a Device Session, or

@@ -627,6 +627,7 @@ func (m *Machine) startService() error {
 			Listen:        s.Listen,
 			LogLevel:      s.LogLevel,
 			Log:           log,
+			Filesystems:   LocalDisk{},
 			SocketPath:    m.SocketPath(),
 		})
 	}

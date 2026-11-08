@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,6 +50,37 @@ func TestMountType(t *testing.T) {
 	}
 	if _, err := mountType(strings.NewReader("garbage\n"), "/"); err == nil {
 		t.Error("mountinfo that does not parse gave a filesystem type")
+	}
+}
+
+// A mount table in a file is read for a path as the kernel resolves it:
+// through its symlinks, and from the working directory when it is relative.
+func TestMountinfoResolvesThePath(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := filepath.Join(root, "remote")
+	if err := os.Mkdir(remote, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(remote, link); err != nil {
+		t.Fatal(err)
+	}
+	table := filepath.Join(root, "mountinfo")
+	text := "22 1 252:1 / / rw - ext4 /dev/vda1 rw\n40 22 0:35 / " + remote + " rw - nfs4 10.0.0.2:/export rw\n"
+	if err := os.WriteFile(table, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	for _, path := range []string{remote, link, "remote", "link"} {
+		if got, err := Mountinfo(table).FilesystemType(path); err != nil || got != "nfs4" {
+			t.Errorf("FilesystemType(%s) = %q, %v; want nfs4", path, got, err)
+		}
+	}
+	if got, err := Mountinfo(table).FilesystemType(root); err != nil || got != "ext4" {
+		t.Errorf("FilesystemType(%s) = %q, %v; want ext4", root, got, err)
 	}
 }
 

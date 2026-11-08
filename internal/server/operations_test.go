@@ -32,6 +32,7 @@ func TestTheServerServesExactlyTheDeclaredOperations(t *testing.T) {
 		Listen:      "127.0.0.1:0",
 		LogLevel:    slog.LevelError,
 		Log:         io.Discard,
+		Filesystems: localDisk{},
 		SocketPath:  filepath.Join(socketDir, "koko.sock"),
 	})
 	if err != nil {
@@ -47,4 +48,17 @@ func TestTheServerServesExactlyTheDeclaredOperations(t *testing.T) {
 	if served := srv.api.Names(); !slices.Equal(served, declared) {
 		t.Errorf("the koko server serves %q, want what api.Operations lists: %q", served, declared)
 	}
+}
+
+// localDisk is a filesystem.Types on which every path that exists is on
+// ext4, so that a koko server a test starts reads no real /proc. It is
+// harness.LocalDisk, which this package's tests cannot import, since the
+// harness imports this package.
+type localDisk struct{}
+
+func (localDisk) FilesystemType(path string) (string, error) {
+	if _, err := os.Stat(path); err != nil {
+		return "", err
+	}
+	return "ext4", nil
 }

@@ -85,6 +85,7 @@ func startBeneathTransport(t *testing.T) *beneathTransport {
 		Listen:      "127.0.0.1:0",
 		LogLevel:    slog.LevelError,
 		Log:         io.Discard,
+		Filesystems: localDisk{},
 		SocketPath:  filepath.Join(socketDir, "koko.sock"),
 	})
 	if err != nil {

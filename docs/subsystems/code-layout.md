@@ -14,8 +14,8 @@ for Linux, macOS and Windows alike, when a package is in no group or depends
 
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
-| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the version and operations report, the channel adapter, how a join carries its secret and what a Tunnel's two ends agree on (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the liveness watch of an SSH connection, which both ends of a Device Connection run (`liveness`), the SSH connection every channel koko opens goes through, whose opens fail once it has ended (`sshconn`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer agree on (`install`), the record's value rules: a Host's fields, a Service's ports, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`) | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), the mount table and the network-filesystem check (`filesystem`), one package per area (`space`, `user`, `device`, `host`, `service`, `attr`, `secret`, `web`: the web front), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`), the Gateway (`gateway`) | client |
+| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the version and operations report, the channel adapter, how a join carries its secret and what a Tunnel's two ends agree on (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the liveness watch of an SSH connection, which both ends of a Device Connection run (`liveness`), the SSH connection every channel koko opens goes through, whose opens fail once it has ended (`sshconn`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer, and `koko server run` and its start-up, agree on (`install`), the record's value rules: a Host's fields, a Service's ports, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`) | server, client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), the mount table and the network-filesystem check, which the installer and start-up share (`filesystem`), one package per area (`space`, `user`, `device`, `host`, `service`, `attr`, `secret`, `web`: the web front), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`), the Gateway (`gateway`) | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join, koko's ssh_config and known_hosts, and the Include line (`devicefiles`), the Device Mux and the client of its local protocol (`devicemux`), the device end of a Tunnel (`tunnel`) | server |
 
 A package that holds only tests is in no group, since only non-test
@@ -33,7 +33,8 @@ sets in Linux builds only ([`server_linux.go`](../../cmd/koko/server_linux.go)).
 `koko server install` and `koko server uninstall` dispatch the same way,
 through `cli.Runner.ServerInstall` and `cli.Runner.ServerUninstall`, whose
 requests, reports and refusals are the shared
-[`install`](../../internal/shared/install/install.go) types. Every other
+[`install`](../../internal/shared/install/install.go) types; the refusals
+of `koko server run`'s start-up are `install.Refusal`s too. Every other
 command is a client command that reaches the koko server over the socket.
 
 ## Where an area adds its parts
@@ -231,7 +232,13 @@ each SHA-256 fingerprint with `SHA256:<fingerprint>` and each time with
 [`harness.ServerStart`](../../internal/harness/harness.go) is a
 `cli.Runner.ServerRun` for S1 tests of `koko server run`: the real start-up on
 a temporary socket and, whatever `--listen` says, a loopback port, stopped at
-once if it starts.
+once if it starts; `harness.ServerStartWith(t, opts...)` is the same with
+`harness.SocketPath(path)`, to start beside a koko server or a stale socket
+file, and `harness.Mountinfo(path)`, a file in `/proc/self/mountinfo`'s
+format, such as one that puts the data directory on NFS. Every koko server
+the harness starts reads its mounts from that file, or else from
+`harness.LocalDisk`, on which every path is on ext4, so no test reads the
+real `/proc`.
 [`harness.NewMachine`](../../internal/harness/machine.go) is the fake machine
 of `koko server install`'s system seam ([the installer](installer.md#verifying)).
 

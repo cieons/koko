@@ -31,6 +31,7 @@ import (
 	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/server"
+	"github.com/cieons/koko/internal/server/filesystem"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/timing"
@@ -74,6 +75,34 @@ type options struct {
 	listen      string
 	socket      string
 	timings     timing.Timings
+	filesystems filesystem.Types
+}
+
+// Mountinfo makes the koko server read the machine's mounts from path, a
+// file in the format of /proc/self/mountinfo, such as one that puts its data
+// directory on NFS. Without it, every path is on a local filesystem
+// (LocalDisk), and no koko server the harness starts reads the real /proc.
+func Mountinfo(path string) Option {
+	return func(o *options) { o.filesystems = filesystem.Mountinfo(path) }
+}
+
+// LocalDisk is a filesystem.Types on which every path that exists is on
+// ext4, a local filesystem.
+type LocalDisk struct{}
+
+func (LocalDisk) FilesystemType(path string) (string, error) {
+	if _, err := os.Stat(path); err != nil {
+		return "", err
+	}
+	return "ext4", nil
+}
+
+// filesystemsOr is the mount table o names, or LocalDisk.
+func (o *options) filesystemsOrLocalDisk() filesystem.Types {
+	if o.filesystems == nil {
+		return LocalDisk{}
+	}
+	return o.filesystems
 }
 
 // Timings starts the koko server with t through the timing-constants hook,
@@ -110,7 +139,7 @@ func Listen(addr string) Option {
 // SocketPath makes the koko server serve its Unix socket at path, instead
 // of at a new temporary path, such as the path a koko binary built for a
 // test reaches its koko server at. The path must be short enough for a Unix
-// socket (macOS allows 104 bytes), and nothing may be there.
+// socket (macOS allows 104 bytes), and nothing may answer there.
 func SocketPath(path string) Option {
 	return func(o *options) { o.socket = path }
 }
@@ -199,6 +228,7 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		Listen:      cmp.Or(o.listen, listenAddr),
 		LogLevel:    slog.LevelDebug,
 		Log:         h.log,
+		Filesystems: o.filesystemsOrLocalDisk(),
 		SocketPath:  h.socket,
 		Clock:       h.clock.Now,
 		Timings:     o.timings,
@@ -262,7 +292,20 @@ func NewRootKeyFile(t testing.TB) string {
 // the start-up refused, and never serves.
 func ServerStart(t testing.TB) func(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
 	t.Helper()
-	socket := filepath.Join(ShortTempDir(t), "koko.sock")
+	return ServerStartWith(t)
+}
+
+// ServerStartWith is ServerStart with the options that apply to a start-up
+// given its settings: SocketPath, to start beside a koko server serving
+// there or on a stale socket file, and Mountinfo.
+func ServerStartWith(t testing.TB, opts ...Option) func(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
+	t.Helper()
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+	socket := cmp.Or(o.socket, filepath.Join(ShortTempDir(t), "koko.sock"))
+	filesystems := o.filesystemsOrLocalDisk()
 	return func(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
 		srv, err := server.Start(ctx, server.Config{
 			DataDir:       s.DataDir,
@@ -271,6 +314,7 @@ func ServerStart(t testing.TB) func(ctx context.Context, s cli.ServerSettings, l
 			Listen:        listenAddr,
 			LogLevel:      s.LogLevel,
 			Log:           log,
+			Filesystems:   filesystems,
 			SocketPath:    socket,
 		})
 		if err != nil {

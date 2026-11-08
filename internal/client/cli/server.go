@@ -164,13 +164,13 @@ func serverRun(ctx context.Context, in *Input) error {
 	if !isListenAddr(listen) {
 		return usagef("--listen (KOKO_LISTEN) takes host:port or :port, not %q", listen)
 	}
-	return in.runner.ServerRun(ctx, ServerSettings{
+	return refusalError(in.runner.ServerRun(ctx, ServerSettings{
 		DataDir:       in.Flag("data-dir"),
 		RootKeyPath:   rootKey,
 		RootKeySource: source,
 		Listen:        listen,
 		LogLevel:      level,
-	}, in.inv.Stderr)
+	}, in.inv.Stderr))
 }
 
 var serverMappings = []mapping{
@@ -271,7 +271,7 @@ func serverInstall(ctx context.Context, in *Input) (installedJSON, error) {
 	}
 	report, err := in.runner.ServerInstall(ctx, req, initialise)
 	if err != nil {
-		return installedJSON{}, installError(err)
+		return installedJSON{}, refusalError(err)
 	}
 	out := installedJSON{
 		Upgraded:           report.Upgraded,
@@ -315,9 +315,9 @@ func installRequest(in *Input) (install.Request, error) {
 	return install.Request{Owner: owner, Address: address, Port: port}, nil
 }
 
-// installError gives the installer's refusals the CLI's codes and exit
-// statuses.
-func installError(err error) error {
+// refusalError gives the refusals of the installer and of the koko server's
+// start-up the CLI's codes and exit statuses.
+func refusalError(err error) error {
 	r, ok := errors.AsType[*install.Refusal](err)
 	if !ok {
 		return err

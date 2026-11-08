@@ -1,6 +1,7 @@
 // Package install is what `koko server install` and `koko server uninstall`
 // in the CLI and the installer in the koko server's code agree on: what
-// install is asked, what each reports, and why install refuses. The CLI
+// install is asked, what each reports, and why install, or the start-up of
+// `koko server run`, refuses. The CLI
 // hands both to the installer through cli.Runner, so neither imports the
 // other's group (ADR 0024); this package is the contract between them, as
 // wire is between the CLI and the koko server.
@@ -76,8 +77,9 @@ type UninstallReport struct {
 	ListenPort int
 }
 
-// Refusal is install refusing, before it writes anything, for a reason the
-// CLI reports with an error code of its own.
+// Refusal is install, or the koko server's start-up, refusing before it
+// writes anything, for a reason the CLI reports with an error code of its
+// own.
 type Refusal struct {
 	Reason  Reason
 	Message string
@@ -95,10 +97,12 @@ const (
 	// --owner for a koko server not initialised yet. Fix it and run
 	// install again.
 	Usage Reason = iota + 1
-	// PortTaken: another process listens on the port.
+	// PortTaken: another process listens on the port, or, at the koko
+	// server's start-up, something answers on its socket.
 	PortTaken
 	// Unsupported: this machine cannot run the koko server, such as one
-	// with systemd older than 247.
+	// with systemd older than 247, or a data directory on a network
+	// filesystem.
 	Unsupported
 	// Initialised: the koko server on this machine is initialised already,
 	// so install upgrades it, which takes neither --owner nor --address.

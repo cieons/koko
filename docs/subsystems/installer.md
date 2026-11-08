@@ -25,7 +25,8 @@ with `unsupported_platform`, as `koko server run` does. The two sides agree on
 the shared [`install`](../../internal/shared/install/install.go) types: the
 request, the report, the function that calls `server.init` over the socket
 (the installer owns no API client), and `install.Refusal`, whose reason the
-CLI turns into its code. `koko server uninstall`, also irreversible, takes no
+CLI turns into its code, as it does for the refusals of `koko server run`'s
+start-up ([the Seal](seal.md#at-start-up)). `koko server uninstall`, also irreversible, takes no
 flag but `--json` and dispatches the same way, through
 `cli.Runner.ServerUninstall` ([uninstall](#uninstall)).
 
@@ -40,7 +41,7 @@ the real one, rooted at `/`:
 | Method | On the machine |
 | --- | --- |
 | `SystemdVersion` | the first line of `systemctl --version` |
-| `FilesystemType` | the latest mount on the longest mount point holding the path, in `/proc/self/mountinfo` ([`filesystem.System`](../../internal/server/filesystem/filesystem.go)) |
+| `FilesystemType` | the latest mount on the longest mount point holding the path, in `/proc/self/mountinfo` ([`filesystem.System`](../../internal/server/filesystem/filesystem.go), which start-up reads too) |
 | `PortOwner` | [`portowner.Lookup`](web-front.md#the-port-owner-lookup), which as root names any user's process |
 | `SourceIP` | the source address of a UDP socket connected to a documentation address (192.0.2.1, then 2001:db8::1), which only the default route covers; connecting sends nothing, and no one else is asked |
 | `AddUser` | `useradd --system --user-group --no-create-home --home-dir /var/lib/koko --shell /usr/sbin/nologin --comment "koko server" koko`, unless `koko` exists |
@@ -65,8 +66,9 @@ In this order ([`Installer.Install`](../../internal/server/installer/installer.g
    - systemd older than 247, which `LoadCredential=` needs:
      `unsupported_platform`;
    - a data directory on a network filesystem (NFS, SMB, Ceph, 9p, sshfs and
-     the like; [`filesystem.Network`](../../internal/server/filesystem/filesystem.go)),
-     where SQLite's WAL does not work:
+     the like; [`filesystem.Network`](../../internal/server/filesystem/filesystem.go),
+     which the koko server's start-up also checks at every start
+     ([the Seal](seal.md#at-start-up))), where SQLite's WAL does not work:
      `unsupported_platform`. Before `/var/lib/koko` exists, the filesystem it
      will be made on is checked (`filesystem.Nearest`);
    - a `koko.db` at a schema this koko predates, which the koko server would

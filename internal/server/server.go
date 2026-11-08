@@ -24,6 +24,7 @@ import (
 	"github.com/cieons/koko/internal/server/deployment"
 	"github.com/cieons/koko/internal/server/device"
 	"github.com/cieons/koko/internal/server/enroll"
+	"github.com/cieons/koko/internal/server/filesystem"
 	"github.com/cieons/koko/internal/server/gateway"
 	"github.com/cieons/koko/internal/server/host"
 	"github.com/cieons/koko/internal/server/op"
@@ -85,6 +86,10 @@ type Config struct {
 	// Log receives the log, one structured line per event: stderr, which
 	// journald reads under systemd.
 	Log io.Writer
+	// Filesystems finds the filesystem holding the data directory, which
+	// start-up refuses on a network filesystem: filesystem.System on a
+	// machine, a fake in tests, so they read no real /proc. It must be set.
+	Filesystems filesystem.Types
 
 	// SocketPath is the socket-path hook, for tests only: empty means the
 	// fixed wire.SocketPath. No flag or environment variable sets it.
@@ -125,9 +130,11 @@ type Server struct {
 // serves until Close. It refuses to start, and writes no key, when the Root
 // Key file's path is not absolute, or the file is inside the data directory,
 // missing, does not parse, or is not the Root Key the sealed data needs,
-// naming the file. The store opens before the key loads, as P0 spec: install
-// and run orders it, so that a refusal can name the Root Key the sealed data
-// needs. An initialised koko server that cannot listen on TCP refuses to
+// naming the file. Before it writes anything, it refuses a data directory on
+// a network filesystem or one it cannot write, and a socket path something
+// answers on; a stale socket file there it removes. The store opens before
+// the key loads, as P0 spec: install and run orders it, so that a refusal
+// can name the Root Key the sealed data needs. An initialised koko server that cannot listen on TCP refuses to
 // start.
 func Start(ctx context.Context, cfg Config) (*Server, error) {
 	log := slog.New(slog.NewTextHandler(cfg.Log, &slog.HandlerOptions{Level: cfg.LogLevel}))
@@ -136,6 +143,18 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 		return nil, err
 	}
 	if err := checkRootKeyOutside(cfg.RootKeyPath, cfg.DataDir); err != nil {
+		return nil, err
+	}
+	if cfg.Filesystems == nil {
+		return nil, errors.New("start the koko server: Config.Filesystems is not set")
+	}
+	if err := checkDataDir(cfg.DataDir, cfg.Filesystems); err != nil {
+		return nil, err
+	}
+	// Before the store opens, so that a second start beside a running koko
+	// server migrates nothing under it.
+	socket := cmp.Or(cfg.SocketPath, wire.SocketPath)
+	if err := claimSocket(ctx, socket, log); err != nil {
 		return nil, err
 	}
 	st, err := store.Open(ctx, cfg.DataDir)
@@ -206,7 +225,6 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 			return nil, errors.Join(err, srv.Close())
 		}
 	}
-	socket := cmp.Or(cfg.SocketPath, wire.SocketPath)
 	if err := t.ListenSocket(ctx, socket); err != nil {
 		return nil, errors.Join(err, srv.Close())
 	}

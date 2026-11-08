@@ -1,10 +1,11 @@
 // Package filesystem tells which filesystem holds a path, and whether that
 // filesystem keeps its files on another machine, where SQLite's WAL does not
 // work. The installer checks the data directory with it before it writes
-// anything.
+// anything, and the koko server's start-up at every start (P1 spec: the
+// container image, "Start-up on every machine").
 //
-// It reaches the mount table through a Types, so that tests fake it and
-// never read the real /proc.
+// Both reach the mount table through a Types, so that tests fake it and never
+// read the real /proc.
 package filesystem
 
 import (
@@ -30,16 +31,21 @@ type Types interface {
 // /proc/<pid>/mountinfo.
 type Mountinfo string
 
-// System is the running process's mount table.
+// System is the running process's mount table, which inside a container
+// shows a bind mount's own filesystem.
 const System Mountinfo = "/proc/self/mountinfo"
 
 var _ Types = System
 
 // FilesystemType resolves path's symlinks, then finds the mount holding it
 // in the table, the one whose mount point is the longest prefix of path, and
-// returns its type. path is absolute.
+// returns its type.
 func (m Mountinfo) FilesystemType(path string) (string, error) {
 	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	resolved, err = filepath.Abs(resolved)
 	if err != nil {
 		return "", err
 	}

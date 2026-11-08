@@ -8,6 +8,7 @@ import (
 
 	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/server"
+	"github.com/cieons/koko/internal/server/filesystem"
 	"github.com/cieons/koko/internal/server/installer"
 	"github.com/cieons/koko/internal/shared/install"
 )
@@ -22,6 +23,7 @@ func serverRun(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
 		Listen:        s.Listen,
 		LogLevel:      s.LogLevel,
 		Log:           log,
+		Filesystems:   filesystem.System,
 	})
 }
 

@@ -177,9 +177,11 @@ status. A command reaches the koko server only on its first `in.Call`, so
   leave`; `koko ssh setup` on one, naming `koko join`),
   `invalid_join_code` (the koko server refused the Join Code, used, expired
   or never issued alike), `unsupported_platform` (`koko server run`,
-  `install` or `uninstall` outside Linux, or a machine install cannot use),
-  `port_taken` (another process holds the port `koko web` or `koko server
-  install` listens on), `server_too_old` (the koko server's report does not
+  `install` or `uninstall` outside Linux, or a machine install cannot use,
+  or a data directory on a network filesystem, which `koko server run`
+  refuses too), `port_taken` (another process holds the port `koko web` or
+  `koko server install` listens on, or something, such as a koko server, answers on the socket
+  `koko server run` would listen on), `server_too_old` (the koko server's report does not
   list the command's operation; the message names the koko server's version
   and the command, and nothing was sent; or, so far for `koko ssh setup`
   only, the koko server answered without a field the command needs, which

@@ -32,9 +32,11 @@ const (
 	// codeInvalidJoinCode: the koko server refused the Join Code: used,
 	// expired, voided or never issued, which it does not say.
 	codeInvalidJoinCode = "invalid_join_code"
-	// codeUnsupportedPlatform: the command does not run on this OS.
+	// codeUnsupportedPlatform: the command does not run on this OS, or on
+	// this machine, such as the koko server on a network filesystem.
 	codeUnsupportedPlatform = "unsupported_platform"
-	// codePortTaken: another process holds the port the command listens on.
+	// codePortTaken: another process holds the port the command listens on,
+	// or, for koko server run, something answers on its socket.
 	codePortTaken = "port_taken"
 	// codeServerTooOld: the koko server does not serve the command's
 	// operation, so it is older than the CLI, and nothing was sent; or it
