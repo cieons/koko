@@ -272,10 +272,13 @@ then to itself, and a refusal can be shown to make no connection.
 `f.CutWhen(cut)` is its fault injection: the first bytes the koko server
 sends once `cut` returns true are dropped with their connection, so a test
 cuts a call after the koko server has logged its answer and before the
-answer arrives. `f.Stall()` makes the connections it carries pass nothing
-more, either way, without closing them, as a network path that went dead
-does, while connections it accepts after pass as before; `f.Partition()`
-also passes on no close, so each end finds its connection dead by itself.
+answer arrives. The cut falls on any connection, one that is ending
+included, so a test that cuts one among several first waits until
+`f.Carried()`, the connections the forwarder carries now, has let the
+others go. `f.Stall()` makes the connections it carries pass nothing more,
+either way, without closing them, as a network path that went dead does,
+while connections it accepts after pass as before; `f.Partition()` also
+passes on no close, so each end finds its connection dead by itself.
 
 ### Running the S1 tests
 

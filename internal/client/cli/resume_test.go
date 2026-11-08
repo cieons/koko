@@ -334,12 +334,17 @@ func killingTheDeviceMuxEndsNoSSHSession(t *testing.T) {
 		name string
 		env  []string
 		// fall makes the Tunnel's way to the koko server fail.
-		fall      func(d *harness.Device, fwd *harness.Forwarder)
+		fall      func(t *testing.T, d *harness.Device, fwd *harness.Forwarder)
 		wantMuxes int
 	}{
-		{"through the Device Mux", nil, func(d *harness.Device, _ *harness.Forwarder) { d.KillMux() }, 2},
-		{"with KOKO_DIRECT=1", []string{"KOKO_DIRECT=1"}, func(d *harness.Device, fwd *harness.Forwarder) {
+		{"through the Device Mux", nil, func(_ *testing.T, d *harness.Device, _ *harness.Forwarder) { d.KillMux() }, 2},
+		{"with KOKO_DIRECT=1", []string{"KOKO_DIRECT=1"}, func(t *testing.T, d *harness.Device, fwd *harness.Forwarder) {
 			d.KillMux()
+			// The koko server's answer to the killed Device Mux's last probe
+			// may still be on its way, and would spend the cut on a
+			// connection nobody holds: the cut is armed once the forwarder
+			// carries the Tunnel's Device Connection alone.
+			eventually(t, "the forwarder carries only the Tunnel's Device Connection", func() bool { return fwd.Carried() == 1 })
 			fwd.CutWhen(func() bool { return true })
 		}, 1},
 	} {
@@ -354,7 +359,7 @@ func killingTheDeviceMuxEndsNoSSHSession(t *testing.T) {
 				t.Fatalf("the shell printed %q, want one", got)
 			}
 
-			tc.fall(d, s.fwd)
+			tc.fall(t, d, s.fwd)
 			if got := say("echo two"); got != "two\n" {
 				t.Errorf("the shell printed %q, want two", got)
 			}

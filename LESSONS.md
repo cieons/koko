@@ -65,10 +65,16 @@ accepts: 3 failures under load. The Devices page's countdown test, in
 turn, moved its faked clock on once the Join Code line showed, though
 React starts the countdown's interval in an effect it may run just after:
 CI on `main` went red at 4b0d50b, which touched nothing under `web/`.
+The test of killing the Device Mux with `KOKO_DIRECT=1`, in turn, armed
+its cut once the Device Mux had stopped, to fall on the Tunnel's own
+Device Connection, though the koko server's answer to the Device Mux's last
+probe could still be on its way and spend the cut on the dead connection:
+nothing Resumed in about 1 in 30 runs under load, and CI's macOS job on
+`main` went red at d5e0d77, which only met the race the test had from 1e3a865.
 **Seen:** 2 (2026-11-06, 2026-11-08)
 **Evidence:** 3cae7b1 (#38); 4232f09 (#43); #77; ecff11b (#49); #78;
 c152887 (#54); check runs 42166495220 and 42167225724; 4f5156b (#60);
-#79; check run 42436925411
+#79; check run 42436925411; 1e3a865 (#70); check run 42461764144; #87
 
 ### A channel closes only once every request on it has its answer
 

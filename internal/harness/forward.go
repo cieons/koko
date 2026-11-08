@@ -10,7 +10,8 @@ import (
 
 // Forwarder is a TCP forwarder on a loopback port: it passes each
 // connection it accepts to its target, which the test can change, and
-// counts them. A koko server initialised with the forwarder's address as its
+// counts them, those it has accepted (Conns) and those it carries now
+// (Carried). A koko server initialised with the forwarder's address as its
 // Server Address issues Join Codes that lead wherever the test points it:
 // first to an impostor, then to the koko server itself; and a test sees that
 // a refusal made no connection. It also cuts a connection when the test
@@ -75,11 +76,24 @@ func (f *Forwarder) Conns() int {
 	return f.conns
 }
 
+// Carried counts the connections the forwarder carries now: those it has
+// opened to its target whose relays have not both returned. A connection
+// either end has closed counts until neither relay can pass anything more,
+// so a cut armed once Carried has let it go cannot fall on it.
+func (f *Forwarder) Carried() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.carried)
+}
+
 // CutWhen arms one cut: the first bytes the target sends, on any
 // connection, once cut returns true, are dropped with that connection, both
 // ways, and the cut is spent. A test cuts a call mid-flight with it: cut
 // turns true once the koko server has logged the call's answer, and the
-// answer, which it sends after, never reaches the device.
+// answer, which it sends after, never reaches the device. Bytes the target
+// sends on a connection that is ending spend the cut too: a test that cuts
+// one connection among several waits, with Carried, until the others are
+// gone.
 func (f *Forwarder) CutWhen(cut func() bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -169,9 +183,14 @@ func (f *Forwarder) pass(ctx context.Context, in net.Conn, target string) {
 	f.wg.Go(func() { f.relay(out, in, c, false); done <- struct{}{} })
 	f.wg.Go(func() { f.relay(in, out, c, true); done <- struct{}{} })
 	<-done
-	if c.partitioned.Load() {
-		<-done
+	if !c.partitioned.Load() {
+		// One side's end ends the other: closing both ends the other relay.
+		_ = in.Close()
+		_ = out.Close()
 	}
+	// Carried counts the connection until neither relay can pass, or cut on,
+	// anything more.
+	<-done
 }
 
 // relay passes what arrives on from to to, until either side ends, or, when
