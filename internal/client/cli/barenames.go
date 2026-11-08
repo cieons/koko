@@ -19,15 +19,21 @@ import (
 func writeBareNames(ctx context.Context, c *apiclient.Client, home string, stderr io.Writer) {
 	resp, err := c.Call(ctx, api.HostList, api.HostListRequest{})
 	if err == nil {
-		names := make([]string, 0, len(resp.Hosts))
-		for _, h := range resp.Hosts {
-			names = append(names, h.Name)
-		}
-		_, err = devicefiles.WriteSSHConfig(home, names)
+		_, err = devicefiles.WriteSSHConfig(home, bareNames(resp))
 	}
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "koko: could not rewrite the bare names in koko's ssh_config (%v); until koko does, reach a Host as ssh <host>.koko\n", err)
 	}
+}
+
+// bareNames are the names of the Hosts host.list answered: every Host the
+// caller can see that is not Retired.
+func bareNames(resp api.HostListResponse) []string {
+	names := make([]string, 0, len(resp.Hosts))
+	for _, h := range resp.Hosts {
+		names = append(names, h.Name)
+	}
+	return names
 }
 
 // rewriteBareNamesAfterHostChange runs writeBareNames after the caller's

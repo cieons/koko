@@ -179,18 +179,7 @@ func (s *Staged) stage(key ed25519.PrivateKey) error {
 	if s.sshConfig, err = renderSSHConfig(s.home, nil); err != nil {
 		return err
 	}
-	for _, d := range []string{filepath.Dir(dir(s.home)), dir(s.home)} {
-		err := os.Mkdir(d, 0o700)
-		switch {
-		case err == nil:
-			s.made = append(s.made, d)
-		case !errors.Is(err, fs.ErrExist):
-			return fmt.Errorf("make %s: %w", d, err)
-		}
-	}
-	// koko's own directory, never the user's ~/.ssh, is made private even
-	// when it was there already.
-	if err := restrict(dir(s.home), 0o700); err != nil {
+	if s.made, err = makeDir(s.home); err != nil {
 		return err
 	}
 	block, err := ssh.MarshalPrivateKey(key, "koko device key")
@@ -199,6 +188,23 @@ func (s *Staged) stage(key ed25519.PrivateKey) error {
 	}
 	s.tmpKey, err = writeTemp(dir(s.home), "."+keyFile+"-*", pem.EncodeToMemory(block))
 	return err
+}
+
+// makeDir makes ~/.ssh and ~/.ssh/koko/ under home, mode 0700, when they
+// are missing, and makes koko's own directory, never the user's ~/.ssh,
+// private even when it was there already. It returns the directories it
+// made, deepest last, those it made before failing included.
+func makeDir(home string) (made []string, err error) {
+	for _, d := range []string{filepath.Dir(dir(home)), dir(home)} {
+		err := os.Mkdir(d, 0o700)
+		switch {
+		case err == nil:
+			made = append(made, d)
+		case !errors.Is(err, fs.ErrExist):
+			return made, fmt.Errorf("make %s: %w", d, err)
+		}
+	}
+	return made, restrict(dir(home), 0o700)
 }
 
 // Commit completes the join with the client config c: it puts the key in

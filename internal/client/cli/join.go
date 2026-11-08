@@ -152,15 +152,25 @@ func join(ctx context.Context, in *Input) (joined, error) {
 	// nothing about that, so the join says why and goes on. A line it finds
 	// below a Host or Match line it leaves there, and warns as status does.
 	if !in.Bool("no-ssh-config") {
-		err := devicefiles.AddInclude(home)
-		if err == nil {
-			err = devicefiles.CheckInclude(home)
-		}
-		if err != nil {
-			out.IncludeWarning = new(err.Error())
-		}
+		out.IncludeWarning = addInclude(home)
 	}
 	return out, nil
+}
+
+// addInclude puts the Include line first in ~/.ssh/config under home, then
+// checks it as status does, for koko join and koko ssh setup, and returns
+// the warning for a file it left alone or a line ssh does not read for
+// every host: why, and how to fix it. It returns nil when ssh reads koko's
+// ssh_config for every host.
+func addInclude(home string) *string {
+	err := devicefiles.AddInclude(home)
+	if err == nil {
+		err = devicefiles.CheckInclude(home)
+	}
+	if err != nil {
+		return new(err.Error())
+	}
+	return nil
 }
 
 // joinCode reads the Join Code: the argument, or stdin for "-", which keeps
