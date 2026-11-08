@@ -107,7 +107,30 @@ func web(ctx context.Context, in *Input, ready func(webJSON) error) error {
 		defer waitForOpener()
 	}
 	f := forwarder{conn: conn, payload: wire.WebPayload(port), stderr: in.inv.Stderr}
-	return f.serve(ctx, ln)
+	err = f.serve(ctx, ln)
+	if lost, ok := errors.AsType[*connectionEnded](err); ok {
+		return webEnded(in, lost.err)
+	}
+	return err
+}
+
+// webEnded says why koko web ended when its connection to the koko server
+// did, with err from Wait. koko disconnect stopping it is a stop as Ctrl-C
+// is, so koko web exits 0, saying so. A Revoked Device Session ends koko web
+// with revoked, once the device's files are deleted: by the Device Mux, or
+// here on the direct path. On a joined device the cookie outlives every
+// other end; over the Unix socket it ends with the run.
+func webEnded(in *Input, err error) error {
+	switch {
+	case errors.Is(err, serverconn.ErrDisconnected):
+		_, _ = fmt.Fprintln(in.inv.Stderr, "koko: koko disconnect stopped koko web.")
+		return nil
+	case in.joined == nil:
+		return &cliError{code: codeServerUnreachable, message: "lost the connection to the koko server, and with it this run of koko web and its cookie: run koko web again once the koko server is back"}
+	case errors.Is(err, serverconn.ErrRevoked):
+		return revoked(in.inv.getenv("HOME"), "", *in.joined, &serverconn.RevokedError{Device: in.joined.Device})
+	}
+	return &cliError{code: codeServerUnreachable, message: "lost the connection to the koko server: run koko web again, and the browser's cookie still works"}
 }
 
 // listenWeb listens on 127.0.0.1:port, refusing a taken port by naming the
@@ -161,15 +184,22 @@ type forwarder struct {
 	stderr  io.Writer
 }
 
+// connectionEnded is serve's error when the connection to the koko server
+// ended, with err from its Wait.
+type connectionEnded struct {
+	err error
+}
+
+func (e *connectionEnded) Error() string {
+	return fmt.Sprintf("the connection to the koko server ended: %v", e.err)
+}
+
 // serve forwards each browser connection on ln. It returns nil once ctx
-// ends, and an error when the connection to the koko server ends first.
-// Either way it closes every browser connection before it returns.
+// ends, and a *connectionEnded when the connection to the koko server ends
+// first. Either way it closes every browser connection before it returns.
 func (f forwarder) serve(ctx context.Context, ln net.Listener) error {
-	lost := make(chan struct{})
-	go func() {
-		_ = f.conn.Wait()
-		close(lost)
-	}()
+	lost := make(chan error, 1)
+	go func() { lost <- f.conn.Wait() }()
 	var (
 		wg        sync.WaitGroup
 		mu        sync.Mutex
@@ -200,8 +230,8 @@ func (f forwarder) serve(ctx context.Context, ln net.Listener) error {
 	var err error
 	select {
 	case <-ctx.Done():
-	case <-lost:
-		err = &cliError{code: codeServerUnreachable, message: "lost the connection to the koko server, and with it this run of koko web and its cookie: run koko web again once the koko server is back"}
+	case waitErr := <-lost:
+		err = &connectionEnded{err: waitErr}
 	case <-accepting:
 		err = fmt.Errorf("accept a browser connection: %w", acceptErr)
 	}

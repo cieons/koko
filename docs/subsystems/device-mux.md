@@ -247,7 +247,7 @@ ssh_config following the record
 - **Idle exit.** It exits `timing.DeviceMuxIdle` (10 minutes) after the
   last command left: a command, `koko web` or `koko tunnel` connected keeps
   it running, with or without a channel open, so `koko web` between browser
-  connections counts as open (#62), and so does a Tunnel waiting to Resume,
+  connections counts as open, and so does a Tunnel waiting to Resume,
   whose process stays connected; its own bare-name refresh does not. A
   command that connects as it idles out is refused, and starts a new one.
 - **Revocation.** On the revocation disconnect

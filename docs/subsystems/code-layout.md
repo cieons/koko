@@ -94,7 +94,8 @@ the koko server's `withdraw` to it, which hands each change to the Gateway
 and then to the transport ([revoking](device-connection.md#revoking)): an
 area whose operations withdraw access takes the signal in its `Register`, as
 `device`, `user`, `space` and `host` do, and publishes on it; a later
-consumer subscribes in `server.Start` (rule 12).
+consumer subscribes in `server.Start` (rule 12), as the web front's
+`Withdraw` does.
 
 Error codes every area shares (`invalid_request`, `unknown_field`,
 `invalid_name`, `name_taken`, ...) are in `commonCodes`; an area adds a code of

@@ -7,9 +7,14 @@
 // another site's page cannot call the API. It also serves web.start, which
 // koko web calls for its token.
 //
-// Over the Unix socket, where the Local caller has no Device Session, a run
-// of koko web is its SSH connection: the token is traded and the cookie
-// checked only on that connection's web@koko channels, and both end with it.
+// A token and a cookie are bound to the Device Session koko web runs as: the
+// cookie lets in a web@koko channel of any Device Connection of that Device
+// Session, so it outlives koko web, a dropped Device Connection and a koko
+// server restart, until the Device Session is Revoked. Over the Unix socket,
+// where the Local caller has no Device Session, they are bound to a run of
+// koko web instead, which is its SSH connection: the token is traded and the
+// cookie checked only on that connection's web@koko channels, and both end
+// with it.
 package web
 
 import (
@@ -26,6 +31,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cieons/koko/internal/server/access"
 	"github.com/cieons/koko/internal/server/deployment"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
@@ -69,12 +75,24 @@ func New(api http.Handler, st *store.Store, rootKey *seal.RootKey, clock func() 
 
 // Register registers the web area's operation.
 func (f *Front) Register(a *op.API) {
-	a.Handle(api.WebStart, f.start, op.LocalOnly)
+	a.Handle(api.WebStart, f.start)
 }
 
-// start is web.start: it starts a run of koko web on the caller's
-// connection, if none runs there yet, and issues a token for it.
-func (f *Front) start(ctx context.Context, _ store.Tx, _ op.Caller, _ api.WebStartRequest) (api.WebStartResponse, error) {
+// Withdraw ends the cookies and tokens of the Device Sessions c Revoked, at
+// once, while their connections may still be open: a consumer of the
+// access-change signal. It does not block.
+func (f *Front) Withdraw(c access.Change) {
+	f.runs.revoke(c.Revoked)
+}
+
+// start is web.start: it issues a token for the caller's Device Session, or,
+// for the Local caller, for the run of koko web on the caller's connection,
+// which it starts if none runs there yet. A Revoked Device Session gets
+// none.
+func (f *Front) start(ctx context.Context, tx store.Tx, caller op.Caller, _ api.WebStartRequest) (api.WebStartResponse, error) {
+	if _, err := access.Who(ctx, tx, caller); err != nil {
+		return api.WebStartResponse{}, err
+	}
 	conn, ok := transport.ConnectionFrom(ctx)
 	if !ok {
 		return api.WebStartResponse{}, fmt.Errorf("start koko web: the call came without its connection")
@@ -94,11 +112,19 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		noAnswer(w)
 		return
 	}
-	name := cookieName(port)
-	cookieValid, err := f.checkCookie(ctx, r, name, conn)
-	if err != nil {
-		f.fail(w, r, err)
+	sub, state := f.runs.subject(conn)
+	if state == subjectRevoked {
+		refuse(w, r, api.CodeRevoked, "this device's Device Session was revoked, and with it the web UI's cookie: koko web has stopped, and this device must join the koko server again")
 		return
+	}
+	name := cookieName(port)
+	cookieValid := false
+	if state == subjectFound {
+		var err error
+		if cookieValid, err = f.checkCookie(ctx, r, name, sub); err != nil {
+			f.fail(w, r, err)
+			return
+		}
 	}
 	if token := r.URL.Query().Get(tokenParam); token != "" && r.Method == http.MethodGet && !isAPI(r) {
 		if cookieValid {
@@ -107,11 +133,11 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			redirectWithoutToken(w, r)
 			return
 		}
-		f.trade(w, r, conn, name, token)
+		f.trade(w, r, sub, name, token)
 		return
 	}
 	if !cookieValid {
-		refuse(w, r, api.CodeCookieRequired, "this browser holds no cookie of this run of koko web: open the address koko web printed, or run koko web again for a new one")
+		refuse(w, r, api.CodeCookieRequired, "this browser holds no cookie of this koko web: open the address koko web printed, or run koko web again for a new one")
 		return
 	}
 	if isAPI(r) {
@@ -125,9 +151,10 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.serveFile(w, r)
 }
 
-// trade spends the token and gives the browser this run's cookie, then
-// redirects to the same page without the token.
-func (f *Front) trade(w http.ResponseWriter, r *http.Request, conn *transport.Connection, name, token string) {
+// trade spends the token and gives the browser the cookie of sub, the
+// subject the request is let in by, then redirects to the same page without
+// the token.
+func (f *Front) trade(w http.ResponseWriter, r *http.Request, sub subject, name, token string) {
 	key, err := f.cookieKey(r.Context())
 	if err != nil {
 		f.fail(w, r, err)
@@ -135,20 +162,19 @@ func (f *Front) trade(w http.ResponseWriter, r *http.Request, conn *transport.Co
 	}
 	// As op.Now reads it for web.start, which issued the token.
 	now := f.clock().UTC().Truncate(time.Second)
-	id, result := f.runs.spend(conn, token, now)
-	switch result {
+	switch f.runs.spend(sub, token, now) {
 	case tokenAlreadySpent:
 		f.log.Info("web token refused", "reason", "spent")
 		refusePage(w, http.StatusForbidden, "this address of koko web was opened already, in another browser, and works only once. If that was not you, another user of this machine opened it first: stop koko web, and run it again for a new address")
 		return
 	case tokenUnknown:
 		f.log.Info("web token refused", "reason", "expired or unknown")
-		refusePage(w, http.StatusUnauthorized, "this address of koko web has expired, or comes from another run of koko web: run koko web again and open the address it prints")
+		refusePage(w, http.StatusUnauthorized, "this address of koko web has expired, or comes from another run of koko web, such as another device's: run koko web again and open the address it prints")
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
-		Value:    signCookie(key, id),
+		Value:    signCookie(key, sub),
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
@@ -157,22 +183,18 @@ func (f *Front) trade(w http.ResponseWriter, r *http.Request, conn *transport.Co
 	redirectWithoutToken(w, r)
 }
 
-// checkCookie tells whether the request carries a valid cookie of the run on
-// conn.
-func (f *Front) checkCookie(ctx context.Context, r *http.Request, name string, conn *transport.Connection) (bool, error) {
+// checkCookie tells whether the request carries a valid cookie of sub, the
+// subject it is let in by.
+func (f *Front) checkCookie(ctx context.Context, r *http.Request, name string, sub subject) (bool, error) {
 	c, err := r.Cookie(name)
 	if err != nil {
-		return false, nil
-	}
-	id, ok := f.runs.id(conn)
-	if !ok {
 		return false, nil
 	}
 	key, err := f.cookieKey(ctx)
 	if err != nil {
 		return false, err
 	}
-	return verifyCookie(key, c.Value, id), nil
+	return verifyCookie(key, c.Value, sub), nil
 }
 
 // cookieKey returns the cookie key, which it loads, or makes on first use,

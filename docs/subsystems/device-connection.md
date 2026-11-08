@@ -23,8 +23,9 @@ one-time code is
 - **SSH** with the version string `SSH-2.0-koko`, carrying the socket's
   channels, `api@koko`, `web@koko` and `tunnel@koko`, and refusing any other type
   ([`transport.ServeTCP`](../../internal/server/transport/transport.go)).
-  `web.start` answers only the Local caller, so the web front serves a
-  Device Connection nothing yet.
+  A `web@koko` channel reaches the web front, which lets it in by the
+  cookie of the connection's Device Session ([`koko web` and the web
+  front](web-front.md#runs-tokens-and-the-cookie)).
 - **Liveness.** The koko server notes when bytes last came from each Device
   Connection ([`liveness`](../../internal/shared/liveness/liveness.go)):
   after `timing.ServerProbe` (15 s) without any it sends
@@ -324,8 +325,10 @@ and names them all as Revoked on the signal, as a Removed User's
 ([Users](users.md#removing)). The other changes that withdraw access, a
 Member taken out of a Space and a Host put out of a caller's reach, name
 what they affect in fields of `access.Change` of their own, which only the
-Gateway acts on. A later consumer, such as the web front's cookies,
-subscribes beside it.
+Gateway acts on. `server.Start` also subscribes the web front's
+`Withdraw`, which ends the Revoked Device Sessions' cookies and tokens at
+once, while their Device Connections may still be open
+([the web front](web-front.md#runs-tokens-and-the-cookie)).
 
 ## On the device
 

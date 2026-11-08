@@ -30,6 +30,7 @@ var realTime = []func(*testing.T){
 	anotherHomeGoesDirectBesideTheDeviceMux,
 	aRestoredKokoServerKeepsItsDevicesPins,
 	aResumeFromAnotherDeviceSessionIsRefused,
+	aRunningKokoWebKeepsTheDeviceMuxRunning,
 	aSecondDeviceMuxOfTheBuildExitsAtItsLock,
 	aShellCarriesOnAcrossADrop,
 	aTryToReconnectEndsSoTheNextCanFollow,

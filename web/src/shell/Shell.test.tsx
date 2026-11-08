@@ -611,7 +611,7 @@ test.each([
   expect(api.calls.filter((c) => c.path === DeviceRevoke.path)).toHaveLength(1);
 });
 
-test("when the browser's cookie is not one of this run of koko web, the page says to open its address", async () => {
+test("when the browser's cookie is no longer valid, the page says to open koko web's address", async () => {
   const api = fakeApi();
   let ended = false;
   api.on(UserCurrent, () => {
@@ -627,7 +627,7 @@ test("when the browser's cookie is not one of this run of koko web, the page say
   fireEvent.focus(window);
 
   expect((await screen.findByRole("alert")).textContent).toBe(
-    "This page's access ended with the run of koko web that opened it. Open the address koko web printed.",
+    "This browser no longer holds a valid cookie for this page. Open the address koko web printed.",
   );
 });
 

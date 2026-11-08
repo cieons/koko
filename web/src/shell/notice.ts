@@ -6,8 +6,8 @@ import { ApiError, type Call, DroppedError, observeCalls } from "../client";
 
 /**
  * Notice is what the page says when the web UI cannot act: koko web is not
- * running, the Device Session was Revoked, or the browser's cookie is not one
- * of this run of koko web.
+ * running, the Device Session was Revoked, or the browser holds no valid
+ * cookie, as when the run of koko web over the Unix socket that gave it ended.
  */
 export type Notice = "stopped" | "revoked" | "cookie";
 

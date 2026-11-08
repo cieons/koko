@@ -63,7 +63,14 @@ func startWeb(t *testing.T, h *harness.Harness) *kokoWeb {
 // address.
 func startWebOn(t *testing.T, h *harness.Harness, port int) *kokoWeb {
 	t.Helper()
-	p := h.Background(nil, "web", "--port", strconv.Itoa(port), "--no-open", "--json")
+	return startWebThrough(t, h.Background, port)
+}
+
+// startWebThrough runs koko web --no-open --json on port with background, the
+// Local caller's or a device's, and waits for its address.
+func startWebThrough(t *testing.T, background func(env []string, args ...string) *harness.Process, port int) *kokoWeb {
+	t.Helper()
+	p := background(nil, "web", "--port", strconv.Itoa(port), "--no-open", "--json")
 	w := printedWeb(t, p.WaitStdout("}\n"))
 	w.Process = p
 	return w

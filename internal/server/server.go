@@ -170,9 +170,11 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	}
 	// The access-change signal: once a change that withdraws access
 	// commits, the Gateway ends the SSH Sessions it withdrew access from, and
-	// the transport closes the Device Connections it Revoked.
+	// the transport closes the Device Connections it Revoked, and the web
+	// front ends the cookies of the Device Sessions it Revoked.
 	var changes access.Signal
 	changes.Subscribe(srv.withdraw)
+	changes.Subscribe(front.Withdraw)
 	space.Register(a, user.ByName, holdings, &changes)
 	// host show lists a Host's Services, which the service area reads,
 	// since it imports the host area.
