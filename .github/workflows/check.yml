@@ -38,10 +38,14 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       # The action only installs golangci-lint and keeps its cache; make lint
-      # runs it, once for each OS koko builds for.
+      # runs it, once for each OS koko builds for. It builds golangci-lint
+      # with go install, through the Go module proxy, rather than download
+      # GitHub's release binary: GitHub's release downloads answered 504 for
+      # hours on 2026-11-08 and failed every run before a test ran.
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.15.0
+          install-mode: goinstall
           install-only: true
       # The real-OpenSSH test (internal/client/openssh) runs the system's
       # ssh, scp, sftp, sftp-server and rsync, and fails rather than skips
