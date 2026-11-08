@@ -9,6 +9,11 @@ providers, and it is the one door people and AI agents use to reach them.
 
 **Status:** early design. Nothing is usable yet.
 
+## Installing
+
+[Installing and running the koko server](docs/install.md): one line on a
+Linux machine with systemd, then upgrading, going back and restoring.
+
 ## Planned
 
 - A record of your hosts and the services on them, described by typed

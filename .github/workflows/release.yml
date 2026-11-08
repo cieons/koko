@@ -14,14 +14,17 @@ permissions:
   contents: read
 
 jobs:
-  # The release is built only from a commit that passes every check.
+  # The release is built only from a commit that passes every check and
+  # installs on a real systemd machine.
   check:
     uses: ./.github/workflows/check.yml
+  systemd:
+    uses: ./.github/workflows/systemd.yml
 
   # The build runs koko's and npm's code, so it holds no token that can
   # publish or sign.
   build:
-    needs: check
+    needs: [check, systemd]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

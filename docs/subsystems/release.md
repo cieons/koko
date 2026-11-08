@@ -31,10 +31,12 @@ so `koko version` says the tag in a checkout at the tag with nothing
 changed, and a pseudo-version (with `+dirty` for changes) anywhere else.
 
 The [release workflow](../../.github/workflows/release.yml) runs on a pushed
-`v*` tag, in three jobs:
+`v*` tag, in these jobs:
 
-1. **check**: the [check workflow](../../.github/workflows/check.yml) on the
-   tag, on Linux and macOS; nothing is built unless it passes;
+1. **check** and **systemd**: the
+   [check workflow](../../.github/workflows/check.yml) on the tag, on Linux
+   and macOS, and [the real-systemd check](#the-real-systemd-check);
+   nothing is built unless both pass;
 2. **build**, with a read-only token and no credentials left in the
    checkout, since it runs koko's and npm's code: `make dist`, a check that
    `dist/koko-linux-amd64 version` is the tag, and `dist/` uploaded as a
@@ -107,5 +109,61 @@ the test, so nothing imports it, and it is in no
 [package group](code-layout.md#the-package-groups).
 
 The release workflow runs only on a tag, and no test runs it; actionlint
-checks it by hand. Nothing yet installs a `make dist` build on a real
-systemd machine.
+checks it by hand.
+
+## The real-systemd check
+
+The [systemd workflow](../../.github/workflows/systemd.yml) installs koko
+on a real systemd machine, a fresh `ubuntu-latest` runner, on every push to
+`main`, on every pull request, and on a release's tag before the build job,
+which needs it. It runs `make dist` twice: on the commit, and in a worktree
+on the commit just before the one that added the latest migration step, so
+that the upgrade from that older build migrates and snapshots (every
+migration step is a file added to `internal/server/store/migrations/`,
+[the store](store.md#migrations)). Then
+[`release/systemd-check.sh`](../../release/systemd-check.sh)
+`<older dist> <newer dist>` checks, in order:
+
+1. install.sh refuses a release whose binary does not match its
+   `SHA256SUMS`, runs nothing and writes nothing;
+2. `koko server install` refuses, with `unsupported_platform`, a Docker
+   container that systemd does not run, and writes nothing there;
+3. install.sh installs the older build with `--owner alice --address
+   localhost`: the service is active, its process runs as `koko` and
+   listens on 443, systemd holds its `root-key` credential
+   (`LoadCredential=`, asked over D-Bus, since `systemctl show` prints it
+   as `[unprintable]`), and `koko` cannot read `/etc/koko/root.key`;
+4. a device joins with the printed Join Code and lists the Users;
+5. with a drop-in setting `KOKO_LISTEN=[::]:443`, `systemctl show` quotes
+   that entry as the installer reads it;
+6. install.sh of the newer build, without `--owner`, upgrades: the binary is
+   the newer one, the service runs again under a new process, a
+   `koko.db.before-<n>` snapshot is there, and the device still works;
+7. `koko server uninstall` leaves nothing running or listening, removes the
+   unit and the binary, and keeps `koko.db`, the Root Key and the `koko`
+   user;
+8. after `chown -R root:root /var/lib/koko`, as a copy put back by root
+   would be, install.sh without `--owner` starts the koko server again,
+   systemd gives every file back to `koko`, and the device still works.
+
+**How install.sh reaches a local build.** install.sh runs unchanged. A fake
+`curl`, first on its `PATH`, serves `https://github.com/cieons/koko` from a
+directory: `releases/latest` redirects to the tag a file there names, and
+`releases/download/<tag>/<file>` is a file. The older build is release
+`v0.0.1`, the newer `v0.0.2`, and `v0.0.3` the newer one with its binary
+swapped for a script that would leave a mark if it ran. Real curl, TLS and
+GitHub are what the check leaves out; a setting in install.sh to download
+from elsewhere would be one more input to the script that runs as root on
+every koko server, for a test alone.
+
+**The device** is a Docker container (`ubuntu:24.04`) on the host's network,
+with the older build's binary as its `koko`. Its own filesystem has no
+`/run/koko/koko.sock`, so its commands go over TCP to `localhost:443`, as
+a device's do, through its Device Mux, and not through the Unix socket as
+the Local caller. It keeps the older CLI through the upgrade, as a device
+does when its koko server is upgraded.
+
+The script refuses a machine where koko was installed, and leaves koko's
+data, Root Key and user behind: run it only on a throwaway machine with
+systemd, Docker, `jq`, `ss` and passwordless `sudo`. On a failure it prints
+the koko service's journal and the device's Device Mux log.

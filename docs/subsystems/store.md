@@ -55,10 +55,11 @@ schema version:
 - **0, a new database:** migrated with no snapshot, since it holds nothing to
   go back to.
 
-To go back, the Owner stops the koko server, reinstalls the older koko, moves
-`koko.db` aside with any `koko.db-wal` and `koko.db-shm` (only a crash leaves
-them; SQLite would replay a leftover `-wal` onto the snapshot), and puts the
-snapshot in its place.
+To go back, the Owner stops the koko server, moves `koko.db` aside with any
+`koko.db-wal` and `koko.db-shm` (only a crash leaves them; SQLite would
+replay a leftover `-wal` onto the snapshot), puts the snapshot in its place,
+and then reinstalls the older koko, which refuses to install over the newer
+schema ([the installer](installer.md#the-steps)).
 
 Each step's transaction makes sure of the snapshot under its write lock
 before it applies the step, so two processes starting together never

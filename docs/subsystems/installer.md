@@ -319,4 +319,7 @@ binary.
 [`unit_test.go`](../../internal/server/installer/unit_test.go) test the
 address check, the network filesystems, reading systemd's version, reading
 mountinfo and reading the port from the unit's environment as systemd shows
-it. The real machine's own calls run in the real-systemd workflow (#65).
+it. The real machine's own calls run in
+[the real-systemd check](release.md#the-real-systemd-check), all but
+`SourceIP`, since every install there passes `--address`, and a
+`PortOwner` naming another process than the koko service.
