@@ -159,6 +159,11 @@ type deviceMux struct {
 	stop    context.CancelCauseFunc
 	hostKey ssh.Signer
 	wg      sync.WaitGroup
+	// pipes counts the channels it carries, which closeAll waits for on a
+	// revocation. A channel joins it only under mu while the Device Mux is
+	// not stopping, and a revocation stops it under mu, so none joins once
+	// closeAll may wait.
+	pipes sync.WaitGroup
 
 	// retryNow cuts the reconnect loop's wait short, on a wake or a route
 	// change.
@@ -630,27 +635,50 @@ func (m *deviceMux) carry(nch ssh.NewChannel) {
 		case <-m.ctx.Done():
 		}
 	}
+	m.mu.Lock()
+	stopping := m.ctx.Err() != nil
+	if !stopping {
+		m.pipes.Add(1)
+	}
+	m.mu.Unlock()
+	if stopping {
+		_ = remote.Close()
+		_ = nch.Reject(ssh.ConnectionFailed, "the Device Mux is stopping")
+		return
+	}
+	defer m.pipes.Done()
 	ch, reqs, err := nch.Accept()
 	if err != nil {
 		_ = remote.Close()
 		return
 	}
 	m.wg.Go(func() { ssh.DiscardRequests(reqs) })
-	pipe(ch, remote, d.done)
+	pipe(ch, remote, d.done, m.timings.PassOn)
 }
 
 // pipe copies bytes both ways between a command's channel and the koko
 // server's, passing on each half-close, until both directions have ended or
-// the Device Connection has; then it closes both channels.
-func pipe(ch ssh.Channel, remote io.ReadWriteCloser, dropped <-chan struct{}) {
+// the Device Connection has; then it closes both channels. What the koko
+// server sent before the Device Connection ended still reaches the command
+// first, such as the answer to a call that revoked this device, within
+// passOn: x/crypto/ssh ends the koko server's channel only after the bytes
+// it had taken.
+func pipe(ch ssh.Channel, remote io.ReadWriteCloser, dropped <-chan struct{}, passOn time.Duration) {
 	closeBoth := sync.OnceFunc(func() {
 		_ = ch.Close()
 		_ = remote.Close()
 	})
+	passedOn := make(chan struct{})
 	ended := make(chan struct{})
 	go func() {
 		select {
 		case <-dropped:
+			timer := time.NewTimer(passOn)
+			defer timer.Stop()
+			select {
+			case <-passedOn:
+			case <-timer.C:
+			}
 			closeBoth()
 		case <-ended:
 		}
@@ -663,6 +691,7 @@ func pipe(ch ssh.Channel, remote io.ReadWriteCloser, dropped <-chan struct{}) {
 		}
 	})
 	wg.Go(func() {
+		defer close(passedOn)
 		_, _ = io.Copy(ch, remote)
 		_ = ch.CloseWrite()
 	})
@@ -736,11 +765,16 @@ func (m *deviceMux) idleOut() {
 // closeAll ends every command's connection and the Device Connection, once
 // the Device Mux is stopping for cause; a revocation tells each command
 // first, as the koko server told the Device Mux, and so does koko
-// disconnect, so what they carried ends for good.
+// disconnect, so what they carried ends for good. On a revocation, whose
+// Device Connection has ended, it first waits for the channels, which pass
+// on what the koko server sent before it, each within timing.PassOn.
 func (m *deviceMux) closeAll(cause error) {
 	type conns struct {
 		nc  net.Conn
 		ssh ssh.Conn
+	}
+	if errors.Is(cause, errRevoked) {
+		m.pipes.Wait()
 	}
 	m.mu.Lock()
 	commands := make([]conns, 0, len(m.commands))

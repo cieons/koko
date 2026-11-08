@@ -79,9 +79,14 @@ the channel first, and the Gateway refused the exec: CI on `main` went red
 at 0ac2b3d. The Gateway, in turn, closed the client's channel as soon as the
 Host's closed, while the Host's answer to the client's exec was still being
 passed back: 1 in about 1,600 runs of the exec tests in a Linux container
-got `EOF`.
-**Seen:** 1 (2026-11-06)
-**Evidence:** 0ac2b3d (#64); 2e5b9f4 (#59); check run 42164460501
+got `EOF`. The Device Mux, likewise, closed a command's channel and
+connection once a revocation ended its Device Connection, before it had
+passed on the koko server's answer to the call that revoked the device: 1
+in about 400 runs of revoking the device in use under load got `revoked`
+instead of the answer.
+**Seen:** 2 (2026-11-06, 2026-11-08)
+**Evidence:** 0ac2b3d (#64); 2e5b9f4 (#59); check run 42164460501;
+ecff11b (#49); #81; check run 42443377692
 
 ### A command a test runs on the in-process Host ends when its SSH Session does
 

@@ -448,7 +448,9 @@ open meanwhile.
 
 - **Which connection.** It resumes on the connection it opened on while
   that lasts: through a Device Mux, which closes the Tunnel's channel when
-  its Device Connection drops, the resume's open waits for the Device Mux's
+  its Device Connection drops, once the channel has passed on what came
+  before the drop ([the Device Mux](device-mux.md#the-local-protocol)),
+  the resume's open waits for the Device Mux's
   next Device Connection, and is sent again each time the Device Mux
   refuses it after `timing.CommandWait`, which keeps the Device Mux
   reconnecting. Once that connection has ended, as when the Device Mux

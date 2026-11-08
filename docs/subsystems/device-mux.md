@@ -132,8 +132,12 @@ The koko server's own SSH, as on its Unix socket
   back with the koko server's reason and message. Bytes go both ways,
   half-closes included, until both directions end or the Device Connection
   does. It holds no Tunnel state.
-- When the Device Connection drops, the channels on it end, so an API call
-  in flight fails as a drop and [the API client](api.md#the-api-client)
+- When the Device Connection drops, the channels on it end once each has
+  passed on to its command what the koko server sent before the drop, or
+  `timing.PassOn` (5 s) has passed, for a command that does not read
+  ([`pipe`](../../internal/client/devicemux/devicemux.go)). So an API call
+  the koko server answered before the drop gets its answer; one still in
+  flight fails as a drop, [the API client](api.md#the-api-client)
   sends it once more, and a Tunnel's process Resumes it
   ([the device end of a Tunnel](gateway.md#the-device-end-of-a-tunnel));
   commands stay connected, and a channel opened next waits for the next
@@ -251,8 +255,11 @@ ssh_config following the record
   Revoked banner when it reconnects, it runs the revocation cleanup
   ([`devicefiles.Revoke`](../../internal/client/devicefiles/devicefiles.go))
   holding its lock, so no command hears of the revocation before the
-  cleanup is done, then tells each command and exits. A command it cut off
-  finds the revocation record when it tries again. A device whose join is
+  cleanup is done. Once its channels have passed on what the koko server
+  sent before it closed the Device Connection, such as the answer to the
+  call that revoked this device, each within `timing.PassOn`, it tells
+  each command and exits. A command it cut off finds the revocation
+  record when it tries again. A device whose join is
   gone when it reconnects (`not_joined`) stops it too.
 - **koko disconnect.** `koko disconnect` ([`disconnect`](../../internal/client/cli/connect.go))
   lists every socket in the runtime directory
@@ -341,5 +348,9 @@ user's id is tested.
   status` connected (golden) and reconnecting, and `null` on the direct
   path.
 - [`devicemux` package tests](../../internal/client/devicemux): the name,
-  the macOS path limit, the runtime directory, the peer credentials, and a
-  command handed the report of the next Device Connection.
+  the macOS path limit, the runtime directory, the peer credentials, a
+  command handed the report of the next Device Connection, and what the
+  koko server sent before a revocation reaching the command in full, and
+  a command that does not read keeping the Device Mux no longer than
+  `timing.PassOn`
+  ([`revoke_test.go`](../../internal/client/devicemux/revoke_test.go)).

@@ -105,6 +105,11 @@ const (
 	// the monotonic clock it is counted on stands still while the device
 	// sleeps. A koko server reached by then Resumes the Tunnel or refuses.
 	ResumeGiveUp = 2 * time.Minute
+	// PassOn bounds how long the Device Mux, once a Device Connection has
+	// ended, lets each channel on it pass on to its command what the koko
+	// server sent before, such as the answer to the call that revoked this
+	// device, for a command that does not read.
+	PassOn = 5 * time.Second
 )
 
 // Timings is the timing-constants hook. Each field is named after its
@@ -133,6 +138,7 @@ type Timings struct {
 	Grace                time.Duration
 	ResumeExchange       time.Duration
 	ResumeGiveUp         time.Duration
+	PassOn               time.Duration
 
 	// Wake and RouteChange stand in for the Device Mux's watches of the
 	// device waking from sleep and of a change of its network routes: each
@@ -167,6 +173,7 @@ func (t Timings) Resolve() Timings {
 	t.Grace = cmp.Or(t.Grace, Grace)
 	t.ResumeExchange = cmp.Or(t.ResumeExchange, ResumeExchange)
 	t.ResumeGiveUp = cmp.Or(t.ResumeGiveUp, ResumeGiveUp)
+	t.PassOn = cmp.Or(t.PassOn, PassOn)
 	return t
 }
 

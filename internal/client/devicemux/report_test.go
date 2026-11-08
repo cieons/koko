@@ -21,6 +21,7 @@ import (
 
 	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/client/devicemux"
+	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -28,8 +29,30 @@ import (
 // Connection the Device Mux holds now: after a drop, that of the next one,
 // which a koko server upgraded meanwhile reports with its new version.
 func TestACommandGetsTheReportOfTheNextDeviceConnection(t *testing.T) {
-	srv := startReporter(t)
-	home := t.TempDir()
+	srv := startReporter(t, nil)
+	home, socket, muxLog := runMux(t, srv, timing.Timings{})
+
+	conn := dial(t, socket, home)
+	waitReport(t, conn, "v0.0.1")
+	srv.drop()
+	// An open sent on the Device Connection as it drops is refused, not sent
+	// again, so the channel is opened only once the Device Mux has let go of
+	// that one: the open then goes on the next.
+	waitLog(t, muxLog, `msg="device connection dropped"`)
+	ch, err := conn.OpenChannel(t.Context(), wire.ChannelAPI, nil)
+	if err != nil {
+		t.Fatalf("open a channel after the drop: %v; the Device Mux logged:\n%s", err, muxLog)
+	}
+	_ = ch.Close()
+	waitReport(t, conn, "v0.0.2")
+}
+
+// runMux joins a device in a new home to srv and runs its Device Mux, on a
+// socket of its own, until the test ends. It returns the home, the socket
+// and what the Device Mux logs.
+func runMux(t *testing.T, srv *reporter, timings timing.Timings) (home, socket string, muxLog *syncBuffer) {
+	t.Helper()
+	home = t.TempDir()
 	_, key, _ := ed25519.GenerateKey(rand.Reader)
 	staged, err := devicefiles.Stage(home, key)
 	if err != nil {
@@ -49,12 +72,12 @@ func TestACommandGetsTheReportOfTheNextDeviceConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	socket := filepath.Join(dir, "mux.sock")
-	muxLog := &syncBuffer{}
+	socket = filepath.Join(dir, "mux.sock")
+	muxLog = &syncBuffer{}
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- devicemux.Run(ctx, devicemux.Config{Home: home, Socket: socket, Log: slog.New(slog.NewTextHandler(muxLog, nil))})
+		done <- devicemux.Run(ctx, devicemux.Config{Home: home, Socket: socket, Timings: timings, Log: slog.New(slog.NewTextHandler(muxLog, nil))})
 	}()
 	t.Cleanup(func() {
 		stop()
@@ -62,20 +85,7 @@ func TestACommandGetsTheReportOfTheNextDeviceConnection(t *testing.T) {
 			t.Errorf("the Device Mux failed: %v", err)
 		}
 	})
-
-	conn := dial(t, socket, home)
-	waitReport(t, conn, "v0.0.1")
-	srv.drop()
-	// An open sent on the Device Connection as it drops is refused, not sent
-	// again, so the channel is opened only once the Device Mux has let go of
-	// that one: the open then goes on the next.
-	waitLog(t, muxLog, `msg="device connection dropped"`)
-	ch, err := conn.OpenChannel(t.Context(), wire.ChannelAPI, nil)
-	if err != nil {
-		t.Fatalf("open a channel after the drop: %v; the Device Mux logged:\n%s", err, muxLog)
-	}
-	_ = ch.Close()
-	waitReport(t, conn, "v0.0.2")
+	return home, socket, muxLog
 }
 
 // dial connects to the Device Mux at socket, for the device whose home is
@@ -83,6 +93,7 @@ func TestACommandGetsTheReportOfTheNextDeviceConnection(t *testing.T) {
 func dial(t *testing.T, socket, home string) interface {
 	Report(context.Context) (wire.Report, error)
 	OpenChannel(context.Context, string, []byte) (io.ReadWriteCloser, error)
+	Wait() error
 } {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -158,10 +169,13 @@ func (b *syncBuffer) String() string {
 
 // reporter stands in for a koko server: it takes any device key, reports
 // the version v0.0.<n> on its nth connection, as an upgraded koko server
-// would, and accepts every channel only to close it.
+// would, and accepts every channel to answer it, or only to close it.
 type reporter struct {
 	ln      net.Listener
 	hostKey ssh.Signer
+	// answer, unless nil, answers each channel the reporter accepts, on its
+	// connection.
+	answer func(nc net.Conn, conn ssh.Conn, ch ssh.Channel)
 
 	mu    sync.Mutex
 	n     int
@@ -169,7 +183,9 @@ type reporter struct {
 	wg    sync.WaitGroup
 }
 
-func startReporter(t *testing.T) *reporter {
+// startReporter starts a reporter whose channels answer answers, or close at
+// once when it is nil.
+func startReporter(t *testing.T, answer func(nc net.Conn, conn ssh.Conn, ch ssh.Channel)) *reporter {
 	t.Helper()
 	_, key, _ := ed25519.GenerateKey(rand.Reader)
 	hostKey, err := ssh.NewSignerFromKey(key)
@@ -181,7 +197,7 @@ func startReporter(t *testing.T) *reporter {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &reporter{ln: ln, hostKey: hostKey}
+	r := &reporter{ln: ln, hostKey: hostKey, answer: answer}
 	cfg := &ssh.ServerConfig{PublicKeyCallback: func(ssh.ConnMetadata, ssh.PublicKey) (*ssh.Permissions, error) { return nil, nil }}
 	cfg.AddHostKey(hostKey)
 	r.wg.Go(func() {
@@ -217,10 +233,16 @@ func (r *reporter) serve(nc net.Conn, cfg *ssh.ServerConfig) {
 	go ssh.DiscardRequests(reqs)
 	_, _, _ = conn.SendRequest(wire.RequestReport, false, report.Marshal())
 	for nch := range chans {
-		if ch, reqs, err := nch.Accept(); err == nil {
-			go ssh.DiscardRequests(reqs)
-			_ = ch.Close()
+		ch, reqs, err := nch.Accept()
+		if err != nil {
+			continue
 		}
+		go ssh.DiscardRequests(reqs)
+		if r.answer == nil {
+			_ = ch.Close()
+			continue
+		}
+		r.wg.Go(func() { r.answer(nc, conn, ch) })
 	}
 }
 
