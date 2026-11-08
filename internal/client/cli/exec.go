@@ -14,6 +14,7 @@ import (
 	"github.com/cieons/koko/internal/client/tunnel"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/resumable"
+	"github.com/cieons/koko/internal/shared/sshconn"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -145,7 +146,7 @@ func (in *Input) dialGateway(ctx context.Context, t *tunnel.Tunnel, sshName stri
 	case err != nil:
 		return nil, sessionError(hostName, t, err)
 	}
-	return ssh.NewClient(c, chans, reqs), nil
+	return ssh.NewClient(sshconn.Wrap(c), chans, reqs), nil
 }
 
 // sessionError says why the SSH Session to hostName failed with err: the

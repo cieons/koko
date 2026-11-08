@@ -111,6 +111,18 @@ on both CI runners, and left `main` red at c152887.
 **Seen:** 1 (2026-11-06)
 **Evidence:** c152887 (#54); check runs 42166495220 and 42167225724
 
+### Every SSH connection koko opens channels on goes through sshconn.Wrap
+
+**Why:** x/crypto's `OpenChannel` on a connection that has just ended can
+wait for ever: the connection fails the opens it holds as it ends, then its
+writes, and an open that comes in between is failed by neither. A Tunnel
+whose channel failed with its Device Connection Resumed on that same
+connection before koko saw it end, and `koko exec` with an upload in flight
+hung there instead of reconnecting: about 1 in 30 runs of its test, and CI
+on `main` went red at 0d192f9.
+**Seen:** 1 (2026-11-08)
+**Evidence:** 1e3a865 (#70); check run 42450143194; #84
+
 ## Moved to the code standards
 
 _None yet._

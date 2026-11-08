@@ -20,6 +20,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/shared/liveness"
+	"github.com/cieons/koko/internal/shared/sshconn"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -432,7 +433,7 @@ func handshake(ctx, actx context.Context, t Target, dial dialFunc, algorithms []
 	}
 	switch {
 	case err == nil:
-		return &leg{Client: ssh.NewClient(conn, chans, reqs), conn: nc}, offered, false, nil
+		return &leg{Client: ssh.NewClient(sshconn.Wrap(conn), chans, reqs), conn: nc}, offered, false, nil
 	case offered == nil:
 		return nil, nil, retryable(err), err
 	case retryable(err):

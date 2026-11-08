@@ -26,6 +26,7 @@ import (
 
 	"github.com/cieons/koko/internal/shared/joincode"
 	"github.com/cieons/koko/internal/shared/liveness"
+	"github.com/cieons/koko/internal/shared/sshconn"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -345,7 +346,7 @@ func newSSHConn(conn ssh.Conn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Req
 	none := make(chan *ssh.Request)
 	close(none)
 	c := &sshConn{
-		client:       ssh.NewClient(conn, chans, none),
+		client:       ssh.NewClient(sshconn.Wrap(conn), chans, none),
 		reported:     make(chan struct{}),
 		requestsDone: make(chan struct{}),
 	}

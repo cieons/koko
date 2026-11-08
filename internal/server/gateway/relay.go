@@ -17,6 +17,7 @@ import (
 	"github.com/cieons/koko/internal/server/hostconn"
 	"github.com/cieons/koko/internal/shared/liveness"
 	"github.com/cieons/koko/internal/shared/resumable"
+	"github.com/cieons/koko/internal/shared/sshconn"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -170,9 +171,10 @@ func (s *sshSession) relay(ctx context.Context, client *ssh.ServerConn, chans <-
 	defer wg.Wait()
 	// Before any forward reaches the Host, so none of its channels is
 	// refused.
+	toClient := sshconn.Wrap(client)
 	for _, kind := range forwardedChannels {
 		fromHost := s.host.HandleChannelOpen(kind)
-		wg.Go(func() { each(fromHost, func(nch ssh.NewChannel) { s.forwarded(client, nch) }) })
+		wg.Go(func() { each(fromHost, func(nch ssh.NewChannel) { s.forwarded(toClient, nch) }) })
 	}
 	wg.Go(func() { s.globalRequests(reqs) })
 	wg.Go(func() { each(chans, s.channel) })
