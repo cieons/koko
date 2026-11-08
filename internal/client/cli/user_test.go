@@ -43,6 +43,7 @@ func userInvite(t *testing.T, h *harness.Harness, user string) invitation {
 // prints their Invite: their first Join Code, for device-1, valid for 15
 // minutes.
 func TestUserInviteCreatesAMemberAndTheirFirstJoinCode(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("user", "invite", "bob", "--json")
 	r.WantSuccess(t)
@@ -77,6 +78,7 @@ func TestUserInviteCreatesAMemberAndTheirFirstJoinCode(t *testing.T) {
 // For people, user invite says whom it invited, then prints the one koko
 // join line to send them.
 func TestUserInviteForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("user", "invite", "bob")
 	r.WantSuccess(t)
@@ -93,6 +95,7 @@ func TestUserInviteForPeople(t *testing.T) {
 // A new User's name is refused when a User or a Space holds it, since they
 // share one namespace; the refusal creates nothing.
 func TestUserInviteRefusesATakenName(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
@@ -114,6 +117,7 @@ func TestUserInviteRefusesATakenName(t *testing.T) {
 // koko reads the name, so the refusal does not say whether a User or a
 // Space holds it, and creates nothing.
 func TestOnlyTheOwnerInvites(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
@@ -133,6 +137,7 @@ func TestOnlyTheOwnerInvites(t *testing.T) {
 
 // A User's name is a lowercase DNS label.
 func TestUserInviteRefusesAnInvalidName(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	for _, name := range []string{"Bob", "bob_1", "bob-", strings.Repeat("b", 64)} {
 		h.Koko("user", "invite", name, "--json").WantError(t, 1, "invalid_name")
@@ -168,6 +173,7 @@ func names(l []userOut) []string {
 // were created; --all adds the Removed ones, with when they were Removed. A
 // User deleted is in neither.
 func TestUserLsListsTheUsers(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	for _, u := range []string{"dave", "bob", "carol"} {
 		userInvite(t, h, u)
@@ -196,6 +202,7 @@ func TestUserLsListsTheUsers(t *testing.T) {
 // For people, user ls is a table of the Users, with a REMOVED column when
 // it lists a Removed one.
 func TestUserLsForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	userInvite(t, h, "bob")
 	h.Join("bob")
@@ -221,6 +228,7 @@ func TestUserLsForPeople(t *testing.T) {
 // owner_only before koko reads the name, so the refusal is the same for
 // any name and changes nothing.
 func TestOnlyTheOwnerListsAndRemovesUsers(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	userInvite(t, h, "bob")
 	userInvite(t, h, "carol")
@@ -246,6 +254,7 @@ func TestOnlyTheOwnerListsAndRemovesUsers(t *testing.T) {
 // A device name belongs to its User: bob's device-1 and alice's device-1
 // are both held by valid Join Codes at once.
 func TestDeviceNamesArePerUser(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	if jc := deviceAdd(t, h, "--user", "bob", "laptop"); jc.Device != "laptop" {
@@ -259,6 +268,7 @@ func TestDeviceNamesArePerUser(t *testing.T) {
 // An Invite that expires leaves its User in place: the Invite no longer
 // joins, and the User joins with a new Join Code from device add --user.
 func TestAnExpiredInviteLeavesItsUser(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("user", "invite", "bob", "--json")
 	r.WantSuccess(t)

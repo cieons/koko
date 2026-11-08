@@ -63,6 +63,7 @@ func bareNamesSetup(t *testing.T, h *harness.Harness) {
 // koko's ssh_config, by name: a Member's those of their Spaces, the Owner's
 // every one; a Retired Host's name is in neither.
 func TestJoinWritesTheBareNamesOfTheHostsItsUserCanSee(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	bareNamesSetup(t, h)
 
@@ -77,6 +78,7 @@ func TestJoinWritesTheBareNamesOfTheHostsItsUserCanSee(t *testing.T) {
 // Host someone else recorded in the caller's Space since. A Retired Host
 // leaves the list.
 func TestTheCallersOwnHostChangesRewriteTheBareNames(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	bareNamesSetup(t, h)
 	bob, _ := joinAs(t, deviceAdd(t, h, "laptop", "--user", "bob"))
@@ -129,6 +131,7 @@ func TestTheCallersOwnHostChangesRewriteTheBareNames(t *testing.T) {
 // joined nothing: a Host change there writes no ssh_config, and says
 // nothing of one.
 func TestAHostChangeOverTheUnixSocketWritesNoSSHConfig(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("host", "add", "web1", "address=203.0.113.10", "account=deploy")
 	r.WantSuccess(t)
@@ -145,6 +148,7 @@ func TestAHostChangeOverTheUnixSocketWritesNoSSHConfig(t *testing.T) {
 // it printed, --json included, and exits 0: the rewrite comes after it.
 // One line on stderr says why, and that the Host's .koko name reaches it.
 func TestAHostChangeWhoseBareNamesCannotBeWrittenStillHolds(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	d := h.Join(harness.Owner)
 	// A directory in its place, which no rename replaces.
@@ -180,7 +184,7 @@ func hostLists(h *harness.Harness) int {
 // Gateway checks access at each SSH Session, and as bare names once the
 // Device Mux refreshes them, which it does every BareNameRefresh. A refresh
 // that finds the record as it was leaves koko's ssh_config alone.
-func TestTheDeviceMuxRefreshesTheBareNames(t *testing.T) {
+func theDeviceMuxRefreshesTheBareNames(t *testing.T) {
 	const refresh = 100 * time.Millisecond
 	h := harness.Start(t)
 	bareNamesSetup(t, h)
@@ -222,7 +226,7 @@ func TestTheDeviceMuxRefreshesTheBareNames(t *testing.T) {
 
 // The Device Mux's own refreshes are no command: once the last command
 // leaves, it idles out, however often it refreshes.
-func TestTheDeviceMuxIdlesOutThoughItRefreshesTheBareNames(t *testing.T) {
+func theDeviceMuxIdlesOutThoughItRefreshesTheBareNames(t *testing.T) {
 	const idle = 300 * time.Millisecond
 	h, _, d := muxDevice(t, timing.Timings{DeviceMuxIdle: idle, BareNameRefresh: idle / 10})
 	held := d.DialMux()
@@ -235,7 +239,7 @@ func TestTheDeviceMuxIdlesOutThoughItRefreshesTheBareNames(t *testing.T) {
 // The Device Mux refreshes the bare names at its start, and a refresh that a
 // drop cuts tries again on the next Device Connection, which the Device Mux
 // opens at once, rather than BareNameRefresh later.
-func TestTheDeviceMuxRefreshesAtItsStartAndAgainAfterADrop(t *testing.T) {
+func theDeviceMuxRefreshesAtItsStartAndAgainAfterADrop(t *testing.T) {
 	h, fwd, _, init := initThrough(t)
 	d := harness.NewMuxDevice(t, timing.Timings{BareNameRefresh: time.Hour})
 	// The join, with no Device Mux, lists the Hosts once; the next host.list
@@ -253,7 +257,7 @@ func TestTheDeviceMuxRefreshesAtItsStartAndAgainAfterADrop(t *testing.T) {
 // waits for one without asking for it: after a drop the Device Mux tries
 // once at once, as ever, and never again while nothing else waits, however
 // often a refresh falls due.
-func TestABareNameRefreshNeverMakesTheDeviceMuxReconnect(t *testing.T) {
+func aBareNameRefreshNeverMakesTheDeviceMuxReconnect(t *testing.T) {
 	const refresh = 20 * time.Millisecond
 	_, fwd, d := muxDevice(t, timing.Timings{BareNameRefresh: refresh, ReconnectFirst: refresh, ReconnectMax: refresh})
 	fwd.To(harness.FreeAddr(t))

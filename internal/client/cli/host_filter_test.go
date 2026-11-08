@@ -48,6 +48,7 @@ func listed(t *testing.T, h *harness.Harness, tz string, args ...string) []strin
 // of today in the caller's time zone and do not renew by themselves, soonest
 // first. Relative dates resolve in writes as in filters.
 func TestHostLsAnswersTheRenewalQuestion(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	// 23:30 in UTC is already the 7th in Berlin.
 	h.SetNow(time.Date(2026, 11, 6, 23, 30, 0, 0, time.UTC))
@@ -77,6 +78,7 @@ func TestHostLsAnswersTheRenewalQuestion(t *testing.T) {
 // Each operator once, on Attributes and fields alike, ANDed; a Host that
 // lacks the key matches != and lacks, and no other.
 func TestHostLsTakesEachOperator(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	recordHost(t, h.Koko, "web1", "price=10", "region=eu")
 	recordHost(t, h.Koko, "web2", "price=9.5", "port=2222")
@@ -107,6 +109,7 @@ func TestHostLsTakesEachOperator(t *testing.T) {
 // Without --sort, Hosts are by name in natural order, the order --sort name
 // gives, so web2 comes before web10.
 func TestHostLsListsByNameInNaturalOrder(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	for _, name := range []string{"web10", "web2", "db1"} {
 		recordHost(t, h.Koko, name)
@@ -123,6 +126,7 @@ func TestHostLsListsByNameInNaturalOrder(t *testing.T) {
 // from the greatest value down; a Host that lacks a key sorts last either
 // way, and ties stay by name.
 func TestHostLsSortsByRepeatedKeys(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	recordHost(t, h.Koko, "web1", "auto_renew=yes", "price=5")
 	recordHost(t, h.Koko, "web2", "auto_renew=no", "price=10")
@@ -149,6 +153,7 @@ func TestHostLsSortsByRepeatedKeys(t *testing.T) {
 // A malformed term or sort key is refused before any call, with exit status
 // 2 and the error on stderr, so a typo is told apart from an empty result.
 func TestHostLsRefusesAMalformedTermBeforeAnyCall(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	for _, tc := range []struct {
 		args []string
@@ -191,6 +196,7 @@ func TestHostLsRefusesAMalformedTermBeforeAnyCall(t *testing.T) {
 // koko can load is refused rather than read as UTC, and only where a
 // relative date needs it.
 func TestATimeZoneKokoCannotLoadIsRefused(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	recordHost(t, h.Koko, "web1", "expires_at=2026-12-01")
 	bad := []string{"TZ=Mars/Olympus_Mons"}
@@ -207,6 +213,7 @@ func TestATimeZoneKokoCannotLoadIsRefused(t *testing.T) {
 // (#71), resolved in a write in the time zone TZ names and on the clock the
 // harness sets.
 func TestRelativeDatesResolveInTheCallersTimeZone(t *testing.T) {
+	t.Parallel()
 	b, err := os.ReadFile("testdata/relative-dates.json")
 	if err != nil {
 		t.Fatal(err)
@@ -252,6 +259,7 @@ func TestRelativeDatesResolveInTheCallersTimeZone(t *testing.T) {
 // A Preset's value that does not parse as its type is refused before any
 // call, on add and on set, and never falls back to text.
 func TestAPresetValueThatDoesNotParseIsRefusedBeforeAnyCall(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	recordHost(t, h.Koko, "web1")
 	calls := h.Calls()
@@ -278,6 +286,7 @@ func TestAPresetValueThatDoesNotParseIsRefusedBeforeAnyCall(t *testing.T) {
 // Each Preset prints in its JSON type: a number as a JSON number in its one
 // exact decimal form, exactly as stored, and every other value as a string.
 func TestHostShowPrintsTypedValues(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	recordHost(t, h.Koko, "web1")
 	h.Koko("host", "set", "web1", "provider=hetzner", "provider_account=ops@example.com", "region=fsn1",

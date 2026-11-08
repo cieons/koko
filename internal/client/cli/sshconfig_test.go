@@ -54,6 +54,7 @@ func kokoSSHConfig(t *testing.T, d *harness.Device) string {
 // ~/.ssh/koko/ holds no file besides koko's, so nothing was left half
 // written.
 func TestJoinSetsUpSSH(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	d := harness.NewDevice(t)
 	r := d.Koko("join", deviceAdd(t, h, "laptop").Code, "--json")
@@ -130,6 +131,7 @@ func includeWarning(t *testing.T, r harness.Result) *string {
 // koko's ssh_config already, however written, is left byte for byte, and
 // join warns, as koko status does, when that line comes below a Host line.
 func TestJoinPutsTheIncludeLineFirst(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	const own = "Host *\n  ServerAliveInterval 60\n\nHost github.com\n  User git"
 	d, r := joinWith(t, h, func(d *harness.Device) {
@@ -178,6 +180,7 @@ func TestJoinPutsTheIncludeLineFirst(t *testing.T) {
 // left byte for byte, and join prints the line to add, for people and in
 // --json; the device has joined all the same.
 func TestJoinLeavesASymlinkedOrReadOnlyConfigAlone(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	const own = "Host github.com\n  User git\n"
 	for _, c := range []struct {
@@ -239,6 +242,7 @@ func TestJoinLeavesASymlinkedOrReadOnlyConfigAlone(t *testing.T) {
 // says nothing of it; koko's own ssh_config and known_hosts are written all
 // the same, for a user who includes them their own way.
 func TestJoinWithNoSSHConfig(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	ref := h.Join(harness.Owner)
 	d, r := joinWith(t, h, func(*harness.Device) {}, "--no-ssh-config", "--json")
@@ -260,6 +264,7 @@ func TestJoinWithNoSSHConfig(t *testing.T) {
 // which ssh expands) refuses the join before it connects, saying why: the
 // Join Code stays usable, and the device keeps nothing of the join.
 func TestJoinRefusesAHomeSSHWouldMisreadBeforeSpendingTheCode(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	jc := deviceAdd(t, h, "laptop")
 	home := filepath.Join(t.TempDir(), "a%h")
@@ -283,6 +288,7 @@ func TestJoinRefusesAHomeSSHWouldMisreadBeforeSpendingTheCode(t *testing.T) {
 // *.koko block stays, so ssh web1.koko still runs koko tunnel, which
 // explains the revocation; ~/.ssh/config keeps its Include line.
 func TestTheRevocationCleanupRemovesTheBareNamesAndKnownHosts(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	ref := h.Join(harness.Owner)
 	addHost(t, h.Koko, "web1")

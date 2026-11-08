@@ -12,6 +12,7 @@ import (
 // Every field of every API response the CLI reads is mapped into the CLI's
 // own --json or left out on purpose (ADR 0016).
 func TestEveryAPIResponseFieldIsMappedOrLeftOut(t *testing.T) {
+	t.Parallel()
 	for _, err := range checkMappings(Tree(), slices.Concat(mappings...)) {
 		t.Error(err)
 	}
@@ -40,6 +41,7 @@ var widgetCommands = []Command{{
 // The mapping test fails when the API gains a field the CLI neither shows nor
 // leaves out, and when a response type has no mapping at all.
 func TestMappingCheckFailsForAnUnmappedField(t *testing.T) {
+	t.Parallel()
 	ms := []mapping{
 		{api: reflect.TypeFor[widgetList]()},
 		{api: reflect.TypeFor[widget](), cli: reflect.TypeFor[widgetJSON]()},

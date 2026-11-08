@@ -106,6 +106,7 @@ func addSpaceWithMembers(t *testing.T, h *harness.Harness, space string, users .
 // port 22, with no pin, no Attributes and no Note, and prints every field,
 // null where it has no value.
 func TestHostAddPrintsTheHostItMade(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("host", "add", "web1", "address=203.0.113.10", "account=deploy", "--json")
 	r.WantSuccess(t)
@@ -123,6 +124,7 @@ func TestHostAddPrintsTheHostItMade(t *testing.T) {
 }
 
 func TestHostAddForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("host", "add", "web1", "address=203.0.113.10", "account=deploy")
 	r.WantSuccess(t)
@@ -134,6 +136,7 @@ func TestHostAddForPeople(t *testing.T) {
 // Fields and Attributes are both key=value on one command line, and the Note
 // comes from --note-file; host show prints all of them.
 func TestHostAddRecordsFieldsAttributesAndANote(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	note := "Set up for the shop.\nRuns nginx and the API.\n"
 	h.Koko("host", "add", "web1", "address=203.0.113.10", "port=2222", "account=deploy",
@@ -151,6 +154,7 @@ func TestHostAddRecordsFieldsAttributesAndANote(t *testing.T) {
 // The Host Account has no default, and neither has the address: without
 // either, host add is refused before any call.
 func TestHostAddNeedsAnAddressAndAHostAccount(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("host", "add", "web1", "address=203.0.113.10", "--json")
 	r.WantError(t, 2, "invalid_usage")
@@ -164,6 +168,7 @@ func TestHostAddNeedsAnAddressAndAHostAccount(t *testing.T) {
 // A Host goes to the caller's Personal Space unless space= names another
 // they can act in; the Local caller acts as the Owner.
 func TestHostAddGoesToTheCallersPersonalSpaceUnlessNamed(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	h.Koko("space", "add", "data").WantSuccess(t)
@@ -189,6 +194,7 @@ func TestHostAddGoesToTheCallersPersonalSpaceUnlessNamed(t *testing.T) {
 // refused, and the refusal is the same whichever Space holds the name, one
 // the caller can see or not, and names nothing else of that Host.
 func TestATakenHostNameIsRefusedWhicheverSpaceHoldsIt(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	h.Koko("user", "invite", "carol").WantSuccess(t)
@@ -220,6 +226,7 @@ func TestATakenHostNameIsRefusedWhicheverSpaceHoldsIt(t *testing.T) {
 // Two adds of one name at the same moment never both succeed: the check
 // runs inside the write's transaction.
 func TestConcurrentAddsOfOneNameRecordOneHost(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	var wg sync.WaitGroup
 	results := make([]harness.Result, 8)
@@ -245,6 +252,7 @@ func TestConcurrentAddsOfOneNameRecordOneHost(t *testing.T) {
 // A Host name is a lowercase DNS label, so it works as an SSH Name and in a
 // shell without quoting.
 func TestHostNamesAreLowercaseDNSLabels(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	for _, name := range []string{"Web1", "web_1", "web.1", "web-", strings.Repeat("a", 64)} {
 		r := h.Koko("host", "add", name, "address=203.0.113.10", "account=deploy", "--json")
@@ -259,6 +267,7 @@ func TestHostNamesAreLowercaseDNSLabels(t *testing.T) {
 
 // Each value rule refuses a bad value before any call, with exit status 2.
 func TestHostValuesThatBreakTheirRulesAreRefusedBeforeAnyCall(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	for _, pair := range []string{
 		"address=web..example.com",
@@ -304,6 +313,7 @@ func TestHostValuesThatBreakTheirRulesAreRefusedBeforeAnyCall(t *testing.T) {
 // An address is an IP address or a DNS name, kept in one form; two Hosts can
 // share one, behind one NAT address on different ports.
 func TestHostAddressesAreKeptInOneForm(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	for _, tc := range []struct{ host, given, kept string }{
 		{"v6", "2001:DB8:0:0::1", "2001:db8::1"},
@@ -322,6 +332,7 @@ func TestHostAddressesAreKeptInOneForm(t *testing.T) {
 
 // A Host id stands wherever a Host name does.
 func TestAHostIDStandsForItsName(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	id := addHost(t, h.Koko, "web1").ID
@@ -344,6 +355,7 @@ func TestAHostIDStandsForItsName(t *testing.T) {
 }
 
 func TestHostShowForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("host", "add", "web1", "address=203.0.113.10", "account=deploy", "region=fsn1", "provider=hetzner",
 		"--note-file", hostNoteFile(t, "Runs nginx.")).WantSuccess(t)
@@ -371,6 +383,7 @@ func TestHostShowForPeople(t *testing.T) {
 // A Host in a Space the caller cannot see answers exactly as a Host that
 // does not exist, by name and by id.
 func TestAHostTheCallerCannotSeeAnswersAsUnknown(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	h.Koko("user", "invite", "carol").WantSuccess(t)
@@ -405,6 +418,7 @@ func TestAHostTheCallerCannotSeeAnswersAsUnknown(t *testing.T) {
 // host ls --json is a bare array of the Hosts the caller can see, by name,
 // each with its Attributes in their own object and without its Note.
 func TestHostLsListsTheHostsTheCallerCanSee(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	h.Koko("user", "invite", "carol").WantSuccess(t)
@@ -441,6 +455,7 @@ func TestHostLsListsTheHostsTheCallerCanSee(t *testing.T) {
 // --with-note brings each Host's Note into the list, null for a Host with
 // none.
 func TestHostLsWithNote(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1", "--note-file", hostNoteFile(t, "First line.\nSecond line.\n"))
 	addHost(t, h.Koko, "web2")
@@ -456,6 +471,7 @@ func TestHostLsWithNote(t *testing.T) {
 }
 
 func TestHostLsForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	if r := h.Koko("host", "ls"); r.Stdout != "No Hosts.\n" {
 		t.Errorf("host ls with no Host printed %q", r.Stdout)
@@ -476,6 +492,7 @@ func TestHostLsForPeople(t *testing.T) {
 // host set changes only what it names, so two people changing different
 // keys never undo each other, and prints the Host as it left it.
 func TestHostSetChangesOnlyWhatItNames(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	bob := h.Join("bob")
@@ -500,6 +517,7 @@ func TestHostSetChangesOnlyWhatItNames(t *testing.T) {
 // --unset clears an Attribute or the Note; a key the Host lacks is already
 // clear; --note-file replaces the Note.
 func TestHostSetUnsetClearsAnAttributeOrTheNote(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1", "region=fsn1", "provider=hetzner", "--note-file", hostNoteFile(t, "Old."))
 	h.Koko("host", "set", "web1", "--unset", "region", "--unset", "cores", "--note-file", hostNoteFile(t, "New.")).WantSuccess(t)
@@ -515,6 +533,7 @@ func TestHostSetUnsetClearsAnAttributeOrTheNote(t *testing.T) {
 
 // --unset port gives a Host back the port it has when none is given: 22.
 func TestHostSetUnsetPortGoesBackTo22(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1", "port=2222")
 	if got := decodeHost(t, h.Koko("host", "set", "web1", "--unset", "port", "--json")); got.Port != 22 {
@@ -526,6 +545,7 @@ func TestHostSetUnsetPortGoesBackTo22(t *testing.T) {
 // their own or are koko's, clears no field a Host must have, and needs
 // something to change; each is refused before any call.
 func TestHostSetRefusals(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1", "--note-file", hostNoteFile(t, "A Note."))
 	calls := h.Calls()
@@ -569,6 +589,7 @@ func (noteTerminal) ReadNoEcho(context.Context) ([]byte, error) {
 // --note-file - reads the Note from stdin, never from a terminal there;
 // --note-file <file> from a file. A Note is 1 byte to 64 KiB of text.
 func TestTheNoteComesFromAFileOrStdin(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	alice := h.Join(harness.Owner)
@@ -598,6 +619,7 @@ func TestTheNoteComesFromAFileOrStdin(t *testing.T) {
 // host rename changes the SSH Name and keeps everything else; a taken name
 // is refused.
 func TestHostRename(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	added := addHost(t, h.Koko, "web1", "region=fsn1")
 	addHost(t, h.Koko, "web3")
@@ -619,6 +641,7 @@ func TestHostRename(t *testing.T) {
 // A Member moves a Host between Spaces they can act in, and only those; the
 // Host keeps its Attributes, Note and SSH Name. The Owner moves any Host.
 func TestHostMoveNeedsBothSpaces(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	h.Koko("space", "add", "data").WantSuccess(t)
@@ -647,6 +670,7 @@ func TestHostMoveNeedsBothSpaces(t *testing.T) {
 // host rm deletes a Host with its Attributes and Note, prints it as it was,
 // and frees its name.
 func TestHostRm(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	added := addHost(t, h.Koko, "web1", "region=fsn1", "--note-file", hostNoteFile(t, "Gone soon."))
 	r := h.Koko("host", "rm", "web1", "--json")
@@ -668,6 +692,7 @@ func TestHostRm(t *testing.T) {
 // space show counts the Hosts a Space holds, and space rm refuses a Space
 // while it holds one.
 func TestASpaceThatHoldsAHostIsNotRemoved(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	addHost(t, h.Koko, "web1", "space=ops")

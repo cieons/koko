@@ -10,6 +10,7 @@ import (
 
 // The rules every entry of the command tree keeps.
 func TestCommandTreeEntries(t *testing.T) {
+	t.Parallel()
 	var paths []string
 	for _, c := range Tree() {
 		path := "koko " + c.Path()

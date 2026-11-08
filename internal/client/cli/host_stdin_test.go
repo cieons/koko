@@ -17,6 +17,7 @@ import (
 // The fields only koko sets are ignored, so each Host added is Registered,
 // with an id of its own and no pin.
 func TestHostAddReadsAnArrayOrOneObjectOnStdin(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.KokoStdin(`[
 		{"name": "web1", "address": "203.0.113.10", "account": "deploy", "attributes": {"provider": "hetzner", "price": 9.90}},
@@ -49,6 +50,7 @@ func TestHostAddReadsAnArrayOrOneObjectOnStdin(t *testing.T) {
 // koko host add without a name never waits for typing nobody will do: a
 // terminal on stdin is refused at once, before anything is read from it.
 func TestHostAddWithoutANameRefusesATerminalOnStdin(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	term := harness.NewTerminal()
 	if msg := h.KokoTerminal(term, "host", "add", "--json").WantError(t, 2, "invalid_usage"); !strings.Contains(msg, "terminal") {
@@ -66,6 +68,7 @@ func TestHostAddWithoutANameRefusesATerminalOnStdin(t *testing.T) {
 // what only koko host add <host> takes, key=value words and --note-file,
 // which a Host on stdin gives as its members.
 func TestHostAddWithoutANameRefusesWhatIsNotHostsOnStdin(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	const web1 = `{"name": "web1", "address": "203.0.113.10", "account": "deploy"}`
 	for _, tc := range []struct {
@@ -97,6 +100,7 @@ func TestHostAddWithoutANameRefusesWhatIsNotHostsOnStdin(t *testing.T) {
 // call, so a typo, or an Attribute written beside the fields instead of in
 // "attributes", never drops a value silently.
 func TestHostAddOnStdinRefusesAnUnknownFieldByName(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.KokoStdin(`{"name": "web1", "address": "203.0.113.10", "account": "deploy", "provider": "hetzner", "acount": "root"}`,
 		"host", "add", "--json")
@@ -111,6 +115,7 @@ func TestHostAddOnStdinRefusesAnUnknownFieldByName(t *testing.T) {
 // Each Host on stdin meets the rules a key=value Host meets, and one that
 // breaks one is refused before any call, with exit status 2.
 func TestHostAddOnStdinChecksEveryValueBeforeAnyCall(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	const base = `"name": "web1", "address": "203.0.113.10", "account": "deploy"`
 	for _, host := range []string{
@@ -175,6 +180,7 @@ func faultsAt(e api.Error) []int {
 // A batch with Hosts at fault adds none of them, and the refusal lists each
 // Host at fault by its index in the batch, every one, not only the first.
 func TestAnInvalidBatchIsRefusedBeforeAnyCallListingEveryHostAtFault(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.KokoStdin(`[
 		{"name": "web1", "address": "203.0.113.10", "account": "deploy"},
@@ -203,6 +209,7 @@ func TestAnInvalidBatchIsRefusedBeforeAnyCallListingEveryHostAtFault(t *testing.
 // at fault with its own code. Its own code is the one they share, or
 // invalid_batch when they differ.
 func TestTheKokoServerRefusesABatchListingEveryHostAtFault(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	recordHost(t, h.Koko, "web1")
 	const host = `"address": "203.0.113.10", "account": "deploy"`
@@ -255,6 +262,7 @@ func withoutKokosFields(t *testing.T, printed string) []map[string]jsontext.Valu
 // Attributes and its Note, as a new Registered Host. Without --with-note
 // the Notes stay behind.
 func TestHostLsWithNotePipedIntoHostAddKeepsEverything(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	h.Koko("host", "add", "web1", "space=ops", "address=203.0.113.10", "port=2222", "account=deploy",

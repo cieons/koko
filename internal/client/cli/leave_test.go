@@ -58,6 +58,7 @@ func userSSHFiles(t *testing.T, d *harness.Device) map[string]string {
 // own ~/.ssh files byte for byte; then the device joins the new koko server
 // with its Join Code.
 func TestKokoLeaveLetsADeviceJoinAKokoServerInitialisedAnew(t *testing.T) {
+	t.Parallel()
 	old, fwd, _, _ := initThrough(t)
 	old.Koko("host", "add", "web1", "address=203.0.113.10", "account=deploy").WantSuccess(t)
 	jc := deviceAdd(t, old, "laptop")
@@ -139,6 +140,7 @@ func TestKokoLeaveLetsADeviceJoinAKokoServerInitialisedAnew(t *testing.T) {
 // while its koko server still runs; that koko server still lists it, and
 // revoking it on the koko server's machine works.
 func TestKokoLeaveNamesTheDeviceSessionLeftBehind(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	d := h.Join(harness.Owner)
 	c := readClientConfig(t, d)
@@ -155,6 +157,7 @@ func TestKokoLeaveNamesTheDeviceSessionLeftBehind(t *testing.T) {
 
 // On a device that has not joined, koko leave says so and exits 1.
 func TestKokoLeaveOnADeviceThatHasNotJoined(t *testing.T) {
+	t.Parallel()
 	d := harness.NewDevice(t)
 	r := d.Koko("leave", "--json")
 	if msg := r.WantError(t, 1, "not_joined"); !strings.Contains(msg, "this device has not joined a koko server") {
@@ -166,6 +169,7 @@ func TestKokoLeaveOnADeviceThatHasNotJoined(t *testing.T) {
 // A Device Mux that does not stop could write into the device's files
 // afterwards, so koko leave then deletes none of them, and says so.
 func TestKokoLeaveKeepsTheJoinWhenADeviceMuxDoesNotStop(t *testing.T) {
+	t.Parallel()
 	_, _, d := muxDevice(t, timing.Timings{})
 	before := readClientConfig(t, d)
 	stubborn := filepath.Join(filepath.Dir(muxSocket(d)), "a0.0.0-older.sock")
@@ -186,6 +190,7 @@ func TestKokoLeaveKeepsTheJoinWhenADeviceMuxDoesNotStop(t *testing.T) {
 // koko leave sits in the irreversible tier, so help and koko skill list it
 // there.
 func TestKokoLeaveIsIrreversible(t *testing.T) {
+	t.Parallel()
 	r := harness.NewDevice(t).Koko("help", "leave", "--json")
 	r.WantSuccess(t)
 	var commands []struct {

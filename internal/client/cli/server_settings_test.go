@@ -107,6 +107,7 @@ func rootKeyID(t *testing.T, file []byte) string {
 // as stored, the port it listens on, the host key devices pin, its version,
 // the Root Key's file and id, and the data directory; never the Root Key.
 func TestServerShowPrintsTheSettings(t *testing.T) {
+	t.Parallel()
 	k := startKnownServer(t)
 	r := k.Koko("server", "show", "--json")
 	wantNoRootKey(t, r, k.key)
@@ -160,6 +161,7 @@ func TestServerShowPrintsTheSettings(t *testing.T) {
 // LoadCredential= hands it, but koko server show names the file the Owner
 // keeps, the one install wrote and printed: /etc/koko/root.key.
 func TestServerShowNamesTheRootKeyFileInstallWrote(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	installed := install(t, m, "--owner", "alice")
 	key, err := os.ReadFile(m.Path("/etc/koko/root.key"))
@@ -184,6 +186,7 @@ func TestServerShowNamesTheRootKeyFileInstallWrote(t *testing.T) {
 // koko server set address= changes the Server Address and prints the
 // settings as they are now; server show shows the change.
 func TestServerSetAddress(t *testing.T) {
+	t.Parallel()
 	k := startKnownServer(t)
 	r := k.Koko("server", "set", "address=koko.example.com:8443", "--json")
 	wantNoRootKey(t, r, k.key)
@@ -222,6 +225,7 @@ func TestServerSetAddress(t *testing.T) {
 // way another server set undoes (ADR 0019), so a harness can allow the one
 // and ask before the other.
 func TestServerShowAndSetSitInTheirTiers(t *testing.T) {
+	t.Parallel()
 	want := map[string]cli.Tier{"server show": cli.Read, "server set": cli.Reversible}
 	for _, c := range cli.Tree() {
 		if tier, ok := want[c.Path()]; ok {
@@ -240,6 +244,7 @@ func TestServerShowAndSetSitInTheirTiers(t *testing.T) {
 // code issued before still carries the old address and joins there, and
 // one issued after leads its device to the new address.
 func TestServerSetAddressChangesOnlyLaterJoinCodes(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	before := deviceAdd(t, h)
 	old := decode(t, before.Code).Address
@@ -267,6 +272,7 @@ func TestServerSetAddressChangesOnlyLaterJoinCodes(t *testing.T) {
 // change a setting: no setting named, a setting it does not have, and a
 // value that is not a Server Address.
 func TestServerSetRefusesAnythingButAServerAddress(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	for name, args := range map[string][]string{
 		"no setting":             {},
@@ -290,6 +296,7 @@ func TestServerSetRefusesAnythingButAServerAddress(t *testing.T) {
 // A Server Address a Join Code cannot carry, 255 bytes with its port, is
 // refused by the koko server and leaves the Server Address as it was.
 func TestServerSetRefusesAnAddressNoJoinCodeCarries(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	label := strings.Repeat("a", 63)
 	long := label + "." + label + "." + label + "." + label[:61] + ":65535" // a 253-byte name
@@ -306,6 +313,7 @@ func TestServerSetRefusesAnAddressNoJoinCodeCarries(t *testing.T) {
 // Owner's own device included, and changes nothing; server show answers
 // every device.
 func TestServerSetAnswersOnlyOnTheKokoServersMachine(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	devices := map[string]*harness.Device{"the Owner's device": h.Join(harness.Owner), "a Member's device": h.Join("bob")}
@@ -326,6 +334,7 @@ func TestServerSetAnswersOnlyOnTheKokoServersMachine(t *testing.T) {
 // caller, yet server.set through it is refused with local_only and changes
 // nothing, while server show answers.
 func TestServerSetRefusesABrowserTab(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	w := startWeb(t, h)
 	b := newBrowser(t, w.port)

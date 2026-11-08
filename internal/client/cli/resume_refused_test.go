@@ -178,7 +178,7 @@ var lostCases = []struct {
 // access was withdrawn, its Host closed the connection, or its Device
 // Session was Revoked while it was Detached, and once the device has spent
 // timing.ResumeGiveUp awake without reaching the koko server.
-func TestKokoTunnelSaysInOneLineWhyItCouldNotResume(t *testing.T) {
+func kokoTunnelSaysInOneLineWhyItCouldNotResume(t *testing.T) {
 	for _, path := range []struct {
 		name string
 		mux  bool
@@ -224,7 +224,7 @@ func TestKokoTunnelSaysInOneLineWhyItCouldNotResume(t *testing.T) {
 
 // koko exec prints the same line as koko tunnel when its Tunnel cannot
 // Resume, and exits 255.
-func TestKokoExecSaysInOneLineWhyItCouldNotResume(t *testing.T) {
+func kokoExecSaysInOneLineWhyItCouldNotResume(t *testing.T) {
 	s := startLost(t, false, resumeServer, resumeDevice)
 	p := s.d.Proxy(nil, "exec", "web1", "cat")
 	waitServerLog(t, s.h, `msg="ssh session request" .* request=exec\n`)

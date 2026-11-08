@@ -26,16 +26,19 @@ import (
 	"github.com/cieons/koko/internal/shared/api"
 )
 
-// freePort returns a TCP port on 127.0.0.1 that nothing listens on.
+// freePort returns a TCP port on 127.0.0.1 that nothing listens on and no
+// other test takes meanwhile (harness.FreeAddr).
 func freePort(t *testing.T) int {
 	t.Helper()
-	var lc net.ListenConfig
-	ln, err := lc.Listen(t.Context(), "tcp4", "127.0.0.1:0")
+	_, port, err := net.SplitHostPort(harness.FreeAddr(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = ln.Close() }()
-	return ln.Addr().(*net.TCPAddr).Port
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }
 
 // kokoWeb is a running koko web, over the harness's Unix socket.
@@ -175,6 +178,7 @@ func (b *browser) open(w *kokoWeb) {
 // SameSite=Strict, and is redirected to the page without the token, which is
 // the embedded web UI (the placeholder page in a build without it).
 func TestWebPrintsItsAddressAndTradesItsTokenForACookie(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	w := startWeb(t, h)
 	printed := strings.NewReplacer(w.token, "<token>", strconv.Itoa(w.port), "<port>").Replace(w.printed)
@@ -259,6 +263,7 @@ func wantAPIError(t *testing.T, a *answer, status int, code string) {
 // says to open koko web's address, and an API call gets cookie_required
 // without reaching the API.
 func TestWebRefusesARequestWithoutTokenOrCookie(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	w := startWeb(t, h)
 	b := newBrowser(t, w.port)
@@ -285,6 +290,7 @@ func TestWebRefusesARequestWithoutTokenOrCookie(t *testing.T) {
 // refused and told why. A browser holding the cookie already is only sent on
 // without the token.
 func TestWebTokenWorksOnce(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	w := startWeb(t, h)
 	other := newBrowser(t, w.port)
@@ -307,6 +313,7 @@ func TestWebTokenWorksOnce(t *testing.T) {
 // koko web's own port: a DNS-rebound page's request, naming its own site,
 // gets no answer at all.
 func TestWebAnswersOnlyItsOwnHost(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	w := startWeb(t, h)
 	b := newBrowser(t, w.port)
@@ -329,6 +336,7 @@ func TestWebAnswersOnlyItsOwnHost(t *testing.T) {
 // Only a JSON POST reaches the API, and nothing sends a CORS header, so
 // another site's page fails its preflight and a form it submits is refused.
 func TestWebAPITakesOnlyAJSONPost(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	w := startWeb(t, h)
 	b := newBrowser(t, w.port)
@@ -379,6 +387,7 @@ func TestWebAPITakesOnlyAJSONPost(t *testing.T) {
 // it exits, the next run on the same port refuses the old cookie and the old
 // token.
 func TestWebCookieEndsWithTheRun(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	first := startWeb(t, h)
 	b := newBrowser(t, first.port)
@@ -401,6 +410,7 @@ func TestWebCookieEndsWithTheRun(t *testing.T) {
 // A token nobody uses works for 5 minutes on the koko server's clock, as
 // koko web's address says nothing of it, and is refused from then on.
 func TestWebTokenWorksForFiveMinutes(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	w := startWeb(t, h)
 	h.Advance(5*time.Minute - time.Second)
@@ -416,6 +426,7 @@ func TestWebTokenWorksForFiveMinutes(t *testing.T) {
 // may reach localhost on [::1] first, so a port held there only is refused
 // too.
 func TestWebRefusesATakenPort(t *testing.T) {
+	t.Parallel()
 	for _, l := range []struct{ network, addr string }{{"tcp4", "127.0.0.1:0"}, {"tcp6", "[::1]:0"}} {
 		t.Run(l.network, func(t *testing.T) {
 			h := harness.Start(t)
@@ -445,6 +456,7 @@ func TestWebRefusesATakenPort(t *testing.T) {
 
 // --port takes a TCP port, and the command line is refused otherwise.
 func TestWebPortMustBeATCPPort(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	for _, port := range []string{"0", "65536", "-1", "http", "5656x"} {
 		h.Koko("web", "--port="+port, "--no-open", "--json").WantError(t, 2, "invalid_usage")
@@ -459,6 +471,7 @@ func TestWebPortMustBeATCPPort(t *testing.T) {
 // koko web waits for the opener before it exits, so each run's opener has
 // done its work once the run is stopped.
 func TestWebOpensItsAddressUnlessNoOpen(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	bin := t.TempDir()
 	opened := filepath.Join(t.TempDir(), "opened")
@@ -494,6 +507,7 @@ func TestWebOpensItsAddressUnlessNoOpen(t *testing.T) {
 // Without an opener, koko web says so and serves on: the address it printed
 // still works.
 func TestWebServesOnWhenNoBrowserOpens(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	p := h.Background([]string{"PATH=" + t.TempDir()}, "web", "--port", strconv.Itoa(freePort(t)), "--json")
 	w := printedWeb(t, p.WaitStdout("}\n"))
@@ -507,6 +521,7 @@ func TestWebServesOnWhenNoBrowserOpens(t *testing.T) {
 // koko web ends, with server_unreachable, when the koko server goes away:
 // its cookie no longer works anyway.
 func TestWebEndsWhenTheKokoServerStops(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	w := startWeb(t, h)
 	h.Stop()
@@ -519,6 +534,7 @@ func TestWebEndsWhenTheKokoServerStops(t *testing.T) {
 // The token and the cookie appear in no log line, error or output, except
 // the address koko web prints.
 func TestWebKeepsItsTokenAndCookieOutOfOutput(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	w := startWeb(t, h)
 	b := newBrowser(t, w.port)
@@ -547,6 +563,7 @@ func TestWebKeepsItsTokenAndCookieOutOfOutput(t *testing.T) {
 // A token works only through the run of koko web that printed it: opened on
 // another run's port, it is refused and stays unspent.
 func TestWebTokenWorksOnlyThroughItsOwnRun(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	mine, other := startWeb(t, h), startWeb(t, h)
 	b := newBrowser(t, other.port)
@@ -559,6 +576,7 @@ func TestWebTokenWorksOnlyThroughItsOwnRun(t *testing.T) {
 // tests, so this runs TestWebPrintsItsAddressAndTradesItsTokenForACookie
 // again in a build whose overlay hides the build output.
 func TestWebServesThePlaceholderInABuildWithoutTheWebUI(t *testing.T) {
+	t.Parallel()
 	hide := map[string]string{}
 	err := filepath.WalkDir("../../server/webui/site/app", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {

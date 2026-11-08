@@ -50,6 +50,7 @@ func upgrade(t *testing.T, m *harness.Machine, args ...string) installed {
 // which runs on the record as it was, with the same Owner, Server Address,
 // host key and Root Key. It prints no Join Code.
 func TestServerInstallUpgradesAnInitialisedServer(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	before := install(t, m, "--owner", "alice")
 	unit := readFile(t, m, "/etc/systemd/system/koko.service")
@@ -98,6 +99,7 @@ func TestServerInstallUpgradesAnInitialisedServer(t *testing.T) {
 // fresh koko server: each is refused before anything is written, naming how
 // to go on, and the koko server runs on as it was.
 func TestServerInstallUpgradeRefusesOwnerAndAddress(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	install(t, m, "--owner", "alice")
 	for _, tc := range []struct {
@@ -161,6 +163,7 @@ func watch(t *testing.T, m *harness.Machine) (untouched func()) {
 // says that devices joined before must take the new address by hand; one
 // that names its own port stays where devices connect, and nothing is said.
 func TestServerInstallUpgradeAndThePort(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name        string
 		install     []string
@@ -192,6 +195,7 @@ func TestServerInstallUpgradeAndThePort(t *testing.T) {
 // For people, an upgrade that moves the port devices connect to says so,
 // with the one koko connect line to run on each of them.
 func TestServerInstallUpgradeMovingThePortForPeople(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	install(t, m, "--owner", "alice")
 	r := m.Koko("server", "install", "--port", "8443")
@@ -220,6 +224,7 @@ func TestServerInstallUpgradeMovingThePortForPeople(t *testing.T) {
 // koko service's own process holding it is no refusal, since the restart
 // frees it, but any other process is, even one named koko.
 func TestServerInstallUpgradeChecksThePort(t *testing.T) {
+	t.Parallel()
 	t.Run("held by the koko service", func(t *testing.T) {
 		m := harness.NewMachine(t)
 		install(t, m, "--owner", "alice")
@@ -268,6 +273,7 @@ func TestServerInstallUpgradeChecksThePort(t *testing.T) {
 // Root Key's or one that does not parse is refused before anything is
 // written, naming the Root Key the sealed data needs, and is left as it is.
 func TestServerInstallUpgradeNeedsTheRootKey(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		// replace changes the Root Key file at path and returns what the
@@ -320,6 +326,7 @@ func TestServerInstallUpgradeNeedsTheRootKey(t *testing.T) {
 // --port gives, and says devices that joined on another port must take the
 // new address. A unit whose port install cannot read is never written over.
 func TestServerInstallUpgradeAndTheUnit(t *testing.T) {
+	t.Parallel()
 	t.Run("gone", func(t *testing.T) {
 		m := harness.NewMachine(t)
 		install(t, m, "--owner", "alice", "--port", "8443")
@@ -353,6 +360,7 @@ func TestServerInstallUpgradeAndTheUnit(t *testing.T) {
 // before anything is written. Uninstall keeps the drop-in, which systemd
 // does not load without the unit, and install after it still finds it.
 func TestServerInstallUpgradeWithADropInPort(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	install(t, m, "--owner", "alice")
 	if err := os.MkdirAll(m.Path("/etc/systemd/system/koko.service.d"), 0o755); err != nil {
@@ -402,6 +410,7 @@ func TestServerInstallUpgradeWithADropInPort(t *testing.T) {
 // leaves the copy's owner to systemd's StateDirectory=, which gives the
 // whole tree to the koko user when the directory is not that user's.
 func TestServerInstallRestoresACopy(t *testing.T) {
+	t.Parallel()
 	old := harness.NewMachine(t)
 	before := install(t, old, "--owner", "alice")
 	if err := old.Systemctl(context.Background(), "stop", "koko.service"); err != nil {
@@ -437,6 +446,7 @@ func TestServerInstallRestoresACopy(t *testing.T) {
 // would not start: install refuses it before anything is written, naming
 // the schema versions, and the newer koko server runs on.
 func TestServerInstallRefusesDataNewerThanItsSchema(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	install(t, m, "--owner", "alice")
 	db, err := sql.Open("sqlite", m.Path("/var/lib/koko/koko.db"))

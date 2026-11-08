@@ -47,6 +47,7 @@ func kokoDisconnect(t *testing.T, d *harness.Device) (disconnectOut, string) {
 // Session ends for good. With none running it says so. The next command
 // starts a new Device Mux.
 func TestKokoDisconnectStopsTheDeviceMuxAndCountsWhatItEnded(t *testing.T) {
+	t.Parallel()
 	_, _, d := muxDevice(t, timing.Timings{})
 	waitLogs(t, d, `msg="device connection opened"`, 1)
 	held := []serverconn.Conn{d.DialMux(), d.DialMux()}
@@ -81,6 +82,7 @@ func TestKokoDisconnectStopsTheDeviceMuxAndCountsWhatItEnded(t *testing.T) {
 // build, each with its own count, and passes over a socket a crashed one
 // left.
 func TestKokoDisconnectStopsTheDeviceMuxOfEveryBuild(t *testing.T) {
+	t.Parallel()
 	_, _, d := muxDevice(t, timing.Timings{})
 	waitLogs(t, d, `msg="device connection opened"`, 1)
 	d.DialMux()
@@ -147,6 +149,7 @@ func TestKokoDisconnectStopsTheDeviceMuxOfEveryBuild(t *testing.T) {
 // stopping the others: it fails once it has asked each, naming that socket
 // and saying what it stopped.
 func TestKokoDisconnectStopsTheOthersWhenOneDoesNotStop(t *testing.T) {
+	t.Parallel()
 	_, _, d := muxDevice(t, timing.Timings{})
 	waitLogs(t, d, `msg="device connection opened"`, 1)
 	d.DialMux()

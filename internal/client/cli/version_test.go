@@ -16,6 +16,7 @@ var buildValue = regexp.MustCompile(`"(\w+)": "[^"]*"`)
 
 // version prints the build offline: it needs no koko server.
 func TestVersionPrintsTheBuild(t *testing.T) {
+	t.Parallel()
 	noServer := cli.Runner{SocketPath: filepath.Join(t.TempDir(), "none.sock")}
 	r := harness.Run(t, noServer, nil, "version", "--json")
 	r.WantSuccess(t)

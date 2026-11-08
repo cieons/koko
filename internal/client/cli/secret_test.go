@@ -56,6 +56,7 @@ func secretNames(t *testing.T, run func(args ...string) harness.Result, args ...
 // stdout as stored, byte for byte, its trailing newline included, and
 // nothing else.
 func TestSecretAddFromStdinThenShow(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.KokoStdin("s3cret\n", "secret", "add", "ops/db-password").WantSuccess(t)
 	r := h.Koko("secret", "show", "ops/db-password")
@@ -68,6 +69,7 @@ func TestSecretAddFromStdinThenShow(t *testing.T) {
 // Any bytes up to 64 KiB go in from stdin or from a file and come out of
 // secret show the same: binary bytes, a multi-line key, exactly 64 KiB.
 func TestSecretValuesRoundTripByteForByte(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	binary := []byte{0, 1, 2, 0xfe, 0xff, '\n', 0x80, 'k', 0}
 	key := "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\r\nBG5vbmUAAAAEbm9uZQ==\n-----END OPENSSH PRIVATE KEY-----\n"
@@ -100,6 +102,7 @@ func TestSecretValuesRoundTripByteForByte(t *testing.T) {
 // A value of 64 KiB and one byte is refused before any call, from stdin and
 // from a file, and nothing is stored.
 func TestSecretAddRefusesAValueOver64KiB(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	over := strings.Repeat("x", secretMaxSize+1)
 	file := filepath.Join(t.TempDir(), "over")
@@ -126,6 +129,7 @@ func TestSecretAddRefusesAValueOver64KiB(t *testing.T) {
 // value on stderr, reads it with echo off, and stores what was typed; the
 // value never shows.
 func TestSecretAddPromptsOnATerminal(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	term := harness.NewTerminal("typed-s3cret")
 	r := h.KokoTerminal(term, "secret", "add", "ops/db-password", "--json")
@@ -146,6 +150,7 @@ func TestSecretAddPromptsOnATerminal(t *testing.T) {
 // Without a terminal and with nothing on stdin, secret add never waits: it
 // exits 2 at once, naming the stdin and flag forms, and makes no call.
 func TestSecretAddWithoutATerminalNamesTheForms(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	calls := h.Calls()
 	r := h.Koko("secret", "add", "ops/db-password", "--json")
@@ -161,6 +166,7 @@ func TestSecretAddWithoutATerminalNamesTheForms(t *testing.T) {
 
 // secret add --json prints the Secret it stored, without its value.
 func TestSecretAddPrintsTheSecret(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	r := h.KokoStdin("s3cret\n", "secret", "add", "ops/db-password", "--json")
 	r.WantSuccess(t)
@@ -168,6 +174,7 @@ func TestSecretAddPrintsTheSecret(t *testing.T) {
 }
 
 func TestSecretAddForPeople(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	r := h.KokoStdin("s3cret\n", "secret", "add", "ops/db-password")
 	r.WantSuccess(t)
@@ -179,6 +186,7 @@ func TestSecretAddForPeople(t *testing.T) {
 // secret add under a name the Space holds fails and leaves the value as it
 // was; the same name in another Space is another Secret.
 func TestSecretAddRefusesATakenName(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.KokoStdin("first", "secret", "add", "ops/db-password").WantSuccess(t)
 	r := h.KokoStdin("second", "secret", "add", "ops/db-password", "--json")
@@ -197,6 +205,7 @@ func TestSecretAddRefusesATakenName(t *testing.T) {
 // A Secret's name is 1 to 63 of a-z, 0-9, '-' and '_', starting with a
 // letter or a digit; the koko server refuses any other.
 func TestSecretNamesFollowTheNameRule(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	for _, n := range []string{"DB-password", "-db", "_db", "db.password", "db password", strings.Repeat("a", 64)} {
 		r := h.KokoStdin("v", "secret", "add", "ops/"+n, "--json")
@@ -215,6 +224,7 @@ func TestSecretNamesFollowTheNameRule(t *testing.T) {
 // empty part, is refused with exit 2 before any call, as is a command line
 // missing an argument or holding one too many.
 func TestASecretNameWithoutItsSpaceIsRefused(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	calls := h.Calls()
 	r := h.Koko("secret", "show", "db-password", "--json")
@@ -243,6 +253,7 @@ func TestASecretNameWithoutItsSpaceIsRefused(t *testing.T) {
 // A flag written before the command path is refused, so a harness rule for
 // koko secret ls never matches koko --json secret show.
 func TestSecretShowRefusesAFlagBeforeThePath(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.KokoStdin("s3cret", "secret", "add", "ops/db-password").WantSuccess(t)
 	for _, args := range [][]string{
@@ -259,6 +270,7 @@ func TestSecretShowRefusesAFlagBeforeThePath(t *testing.T) {
 
 // secret show --json prints the Secret with its value in base64.
 func TestSecretShowPrintsTheValueInBase64(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	value := []byte("s3cret\n\x00\xff")
 	h.KokoStdin(string(value), "secret", "add", "ops/db-password").WantSuccess(t)
@@ -276,6 +288,7 @@ func TestSecretShowPrintsTheValueInBase64(t *testing.T) {
 
 // secret show of a name the Space does not hold fails with unknown_secret.
 func TestSecretShowRefusesAnUnknownSecret(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	r := h.Koko("secret", "show", "ops/db-password", "--json")
 	r.WantError(t, 1, "unknown_secret")
@@ -286,6 +299,7 @@ func TestSecretShowRefusesAnUnknownSecret(t *testing.T) {
 // secret ls lists names only, sorted by Space and name: those of one Space,
 // or of every Space the caller can see.
 func TestSecretLsListsNamesOnly(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.Koko("space", "add", "data").WantSuccess(t)
 	for _, n := range []string{"ops/token", "ops/db-password", "data/db-password", harness.Owner + "/note-key"} {
@@ -310,6 +324,7 @@ func TestSecretLsListsNamesOnly(t *testing.T) {
 }
 
 func TestSecretLsForPeople(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	if r := h.Koko("secret", "ls"); r.Status != 0 || r.Stdout != "No Secrets.\n" {
 		t.Errorf("secret ls with none = %d %q", r.Status, r.Stdout)
@@ -327,6 +342,7 @@ func TestSecretLsForPeople(t *testing.T) {
 // No flag of secret ls prints a value: it takes none but --json, which
 // prints names only.
 func TestNoFlagOfSecretLsPrintsAValue(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.KokoStdin("s3cret", "secret", "add", "ops/db-password").WantSuccess(t)
 	for _, flag := range []string{"--values", "--show", "--reveal", "--all", "--from-file=x"} {
@@ -340,6 +356,7 @@ func TestNoFlagOfSecretLsPrintsAValue(t *testing.T) {
 
 // secret ls of a Space that does not exist fails with unknown_space.
 func TestSecretLsRefusesAnUnknownSpace(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.Koko("secret", "ls", "data", "--json").WantError(t, 1, "unknown_space")
 }
@@ -349,6 +366,7 @@ func TestSecretLsRefusesAnUnknownSpace(t *testing.T) {
 // answers as one that does not exist. The Owner, through a Device Session as
 // over the Unix socket, acts on every Space's Secrets.
 func TestSecretsFollowSpaceMembership(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	for _, u := range []string{"bob", "carol"} {
 		h.Koko("user", "invite", u).WantSuccess(t)
@@ -398,6 +416,7 @@ func TestSecretsFollowSpaceMembership(t *testing.T) {
 // Membership is read afresh on every call: a Member taken out of a Space
 // loses its Secrets on their next command, on the same Device Session.
 func TestAMemberTakenOutOfASpaceLosesItsSecretsAtOnce(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	h.Koko("space", "member", "add", "ops", "bob").WantSuccess(t)
@@ -426,6 +445,7 @@ const marker = "koko-marker-value-7Qz4Xw2Ln9"
 // every Secret command, with and without --json, and their failures, over
 // the Unix socket and over a Device Connection.
 func TestASecretValueShowsOnlyOnSecretShowsStdout(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	h.Koko("space", "member", "add", "ops", "bob").WantSuccess(t)
@@ -548,6 +568,7 @@ func TestASecretValueShowsOnlyOnSecretShowsStdout(t *testing.T) {
 // space show counts a Space's Secrets, and space rm refuses a Space while it
 // holds one, naming it.
 func TestASpaceThatHoldsASecretIsNotRemoved(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.KokoStdin("s3cret", "secret", "add", "ops/db-password").WantSuccess(t)
 	h.KokoStdin("s3cret", "secret", "add", "ops/token").WantSuccess(t)

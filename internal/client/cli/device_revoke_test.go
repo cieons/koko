@@ -76,6 +76,7 @@ func wantGone(t *testing.T, d *harness.Device, files ...string) {
 // later command explains the revocation from that record until the next
 // koko join, which the record does not block and which clears it.
 func TestARevokedDeviceIsToldByNameAndForgetsItsJoin(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Join(harness.Owner)
 	laptop, laptopID := joinAs(t, deviceAdd(t, h, "laptop"))
@@ -126,6 +127,7 @@ func waitClosed(t *testing.T, conn serverconn.Conn, what string) {
 // Revoking a Device Session closes its open Device Connections at once, and
 // no other's: the device it added keeps its connection and goes on working.
 func TestRevokingClosesTheDeviceSessionsConnections(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Join(harness.Owner)
 	laptop, _ := joinAs(t, deviceAdd(t, h, "laptop"))
@@ -151,6 +153,7 @@ func TestRevokingClosesTheDeviceSessionsConnections(t *testing.T) {
 // record, as when it learns of a revocation from elsewhere. For people,
 // device revoke says that it was this device.
 func TestRevokingTheDeviceInUse(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	laptop, laptopID := joinAs(t, deviceAdd(t, h, "laptop", "--user", "bob"))
@@ -182,6 +185,7 @@ func TestRevokingTheDeviceInUse(t *testing.T) {
 // working, and a code already used stays refused once its own Device
 // Session is revoked, though that frees its device name.
 func TestRevokingVoidsTheJoinCodesItIssued(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Join(harness.Owner)
 	laptop, _ := joinAs(t, deviceAdd(t, h, "laptop"))
@@ -208,6 +212,7 @@ func TestRevokingVoidsTheJoinCodesItIssued(t *testing.T) {
 // Revoked ones included, so a device left unnamed never takes the name of
 // one that was revoked.
 func TestDeviceNamesCountPastRevokedDeviceSessions(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("user", "invite", "bob", "--json")
 	r.WantSuccess(t)
@@ -226,6 +231,7 @@ func TestDeviceNamesCountPastRevokedDeviceSessions(t *testing.T) {
 // --last, since recovery then goes through the koko server's machine; while
 // another of the Owner's devices is left, it needs none.
 func TestRevokingTheOwnersLastDeviceSessionNeedsLast(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	laptop, _ := joinAs(t, deviceAdd(t, h, "laptop"))
 	joinAs(t, deviceAdd(t, h, "phone"))
@@ -251,6 +257,7 @@ func TestRevokingTheOwnersLastDeviceSessionNeedsLast(t *testing.T) {
 // gets, byte for byte, the answer for one that does not exist, and revokes
 // nothing.
 func TestAMemberCannotRevokeAnotherUsersDeviceSession(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	laptop, _ := joinAs(t, deviceAdd(t, h, "laptop"))
@@ -275,6 +282,7 @@ func TestAMemberCannotRevokeAnotherUsersDeviceSession(t *testing.T) {
 // later try of the Revoked device. None holds a code
 // (TestNoJoinCodeIsStoredOrLogged).
 func TestRevocationsAreLogged(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	laptop, laptopID := joinAs(t, deviceAdd(t, h, "laptop"))
 	phone, phoneID := joinAs(t, deviceAdd(t, h, "phone"))
@@ -304,6 +312,7 @@ func TestRevocationsAreLogged(t *testing.T) {
 // revoke prints it with its revoked time, device ls leaves it out from then
 // on, and device ls --all lists it among the live ones, with that time.
 func TestTheOwnerRevokesAnyonesDeviceSession(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	_, laptopID := joinAs(t, deviceAdd(t, h, "laptop", "--user", "bob"))

@@ -15,10 +15,12 @@ import (
 	"encoding/json/v2"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -105,19 +107,54 @@ func Listen(addr string) Option {
 }
 
 // FreeAddr returns a loopback address with a TCP port that nothing listened
-// on a moment ago, for Listen.
+// on a moment ago, for Listen or as an address where nothing answers. A test
+// running in parallel never takes its port meanwhile: the port lies below
+// those the OS picks for a listener on port 0 or an outgoing connection
+// (from 32768 on Linux, 49152 on macOS), and FreeAddr returns none twice in
+// one test process.
 func FreeAddr(t testing.TB) string {
 	t.Helper()
-	var lc net.ListenConfig
-	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	for range freePortTries {
+		addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(freePorts.next()))
+		var lc net.ListenConfig
+		ln, err := lc.Listen(t.Context(), "tcp", addr)
+		if err != nil {
+			continue // something outside this process holds it
+		}
+		if err := ln.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return addr
 	}
-	addr := ln.Addr().String()
-	if err := ln.Close(); err != nil {
-		t.Fatal(err)
+	t.Fatalf("no free TCP port on 127.0.0.1 in %d tries", freePortTries)
+	return ""
+}
+
+// The ports FreeAddr returns, from firstFreePort up to the start of Linux's
+// range for port 0, and how many it tries before it gives up.
+const (
+	firstFreePort = 20000
+	endFreePort   = 32768
+	freePortTries = 100
+)
+
+// freePorts hands out FreeAddr's ports in turn, from a random one on, so two
+// test processes running side by side seldom try the same ones.
+var freePorts = &portSeq{last: firstFreePort + rand.IntN(endFreePort-firstFreePort)}
+
+type portSeq struct {
+	mu   sync.Mutex
+	last int
+}
+
+func (s *portSeq) next() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.last++
+	if s.last >= endFreePort {
+		s.last = firstFreePort
 	}
-	return addr
+	return s.last
 }
 
 // Start starts a koko server in the test process on a temporary data

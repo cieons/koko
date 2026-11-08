@@ -6,6 +6,7 @@ import "testing"
 // agent's harness allows host ls and host show by prefix and asks before
 // host retire and host rm.
 func TestHostCommandsSitInTheirTiers(t *testing.T) {
+	t.Parallel()
 	want := map[string]Tier{
 		"host ls":     Read,
 		"host show":   Read,

@@ -12,6 +12,7 @@ import (
 // more on a new Device Connection: the command succeeds, and a write applies
 // once, its retry answered with the response stored for its Idempotency-Key.
 func TestACallCutMidFlightIsRetriedAndAppliesOnce(t *testing.T) {
+	t.Parallel()
 	h, fwd, _, _ := initThrough(t)
 	d := h.Join(harness.Owner)
 	for _, tc := range []struct {
@@ -45,6 +46,7 @@ func TestACallCutMidFlightIsRetriedAndAppliesOnce(t *testing.T) {
 // again on a Device Connection of the key the join made a Device Session,
 // and the join completes.
 func TestAJoinWhoseCallIsCutStillJoins(t *testing.T) {
+	t.Parallel()
 	h, fwd, _, init := initThrough(t)
 	fwd.CutWhen(func() bool { return strings.Contains(h.Log(), "path=/v1/user.current status=200") })
 	d := harness.NewDevice(t)

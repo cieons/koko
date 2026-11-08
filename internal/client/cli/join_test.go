@@ -96,6 +96,7 @@ func mode(t *testing.T, path string) fs.FileMode {
 // list, the User and the device name. From then on the device reaches the
 // koko server as that User.
 func TestJoinWithACodeIssuedOverTheSocket(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	jc := deviceAdd(t, h, "laptop")
 	code := decode(t, jc.Code)
@@ -152,6 +153,7 @@ func TestJoinWithACodeIssuedOverTheSocket(t *testing.T) {
 
 // For people, koko join says which koko server it joined, as whom.
 func TestJoinForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	jc := deviceAdd(t, h, "laptop")
 	r := harness.NewDevice(t).Koko("join", jc.Code)
@@ -163,6 +165,7 @@ func TestJoinForPeople(t *testing.T) {
 
 // koko join - reads the code from stdin, so it stays out of shell history.
 func TestJoinReadsTheCodeFromStdin(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	jc := deviceAdd(t, h, "laptop")
 	d := harness.NewDevice(t)
@@ -192,6 +195,7 @@ func deviceAddOn(t *testing.T, d *harness.Device, args ...string) joinCodeOut {
 // The harness's own join: a device of a test User, joined with a code
 // issued over the socket.
 func TestTheHarnessJoinsADeviceForATestUser(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	d := h.Join("bob")
@@ -222,6 +226,7 @@ func wantNothingLeft(t *testing.T, d *harness.Device) {
 // A truncated or damaged code is caught on the device: koko join exits 2
 // before it connects, so the koko server sees no connection.
 func TestJoinRefusesADamagedCodeBeforeConnecting(t *testing.T) {
+	t.Parallel()
 	_, fwd, _, init := initThrough(t)
 	code := init.JoinCode.Code
 	flipped := []byte(code)
@@ -255,6 +260,7 @@ func TestJoinRefusesADamagedCodeBeforeConnecting(t *testing.T) {
 // refused with host_key_mismatch, naming both keys, before anything is sent;
 // so the same code then joins the right koko server.
 func TestJoinRefusesAnotherHostKeyAndTheCodeStaysUsable(t *testing.T) {
+	t.Parallel()
 	_, fwd, listen, init := initThrough(t)
 	impostor := sshhost.Start(t)
 	fwd.To(net.JoinHostPort("127.0.0.1", strconv.Itoa(impostor.Port())))
@@ -279,6 +285,7 @@ func TestJoinRefusesAnotherHostKeyAndTheCodeStaysUsable(t *testing.T) {
 // codes teaches nothing; each failed join leaves the device as it was. A
 // code joins until its last second.
 func TestJoinRefusesAUsedAnExpiredAndAWrongCodeAlike(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	expired := deviceAdd(t, h, "desktop").Code
 	lastSecond := deviceAdd(t, h, "tablet").Code
@@ -311,6 +318,7 @@ func TestJoinRefusesAUsedAnExpiredAndAWrongCodeAlike(t *testing.T) {
 // A joined device refuses a second koko join and says to revoke its Device
 // Session first. It sends nothing, so the code still joins another device.
 func TestAJoinedDeviceRefusesASecondJoin(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	d := h.Join(harness.Owner)
 	before := readClientConfig(t, d)
@@ -334,6 +342,7 @@ func TestAJoinedDeviceRefusesASecondJoin(t *testing.T) {
 // issued the code, and from where; and why a join failed. Neither holds the
 // code (TestNoJoinCodeIsStoredOrLogged).
 func TestJoinsAndFailedJoinsAreLogged(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	jc := deviceAdd(t, h, "laptop")
 	var first joinedOut

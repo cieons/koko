@@ -42,6 +42,7 @@ func listedStates(t *testing.T, r harness.Result) []string {
 // name names it no more and is free for a new Host, and its id still shows
 // it, as it was.
 func TestHostRetireFreesTheNameAndKeepsTheRecord(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	old := addHost(t, h.Koko, "web1", "region=fsn1", "--note-file", hostNoteFile(t, "Cancelled at the provider."))
 
@@ -74,6 +75,7 @@ func TestHostRetireFreesTheNameAndKeepsTheRecord(t *testing.T) {
 // usual order, and --all state=retired lists only them; filters without
 // --all never reach them.
 func TestHostLsAllBringsBackTheRetiredHosts(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	old := addHost(t, h.Koko, "web1")
 	addHost(t, h.Koko, "db1")
@@ -104,6 +106,7 @@ func TestHostLsAllBringsBackTheRetiredHosts(t *testing.T) {
 // refused key among allowed ones included. It takes changes to its
 // Attributes and Note, and moves, and stays Retired through them.
 func TestARetiredHostTakesOnlyAttributeNoteAndMoveChanges(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	old := addHost(t, h.Koko, "web1", "region=fsn1")
@@ -152,6 +155,7 @@ func TestARetiredHostTakesOnlyAttributeNoteAndMoveChanges(t *testing.T) {
 // rm, which refuses a Managed Host and names host retire as the way on,
 // refuses it too, as every Host that was ever Managed.
 func TestAManagedHostRetiresWithItsPinAndIsNeverEnrolled(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := managedHost(t, h, "web1")
 	pinned := fingerprint(host)
@@ -181,6 +185,7 @@ func TestAManagedHostRetiresWithItsPinAndIsNeverEnrolled(t *testing.T) {
 // A Retired Host that was never Managed has no pin, and host rm deletes it
 // by its id, with its Services, as any Host never Managed.
 func TestARetiredHostNeverManagedIsDeleted(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	old := addHost(t, h.Koko, "web1")
 	h.Koko("service", "add", "web1/nginx").WantSuccess(t)
@@ -198,6 +203,7 @@ func TestARetiredHostNeverManagedIsDeleted(t *testing.T) {
 // lists them for people, attr ls counts their keys, and service add, set,
 // rename and rm on the Retired Host are refused with host_retired.
 func TestARetiredHostsServicesAreHiddenAndKeptAsTheyWere(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	old := addHost(t, h.Koko, "web1")
 	h.Koko("service", "add", "web1/nginx", "ports=443", "kind=proxy").WantSuccess(t)
@@ -252,6 +258,7 @@ func TestARetiredHostsServicesAreHiddenAndKeptAsTheyWere(t *testing.T) {
 // retired_hosts, and space rm refuses a Space that holds only a Retired
 // Host, naming it, until it moves out.
 func TestASpaceThatHoldsARetiredHostIsNotRemoved(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	old := addHost(t, h.Koko, "web1", "space=ops")
@@ -281,6 +288,7 @@ func TestASpaceThatHoldsARetiredHostIsNotRemoved(t *testing.T) {
 // host set refuses state= before any call, naming host retire, the one way
 // a person changes a Host's state.
 func TestHostSetStateNamesHostRetire(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	calls := h.Calls()
@@ -296,6 +304,7 @@ func TestHostSetStateNamesHostRetire(t *testing.T) {
 // For people, host retire names the Host by its name and its id, which
 // names it from then on.
 func TestHostRetireForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	added := addHost(t, h.Koko, "web1")
 	r := h.Koko("host", "retire", "web1")

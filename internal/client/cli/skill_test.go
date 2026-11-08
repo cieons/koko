@@ -23,6 +23,7 @@ func offline(t *testing.T) cli.Runner {
 // directory of its own, and prints where; the stub's bytes are fixed, so it
 // never goes stale across upgrades.
 func TestSkillInstallWritesTheStubUnderHome(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	r := harness.Run(t, offline(t), []string{"HOME=" + home}, "skill", "install", "--json")
 	r.WantSuccess(t)
@@ -48,6 +49,7 @@ func TestSkillInstallWritesTheStubUnderHome(t *testing.T) {
 // koko/SKILL.md there, over the stub an earlier install wrote, and leaves
 // every other file as it was.
 func TestSkillInstallIntoDirTouchesOnlyItsOwnFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	others := map[string]string{
 		"SKILL.md":          "another agent's own skill\n",
@@ -105,6 +107,7 @@ func TestSkillInstallIntoDirTouchesOnlyItsOwnFile(t *testing.T) {
 // Without HOME, the default directory is unknown: the command line is
 // refused, naming --dir, and nothing is written.
 func TestSkillInstallWithoutHomeNamesDir(t *testing.T) {
+	t.Parallel()
 	r := harness.Run(t, offline(t), nil, "skill", "install", "--json")
 	if msg := r.WantError(t, 2, "invalid_usage"); !strings.Contains(msg, "--dir") {
 		t.Errorf("the refusal %q does not name --dir", msg)
@@ -113,6 +116,7 @@ func TestSkillInstallWithoutHomeNamesDir(t *testing.T) {
 
 // koko skill needs no koko server: it prints the reference of the binary.
 func TestSkillIsOffline(t *testing.T) {
+	t.Parallel()
 	r := harness.Run(t, offline(t), []string{"HOME=" + t.TempDir()}, "skill")
 	r.WantSuccess(t)
 	if !strings.HasPrefix(r.Stdout, "# koko\n") {
@@ -123,6 +127,7 @@ func TestSkillIsOffline(t *testing.T) {
 // koko help --json prints each command it shows as koko skill --json
 // describes one.
 func TestHelpJSON(t *testing.T) {
+	t.Parallel()
 	r := harness.Run(t, offline(t), nil, "help", "skill", "install", "--json")
 	r.WantSuccess(t)
 	harness.Golden(t, "help-skill-install.json", r.Stdout)
@@ -131,6 +136,7 @@ func TestHelpJSON(t *testing.T) {
 // koko help refuses words that start no command, naming what they could
 // continue with, and --help anywhere points to it.
 func TestHelpRefusesWhatIsNoCommand(t *testing.T) {
+	t.Parallel()
 	r := harness.Run(t, offline(t), nil, "help", "host", "frob", "--json")
 	if msg := r.WantError(t, 2, "invalid_usage"); !strings.Contains(msg, "koko host frob is not a command") || !strings.Contains(msg, "ls") {
 		t.Errorf("the refusal %q does not say koko host frob is no command and what koko host takes", msg)
@@ -153,6 +159,7 @@ var scriptValue = regexp.MustCompile(`"script": ".*"`)
 // koko completion prints the script for bash or zsh, and refuses any other
 // shell, naming the two.
 func TestCompletionShells(t *testing.T) {
+	t.Parallel()
 	for _, shell := range []string{"bash", "zsh"} {
 		r := harness.Run(t, offline(t), nil, "completion", shell)
 		r.WantSuccess(t)

@@ -32,6 +32,7 @@ var secretTree = []Command{
 // it would put it in an agent's transcript once more (P0 spec: Secrets,
 // story 9).
 func TestASecretWrittenAsAnArgumentIsRefusedUnrepeated(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		argv    []string
 		message string
@@ -115,6 +116,7 @@ func readSecret(t *testing.T, s SecretInput, stdin io.Reader, term *fakeTerminal
 }
 
 func TestSecretInputFromAFile(t *testing.T) {
+	t.Parallel()
 	want := []byte("-----BEGIN KEY-----\n\x00\xff binary\n-----END KEY-----\n")
 	file := filepath.Join(t.TempDir(), "key")
 	if err := os.WriteFile(file, want, 0o600); err != nil {
@@ -131,6 +133,7 @@ func TestSecretInputFromAFile(t *testing.T) {
 }
 
 func TestSecretInputFromAFileThatCannotBeRead(t *testing.T) {
+	t.Parallel()
 	file := filepath.Join(t.TempDir(), "missing")
 	_, _, err := readSecret(t, secretValue, untouchedStdin{t}, nil, "secret", "add", "ops/db-password", "--from-file", file)
 	wantRefused(t, err, "cannot read --from-file "+file+": no such file or directory")
@@ -139,6 +142,7 @@ func TestSecretInputFromAFileThatCannotBeRead(t *testing.T) {
 // A Secret value is read from stdin whenever stdin is not a terminal: a
 // pipe, or a file as here, byte for byte with its trailing newline.
 func TestSecretInputFromStdin(t *testing.T) {
+	t.Parallel()
 	want := []byte("s3cret\n")
 	file := filepath.Join(t.TempDir(), "value")
 	if err := os.WriteFile(file, want, 0o600); err != nil {
@@ -156,6 +160,7 @@ func TestSecretInputFromStdin(t *testing.T) {
 }
 
 func TestSecretInputFromAStdinFlag(t *testing.T) {
+	t.Parallel()
 	got, _, err := readSecret(t, password, strings.NewReader("hunter2\n"), nil, "host", "enroll", "web-1", "--password-stdin")
 	if err != nil || string(got) != "hunter2\n" {
 		t.Errorf("read %q, %v; want %q", got, err, "hunter2\n")
@@ -164,6 +169,7 @@ func TestSecretInputFromAStdinFlag(t *testing.T) {
 
 // A stdin flag given with a terminal on stdin would echo what is typed.
 func TestSecretInputStdinFlagRefusesATerminal(t *testing.T) {
+	t.Parallel()
 	term := &fakeTerminal{typed: "hunter2\n"}
 	_, _, err := readSecret(t, password, untouchedStdin{t}, term, "host", "enroll", "web-1", "--password-stdin")
 	wantRefused(t, err, "--password-stdin reads stdin, which is a terminal: pipe the password of web-1 in, "+
@@ -176,6 +182,7 @@ func TestSecretInputStdinFlagRefusesATerminal(t *testing.T) {
 // With no form given and stdin a terminal, the reader prompts on stderr and
 // reads one line with echo off, and never reads stdin as a pipe.
 func TestSecretInputPromptsOnATerminal(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		s    SecretInput
 		argv []string
@@ -202,6 +209,7 @@ func TestSecretInputPromptsOnATerminal(t *testing.T) {
 // naming the forms that give it. Empty stdin, such as an agent's /dev/null,
 // gives nothing.
 func TestSecretInputWithoutATerminalFailsAtOnce(t *testing.T) {
+	t.Parallel()
 	devNull, err := os.Open(os.DevNull)
 	if err != nil {
 		t.Fatal(err)
@@ -246,6 +254,7 @@ func TestSecretInputWithoutATerminalFailsAtOnce(t *testing.T) {
 // never stored cut short and an endless stdin or file is never read to its
 // end.
 func TestSecretInputHoldsToItsLimit(t *testing.T) {
+	t.Parallel()
 	value, pw := secretValue, password
 	value.Max, pw.Max = 8, 8
 	dir := t.TempDir()
@@ -298,6 +307,7 @@ func (endless) Read(p []byte) (int, error) {
 // An empty secret input is refused from every form, so a pipe from a command
 // that failed never stores or sends an empty value.
 func TestSecretInputIsNeverEmpty(t *testing.T) {
+	t.Parallel()
 	empty := filepath.Join(t.TempDir(), "empty")
 	if err := os.WriteFile(empty, nil, 0o600); err != nil {
 		t.Fatal(err)

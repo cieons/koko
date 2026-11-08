@@ -10,6 +10,7 @@ import (
 // Each secret command sits in the tier P0 spec: Secrets gives it, so an
 // agent's harness can allow secret ls by prefix and ask before secret show.
 func TestSecretCommandsSitInTheirTiers(t *testing.T) {
+	t.Parallel()
 	want := map[string]Tier{
 		"secret ls":     Read,
 		"secret add":    Reversible,
@@ -42,6 +43,7 @@ func TestSecretCommandsSitInTheirTiers(t *testing.T) {
 // harness rule asks before any value is shown, and no flag of another
 // command adds one (P0 spec: Secrets, stories 28 and 30).
 func TestOnlySecretShowAnswersWithAValue(t *testing.T) {
+	t.Parallel()
 	value, printed := reflect.TypeFor[api.SecretValue](), reflect.TypeFor[secretValueJSON]()
 	for _, o := range api.Operations() {
 		info := o.Info()

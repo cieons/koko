@@ -76,6 +76,7 @@ func files(t *testing.T, dir string) []string {
 // The koko server starts with its Root Key, and its log names the id the
 // key's file names, never the key.
 func TestServerRunStartsWithItsRootKeyFile(t *testing.T) {
+	t.Parallel()
 	keyFile := filepath.Join(t.TempDir(), "root.key")
 	id, key := newKeyFile(t, keyFile)
 	r := serverRun(t, t.TempDir(), keyFile)
@@ -93,6 +94,7 @@ func TestServerRunStartsWithItsRootKeyFile(t *testing.T) {
 // The Root Key's file stays outside the data directory, so that a copy of the
 // data directory never holds it (P0 spec: install and run, story 45).
 func TestServerRunRefusesARootKeyFileInsideTheDataDirectory(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		// place makes what the case needs under root and returns the data
@@ -157,6 +159,7 @@ func TestServerRunRefusesARootKeyFileInsideTheDataDirectory(t *testing.T) {
 
 // A Root Key file beside the data directory, named like it, is outside it.
 func TestServerRunTakesARootKeyFileBesideTheDataDirectory(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	keyFile := filepath.Join(root, "data-root.key")
 	newKeyFile(t, keyFile)
@@ -168,6 +171,7 @@ func TestServerRunTakesARootKeyFileBesideTheDataDirectory(t *testing.T) {
 // A missing Root Key file stops the start-up, and nothing writes a key in its
 // place.
 func TestServerRunRefusesAMissingRootKeyFile(t *testing.T) {
+	t.Parallel()
 	keyDir := t.TempDir()
 	keyFile := filepath.Join(keyDir, "root.key")
 	r := serverRun(t, t.TempDir(), keyFile)
@@ -180,6 +184,7 @@ func TestServerRunRefusesAMissingRootKeyFile(t *testing.T) {
 // A Root Key file that does not parse stops the start-up as such: it is never
 // taken for a missing file, and nothing writes a key over it or beside it.
 func TestServerRunRefusesARootKeyFileThatDoesNotParse(t *testing.T) {
+	t.Parallel()
 	keyDir := t.TempDir()
 	keyFile := filepath.Join(keyDir, "root.key")
 	_, key := newKeyFile(t, keyFile)

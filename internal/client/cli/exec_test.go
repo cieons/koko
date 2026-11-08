@@ -69,6 +69,7 @@ func waitServerLog(t *testing.T, h *harness.Harness, pattern string) []string {
 // The koko server logs the SSH Session's start and end, one line each, with
 // their fields, and never the command's text.
 func TestExecOnAJoinedDeviceIsLoggedWithoutItsCommand(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	managedHost(t, h, "web1")
 	hostID := showHost(t, h.Koko, "web1").ID
@@ -95,6 +96,7 @@ func TestExecOnAJoinedDeviceIsLoggedWithoutItsCommand(t *testing.T) {
 // On a device whose commands go through its Device Mux, koko exec's Tunnel
 // rides the Device Mux's Device Connection too, and opens none of its own.
 func TestExecGoesThroughTheDeviceMux(t *testing.T) {
+	t.Parallel()
 	h, fwd, d := muxDevice(t, timing.Timings{})
 	managedHost(t, h, "web1")
 
@@ -110,6 +112,7 @@ func TestExecGoesThroughTheDeviceMux(t *testing.T) {
 // Every word after the Host is the command's, flags and --json included, as
 // typed: koko exec takes no flag there.
 func TestExecPassesEveryWordAfterTheHostToTheCommand(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := managedHost(t, h, "web1")
 	reqs := len(host.Requests())
@@ -126,6 +129,7 @@ func TestExecPassesEveryWordAfterTheHostToTheCommand(t *testing.T) {
 // koko help says that koko exec takes no flag, not even --json, and where
 // its command's words begin; koko skill says so for agents.
 func TestHelpSaysKokoExecTakesNoFlags(t *testing.T) {
+	t.Parallel()
 	r := harness.Run(t, offline(t), nil, "help", "exec")
 	r.WantSuccess(t)
 	if strings.Contains(r.Stdout, "Flags:") || !strings.Contains(r.Stdout, "It takes no flag, not even --json: every word after <host> is the command's") {
@@ -148,6 +152,7 @@ func TestHelpSaysKokoExecTakesNoFlags(t *testing.T) {
 // command line, a device that has not joined, a Host the Gateway cannot
 // connect to. Each says why in one line, never as JSON.
 func TestExecExits255WhenKokoItselfFails(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t, harness.Timings(timing.Timings{HostConnectWait: time.Millisecond}))
 	host := managedHost(t, h, "web1")
 	_, deadPort, err := net.SplitHostPort(harness.FreeAddr(t))
@@ -187,6 +192,7 @@ func TestExecExits255WhenKokoItselfFails(t *testing.T) {
 // A command a signal ends has no exit status: koko exec exits 255, as ssh
 // does, and names the signal, which the koko server logs too.
 func TestExecExits255WhenASignalEndsTheCommand(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	managedHost(t, h, "web1")
 	wantRefused(t, h.Koko("exec", "web1", "kill -TERM $$"), "koko: the command on web1 was ended by SIGTERM\n")
@@ -196,6 +202,7 @@ func TestExecExits255WhenASignalEndsTheCommand(t *testing.T) {
 // koko exec forwards no signal: Ctrl-C ends the SSH Session at once, says
 // so, and exits 255, as a failure of koko's own.
 func TestExecEndsTheSSHSessionWhenInterrupted(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	managedHost(t, h, "web1")
 	p := h.Background(nil, "exec", "web1", "exec sleep 30")
@@ -208,6 +215,7 @@ func TestExecEndsTheSSHSessionWhenInterrupted(t *testing.T) {
 // is restarting: koko exec shows the Gateway's line and exits 255, adding
 // nothing, and the koko server logs the end.
 func TestAKokoServerStopEndsTheSSHSession(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	managedHost(t, h, "web1")
 	p := h.Background(nil, "exec", "web1", "exec sleep 30")
@@ -223,6 +231,7 @@ func TestAKokoServerStopEndsTheSSHSession(t *testing.T) {
 // An SSH Session uses its Device Session, as a command does, which moves
 // its last used time.
 func TestExecUsesItsDeviceSession(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	managedHost(t, h, "web1")
 	laptop, id := joinAs(t, deviceAdd(t, h, "laptop"))
@@ -238,6 +247,7 @@ func TestExecUsesItsDeviceSession(t *testing.T) {
 
 // Either form of the SSH Name reaches the Host: web1 and web1.koko.
 func TestExecTakesEitherFormOfTheSSHName(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	managedHost(t, h, "web1")
 	for _, sshName := range []string{"web1", "web1.koko"} {
@@ -252,6 +262,7 @@ func TestExecTakesEitherFormOfTheSSHName(t *testing.T) {
 // cannot act in with the same banner, so it tells nothing of Hosts outside
 // their Spaces, and connects to no Host for either.
 func TestExecRefusesAnUnknownNameAndAnUnseenHostAlike(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := managedHost(t, h, "web1")
 	h.Koko("user", "invite", "bob").WantSuccess(t)
@@ -273,6 +284,7 @@ func TestExecRefusesAnUnknownNameAndAnUnseenHostAlike(t *testing.T) {
 // Only a Managed Host is reached: a Registered one, which koko cannot log in
 // to yet, is refused, saying how to Enroll it, without a connection.
 func TestExecRefusesARegisteredHost(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := sshhost.Start(t, sshhost.Password(hostPassword))
 	addHostAt(t, h.Koko, "db1", host)
@@ -287,6 +299,7 @@ func TestExecRefusesARegisteredHost(t *testing.T) {
 // A Retired Host holds no name, so the Gateway refuses the name it had as
 // one no Host holds, without a connection to it.
 func TestExecRefusesARetiredHostsName(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := managedHost(t, h, "web1")
 	h.Koko("host", "retire", "web1").WantSuccess(t)
@@ -303,6 +316,7 @@ func TestExecRefusesARetiredHostsName(t *testing.T) {
 // with the remote status. The Gateway logs in as the Host Account with the
 // koko key.
 func TestExecRunsOneCommandOnAManagedHost(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := managedHost(t, h, "web1")
 	kokoKey := kokoKeyLine(t, host)

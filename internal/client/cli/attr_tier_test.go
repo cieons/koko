@@ -4,6 +4,7 @@ import "testing"
 
 // koko attr ls only reads, so an agent's harness allows it by prefix.
 func TestAttrCommandsSitInTheirTiers(t *testing.T) {
+	t.Parallel()
 	var paths []string
 	for _, c := range Tree() {
 		if c.Noun != "attr" {

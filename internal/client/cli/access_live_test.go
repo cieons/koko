@@ -100,6 +100,7 @@ func (l *liveSSH) wantOpen(line string) {
 // its Device Connections close; another Device Session's SSH Session to the
 // same Host goes on until its own revocation, and the Owner's goes on.
 func TestRevokingADeviceSessionEndsItsSSHSessions(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	laptop := h.Join("bob")
@@ -129,6 +130,7 @@ func TestRevokingADeviceSessionEndsItsSSHSessions(t *testing.T) {
 // Removing a User ends each of their live SSH Sessions with one line naming
 // the removal, before their Device Connections close.
 func TestRemovingAUserEndsTheirSSHSessions(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	laptop := h.Join("bob")
@@ -144,6 +146,7 @@ func TestRemovingAUserEndsTheirSSHSessions(t *testing.T) {
 // and only those: one to a Host in a Space they still act in goes on, and
 // so does the Owner's to the same Host.
 func TestTakingAMemberOutOfASpaceEndsTheirSSHSessionsToItsHosts(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	laptop := h.Join("bob")
@@ -164,6 +167,7 @@ func TestTakingAMemberOutOfASpaceEndsTheirSSHSessionsToItsHosts(t *testing.T) {
 // Session to it with a line that names the Host as they reached it, and
 // neither its new name nor either Space, and the Owner's goes on.
 func TestMovingAHostOutOfReachEndsTheSSHSessionsThatLoseIt(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	laptop := h.Join("bob")
@@ -181,6 +185,7 @@ func TestMovingAHostOutOfReachEndsTheSSHSessionsThatLoseIt(t *testing.T) {
 // Retiring a Host ends every live SSH Session to it, the Owner's included,
 // with one line naming the retirement.
 func TestRetiringAHostEndsItsSSHSessions(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	laptop := h.Join("bob")
@@ -198,6 +203,7 @@ func TestRetiringAHostEndsItsSSHSessions(t *testing.T) {
 // A change of Host Account sends a Managed Host back to Registered, which
 // ends every live SSH Session to it.
 func TestAHostSentBackToRegisteredEndsItsSSHSessions(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	managedHost(t, h, "web1")
 	s := openLiveSSH(t, h, h.Proxy("tunnel", "web1"), "web1")
@@ -211,6 +217,7 @@ func TestAHostSentBackToRegisteredEndsItsSSHSessions(t *testing.T) {
 // Host, changing its address, port, Note and Attributes, moving it to
 // another Space the Member acts in, and revoking another Device Session.
 func TestAChangeThatKeepsAccessInterruptsNothing(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	laptop := h.Join("bob")

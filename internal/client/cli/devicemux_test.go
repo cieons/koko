@@ -53,6 +53,7 @@ func waitConns(t *testing.T, fwd *harness.Forwarder, n int, d *harness.Device) {
 // Connection at once; every command after shares it, and opens none of its
 // own. KOKO_DIRECT=1 makes a command open its own.
 func TestCommandsShareTheDeviceMuxsDeviceConnection(t *testing.T) {
+	t.Parallel()
 	_, fwd, d := muxDevice(t, timing.Timings{})
 	for range 3 {
 		d.Koko("space", "ls", "--json").WantSuccess(t)
@@ -73,6 +74,7 @@ func TestCommandsShareTheDeviceMuxsDeviceConnection(t *testing.T) {
 // command waits for the winner's socket and goes through it, so the device
 // opens one Device Connection. koko join with KOKO_DIRECT=1 starts none.
 func TestOneDeviceMuxPerBuildWhenCommandsRaceToStartIt(t *testing.T) {
+	t.Parallel()
 	h, fwd, _, _ := initThrough(t)
 	d := harness.NewMuxDevice(t, timing.Timings{})
 	d.KokoEnv([]string{"KOKO_DIRECT=1"}, "join", deviceAdd(t, h, "laptop").Code).WantSuccess(t)
@@ -103,7 +105,7 @@ func TestOneDeviceMuxPerBuildWhenCommandsRaceToStartIt(t *testing.T) {
 // device-mux, as a command that saw none would start it) finds the lock
 // taken, waits for it as long as a start may take, and exits, leaving the
 // first one serving: it opens no Device Connection and takes no socket.
-func TestASecondDeviceMuxOfTheBuildExitsAtItsLock(t *testing.T) {
+func aSecondDeviceMuxOfTheBuildExitsAtItsLock(t *testing.T) {
 	const start = 200 * time.Millisecond
 	_, fwd, d := muxDevice(t, timing.Timings{DeviceMuxStart: start})
 	ran := make(chan harness.Result, 1)
@@ -133,7 +135,7 @@ func TestASecondDeviceMuxOfTheBuildExitsAtItsLock(t *testing.T) {
 // as another User, finds the Device Mux of its build carrying the first
 // home's device, and opens its own Device Connections, saying why at debug
 // level; it acts as its own User throughout.
-func TestAnotherHomeGoesDirectBesideTheDeviceMux(t *testing.T) {
+func anotherHomeGoesDirectBesideTheDeviceMux(t *testing.T) {
 	h, fwd, _, _ := initThrough(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	alices := harness.NewMuxDevice(t, timing.Timings{DeviceMuxStart: 200 * time.Millisecond})
@@ -160,7 +162,7 @@ func TestAnotherHomeGoesDirectBesideTheDeviceMux(t *testing.T) {
 // A Device Mux that starts and exits at once, as in a sandbox that lets it
 // start but not listen, sends the command direct at once, not after the
 // whole wait for its socket.
-func TestADeviceMuxThatExitsAtOnceSendsTheCommandDirect(t *testing.T) {
+func aDeviceMuxThatExitsAtOnceSendsTheCommandDirect(t *testing.T) {
 	const start = 5 * time.Second
 	h, fwd, _, _ := initThrough(t)
 	d := harness.NewMuxDevice(t, timing.Timings{DeviceMuxStart: start})
@@ -183,6 +185,7 @@ func TestADeviceMuxThatExitsAtOnceSendsTheCommandDirect(t *testing.T) {
 // KOKO_LOG_LEVEL takes what koko server run's --log-level takes; any other
 // value refuses the command line, as there.
 func TestAnUnknownLogLevelIsRefused(t *testing.T) {
+	t.Parallel()
 	d := harness.NewDevice(t)
 	msg := d.KokoEnv([]string{"KOKO_LOG_LEVEL=trace"}, "version", "--json").WantError(t, 2, "invalid_usage")
 	if !strings.Contains(msg, `KOKO_LOG_LEVEL is "trace"`) {
@@ -195,7 +198,7 @@ func TestAnUnknownLogLevelIsRefused(t *testing.T) {
 // time, and removes its socket; the next command starts a new one. A
 // command connected keeps it running, however long it holds no channel
 // open, as koko web between browser connections does.
-func TestTheDeviceMuxIdlesOutWithNothingConnected(t *testing.T) {
+func theDeviceMuxIdlesOutWithNothingConnected(t *testing.T) {
 	const idle = 300 * time.Millisecond
 	_, fwd, d := muxDevice(t, timing.Timings{DeviceMuxIdle: idle})
 	d.Koko("space", "ls", "--json").WantSuccess(t)
@@ -232,6 +235,7 @@ func TestTheDeviceMuxIdlesOutWithNothingConnected(t *testing.T) {
 // and exits. Later commands explain the revocation from the record, and
 // connect to nothing.
 func TestTheDeviceMuxRunsTheRevocationCleanupAndExits(t *testing.T) {
+	t.Parallel()
 	h, fwd, _, _ := initThrough(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	d := harness.NewMuxDevice(t, timing.Timings{})
@@ -258,6 +262,7 @@ func TestTheDeviceMuxRunsTheRevocationCleanupAndExits(t *testing.T) {
 // A device revoking its own Device Session through its Device Mux gets the
 // answer, says it was this device, and is cleaned up; its Device Mux exits.
 func TestRevokingTheDeviceInUseThroughTheDeviceMux(t *testing.T) {
+	t.Parallel()
 	h, fwd, _, _ := initThrough(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	d := harness.NewMuxDevice(t, timing.Timings{})
@@ -279,6 +284,7 @@ func TestRevokingTheDeviceInUseThroughTheDeviceMux(t *testing.T) {
 // each command opens its own Device Connection, saying why in one debug
 // line when KOKO_LOG_LEVEL=debug asks for it. KOKO_DIRECT=1 does the same.
 func TestTheDirectPath(t *testing.T) {
+	t.Parallel()
 	for name, c := range map[string]struct {
 		spoil func(t *testing.T, dir string)
 		why   string
@@ -340,6 +346,7 @@ func mustDo(t *testing.T, errs ...error) {
 // command sends it again through the Device Mux, which opens a new Device
 // Connection, and the write applies once.
 func TestACallCutUnderTheDeviceMuxIsRetriedAndAppliesOnce(t *testing.T) {
+	t.Parallel()
 	h, fwd, d := muxDevice(t, timing.Timings{})
 	const answered = "path=/v1/space.add status=200"
 	fwd.CutWhen(func() bool { return strings.Contains(h.Log(), answered) })
@@ -364,6 +371,7 @@ func TestACallCutUnderTheDeviceMuxIsRetriedAndAppliesOnce(t *testing.T) {
 // refused with the koko server's own message, and the report is the koko
 // server's.
 func TestTheDeviceMuxCarriesChannelsAcrossADrop(t *testing.T) {
+	t.Parallel()
 	_, fwd, d := muxDevice(t, timing.Timings{})
 	conn := d.DialMux()
 	report, err := conn.Report(t.Context())

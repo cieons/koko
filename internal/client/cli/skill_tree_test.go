@@ -98,6 +98,7 @@ func listedCommands(section string) []string {
 // other, in koko skill's text and in its --json, so that a person can allow
 // the read tier by prefix.
 func TestSkillListsEveryCommandUnderItsTier(t *testing.T) {
+	t.Parallel()
 	sections := skillSections(t)
 	ref := skillReference(t)
 	tiers := []Tier{Read, Reversible, Irreversible}
@@ -126,6 +127,7 @@ func TestSkillListsEveryCommandUnderItsTier(t *testing.T) {
 // --json, which holds what encoding/json/v2 writes for it, so that an agent
 // learns the CLI's shape (ADR 0016) from the binary.
 func TestSkillShowsEveryCommandsFlagsAndJSONShape(t *testing.T) {
+	t.Parallel()
 	sections := skillSections(t)
 	text := sections[Read.String()] + sections[Reversible.String()] + sections[Irreversible.String()]
 	ref := skillReference(t)
@@ -199,6 +201,7 @@ var anyType = regexp.MustCompile(`(^|[^"\w])any\b`)
 
 // The shapes are written as the notation says.
 func TestShapeNotation(t *testing.T) {
+	t.Parallel()
 	type inner struct {
 		A string `json:"a"`
 	}
@@ -246,6 +249,7 @@ func (selfShaped) jsonShape() string { return "string | [string]" }
 // Every error code, the koko server's and the CLI's own, and every exit
 // status are listed, so that an agent knows what to branch on.
 func TestSkillListsEveryErrorCodeAndExitStatus(t *testing.T) {
+	t.Parallel()
 	sections := skillSections(t)
 	ref := skillReference(t)
 	want := map[string]string{}
@@ -286,6 +290,7 @@ func TestSkillListsEveryErrorCodeAndExitStatus(t *testing.T) {
 // with each form of a term, which the parser reads as the operator it says,
 // and with the fields each list filters on.
 func TestSkillDocumentsThePresetsAndTheFilterSyntax(t *testing.T) {
+	t.Parallel()
 	sections := skillSections(t)
 	ref := skillReference(t)
 	presets := record.Presets()
@@ -342,6 +347,7 @@ func TestSkillDocumentsThePresetsAndTheFilterSyntax(t *testing.T) {
 // koko skill, koko help and koko completion only print, and koko skill
 // install writes one file koko owns (P0 spec: overview).
 func TestSkillCommandsSitInTheirTiers(t *testing.T) {
+	t.Parallel()
 	want := map[string]Tier{"skill": Read, "skill install": Reversible, "help": Read, "completion": Read}
 	for path, tier := range want {
 		c := find(Tree(), strings.Fields(path))
@@ -358,6 +364,7 @@ func TestSkillCommandsSitInTheirTiers(t *testing.T) {
 // koko help lists every command, and koko help <command> shows its usage
 // and each of its flags, all from the tree.
 func TestHelpShowsEveryCommandAndItsFlags(t *testing.T) {
+	t.Parallel()
 	out, errs, status := runOffline(t, "help")
 	if status != exitOK || errs != "" {
 		t.Fatalf("koko help: exit status %d, stderr %q", status, errs)
@@ -457,6 +464,7 @@ done`
 // flags, and the values of each flag and argument that has choices, all
 // from the tree; an argument never extends the command path.
 func TestCompletionCompletesEveryCommandFromTheTree(t *testing.T) {
+	t.Parallel()
 	type query struct {
 		words []string
 		// want are words the answer holds, or the answer whole when exact.
@@ -557,6 +565,7 @@ func sameWords(a, b []string) bool {
 // completes a file flag's value with the files there; the lines it
 // completes are taken from the tree.
 func TestCompletionInBash(t *testing.T) {
+	t.Parallel()
 	sh, err := exec.LookPath("bash")
 	if err != nil {
 		t.Skipf("bash is not installed: %v", err)

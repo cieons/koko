@@ -12,6 +12,7 @@ import (
 // the browser keeps no copy of it in its cache. A refused secret.show says
 // the same.
 func TestSecretShowOverWebIsNeverCached(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.KokoStdin("s3cret\n", "secret", "add", "ops/db-password").WantSuccess(t)
 	w := startWeb(t, h)

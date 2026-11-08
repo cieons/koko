@@ -31,6 +31,7 @@ func (f *fakeServer) run(_ context.Context, s cli.ServerSettings, log io.Writer)
 const credentialsDirectory = "CREDENTIALS_DIRECTORY=/run/credentials/koko.service"
 
 func TestServerRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
+	t.Parallel()
 	// The Root Key's file is systemd's copy of the one the koko unit loads.
 	defaults := cli.ServerSettings{
 		DataDir:       "/var/lib/koko",
@@ -92,6 +93,7 @@ func TestServerRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
 }
 
 func TestServerRunRefusesBadSettings(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		env     []string
@@ -129,6 +131,7 @@ func TestServerRunRefusesBadSettings(t *testing.T) {
 
 // A build without the koko server (every OS but Linux) refuses to run it.
 func TestServerRunWhereTheBuildHasNoServer(t *testing.T) {
+	t.Parallel()
 	r := harness.Run(t, cli.Runner{}, nil, "server", "run", "--json")
 	msg := r.WantError(t, 1, "unsupported_platform")
 	if !strings.Contains(msg, "Linux only") {
@@ -137,6 +140,7 @@ func TestServerRunWhereTheBuildHasNoServer(t *testing.T) {
 }
 
 func TestServerRunFailureExitsOne(t *testing.T) {
+	t.Parallel()
 	f := &fakeServer{err: errors.New("listen on /run/koko/koko.sock: permission denied")}
 	r := harness.Run(t, cli.Runner{ServerRun: f.run}, []string{credentialsDirectory}, "server", "run")
 	if r.Status != 1 || r.Stdout != "" || !strings.HasSuffix(r.Stderr, "koko: listen on /run/koko/koko.sock: permission denied\n") {

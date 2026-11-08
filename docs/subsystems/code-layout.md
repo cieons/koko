@@ -52,7 +52,7 @@ lines.
 | Commands and their `--json` types | `internal/client/cli/<area>.go`, with `<area>Commands` | `commands` in [`tree.go`](../../internal/client/cli/tree.go) |
 | API-to-CLI mappings | `<area>Mappings` in the same file | `mappings` in [`mapping.go`](../../internal/client/cli/mapping.go) |
 | Migration steps | `internal/server/store/migrations/<what-it-adds>.sql` | `steps` in [`migrations.go`](../../internal/server/store/migrations.go) (rule 2) |
-| S1 tests and golden files | `internal/client/cli/<area>_test.go`, `testdata/<command>[-<case>].json` | none |
+| S1 tests and golden files | `internal/client/cli/<area>_test.go`, `testdata/<command>[-<case>].json` | `realTime` in [`realtime_test.go`](../../internal/client/cli/realtime_test.go), one line for each test whose outcome hangs on real time ([running the S1 tests](#running-the-s1-tests)) |
 | Access-matrix rows | `internal/server/access/matrix_<area>_test.go`, with `<area>Rows` | `areaRows` in [`matrix_test.go`](../../internal/server/access/matrix_test.go) (rule 6) |
 | What a Space holds, for an area whose records live in a Space | a [`space.Holding`](../../internal/server/space/space.go) in the area's package | `holdings` in [`server.go`](../../internal/server/server.go) (rule 7) |
 | The Attribute keys in use, for an area whose records hold Attributes | an [`attr.Keys`](../../internal/server/attr/attr.go) in the area's package | `attrKeys` in [`server.go`](../../internal/server/server.go) |
@@ -267,6 +267,54 @@ answer arrives. `f.Stall()` makes the connections it carries pass nothing
 more, either way, without closing them, as a network path that went dead
 does, while connections it accepts after pass as before; `f.Partition()`
 also passes on no close, so each end finds its connection dead by itself.
+
+### Running the S1 tests
+
+`go test` runs one package's tests one at a time unless they say otherwise,
+and bounds each package's test binary at 5 minutes (`make test`'s
+`-timeout`). `internal/client/cli` holds most of the S1 tests, so they run in
+parallel. Each test starts its own koko server, HOME, socket, clock and
+timing hook. The only thing tests share is the loopback port space: a port
+picked as 127.0.0.1:0 is held while in use, and `harness.FreeAddr` hands
+out ports below the range the OS picks from, never the same one twice in a
+process. Every test is one of three kinds:
+
+- **A test whose outcome does not hang on real time** calls `t.Parallel()`
+  as its first line. Go runs these together, as many at once as there are
+  CPUs, once the serial tests are done. Most tests are this kind. That
+  includes a test that waits for an event within a bound, such as
+  `waitLog`, `eventually` or `WaitStdout` within 10 s. It also includes a
+  test that shortens a wait that never ends in what it waits for, such as
+  the pause between tries at a port nothing listens on, or a command's wait
+  for a koko server that was stopped. And it includes a test that holds a
+  delay far inside the wait for it, such as the fake machine's 300 ms
+  `StartDelay` under install's 30 s wait.
+- **A test whose outcome hangs on real time** goes in `realTime` in
+  [`realtime_test.go`](../../internal/client/cli/realtime_test.go). Such a
+  test does one of three things. It shortens a wait that does end, such as
+  for a probe that is answered, a reconnect, or a command waiting for a koko
+  server that answers. It counts on what happens within a set time, such as
+  a `time.Sleep` before checking that nothing happened, a login kept slow
+  with `sshhost.SlowLogins`, or a `Freeze`. Or it measures how long
+  something took (`time.Since`).
+
+  Its name starts with a lower-case letter instead of `Test`. It does not
+  call `t.Parallel()`. It is added to `realTime` in alphabetical order: one
+  line, kept on a rebase conflict as in a central list. `TestRealTime` runs
+  each as a parallel subtest named after it with a capital first letter,
+  such as `TestRealTime/TheGatewayProbesAQuietHost`, which is the name to
+  give `go test -run`. `TestRealTime` itself is serial, so these tests run
+  together before the parallel batch and never share the CPU with it. They
+  mostly wait, so running them together loads them little; their margins
+  still allow for a loaded machine ([LESSONS.md](../../LESSONS.md)).
+- **A test that calls `t.Chdir` or `t.Setenv`** stays serial, neither
+  calling `t.Parallel()` nor going in `realTime`, since Go refuses both in
+  a parallel test. Its whole time adds to the package's.
+
+`make lint` catches a test that is none of the three. The `paralleltest`
+linter finds a `Test` function in `internal/client/cli` that neither calls
+`t.Parallel()` nor is one Go refuses to run in parallel. The `unused` linter
+finds a real-time test left out of `realTime`.
 
 ## The in-process Host
 

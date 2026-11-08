@@ -46,6 +46,7 @@ func otherServer(t *testing.T, report wire.Report) (string, *atomic.Int32) {
 // server_too_old, naming the koko server's version and the command, and
 // sends nothing.
 func TestACommandTheServerLacksIsServerTooOld(t *testing.T) {
+	t.Parallel()
 	path, calls := otherServer(t, wire.Report{Version: "v0.1.0", Operations: []string{"space.list"}})
 	r := harness.Run(t, cli.Runner{SocketPath: path}, nil, "space", "add", "ops", "--json")
 	msg := r.WantError(t, 1, "server_too_old")
@@ -64,6 +65,7 @@ func TestACommandTheServerLacksIsServerTooOld(t *testing.T) {
 // reports operations this CLI does not know, and answers with fields it does
 // not know.
 func TestACLIOlderThanTheServerKeepsWorking(t *testing.T) {
+	t.Parallel()
 	path, _ := otherServer(t, wire.Report{Version: "v9.0.0", Operations: []string{"space.list", "space.archive"}})
 	r := harness.Run(t, cli.Runner{SocketPath: path}, nil, "space", "ls", "--json")
 	r.WantSuccess(t)

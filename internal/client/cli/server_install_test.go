@@ -99,6 +99,7 @@ func wantNoRootKey(t *testing.T, r harness.Result, file []byte) {
 // initialises the koko server over its socket, then prints what the Owner
 // needs next.
 func TestServerInstallOnAFreshMachine(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	r := m.Koko("server", "install", "--owner", "alice", "--json")
 	r.WantSuccess(t)
@@ -170,6 +171,7 @@ func TestServerInstallOnAFreshMachine(t *testing.T) {
 // the binary and the unit before it starts the service, and waits for the
 // service's socket, which opens late here, before it initialises.
 func TestServerInstallChecksFirstAndWaitsForTheSocket(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	fresh := m.Files()
 	m.StartDelay = 300 * time.Millisecond
@@ -209,6 +211,7 @@ func TestServerInstallChecksFirstAndWaitsForTheSocket(t *testing.T) {
 // not only until the socket's file is there: here the file comes 300 ms
 // before the koko server listens, and initialisation still reaches it.
 func TestServerInstallWaitsUntilTheSocketAccepts(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	m.ListenDelay = 300 * time.Millisecond
 	install(t, m, "--owner", "alice")
@@ -219,6 +222,7 @@ func TestServerInstallWaitsUntilTheSocketAccepts(t *testing.T) {
 // to open, and the one koko join line for the Owner's first device; never
 // the Root Key.
 func TestServerInstallForPeople(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	r := m.Koko("server", "install", "--owner", "alice")
 	r.WantSuccess(t)
@@ -247,6 +251,7 @@ func TestServerInstallForPeople(t *testing.T) {
 // --port makes the koko server listen on another port: install checks that
 // one, writes it into the unit and names it as the port to open.
 func TestServerInstallOnAnotherPort(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	m.Listening[443] = portowner.Process{PID: 812, Name: "nginx", User: "www-data"}
 	out := install(t, m, "--owner", "alice", "--port", "8443")
@@ -268,6 +273,7 @@ func TestServerInstallOnAnotherPort(t *testing.T) {
 // With --address, install initialises with that Server Address and never
 // asks for the machine's IP.
 func TestServerInstallWithAnAddress(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	out := install(t, m, "--owner", "alice", "--address", "koko.example.com")
 	code, err := joincode.Decode(out.JoinCode.Code)
@@ -285,6 +291,7 @@ func TestServerInstallWithAnAddress(t *testing.T) {
 // Every refusal comes before install writes anything, and says how to go
 // on.
 func TestServerInstallRefusals(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		setup  func(m *harness.Machine)
@@ -362,6 +369,7 @@ func TestServerInstallRefusals(t *testing.T) {
 // names an address devices elsewhere cannot reach: RFC 1918, CGNAT, IPv6
 // ULA, loopback and link-local.
 func TestServerInstallRefusesAPrivateSourceIP(t *testing.T) {
+	t.Parallel()
 	for _, ip := range []string{"10.1.2.3", "172.16.0.9", "192.168.1.20", "100.64.0.1", "fd12:3456::1", "127.0.0.1", "169.254.0.5", "fe80::1"} {
 		t.Run(ip, func(t *testing.T) {
 			m := harness.NewMachine(t)
@@ -384,6 +392,7 @@ func TestServerInstallRefusesAPrivateSourceIP(t *testing.T) {
 // running as sd_booted does, by /run/systemd/system, and refuses before it
 // asks the machine anything or writes anything.
 func TestServerInstallRefusesWithoutSystemdRunning(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	if err := os.Remove(m.Path("/run/systemd/system")); err != nil {
 		t.Fatal(err)
@@ -406,6 +415,7 @@ func TestServerInstallRefusesWithoutSystemdRunning(t *testing.T) {
 // A flag value that could never work is refused before install asks the
 // machine anything.
 func TestServerInstallRefusesBadFlags(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		args []string
 		says string
@@ -437,6 +447,7 @@ func TestServerInstallRefusesBadFlags(t *testing.T) {
 // Until initialisation has succeeded, running install again finishes the
 // job: here, after a run refused for its address.
 func TestServerInstallAgainAfterARefusedAddress(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	m.Source = netip.MustParseAddr("10.0.0.5")
 	m.Koko("server", "install", "--owner", "alice", "--json").WantError(t, 2, "invalid_usage")
@@ -453,6 +464,7 @@ func TestServerInstallAgainAfterARefusedAddress(t *testing.T) {
 // sealed under it yet, and finishes the job, waiting for a service that
 // takes longer to open its socket than the first run waited.
 func TestServerInstallAgainAfterTheServiceDidNotStart(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	m.NoSocket = true
 	r := m.Koko("server", "install", "--owner", "alice", "--json")
@@ -480,6 +492,7 @@ func TestServerInstallAgainAfterTheServiceDidNotStart(t *testing.T) {
 // it is and made root's alone; one that does not parse is left as it is,
 // never replaced.
 func TestServerInstallKeepsARootKeyFileThere(t *testing.T) {
+	t.Parallel()
 	keep := func(t *testing.T, m *harness.Machine, text []byte, mode fs.FileMode) {
 		t.Helper()
 		if err := os.MkdirAll(m.Path("/etc/koko"), 0o755); err != nil {
@@ -527,6 +540,7 @@ func TestServerInstallKeepsARootKeyFileThere(t *testing.T) {
 // A build without the koko server (every OS but Linux) refuses to install it,
 // as it refuses to run it.
 func TestServerInstallWhereTheBuildHasNoServer(t *testing.T) {
+	t.Parallel()
 	r := harness.Run(t, cli.Runner{}, nil, "server", "install", "--owner", "alice", "--json")
 	msg := r.WantError(t, 1, "unsupported_platform")
 	if !strings.Contains(msg, "Linux only") {

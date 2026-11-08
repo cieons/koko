@@ -27,6 +27,7 @@ type uninstalled struct {
 // their paths, with the port the koko server listened on; there is no
 // purge.
 func TestServerUninstall(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	install(t, m, "--owner", "alice")
 	key := readFile(t, m, "/etc/koko/root.key")
@@ -84,6 +85,7 @@ func TestServerUninstall(t *testing.T) {
 // For people, uninstall says what it removed and where what it kept is, and
 // how to install koko again on it, on the port it listened on.
 func TestServerUninstallForPeople(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	install(t, m, "--owner", "alice", "--port", "8443")
 	r := m.Koko("server", "uninstall")
@@ -107,6 +109,7 @@ func TestServerUninstallForPeople(t *testing.T) {
 // then runs the koko server again on the data uninstall kept: it is the
 // upgrade of the koko server initialised there.
 func TestServerUninstallAgainThenInstall(t *testing.T) {
+	t.Parallel()
 	m := harness.NewMachine(t)
 	before := install(t, m, "--owner", "alice")
 	m.Koko("server", "uninstall", "--json").WantSuccess(t)
@@ -138,6 +141,7 @@ func TestServerUninstallAgainThenInstall(t *testing.T) {
 // A build without the koko server (every OS but Linux) refuses to uninstall
 // it, as it refuses to install it.
 func TestServerUninstallWhereTheBuildHasNoServer(t *testing.T) {
+	t.Parallel()
 	r := harness.Run(t, cli.Runner{}, nil, "server", "uninstall", "--json")
 	msg := r.WantError(t, 1, "unsupported_platform")
 	if !strings.Contains(msg, "Linux only") {
@@ -148,6 +152,7 @@ func TestServerUninstallWhereTheBuildHasNoServer(t *testing.T) {
 // Install and uninstall change the machine, and install prints a
 // credential, so both are in the irreversible tier (ADR 0019).
 func TestServerInstallAndUninstallAreIrreversible(t *testing.T) {
+	t.Parallel()
 	for _, path := range []string{"server install", "server uninstall"} {
 		i := slices.IndexFunc(cli.Tree(), func(c cli.Command) bool { return c.Path() == path })
 		if i < 0 {

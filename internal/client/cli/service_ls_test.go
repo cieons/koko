@@ -31,6 +31,7 @@ func serviceNames(t *testing.T, run func(args ...string) harness.Result, args ..
 // caller can see, by Host and then by name, each in natural order, without
 // their Notes: a Service lives in its Host's Space.
 func TestServiceLsListsTheServicesOnTheHostsTheCallerCanSee(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	h.Koko("user", "invite", "carol").WantSuccess(t)
@@ -76,6 +77,7 @@ func TestServiceLsListsTheServicesOnTheHostsTheCallerCanSee(t *testing.T) {
 // service ls filters by host= and by the Services' own Attributes, with
 // every operator host ls takes, and sorts by them.
 func TestServiceLsFiltersByHostAndByAttribute(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1", "provider=hetzner")
 	addHost(t, h.Koko, "web2")
@@ -112,6 +114,7 @@ func TestServiceLsFiltersByHostAndByAttribute(t *testing.T) {
 // service ls takes the fields of a Service, not of its Host, and refuses a
 // malformed term before any call, as host ls does.
 func TestServiceLsRefusesAFilterBeforeAnyCall(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	for _, args := range [][]string{
 		{"space=ops"},
@@ -132,6 +135,7 @@ func TestServiceLsRefusesAFilterBeforeAnyCall(t *testing.T) {
 // --with-note brings each Service's Note into the list, null for one with
 // none.
 func TestServiceLsWithNote(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	h.Koko("service", "add", "web1/nginx", "--note-file", hostNoteFile(t, "First line.\nSecond line.\n")).WantSuccess(t)
@@ -148,6 +152,7 @@ func TestServiceLsWithNote(t *testing.T) {
 }
 
 func TestServiceLsForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	if r := h.Koko("service", "ls"); r.Stdout != "No Services.\n" {
 		t.Errorf("service ls with no Service printed %q", r.Stdout)

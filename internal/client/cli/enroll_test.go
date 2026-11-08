@@ -176,6 +176,7 @@ func wantOneLoginWith(t *testing.T, host *sshhost.Host, method string, key ssh.P
 // Account's authorized_keys, which it creates with ~/.ssh when they are
 // missing, and prints the Host.
 func TestEnrollWithThePasswordOnStdinMakesTheHostManaged(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := sshhost.Start(t, sshhost.Password(hostPassword))
 	addHostAt(t, h.Koko, "web1", host)
@@ -214,6 +215,7 @@ func TestEnrollWithThePasswordOnStdinMakesTheHostManaged(t *testing.T) {
 // With no input flag on a terminal, Enroll asks for the password with echo
 // off, and says for people what it pinned.
 func TestEnrollPromptsForThePasswordOnATerminal(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := sshhost.Start(t, sshhost.Password(hostPassword))
 	added := addHostAt(t, h.Koko, "web1", host)
@@ -235,6 +237,7 @@ func TestEnrollPromptsForThePasswordOnATerminal(t *testing.T) {
 // never with the koko key; the Host's own keys stay in authorized_keys
 // before the koko key.
 func TestEnrollWithAPrivateKeyFile(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	key := newUserKey(t, "")
 	host := sshhost.Start(t, sshhost.AuthorizedKey(key.pub))
@@ -254,6 +257,7 @@ func TestEnrollWithAPrivateKeyFile(t *testing.T) {
 // and is decrypted on the device. Without a terminal, or with a passphrase
 // that does not open it, it is refused with exit 2 before any call.
 func TestEnrollWithAnEncryptedKeyAsksForItsPassphrase(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	key := newUserKey(t, "open sesame")
 	host := sshhost.Start(t, sshhost.AuthorizedKey(key.pub))
@@ -284,6 +288,7 @@ func TestEnrollWithAnEncryptedKeyAsksForItsPassphrase(t *testing.T) {
 // read, a Secret named without its Space, and a password that is empty once
 // its line ending is dropped.
 func TestEnrollRefusesWhatItCannotUseBeforeAnyCall(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := sshhost.Start(t, sshhost.Password(hostPassword))
 	addHostAt(t, h.Koko, "web1", host)
@@ -329,6 +334,7 @@ func TestEnrollRefusesWhatItCannotUseBeforeAnyCall(t *testing.T) {
 // refused with both fingerprints, before koko sends it anything to log in
 // with, and stays Registered with no pin.
 func TestEnrollWithHostKeyAcceptsOnlyThatKey(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := sshhost.Start(t, sshhost.Password(hostPassword))
 	addHostAt(t, h.Koko, "web1", host)
@@ -355,6 +361,7 @@ func TestEnrollWithHostKeyAcceptsOnlyThatKey(t *testing.T) {
 // that pin; a Managed Host Enrolls again only to pin a new host key; and
 // Enrolling again leaves the koko key's line as it is.
 func TestTheHostStatesFollowEnroll(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := sshhost.Start(t, sshhost.Password(hostPassword))
 	addHostAt(t, h.Koko, "web1", host)
@@ -390,6 +397,7 @@ func TestTheHostStatesFollowEnroll(t *testing.T) {
 // alike. --replace-host-key pins the key it offers now once the login
 // succeeds, and the log records the old and the new fingerprint.
 func TestEnrollRefusesAChangedHostKeyUntilItIsReplaced(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := sshhost.Start(t, sshhost.Password(hostPassword))
 	rebuilt := sshhost.Start(t, sshhost.Password(hostPassword))
@@ -432,6 +440,7 @@ func TestEnrollRefusesAChangedHostKeyUntilItIsReplaced(t *testing.T) {
 // already, and --host-key naming the new key, or --replace-host-key, pins
 // the key it offers now and keeps it Managed.
 func TestAManagedHostEnrollsAgainToPinANewHostKey(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := sshhost.Start(t, sshhost.Password(hostPassword))
 	addHostAt(t, h.Koko, "web1", host)
@@ -458,6 +467,7 @@ func TestAManagedHostEnrollsAgainToPinANewHostKey(t *testing.T) {
 // it is when a line holds the koko key already, whatever its options and
 // comment; a line that is a comment does not count.
 func TestEnrollChangesNothingElseInAuthorizedKeys(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	first := sshhost.Start(t, sshhost.Password(hostPassword))
 	addHostAt(t, h.Koko, "web0", first)
@@ -498,6 +508,7 @@ func TestEnrollChangesNothingElseInAuthorizedKeys(t *testing.T) {
 // A Host that refuses the login, cannot be reached, or cannot take the
 // koko key stays Registered with no pin, and the log says why.
 func TestAFailedEnrollLeavesTheHostRegistered(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t, harness.Timings(timing.Timings{HostConnectWait: time.Millisecond}))
 	refusing := sshhost.Start(t, sshhost.Password("another password"))
 	addHostAt(t, h.Koko, "web1", refusing)
@@ -537,6 +548,7 @@ func TestAFailedEnrollLeavesTheHostRegistered(t *testing.T) {
 // even once a Host Account change has sent it back to Registered: it can
 // only be kept on record.
 func TestHostRmIsRefusedOnceAHostHasAPin(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := sshhost.Start(t, sshhost.Password(hostPassword))
 	addHostAt(t, h.Koko, "web1", host)
@@ -551,7 +563,7 @@ func TestHostRmIsRefusedOnceAHostHasAPin(t *testing.T) {
 
 // The caller dropping its call does not cancel a running Enroll: the login
 // it began goes on, the koko key is added, and the Host ends up Managed.
-func TestADroppedCallDoesNotCancelARunningEnroll(t *testing.T) {
+func aDroppedCallDoesNotCancelARunningEnroll(t *testing.T) {
 	h := harness.Start(t)
 	host := sshhost.Start(t, sshhost.Password(hostPassword), sshhost.SlowLogins(300*time.Millisecond))
 	addHostAt(t, h.Koko, "web1", host)
@@ -585,7 +597,7 @@ func TestADroppedCallDoesNotCancelARunningEnroll(t *testing.T) {
 // The login runs outside the write's transaction, so a Host whose Host
 // Account changes meanwhile is not recorded as Managed: the koko key went
 // to the Host Account Enroll logged in as.
-func TestEnrollRecordsNothingWhenTheHostChangesMeanwhile(t *testing.T) {
+func enrollRecordsNothingWhenTheHostChangesMeanwhile(t *testing.T) {
 	h := harness.Start(t)
 	host := sshhost.Start(t, sshhost.Password(hostPassword), sshhost.SlowLogins(500*time.Millisecond))
 	addHostAt(t, h.Koko, "web1", host)
@@ -635,6 +647,7 @@ func eventually(t *testing.T, what string, cond func() bool) {
 // Enroll reaches any output, the koko server's log or its database, in any
 // form it travels in, for an Enroll that succeeds or fails.
 func TestNoEnrollInputIsStoredOrLogged(t *testing.T) {
+	t.Parallel()
 	dataDir := t.TempDir()
 	h := harness.Start(t, harness.DataDir(dataDir))
 	const passphrase = "open sesame, but only here"

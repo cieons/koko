@@ -83,6 +83,7 @@ func deref[T any](p *T) any {
 // koko server's, as it reported it on connecting; there is nothing to warn
 // about. It makes no API call.
 func TestStatusOnAJoinedDevice(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	d := h.Join(harness.Owner)
 	c := readClientConfig(t, d)
@@ -118,6 +119,7 @@ func TestStatusOnAJoinedDevice(t *testing.T) {
 // On the koko server's own machine, commands reach it over its Unix socket
 // as the Local caller, and koko status says so; nothing has joined there.
 func TestStatusOverTheSocket(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	s, out := status(t, h.Koko, h.Socket(), "<socket>")
 	harness.Golden(t, "status-socket.json", out)
@@ -134,6 +136,7 @@ func TestStatusOverTheSocket(t *testing.T) {
 // A device that has not joined is told so, with the code any command would
 // fail with; koko status itself succeeds, since saying so is its purpose.
 func TestStatusOnADeviceThatHasNotJoined(t *testing.T) {
+	t.Parallel()
 	d := harness.NewDevice(t)
 	s, out := status(t, d.Koko)
 	harness.Golden(t, "status-not-joined.json", regexp.MustCompile(`\(nothing at [^)]*\)`).ReplaceAllString(out, "(nothing at <socket>)"))
@@ -145,6 +148,7 @@ func TestStatusOnADeviceThatHasNotJoined(t *testing.T) {
 // A device whose Device Session was Revoked learns it from koko status
 // itself, which then shows the revocation record and no join.
 func TestStatusShowsTheRevocationRecord(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Join(harness.Owner)
 	laptop, laptopID := joinAs(t, deviceAdd(t, h, "laptop"))
@@ -166,6 +170,7 @@ func TestStatusShowsTheRevocationRecord(t *testing.T) {
 // A koko server that does not answer is shown as such, with the device's
 // join; koko status still succeeds.
 func TestStatusWhenTheKokoServerIsUnreachable(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	d := h.Join(harness.Owner)
 	d.UseTimings(timing.Timings{CommandWait: 200 * time.Millisecond})
@@ -180,7 +185,7 @@ func TestStatusWhenTheKokoServerIsUnreachable(t *testing.T) {
 // it: its socket, and connected since it opened its Device Connection. Once
 // the koko server stops, the Device Mux is reconnecting since the drop, and
 // its last error is what status's own connection failed with.
-func TestStatusShowsTheDeviceMux(t *testing.T) {
+func statusShowsTheDeviceMux(t *testing.T) {
 	h, _, d := muxDevice(t, timing.Timings{CommandWait: 200 * time.Millisecond})
 	c := readClientConfig(t, d)
 	socket := filepath.Join(d.RuntimeDir(), "koko", devicemux.Name(build.Read())+".sock")
@@ -220,6 +225,7 @@ func TestStatusShowsTheDeviceMux(t *testing.T) {
 
 // Without a Device Mux, on the direct path, koko status shows none.
 func TestStatusShowsNoDeviceMuxOnTheDirectPath(t *testing.T) {
+	t.Parallel()
 	_, _, d := muxDevice(t, timing.Timings{})
 	r := d.KokoEnv([]string{"KOKO_DIRECT=1"}, "status", "--json")
 	r.WantSuccess(t)
@@ -232,6 +238,7 @@ func TestStatusShowsNoDeviceMuxOnTheDirectPath(t *testing.T) {
 // or includes it below a Host or Match line, where ssh reads it only for
 // that block's hosts; a file it cannot read is reported as such.
 func TestStatusWarnsWhenSSHDoesNotReadKokosSSHConfig(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	d := h.Join(harness.Owner)
 	const missing = `~/.ssh/config does not include koko's ssh_config, so ssh does not reach Hosts through koko: add the line "` + includeLine + `" at its top`

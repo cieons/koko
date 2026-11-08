@@ -48,6 +48,7 @@ func contents(t *testing.T, dir string) map[string]string {
 // A restart with the Root Key the data was sealed under opens the koko
 // server's keys: it logs the host key initialisation made.
 func TestServerRunOpensTheSealedKeysWithTheirRootKey(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	dataDir, keyFile := filepath.Join(root, "data"), filepath.Join(root, "etc", "root.key")
 	newKeyFile(t, keyFile)
@@ -64,6 +65,7 @@ func TestServerRunOpensTheSealedKeysWithTheirRootKey(t *testing.T) {
 
 // Before initialisation the start-up log says so, and names no host key.
 func TestServerRunBeforeInitialisation(t *testing.T) {
+	t.Parallel()
 	keyFile := filepath.Join(t.TempDir(), "root.key")
 	newKeyFile(t, keyFile)
 	r := serverRun(t, t.TempDir(), keyFile)
@@ -77,6 +79,7 @@ func TestServerRunBeforeInitialisation(t *testing.T) {
 // needs, and nothing is written, in the data directory or beside the Root
 // Key file (P0 spec: Secrets, stories 43 and 44).
 func TestServerRunRefusesAnotherRootKeyOverSealedData(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		// replace changes the Root Key file at path and returns the key

@@ -37,6 +37,7 @@ func attrKeys(t *testing.T, run func(args ...string) harness.Result) []printedAt
 // Preset table, then every other key in use, by key, each saying whether
 // something has it.
 func TestAttrLsPrintsThePresetsAndTheKeysInUse(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	recordHost(t, h.Koko, "web1", "price=10", "os=debian", "cores=8")
 	recordHost(t, h.Koko, "web2", "cores=16")
@@ -89,6 +90,7 @@ func TestAttrLsPrintsThePresetsAndTheKeysInUse(t *testing.T) {
 // A key in use only in a Space the caller cannot act in is answered as if
 // nothing held it; the Owner sees every Space's.
 func TestAttrLsListsTheKeysInUseOnWhatTheCallerCanSee(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	h.Koko("user", "invite", "carol").WantSuccess(t)

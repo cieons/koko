@@ -73,6 +73,7 @@ func muxSocket(d *harness.Device) string {
 // key it answered with, its version and the Device Mux; with KOKO_DIRECT=1
 // it goes direct, and shows no Device Mux.
 func TestKokoConnectChecksThePinnedHostKeyThroughTheDeviceMux(t *testing.T) {
+	t.Parallel()
 	_, _, d := muxDevice(t, timing.Timings{})
 	c := readClientConfig(t, d)
 	d.Koko("disconnect").WantSuccess(t)
@@ -114,7 +115,7 @@ func TestKokoConnectChecksThePinnedHostKeyThroughTheDeviceMux(t *testing.T) {
 // key, an address nothing answers at and an address without a port each
 // leave the device's address as it was. Once it takes one, commands reach
 // the koko server there, the host keys pinned unchanged.
-func TestKokoConnectTakesANewAddressOnlyWhereThePinnedHostKeyAnswers(t *testing.T) {
+func kokoConnectTakesANewAddressOnlyWhereThePinnedHostKeyAnswers(t *testing.T) {
 	_, fwd, listen, init := initThroughWith(t, timing.Timings{})
 	d := harness.NewMuxDevice(t, timing.Timings{CommandWait: 300 * time.Millisecond, ReconnectFirst: 20 * time.Millisecond, ReconnectMax: 40 * time.Millisecond})
 	d.Koko("join", init.JoinCode.Code).WantSuccess(t)
@@ -172,7 +173,7 @@ func TestKokoConnectTakesANewAddressOnlyWhereThePinnedHostKeyAnswers(t *testing.
 // same Root Key start a second koko server elsewhere, which keeps every
 // record and every Secret, and which a device joined to the first reaches
 // with the host key it pinned, once koko connect gives it the new address.
-func TestARestoredKokoServerKeepsItsDevicesPins(t *testing.T) {
+func aRestoredKokoServerKeepsItsDevicesPins(t *testing.T) {
 	dataDir, rootKey := t.TempDir(), harness.NewRootKeyFile(t)
 	first := harness.Start(t, harness.DataDir(dataDir), harness.RootKeyFile(rootKey))
 	d := first.Join(harness.Owner)

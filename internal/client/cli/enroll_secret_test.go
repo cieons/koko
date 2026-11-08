@@ -28,6 +28,7 @@ import (
 // secret add is dropped, as --password-stdin drops it. The Secret stays as
 // it was.
 func TestEnrollWithASecretHoldingThePassword(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	host := sshhost.Start(t, sshhost.Password(hostPassword))
 	addHostAt(t, h.Koko, "web1", host)
@@ -54,6 +55,7 @@ func TestEnrollWithASecretHoldingThePassword(t *testing.T) {
 // its file: Enroll logs in with it once, by public key, and never with the
 // koko key.
 func TestEnrollWithASecretHoldingAPrivateKey(t *testing.T) {
+	t.Parallel()
 	openSSH := newUserKey(t, "")
 	indented := filepath.Join(t.TempDir(), "indented")
 	if err := os.WriteFile(indented, append([]byte(" \t"), openSSH.file...), 0o600); err != nil {
@@ -104,6 +106,7 @@ func TestEnrollWithASecretHoldingAPrivateKey(t *testing.T) {
 // can read grants no Host they cannot see either. Membership is read on
 // every call, so a Member given the Space Enrolls with its Secret at once.
 func TestEnrollWithASecretTheCallerCannotReadIsRefused(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.Koko("space", "add", "vault").WantSuccess(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
@@ -140,6 +143,7 @@ func TestEnrollWithASecretTheCallerCannotReadIsRefused(t *testing.T) {
 // holds no private key, which is never tried as a password; and a line
 // ending alone.
 func TestEnrollRefusesASecretItCannotUse(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	host := sshhost.Start(t, sshhost.Password(hostPassword))
 	addHostAt(t, h.Koko, "web1", host)
@@ -172,6 +176,7 @@ func TestEnrollRefusesASecretItCannotUse(t *testing.T) {
 // the koko server's data directory holds the value only sealed, as the
 // Secret.
 func TestASecretsValueNeverReachesTheDeviceThatEnrolls(t *testing.T) {
+	t.Parallel()
 	dataDir := t.TempDir()
 	h := harness.Start(t, harness.DataDir(dataDir))
 	h.Koko("space", "add", "ops").WantSuccess(t)

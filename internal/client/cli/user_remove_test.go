@@ -33,6 +33,7 @@ func userRemove(t *testing.T, run func(...string) harness.Result, args ...string
 // memberships, their Join Codes and their empty Personal Space go with them,
 // and the name is free again.
 func TestUserRemoveDeletesAUserWhoNeverJoined(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	inv := userInvite(t, h, "bob")
 	h.Koko("space", "add", "ops").WantSuccess(t)
@@ -71,6 +72,7 @@ func TestUserRemoveDeletesAUserWhoNeverJoined(t *testing.T) {
 // Join Codes and those their devices issued; takes them out of every Space;
 // and keeps them on record, Removed, with their Device Sessions.
 func TestUserRemoveRemovesAUserWhoJoined(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	inv := userInvite(t, h, "bob")
 	laptop, laptopID := joinAs(t, inv.JoinCode)
@@ -134,6 +136,7 @@ func TestUserRemoveRemovesAUserWhoJoined(t *testing.T) {
 // Owner renames it, gives it Members, moves its Hosts out and removes it
 // once it is empty; the Removed User's name stays theirs throughout.
 func TestARemovedUsersPersonalSpacePassesToTheOwner(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	userInvite(t, h, "bob")
 	userInvite(t, h, "carol")
@@ -176,6 +179,7 @@ func TestARemovedUsersPersonalSpacePassesToTheOwner(t *testing.T) {
 // again. Each refusal says they were Removed and changes nothing. Taking
 // them out of a Space, which they are in no more, is harmless.
 func TestARemovedUserGetsNoJoinCodeAndJoinsNoSpace(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	userInvite(t, h, "bob")
 	userInvite(t, h, "carol")
@@ -204,6 +208,7 @@ func TestARemovedUserGetsNoJoinCodeAndJoinsNoSpace(t *testing.T) {
 // joins, when they have never joined, and not after, whoever asks. The
 // refusal changes nothing.
 func TestTheOwnerIsNeverRemoved(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	// Initialisation's Join Code is still unused: the Owner never joined.
 	r := h.Koko("user", "remove", harness.Owner, "--json")
@@ -221,6 +226,7 @@ func TestTheOwnerIsNeverRemoved(t *testing.T) {
 // For people, user remove says whether it deleted or Removed the User, and
 // what that did.
 func TestUserRemoveForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	bob := userInvite(t, h, "bob")
 	carol := userInvite(t, h, "carol")
@@ -243,6 +249,7 @@ func TestUserRemoveForPeople(t *testing.T) {
 // Space holds a record, user remove refuses, naming what is left, and
 // changes nothing; once it is empty, it deletes them.
 func TestUserRemoveRefusesToDeleteAUserWhosePersonalSpaceHoldsARecord(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	userInvite(t, h, "bob")
 	h.Koko("host", "add", "web1", "address=203.0.113.10", "account=deploy", "space=bob").WantSuccess(t)

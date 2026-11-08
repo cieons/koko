@@ -51,6 +51,7 @@ func fingerprintOf(c joincode.Code) string {
 // valid for 15 minutes from its issue, naming the koko server's Server
 // Address with its listen port and its host key.
 func TestDeviceAddIssuesAJoinCodeForTheOwner(t *testing.T) {
+	t.Parallel()
 	listen := harness.FreeAddr(t)
 	_, port, _ := net.SplitHostPort(listen)
 	h := harness.Start(t, harness.NoInit(), harness.Listen(listen))
@@ -82,6 +83,7 @@ func TestDeviceAddIssuesAJoinCodeForTheOwner(t *testing.T) {
 // For people, device add says for whom and until when, then prints the one
 // koko join line to paste on the new device.
 func TestDeviceAddForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("device", "add", "laptop")
 	r.WantSuccess(t)
@@ -100,6 +102,7 @@ func TestDeviceAddForPeople(t *testing.T) {
 // User's valid Join Codes hold, so several codes can be valid at once
 // without colliding.
 func TestDeviceAddNamesTheDeviceAfterTheNamesTaken(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	// Initialisation's Join Code holds device-1.
 	var codes []string
@@ -126,6 +129,7 @@ func TestDeviceAddNamesTheDeviceAfterTheNamesTaken(t *testing.T) {
 // A name a valid Join Code of the User holds is refused; once the code has
 // expired, 15 minutes after its issue, the name is free again.
 func TestDeviceAddRefusesANameAValidJoinCodeHolds(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	deviceAdd(t, h, "laptop")
 	r := h.Koko("device", "add", "laptop", "--json")
@@ -146,6 +150,7 @@ func TestDeviceAddRefusesANameAValidJoinCodeHolds(t *testing.T) {
 
 // A device name is a lowercase DNS label.
 func TestDeviceAddRefusesAnInvalidName(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	for _, device := range []string{"Laptop", "lap_top", "laptop-", "a/b", strings.Repeat("a", 64)} {
 		h.Koko("device", "add", device, "--json").WantError(t, 1, "invalid_name")
@@ -157,6 +162,7 @@ func TestDeviceAddRefusesAnInvalidName(t *testing.T) {
 
 // --user names a User who is not there: unknown_user, and nothing issued.
 func TestDeviceAddRefusesAnUnknownUser(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("device", "add", "--user", "bob", "--json")
 	r.WantError(t, 1, "unknown_user")
@@ -173,6 +179,7 @@ func TestDeviceAddRefusesAnUnknownUser(t *testing.T) {
 // encoding. The responses of server.init, user.invite and device.add, kept
 // for their Idempotency-Keys, hold the codes sealed.
 func TestNoJoinCodeIsStoredOrLogged(t *testing.T) {
+	t.Parallel()
 	dataDir := t.TempDir()
 	h := harness.Start(t, harness.NoInit(), harness.DataDir(dataDir))
 	init, err := h.Call(api.ServerInit, api.ServerInitRequest{Owner: harness.Owner, Address: harness.Address})
@@ -266,6 +273,7 @@ func readDir(t *testing.T, dir string) map[string][]byte {
 // owner_only, which says nothing of whether that User exists. The device the
 // Member's code joins acts as the Member too.
 func TestAJoinedMemberAddsDevicesForThemselvesOnly(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	bob := h.Join("bob")
@@ -297,6 +305,7 @@ func TestAJoinedMemberAddsDevicesForThemselvesOnly(t *testing.T) {
 // The Owner's joined device issues for the Owner, and for any other User
 // with --user.
 func TestAJoinedOwnerAddsDevicesForAnyUser(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	alice := h.Join(harness.Owner)
@@ -350,6 +359,7 @@ func joinAs(t *testing.T, jc joinCodeOut) (*harness.Device, string) {
 // socket, or the Device Session that issued its Join Code, by id and name),
 // and its created and last used times.
 func TestDeviceLsListsEveryDeviceSessionForTheOwner(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	_, desktopID := joinAs(t, deviceAdd(t, h, "desktop", "--user", "bob"))
@@ -385,6 +395,7 @@ func TestDeviceLsListsEveryDeviceSessionForTheOwner(t *testing.T) {
 // that moves its last used time, kept to the minute, and nothing done on
 // another connection does.
 func TestDeviceLsShowsWhenADeviceWasLastUsed(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	laptop, id := joinAs(t, deviceAdd(t, h, "laptop"))
 	wantLastUsed := func(when time.Time) {
@@ -418,6 +429,7 @@ func TestDeviceLsShowsWhenADeviceWasLastUsed(t *testing.T) {
 // naming another User is refused with owner_only, which says nothing of
 // whether that User exists. The Owner's --user narrows the list to one User.
 func TestDeviceLsShowsAMemberOnlyTheirOwn(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	h.Join(harness.Owner)
@@ -447,6 +459,7 @@ func TestDeviceLsShowsAMemberOnlyTheirOwn(t *testing.T) {
 // device, by <user>/<device> or the Unix socket, and with --all a REVOKED
 // column; with nothing to list, it says so.
 func TestDeviceLsForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("device", "ls")
 	r.WantSuccess(t)
@@ -485,6 +498,7 @@ func orNull(s *string) string {
 // A live Device Session holds its name as a valid Join Code does, and
 // device-<n> counts from one past the Device Sessions the User has had.
 func TestDeviceAddNamesPastLiveDeviceSessions(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Advance(15 * time.Minute) // initialisation's code for device-1 expires
 	d := harness.NewDevice(t)

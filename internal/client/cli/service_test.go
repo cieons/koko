@@ -41,6 +41,7 @@ func decodeService(t *testing.T, r harness.Result) printedService {
 // every field: its id, name, Host, ports, Attributes and Note, null for
 // none.
 func TestServiceAddPrintsTheServiceItMade(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	r := h.Koko("service", "add", "web1/nginx", "ports=443/tcp,80", "--json")
@@ -57,6 +58,7 @@ func TestServiceAddPrintsTheServiceItMade(t *testing.T) {
 }
 
 func TestServiceAddForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	r := h.Koko("service", "add", "web1/nginx")
@@ -76,6 +78,7 @@ func showService(t *testing.T, run func(args ...string) harness.Result, ref stri
 // A Service takes Attributes, typed as a Host's, and a Note from
 // --note-file, beside its ports; service show prints all of them.
 func TestServiceAddRecordsPortsAttributesAndANote(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	note := "Terminates TLS for the shop.\nConfig in /etc/nginx.\n"
@@ -97,6 +100,7 @@ func TestServiceAddRecordsPortsAttributesAndANote(t *testing.T) {
 // A Service with no ports, such as a worker or a scheduled job, prints an
 // empty set.
 func TestAServiceMayListenOnNoPorts(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	if got := decodeService(t, h.Koko("service", "add", "web1/backup", "--json")); got.Ports == nil || len(got.Ports) != 0 {
@@ -110,6 +114,7 @@ func TestAServiceMayListenOnNoPorts(t *testing.T) {
 }
 
 func TestServiceShowForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	h.Koko("service", "add", "web1/nginx", "ports=443,80", "kind=proxy", "--note-file", hostNoteFile(t, "Runs TLS.")).WantSuccess(t)
@@ -134,6 +139,7 @@ func TestServiceShowForPeople(t *testing.T) {
 // cannot see answers, for each of its Services, exactly as a Host that does
 // not exist.
 func TestAServiceTheCallerCannotSeeAnswersAsUnknown(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	h.Koko("user", "invite", "carol").WantSuccess(t)
@@ -170,6 +176,7 @@ func TestAServiceTheCallerCannotSeeAnswersAsUnknown(t *testing.T) {
 // A Service name is a lowercase DNS label, unique on its Host: nginx can
 // run on many Hosts, but only once on each.
 func TestServiceNamesAreUniqueOnTheirHost(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	addHost(t, h.Koko, "web2")
@@ -194,6 +201,7 @@ func TestServiceNamesAreUniqueOnTheirHost(t *testing.T) {
 // the ports, the Attribute keys and values, and the fields a Service does
 // not take.
 func TestServiceValuesThatBreakTheirRulesAreRefusedBeforeAnyCall(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	calls := h.Calls()
@@ -234,6 +242,7 @@ func TestServiceValuesThatBreakTheirRulesAreRefusedBeforeAnyCall(t *testing.T) {
 // service set changes only what it names, and ports= replaces the whole
 // set.
 func TestServiceSetChangesOnlyWhatItNames(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	bob := h.Join("bob")
@@ -260,6 +269,7 @@ func TestServiceSetChangesOnlyWhatItNames(t *testing.T) {
 // --unset clears an Attribute, the Note, or every port; --note-file
 // replaces the Note.
 func TestServiceSetUnsetClearsAnAttributeTheNoteOrThePorts(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	h.Koko("service", "add", "web1/nginx", "ports=443", "kind=proxy", "team=web", "--note-file", hostNoteFile(t, "Old.")).WantSuccess(t)
@@ -278,6 +288,7 @@ func TestServiceSetUnsetClearsAnAttributeTheNoteOrThePorts(t *testing.T) {
 // service set takes neither name nor host, which are rename's or never
 // change, and needs something to change; each is refused before any call.
 func TestServiceSetRefusals(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	h.Koko("service", "add", "web1/nginx", "ports=443", "--note-file", hostNoteFile(t, "A Note.")).WantSuccess(t)
@@ -315,6 +326,7 @@ func TestServiceSetRefusals(t *testing.T) {
 // everything else; a name another Service on the Host holds is refused, and
 // a new name never names another Host.
 func TestServiceRename(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	addHost(t, h.Koko, "web2")
@@ -350,6 +362,7 @@ func TestServiceRename(t *testing.T) {
 
 // service rm deletes a Service and prints it as it was, Note and all.
 func TestServiceRm(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	h.Koko("service", "add", "web1/nginx", "ports=443", "kind=proxy", "--note-file", hostNoteFile(t, "Gone soon.")).WantSuccess(t)
@@ -380,6 +393,7 @@ func TestServiceRm(t *testing.T) {
 // which follow it to whoever can act in its new Space, and a renamed Host's
 // Services go by its new name.
 func TestAMovedOrRenamedHostKeepsItsServices(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	bob := h.Join("bob")
@@ -411,6 +425,7 @@ func TestAMovedOrRenamedHostKeepsItsServices(t *testing.T) {
 // host rm deletes a Host never Managed with its Services, and a new Host
 // under its name has none of them.
 func TestHostRmDeletesItsServices(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	addHost(t, h.Koko, "web2")
@@ -432,6 +447,7 @@ func TestHostRmDeletesItsServices(t *testing.T) {
 // ports, so one command answers what runs there; its --json stays the Host
 // as host ls prints one.
 func TestHostShowListsItsServicesForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addHost(t, h.Koko, "web1")
 	addHost(t, h.Koko, "web2")
@@ -462,6 +478,7 @@ func TestHostShowListsItsServicesForPeople(t *testing.T) {
 // attr ls lists the keys in use on the Services the caller can see as well
 // as on the Hosts, and a Preset has the same type on both.
 func TestAttrLsListsTheKeysInUseOnServices(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	h.Koko("user", "invite", "carol").WantSuccess(t)
@@ -498,6 +515,7 @@ func TestAttrLsListsTheKeysInUseOnServices(t *testing.T) {
 
 // A Host id stands wherever a Host name does in <host>/<service>.
 func TestAHostIDStandsForItsNameInAServicesName(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	id := addHost(t, h.Koko, "web1").ID
 	added := decodeService(t, h.Koko("service", "add", id+"/nginx", "--json"))

@@ -18,6 +18,7 @@ var shapesTree = []Command{
 func noEnv(string) string { return "" }
 
 func TestParseShapes(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		argv  []string
 		path  string
@@ -58,6 +59,7 @@ func TestParseShapes(t *testing.T) {
 }
 
 func TestParseRefusesShapes(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		argv    []string
 		message string
@@ -112,6 +114,7 @@ var writeTree = []Command{
 }
 
 func TestParseWrites(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		argv  []string
 		pairs []Pair
@@ -139,6 +142,7 @@ func TestParseWrites(t *testing.T) {
 }
 
 func TestParseRefusesWrites(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		argv    []string
 		message string
@@ -161,6 +165,7 @@ func TestParseRefusesWrites(t *testing.T) {
 }
 
 func TestParseQualifiedNames(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		argv            []string
 		arg             string
@@ -181,6 +186,7 @@ func TestParseQualifiedNames(t *testing.T) {
 }
 
 func TestParseRefusesQualifiedNames(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		argv    []string
 		message string
@@ -211,6 +217,7 @@ var manyTree = []Command{
 // An argument with Many takes every word left, in order, and needs one;
 // each word is checked as any argument is.
 func TestParseManyArguments(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		argv  []string
 		users []string
@@ -243,6 +250,7 @@ var optionalTree = []Command{
 
 // An optional argument may be left out; given, it is checked as any other.
 func TestParseOptionalArguments(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		argv []string
 		args map[string]string

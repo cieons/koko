@@ -7,8 +7,20 @@ linters:
     - errorlint
     - misspell
     - noctx
+    - paralleltest
     - unconvert
     - usestdlibvars
+  settings:
+    paralleltest:
+      ignore-missing-subtests: true
+  exclusions:
+    rules:
+      # Only the S1 tests run in parallel, each calling t.Parallel() unless
+      # it is a TestRealTime test or one Go refuses to run in parallel
+      # (docs/subsystems/code-layout.md, "Running the S1 tests").
+      - path-except: internal/client/cli/
+        linters:
+          - paralleltest
 
 formatters:
   enable:

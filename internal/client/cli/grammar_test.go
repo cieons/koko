@@ -10,6 +10,7 @@ import (
 // Each refusal of the command line exits 2 with the error on stderr only, and
 // the koko server sees no call.
 func TestCommandLineRefusals(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	for _, tc := range []struct {
 		name    string
@@ -46,6 +47,7 @@ func TestCommandLineRefusals(t *testing.T) {
 }
 
 func TestNoCommandLineAtAll(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko()
 	if r.Status != 2 || r.Stdout != "" || !strings.HasPrefix(r.Stderr, "koko: give a command") {
@@ -55,6 +57,7 @@ func TestNoCommandLineAtAll(t *testing.T) {
 
 // Without --json a refusal is one line for people on stderr.
 func TestRefusalForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("space", "ls", "--all")
 	if r.Status != 2 || r.Stdout != "" || r.Stderr != "koko: unknown flag --all for koko space ls\n" {
@@ -64,6 +67,7 @@ func TestRefusalForPeople(t *testing.T) {
 
 // Flags and arguments after the path come in any order.
 func TestFlagsAfterThePathInAnyOrder(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "--json", "ops").WantSuccess(t)
 	h.Koko("space", "add", "data", "--json").WantSuccess(t)

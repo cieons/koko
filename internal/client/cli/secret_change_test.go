@@ -35,6 +35,7 @@ func decodeSecret(t *testing.T, r harness.Result) secretRecord {
 // secret set replaces a Secret's value, from stdin or from a file, and
 // secret show then prints the new value as stored.
 func TestSecretSetReplacesTheValue(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.KokoStdin("old-s3cret", "secret", "add", "ops/db-password").WantSuccess(t)
 	h.KokoStdin("new-s3cret\n", "secret", "set", "ops/db-password").WantSuccess(t)
@@ -56,6 +57,7 @@ func TestSecretSetReplacesTheValue(t *testing.T) {
 // secret set --json prints the Secret it changed, without its value, its id
 // and created_at as they were and updated_at moved to the change.
 func TestSecretSetPrintsTheSecret(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	added := decodeSecret(t, h.KokoStdin("old-s3cret", "secret", "add", "ops/db-password", "--json"))
 	h.Advance(time.Hour)
@@ -71,6 +73,7 @@ func TestSecretSetPrintsTheSecret(t *testing.T) {
 }
 
 func TestSecretSetForPeople(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.KokoStdin("old-s3cret", "secret", "add", "ops/db-password").WantSuccess(t)
 	r := h.KokoStdin("new-s3cret", "secret", "set", "ops/db-password")
@@ -83,6 +86,7 @@ func TestSecretSetForPeople(t *testing.T) {
 // secret set on a Secret that does not exist fails and adds none, so a typo
 // never makes a second Secret.
 func TestSecretSetRefusesAnUnknownSecret(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.KokoStdin("s3cret", "secret", "add", "ops/db-password").WantSuccess(t)
 	r := h.KokoStdin("s3cret", "secret", "set", "ops/db-pasword", "--json")
@@ -98,6 +102,7 @@ func TestSecretSetRefusesAnUnknownSecret(t *testing.T) {
 // none without a terminal, is refused with exit 2 before any call, and the
 // value stays as it was.
 func TestSecretSetReadsItsValueAsSecretAddDoes(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.KokoStdin("s3cret", "secret", "add", "ops/db-password").WantSuccess(t)
 	calls := h.Calls()
@@ -126,6 +131,7 @@ func TestSecretSetReadsItsValueAsSecretAddDoes(t *testing.T) {
 // secret set refuses a value written as an argument with exit 2, before any
 // call, without repeating it, and the value stays as it was.
 func TestSecretSetRefusesAValueWrittenAsAnArgument(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.KokoStdin("s3cret", "secret", "add", "ops/db-password").WantSuccess(t)
 	calls := h.Calls()
@@ -146,6 +152,7 @@ func TestSecretSetRefusesAValueWrittenAsAnArgument(t *testing.T) {
 // The last secret set wins: two callers set one Secret in turn, and it
 // holds the later value. P0 has no revision check.
 func TestTheLastSecretSetWins(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	h.Koko("space", "member", "add", "ops", "bob").WantSuccess(t)
@@ -161,6 +168,7 @@ func TestTheLastSecretSetWins(t *testing.T) {
 // secret rename gives a Secret a new name in its Space: it keeps its id and
 // its value, and the old name names nothing.
 func TestSecretRenameKeepsTheSecret(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	added := decodeSecret(t, h.KokoStdin("s3cret", "secret", "add", "ops/db-password", "--json"))
 	h.Advance(time.Hour)
@@ -178,6 +186,7 @@ func TestSecretRenameKeepsTheSecret(t *testing.T) {
 }
 
 func TestSecretRenameForPeople(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.KokoStdin("s3cret", "secret", "add", "ops/db-password").WantSuccess(t)
 	r := h.Koko("secret", "rename", "ops/db-password", "db-pass")
@@ -191,6 +200,7 @@ func TestSecretRenameForPeople(t *testing.T) {
 // that breaks the name rule, and a Secret that does not exist, and changes
 // nothing.
 func TestSecretRenameRefusals(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.KokoStdin("first", "secret", "add", "ops/db-password").WantSuccess(t)
 	h.KokoStdin("second", "secret", "add", "ops/token").WantSuccess(t)
@@ -214,6 +224,7 @@ func TestSecretRenameRefusals(t *testing.T) {
 // id and its value, and the old Space no longer holds it. A move to its own
 // Space changes nothing.
 func TestSecretMoveKeepsTheSecret(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.Koko("space", "add", "data").WantSuccess(t)
 	added := decodeSecret(t, h.KokoStdin("s3cret", "secret", "add", "ops/db-password", "--json"))
@@ -237,6 +248,7 @@ func TestSecretMoveKeepsTheSecret(t *testing.T) {
 }
 
 func TestSecretMoveForPeople(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.KokoStdin("s3cret", "secret", "add", "ops/db-password").WantSuccess(t)
 	r := h.Koko("secret", "move", "ops/db-password", harness.Owner)
@@ -249,6 +261,7 @@ func TestSecretMoveForPeople(t *testing.T) {
 // secret move refuses a target Space that holds the name, and a Secret or a
 // Space that does not exist, and changes nothing.
 func TestSecretMoveRefusals(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.Koko("space", "add", "data").WantSuccess(t)
 	h.KokoStdin("ops-value", "secret", "add", "ops/db-password").WantSuccess(t)
@@ -269,6 +282,7 @@ func TestSecretMoveRefusals(t *testing.T) {
 // the source only, or in the target only, is refused as for a Space that
 // does not exist, and the Secret stays; one who can act in both moves it.
 func TestSecretMoveNeedsBothSpaces(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.Koko("space", "add", "data").WantSuccess(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
@@ -305,6 +319,7 @@ func TestSecretMoveNeedsBothSpaces(t *testing.T) {
 // is listed nowhere, and its Space holds nothing. --json prints the Secret
 // it deleted, as it was, without its value.
 func TestSecretRmDeletesTheSecret(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	added := decodeSecret(t, h.KokoStdin("s3cret", "secret", "add", "ops/db-password", "--json"))
 	r := h.Koko("secret", "rm", "ops/db-password", "--json")
@@ -329,6 +344,7 @@ func TestSecretRmDeletesTheSecret(t *testing.T) {
 }
 
 func TestSecretRmForPeople(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.KokoStdin("s3cret", "secret", "add", "ops/db-password").WantSuccess(t)
 	r := h.Koko("secret", "rm", "ops/db-password")
@@ -341,6 +357,7 @@ func TestSecretRmForPeople(t *testing.T) {
 // secret rename, move and rm refuse a command line that names a Secret
 // without its Space, or misses an argument, with exit 2 before any call.
 func TestSecretChangesRefuseABadCommandLine(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	calls := h.Calls()
 	for _, tc := range []struct {
@@ -363,6 +380,7 @@ func TestSecretChangesRefuseABadCommandLine(t *testing.T) {
 // The Owner sees the Secrets of a Removed User's former Personal Space, and
 // moves them out or deletes them; nobody else sees them.
 func TestTheOwnerMovesTheSecretsOfARemovedUser(t *testing.T) {
+	t.Parallel()
 	h := startWithOps(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	h.Koko("user", "invite", "carol").WantSuccess(t)

@@ -5,6 +5,7 @@ import "testing"
 // Each space command sits in the tier P0 spec: people and Spaces gives it,
 // so an agent's harness allows space ls and space show by prefix.
 func TestSpaceCommandsSitInTheirTiers(t *testing.T) {
+	t.Parallel()
 	want := map[string]Tier{
 		"space ls":         Read,
 		"space show":       Read,

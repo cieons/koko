@@ -54,6 +54,7 @@ func sshAs(t *testing.T, p *harness.Proxy, sshName, user, pinned string) (*ssh.C
 // the Host Account's own name, and refuses any other with a banner saying
 // how the Host is reached.
 func TestTheGatewayTakesOnlyKokoAndTheHostAccountAsTheUserName(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	tunnelHost(t, h, "web1")
 	pinned := gatewayHostKey(t, h)
@@ -82,6 +83,7 @@ func TestTheGatewayTakesOnlyKokoAndTheHostAccountAsTheUserName(t *testing.T) {
 // once and sent no login; or it refused the koko key, tried once. A network
 // error that goes away is retried and nobody sees it.
 func TestTheGatewaySaysWhyItCouldNotLogInToTheHost(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t, harness.Timings(timing.Timings{HostConnectWait: time.Millisecond}))
 	_, deadPort, err := net.SplitHostPort(harness.FreeAddr(t))
 	if err != nil {
@@ -138,6 +140,7 @@ func TestTheGatewaySaysWhyItCouldNotLogInToTheHost(t *testing.T) {
 // refused with a banner, without a connection to the Host, until one of the
 // 64 ends. Another Device Session of the same User starts its own.
 func TestADeviceSessionHasAtMost64SSHSessions(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := tunnelHost(t, h, "web1")
 	pinned := gatewayHostKey(t, h)
@@ -174,6 +177,7 @@ func TestADeviceSessionHasAtMost64SSHSessions(t *testing.T) {
 // Agent and X11 forwarding are refused, each with one line on the session's
 // stderr, and never reach the Host; the session carries on.
 func TestTheGatewayRefusesAgentAndX11Forwarding(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := tunnelHost(t, h, "web1")
 	c := sshOver(t, h.Proxy("tunnel", "web1"), "web1", gatewayHostKey(t, h))
@@ -210,6 +214,7 @@ func TestTheGatewayRefusesAgentAndX11Forwarding(t *testing.T) {
 // server's own SSH, is refused on a Device Connection and on the Unix socket
 // alike, saying that only the koko CLI opens Tunnels.
 func TestTheKokoServerRefusesDirectTCPIP(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	tunnelHost(t, h, "web1")
 	socket, err := serverconn.DialSocket(t.Context(), h.Socket())
@@ -236,7 +241,7 @@ func TestTheKokoServerRefusesDirectTCPIP(t *testing.T) {
 // The Gateway probes a Host it has heard nothing from for a while with a
 // keepalive@openssh.com, so a quiet SSH Session, and a Host that stops
 // answering for less than the end's wait, pass unnoticed.
-func TestTheGatewayProbesAQuietHost(t *testing.T) {
+func theGatewayProbesAQuietHost(t *testing.T) {
 	h := harness.Start(t, harness.Timings(timing.Timings{HostProbe: 50 * time.Millisecond}))
 	host := managedHost(t, h, "web1")
 	p := h.Background(nil, "exec", "web1", "echo ready; sleep 0.5; echo after the blip")
@@ -257,7 +262,7 @@ func TestTheGatewayProbesAQuietHost(t *testing.T) {
 // its SSH Session: the Gateway writes one line naming the Host on the
 // session's stderr, and koko exec, which shows it, exits 255 at once and
 // adds nothing.
-func TestTheGatewayEndsTheSSHSessionOfAHostThatStopsAnswering(t *testing.T) {
+func theGatewayEndsTheSSHSessionOfAHostThatStopsAnswering(t *testing.T) {
 	// Long enough that a Host still answering, through the Enroll and the
 	// command's start, is never taken for silent under load.
 	h := harness.Start(t, harness.Timings(timing.Timings{HostProbe: 50 * time.Millisecond, HostDead: 1500 * time.Millisecond}))
@@ -276,6 +281,7 @@ func TestTheGatewayEndsTheSSHSessionOfAHostThatStopsAnswering(t *testing.T) {
 // each session's stderr, through koko exec and ssh alike, after what the
 // Host sent before.
 func TestTheGatewaySaysWhenTheHostClosedTheConnection(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := managedHost(t, h, "web1")
 	p := h.Background(nil, "exec", "web1", "echo ready; exec sleep 30")
@@ -310,6 +316,7 @@ func TestTheGatewaySaysWhenTheHostClosedTheConnection(t *testing.T) {
 // socket, a direct Device Connection and the Device Mux alike, as the
 // Gateway closed the Tunnel.
 func TestAKokoServerStopTellsEachSSHSessionItIsRestarting(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	tunnelHost(t, h, "web1")
 	pinned := gatewayHostKey(t, h)
@@ -349,6 +356,7 @@ func TestAKokoServerStopTellsEachSSHSessionItIsRestarting(t *testing.T) {
 // the Tunnel's id: a shell, an exec, each subsystem by name, and each
 // forward's target, -L and -R, TCP and Unix sockets; never a command's text.
 func TestTheGatewayLogsEachKindOfRequestOnce(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	tunnelHost(t, h, "web1", sshhost.Subsystem("sftp", "cat"))
 	c := sshOver(t, h.Proxy("tunnel", "web1"), "web1", gatewayHostKey(t, h))
@@ -421,6 +429,7 @@ func TestTheGatewayLogsEachKindOfRequestOnce(t *testing.T) {
 // name they ask for, so the user-name banner never names the Host Account
 // of a Host outside their Spaces.
 func TestTheUserNameBannerTellsNothingOfAnUnseenHost(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	tunnelHost(t, h, "web1")
 	h.Koko("user", "invite", "bob").WantSuccess(t)

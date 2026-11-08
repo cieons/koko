@@ -6,6 +6,7 @@ import "testing"
 // agent's harness allows service ls and service show by prefix and asks
 // before service rm.
 func TestServiceCommandsSitInTheirTiers(t *testing.T) {
+	t.Parallel()
 	want := map[string]Tier{
 		"service ls":     Read,
 		"service show":   Read,

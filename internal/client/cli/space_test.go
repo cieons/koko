@@ -10,6 +10,7 @@ import (
 )
 
 func TestSpaceAddPrintsTheSpaceItMade(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("space", "add", "ops", "--json")
 	r.WantSuccess(t)
@@ -17,6 +18,7 @@ func TestSpaceAddPrintsTheSpaceItMade(t *testing.T) {
 }
 
 func TestSpaceAddForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("space", "add", "ops")
 	r.WantSuccess(t)
@@ -28,6 +30,7 @@ func TestSpaceAddForPeople(t *testing.T) {
 // space ls --json is a bare array of every Space, the Owner's Personal Space
 // included, sorted by name, carrying the ids space add printed.
 func TestSpaceLsListsEverySpace(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	var added []string
 	for _, name := range []string{"ops", "data"} {
@@ -59,6 +62,7 @@ func TestSpaceLsListsEverySpace(t *testing.T) {
 // On a koko server just initialised, the one Space is the Owner's Personal
 // Space, named after them.
 func TestSpaceLsOnAFreshKokoServer(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("space", "ls", "--json")
 	r.WantSuccess(t)
@@ -66,6 +70,7 @@ func TestSpaceLsOnAFreshKokoServer(t *testing.T) {
 }
 
 func TestSpaceLsForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	r := h.Koko("space", "ls")
@@ -78,6 +83,7 @@ func TestSpaceLsForPeople(t *testing.T) {
 }
 
 func TestSpaceAddRefusesATakenName(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	r := h.Koko("space", "add", "ops", "--json")
@@ -92,6 +98,7 @@ func TestSpaceAddRefusesATakenName(t *testing.T) {
 
 // A Space's name is a lowercase DNS label of 1 to 63 characters.
 func TestSpaceAddRefusesAnInvalidName(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	for _, name := range []string{"Ops", "ops-", "ops_1", strings.Repeat("a", 64)} {
 		r := h.Koko("space", "add", name, "--json")
@@ -143,6 +150,7 @@ func spaceShow(t *testing.T, run func(args ...string) harness.Result, space stri
 // space show prints a Space with its Members and how many Hosts and Secrets
 // it holds: a new shared Space has none of either.
 func TestSpaceShowShowsANewSpace(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	added := h.Koko("space", "add", "ops", "--json")
 	added.WantSuccess(t)
@@ -163,6 +171,7 @@ func TestSpaceShowShowsANewSpace(t *testing.T) {
 
 // A User's Personal Space is shown as personal, with no Members.
 func TestSpaceShowShowsAPersonalSpace(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	if s := spaceShow(t, h.Koko, harness.Owner); s.Name != harness.Owner || !s.Personal || len(s.Members) != 0 {
 		t.Errorf("space show %s = %+v, want the Owner's Personal Space with no Members", harness.Owner, s)
@@ -170,6 +179,7 @@ func TestSpaceShowShowsAPersonalSpace(t *testing.T) {
 }
 
 func TestSpaceShowForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	r := h.Koko("space", "show", "ops")
@@ -182,6 +192,7 @@ func TestSpaceShowForPeople(t *testing.T) {
 }
 
 func TestSpaceShowRefusesAnUnknownSpace(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	r := h.Koko("space", "show", "ops", "--json")
 	r.WantError(t, 1, "unknown_space")
@@ -206,6 +217,7 @@ func spaceMembers(t *testing.T, h *harness.Harness, verb, space string, users ..
 // Users who have not joined included, and prints the Space with its
 // Members, by name.
 func TestSpaceMemberAddAddsSeveralUsers(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	h.Koko("user", "invite", "carol").WantSuccess(t)
@@ -220,6 +232,7 @@ func TestSpaceMemberAddAddsSeveralUsers(t *testing.T) {
 }
 
 func TestSpaceMemberAddForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
@@ -233,6 +246,7 @@ func TestSpaceMemberAddForPeople(t *testing.T) {
 // A User already a Member stays one, so the command states who the Members
 // are after it, whatever they were before.
 func TestSpaceMemberAddLeavesAMemberAsTheyAre(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
@@ -246,6 +260,7 @@ func TestSpaceMemberAddLeavesAMemberAsTheyAre(t *testing.T) {
 // Several Users are added all or nothing: one name that no User holds adds
 // none of them, and the refusal names it.
 func TestSpaceMemberAddIsAllOrNothing(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
@@ -261,6 +276,7 @@ func TestSpaceMemberAddIsAllOrNothing(t *testing.T) {
 // A Personal Space is never given Members while its User exists; the Owner's
 // own is no exception.
 func TestSpaceMemberAddRefusesAPersonalSpace(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	r := h.Koko("space", "member", "add", harness.Owner, "bob", "--json")
@@ -276,6 +292,7 @@ func TestSpaceMemberAddRefusesAPersonalSpace(t *testing.T) {
 // space member rm takes several Users out of a Space at once; a User who is
 // not a Member stays out, and an unknown name takes nobody out.
 func TestSpaceMemberRmTakesSeveralUsersOut(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	for _, u := range []string{"bob", "carol", "dave"} {
@@ -318,6 +335,7 @@ func spaceNames(t *testing.T, run func(args ...string) harness.Result) []string 
 // of, and nothing else; the Owner, through a Device Session as over the
 // Unix socket, lists every Space.
 func TestSpaceLsListsTheSpacesTheCallerCanActIn(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	for _, u := range []string{"bob", "carol"} {
 		h.Koko("user", "invite", u).WantSuccess(t)
@@ -351,6 +369,7 @@ func TestSpaceLsListsTheSpacesTheCallerCanActIn(t *testing.T) {
 // A Member shows the Spaces they can act in, their own Personal Space
 // included.
 func TestSpaceShowForAMember(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
@@ -367,6 +386,7 @@ func TestSpaceShowForAMember(t *testing.T) {
 // A Space a Member cannot act in answers them exactly as a Space that does
 // not exist, before and after it is recorded.
 func TestASpaceAMemberCannotSeeAnswersAsUnknown(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "carol").WantSuccess(t)
 	carol := h.Join("carol")
@@ -387,6 +407,7 @@ func TestASpaceAMemberCannotSeeAnswersAsUnknown(t *testing.T) {
 // loses it on their next command, and gets it back once added again, on the
 // same Device Session.
 func TestAMembershipChangeHoldsFromTheNextCall(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
@@ -407,6 +428,7 @@ func TestAMembershipChangeHoldsFromTheNextCall(t *testing.T) {
 // is the same for a name that is taken, free or unknown, and changes
 // nothing.
 func TestOnlyTheOwnerChangesSpaces(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
@@ -443,6 +465,7 @@ func TestOnlyTheOwnerChangesSpaces(t *testing.T) {
 // space rename gives a shared Space a new name and prints it; the Space
 // keeps its id and its Members, and the old name is free.
 func TestSpaceRenameRenamesASharedSpace(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
@@ -460,6 +483,7 @@ func TestSpaceRenameRenamesASharedSpace(t *testing.T) {
 }
 
 func TestSpaceRenameForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	r := h.Koko("space", "rename", "ops", "infra")
@@ -472,6 +496,7 @@ func TestSpaceRenameForPeople(t *testing.T) {
 // A Space's new name is checked against every Space, Personal Spaces
 // included; a Personal Space keeps its User's name while its User exists.
 func TestSpaceRenameRefusals(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	h.Koko("space", "add", "data").WantSuccess(t)
@@ -498,6 +523,7 @@ func TestSpaceRenameRefusals(t *testing.T) {
 // space rm removes an empty Space and prints it as it was; its memberships
 // go with it, so a new Space under the same name has no Members.
 func TestSpaceRmRemovesAnEmptySpace(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
@@ -523,6 +549,7 @@ func TestSpaceRmRemovesAnEmptySpace(t *testing.T) {
 }
 
 func TestSpaceRmForPeople(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	r := h.Koko("space", "rm", "ops")
@@ -534,6 +561,7 @@ func TestSpaceRmForPeople(t *testing.T) {
 
 // A Personal Space is never removed while its User exists.
 func TestSpaceRmRefusals(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	r := h.Koko("space", "rm", "bob", "--json")
@@ -548,6 +576,7 @@ func TestSpaceRmRefusals(t *testing.T) {
 
 // Without --json the error is a line for people, still on stderr only.
 func TestErrorForPeopleGoesToStderr(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("space", "add", "ops").WantSuccess(t)
 	r := h.Koko("space", "add", "ops")

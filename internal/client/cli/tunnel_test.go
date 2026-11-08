@@ -120,6 +120,7 @@ func (w *firstLineWriter) String() string {
 // a signal, and a subsystem such as sftp; the Host's answers come back,
 // exit statuses and signals included.
 func TestKokoTunnelPassesEverySessionRequestToTheHost(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	host := tunnelHost(t, h, "web1", sshhost.Subsystem("sftp", "cat"))
 	c := sshOver(t, h.Proxy("tunnel", "web1"), "web1", gatewayHostKey(t, h))
@@ -267,6 +268,7 @@ func dialHostSide(t *testing.T, network, addr string) (net.Conn, error) {
 // the Host's side, and -R, which asks the Host to listen and carries each
 // connection it accepts back, until ssh cancels it.
 func TestKokoTunnelPassesEveryForwardToTheHost(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	tunnelHost(t, h, "web1")
 	c := sshOver(t, h.Proxy("tunnel", "web1.koko"), "web1.koko", gatewayHostKey(t, h))
@@ -352,6 +354,7 @@ func wantNotListening(t *testing.T, network, addr string) {
 // own host key, and koko tunnel exits 0 once ssh closes the connection, as
 // the Gateway closes the Tunnel.
 func TestSSHReachesAHostThroughKokoTunnel(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	managedHost(t, h, "web1")
 
@@ -376,7 +379,7 @@ func TestSSHReachesAHostThroughKokoTunnel(t *testing.T) {
 // On a joined device koko tunnel's Tunnel rides the Device Mux's Device
 // Connection, and an open SSH Session keeps the Device Mux from idling out,
 // since koko tunnel stays connected to it; once ssh is done, it idles out.
-func TestAnOpenSSHSessionKeepsTheDeviceMuxRunning(t *testing.T) {
+func anOpenSSHSessionKeepsTheDeviceMuxRunning(t *testing.T) {
 	const idle = 300 * time.Millisecond
 	h, fwd, d := muxDevice(t, timing.Timings{DeviceMuxIdle: idle})
 	held := d.DialMux() // through the Enroll, however long it takes
@@ -406,6 +409,7 @@ func TestAnOpenSSHSessionKeepsTheDeviceMuxRunning(t *testing.T) {
 // version and closes at once still gets the Gateway's, and koko tunnel then
 // exits 0.
 func TestKokoTunnelHalfClosesAtStdinsEOFAndKeepsRelaying(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	tunnelHost(t, h, "web1")
 	p := h.Proxy("tunnel", "web1")
@@ -431,6 +435,7 @@ func TestKokoTunnelHalfClosesAtStdinsEOFAndKeepsRelaying(t *testing.T) {
 // without a tty, and which ends every other koko command: the SSH Session
 // carries on.
 func TestKokoTunnelIgnoresSIGINT(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	tunnelHost(t, h, "web1")
 	p := h.Proxy("tunnel", "web1")
@@ -451,7 +456,7 @@ func TestKokoTunnelIgnoresSIGINT(t *testing.T) {
 // koko tunnel sends a close frame and exits 0 at once: the Gateway ends the
 // SSH Session as the client's close, not as a lost Device Connection, over
 // the Unix socket, a direct Device Connection and the Device Mux alike.
-func TestKokoTunnelSendsACloseFrameOnSIGHUPAndSIGTERM(t *testing.T) {
+func kokoTunnelSendsACloseFrameOnSIGHUPAndSIGTERM(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		sig   syscall.Signal
@@ -498,6 +503,7 @@ func TestKokoTunnelSendsACloseFrameOnSIGHUPAndSIGTERM(t *testing.T) {
 // the completion scripts say so, and that it is the ProxyCommand of koko's
 // ssh_config, not for direct use.
 func TestKokoTunnelTakesOneSSHNameAndNoFlags(t *testing.T) {
+	t.Parallel()
 	run := func(args ...string) harness.Result { return harness.Run(t, offline(t), nil, args...) }
 	for _, tc := range []struct {
 		args []string
@@ -556,7 +562,7 @@ func wantTunnelLine(t *testing.T, what string, r harness.Result) string {
 // Each failure before the Device Connection is up is one koko: line on koko
 // tunnel's stderr, the line any koko command prints for it, naming what to
 // do; ssh then says the connection closed. No Tunnel opens.
-func TestKokoTunnelSaysWhyInOneLineBeforeTheDeviceConnection(t *testing.T) {
+func kokoTunnelSaysWhyInOneLineBeforeTheDeviceConnection(t *testing.T) {
 	h := harness.Start(t)
 	host := tunnelHost(t, h, "web1")
 

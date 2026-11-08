@@ -144,7 +144,7 @@ func wantDetached(t *testing.T, h *harness.Harness) {
 // A shell through ssh's path, koko tunnel through the Device Mux, freezes
 // when the Device Connection beneath it fails, and carries on once the
 // Tunnel Resumes on the next one.
-func TestAShellCarriesOnAcrossADrop(t *testing.T) {
+func aShellCarriesOnAcrossADrop(t *testing.T) {
 	for _, f := range faults {
 		t.Run(f.name, func(t *testing.T) {
 			s := resumeHost(t, resumeServer)
@@ -198,7 +198,7 @@ const bulk = 4 << 20
 // A koko exec in flight carries on across a drop with every byte intact,
 // a bulk upload on its stdin and a bulk download on its stdout alike, on
 // the direct path, where it Resumes over a Device Connection of its own.
-func TestABulkTransferThroughKokoExecCarriesOnAcrossADrop(t *testing.T) {
+func aBulkTransferThroughKokoExecCarriesOnAcrossADrop(t *testing.T) {
 	data := randomBytes(bulk)
 	for _, f := range faults {
 		t.Run("upload, "+f.name, func(t *testing.T) {
@@ -257,7 +257,7 @@ func TestABulkTransferThroughKokoExecCarriesOnAcrossADrop(t *testing.T) {
 
 // A command that ends while its Tunnel is Detached gives koko exec, through
 // the Device Mux, its output and its exit status once the Tunnel Resumes.
-func TestACommandThatEndsWhileDetachedGivesItsStatusOnTheResume(t *testing.T) {
+func aCommandThatEndsWhileDetachedGivesItsStatusOnTheResume(t *testing.T) {
 	s := resumeHost(t, resumeServer)
 	d := harness.NewMuxDevice(t, resumeDevice)
 	d.Koko("join", s.joinCode).WantSuccess(t)
@@ -295,7 +295,7 @@ func TestACommandThatEndsWhileDetachedGivesItsStatusOnTheResume(t *testing.T) {
 // the Resume carries it to the Gateway, which then ends the SSH Session
 // that never started; koko tunnel, having relayed all the Gateway sent,
 // exits 0.
-func TestAHalfCloseBeforeADropSurvivesIt(t *testing.T) {
+func aHalfCloseBeforeADropSurvivesIt(t *testing.T) {
 	s := resumeHost(t, resumeServer)
 	d := harness.NewDevice(t)
 	d.UseTimings(resumeDevice)
@@ -329,7 +329,7 @@ func TestAHalfCloseBeforeADropSurvivesIt(t *testing.T) {
 // Tunnel through a new Device Mux, which it starts. With KOKO_DIRECT=1 its
 // Tunnel never went through the Device Mux, and Resumes over a Device
 // Connection of its own.
-func TestKillingTheDeviceMuxEndsNoSSHSession(t *testing.T) {
+func killingTheDeviceMuxEndsNoSSHSession(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		env  []string
@@ -369,7 +369,7 @@ func TestKillingTheDeviceMuxEndsNoSSHSession(t *testing.T) {
 // While its Device Mux reconnects, an SSH Session waits to Resume: koko
 // status counts it, and it keeps the Device Mux from idling out. Once the
 // koko server answers again, it Resumes, and koko status counts none.
-func TestATunnelWaitingToResumeKeepsTheDeviceMuxAndShowsInKokoStatus(t *testing.T) {
+func aTunnelWaitingToResumeKeepsTheDeviceMuxAndShowsInKokoStatus(t *testing.T) {
 	const idle = 300 * time.Millisecond
 	s := resumeHost(t, resumeServer)
 	timings := resumeDevice
@@ -416,7 +416,7 @@ func TestATunnelWaitingToResumeKeepsTheDeviceMuxAndShowsInKokoStatus(t *testing.
 // koko disconnect ends an SSH Session for good: koko tunnel says that koko
 // disconnect ended it, and the Tunnel does not Resume, so the SSH Session
 // ends once its grace runs out.
-func TestKokoDisconnectEndsAnSSHSessionWithoutAResume(t *testing.T) {
+func kokoDisconnectEndsAnSSHSessionWithoutAResume(t *testing.T) {
 	timings := resumeServer
 	timings.Grace = 300 * time.Millisecond
 	s := resumeHost(t, timings)
@@ -445,7 +445,7 @@ func TestKokoDisconnectEndsAnSSHSessionWithoutAResume(t *testing.T) {
 // the Gateway answers its keepalives on the session channel itself, which
 // the Detached client could not, so the Host never ends the SSH Session
 // koko Resumes.
-func TestAHostWithClientAliveIntervalKeepsADetachedSSHSession(t *testing.T) {
+func aHostWithClientAliveIntervalKeepsADetachedSSHSession(t *testing.T) {
 	// The Host gives up on a client that leaves 3 probes 50 ms apart
 	// unanswered: well within the time the Tunnel stays Detached.
 	const interval = 50 * time.Millisecond
@@ -480,7 +480,7 @@ func TestAHostWithClientAliveIntervalKeepsADetachedSSHSession(t *testing.T) {
 // Device Connection of the Device Session that opened it: another Device
 // Session's resume is refused as for a Tunnel the koko server does not
 // hold, and the SSH Session carries on.
-func TestAResumeFromAnotherDeviceSessionIsRefused(t *testing.T) {
+func aResumeFromAnotherDeviceSessionIsRefused(t *testing.T) {
 	s := resumeHost(t, resumeServer)
 	d := harness.NewDevice(t)
 	d.Koko("join", s.joinCode).WantSuccess(t)

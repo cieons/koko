@@ -23,6 +23,7 @@ import (
 // With no socket at its path, and no koko server joined, a command that calls
 // the koko server fails with not_joined.
 func TestNoSocketIsNotJoined(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(harness.ShortTempDir(t), "koko.sock")
 	r := harness.Run(t, cli.Runner{SocketPath: path}, nil, "space", "ls", "--json")
 	msg := r.WantError(t, 1, "not_joined")
@@ -33,6 +34,7 @@ func TestNoSocketIsNotJoined(t *testing.T) {
 
 // A socket path that answers no SSH fails with server_unreachable.
 func TestDeadSocketIsServerUnreachable(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(harness.ShortTempDir(t), "koko.sock")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -47,6 +49,7 @@ func TestDeadSocketIsServerUnreachable(t *testing.T) {
 // A socket that answers SSH but cannot carry the call (here, it refuses every
 // channel) fails with server_unreachable, not internal_error.
 func TestCallThatCannotBeCarriedIsServerUnreachable(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(harness.ShortTempDir(t), "koko.sock")
 	refuseChannels(t, path)
 	r := harness.Run(t, cli.Runner{SocketPath: path}, nil, "space", "ls", "--json")
@@ -115,6 +118,7 @@ func fakeSocket(t *testing.T, path string, report bool) {
 // of the pinned list, of one key or of several, and refuses it with
 // host_key_mismatch, naming both, when it is none.
 func TestDeviceConnectionChecksTheHostKeyAgainstThePinnedList(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	d := h.Join(harness.Owner)
 	c := readClientConfig(t, d)
@@ -143,6 +147,7 @@ func TestDeviceConnectionChecksTheHostKeyAgainstThePinnedList(t *testing.T) {
 // A key no Device Session holds gets a generic not_joined, which names no
 // User and no device.
 func TestDeviceConnectionWithAnUnknownKeyIsNotJoined(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	d := h.Join(harness.Owner)
 	_, unknown, err := ed25519.GenerateKey(rand.Reader)
@@ -166,6 +171,7 @@ func TestDeviceConnectionWithAnUnknownKeyIsNotJoined(t *testing.T) {
 // A joined device whose koko server does not answer fails with
 // server_unreachable, whose hint names koko connect <host:port>.
 func TestJoinedDeviceWhoseServerIsDownIsServerUnreachable(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	d := h.Join(harness.Owner)
 	d.UseTimings(timing.Timings{CommandWait: 200 * time.Millisecond})
@@ -179,6 +185,7 @@ func TestJoinedDeviceWhoseServerIsDownIsServerUnreachable(t *testing.T) {
 // The CLI uses the Unix socket when it is at its path, as the Local caller
 // acting as the Owner, and otherwise the koko server the device joined.
 func TestTheSocketWinsOverTheJoinedServer(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	d := h.Join("bob")

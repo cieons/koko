@@ -11,6 +11,7 @@ import (
 // it is in the irreversible tier and an agent's harness asks a person before
 // running it (ADR 0019).
 func TestCommandsThatPrintAJoinCodeAreIrreversible(t *testing.T) {
+	t.Parallel()
 	printing := 0
 	for _, c := range Tree() {
 		if c.Op == nil || !holds(c.Op.Info().Response, reflect.TypeFor[api.JoinCode](), map[reflect.Type]bool{}) {

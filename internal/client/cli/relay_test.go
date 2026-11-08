@@ -88,6 +88,7 @@ func listedNames(t *testing.T, run func(args ...string) harness.Result, args ...
 // Session, which the koko server logs with the Relay. host show prints the
 // Relay by name and id.
 func TestAHostIsEnrolledAndReachedThroughItsRelay(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	relay := managedHost(t, h, "gw")
 	host := relayedHost(t, h, "gw", "web1", relay)
@@ -116,6 +117,7 @@ func TestAHostIsEnrolledAndReachedThroughItsRelay(t *testing.T) {
 // is no Relay itself. Each refusal changes nothing; a value that names no
 // Host is refused before any call. A Relay is cleared with --unset relay.
 func TestARelayIsSetOnlyWhenItCanBeOne(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	relay := managedHost(t, h, "gw")
 	relayedHost(t, h, "gw", "web1", relay)
@@ -173,6 +175,7 @@ func TestARelayIsSetOnlyWhenItCanBeOne(t *testing.T) {
 // does. A Member sets a Relay in another Space they can see, and not one
 // they cannot.
 func TestARelayKeepsItsLinkAndIsUnnamedToWhoCannotSeeIt(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	laptop := h.Join("bob")
@@ -245,6 +248,7 @@ func TestARelayKeepsItsLinkAndIsUnnamedToWhoCannotSeeIt(t *testing.T) {
 // names no Host. Once its Host has another Relay, none, or is Retired
 // itself, the Relay retires; a Retired Host takes no new Relay.
 func TestRetiringARelayInUseIsRefused(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	relay := managedHost(t, h, "gw")
 	relayedHost(t, h, "gw", "web1", relay)
@@ -282,6 +286,7 @@ func retiredID(t *testing.T, h *harness.Harness, hostName string) string {
 // to a Member who cannot, with neither its fingerprints nor its Host
 // Account. Enroll refuses the same ways.
 func TestTheGatewaySaysWhyItCouldNotPassThroughTheRelay(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t, harness.Timings(timing.Timings{HostConnectWait: time.Millisecond}))
 	addSpaceWithMembers(t, h, "ops", "bob")
 	laptop := h.Join("bob")
@@ -351,6 +356,7 @@ func TestTheGatewaySaysWhyItCouldNotPassThroughTheRelay(t *testing.T) {
 // with a line that names the Relay only to whoever can see it; one whose
 // Relay closes its connection ends with a line naming the Relay.
 func TestARelayThatStopsBeingManagedEndsTheSSHSessionsThroughIt(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	addSpaceWithMembers(t, h, "ops", "bob")
 	laptop := h.Join("bob")
@@ -382,6 +388,7 @@ func TestARelayThatStopsBeingManagedEndsTheSSHSessionsThroughIt(t *testing.T) {
 // ends the SSH Session through it; the Host's new Relay going back to
 // Registered ends one through another.
 func TestAnSSHSessionGoesOnThroughTheRelayItStartedThrough(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	relay := managedHost(t, h, "gw")
 	relayedHost(t, h, "gw", "web1", relay)
@@ -403,7 +410,7 @@ func TestAnSSHSessionGoesOnThroughTheRelayItStartedThrough(t *testing.T) {
 
 // Enroll records nothing when the Host's Relay changes while it logs in to
 // the Host through the old one.
-func TestEnrollRecordsNothingWhenTheRelayChangesMeanwhile(t *testing.T) {
+func enrollRecordsNothingWhenTheRelayChangesMeanwhile(t *testing.T) {
 	h := harness.Start(t)
 	managedHost(t, h, "gw")
 	managedHost(t, h, "gw2")
@@ -424,6 +431,7 @@ func TestEnrollRecordsNothingWhenTheRelayChangesMeanwhile(t *testing.T) {
 // id or its name, and refuses before any call one printed unnamed, which
 // it cannot set.
 func TestHostAddOnStdinTakesARelay(t *testing.T) {
+	t.Parallel()
 	h := harness.Start(t)
 	managedHost(t, h, "gw")
 	gwID := showHost(t, h.Koko, "gw").ID

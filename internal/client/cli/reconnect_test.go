@@ -88,7 +88,7 @@ func waitLogs(t *testing.T, d *harness.Device, substr string, n int) {
 // trying again meanwhile on the direct path, while through the Device Mux
 // the Device Mux tries; then it fails with server_unreachable, saying it
 // cannot reach the koko server and how to give the device a new address.
-func TestACommandWaitsAtMostCommandWaitForTheDeviceConnection(t *testing.T) {
+func aCommandWaitsAtMostCommandWaitForTheDeviceConnection(t *testing.T) {
 	const wait = 500 * time.Millisecond
 	timings := timing.Timings{CommandWait: wait, ReconnectFirst: 20 * time.Millisecond, ReconnectMax: 40 * time.Millisecond}
 	h, fwd, _, init := initThroughWith(t, timing.Timings{})
@@ -120,7 +120,7 @@ func TestACommandWaitsAtMostCommandWaitForTheDeviceConnection(t *testing.T) {
 
 // A koko server that lets a command in but never reports its version is
 // one the command cannot reach: it gives up after timing.CommandWait.
-func TestAConnectionThatNeverReportsFailsWithinCommandWait(t *testing.T) {
+func aConnectionThatNeverReportsFailsWithinCommandWait(t *testing.T) {
 	path := filepath.Join(harness.ShortTempDir(t), "koko.sock")
 	fakeSocket(t, path, false)
 	const wait = 300 * time.Millisecond
@@ -140,7 +140,7 @@ func TestAConnectionThatNeverReportsFailsWithinCommandWait(t *testing.T) {
 // it out, is sent again once the koko server can be reached again: the
 // command waits for it, within timing.CommandWait, rather than fail at the
 // first try, and the write applies once.
-func TestTheRetryOfACutCallWaitsForTheKokoServer(t *testing.T) {
+func theRetryOfACutCallWaitsForTheKokoServer(t *testing.T) {
 	h, fwd, listen, init := initThroughWith(t, timing.Timings{})
 	d := harness.NewDevice(t)
 	d.UseTimings(timing.Timings{ReconnectFirst: 20 * time.Millisecond, ReconnectMax: 50 * time.Millisecond})
@@ -173,7 +173,7 @@ func TestTheRetryOfACutCallWaitsForTheKokoServer(t *testing.T) {
 // The Device Mux probes a quiet Device Connection, so it lives however long
 // nothing is sent on it while the koko server answers; once nothing comes
 // back for timing.DeviceDead it declares it dead and reconnects at once.
-func TestTheDeviceMuxProbesItsDeviceConnectionAndReplacesADeadOne(t *testing.T) {
+func theDeviceMuxProbesItsDeviceConnectionAndReplacesADeadOne(t *testing.T) {
 	// The probe's answer comes, so dead stays long beside it: an answer
 	// slow under load must not pass for none.
 	const probe, dead = 50 * time.Millisecond, time.Second
@@ -204,7 +204,7 @@ func TestTheDeviceMuxProbesItsDeviceConnectionAndReplacesADeadOne(t *testing.T) 
 // The koko server probes a quiet Device Connection, which lives while the
 // device answers, and closes it as dead once nothing comes from the device
 // for timing.ServerDead.
-func TestTheKokoServerProbesADeviceConnectionAndClosesADeadOne(t *testing.T) {
+func theKokoServerProbesADeviceConnectionAndClosesADeadOne(t *testing.T) {
 	// The probe's answer comes, so dead stays long beside it.
 	const probe, dead = 50 * time.Millisecond, time.Second
 	h, fwd, _, init := initThroughWith(t, timing.Timings{ServerProbe: probe, ServerDead: dead})
@@ -233,7 +233,7 @@ func TestTheKokoServerProbesADeviceConnectionAndClosesADeadOne(t *testing.T) {
 // once; with nothing waiting it stops there. While a command waits, it
 // tries again after timing.ReconnectFirst, doubling the wait up to
 // timing.ReconnectMax, and stops once the command has given up.
-func TestTheDeviceMuxReconnectsAtOnceThenBacksOffWhileACommandWaits(t *testing.T) {
+func theDeviceMuxReconnectsAtOnceThenBacksOffWhileACommandWaits(t *testing.T) {
 	const first, most, wait = 20 * time.Millisecond, 40 * time.Millisecond, 2 * time.Second
 	// No wake or route change of the machine running the test cuts a wait
 	// short.
@@ -276,7 +276,7 @@ func TestTheDeviceMuxReconnectsAtOnceThenBacksOffWhileACommandWaits(t *testing.T
 // the timing hook, makes the Device Mux probe its Device Connection at
 // once, long before it would have: a dead one is replaced within
 // timing.DeviceDead-timing.DeviceProbe.
-func TestAWakeOrARouteChangeProbesTheDeviceConnectionAtOnce(t *testing.T) {
+func aWakeOrARouteChangeProbesTheDeviceConnectionAtOnce(t *testing.T) {
 	const probe, dead = time.Hour, time.Hour + 300*time.Millisecond
 	wake, routes := make(chan struct{}), make(chan struct{})
 	_, fwd, d := muxDevice(t, timing.Timings{DeviceProbe: probe, DeviceDead: dead, Wake: wake, RouteChange: routes})
@@ -299,7 +299,7 @@ func TestAWakeOrARouteChangeProbesTheDeviceConnectionAtOnce(t *testing.T) {
 
 // A wake while the Device Mux waits between tries to reconnect makes it
 // try again at once.
-func TestAWakeWhileTheDeviceMuxReconnectsTriesAgainAtOnce(t *testing.T) {
+func aWakeWhileTheDeviceMuxReconnectsTriesAgainAtOnce(t *testing.T) {
 	wake := make(chan struct{})
 	h, fwd, d := muxDevice(t, timing.Timings{ReconnectFirst: time.Hour, CommandWait: 5 * time.Second, Wake: wake})
 	waitLogs(t, d, `msg="device connection opened"`, 1)
@@ -360,7 +360,7 @@ func silent(t *testing.T) (addr string, conns func() int) {
 
 // A try to reconnect lasts at most timing.DeviceConnectAttempt, so an
 // address that never answers holds up no try after it.
-func TestATryToReconnectEndsSoTheNextCanFollow(t *testing.T) {
+func aTryToReconnectEndsSoTheNextCanFollow(t *testing.T) {
 	never := make(chan struct{})
 	h, fwd, d := muxDevice(t, timing.Timings{
 		DeviceConnectAttempt: 200 * time.Millisecond, CommandWait: 2 * time.Second,
