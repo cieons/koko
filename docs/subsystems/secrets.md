@@ -161,8 +161,60 @@ either: a `secret.add` retried with its key adds one Secret and answers the
 kept response, and the same key with another value is refused with
 `idempotency_key_reused`.
 
+## The web UI's Secrets page
+
+[`SecretsPage`](../../web/src/pages/secret/SecretsPage.tsx), at `/secrets`,
+in the [web UI shell](web-shell.md), offers what the commands do, each
+action the same operation.
+
+- **The list** is `secret.list` without a Space: the names of the Secrets
+  in every Space the caller can act in, by Space, then name, as `koko
+  secret ls` prints them. A Member sees only their Spaces' Secrets, since the
+  koko server answers no others.
+- **Revealing.** No value is fetched until a Show is clicked, which calls
+  `secret.show` and never asks first. The value shows in its row, with a
+  button that copies it and one that hides it, and is hidden again after 30
+  seconds, when another value is revealed, when the Secret is written to,
+  or when the page is left. A value `secret.show` answers after a later
+  reveal, a hide, a write to its Secret or the browser leaving the page
+  never shows. It lives only in the page's state
+  ([shown once](web-shell.md#shown-once)), never in the URL or the
+  browser's storage, and the web front sends every API answer with
+  `Cache-Control: no-store` ([the web front](web-front.md#the-web-front)), so
+  the browser's cache holds none.
+- **A value that is not UTF-8** shows as the standard base64 it came in, as
+  `koko secret show --json` prints it, marked so; Copy then copies the
+  base64. A value of UTF-8 bytes shows as text, exactly, a leading byte-order
+  mark and a trailing newline included.
+- **The writes.** Add takes a Space the caller can act in (their Personal
+  Space unless they choose another), a name and a value typed into a field
+  that keeps several lines, such as a private key; the value goes as the
+  base64 of its UTF-8 bytes. Set takes a new value, rename a new name, and
+  move another Space. None of these asks first, and an add or set retried
+  after a dropped connection carries the same `Idempotency-Key`
+  ([calls](web-shell.md#calls)). Delete asks first, in a dialog saying that
+  the Secret and its value are gone for good. A refusal shows its code's
+  message in the form that made the call.
+
 ## Verifying
 
+- [`secrets.test.tsx`](../../web/src/pages/secret/secrets.test.tsx), Vitest
+  and React Testing Library: a Member's list from `secret.list` without a
+  Space and the Space choice from `space.list`; no `secret.show` until a
+  click; a click revealing the value, never asking, its Copy, and the value
+  gone after 30 seconds on a faked clock; Hide, and a second reveal hiding the
+  first; a value answered too late, after a later reveal, the browser
+  leaving the page or a set, never shown; the value gone once the page is
+  left within the web UI or the browser leaves it; a value that is not
+  UTF-8 shown and copied as base64;
+  a browser that cannot copy; add and set never asking, sending the typed
+  value's UTF-8 as base64, and resending the same `Idempotency-Key` after a
+  drop; set hiding the value shown; no value in the URL or the browser's
+  storage; rename and move never asking; a refusal shown in its form;
+  delete asking first and deleting only once confirmed.
+- [`secret_web_test.go`](../../internal/client/cli/secret_web_test.go) (S1,
+  against `koko web`): `secret.show` over `web@koko`, answered or refused,
+  carries `Cache-Control: no-store`.
 - [`internal/client/cli/secret_test.go`](../../internal/client/cli/secret_test.go)
   and [`secret_change_test.go`](../../internal/client/cli/secret_change_test.go)
   (S1): each command with its goldens; values of any bytes up to exactly

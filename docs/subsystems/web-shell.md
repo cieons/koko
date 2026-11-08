@@ -96,7 +96,10 @@ a browser reaches it is [`koko web` and the web front](web-front.md).
   window regains focus. The web UI holds no connection open and never polls.
   An answer to an earlier request never shows as the current one's; a failed
   reload keeps the last answer to the same request beside the error. `reload`
-  shows what a write changed.
+  shows what a write changed. The one read a person asks for by a click,
+  revealing a Secret's value (`secret.show`), calls `call` on the click
+  instead, and its page shows only the latest answer
+  ([the Secrets page](secrets.md#the-web-uis-secrets-page)).
 - **Writes** go through `useWrite`, one per form: submitting the same request
   again after it failed reuses its key, and a write that succeeded, or a
   different request, takes a new one. A write that succeeds while a later

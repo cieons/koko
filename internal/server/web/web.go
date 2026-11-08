@@ -115,6 +115,10 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if isAPI(r) {
+		// An API answer is the caller's record as it is now, and
+		// secret.show's holds a Secret value: the browser keeps none in its
+		// cache.
+		w.Header().Set("Cache-Control", "no-store")
 		f.api.ServeHTTP(w, r)
 		return
 	}

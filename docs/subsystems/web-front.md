@@ -78,7 +78,9 @@ request on a `web@koko` channel in this order:
    build without the web UI's output serves the placeholder page there.
 
 No answer carries a CORS header, so another site's page fails its preflight.
-Refusals and the trade's redirect carry `Cache-Control: no-store`. The
+Refusals, the trade's redirect and every answer of the API carry
+`Cache-Control: no-store`, so the browser's cache holds no record, nor the
+Secret value `secret.show` answers with. The
 token, the cookie and the request's query are in no log line or answer; the
 log says `web cookie issued` and `web token refused` with the reason, at
 info level.
