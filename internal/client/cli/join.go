@@ -146,6 +146,7 @@ func join(ctx context.Context, in *Input) (joined, error) {
 		return joined{}, fmt.Errorf("the Join Code joined this device as %s's device %s, but koko could not keep its files (%w); the code is spent: ask for a new one, and revoke %s/%s", d.User, d.Device, err, d.User, d.Device)
 	}
 	out := joined{ServerAddress: code.Address, DeviceSession: deviceSessionFromAPI(d)}
+	writeBareNames(ctx, c, home, in.inv.Stderr)
 	in.startDeviceMux(ctx)
 	// The device has joined: ssh not reading koko's ssh_config yet changes
 	// nothing about that, so the join says why and goes on. A line it finds

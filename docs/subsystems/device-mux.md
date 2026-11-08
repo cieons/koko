@@ -193,6 +193,33 @@ through the timing-constants hook.
   last try's error; a try that fails for a reason trying again does not
   change answers them at once.
 
+## The bare-name refresh
+
+The Device Mux keeps the [bare names](device-connection.md#ssh) in koko's
+ssh_config following the record
+([`refreshBareNames`](../../internal/client/devicemux/barenames.go)):
+
+- **When.** Once it holds its first Device Connection, then
+  `timing.BareNameRefresh` (10 minutes) after each refresh, until it stops.
+  A refresh that fails tries again 10 minutes later, or sooner on the next
+  Device Connection once its own has ended. A refresh due while it holds no
+  Device Connection waits for the next one without asking for it, so it
+  never makes the Device Mux reconnect.
+- **How.** It calls `host.list` on its Device Connection, through one API
+  client per Device Connection, whose `api@koko` channel stays open between
+  refreshes and carries nothing then, and rewrites koko's ssh_config with
+  the names only when the file would change
+  ([`devicefiles.RefreshSSHConfig`](../../internal/client/devicefiles/ssh.go)).
+  The ProxyCommand keeps the koko the file runs: which koko ssh runs is for
+  a command run from the user's shell to choose, never for a process in
+  the background, whose own path may be an old build's after an upgrade, or
+  one found without the user's PATH. It writes holding the Device Mux's
+  lock and not once it is stopping, so it never puts back the names its own
+  revocation cleanup took out.
+- **No command.** A refresh is not a command connected to the Device Mux:
+  it keeps the Device Mux from idling out no more than it makes it
+  reconnect.
+
 ## State and exit
 
 - **Connected**, since it opened its Device Connection, or **reconnecting**
@@ -201,8 +228,8 @@ through the timing-constants hook.
 - **Idle exit.** It exits `timing.DeviceMuxIdle` (10 minutes) after the
   last command left: a command, `koko web` or `koko tunnel` connected keeps
   it running, with or without a channel open, so `koko web` between browser
-  connections counts as open (#62). A command that connects as it idles out
-  is refused, and starts a new one.
+  connections counts as open (#62); its own bare-name refresh does not. A
+  command that connects as it idles out is refused, and starts a new one.
 - **Revocation.** On the revocation disconnect
   ([`wire.RequestRevoked`](../../internal/shared/wire/wire.go)), or the
   Revoked banner when it reconnects, it runs the revocation cleanup
@@ -231,7 +258,9 @@ One line per event on its stderr (the log beside its socket), at the level
 revision, pid, socket), `device connection opened` (server, server
 version), `cannot open a Device Connection` (each try) and `device
 connection dropped` (server, error, such as `no answer for 15s`), the
-revocation cleanup done or failed, `refused a connection from another OS
+revocation cleanup done or failed, `refreshed the bare names` (names, how
+many, and `rewrote`, whether it wrote the file) or `cannot refresh the
+bare names` (error), `refused a connection from another OS
 user`, `koko disconnect stops the device mux` (commands), and `device mux
 stopped` with its reason; at debug level, `probing the Device Connection
 at once` (reason: wake or route change) and `no route-change watch`.
@@ -250,6 +279,14 @@ at once` (reason: wake or route change) and `no route-change watch`.
   `KOKO_LOG_LEVEL` refused; a call cut under it retried and applied once;
   channels across a drop, an open the drop cut not sent twice, a refusal
   passed back, and its report.
+- [`barenames_test.go`](../../internal/client/cli/barenames_test.go): a
+  Host someone else records in a Member's Space, and a Space the Member is
+  added to, reached as `<name>.koko` at once and as bare names after a
+  refresh, and refreshes that find the record as it was leaving the file
+  alone; the refresh at its start, and one a drop cut tried again on the
+  next Device Connection; the idle exit however often it refreshes; and no
+  reconnect for a refresh. [`devicefiles/ssh_test.go`](../../internal/client/devicefiles/ssh_test.go)
+  `TestARefreshKeepsTheKokoTheFileRuns`: the ProxyCommand a refresh keeps.
 - [`reconnect_test.go`](../../internal/client/cli/reconnect_test.go) (S1,
   the timings shrunk, a [`harness.Forward`](../../internal/harness/forward.go)
   stalled or pointed elsewhere): a command waiting at most

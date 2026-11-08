@@ -14,7 +14,6 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/client/cli"
-	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/harness"
 )
 
@@ -286,14 +285,12 @@ func TestJoinRefusesAHomeSSHWouldMisreadBeforeSpendingTheCode(t *testing.T) {
 func TestTheRevocationCleanupRemovesTheBareNamesAndKnownHosts(t *testing.T) {
 	h := harness.Start(t)
 	ref := h.Join(harness.Owner)
+	addHost(t, h.Koko, "web1")
+	addHost(t, h.Koko, "db1")
 	elsewhere, _ := joinAs(t, deviceAdd(t, h, "laptop"))
 	itself, _ := joinAs(t, deviceAdd(t, h, "desktop"))
 	for _, d := range []*harness.Device{elsewhere, itself} {
-		// The names a bare-name refresh writes (#69).
-		if err := devicefiles.WriteSSHConfig(d.Home(), []string{"web1", "db1"}); err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(kokoSSHConfig(t, d), "Host *.koko web1 db1\n") {
+		if !strings.Contains(kokoSSHConfig(t, d), "Host *.koko db1 web1\n") {
 			t.Fatalf("koko's ssh_config holds no bare names:\n%s", kokoSSHConfig(t, d))
 		}
 	}

@@ -86,6 +86,11 @@ const (
 	// clock having moved more than WakeCheck further than the monotonic one
 	// since the last look is a wake.
 	WakeCheck = time.Second
+	// BareNameRefresh is how long the Device Mux waits after it refreshed
+	// the bare names in koko's ssh_config, which it does first once it holds
+	// its first Device Connection, before it refreshes them again: so a Host
+	// someone else records becomes a bare name by itself.
+	BareNameRefresh = 10 * time.Minute
 )
 
 // Timings is the timing-constants hook. Each field is named after its
@@ -110,6 +115,7 @@ type Timings struct {
 	CommandWait          time.Duration
 	DeviceConnectAttempt time.Duration
 	WakeCheck            time.Duration
+	BareNameRefresh      time.Duration
 
 	// Wake and RouteChange stand in for the Device Mux's watches of the
 	// device waking from sleep and of a change of its network routes: each
@@ -140,6 +146,7 @@ func (t Timings) Resolve() Timings {
 	t.CommandWait = cmp.Or(t.CommandWait, CommandWait)
 	t.DeviceConnectAttempt = cmp.Or(t.DeviceConnectAttempt, DeviceConnectAttempt)
 	t.WakeCheck = cmp.Or(t.WakeCheck, WakeCheck)
+	t.BareNameRefresh = cmp.Or(t.BareNameRefresh, BareNameRefresh)
 	return t
 }
 

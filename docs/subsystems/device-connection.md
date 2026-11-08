@@ -107,7 +107,9 @@ one-time code ([`join`](../../internal/client/cli/join.go)):
    ([the API client](api.md#the-api-client)).
 7. It puts the key in place, writes koko's known_hosts and ssh_config
    ([ssh](#ssh)), then the client config, which marks the device joined,
-   and removes any revocation record.
+   and removes any revocation record. Then it writes the bare names of the
+   Hosts its User can see into koko's ssh_config, listed on the same
+   connection ([bare names](#ssh)).
 8. Unless `--no-ssh-config`, it puts the Include line first in
    `~/.ssh/config`, then checks it as `koko status` does ([ssh](#ssh)). A
    file it leaves alone, or a line below a `Host` line, does not fail the
@@ -157,12 +159,15 @@ ssh integration (P0 spec: reach, "Device files and ssh integration").
 
 - **koko's ssh_config** (`devicefiles.WriteSSHConfig`) is rewritten whole
   and atomically (a new file renamed over it), mode 0600: a comment, then a
-  `Host` line naming `*.koko` and the bare names it is given, then the
-  block, as [a join writes it](../../internal/client/cli/testdata/join-ssh_config).
+  `Host` line naming `*.koko` and the bare names it is given, in their
+  order, then the block, as [a join of a User who sees no Host writes it](../../internal/client/cli/testdata/join-ssh_config).
+  It is written only when it would change: a regular file of mode 0600
+  that holds the same bytes is left alone.
   The ProxyCommand runs the binary that wrote the file: by the path a PATH
   lookup of `koko` finds when that is the same file, such as a package
   manager's link that outlives an upgrade, and otherwise by the path the OS
-  gives for it, which on Linux has every symlink resolved. known_hosts' path
+  gives for it, which on Linux has every symlink resolved; the Device Mux's
+  refresh keeps the binary the file runs ([the bare-name refresh](device-mux.md#the-bare-name-refresh)). known_hosts' path
   is resolved from `HOME`. Both are absolute and double-quoted, and a path
   holding `"`, `$`, `` ` ``, `\`, `%` or a control character is refused,
   since ssh or the shell running ProxyCommand would read it otherwise; a
@@ -172,7 +177,25 @@ ssh integration (P0 spec: reach, "Device files and ssh integration").
   `Host` line is split across blocks identical but for their names, so that
   no line passes 1 KiB, newline included
   ([golden](../../internal/client/devicefiles/testdata/ssh_config-split)).
-  A join writes no bare names.
+- **Bare names** are the names of the Hosts the device's User can see that
+  are not Retired, as `host.list` answers them, by name, so that bare `ssh
+  web1` works ([ADR 0014](../adr/0014-host-names-are-unique-across-the-koko-server.md)).
+  `koko join` writes them; so does the CLI right after the caller's own
+  `koko host add` (stdin included), `rename`, `move`, `retire` and `rm`
+  succeed ([`rewriteBareNamesAfterHostChange`](../../internal/client/cli/barenames.go)),
+  listing on the command's own connection, which also takes a Host someone
+  else recorded since; and the Device Mux refreshes them while it runs
+  ([the bare-name refresh](device-mux.md#the-bare-name-refresh)).
+  A Host someone else records, or one in a Space the User is added to, is
+  reachable as `web1.koko` at once, since the Gateway checks access at each
+  SSH Session, and as bare `web1` after the next refresh. The CLI writes
+  them only on a joined device's Device Connection: over the Unix socket
+  the caller is the Local caller, on a machine that joined nothing, and no
+  ssh_config is written (who writes one on the koko server's own machine
+  is #67's). A join or a Host change whose bare names cannot be
+  written still holds and exits 0, and says so in one line on stderr,
+  `koko: could not rewrite the bare names in koko's ssh_config (<why>);
+  until koko does, reach a Host as ssh <host>.koko`.
 - **known_hosts** holds each host key the client config pins, as
   `koko <key>`, mode 0600. P0 has one koko server per device, so every line
   in it is that koko server's.
@@ -357,7 +380,13 @@ Device Session, the address, `reason=dead` and the error, `no answer for
   the bare names and known_hosts;
   [`devicefiles/ssh_test.go`](../../internal/client/devicefiles/ssh_test.go):
   the 1 KiB split (golden), the keywords and paths, the ProxyCommand's path
-  by PATH, and the refusals.
+  by PATH, the refusals, and the file written only when it would change.
+- [`barenames_test.go`](../../internal/client/cli/barenames_test.go): the
+  bare names a join writes for a Member and for the Owner, Retired Hosts
+  left out; each of the caller's own Host changes rewriting them, with a
+  Host someone else recorded since; none written over the Unix socket; a
+  change whose bare names cannot be written holding, with its line on
+  stderr; and the Device Mux's refresh ([the Device Mux](device-mux.md#verifying)).
 - [`status_test.go`](../../internal/client/cli/status_test.go): `koko
   status` joined, over the socket, not joined, revoked and unreachable, and
   its Include warnings.

@@ -379,6 +379,7 @@ func recordHosts(ctx context.Context, in *Input, hosts []api.NewHost, one bool) 
 	if err != nil {
 		return addedHosts{}, err
 	}
+	in.rewriteBareNamesAfterHostChange(ctx)
 	if len(resp.Hosts) != len(hosts) {
 		return addedHosts{}, fmt.Errorf("host.add answered %d Hosts for %d", len(resp.Hosts), len(hosts))
 	}
@@ -570,6 +571,7 @@ func hostRename(ctx context.Context, in *Input) (renamedHost, error) {
 	if err != nil {
 		return renamedHost{}, err
 	}
+	in.rewriteBareNamesAfterHostChange(ctx)
 	return renamedHost{hostJSON: hostFromAPI(resp.Host), from: in.Arg("host")}, nil
 }
 
@@ -586,6 +588,7 @@ func hostMove(ctx context.Context, in *Input) (movedHost, error) {
 	if err != nil {
 		return movedHost{}, err
 	}
+	in.rewriteBareNamesAfterHostChange(ctx)
 	return movedHost(hostFromAPI(resp.Host)), nil
 }
 
@@ -603,6 +606,7 @@ func hostRetire(ctx context.Context, in *Input) (retiredHost, error) {
 	if err != nil {
 		return retiredHost{}, err
 	}
+	in.rewriteBareNamesAfterHostChange(ctx)
 	return retiredHost(hostFromAPI(resp.Host)), nil
 }
 
@@ -620,5 +624,6 @@ func hostRm(ctx context.Context, in *Input) (removedHost, error) {
 	if err != nil {
 		return removedHost{}, err
 	}
+	in.rewriteBareNamesAfterHostChange(ctx)
 	return removedHost(hostFromAPI(resp.Host)), nil
 }

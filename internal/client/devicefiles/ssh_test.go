@@ -37,7 +37,7 @@ func TestKokosSSHConfigSplitsALongNameList(t *testing.T) {
 	for i := range 40 {
 		names = append(names, fmt.Sprintf("%s%02d", strings.Repeat("h", 61), i)) // 63 characters, the longest
 	}
-	if err := devicefiles.WriteSSHConfig(home, names); err != nil {
+	if _, err := devicefiles.WriteSSHConfig(home, names); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(home, ".ssh", "koko", "ssh_config")
@@ -129,7 +129,7 @@ func TestKokosSSHConfigRunsKokoByItsPathOnPATH(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(home, ".ssh", "koko"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := devicefiles.WriteSSHConfig(home, nil); err != nil {
+		if _, err := devicefiles.WriteSSHConfig(home, nil); err != nil {
 			t.Fatal(err)
 		}
 		b, err := os.ReadFile(filepath.Join(home, ".ssh", "koko", "ssh_config"))
@@ -160,11 +160,100 @@ func TestKokosSSHConfigRefusesWhatSSHWouldMisread(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(home, ".ssh", "koko"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := devicefiles.WriteSSHConfig(home, c.names); err == nil {
+		if _, err := devicefiles.WriteSSHConfig(home, c.names); err == nil {
 			t.Errorf("%s: koko wrote its ssh_config", name)
 		}
 		if _, err := os.Stat(filepath.Join(home, ".ssh", "koko", "ssh_config")); err == nil {
 			t.Errorf("%s: an ssh_config is there", name)
 		}
+	}
+}
+
+// The Device Mux's refresh rewrites the bare names but runs koko by the path
+// the file names already, which a command run from the user's shell wrote:
+// a refresh whose own lookup finds another path, as one without the user's
+// PATH does, or an old build's after an upgrade, keeps it. A file that names
+// no koko gets this binary.
+func TestARefreshKeepsTheKokoTheFileRuns(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	linked := t.TempDir()
+	link := filepath.Join(linked, "koko")
+	if err := os.Symlink(self, link); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".ssh", "koko"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".ssh", "koko", "ssh_config")
+	proxy := func(koko string) string { return "\n  ProxyCommand \"" + koko + "\" tunnel '%h'\n" }
+
+	t.Setenv("PATH", linked)
+	if _, err := devicefiles.WriteSSHConfig(home, []string{"web1"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", "")
+	if wrote, err := devicefiles.RefreshSSHConfig(home, []string{"db1", "web1"}); err != nil || !wrote {
+		t.Fatalf("a refresh with other names wrote %v (%v), want it written", wrote, err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "Host *.koko db1 web1\n") || !strings.Contains(string(b), proxy(link)) {
+		t.Errorf("after a refresh without koko on PATH, koko's ssh_config is\n%s\nwant the new names and koko run as %s", b, link)
+	}
+
+	if err := os.WriteFile(path, []byte("# no ProxyCommand\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := devicefiles.RefreshSSHConfig(home, []string{"web1"}); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(path); err != nil || !strings.Contains(string(b), proxy(self)) {
+		t.Errorf("a refresh of a file that names no koko wrote\n%s\n(%v), want koko run as %s", b, err, self)
+	}
+}
+
+// koko's ssh_config is written only when it would change: the same names
+// again leave the file alone, while other names, or a mode other than 0600
+// on the same bytes, rewrite it with mode 0600.
+func TestKokosSSHConfigIsWrittenOnlyWhenItWouldChange(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".ssh", "koko"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".ssh", "koko", "ssh_config")
+	write := func(names ...string) (bool, os.FileInfo) {
+		t.Helper()
+		wrote, err := devicefiles.WriteSSHConfig(home, names)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fi, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return wrote, fi
+	}
+
+	if wrote, _ := write("web1"); !wrote {
+		t.Errorf("koko says it did not write an ssh_config that was not there")
+	}
+	_, first := write("web1")
+	if wrote, again := write("web1"); wrote || !os.SameFile(first, again) {
+		t.Errorf("the same names again: koko says it wrote %v, and the file is the same one: %v; want neither written", wrote, os.SameFile(first, again))
+	}
+	if wrote, other := write("web1", "db1"); !wrote || os.SameFile(first, other) {
+		t.Errorf("other names: koko says it wrote %v, and the file is the same one: %v; want it rewritten", wrote, os.SameFile(first, other))
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if wrote, fi := write("web1", "db1"); !wrote || fi.Mode().Perm() != 0o600 {
+		t.Errorf("the same names on a file of mode 0644: koko says it wrote %v, and the mode is %v; want it rewritten 0600", wrote, fi.Mode().Perm())
 	}
 }

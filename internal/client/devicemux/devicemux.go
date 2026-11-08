@@ -113,6 +113,7 @@ func Run(ctx context.Context, c Config) error {
 
 	m.wg.Go(func() { m.accept(ln) })
 	m.wg.Go(m.watchSignals)
+	m.wg.Go(m.refreshBareNames)
 	// It connects at once, so the first command finds the Device Connection
 	// open, as after koko join.
 	m.mu.Lock()

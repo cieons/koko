@@ -316,7 +316,8 @@ func Revoke(home string, c Config, learned time.Time) error {
 			return fmt.Errorf("delete the files of this device's Revoked Device Session: %w", err)
 		}
 	}
-	return WriteSSHConfig(home, nil)
+	_, err = WriteSSHConfig(home, nil)
+	return err
 }
 
 // ReadRevocation returns the revocation record the device whose home

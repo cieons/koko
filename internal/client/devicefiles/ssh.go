@@ -45,26 +45,96 @@ const IncludeLine = "Include ~/" + kokoDir + "/" + sshConfigFile
 // sshConfigHeader opens koko's ssh_config; a comment is no directive.
 const sshConfigHeader = "# Written by koko; it rewrites this file. Your own entries go in ~/.ssh/config.\n"
 
+// proxyCommand and proxyTunnel frame the double-quoted koko binary on the
+// ProxyCommand line of koko's ssh_config, which sshConfig writes and
+// proxyKoko reads back.
+const (
+	proxyCommand = "ProxyCommand "
+	proxyTunnel  = " tunnel '%h'"
+)
+
 // WriteSSHConfig rewrites koko's ssh_config on the device whose home
 // directory is home, whole and atomically, with mode 0600: a Host block for
-// every *.koko name and the bare names given, the names of Hosts the User
-// can see (ADR 0014), whose ProxyCommand runs this very koko binary as
-// koko tunnel. A name list too long for one Host line is split across
-// identical blocks, so that no line passes 1 KiB. Every keyword is one
-// OpenSSH 7.3 knows, the release that added Include, since an unknown one
-// breaks every ssh the user runs.
-func WriteSSHConfig(home string, names []string) error {
+// every *.koko name and the bare names given, in their order, the names of
+// Hosts the User can see (ADR 0014), whose ProxyCommand runs this very koko
+// binary as koko tunnel. A name list too long for one Host line is split
+// across identical blocks, so that no line passes 1 KiB. Every keyword is
+// one OpenSSH 7.3 knows, the release that added Include, since an unknown
+// one breaks every ssh the user runs.
+//
+// A file that holds those bytes already, as a regular file with mode 0600,
+// it leaves alone, so a bare-name refresh that finds the record as it was
+// writes nothing; it tells whether it wrote. A file it cannot read counts
+// as changed.
+func WriteSSHConfig(home string, names []string) (wrote bool, err error) {
 	if err := checkHome(home); err != nil {
-		return err
+		return false, err
 	}
 	b, err := renderSSHConfig(home, names)
 	if err != nil {
-		return err
+		return false, err
 	}
-	if err := replace(filepath.Join(dir(home), sshConfigFile), b, 0o600); err != nil {
-		return fmt.Errorf("write koko's ssh_config: %w", err)
+	return replaceChanged(filepath.Join(dir(home), sshConfigFile), b)
+}
+
+// RefreshSSHConfig rewrites koko's ssh_config as WriteSSHConfig does, for
+// the Device Mux's bare-name refresh, but its ProxyCommand runs koko by the
+// path the file names already, when it names one koko would write: which
+// koko ssh runs is for a command run from the user's shell to choose, a
+// join or a Host change, never for a process in the background, whose own
+// path may be an old build's after an upgrade, or one found without the
+// user's PATH. A file that names none, or cannot be read, gets this binary.
+func RefreshSSHConfig(home string, names []string) (wrote bool, err error) {
+	if err := checkHome(home); err != nil {
+		return false, err
 	}
-	return nil
+	path := filepath.Join(dir(home), sshConfigFile)
+	old, err := os.ReadFile(path)
+	if err != nil {
+		return WriteSSHConfig(home, names)
+	}
+	koko, ok := proxyKoko(old)
+	if !ok {
+		return WriteSSHConfig(home, names)
+	}
+	b, err := sshConfig(koko, filepath.Join(dir(home), knownHostsFile), names)
+	if err != nil {
+		return false, fmt.Errorf("write koko's ssh_config: %w", err)
+	}
+	return replaceChanged(path, b)
+}
+
+// replaceChanged writes b as koko's ssh_config at path, as replace does,
+// unless path is a regular file of mode 0600 that holds b already, and
+// tells whether it wrote. A file it cannot read counts as changed.
+func replaceChanged(path string, b []byte) (bool, error) {
+	if fi, err := os.Lstat(path); err == nil && fi.Mode().IsRegular() && fi.Mode().Perm() == 0o600 {
+		if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, b) {
+			return false, nil
+		}
+	}
+	if err := replace(path, b, 0o600); err != nil {
+		return false, fmt.Errorf("write koko's ssh_config: %w", err)
+	}
+	return true, nil
+}
+
+// proxyKoko returns the koko binary the ProxyCommand of koko's ssh_config b
+// runs, and whether b names one as sshConfig writes it.
+func proxyKoko(b []byte) (string, bool) {
+	for line := range strings.Lines(string(b)) {
+		arg, ok := strings.CutPrefix(line, "  "+proxyCommand)
+		if !ok {
+			continue
+		}
+		arg, ok = strings.CutSuffix(arg, proxyTunnel+"\n")
+		koko := strings.TrimSuffix(strings.TrimPrefix(arg, `"`), `"`)
+		if quoted, err := quotePath(koko); ok && err == nil && quoted == arg {
+			return koko, true
+		}
+		return "", false
+	}
+	return "", false
 }
 
 // renderSSHConfig returns koko's ssh_config for the device whose home
@@ -125,7 +195,7 @@ func sshConfig(koko, knownHosts string, names []string) ([]byte, error) {
 	// ssh never ends an SSH Session that could still Resume; they move with
 	// the grace.
 	body := []string{
-		"ProxyCommand " + kokoArg + " tunnel '%h'",
+		proxyCommand + kokoArg + proxyTunnel,
 		"HostKeyAlias " + hostKeyAlias,
 		"UserKnownHostsFile " + knownHostsArg,
 		"StrictHostKeyChecking yes",

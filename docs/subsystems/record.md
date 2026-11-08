@@ -79,8 +79,7 @@ pin, and the name it had, which it no longer holds. From then on:
 Retiring ends every live SSH Session to the Host, each with a line naming
 the retirement ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
 
-Not yet: a Relay in use cannot be retired once Relays exist (#72), and the
-CLI does not yet rewrite the bare-name list after it (#69).
+Not yet: a Relay in use cannot be retired once Relays exist (#72).
 
 ## A Service
 
@@ -291,6 +290,10 @@ show`'s shape, Note and all, as `rm` prints the Host it deleted; for people,
 `Retired Host web1 (host_...); name it by its id from now on.` `koko host ls
 --all` adds the Retired Hosts, and `koko host ls --all state=retired` lists
 only them; without `--all`, `state=retired` matches nothing.
+
+On a joined device, the Host commands that change which Hosts the caller
+sees, or by what name, also rewrite the [bare names](device-connection.md#ssh)
+in koko's ssh_config at once.
 
 `koko host ls` takes filter terms that need no quoting in a shell
 ([`readFilters`](../../internal/client/cli/filter.go)): `key=value`,
