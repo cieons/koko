@@ -13,6 +13,8 @@ koko 是自托管的。它记录你在各家厂商租用的服务器，也是人
 
 [安装和运行 koko 服务器](docs/install.zh-CN.md)：在装有 systemd 的 Linux
 机器上运行一行命令，以及升级、回退和恢复。
+没有 systemd 时，用 Docker 运行镜像 `ghcr.io/cieons/koko`
+（[在容器中运行](docs/install.zh-CN.md#在容器中运行)）。
 
 ## 功能
 

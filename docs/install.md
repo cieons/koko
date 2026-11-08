@@ -2,17 +2,19 @@
 
 [中文](install.zh-CN.md)
 
-The koko server runs on one Linux machine with systemd. This page covers
-installing it, checking a release, upgrading and going back, keeping the
-Root Key, restoring onto another machine, and what to do without the Root
-Key. How each step works is in the [installer](subsystems/installer.md) and
+The koko server runs on one Linux machine with systemd, or in a container
+from its image, `ghcr.io/cieons/koko` ([In a container](#in-a-container)).
+This page covers installing it, checking a release, upgrading and going
+back, keeping the Root Key, restoring onto another machine, and what to do
+without the Root Key, then the same for the container. How each step works
+is in the [installer](subsystems/installer.md) and
 [release](subsystems/release.md) references.
 
 ## What the machine needs
 
 - Linux on amd64 or arm64, with systemd 247 or later running it: Debian 11,
   Ubuntu 22.04, RHEL 9 or later. A container that systemd does not run is
-  refused.
+  refused: run [the image](#in-a-container) there instead.
 - `/var/lib/koko` on a local filesystem, not NFS or another network
   filesystem.
 - A free TCP port, 7822 unless you pick another with `--port`.
@@ -191,3 +193,279 @@ runs `koko leave`, then joins with a new Join Code.
 binary. It keeps the data directory, the Root Key and the `koko` user, and
 prints the port it listened on: install again without `--owner`, with that
 `--port`, to run it on the same data.
+
+## In a container
+
+The image `ghcr.io/cieons/koko` runs the koko server where systemd does
+not, such as beside your other containers in Docker. Each release pushes
+it for amd64 and arm64, holding that release's own `koko-linux-<arch>`
+binary. The container starts as root only to give its one directory to
+uid 65532, then serves as uid 65532 with no capability. Why it works this
+way is in [ADR 0037](adr/0037-the-container-keeps-its-data-and-its-root-key-in-one-directory.md)
+and [ADR 0038](adr/0038-a-container-initialises-at-its-first-start-and-gives-its-first-join-code-to-docker-exec.md).
+
+### What the Docker host needs
+
+- Docker with Compose v2 (`docker compose`), on amd64 or arm64.
+- A directory for koko, `/srv/koko` below, on a local filesystem, not NFS
+  or another network filesystem: the koko server refuses one at start.
+- A free TCP port to publish, 7822 below. **Open it in your provider's
+  firewall**, since koko opens none itself.
+
+Nothing else is prepared on the Docker host: no user, no key, no
+directory. Docker makes `/srv/koko` when it is missing, and the container
+gives it to uid 65532 with mode 0700, so on the Docker host only root can
+read it.
+
+### Starting it
+
+Save [`release/compose.yaml`](../release/compose.yaml) as `compose.yaml` in
+a directory of its own:
+
+```yaml
+# The koko server in a container: see docs/install.md, "In a container".
+# Before the first start, beside this file:
+#   echo KOKO_VERSION=0.2.0 > .env    # the release to run, without its v
+# After it: docker exec koko koko device add    # your first Join Code
+services:
+  koko:
+    image: ghcr.io/cieons/koko:${KOKO_VERSION:?set KOKO_VERSION in .env, such as KOKO_VERSION=0.2.0}
+    container_name: koko
+    restart: unless-stopped
+    stop_grace_period: 30s
+    # Root only long enough to give /koko to uid 65532, then never again.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: [no-new-privileges:true]
+    ports:
+      - "7822:7822"        # with another host port, name it in KOKO_ADDRESS
+    volumes:
+      - /srv/koko:/koko    # the data and the Root Key; Docker makes it if missing
+    environment:
+      KOKO_OWNER: alice                  # read only at the first start
+      KOKO_ADDRESS: koko.example.com     # host[:published port]; read only at the first start
+```
+
+Put yourself as the Owner in `KOKO_OWNER`, and in `KOKO_ADDRESS` the
+address your devices will reach the koko server at: a DNS name is best, as
+for [`--address`](#installing). Then, beside the file:
+
+```sh
+echo KOKO_VERSION=0.2.0 > .env     # the release to run, without its v
+docker compose up -d
+docker exec koko koko device add   # your first Join Code
+```
+
+`KOKO_VERSION` is required, so the container always runs a release you
+chose. At its first start the koko server makes the Root Key,
+`/srv/koko/root.key`, and initialises itself. `docker logs koko` then says
+`koko server initialised`, with the host key's fingerprint, the listen
+address, the Root Key's path and id, and the `koko device add` line to run
+next. No log line holds the Root Key or a Join Code. A fresh koko server
+without `KOKO_ADDRESS` refuses to start, naming it: the container's own IP
+is private, and no device could reach it.
+
+`koko device add` prints your first Join Code, which works once, within 15
+minutes, and the `koko join` line to run with it on your computer
+([the CLI on your computer](#the-cli-on-your-computer)). Lost the code, or
+it expired? Run the same line again, as you do after losing every device.
+
+Without Compose, the same container with `docker run`:
+
+```sh
+docker run -d --name koko --restart unless-stopped --stop-timeout 30 \
+  --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+  --cap-add SETGID --cap-add SETUID --security-opt no-new-privileges:true \
+  -p 7822:7822 -v /srv/koko:/koko \
+  -e KOKO_OWNER=alice -e KOKO_ADDRESS=koko.example.com \
+  ghcr.io/cieons/koko:0.2.0
+```
+
+### Owner commands
+
+`docker exec koko koko <command>` runs the koko CLI inside the container,
+where it reaches the koko server over its Unix socket as the Local caller,
+which acts as the Owner. So the Owner needs no device to act:
+
+```sh
+docker exec koko koko server show
+docker exec koko koko server set address=<host[:port]>
+docker exec koko koko device add
+docker exec koko koko user invite bob
+```
+
+The Docker host's own shell is not a Local caller, since the socket stays
+inside the container: from the Docker host, use `docker exec`, or join it
+as a device. Mounting the container's `/run/koko` onto the Docker host is
+not supported.
+
+### The port
+
+The container listens on 7822, so any other port, 443 included, is only a
+port mapping on the Docker host. When the published port is 7822,
+`KOKO_ADDRESS: koko.example.com` is enough. When it differs, name the
+published port in the address, since it is the port devices dial:
+
+```yaml
+    ports:
+      - "443:7822"
+    environment:
+      KOKO_ADDRESS: koko.example.com:443
+```
+
+`KOKO_OWNER` and `KOKO_ADDRESS` are read only at the first start. A later
+start whose values differ from the record logs a warning and changes
+nothing. To move the published port later, change the mapping and
+`KOKO_ADDRESS`, run `docker compose up -d`, then
+`docker exec koko koko server set address=koko.example.com:<port>`, and
+`koko connect koko.example.com:<port>` on each device.
+
+With `network_mode: host`, the container's port is the machine's: leave
+out `ports:`, and set `KOKO_LISTEN` (such as `:8443`) to listen on another
+port than 7822. It must be 1024 or above, since the koko server holds no
+capability. When `KOKO_ADDRESS` names no port, devices dial the one the
+koko server listens on.
+
+### Backups and the Root Key
+
+`/srv/koko` holds everything the container keeps: the Root Key,
+`root.key`, one line that names its own id, and the data directory,
+`data/`, with `koko.db` and the latest `koko.db.before-<n>` snapshot.
+
+The Root Key seals every Secret and the koko server's own keys. A copy of
+`data/` alone reveals no Secret and no private key. **A copy of the whole
+directory holds the record and its key together**, and the koko process can
+read, change or delete `root.key`, which systemd prevents on an installed
+koko server. So:
+
+1. Right after the first start, copy `root.key` off the machine, such as
+   into a password manager. It is one line: `sudo cat /srv/koko/root.key`.
+   `docker exec koko koko server show` prints its id.
+2. Back up `data/` on its own, copied as root while the container is
+   stopped (`docker compose stop`, then `docker compose start`). That copy
+   can be kept anywhere.
+3. Keep a copy of the whole directory only where you would keep the Secrets
+   themselves.
+4. A disk snapshot of the machine holds both, but your provider controls
+   the machine already.
+
+The koko server never makes a Root Key over sealed data: a missing or wrong
+`root.key` is refused at start, naming the id the data needs. Without any
+copy of it, the way on is the one in
+[Without the Root Key](#without-the-root-key): move `data/` aside and start
+again.
+
+### Upgrading the container
+
+Change `KOKO_VERSION` in `.env`, then run `docker compose up -d` again.
+Compose pulls the new image and replaces the container, which keeps its
+record, its Owner, its Server Address and its keys in `/srv/koko`. Every
+open SSH Session ends, with a line saying the koko server is restarting.
+When the new koko changes the database's schema, the koko server first
+copies the database as it was to `/srv/koko/data/koko.db.before-<n>`, and
+keeps only the latest snapshot.
+
+With `docker run`, run `docker stop koko` and `docker rm koko`, which keep
+`/srv/koko`, then the `docker run` line with the new version.
+
+### Going back in a container
+
+To go back to the koko you upgraded from, set its version in `.env` and run
+`docker compose up -d`. When the upgrade changed no schema, that is all.
+When it did, the older image refuses at start and writes nothing, and
+`docker logs koko` names the version it needs and the snapshot to put in
+place. Put it in place on the Docker host, in a root shell (`sudo -s`),
+beside `compose.yaml`:
+
+```sh
+docker compose down
+mkdir /srv/koko-newer
+mv /srv/koko/data/koko.db /srv/koko-newer/
+mv /srv/koko/data/koko.db-wal /srv/koko/data/koko.db-shm /srv/koko-newer/ 2>/dev/null # there only after a crash
+mv /srv/koko/data/koko.db.before-<n> /srv/koko/data/koko.db
+docker compose up -d
+```
+
+with the snapshot the refusal named in place of `koko.db.before-<n>`.
+Anything written after the upgrade is lost with the newer database, which
+stays in `/srv/koko-newer`.
+
+### Restoring or moving the container
+
+1. On the old machine: `docker compose down`, then copy `/srv/koko` as a
+   whole directory, as root. Or copy `data/` alone and keep it with your
+   copy of `root.key`: a restore needs both.
+2. On the new machine, put both back at `/srv/koko`, `root.key` beside
+   `data/`, with any owner: the container gives them to uid 65532 when it
+   starts.
+3. Run `docker compose up -d` there, with the same `compose.yaml` and
+   `.env`.
+
+The host key travels sealed in `data/`, so devices still trust the koko
+server. If its address changed, run
+`docker exec koko koko server set address=<host[:port]>`, and
+`koko connect <host:port>` on each device.
+
+### Moving from systemd
+
+`koko server uninstall` stops an installed koko server and keeps its data
+directory and Root Key. Put them in the container's directory, one that
+holds no `data/` yet, as root:
+
+```sh
+koko server uninstall
+mkdir -p /srv/koko
+cp -a /var/lib/koko /srv/koko/data
+cp /etc/koko/root.key /srv/koko/root.key
+```
+
+Then start the Compose file as above, without `docker exec … device add`:
+the devices you joined keep working. Set `KOKO_OWNER` and `KOKO_ADDRESS`
+to its Owner and Server Address, or each start logs a warning that they
+differ. If the installed koko server listened on another port than 7822,
+publish that port (`"443:7822"` for 443), and, when its Server Address
+names no port, name it, in `KOKO_ADDRESS` and with
+`docker exec koko koko server set address=koko.example.com:443`.
+
+Going the other way, put `data/` at `/var/lib/koko` and `root.key` at
+`/etc/koko/root.key`, then follow
+[Restoring onto another machine](#restoring-onto-another-machine) from
+step 2, with `--port` set to the published port when it was not 7822.
+
+### Checking the image
+
+Each image carries a GitHub artifact attestation, which the
+[GitHub CLI](https://cli.github.com) checks:
+
+```sh
+gh attestation verify oci://ghcr.io/cieons/koko:0.2.0 --repo cieons/koko
+```
+
+The image's `/usr/local/bin/koko` is the release's `koko-linux-<arch>`
+byte for byte, the file `SHA256SUMS` lists.
+
+### Starting as uid 65532
+
+Where an image may not start as root, such as under Kubernetes'
+`runAsNonRoot`, run it as uid 65532 from the start, on a directory that
+uid 65532 can already write: `user: "65532:65532"` in the Compose file,
+`docker run --user 65532:65532`, or a pod with `runAsUser: 65532`,
+`runAsGroup: 65532` and `fsGroup: 65532`. A directory on the Docker host
+is made first, as root: `install -d -o 65532 -g 65532 -m 0700 /srv/koko`.
+The koko server
+then prepares nothing, drops nothing and needs no capability. A directory
+it cannot write is refused at start, naming the directory and the uid and
+gid it runs as. Another uid works only where both `/koko` and the image's
+`/run/koko` are writable by it.
+
+### The Root Key kept apart
+
+To keep the Root Key out of the directory you back up, mount it read-only
+from elsewhere and point `KOKO_ROOT_KEY_FILE` at it. After the first start,
+run `docker compose down`, then, as root, move `/srv/koko/root.key` into a
+directory of its own, say `/etc/koko-key/root.key` (`mkdir /etc/koko-key`
+first), still uid 65532's, and `chmod 0400` it. Then add
+`/etc/koko-key/root.key:/run/secrets/koko-root.key:ro` to `volumes:` and
+`KOKO_ROOT_KEY_FILE: /run/secrets/koko-root.key` to `environment:`, and run
+`docker compose up -d`. The koko server leaves a file on a read-only mount
+as it is; one it cannot read is refused at start.

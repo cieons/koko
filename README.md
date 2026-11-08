@@ -14,6 +14,8 @@ expect rough edges.
 
 [Installing and running the koko server](docs/install.md): one line on a
 Linux machine with systemd, then upgrading, going back and restoring.
+Without systemd, run the image `ghcr.io/cieons/koko` with Docker
+([In a container](docs/install.md#in-a-container)).
 
 ## What it does
 
