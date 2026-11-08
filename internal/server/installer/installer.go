@@ -64,8 +64,8 @@ const (
 	// User is the static system user the koko service runs as.
 	User = "koko"
 	// defaultPort is the TCP port a fresh koko server listens on unless
-	// --port names another.
-	defaultPort = 443
+	// --port names another (ADR 0036).
+	defaultPort = 7822
 	// minSystemd is the oldest systemd whose LoadCredential= the unit can
 	// use.
 	minSystemd = 247

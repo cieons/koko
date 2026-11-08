@@ -76,7 +76,7 @@ type Config struct {
 	// Key's file as the Owner keeps it, which server.show names; empty
 	// means RootKeyPath itself.
 	RootKeySource string
-	// Listen is the TCP listen address, such as :443, where devices reach
+	// Listen is the TCP listen address, such as :7822, where devices reach
 	// the koko server once it is initialised. A Server Address without a
 	// port names its port.
 	Listen string

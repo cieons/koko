@@ -10,12 +10,13 @@
 # on a fresh runner.
 #
 # In this order: a binary that does not match SHA256SUMS is never run; the
-# older build installs, listens on 443 as the koko user with the Root Key
+# older build installs, listens on 7822 as the koko user with the Root Key
 # through LoadCredential=, and a device joins with the printed Join Code and
-# makes an API call; the newer build upgrades it, restarting the service and
-# leaving the snapshot, and the device still works; uninstall keeps the data
-# directory, the Root Key and the koko user; and install, run again on that
-# data directory put back by root, starts the koko server with its record.
+# makes an API call; the newer build upgrades it, restarting the service on
+# the port it kept, with no capability, and leaving the snapshot, and the
+# device still works; uninstall keeps the data directory, the Root Key and
+# the koko user; and install, run again on that data directory put back by
+# root, starts the koko server with its record on the default port, 7822.
 # On the way it checks what only a real systemd shows: the Environment
 # systemctl show quotes, and koko server install refusing a container that
 # systemd does not run.
@@ -29,7 +30,7 @@
 #
 # Run it only on a throwaway Linux machine with systemd, Docker, jq, ss and
 # passwordless sudo, where koko was never installed: it installs koko as
-# root on port 443, and leaves its data, its Root Key and its user behind.
+# root on port 7822, and leaves its data, its Root Key and its user behind.
 
 set -eu
 
@@ -62,6 +63,9 @@ done
 ! id koko >/dev/null 2>&1 || fail "the koko user is there: run this only on a machine koko was never installed on"
 
 work=$(mktemp -d)
+# port is the koko server's default port (ADR 0036), which the older build
+# is given with --port, since it may be from before that default.
+port=7822
 device=koko-systemd-check-device
 image=ubuntu:24.04
 github=$work/github
@@ -151,16 +155,16 @@ install_ok() {
 }
 
 # check_running checks that the koko service runs as the koko user, listens
-# on 443 and holds the Root Key through LoadCredential=, and sets pid to its
-# process.
+# on $port and holds the Root Key through LoadCredential=, and sets pid to
+# its process.
 check_running() {
 	systemctl is-active --quiet koko.service || fail "the koko service is not active"
 	pid=$(systemctl show --property=MainPID --value koko.service)
 	[ "$pid" != 0 ] || fail "the koko service has no process"
 	user=$(ps -o user= -p "$pid")
 	[ "$user" = koko ] || fail "the koko server runs as $user, not koko"
-	sudo ss -Hltnp 'sport = :443' | grep -q "pid=$pid," ||
-		fail "the koko server (pid $pid) does not listen on 443: $(sudo ss -Hltnp 'sport = :443')"
+	sudo ss -Hltnp "sport = :$port" | grep -q "pid=$pid," ||
+		fail "the koko server (pid $pid) does not listen on $port: $(sudo ss -Hltnp "sport = :$port")"
 	# systemctl show prints LoadCredential as [unprintable], so ask systemd
 	# over D-Bus.
 	credential=$(busctl get-property org.freedesktop.systemd1 /org/freedesktop/systemd1/unit/koko_2eservice \
@@ -207,9 +211,9 @@ cat "$work/err" >&2
 [ "$status" = 1 ] || fail "koko server install exited $status, not 1"
 jq -e '.error.code == "unsupported_platform"' "$work/err" >/dev/null || fail "koko server install did not refuse with unsupported_platform"
 
-step "install.sh installs the older build, which runs as the koko user on 443"
+step "install.sh installs the older build, which runs as the koko user on $port"
 echo v0.0.1 >"$github/latest"
-install_ok "$older" sh -s -- --owner alice --address localhost --json
+install_ok "$older" sh -s -- --owner alice --address localhost --port "$port" --json
 # The Join Code is a credential, so it is not shown.
 jq 'del(.join_code.code)' "$work/out"
 code=$(jq -r .join_code.code "$work/out")
@@ -223,12 +227,12 @@ device_calls
 
 step "systemctl show quotes an Environment entry holding [ as install reads it"
 sudo mkdir -p /etc/systemd/system/koko.service.d
-printf '[Service]\nEnvironment=KOKO_LISTEN=[::]:443\n' |
+printf '[Service]\nEnvironment=KOKO_LISTEN=[::]:%s\n' "$port" |
 	sudo tee /etc/systemd/system/koko.service.d/listen.conf >/dev/null
 sudo systemctl daemon-reload
 environment=$(systemctl show --property=Environment --value koko.service)
 case " $environment " in
-*' "KOKO_LISTEN=[::]:443" '*) ;;
+*" \"KOKO_LISTEN=[::]:$port\" "*) ;;
 *) fail "systemctl show prints the koko service's Environment as: $environment" ;;
 esac
 
@@ -237,10 +241,17 @@ echo v0.0.2 >"$github/latest"
 before=$pid
 install_ok "$newer" sh -s -- --json
 jq . "$work/out"
-jq -e '.upgraded and .listen_port == 443' "$work/out" >/dev/null || fail "install.sh did not upgrade on port 443"
+jq -e --argjson port "$port" '.upgraded and .listen_port == $port' "$work/out" >/dev/null ||
+	fail "install.sh did not upgrade on port $port"
 cmp -s /usr/local/bin/koko "$newer/$asset" || fail "/usr/local/bin/koko is not the newer build"
 check_running
 [ "$pid" != "$before" ] || fail "the koko service did not restart"
+# A port of 1024 or above needs no capability, so the newer unit leaves the
+# koko server none, not even one it could gain.
+for set in CapEff CapBnd; do
+	held=$(awk -v set="$set:" '$1 == set { print $2 }' "/proc/$pid/status")
+	[ "$held" = 0000000000000000 ] || fail "the koko server on $port holds the capabilities $held in $set"
+done
 sudo sh -c 'ls -l /var/lib/koko/koko.db.before-*' || fail "the upgrade left no snapshot"
 
 step "the device still works"
@@ -255,16 +266,23 @@ jq . "$work/out"
 for path in /etc/systemd/system/koko.service /usr/local/bin/koko; do
 	[ ! -e "$path" ] || fail "uninstall left $path"
 done
-listening=$(sudo ss -Hltn 'sport = :443')
-[ -z "$listening" ] || fail "something still listens on 443: $listening"
+listening=$(sudo ss -Hltn "sport = :$port")
+[ -z "$listening" ] || fail "something still listens on $port: $listening"
 sudo test -f /var/lib/koko/koko.db || fail "uninstall removed /var/lib/koko/koko.db"
 sudo test -f /etc/koko/root.key || fail "uninstall removed /etc/koko/root.key"
 id koko >/dev/null || fail "uninstall removed the koko user"
 
-step "install.sh without --owner runs the data directory root put back, with its record"
+step "install.sh without --owner runs the data directory root put back, with its record, on the default port"
+# Without the unit or the drop-in, install cannot know the port the koko
+# server listened on, so it takes the newer build's default, and says so by
+# naming the address devices must connect to, which a port read from a
+# drop-in would not.
+sudo rm -f /etc/systemd/system/koko.service.d/listen.conf
 sudo chown -R root:root /var/lib/koko
 install_ok "$newer" sh -s -- --json
 jq . "$work/out"
+jq -e --argjson port "$port" '.upgraded and .listen_port == $port and .devices_must_connect == "localhost:\($port)"' "$work/out" >/dev/null ||
+	fail "install.sh did not take the default port $port"
 check_running
 not_koko=$(sudo find /var/lib/koko ! -user koko)
 [ -z "$not_koko" ] || fail "systemd left these in the data directory to another user than koko: $not_koko"

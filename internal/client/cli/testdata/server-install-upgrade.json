@@ -4,5 +4,5 @@
   "host_key_fingerprint": "SHA256:<fingerprint>",
   "root_key_file": "/etc/koko/root.key",
   "root_key_id": "rootkey_<1>",
-  "listen_port": 443
+  "listen_port": 7822
 }

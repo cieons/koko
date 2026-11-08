@@ -23,8 +23,17 @@ StateDirectory={{.StateDirectory}}
 StateDirectoryMode=0700
 RuntimeDirectory={{.RuntimeDirectory}}
 RuntimeDirectoryMode=0755
+{{- if lt .Port 1024}}
+# Port {{.Port}} is below 1024, which only CAP_NET_BIND_SERVICE lets the koko
+# user bind.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+{{- else}}
+# Port {{.Port}} needs no capability, so the koko server holds none. A port
+# below 1024 needs CAP_NET_BIND_SERVICE: after moving KOKO_LISTEN below 1024
+# with a drop-in, run koko server install again, which grants it here.
+CapabilityBoundingSet=
+{{- end}}
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

@@ -1,3 +1,7 @@
+---
+status: its default port, 443, superseded by ADR-0036
+---
+
 # SSH end to end; the web UI through the CLI
 
 The CLI reaches the koko server over SSH, and P0 has no TLS anywhere: HTTPS

@@ -21,7 +21,7 @@ type Request struct {
 	// serveraddr); empty when --address was not given.
 	Address string
 	// Port is the TCP port the koko server listens on, or 0 when --port
-	// was not given: a fresh koko server then listens on 443, and an
+	// was not given: a fresh koko server then listens on 7822, and an
 	// upgrade keeps the port the koko unit names.
 	Port int
 }

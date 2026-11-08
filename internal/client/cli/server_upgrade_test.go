@@ -72,8 +72,8 @@ func TestServerInstallUpgradesAnInitialisedServer(t *testing.T) {
 		t.Errorf("install printed %+v, want an upgrade and no Join Code", out)
 	}
 	if out.Address != before.Address || out.HostKeyFingerprint != before.HostKeyFingerprint ||
-		out.RootKeyID != before.RootKeyID || out.RootKeyFile != "/etc/koko/root.key" || out.ListenPort != 443 {
-		t.Errorf("the upgrade printed %+v, want the Server Address, host key and Root Key of %+v on port 443", out, before)
+		out.RootKeyID != before.RootKeyID || out.RootKeyFile != "/etc/koko/root.key" || out.ListenPort != 7822 {
+		t.Errorf("the upgrade printed %+v, want the Server Address, host key and Root Key of %+v on port 7822", out, before)
 	}
 
 	if got := readFile(t, m, "/usr/local/bin/koko"); got != string(release) {
@@ -230,8 +230,8 @@ func TestServerInstallUpgradeChecksThePort(t *testing.T) {
 		install(t, m, "--owner", "alice")
 		calls := len(m.Calls())
 		upgrade(t, m)
-		if whats := callNames(m.Calls()[calls:]); !slices.Contains(whats, "port 443") || !slices.Contains(whats, "show koko.service MainPID") {
-			t.Errorf("the upgrade did not check who holds port 443: %v", whats)
+		if whats := callNames(m.Calls()[calls:]); !slices.Contains(whats, "port 7822") || !slices.Contains(whats, "show koko.service MainPID") {
+			t.Errorf("the upgrade did not check who holds port 7822: %v", whats)
 		}
 	})
 	nginx := portowner.Process{PID: 812, Name: "nginx", User: "www-data"}
@@ -246,10 +246,10 @@ func TestServerInstallUpgradeChecksThePort(t *testing.T) {
 			if err := m.Systemctl(context.Background(), "stop", "koko.service"); err != nil {
 				t.Fatal(err)
 			}
-			m.Listening[443] = nginx
+			m.Listening[7822] = nginx
 		}, nil, "nginx (pid 812, user www-data)"},
 		{"another koko process", func(m *harness.Machine) {
-			m.Listening[443] = portowner.Process{PID: 9001, Name: "koko", User: "koko"}
+			m.Listening[7822] = portowner.Process{PID: 9001, Name: "koko", User: "koko"}
 		}, nil, "koko (pid 9001, user koko)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -322,7 +322,7 @@ func TestServerInstallUpgradeNeedsTheRootKey(t *testing.T) {
 }
 
 // Without its unit, as after koko server uninstall, an upgrade cannot know
-// the port the koko server listened on: it listens on 443, or on the port
+// the port the koko server listened on: it listens on 7822, or on the port
 // --port gives, and says devices that joined on another port must take the
 // new address. A unit whose port install cannot read is never written over.
 func TestServerInstallUpgradeAndTheUnit(t *testing.T) {
@@ -332,8 +332,8 @@ func TestServerInstallUpgradeAndTheUnit(t *testing.T) {
 		install(t, m, "--owner", "alice", "--port", "8443")
 		m.Koko("server", "uninstall", "--json").WantSuccess(t)
 		out := upgrade(t, m)
-		if out.ListenPort != 443 || out.DevicesMustConnect != harness.SourceIP+":443" {
-			t.Errorf("the upgrade printed %+v, want port 443 and devices_must_connect %s:443", out, harness.SourceIP)
+		if out.ListenPort != 7822 || out.DevicesMustConnect != harness.SourceIP+":7822" {
+			t.Errorf("the upgrade printed %+v, want port 7822 and devices_must_connect %s:7822", out, harness.SourceIP)
 		}
 		wantInitialised(t, m, "alice")
 	})
@@ -401,6 +401,36 @@ func TestServerInstallUpgradeWithADropInPort(t *testing.T) {
 	out = upgrade(t, m)
 	if out.ListenPort != 8443 || out.DevicesMustConnect != "" {
 		t.Errorf("install after uninstall printed %+v, want the drop-in's port 8443 and no devices_must_connect", out)
+	}
+}
+
+// A drop-in that moves the port below 1024 gets the right to bind it from
+// the next install, which writes the unit for the drop-in's port, and a
+// drop-in that moves it back gives that right up.
+func TestServerInstallUpgradeGrantsTheBindToADropInPortBelow1024(t *testing.T) {
+	t.Parallel()
+	m := harness.NewMachine(t)
+	install(t, m, "--owner", "alice")
+	wantBindGrant(t, readFile(t, m, "/etc/systemd/system/koko.service"), false)
+	for _, tc := range []struct {
+		port   int
+		grants bool
+	}{{443, true}, {8443, false}} {
+		if err := os.MkdirAll(m.Path("/etc/systemd/system/koko.service.d"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(m.Path("/etc/systemd/system/koko.service.d/port.conf"), fmt.Appendf(nil, "[Service]\nEnvironment=KOKO_LISTEN=:%d\n", tc.port), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{{"daemon-reload"}, {"restart", "koko.service"}} {
+			if err := m.Systemctl(context.Background(), args...); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if out := upgrade(t, m); out.ListenPort != tc.port {
+			t.Errorf("the upgrade printed %+v, want the drop-in's port %d", out, tc.port)
+		}
+		wantBindGrant(t, readFile(t, m, "/etc/systemd/system/koko.service"), tc.grants)
 	}
 }
 

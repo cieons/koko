@@ -27,7 +27,7 @@ Linux machine with systemd, then upgrading, going back and restoring.
 - A gateway that ends every SSH session, so only koko holds a key your
   hosts trust.
 - Enrolling a host adds one public key to it and changes nothing else.
-- One SSH port (443 by default) and no certificates; `ssh`, `scp` and
+- One SSH port (7822 by default) and no certificates; `ssh`, `scp` and
   `rsync` work unchanged through it.
 - CLI first, with a built-in skill for coding agents (`koko skill`).
 

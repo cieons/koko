@@ -13,7 +13,7 @@ Key. How each step works is in the [installer](subsystems/installer.md) and
   refused.
 - `/var/lib/koko` on a local filesystem, not NFS or another network
   filesystem.
-- A free TCP port, 443 unless you pick another with `--port`.
+- A free TCP port, 7822 unless you pick another with `--port`.
 - `curl`, `sha256sum`, `awk` and `mktemp`, and root, as the root user or
   through `sudo`.
 
@@ -34,9 +34,11 @@ Not root? Pipe it to `sudo sh` instead of `sh`.
   machine's public IP, and refuses a private one (10.x, 192.168.x,
   100.64.x and the like), since your devices could not reach it. Behind NAT
   that maps another port, write that port: `--address koko.example.com:8443`.
-- **`--port`**: the port the koko server listens on, 443 by default. Install
+- **`--port`**: the port the koko server listens on, 7822 by default. Install
   never moves to another port by itself: when the port is taken, it names
-  the process holding it and stops.
+  the process holding it and stops. A network that lets only web traffic
+  out (ports 80 and 443) cannot reach 7822: pick `--port 443` if your
+  devices sit behind one and nothing else on the machine holds 443.
 - **`KOKO_VERSION`** pins a release instead of the latest:
   `curl … | sudo env KOKO_VERSION=v0.3.0 sh -s -- …`. Plain `sudo` drops
   the variable, hence `env`.
@@ -99,9 +101,11 @@ restarting. `--owner` and `--address` are refused on an upgrade: change the
 Server Address with `koko server set address=<host[:port]>` instead.
 
 The upgrade keeps the port the koko server listens on, even one set with a
-drop-in (`systemctl edit koko`). `--port` moves it. When the Server Address
-names no port of its own, devices follow the listen port, so after a move
-the output names the `koko connect <host:port>` line to run on each device.
+drop-in (`systemctl edit koko`); after a drop-in moves it below 1024, run
+the install line again, which lets the koko server bind it. `--port` moves
+it. When the Server Address names no port of its own, devices follow the
+listen port, so after a move the output names the `koko connect
+<host:port>` line to run on each device.
 
 When the new koko changes the database's schema, the koko server first
 copies the database as it was to `/var/lib/koko/koko.db.before-<n>`, the
@@ -157,7 +161,7 @@ koko server is stopped, kept with the Root Key, restores it:
    `/var/lib/koko`, and the Root Key at `/etc/koko/root.key`, owned by root
    with mode 0600, in `/etc/koko`, mode 0700.
 3. Run the install line without `--owner`, adding `--port <port>` if the old
-   koko server listened on another port than 443. It finds the koko
+   koko server listened on another port than 7822. It finds the koko
    server's record and starts it.
 
 The host key travels in the data directory, so devices still trust the koko

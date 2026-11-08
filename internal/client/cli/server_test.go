@@ -37,7 +37,7 @@ func TestServerRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
 		DataDir:       "/var/lib/koko",
 		RootKeyPath:   "/run/credentials/koko.service/root-key",
 		RootKeySource: "/etc/koko/root.key",
-		Listen:        ":443",
+		Listen:        ":7822",
 		LogLevel:      slog.LevelInfo,
 	}
 	for _, tc := range []struct {

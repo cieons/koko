@@ -2,11 +2,13 @@ package cli_test
 
 import (
 	"encoding/json/v2"
+	"fmt"
 	"io/fs"
 	"net/netip"
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -152,7 +154,7 @@ func TestServerInstallOnAFreshMachine(t *testing.T) {
 	wantInitialised(t, m, "alice")
 
 	// What install printed.
-	if out.Address != harness.SourceIP || out.RootKeyFile != "/etc/koko/root.key" || out.ListenPort != 443 ||
+	if out.Address != harness.SourceIP || out.RootKeyFile != "/etc/koko/root.key" || out.ListenPort != 7822 ||
 		!strings.HasPrefix(out.HostKeyFingerprint, "SHA256:") || !strings.HasPrefix(out.RootKeyID, "rootkey_") {
 		t.Errorf("install printed %+v", out)
 	}
@@ -187,7 +189,7 @@ func TestServerInstallChecksFirstAndWaitsForTheSocket(t *testing.T) {
 	if firstWrite < 0 {
 		t.Fatalf("install never created the koko user: %v", whats)
 	}
-	for _, check := range []string{"systemd --version", "filesystem /var/lib", "port 443", "source ip"} {
+	for _, check := range []string{"systemd --version", "filesystem /var/lib", "port 7822", "source ip"} {
 		i := slices.Index(whats, check)
 		switch {
 		case i < 0:
@@ -232,11 +234,11 @@ func TestServerInstallForPeople(t *testing.T) {
 	}
 	id, _, _ := strings.Cut(string(key), ":")
 	for _, want := range []string{
-		"Server Address:  " + harness.SourceIP + ":443\n",
+		"Server Address:  " + harness.SourceIP + ":7822\n",
 		"Host key:        SHA256:",
 		"Root Key:        /etc/koko/root.key (" + id + ")\n",
 		"Keep a copy of /etc/koko/root.key off this machine",
-		"open TCP port 443 in your provider's firewall",
+		"open TCP port 7822 in your provider's firewall",
 		"run koko ssh setup once as each user who runs ssh <host>.koko on this machine\n",
 		"within 15 minutes",
 		"On alice's new device device-1, before ",
@@ -249,25 +251,53 @@ func TestServerInstallForPeople(t *testing.T) {
 	wantNoRootKey(t, r, key)
 }
 
-// --port makes the koko server listen on another port: install checks that
-// one, writes it into the unit and names it as the port to open.
+// wantBindGrant fails the test unless unit grants the koko user
+// CAP_NET_BIND_SERVICE, its one capability, exactly when grants is true,
+// and otherwise leaves it no capability at all.
+func wantBindGrant(t *testing.T, unit string, grants bool) {
+	t.Helper()
+	for line, want := range map[string]bool{
+		"\nAmbientCapabilities=CAP_NET_BIND_SERVICE\n":   grants,
+		"\nCapabilityBoundingSet=CAP_NET_BIND_SERVICE\n": grants,
+		"\nCapabilityBoundingSet=\n":                     !grants,
+	} {
+		if strings.Contains(unit, line) != want {
+			t.Errorf("the unit holds %q: %v, want %v:\n%s", strings.TrimSpace(line), !want, want, unit)
+		}
+	}
+}
+
+// --port makes the koko server listen on another port, even with the
+// default one taken: install checks that one, writes it into the unit and
+// names it as the port to open. The unit grants the koko user the right to
+// bind a port below 1024 only for such a port, which the default 7822 is
+// not.
 func TestServerInstallOnAnotherPort(t *testing.T) {
 	t.Parallel()
-	m := harness.NewMachine(t)
-	m.Listening[443] = portowner.Process{PID: 812, Name: "nginx", User: "www-data"}
-	out := install(t, m, "--owner", "alice", "--port", "8443")
-	if out.ListenPort != 8443 {
-		t.Errorf("install printed the listen port %d, want 8443", out.ListenPort)
-	}
-	unit, err := os.ReadFile(m.Path("/etc/systemd/system/koko.service"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(unit), "\nEnvironment=KOKO_LISTEN=:8443\n") {
-		t.Errorf("the unit does not listen on 8443:\n%s", unit)
-	}
-	if !slices.ContainsFunc(m.Calls(), func(c harness.Call) bool { return c.What == "port 8443" }) {
-		t.Error("install did not check that port 8443 is free")
+	for _, tc := range []struct {
+		port       int
+		grantsBind bool
+	}{
+		{8443, false},
+		{443, true},
+	} {
+		t.Run(strconv.Itoa(tc.port), func(t *testing.T) {
+			t.Parallel()
+			m := harness.NewMachine(t)
+			m.Listening[7822] = portowner.Process{PID: 812, Name: "nginx", User: "www-data"}
+			out := install(t, m, "--owner", "alice", "--port", strconv.Itoa(tc.port))
+			if out.ListenPort != tc.port {
+				t.Errorf("install printed the listen port %d, want %d", out.ListenPort, tc.port)
+			}
+			unit := readFile(t, m, "/etc/systemd/system/koko.service")
+			if !strings.Contains(unit, fmt.Sprintf("\nEnvironment=KOKO_LISTEN=:%d\n", tc.port)) {
+				t.Errorf("the unit does not listen on %d:\n%s", tc.port, unit)
+			}
+			wantBindGrant(t, unit, tc.grantsBind)
+			if what := fmt.Sprintf("port %d", tc.port); !slices.ContainsFunc(m.Calls(), func(c harness.Call) bool { return c.What == what }) {
+				t.Errorf("install did not check that port %d is free", tc.port)
+			}
+		})
 	}
 }
 
@@ -304,10 +334,10 @@ func TestServerInstallRefusals(t *testing.T) {
 		{
 			"a port in use",
 			func(m *harness.Machine) {
-				m.Listening[443] = portowner.Process{PID: 812, Name: "nginx", User: "www-data"}
+				m.Listening[7822] = portowner.Process{PID: 812, Name: "nginx", User: "www-data"}
 			},
 			nil, 1, "port_taken",
-			[]string{"port 443", "nginx (pid 812, user www-data)", "--port"},
+			[]string{"port 7822", "nginx (pid 812, user www-data)", "--port"},
 		},
 		{
 			"a port given in use",

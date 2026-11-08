@@ -388,7 +388,7 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
 `/var/lib/koko`), `--root-key-file` (`KOKO_ROOT_KEY_FILE`, default
 `$CREDENTIALS_DIRECTORY/root-key`, the file systemd's
 `LoadCredential=root-key` hands the unit), `--listen` (`KOKO_LISTEN`, default
-`:443`: an optional host and a port number, where devices reach the koko
+`:7822`: an optional host and a port number, where devices reach the koko
 server once it is initialised) and `--log-level` (`KOKO_LOG_LEVEL`:
 `debug`, `info`, `warn` or `error`; default `info`). Left to its default
 without `CREDENTIALS_DIRECTORY` set, the Root Key file is refused with exit 2;

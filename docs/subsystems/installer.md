@@ -17,7 +17,7 @@ the first Join Code. It never prompts. The CLI
 `--port` outside 1 to 65535, an `--owner` that is not a User name and an
 `--address` that is not a Server Address with exit 2, before anything else.
 `--port` has no fixed default: a port not given reaches the installer as 0,
-which is 443 on a fresh machine and the port the koko server listens on now
+which is 7822 on a fresh machine and the port the koko server listens on now
 on [an upgrade](#the-upgrade). The CLI then hands the rest to the installer
 through `cli.Runner.ServerInstall`, which `cmd/koko` sets in Linux builds only
 ([code layout](code-layout.md#the-package-groups)); a build without it refuses
@@ -160,7 +160,7 @@ and before any write, each leaving the running koko server as it was:
   one sets, and a `--port` naming another is refused with exit 2, naming the
   drop-in. Without a unit or such a drop-in, as after
   [uninstall](#uninstall) or on a restore, the port the koko server
-  listened on is unknown, and it listens on 443 or the port given. The port
+  listened on is unknown, and it listens on 7822 or the port given. The port
   is then checked as on a fresh machine, the service's own process allowed.
   Install never reads its own unit: it writes it again at every run. It
   reads `KOKO_LISTEN` from `Environment=` settings only, not from an
@@ -185,7 +185,7 @@ embedded in the binary and rendered at every run
 ([`installer.Unit`](../../internal/server/installer/unit.go)), so the unit
 always matches the binary; the
 [golden file](../../internal/client/cli/testdata/server-install-koko.service)
-pins its text, with every setting the spec lists. Two choices are the
+pins its text, with every setting the spec lists. Three choices are the
 installer's own:
 
 - **The startup settings are `Environment=KOKO_*` lines, not flags**, so that
@@ -195,6 +195,13 @@ installer's own:
 - **The Root Key's path is not written**: `koko server run`'s default,
   `$CREDENTIALS_DIRECTORY/root-key`, is the file `LoadCredential=` makes,
   which is where systemd hands the key to the service and nowhere else.
+- **`CAP_NET_BIND_SERVICE` only for a port below 1024**: the unit's
+  `AmbientCapabilities=` and `CapabilityBoundingSet=` grant it only when
+  the port install writes is one, such as `--port 443`, since the `koko`
+  user binds such a port with it alone. The default 7822 needs none, and
+  the unit says instead that a drop-in moving `KOKO_LISTEN` below 1024
+  needs install run again, which reads the drop-in's port and grants it
+  ([ADR 0036](../adr/0036-the-koko-server-listens-on-7822-by-default.md)).
 
 ## What it prints
 
@@ -214,7 +221,7 @@ With `--json`:
   "host_key_fingerprint": "SHA256:...",
   "root_key_file": "/etc/koko/root.key",
   "root_key_id": "rootkey_3f9k2m7q",
-  "listen_port": 443,
+  "listen_port": 7822,
   "join_code": {"id": "...", "code": "koko_...", "user": "alice", "device": "device-1", "expires_at": "..."}
 }
 ```
@@ -263,7 +270,7 @@ systemd did not tell it):
   "data_dir": "/var/lib/koko",
   "root_key_file": "/etc/koko/root.key",
   "system_user": "koko",
-  "listen_port": 443
+  "listen_port": 7822
 }
 ```
 
@@ -290,7 +297,8 @@ of the unit's port. So initialisation and the printout run for real. The tests c
 golden file, the `--json` golden, the koko server initialised), the order
 (checks before any write, the Root Key and the binary before the start, a
 late socket waited for), a socket file there before the koko server accepts
-on it (`ListenDelay`), the printout for people, `--port`, `--address`,
+on it (`ListenDelay`), the printout for people, `--port` (and
+`CAP_NET_BIND_SERVICE` only for one below 1024), `--address`,
 every refusal writing nothing, systemd not running, private source IPs, bad
 flags, running again after a refused address and after a service that never
 opened its socket, and a Root Key file there already. Only a service that

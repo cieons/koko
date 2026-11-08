@@ -77,7 +77,7 @@ func checkHostPart(s string) (port string, hasPort bool, err error) {
 	}
 	host, port, hasPort := strings.Cut(s, ":")
 	if strings.Contains(port, ":") {
-		return "", false, fmt.Errorf("%q holds more than one ':': put an IPv6 address in brackets, as [2001:db8::1]:443", s)
+		return "", false, fmt.Errorf("%q holds more than one ':': put an IPv6 address in brackets, as [2001:db8::1]:7822", s)
 	}
 	if err := checkHost(host); err != nil {
 		return "", false, fmt.Errorf("%q: %w", s, err)

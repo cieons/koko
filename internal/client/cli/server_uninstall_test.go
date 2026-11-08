@@ -41,7 +41,7 @@ func TestServerUninstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !slices.Equal(out.Removed, []string{"/etc/systemd/system/koko.service", "/usr/local/bin/koko"}) ||
-		out.DataDir != "/var/lib/koko" || out.RootKeyFile != "/etc/koko/root.key" || out.SystemUser != "koko" || out.ListenPort != 443 {
+		out.DataDir != "/var/lib/koko" || out.RootKeyFile != "/etc/koko/root.key" || out.SystemUser != "koko" || out.ListenPort != 7822 {
 		t.Errorf("uninstall printed %+v", out)
 	}
 

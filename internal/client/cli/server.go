@@ -31,8 +31,8 @@ const rootKeySource = "/etc/koko/root.key"
 
 // defaultListenPort is the port koko server run listens on unless --listen
 // names another; the unit install writes names its own (P0 spec: install
-// and run).
-const defaultListenPort = "443"
+// and run, ADR 0036).
+const defaultListenPort = "7822"
 
 // defaultRootKeyFile is --root-key-file's default, as help shows it. Only this
 // value is expanded: a path given is taken as it is, even one holding '$'.
@@ -96,7 +96,7 @@ var serverCommands = []Command{
 			{
 				Name:    "port",
 				Value:   "port",
-				Summary: "the TCP port the koko server listens on: 443 on a fresh install, and on an upgrade the port it listens on now; install never moves to another by itself",
+				Summary: "the TCP port the koko server listens on: 7822 on a fresh install, and on an upgrade the port it listens on now; install never moves to another by itself",
 			},
 		},
 		// It prints a credential, the first Join Code (P0 spec: install and
@@ -290,7 +290,7 @@ func serverInstall(ctx context.Context, in *Input) (installedJSON, error) {
 
 // installRequest reads install's flags, refusing a value that could never
 // work before the installer touches the machine. A port not given is 0,
-// which the installer reads as 443 on a fresh machine and as the port the
+// which the installer reads as 7822 on a fresh machine and as the port the
 // koko server listens on now on an upgrade.
 func installRequest(in *Input) (install.Request, error) {
 	port := 0
@@ -336,7 +336,7 @@ func installError(err error) error {
 }
 
 // isListenAddr tells whether addr is a TCP listen address: an optional host
-// and a port number, as :443 or 203.0.113.7:443.
+// and a port number, as :7822 or 203.0.113.7:7822.
 func isListenAddr(addr string) bool {
 	_, port, err := net.SplitHostPort(addr)
 	if err != nil {

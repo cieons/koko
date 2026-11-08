@@ -104,7 +104,7 @@ type ServerSettings struct {
 	// Owner keeps it, which koko server show names. Empty when RootKeyPath
 	// is that file itself.
 	RootKeySource string
-	// Listen is the TCP listen address, such as :443.
+	// Listen is the TCP listen address, such as :7822.
 	Listen   string
 	LogLevel slog.Level
 }

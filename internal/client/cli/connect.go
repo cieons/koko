@@ -131,7 +131,7 @@ func checkHostPort(address string) error {
 		return usagef("%q is not an address koko connect takes: %v", address, err)
 	}
 	if _, _, err := net.SplitHostPort(address); err != nil {
-		return usagef("%q names no port: koko connect takes <host:port>, such as koko.example.com:443", address)
+		return usagef("%q names no port: koko connect takes <host:port>, such as koko.example.com:7822", address)
 	}
 	return nil
 }
