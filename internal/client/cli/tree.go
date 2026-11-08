@@ -250,6 +250,7 @@ var commands = [][]Command{
 	execCommands,
 	tunnelCommands,
 	connectCommands,
+	leaveCommands,
 }
 
 // Tree returns every command.

@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "not_joined",
+    "message": "this device has not joined a koko server: join one with koko join <join-code>"
+  }
+}

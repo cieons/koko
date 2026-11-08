@@ -91,34 +91,9 @@ func checkHome(home string) error {
 // config, or no home directory to hold one, and fails, naming the file, when
 // a file cannot be read or does not parse: that never counts as not joined.
 func Read(home string) (Config, ssh.Signer, error) {
-	if home == "" {
-		return Config{}, nil, ErrNotJoined
-	}
-	if err := checkHome(home); err != nil {
-		return Config{}, nil, err
-	}
-	path := filepath.Join(dir(home), configFile)
-	b, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return Config{}, nil, ErrNotJoined
-	}
+	c, err := ReadConfig(home)
 	if err != nil {
-		return Config{}, nil, fmt.Errorf("read this device's client config: %w", err)
-	}
-	var cj configJSON
-	if err := json.Unmarshal(b, &cj); err != nil {
-		return Config{}, nil, fmt.Errorf("read this device's client config %s: %w", path, err)
-	}
-	c := Config{ServerAddress: cj.ServerAddress, User: cj.User, Device: cj.Device, DeviceSession: cj.DeviceSession}
-	for _, line := range cj.HostKeys {
-		key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(line))
-		if err != nil {
-			return Config{}, nil, fmt.Errorf("read this device's client config %s: a pinned host key: %w", path, err)
-		}
-		c.HostKeys = append(c.HostKeys, key)
-	}
-	if c.ServerAddress == "" || len(c.HostKeys) == 0 {
-		return Config{}, nil, fmt.Errorf("read this device's client config %s: it names no Server Address or no host key", path)
+		return Config{}, nil, err
 	}
 	keyPath := filepath.Join(dir(home), keyFile)
 	pemBytes, err := os.ReadFile(keyPath)
@@ -130,6 +105,42 @@ func Read(home string) (Config, ssh.Signer, error) {
 		return Config{}, nil, fmt.Errorf("read this device's key %s: %w", keyPath, err)
 	}
 	return c, key, nil
+}
+
+// ReadConfig returns the client config of the join the device whose home
+// directory is home holds, as Read does, without reading the device's key:
+// for koko leave, which never uses the key.
+func ReadConfig(home string) (Config, error) {
+	if home == "" {
+		return Config{}, ErrNotJoined
+	}
+	if err := checkHome(home); err != nil {
+		return Config{}, err
+	}
+	path := filepath.Join(dir(home), configFile)
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return Config{}, ErrNotJoined
+	}
+	if err != nil {
+		return Config{}, fmt.Errorf("read this device's client config: %w", err)
+	}
+	var cj configJSON
+	if err := json.Unmarshal(b, &cj); err != nil {
+		return Config{}, fmt.Errorf("read this device's client config %s: %w", path, err)
+	}
+	c := Config{ServerAddress: cj.ServerAddress, User: cj.User, Device: cj.Device, DeviceSession: cj.DeviceSession}
+	for _, line := range cj.HostKeys {
+		key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(line))
+		if err != nil {
+			return Config{}, fmt.Errorf("read this device's client config %s: a pinned host key: %w", path, err)
+		}
+		c.HostKeys = append(c.HostKeys, key)
+	}
+	if c.ServerAddress == "" || len(c.HostKeys) == 0 {
+		return Config{}, fmt.Errorf("read this device's client config %s: it names no Server Address or no host key", path)
+	}
+	return c, nil
 }
 
 // Staged is a join begun on the device: its new key is written under a
@@ -282,11 +293,9 @@ type revocationJSON struct {
 // Revoke is the revocation cleanup on the device whose home directory is
 // home, once it learns at learned that the Device Session its client config
 // c names was Revoked: it writes the revocation record (0600), then deletes
-// the client config, so the device is no longer joined, the device's key,
-// whose copies are now useless, and koko's known_hosts, whose lines are all
-// that koko server's (P0 has one per device). Last it rewrites koko's
-// ssh_config without bare names: *.koko still runs koko tunnel, which
-// explains the revocation from the record.
+// the client config, the device's key and koko's known_hosts, and rewrites
+// koko's ssh_config without bare names (forget): *.koko still runs koko
+// tunnel, which explains the revocation from the record.
 func Revoke(home string, c Config, learned time.Time) error {
 	if err := checkHome(home); err != nil {
 		return err
@@ -311,12 +320,41 @@ func Revoke(home string, c Config, learned time.Time) error {
 	if err != nil {
 		return fmt.Errorf("write the revocation record: %w", err)
 	}
+	return forget(home, "delete the files of this device's Revoked Device Session")
+}
+
+// Leave ends the join the device whose home directory is home holds, on
+// the device alone, for koko leave: it deletes what the revocation cleanup
+// deletes, then any revocation record, and writes none, so the device is
+// as it was before it first joined but for koko's ssh_config without bare
+// names and the Include line in ~/.ssh/config, which a later join finds in
+// place. A file already gone is no failure, so a leave cut short can be
+// finished by joining again, which writes every file anew.
+func Leave(home string) error {
+	if err := checkHome(home); err != nil {
+		return err
+	}
+	if err := forget(home, "delete this device's files of the koko server it left"); err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(dir(home), revocationFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("delete this device's revocation record: %w", err)
+	}
+	return nil
+}
+
+// forget deletes the client config first, so the device is no longer
+// joined, then the device's key, whose copies are now useless, and koko's
+// known_hosts, whose lines are all that koko server's (P0 has one per
+// device), a failure to delete one saying it was doing what; last it
+// rewrites koko's ssh_config without bare names.
+func forget(home, what string) error {
 	for _, f := range []string{configFile, keyFile, knownHostsFile} {
 		if err := os.Remove(filepath.Join(dir(home), f)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("delete the files of this device's Revoked Device Session: %w", err)
+			return fmt.Errorf("%s: %w", what, err)
 		}
 	}
-	_, err = WriteSSHConfig(home, nil)
+	_, err := WriteSSHConfig(home, nil)
 	return err
 }
 

@@ -263,7 +263,9 @@ ssh_config following the record
   such as one a crashed Device Mux left, is passed over; one that answers
   anything else fails the command once it has asked every other, naming
   that socket and saying what it stopped. The next command starts a new
-  Device Mux.
+  Device Mux. `koko leave` stops them in the same way
+  (`stopDeviceMuxes`) before it deletes the device's files
+  ([`koko leave`](device-connection.md#on-the-device)).
 - On stopping it closes its listener, which removes the socket, then every
   connection, then releases the lock.
 

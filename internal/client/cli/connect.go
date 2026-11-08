@@ -199,10 +199,18 @@ func (d disconnectJSON) Human(w io.Writer) error {
 // disconnect stops every Device Mux of this OS user, of every build and
 // home, which ends what each carried on purpose: they tell each command
 // connected that koko disconnect stopped them, so an SSH Session ends for
-// good. A socket nothing answers at, such as one a crashed Device Mux
-// left, is passed over. One that answers but does not stop fails the
-// command, once it has asked every other, saying which it stopped.
+// good.
 func disconnect(ctx context.Context, in *Input) (disconnectJSON, error) {
+	return stopDeviceMuxes(ctx, in, "koko disconnect")
+}
+
+// stopDeviceMuxes stops every Device Mux of this OS user, of every build
+// and home, for the command named, koko disconnect or koko leave, and says
+// what each carried. A socket nothing answers at, such as one a crashed
+// Device Mux left, is passed over. One that answers but does not stop
+// fails the command, once it has asked every other, saying which it
+// stopped.
+func stopDeviceMuxes(ctx context.Context, in *Input, command string) (disconnectJSON, error) {
 	sockets, err := devicemux.Sockets(in.inv.getenv)
 	if err != nil {
 		return disconnectJSON{}, fmt.Errorf("look for the Device Muxes of this OS user: %w", err)
@@ -226,7 +234,7 @@ func disconnect(ctx context.Context, in *Input) (disconnectJSON, error) {
 		for _, m := range out.DeviceMuxes {
 			fmt.Fprintf(&stopped, "; it stopped the Device Mux at %s, ending %d command(s)", m.Socket, m.CommandsEnded)
 		}
-		return disconnectJSON{}, fmt.Errorf("koko disconnect could not stop every Device Mux: %w%s", errors.Join(failed...), stopped.String())
+		return disconnectJSON{}, fmt.Errorf("%s could not stop every Device Mux: %w%s", command, errors.Join(failed...), stopped.String())
 	}
 	return out, nil
 }

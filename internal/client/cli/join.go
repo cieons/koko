@@ -80,7 +80,7 @@ func join(ctx context.Context, in *Input) (joined, error) {
 	switch c, _, err := devicefiles.Read(home); {
 	case err == nil:
 		return joined{}, &cliError{code: codeAlreadyJoined, message: fmt.Sprintf(
-			"this device has joined the koko server at %s already, as %s's device %s: to join again, revoke this device's Device Session first (koko device revoke %s)",
+			"this device has joined the koko server at %s already, as %s's device %s: to join again, revoke this device's Device Session first (koko device revoke %s), or, if that koko server no longer knows this device, run koko leave",
 			c.ServerAddress, c.User, c.Device, c.Device)}
 	case !errors.Is(err, devicefiles.ErrNotJoined):
 		return joined{}, fmt.Errorf("cannot tell whether this device has joined a koko server: %w", err)

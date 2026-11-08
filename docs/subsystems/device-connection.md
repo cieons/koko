@@ -85,7 +85,8 @@ one-time code ([`join`](../../internal/client/cli/join.go)):
 1. It decodes the code; one that cannot be read is refused with exit 2
    before any connection ([Join Codes](join-codes.md#the-string)).
 2. It refuses, with `already_joined`, while this device is joined, and says
-   to revoke this device's Device Session first.
+   to revoke this device's Device Session first, or, when the koko server
+   no longer knows the device, to run [`koko leave`](#on-the-device).
 3. It renders koko's ssh_config ([ssh](#ssh)), makes a new ed25519 key and
    writes it into `~/.ssh/koko/` under a temporary name, so a device that
    cannot keep its files, or whose paths ssh would misread, learns it before
@@ -343,6 +344,25 @@ device. From then on every command that would reach the joined koko server
 explains the revocation from the record, with `revoked`, until the next
 `koko join`, which the record does not block and which removes it.
 
+**`koko leave`** ([`leave`](../../internal/client/cli/leave.go)), in the
+irreversible tier, ends a join on the device alone, for a koko server that
+can no longer revoke it, such as one initialised anew after its Root Key
+was lost, and for a device retired or moved to another koko server. It
+never contacts the koko server. It reads the client config, and on a
+device that has not joined fails as any command does (`not_joined`, or
+`revoked` with the record). It stops every Device Mux of this OS user as
+`koko disconnect` does ([the Device Mux](device-mux.md#state-and-exit)),
+so none writes into the device's files afterwards, and fails, deleting
+nothing, when one answers but does not stop. Then
+([`devicefiles.Leave`](../../internal/client/devicefiles/devicefiles.go))
+it deletes what the revocation cleanup deletes, rewrites koko's ssh_config
+without bare names in the same way, and deletes any revocation record,
+writing none. The Include line in `~/.ssh/config` stays, which the next
+join finds in place. It prints the Device Session it left behind and the
+Server Address, and says to revoke it from another device or on the koko
+server's machine (`koko device revoke <user>/<device>`) if that koko server
+still runs; with its key deleted, no device can use it again.
+
 ## The record
 
 | Table | What it holds |
@@ -371,6 +391,15 @@ Device Session, the address, `reason=dead` and the error, `no answer for
   files, `koko join -`, a damaged code with no connection made, a mismatch
   and the same code joining the right koko server, used, expired and wrong
   codes alike, a second join refused, the log lines.
+- [`leave_test.go`](../../internal/client/cli/leave_test.go): S1, a device
+  whose koko server was replaced by one initialised anew at its address,
+  refused a join naming both ways out, leaving with no connection or call
+  made (golden), its Device Mux stopped, koko's files gone but for
+  ssh_config without bare names, the user's own `~/.ssh` files byte for
+  byte, and joining the new koko server; the Device Session left behind
+  named and revoked on the koko server's machine; a device that has not
+  joined (golden); a Device Mux that does not stop keeping the join; the
+  irreversible tier.
 - [`sshconfig_test.go`](../../internal/client/cli/sshconfig_test.go): a
   join's ssh_config (golden) and known_hosts, the Include line when
   `~/.ssh/config` is absent, the user's, already includes it (however
