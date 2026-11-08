@@ -11,7 +11,7 @@ koko 是自托管的。它记录你在各家厂商租用的服务器，也是人
 
 ## 安装
 
-[安装和运行 koko 服务器](docs/install.md)（英文）：在装有 systemd 的 Linux
+[安装和运行 koko 服务器](docs/install.zh-CN.md)：在装有 systemd 的 Linux
 机器上运行一行命令，以及升级、回退和恢复。
 
 ## 功能

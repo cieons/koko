@@ -1,5 +1,7 @@
 # Installing and running the koko server
 
+[中文](install.zh-CN.md)
+
 The koko server runs on one Linux machine with systemd. This page covers
 installing it, checking a release, upgrading and going back, keeping the
 Root Key, restoring onto another machine, and what to do without the Root
