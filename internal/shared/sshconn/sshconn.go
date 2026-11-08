@@ -8,6 +8,11 @@
 // sent, since a write that fails is recorded for the next one rather than
 // returned. So the open waits for an answer the ended connection never
 // brings. Every connection koko opens channels on goes through Wrap.
+//
+// Wrap keeps what x/crypto's errors tell a caller: an open fails as io.EOF
+// only when it never went out, so a caller may send it again on another
+// connection. One that went out may have reached the other end, which may
+// have acted on it.
 package sshconn
 
 import (
@@ -18,6 +23,9 @@ import (
 
 // Wrap returns conn with an OpenChannel that fails once conn has ended,
 // saying why it ended, rather than waiting for an answer that cannot come.
+// An open made once conn has ended fails as its end, such as io.EOF, since
+// it never went out; one waiting for its answer when conn ends fails
+// matching no cause, since it may have gone out.
 func Wrap(conn ssh.Conn) ssh.Conn {
 	c := &failOnEnd{Conn: conn, ended: make(chan struct{})}
 	go func() {
@@ -41,7 +49,7 @@ type failOnEnd struct {
 func (c *failOnEnd) OpenChannel(name string, data []byte) (ssh.Channel, <-chan *ssh.Request, error) {
 	select {
 	case <-c.ended:
-		return nil, nil, c.endedError()
+		return nil, nil, fmt.Errorf("the SSH connection ended: %w", c.err)
 	default:
 	}
 	type opened struct {
@@ -62,12 +70,18 @@ func (c *failOnEnd) OpenChannel(name string, data []byte) (ssh.Channel, <-chan *
 		case o := <-done:
 			return o.ch, o.reqs, o.err
 		default:
-			return nil, nil, c.endedError()
+			return nil, nil, &unansweredError{end: c.err}
 		}
 	}
 }
 
-// endedError says why the connection ended; the caller names the open.
-func (c *failOnEnd) endedError() error {
-	return fmt.Errorf("the SSH connection ended: %w", c.err)
+// unansweredError is an open whose connection ended before it had its
+// answer. It does not unwrap to why the connection ended: whether the open
+// went out is unknown, and io.EOF would say it never did. Now and then it
+// fails one that never went out, whose x/crypto failure came too late,
+// which errs toward not sending an open twice.
+type unansweredError struct{ end error }
+
+func (e *unansweredError) Error() string {
+	return "the SSH connection ended before the open had its answer: " + e.end.Error()
 }

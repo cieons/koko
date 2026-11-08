@@ -624,8 +624,8 @@ func (m *deviceMux) carry(nch ssh.NewChannel) {
 		if err == nil {
 			break
 		}
-		// x/crypto/ssh fails an open with io.EOF only when the connection
-		// had ended before it sent it.
+		// x/crypto/ssh, and sshconn.Wrap over it, fail an open with io.EOF
+		// only when the connection had ended before it sent it.
 		if !errors.Is(err, io.EOF) || attempt > 0 {
 			_ = nch.Reject(ssh.ConnectionFailed, fmt.Sprintf("the Device Connection dropped: %v", err))
 			return

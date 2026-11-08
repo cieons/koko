@@ -123,6 +123,18 @@ on `main` went red at 0d192f9.
 **Seen:** 1 (2026-11-08)
 **Evidence:** 1e3a865 (#70); check run 42450143194; #84
 
+### A wrapper's own failure wraps no error its callers read as an outcome, such as io.EOF's "never sent"
+
+**Why:** `sshconn.Wrap` failed an open still waiting for its answer, when
+its connection ended, with an error wrapping the end's `io.EOF`. The Device
+Mux reads `io.EOF` from an open as "it never went out", so it sent the open
+again on its next Device Connection, though the koko server may have acted
+on it. That happened in about 1 in 5 runs of
+`TestTheDeviceMuxCarriesChannelsAcrossADrop`, a failure first put down to
+the test's cut.
+**Seen:** 1 (2026-11-08)
+**Evidence:** 2b9137c (#84); #85; #86
+
 ## Moved to the code standards
 
 _None yet._
