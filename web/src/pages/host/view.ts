@@ -262,6 +262,16 @@ export interface ReadTerm {
   filter?: Filter;
 }
 
+/**
+ * Columns are a list's columns besides those of its keys: fixed, the ones it
+ * always shows first, such as a Host's name, and unsorted, the ones it may
+ * show but neither filters nor sorts on, such as a Service's ports.
+ */
+export interface Columns {
+  fixed: readonly string[];
+  unsorted: readonly string[];
+}
+
 /** QueryRead is a view read by readQuery. */
 export interface QueryRead {
   query: ListQuery;
@@ -274,11 +284,12 @@ export interface QueryRead {
 /**
  * readQuery reads view into what the list operation takes, its relative
  * dates resolved by clock, and lists each part the list does not take: a
- * term, a sort key, or a column that is the name, shown twice or no key of
- * the list's. Nothing is to be called while any part is at fault, as the
- * CLI refuses a bad term before any call.
+ * term, a sort key, or a column that is a fixed one, shown twice, or
+ * neither a key of the list's nor one of its unsorted columns. Nothing is
+ * to be called while any part is at fault, as the CLI refuses a bad term
+ * before any call.
  */
-export function readQuery(view: View, types: KeyTypes, clock: Clock): QueryRead {
+export function readQuery(view: View, types: KeyTypes, clock: Clock, columns: Columns): QueryRead {
   const faults: string[] = [];
   const terms = view.filters.map((written): ReadTerm => {
     const term = readTerm(written);
@@ -301,7 +312,12 @@ export function readQuery(view: View, types: KeyTypes, clock: Clock): QueryRead 
       sort.push(key);
     }
   }
-  faults.push(...view.columns.filter((c, i) => c === "name" || view.columns.indexOf(c) !== i || !types(c)));
+  faults.push(
+    ...view.columns.filter(
+      (c, i) =>
+        columns.fixed.includes(c) || view.columns.indexOf(c) !== i || (!types(c) && !columns.unsorted.includes(c)),
+    ),
+  );
   const query: ListQuery = {};
   if (filters.length > 0) {
     query.filters = filters;
