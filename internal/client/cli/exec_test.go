@@ -204,9 +204,29 @@ func TestExecExits255WhenASignalEndsTheCommand(t *testing.T) {
 func TestExecEndsTheSSHSessionWhenInterrupted(t *testing.T) {
 	t.Parallel()
 	h := harness.Start(t)
-	managedHost(t, h, "web1")
+	host := managedHost(t, h, "web1")
+	reqs := len(host.Requests())
 	p := h.Background(nil, "exec", "web1", "exec sleep 30")
-	waitServerLog(t, h, `msg="ssh session started"`)
+	eventually(t, "web1 receives the command", func() bool {
+		return slices.ContainsFunc(host.Requests()[reqs:], func(r sshhost.Request) bool { return !r.Channel && r.Type == "exec" })
+	})
+	wantRefused(t, p.Stop(), "koko: interrupted, so koko ended the SSH Session to web1\n")
+	waitServerLog(t, h, `msg="ssh session ended" .* reason="client closed"\n`)
+}
+
+// Ctrl-C ends the SSH Session before its command runs, too, while koko exec
+// waits for the command's channel, which a Host too loaded to answer leaves
+// open: koko exec says it was interrupted, as it does once the command runs.
+func TestExecEndsTheSSHSessionWhenInterruptedBeforeTheCommandRuns(t *testing.T) {
+	t.Parallel()
+	h := harness.Start(t)
+	host := managedHost(t, h, "web1")
+	host.HoldChannels()
+	reqs := len(host.Requests())
+	p := h.Background(nil, "exec", "web1", "true")
+	eventually(t, "the session channel's open reaches web1", func() bool {
+		return slices.ContainsFunc(host.Requests()[reqs:], func(r sshhost.Request) bool { return r.Channel && r.Type == "session" })
+	})
 	wantRefused(t, p.Stop(), "koko: interrupted, so koko ended the SSH Session to web1\n")
 	waitServerLog(t, h, `msg="ssh session ended" .* reason="client closed"\n`)
 }

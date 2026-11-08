@@ -53,7 +53,23 @@ func execute(ctx context.Context, in *Input) (int, error) {
 		return 0, fmt.Errorf("open a Tunnel to %s: %w", hostName, err)
 	}
 	defer func() { _ = t.Close() }()
-	client, err := in.dialGateway(ctx, t, sshName)
+	// Ctrl-C ends the SSH Session wherever it has got to, the handshake,
+	// the open of the command's channel or the command itself: closing t
+	// fails whatever waits on it.
+	stop := context.AfterFunc(ctx, func() { _ = t.Close() })
+	defer stop()
+	status, err := in.runSession(t, sshName)
+	if ctx.Err() != nil {
+		return 0, interrupted(hostName)
+	}
+	return status, err
+}
+
+// runSession runs the command as koko exec's SSH Session inside the Tunnel
+// t, and returns its exit status, or why koko itself failed.
+func (in *Input) runSession(t *tunnel.Tunnel, sshName string) (int, error) {
+	hostName := wire.TunnelHost(sshName)
+	client, err := in.dialGateway(t, sshName)
 	if err != nil {
 		return 0, err
 	}
@@ -65,18 +81,7 @@ func execute(ctx context.Context, in *Input) (int, error) {
 	}
 	stderr := &tailWriter{w: in.inv.Stderr}
 	s.Stdin, s.Stdout, s.Stderr = in.inv.Stdin, in.inv.Stdout, stderr
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		err = s.Run(strings.Join(in.Args("command"), " "))
-	}()
-	select {
-	case <-done:
-	case <-ctx.Done():
-		_ = client.Close()
-		<-done
-		return 0, interrupted(hostName)
-	}
+	err = s.Run(strings.Join(in.Args("command"), " "))
 	exit, exited := errors.AsType[*ssh.ExitError](err)
 	switch {
 	case exited && exit.Signal() != "":
@@ -118,15 +123,13 @@ func interrupted(hostName string) error {
 // pin (ADR 0008), nothing is pinned, and the key is not checked. A refusal
 // fails with the Gateway's banner as its message, without its "koko: ", and
 // any other failure with sessionError.
-func (in *Input) dialGateway(ctx context.Context, t *tunnel.Tunnel, sshName string) (*ssh.Client, error) {
+func (in *Input) dialGateway(t *tunnel.Tunnel, sshName string) (*ssh.Client, error) {
 	hostName := wire.TunnelHost(sshName)
 	hostKey := ssh.InsecureIgnoreHostKey()
 	if in.joined != nil {
 		hostKey = serverconn.Pinned(in.joined.ServerAddress, in.joined.HostKeys)
 	}
 	var banner string
-	stop := context.AfterFunc(ctx, func() { _ = t.Close() })
-	defer stop()
 	nc := wire.TunnelConn(t, wire.TunnelAddr("koko exec"), wire.TunnelAddr(sshName))
 	c, chans, reqs, err := ssh.NewClientConn(nc, sshName, &ssh.ClientConfig{
 		Config:          ssh.Config{Ciphers: wire.TunnelCiphers},
@@ -141,8 +144,6 @@ func (in *Input) dialGateway(ctx context.Context, t *tunnel.Tunnel, sshName stri
 	switch {
 	case err != nil && banner != "":
 		return nil, errors.New(strings.TrimPrefix(strings.TrimSpace(banner), "koko: "))
-	case err != nil && ctx.Err() != nil:
-		return nil, interrupted(hostName)
 	case err != nil:
 		return nil, sessionError(hostName, t, err)
 	}

@@ -71,10 +71,15 @@ Device Connection, though the koko server's answer to the Device Mux's last
 probe could still be on its way and spend the cut on the dead connection:
 nothing Resumed in about 1 in 30 runs under load, and CI's macOS job on
 `main` went red at d5e0d77, which only met the race the test had from 1e3a865.
+The test of Ctrl-C ending `koko exec`, in turn, interrupted it once the
+Gateway logged the SSH Session's start, though `koko exec` opens its
+command's channel just after: 1 in 3 full `make check` runs got "the SSH
+Session failed" instead of "interrupted".
 **Seen:** 2 (2026-11-06, 2026-11-08)
 **Evidence:** 3cae7b1 (#38); 4232f09 (#43); #77; ecff11b (#49); #78;
 c152887 (#54); check runs 42166495220 and 42167225724; 4f5156b (#60);
-#79; check run 42436925411; 1e3a865 (#70); check run 42461764144; #87
+#79; check run 42436925411; 1e3a865 (#70); check run 42461764144; #87;
+#90
 
 ### A channel closes only once every request on it has its answer
 
@@ -140,6 +145,18 @@ on it. That happened in about 1 in 5 runs of
 the test's cut.
 **Seen:** 1 (2026-11-08)
 **Evidence:** 2b9137c (#84); #85; #86
+
+### Ctrl-C's watch covers every wait until the outcome, not only the step it was set for
+
+**Why:** `koko exec` closed its Tunnel on Ctrl-C only while its SSH
+handshake ran, and watched for Ctrl-C again only once its command ran. A
+Ctrl-C between the two, while the command's channel was opening, closed
+nothing, so `koko exec` waited on a slow Host; one that came as the
+handshake ended closed the Tunnel after all, and the open failed as "the
+SSH Session failed" with x/crypto's raw text. Watch once, from the first
+wait to the outcome, and read any failure after Ctrl-C as interrupted.
+**Seen:** 1 (2026-11-08)
+**Evidence:** #90
 
 ## Moved to the code standards
 

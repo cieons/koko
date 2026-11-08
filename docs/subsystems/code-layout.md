@@ -374,9 +374,11 @@ one Host Account (`sshhost.Account`, `deploy`) with a home directory and an
 forwarding, as a Relay's sshd does. `ResetFirst`, `StallFirst`, `SlowLogins`,
 `ResetNext(n)` (once it is Enrolled, say), `DropConns` and `Freeze` (until
 `Thaw`, reading and writing nothing on any connection) break it as a
-network path or a slow PAM stack would. `ClientAlive(interval, countMax)`
-probes a quiet client with `keepalive@openssh.com` and ends the connection
-when it leaves them unanswered, as sshd's `ClientAliveInterval` does.
+network path or a slow PAM stack would; `HoldChannels` leaves every channel
+opened from then on unanswered, as a Host too loaded to serve one does.
+`ClientAlive(interval, countMax)` probes a quiet client with
+`keepalive@openssh.com` and ends the connection when it leaves them
+unanswered, as sshd's `ClientAliveInterval` does.
 `Logins()` and `Requests()` record what it received; `Conns()` and `Open()`
 count its connections. It runs a session's command as sshd does: an exec
 request through `/bin/sh -c`, a shell request as `/bin/sh` reading its

@@ -396,7 +396,9 @@ but with Go's SSH client and no OpenSSH, Include line or terminal:
   koko server is restarting, the notice's line is on its stderr already, as
   the session's, so it exits 255 and adds nothing; a notice that did not
   reach the session, one still opening, say, is its error.
-- It forwards no signal: Ctrl-C ends the SSH Session and says so.
+- It forwards no signal: Ctrl-C ends the SSH Session and says so, wherever
+  the SSH Session has got to: its handshake, the open of the command's
+  channel, or the command.
 
 ## `koko tunnel`
 
@@ -559,7 +561,8 @@ key as the Host Account; through the Device Mux, opening no Device
 Connection of its own; both forms of the SSH Name; an unknown name and an
 unseen Host refused alike with no connection to the Host, a Registered Host
 refused, a Retired Host's old name refused as unknown; 255 for each failure
-of koko's own and for a command a signal ended; Ctrl-C; a koko server stop
+of koko's own and for a command a signal ended; Ctrl-C, while the
+command's channel opens and once it runs; a koko server stop
 and its notice; the log lines without the command's text; and a Tunnel
 counting as a use of its Device Session.
 [`gateway_test.go`](../../internal/client/cli/gateway_test.go) drives the

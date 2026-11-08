@@ -61,6 +61,9 @@ type Host struct {
 	resetNext int
 	// thawed is closed while the Host is not frozen (Freeze).
 	thawed chan struct{}
+	// holdChannels leaves the channels opened from now on unanswered
+	// (HoldChannels).
+	holdChannels atomic.Bool
 }
 
 // Login is one login attempt the Host received.
@@ -289,6 +292,14 @@ func (h *Host) Thaw() {
 	default:
 		close(h.thawed)
 	}
+}
+
+// HoldChannels makes the Host leave every channel opened from now on
+// unanswered, neither accepted nor refused, as a Host too loaded to serve one
+// does, while its connections carry on otherwise. It records each such open,
+// so a test can tell that it has arrived.
+func (h *Host) HoldChannels() {
+	h.holdChannels.Store(true)
 }
 
 // waitThawed waits until the Host is not frozen, or closed is.
@@ -525,6 +536,10 @@ func (h *Host) serve(nc *hostConn, config *ssh.ServerConfig) {
 		h.wg.Go(func() { h.probeClient(conn, nc, open) })
 	}
 	for nch := range chans {
+		if h.holdChannels.Load() {
+			h.recordChannel(nch, "")
+			continue
+		}
 		switch nch.ChannelType() {
 		case "session":
 			h.session(nch, open)
