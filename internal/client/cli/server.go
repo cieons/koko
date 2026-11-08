@@ -56,7 +56,19 @@ var serverCommands = []Command{
 				Value:   "file",
 				Env:     "KOKO_ROOT_KEY_FILE",
 				Default: defaultRootKeyFile,
-				Summary: "the Root Key's file, outside the data directory",
+				Summary: "the Root Key's file, outside the data directory; a fresh koko server given --owner makes it when it is missing",
+			},
+			{
+				Name:    "owner",
+				Value:   "user",
+				Env:     "KOKO_OWNER",
+				Summary: "the Owner's User name, with which a fresh koko server initialises itself at start; an initialised one does not use it",
+			},
+			{
+				Name:    "address",
+				Value:   "host[:port]",
+				Env:     "KOKO_ADDRESS",
+				Summary: "the Server Address devices connect to, with which a fresh koko server initialises itself at start; given with --owner, and not used once initialised",
 			},
 			{
 				Name:    "listen",
@@ -74,7 +86,9 @@ var serverCommands = []Command{
 				Summary: "the lowest level the log on stderr holds",
 			},
 		},
-		// It runs the koko server and migrates its database (P0 spec: overview).
+		// It runs the koko server and migrates its database (P0 spec:
+		// overview), and with --owner and --address makes a Root Key and
+		// initialises a fresh koko server (ADR 0038).
 		Tier: Irreversible,
 		Run:  quietAction(serverRun),
 	},
@@ -148,6 +162,10 @@ func serverRun(ctx context.Context, in *Input) error {
 	if in.runner.ServerRun == nil {
 		return noServer()
 	}
+	owner, address, err := ownerAndAddress(in)
+	if err != nil {
+		return err
+	}
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(in.Flag("log-level"))); err != nil {
 		return fmt.Errorf("read the log level: %w", err)
@@ -168,9 +186,35 @@ func serverRun(ctx context.Context, in *Input) error {
 		DataDir:       in.Flag("data-dir"),
 		RootKeyPath:   rootKey,
 		RootKeySource: source,
+		Owner:         owner,
+		Address:       address,
 		Listen:        listen,
 		LogLevel:      level,
 	}, in.inv.Stderr))
+}
+
+// ownerAndAddress reads server run's --owner and --address, which a
+// fresh koko server initialises itself with, refusing a name that is not a
+// User name, an address that is not a Server Address, and either one
+// without the other, before the koko server writes anything (P1 spec: the
+// container image).
+func ownerAndAddress(in *Input) (owner, address string, err error) {
+	owner, address = in.Flag("owner"), in.Flag("address")
+	switch {
+	case owner == "" && address == "":
+		return "", "", nil
+	case address == "":
+		return "", "", usagef("--owner (KOKO_OWNER) needs --address (KOKO_ADDRESS): a fresh koko server initialises itself with both, and devices connect to the Server Address")
+	case owner == "":
+		return "", "", usagef("--address (KOKO_ADDRESS) needs --owner (KOKO_OWNER): a fresh koko server initialises itself with both")
+	}
+	if err := name.Check(owner); err != nil {
+		return "", "", usagef("--owner (KOKO_OWNER) takes the Owner's User name: %v", err)
+	}
+	if err := serveraddr.Check(address); err != nil {
+		return "", "", usagef("--address (KOKO_ADDRESS) takes the Server Address, host or host:port: %v", err)
+	}
+	return owner, address, nil
 }
 
 var serverMappings = []mapping{

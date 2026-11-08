@@ -37,6 +37,7 @@ import (
 	"github.com/cieons/koko/internal/server/user"
 	"github.com/cieons/koko/internal/server/web"
 	"github.com/cieons/koko/internal/server/webui"
+	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
@@ -69,7 +70,8 @@ type Config struct {
 	// DataDir holds koko.db.
 	DataDir string
 	// RootKeyPath is the Root Key's file, outside DataDir. The koko server
-	// reads it at every start and never writes it.
+	// reads it at every start, and writes it only when a fresh koko server
+	// given Owner finds it missing.
 	RootKeyPath string
 	// RootKeySource is the file RootKeyPath is a copy of, when it is one:
 	// under systemd, RootKeyPath is the credential's copy, and the source
@@ -77,6 +79,13 @@ type Config struct {
 	// Key's file as the Owner keeps it, which server.show names; empty
 	// means RootKeyPath itself.
 	RootKeySource string
+	// Owner and Address, given together, are the Owner's User name and the
+	// Server Address with which a fresh koko server initialises itself at
+	// start, before it serves anything (ADR 0038). An initialised koko
+	// server does not use them. Both empty, a fresh koko server waits for
+	// server.init over its socket.
+	Owner   string
+	Address string
 	// Listen is the TCP listen address, such as :7822, where devices reach
 	// the koko server once it is initialised. A Server Address without a
 	// port names its port.
@@ -134,8 +143,12 @@ type Server struct {
 // a network filesystem or one it cannot write, and a socket path something
 // answers on; a stale socket file there it removes. The store opens before
 // the key loads, as P0 spec: install and run orders it, so that a refusal
-// can name the Root Key the sealed data needs. An initialised koko server that cannot listen on TCP refuses to
-// start.
+// can name the Root Key the sealed data needs. An initialised koko server
+// that cannot listen on TCP refuses to start.
+//
+// Given an Owner and a Server Address, a fresh koko server makes its
+// missing Root Key and initialises itself before the socket opens; an
+// initialised one warns when they differ from its record (ADR 0038).
 func Start(ctx context.Context, cfg Config) (*Server, error) {
 	log := slog.New(slog.NewTextHandler(cfg.Log, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	// Before anything names the path: a relative one may be the key itself.
@@ -151,6 +164,12 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	if err := checkDataDir(cfg.DataDir, cfg.Filesystems); err != nil {
 		return nil, err
 	}
+	initReq := api.ServerInitRequest{Owner: cfg.Owner, Address: cfg.Address}
+	if initReq.Owner != "" {
+		if err := checkRootKeyDir(cfg.RootKeyPath, cfg.DataDir); err != nil {
+			return nil, err
+		}
+	}
 	// Before the store opens, so that a second start beside a running koko
 	// server migrates nothing under it.
 	socket := cmp.Or(cfg.SocketPath, wire.SocketPath)
@@ -161,9 +180,23 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	madeKey := false
+	if initReq.Owner != "" {
+		if madeKey, err = makeRootKey(ctx, st, cfg.RootKeyPath); err != nil {
+			return nil, errors.Join(err, st.Close())
+		}
+	}
 	key, keys, err := loadKeys(ctx, st, cfg.RootKeyPath)
 	if err != nil {
 		return nil, errors.Join(err, st.Close())
+	}
+	if madeKey {
+		log.Info("wrote a new Root Key", "root_key_file", cfg.RootKeyPath, "root_key", key.ID())
+	}
+	if keys != nil {
+		if err := warnUnused(ctx, st, initReq, log); err != nil {
+			return nil, errors.Join(err, st.Close())
+		}
 	}
 	clock := cfg.Clock
 	if clock == nil {
@@ -206,17 +239,25 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	// The areas that issue Join Codes need what the process loaded to name
 	// the koko server in them.
 	issuer := device.NewIssuer(joinTarget(key, tcp.port))
+	rootKeyFile := cmp.Or(cfg.RootKeySource, cfg.RootKeyPath)
 	device.Register(a, issuer, &changes, log)
 	user.Register(a, issuer.Issue, holdings, &changes, log)
 	registerServer(a, key, issuer, tcp, log)
 	registerSettings(a, &settings{
 		rootKey:     key,
-		rootKeyFile: cmp.Or(cfg.RootKeySource, cfg.RootKeyPath),
+		rootKeyFile: rootKeyFile,
 		dataDir:     cfg.DataDir,
 		version:     build.Read().Version,
 		listenPort:  tcp.port,
 	})
 	front.Register(a)
+	initialisedNow := keys == nil && initReq.Owner != ""
+	if initialisedNow {
+		keys, err = initialiseAtStart(ctx, a, key, tcp, log, initReq, "root_key_file", rootKeyFile, "root_key", key.ID())
+		if err != nil {
+			return nil, errors.Join(err, srv.Close())
+		}
+	}
 	if keys != nil {
 		if err := tcp.bind(ctx); err != nil {
 			return nil, errors.Join(err, srv.Close())
@@ -236,6 +277,11 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 		attrs = append(attrs, "host_key", keys.HostKeyFingerprint(), "listen", tcp.address())
 	}
 	log.Info("koko server started", attrs...)
+	if initialisedNow {
+		log.Info("keep a copy of the Root Key file off this machine, such as in a password manager: without it, nothing sealed in the koko server's data can be opened again",
+			"root_key_file", rootKeyFile)
+		log.Info("the Owner's first Join Code comes from koko device add on this machine, or docker exec <container> koko device add in a container")
+	}
 	return srv, nil
 }
 

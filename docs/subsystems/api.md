@@ -192,6 +192,12 @@ end through `op.AfterTx`, which is told whether it committed. Each call is
 logged at debug level as `api call` with its path and status; an unexpected
 error is logged at error level.
 
+A write of the koko server's own, which no caller asked for, runs through
+`op.API.Do`: one write transaction, with `op.Now` and `op.AfterTx` as a call
+has them, no caller, no Idempotency-Key and no log line of its own.
+Start-up uses it to initialise a fresh koko server at its first start
+([initialisation](initialisation.md#at-first-start)).
+
 The caller (`op.Caller`) is the Local caller or a Device Connection's Device
 Session. Who it acts as comes from the current records on every call
 ([`access.Who`](../../internal/server/access/access.go)): a Device Session's

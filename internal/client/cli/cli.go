@@ -104,6 +104,11 @@ type ServerSettings struct {
 	// Owner keeps it, which koko server show names. Empty when RootKeyPath
 	// is that file itself.
 	RootKeySource string
+	// Owner and Address are the Owner's User name and the Server Address
+	// that a fresh koko server initialises itself with at start; both
+	// empty, it waits for server.init over its socket.
+	Owner   string
+	Address string
 	// Listen is the TCP listen address, such as :7822.
 	Listen   string
 	LogLevel slog.Level

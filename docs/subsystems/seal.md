@@ -86,7 +86,12 @@ from `koko server run --root-key-file` ([the CLI](cli.md)), and:
    once; before the data directory exists, steps 3 and 4 check the nearest
    directory above it that does, where it would be made
    (`filesystem.Nearest`);
-5. claims the socket's path ([`claimSocket`](../../internal/server/startup.go)):
+5. given `--owner`, a missing Root Key file and a data directory with no
+   `koko.db`, so nothing sealed, refuses a directory it cannot write where
+   it would make that file, or the nearest one above it while that is
+   missing, in the same words
+   ([`checkRootKeyDir`](../../internal/server/firststart.go));
+6. claims the socket's path ([`claimSocket`](../../internal/server/startup.go)):
    a socket file there is dialled, for at most a second; one that refuses
    the connection, as a koko server killed without warning leaves behind,
    is removed and logged (`removed a stale socket nobody answered on`); one
@@ -94,26 +99,37 @@ from `koko server run --root-key-file` ([the CLI](cli.md)), and:
    and whatever answers, such as a running koko server, keeps serving. A
    path that holds anything but a socket, or a dial that neither connects
    nor is refused, is refused and left as it is, never taken for stale;
-6. opens the store, and reads which Root Key the sealed data needs, if the
+7. opens the store, and reads which Root Key the sealed data needs, if the
    koko server is initialised ([`loadKeys`](../../internal/server/rootkey.go):
    `seal.SealedBy` on the host key);
-7. loads the Root Key, refusing a missing file, one it cannot read and one
-   that does not parse;
-8. over sealed data, refuses a Root Key whose id is not the one the data
+8. given `--owner`, with nothing sealed yet and no file at the Root Key's
+   path, checks its directory as step 5 does, then writes a new Root Key
+   there (`seal.NewRootKey`), 0600, as the process's user, through a synced
+   temporary file renamed into place
+   ([`makeRootKey`](../../internal/server/firststart.go),
+   [initialisation at first start](initialisation.md#at-first-start)), and
+   logs `wrote a new Root Key` with its path and id once it loads. A file
+   that is there is never replaced: step 9 loads or refuses it as it is;
+9. loads the Root Key, refusing a missing file, one it cannot read and one
+   that does not parse; a missing file on a fresh koko server is refused
+   with a hint that one started with `KOKO_OWNER` and `KOKO_ADDRESS` makes
+   its own;
+10. over sealed data, refuses a Root Key whose id is not the one the data
    needs, then opens the koko server's own keys with it
    ([initialisation](initialisation.md#at-every-start));
-9. logs `root_key=<id>` in its `koko server started` line, and serves.
+11. logs `root_key=<id>` in its `koko server started` line, and serves.
 
-Each Root Key refusal (steps 2, 7 and 8) names the path, and over sealed data the
+Each Root Key refusal (steps 2, 9 and 10) names the path, and over sealed data the
 Root Key id the data needs, so the Owner knows which copy to put back. Steps
-1 to 4 write nothing, and step 5 removes only a stale socket file, so a
-refusal at steps 1 to 5 leaves the data directory as it was, or missing. Every refusal
+1 to 5 write nothing, and step 6 removes only a stale socket file, so a
+refusal at steps 1 to 6 leaves the data directory as it was, or missing. Every refusal
 stops the start-up before the socket opens. Under systemd, `RuntimeDirectory=`
-gives every start a fresh `/run/koko`, so step 5 matters where the socket's
-directory outlives the process, as in a container. No refusal writes a key, and a
-file that does not parse is never taken for a missing one. The store opens
+gives every start a fresh `/run/koko`, so step 6 matters where the socket's
+directory outlives the process, as in a container. No refusal writes a key: step 8 alone writes one, never over sealed
+data nor over a file that is there, and a file that does not parse is never
+taken for a missing one. The store opens
 before the key loads, in the order P0 spec: install and run gives, so a
-refusal at step 7 may leave a new, empty `koko.db` in a fresh data directory,
+refusal at step 9 may leave a new, empty `koko.db` in a fresh data directory,
 and on an upgrade the migration and its snapshot run before a refusal. With
 no migration due, a refusal leaves the data directory as it was.
 
@@ -130,12 +146,19 @@ relative path without printing it, a file inside the data directory (through
 `..` and symlinks too) leaving every file as it was, a missing file writing
 nothing in its place, and a file that does not parse leaving it unchanged.
 [`server_checks_test.go`](../../internal/client/cli/server_checks_test.go)
-covers steps 3 to 5 through the same start-up (`harness.ServerStartWith`): a
+covers steps 3 to 6 through the same start-up (`harness.ServerStartWith`): a
 data directory on NFS in a faked mount table (`harness.Mountinfo`), existing
 or not, and a read-only data directory or parent of a missing one, are
 refused writing nothing; a stale socket file is taken over and served on; a
 second start beside a running koko server refuses naming the socket while
 the first keeps serving; and a file that is not a socket is left as it is.
+[`server_firststart_test.go`](../../internal/client/cli/server_firststart_test.go)
+covers steps 5 and 8 with `--owner`: a read-only directory where the Root
+Key must be made is refused writing nothing; a missing Root Key is written
+as one line, 0600, as the process's user, alone in its directory; one that
+is there is reused byte for byte, or refused byte for byte when it does not
+parse; and none is written over sealed data, whose refusal names the id
+it needs even when the key's directory is read-only.
 The S1 harness gives every koko server it starts a Root Key file made for
 the test (`harness.NewRootKeyFile`). The refusals over sealed data are
 verified with [initialisation](initialisation.md#verifying).

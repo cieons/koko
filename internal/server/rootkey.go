@@ -33,6 +33,8 @@ func loadKeys(ctx context.Context, st *store.Store, path string) (*seal.RootKey,
 	switch {
 	case err != nil && needs != "":
 		return nil, nil, fmt.Errorf("%w; the sealed data needs %s", err, needs)
+	case errors.Is(err, fs.ErrNotExist):
+		return nil, nil, fmt.Errorf("%w; a fresh koko server makes its own when started with KOKO_OWNER and KOKO_ADDRESS (--owner and --address)", err)
 	case err != nil:
 		return nil, nil, err
 	case needs != "" && key.ID() != needs:

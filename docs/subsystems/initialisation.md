@@ -1,7 +1,7 @@
 # Initialisation
 
 How a fresh koko server gets its Owner, its keys and its Server Address,
-once, over its Unix socket, and how the Owner shows and changes its
+once, over its Unix socket or at its first start, and how the Owner shows and changes its
 deployment afterwards. The order is P0 spec: install and run; the
 sealing is [the Seal](seal.md) and
 [ADR 0018](../adr/0018-secrets-and-private-keys-are-sealed-with-a-root-key.md).
@@ -20,7 +20,9 @@ initialisation (`op.BeforeInit`).
   "join_code": {...}}`, the fingerprint as OpenSSH prints it, and the Owner's
   first Join Code as `device.add` returns one.
 
-In one transaction, so that a refusal leaves the koko server as it was, it:
+In one transaction, so that a refusal leaves the koko server as it was, it
+runs steps 1 to 5, initialisation's steps, which a first start shares
+([`initialiseSteps`](../../internal/server/init.go)), then step 6:
 
 1. refuses an initialised koko server with `already_initialised` (409), so
    nothing replaces the Owner or the keys;
@@ -49,6 +51,66 @@ In one transaction, so that a refusal leaves the koko server as it was, it:
 No command of its own calls it: [`koko server install`](installer.md)
 does, once the koko service it started has opened its socket, and so does the
 S1 harness.
+
+## At first start
+
+A koko server can also initialise itself when it starts, given the Owner's
+name and the Server Address: `koko server run --owner <user> --address
+<host[:port]>`, or `KOKO_OWNER` and `KOKO_ADDRESS`
+([ADR 0038](../adr/0038-a-container-initialises-at-its-first-start-and-gives-its-first-join-code-to-docker-exec.md)).
+The container image's docs use them; the systemd unit sets neither, and
+install still initialises over the socket. [The CLI](cli.md#the-commands-so-far)
+checks the two before the koko server runs.
+
+[`server.Start`](../../internal/server/server.go), in the order of
+[the Seal's start-up](seal.md#at-start-up):
+
+1. opens the store, then makes the Root Key when its file is missing and
+   nothing is sealed yet ([`makeRootKey`](../../internal/server/firststart.go));
+   a file that is there is reused when it loads and refused, left as it is,
+   when it does not;
+2. loads the Root Key, as every start does;
+3. on a koko server not initialised yet, runs initialisation's steps 1 to 5
+   in one write of the koko server's own, as `server.init` does
+   ([`initialiseAtStart`](../../internal/server/firststart.go), through
+   `op.API.Do`, which gives the steps the call's time and `op.AfterTx` as an
+   operation has them), and issues no Join Code. `server.init` refuses a
+   Server Address too long for a Join Code when it issues the first one;
+   this start issues none, so it refuses that address as `server.set`
+   does, with `invalid_address`;
+4. only then listens on the Unix socket, so no caller is ever told
+   `not_initialised` in between; the TCP listener, bound in the write,
+   serves only once it commits.
+
+A refused initialisation, such as an address too long for a Join Code, stops
+the start with that refusal and leaves the koko server uninitialised. The
+Root Key step 1 wrote stays, and the next start reuses it, since nothing is
+sealed under it yet: a fix costs one more start.
+
+The log of that start holds `koko server initialised` with the host key and
+the listen address, as `server.init`'s does, and the Root Key's file and id
+(`root_key_file=... root_key=...`), then `koko server started`, then a line
+telling the Owner to keep a copy of the Root Key file off the machine,
+naming it, and one saying that the Owner's first Join Code comes from `koko device add` on this
+machine, or `docker exec <container> koko device add` in a container. When
+start-up made the Root Key, it logs `wrote a new Root Key` with its file and
+id first. No line holds the Root Key or a Join Code.
+
+An initialised koko server does not use `--owner` and `--address`. When
+either differs from the record, the Owner's name or the stored Server
+Address, start-up logs one warning
+([`warnUnused`](../../internal/server/firststart.go)), at `WARN`, saying
+that only a fresh koko server reads them and naming `koko server set
+address=<host[:port]>`, with `owner=`, `recorded_owner=`, `address=` and
+`recorded_address=` for those that differ; equal values log nothing. It
+never refuses over them, and never makes a Root Key over sealed data: a
+missing or another Root Key is refused as at every start, naming the id the
+sealed data needs ([the Seal](seal.md#at-start-up)).
+
+Without `--owner`, a fresh koko server starts uninitialised and waits for
+`server.init`, as before; when its Root Key file is missing, the refusal
+adds that a fresh koko server makes its own when started with `KOKO_OWNER`
+and `KOKO_ADDRESS`.
 
 ## Before initialisation
 
@@ -133,6 +195,26 @@ call.
 
 ## Verifying
 
+- [`server_firststart_test.go`](../../internal/client/cli/server_firststart_test.go),
+  through `koko server run` serving in the background
+  (`harness.ServerServeWith`): a first start writes the Root Key and comes
+  up initialised with no Join Code, `koko server show` naming the address,
+  the Root Key's file and id and the data directory; `koko device add` over
+  the socket issues the first Join Code, and a device joins with it,
+  pinning the host key the log named; the whole log holds the host key, the
+  listen address, the Root Key's file and id and the `koko device add`
+  line, never the Root Key or the Join Code; no caller dialling during a
+  first start gets `not_initialised`; a Root Key file that is there is
+  reused or refused byte for byte; none is made over sealed data; an
+  address too long for a Join Code stops the start and the next start, with
+  a good one, initialises on the Root Key it left; an initialised koko
+  server given another Owner or address warns and keeps its record, and
+  given the same logs nothing; a missing Root Key without `--owner` names
+  `KOKO_OWNER` and `KOKO_ADDRESS`; and the command's tier.
+- [`server_test.go`](../../internal/client/cli/server_test.go): `--owner`
+  and `--address` from flags and the environment, and the refusals of one
+  without the other and of a bad name or address, before the koko server
+  runs.
 - [`server_settings_test.go`](../../internal/client/cli/server_settings_test.go),
   through the CLI: `server show` and `server set` with their `--json`
   golden files and never the Root Key, the Root Key's file named under
@@ -156,6 +238,7 @@ call.
 - [`init_caller_test.go`](../../internal/server/init_caller_test.go):
   `server.init` refused to a caller who is not the Local caller.
 - [`op_test.go`](../../internal/server/op/op_test.go): `BeforeInit` and
-  `LocalOnly`.
+  `LocalOnly`, and `Do`, a write of the koko server's own, with the call's
+  time and `AfterTx`.
 - [`serveraddr_test.go`](../../internal/shared/serveraddr/serveraddr_test.go):
   the Server Address's forms.

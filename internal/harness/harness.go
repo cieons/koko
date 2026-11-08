@@ -300,27 +300,54 @@ func ServerStart(t testing.TB) func(ctx context.Context, s cli.ServerSettings, l
 // there or on a stale socket file, and Mountinfo.
 func ServerStartWith(t testing.TB, opts ...Option) func(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
 	t.Helper()
+	config := settingsConfig(t, opts)
+	return func(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
+		srv, err := server.Start(ctx, config(s, log))
+		if err != nil {
+			return err
+		}
+		return srv.Close()
+	}
+}
+
+// ServerServeWith is ServerStartWith, with the same options, for a koko
+// server that keeps serving, as cmd/koko's does, until the command is
+// interrupted, such as by Process.Stop: a test then reaches it on the
+// socket SocketPath names and, once initialised, over TCP. Start it with
+// RunBackground.
+func ServerServeWith(t testing.TB, opts ...Option) func(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
+	t.Helper()
+	config := settingsConfig(t, opts)
+	return func(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
+		return server.Run(ctx, config(s, log))
+	}
+}
+
+// settingsConfig returns what makes the server.Config of a start-up given
+// its settings, for ServerStartWith and ServerServeWith: the settings as
+// cmd/koko gives them, on the socket and mount table opts name, and a
+// loopback TCP port of the system's choosing whatever --listen says.
+func settingsConfig(t testing.TB, opts []Option) func(cli.ServerSettings, io.Writer) server.Config {
+	t.Helper()
 	var o options
 	for _, opt := range opts {
 		opt(&o)
 	}
 	socket := cmp.Or(o.socket, filepath.Join(ShortTempDir(t), "koko.sock"))
 	filesystems := o.filesystemsOrLocalDisk()
-	return func(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
-		srv, err := server.Start(ctx, server.Config{
+	return func(s cli.ServerSettings, log io.Writer) server.Config {
+		return server.Config{
 			DataDir:       s.DataDir,
 			RootKeyPath:   s.RootKeyPath,
 			RootKeySource: s.RootKeySource,
+			Owner:         s.Owner,
+			Address:       s.Address,
 			Listen:        listenAddr,
 			LogLevel:      s.LogLevel,
 			Log:           log,
 			Filesystems:   filesystems,
 			SocketPath:    socket,
-		})
-		if err != nil {
-			return err
 		}
-		return srv.Close()
 	}
 }
 
@@ -554,6 +581,15 @@ func (d *Device) Background(env []string, args ...string) *Process {
 func Run(t testing.TB, r cli.Runner, env []string, args ...string) Result {
 	t.Helper()
 	return run(t, r, env, "", args...)
+}
+
+// RunBackground starts one koko command line in process with the runner r
+// and the environment env, as Run does, and returns at once, for a command
+// that runs until it is stopped, such as koko server run with
+// ServerServeWith. It is stopped when the test ends.
+func RunBackground(t testing.TB, r cli.Runner, env []string, args ...string) *Process {
+	t.Helper()
+	return background(t, r, env, args...)
 }
 
 func run(t testing.TB, r cli.Runner, env []string, stdin string, args ...string) Result {

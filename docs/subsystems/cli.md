@@ -357,7 +357,7 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
 | `koko status` | read | none: the koko server's version comes from its report | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_error", "device_mux", "revocation", "include_warning"}`, below |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
-| `koko server run [--data-dir <dir>] [--root-key-file <file>] [--listen <addr>] [--log-level <level>]` | irreversible | none | nothing on success |
+| `koko server run [--data-dir <dir>] [--root-key-file <file>] [--owner <user> --address <host[:port]>] [--listen <addr>] [--log-level <level>]` | irreversible | none | nothing on success |
 | `koko server install [--owner <user>] [--address <host[:port]>] [--port <port>]` | irreversible | `server.init` | `{"upgraded", "address", "host_key_fingerprint", "root_key_file", "root_key_id", "listen_port", "join_code"}`, the Join Code as `device add` prints it; an upgrade has no `join_code`, and may have `devices_must_connect` ([the installer](installer.md#what-it-prints)) |
 | `koko server uninstall` | irreversible | none | `{"removed", "data_dir", "root_key_file", "system_user", "listen_port"}` ([the installer](installer.md#uninstall)) |
 | `koko server show` | read | `server.show` | `{"address", "listen_port", "host_key_fingerprint", "version", "root_key_file", "root_key_id", "data_dir"}` ([the deployment afterwards](initialisation.md#the-deployment-afterwards)) |
@@ -392,7 +392,15 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
 `LoadCredential=root-key` hands the unit), `--listen` (`KOKO_LISTEN`, default
 `:7822`: an optional host and a port number, where devices reach the koko
 server once it is initialised) and `--log-level` (`KOKO_LOG_LEVEL`:
-`debug`, `info`, `warn` or `error`; default `info`). Left to its default
+`debug`, `info`, `warn` or `error`; default `info`). `--owner` (`KOKO_OWNER`)
+and `--address` (`KOKO_ADDRESS`), which have no default, go together: with
+them a fresh koko server makes its Root Key when the file is missing and
+initialises itself at start, and an initialised one does not use them
+([initialisation at first start](initialisation.md#at-first-start)). The
+CLI refuses one without the other, an `--owner` that is not a User name and
+an `--address` that is not a Server Address with exit 2, before the koko
+server writes anything. With them, `koko server run` stays in the
+irreversible tier it is in already (ADR 0019). Left to its default
 without `CREDENTIALS_DIRECTORY` set, the Root Key file is refused with exit 2;
 left to it under systemd, the file is a copy of `/etc/koko/root.key`, the
 file the unit's `LoadCredential=` names, which `koko server show` names as

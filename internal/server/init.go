@@ -47,8 +47,9 @@ func initialise(rootKey *seal.RootKey, issuer *device.Issuer, tcp *tcpListener, 
 // It issues no Join Code. So that a refused or failed initialisation leaves
 // the koko server as it was, the listener serves only once tx commits, and
 // closes when it rolls back. A second initialisation is refused, so nothing
-// replaces the Owner or the keys.
-func initialiseSteps(ctx context.Context, tx store.Tx, rootKey *seal.RootKey, tcp *tcpListener, log *slog.Logger, req api.ServerInitRequest) (*deployment.Keys, error) {
+// replaces the Owner or the keys. logAttrs go on its koko server
+// initialised log line.
+func initialiseSteps(ctx context.Context, tx store.Tx, rootKey *seal.RootKey, tcp *tcpListener, log *slog.Logger, req api.ServerInitRequest, logAttrs ...any) (*deployment.Keys, error) {
 	initialised, err := deployment.Initialised(ctx, tx)
 	if err != nil {
 		return nil, fmt.Errorf("initialise the koko server: %w", err)
@@ -75,7 +76,7 @@ func initialiseSteps(ctx context.Context, tx store.Tx, rootKey *seal.RootKey, tc
 			log.Error("serve Device Connections after initialisation", "err", err)
 			return
 		}
-		log.Info("koko server initialised", "host_key", keys.HostKeyFingerprint(), "listen", tcp.address())
+		log.Info("koko server initialised", append([]any{"host_key", keys.HostKeyFingerprint(), "listen", tcp.address()}, logAttrs...)...)
 	})
 	return keys, nil
 }

@@ -70,6 +70,24 @@ func TestServerRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
 			cli.ServerSettings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", Listen: ":9443", LogLevel: slog.LevelInfo},
 		},
 		{
+			"the Owner and the Server Address as flags",
+			[]string{credentialsDirectory},
+			[]string{"--owner", "alice", "--address", "koko.example.com:443"},
+			withInit(defaults, "alice", "koko.example.com:443"),
+		},
+		{
+			"the Owner and the Server Address in the environment",
+			[]string{credentialsDirectory, "KOKO_OWNER=alice", "KOKO_ADDRESS=[2001:db8::7]"},
+			nil,
+			withInit(defaults, "alice", "[2001:db8::7]"),
+		},
+		{
+			"the Owner and the Server Address, flag over environment",
+			[]string{credentialsDirectory, "KOKO_OWNER=bob", "KOKO_ADDRESS=env.example.com"},
+			[]string{"--owner", "alice", "--address", "koko.example.com"},
+			withInit(defaults, "alice", "koko.example.com"),
+		},
+		{
 			"empty variable is unset",
 			[]string{credentialsDirectory, "KOKO_DATA_DIR=", "KOKO_ROOT_KEY_FILE=", "KOKO_LISTEN="},
 			nil,
@@ -92,6 +110,13 @@ func TestServerRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
 	}
 }
 
+// withInit is s with the Owner and the Server Address a fresh koko server
+// initialises itself with.
+func withInit(s cli.ServerSettings, owner, address string) cli.ServerSettings {
+	s.Owner, s.Address = owner, address
+	return s
+}
+
 func TestServerRunRefusesBadSettings(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -110,6 +135,12 @@ func TestServerRunRefusesBadSettings(t *testing.T) {
 		{"listen address without a port", []string{credentialsDirectory}, []string{"--listen", "0.0.0.0"}, `--listen (KOKO_LISTEN) takes host:port or :port, not "0.0.0.0"`},
 		{"listen port out of range", []string{credentialsDirectory}, []string{"--listen", ":65536"}, `--listen (KOKO_LISTEN) takes host:port or :port, not ":65536"`},
 		{"listen port by name", []string{credentialsDirectory, "KOKO_LISTEN=:https"}, nil, `--listen (KOKO_LISTEN) takes host:port or :port, not ":https"`},
+		{"Owner without Server Address", []string{credentialsDirectory}, []string{"--owner", "alice"}, "--owner (KOKO_OWNER) needs --address (KOKO_ADDRESS)"},
+		{"Owner without Server Address in the environment", []string{credentialsDirectory, "KOKO_OWNER=alice"}, nil, "--owner (KOKO_OWNER) needs --address (KOKO_ADDRESS)"},
+		{"Server Address without Owner", []string{credentialsDirectory}, []string{"--address", "koko.example.com"}, "--address (KOKO_ADDRESS) needs --owner (KOKO_OWNER)"},
+		{"Server Address without Owner in the environment", []string{credentialsDirectory, "KOKO_ADDRESS=koko.example.com"}, nil, "--address (KOKO_ADDRESS) needs --owner (KOKO_OWNER)"},
+		{"Owner that is not a User name", []string{credentialsDirectory}, []string{"--owner", "Alice", "--address", "koko.example.com"}, "--owner (KOKO_OWNER) takes the Owner's User name"},
+		{"Server Address that is not one", []string{credentialsDirectory, "KOKO_OWNER=alice", "KOKO_ADDRESS=koko.example.com:0"}, nil, "--address (KOKO_ADDRESS) takes the Server Address"},
 		{
 			"no Root Key file outside systemd", nil, nil,
 			"give the Root Key's file with --root-key-file or KOKO_ROOT_KEY_FILE: its default, $CREDENTIALS_DIRECTORY/root-key, needs CREDENTIALS_DIRECTORY",

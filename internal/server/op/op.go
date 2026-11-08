@@ -358,6 +358,20 @@ func (a *API) serve(r *http.Request) (body []byte, replayed bool, err error) {
 	return body, replayed, err
 }
 
+// Do runs fn as a write of the koko server's own, which no caller asked
+// for: in a transaction of its own, which commits only when fn returns no
+// error, with Now and AfterTx as an operation has them. Start-up uses it to
+// initialise a fresh koko server before it serves anything (ADR 0038).
+func (a *API) Do(ctx context.Context, fn func(ctx context.Context, tx store.Tx) error) error {
+	ctx, finish := a.begin(ctx)
+	committed := false
+	// Deferred, so a step that panics still undoes what it began.
+	defer func() { finish(committed) }()
+	err := a.store.Write(ctx, func(tx store.Tx) error { return fn(ctx, tx) })
+	committed = err == nil
+	return err
+}
+
 // begin starts a call's context: it fixes the call's time from the koko
 // server's clock, for Now, and holds its AfterTx hooks, which finish runs
 // once the call's transaction has ended, told whether it committed.

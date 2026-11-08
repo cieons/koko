@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -450,5 +451,45 @@ func TestAfterTxIsToldWhetherTheCallCommitted(t *testing.T) {
 	wantError(t, status, body, api.CodeNameTaken)
 	if !slices.Equal(ended, []bool{true, false}) {
 		t.Errorf("AfterTx was told %v, want [true false]: committed, then rolled back", ended)
+	}
+}
+
+// A write of the koko server's own, which no caller asked for, runs in one
+// transaction with the call's time and AfterTx, as an operation does: it
+// commits when it returns no error, rolls back when it does, and AfterTx
+// is told which, once the transaction has ended.
+func TestDoRunsAWriteOfTheKokoServersOwn(t *testing.T) {
+	f := newFixture(t)
+	f.clock.Store(new(time.Date(2026, 11, 8, 9, 30, 15, 500_000_000, time.UTC)))
+	var ended []bool
+	do := func(text string, fail error) error {
+		before := len(ended)
+		return f.api.Do(t.Context(), func(ctx context.Context, tx store.Tx) error {
+			op.AfterTx(ctx, func(committed bool) { ended = append(ended, committed) })
+			if got := op.Now(ctx); !got.Equal(time.Date(2026, 11, 8, 9, 30, 15, 0, time.UTC)) {
+				return fmt.Errorf("op.Now = %v, want the clock's time in UTC to the second", got)
+			}
+			if _, err := tx.ExecContext(ctx, "INSERT INTO notes (text) VALUES (?)", text); err != nil {
+				return err
+			}
+			if len(ended) != before {
+				return errors.New("AfterTx ran inside the transaction")
+			}
+			return fail
+		})
+	}
+	if err := do("kept", nil); err != nil {
+		t.Fatal(err)
+	}
+	refusal := api.CodeNameTaken.Errorf("the note is taken")
+	if err := do("dropped", refusal); !errors.Is(err, refusal) {
+		t.Errorf("Do returned %v, want the write's own error", err)
+	}
+	if !slices.Equal(ended, []bool{true, false}) {
+		t.Errorf("AfterTx was told %v, want [true false]: committed, then rolled back", ended)
+	}
+	status, body := f.post(t, noteList.Path(), `{}`)
+	if status != http.StatusOK || body != `{"notes":["kept"],"local":true}` {
+		t.Errorf("note.list = %d %s, want only the note the committed write added", status, body)
 	}
 }

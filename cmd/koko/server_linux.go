@@ -20,6 +20,8 @@ func serverRun(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
 		DataDir:       s.DataDir,
 		RootKeyPath:   s.RootKeyPath,
 		RootKeySource: s.RootKeySource,
+		Owner:         s.Owner,
+		Address:       s.Address,
 		Listen:        s.Listen,
 		LogLevel:      s.LogLevel,
 		Log:           log,
