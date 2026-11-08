@@ -494,7 +494,7 @@ func TestAResumeFromAnotherDeviceSessionIsRefused(t *testing.T) {
 
 	other, _ := joinAs(t, deviceAdd(t, s.h, "thief"))
 	_, err := other.Dial().OpenChannel(t.Context(), wire.ChannelTunnel, wire.TunnelResume(id, 0))
-	if e, ok := errors.AsType[*ssh.OpenChannelError](err); !ok || e.Reason != ssh.Prohibited || !strings.Contains(e.Message, "holds no such Tunnel") {
+	if e, ok := errors.AsType[*ssh.OpenChannelError](err); !ok || e.Reason != ssh.Prohibited || e.Message != "" {
 		t.Errorf("another Device Session's resume: %v, want it refused as a Tunnel the koko server does not hold", err)
 	}
 	waitServerLog(t, s.h, `msg="ssh session resume refused" tunnel=`+started[1]+` .* reason="unknown tunnel"`)

@@ -10,9 +10,9 @@
 // Device Connection the resume waits for; once that connection has ended,
 // on a new one, through a new Device Mux should the old one have crashed,
 // or over a Device Connection of its own. It gives up only when the koko
-// server refuses the resume, or when nothing it could try would reach the
-// koko server again: koko disconnect, a revocation, a device no longer
-// joined.
+// server refuses the resume, when nothing it could try would reach the
+// koko server again (koko disconnect, a revocation, a device no longer
+// joined), or after timing.ResumeGiveUp awake without reaching it.
 package tunnel
 
 import (
@@ -40,6 +40,10 @@ type Dial func(ctx context.Context) (serverconn.Conn, error)
 // as a device whose Device Session was Revoked: the Tunnel gives up its
 // Resume.
 var ErrFinal = errors.New("trying again would not reach the koko server")
+
+// ErrGaveUp is why a Tunnel gave up its Resume once the device had been
+// awake for timing.ResumeGiveUp without reaching the koko server.
+var ErrGaveUp = fmt.Errorf("koko could not reach the koko server for %d minutes", timing.ResumeGiveUp/time.Minute)
 
 // Tunnel is the device end of one Tunnel: a byte stream to the Gateway's SSH
 // server, for an SSH client to run on.
@@ -90,9 +94,10 @@ func watchConn(c serverconn.Conn, own bool) *connection {
 type LostError struct {
 	// At is when the device noticed the loss.
 	At time.Time
-	// Err is why it could not Resume: the koko server refused the resume,
-	// or nothing would reach the koko server again, such as after koko
-	// disconnect (serverconn.ErrDisconnected).
+	// Err is why it could not Resume: the koko server refused the resume
+	// (*RefusedError), nothing would reach the koko server again, such as
+	// after koko disconnect (serverconn.ErrDisconnected), or the device gave
+	// up trying (ErrGaveUp).
 	Err error
 }
 
@@ -102,12 +107,20 @@ func (e *LostError) Error() string {
 
 func (e *LostError) Unwrap() error { return e.Err }
 
-// refusedError is a resume the koko server refused, with its message.
-type refusedError struct {
-	message string
+// RefusedError is a resume the koko server refused. Reason is why the
+// Tunnel ended, as the koko server's refusal says, such as "web1 closed the
+// connection"; empty when it holds no such Tunnel, as when its grace ran
+// out or the koko server restarted.
+type RefusedError struct {
+	Reason string
 }
 
-func (e *refusedError) Error() string { return "the koko server refused the resume: " + e.message }
+func (e *RefusedError) Error() string {
+	if e.Reason == "" {
+		return "the koko server refused the resume"
+	}
+	return "the koko server refused the resume: " + e.Reason
+}
 
 // Open opens a Tunnel over conn to the Host sshName names, alone or followed
 // by .koko, and reads its id. It gives up when ctx ends first. The Tunnel
@@ -182,40 +195,46 @@ func (t *Tunnel) resumeAcrossDrops() {
 }
 
 // resume Resumes the Tunnel, whose stream is off its channel, trying again
-// after a failure trying again may change. Each try begins at least a wait
-// after the last one began, the wait timing.ReconnectFirst at first and
-// doubling up to timing.ReconnectMax, so one that took longer, as a resume
-// waiting out a Device Mux's timing.CommandWait does, is followed at once.
-// Meanwhile it tells the Device Mux it goes through, if any, that it waits
-// to Resume.
+// after a failure trying again may change, for timing.ResumeGiveUp at most,
+// then failing with ErrGaveUp: counted on the monotonic clock, which stands
+// still while the device sleeps. Each try begins at least a wait after the
+// last one began, the wait timing.ReconnectFirst at first and doubling up
+// to timing.ReconnectMax, so one that took longer, as a resume waiting out
+// a Device Mux's timing.CommandWait does, is followed at once. Meanwhile it
+// tells the Device Mux it goes through, if any, that it waits to Resume.
 func (t *Tunnel) resume() error {
 	received := t.stream.Detach()
+	ctx, cancel := context.WithTimeoutCause(t.ctx, t.timings.ResumeGiveUp, ErrGaveUp)
+	defer cancel()
 	var told *connection
 	untell := func() {}
 	defer func() { untell() }()
 	var wait time.Duration
 	for {
 		began := time.Now()
-		c, err := t.connection()
+		c, err := t.connection(ctx)
 		if err == nil {
 			if c != told {
 				untell()
 				told, untell = c, waitingToResume(t.ctx, c)
 			}
-			if err = t.resumeOn(c, received); err == nil {
+			if err = t.resumeOn(ctx, c, received); err == nil {
 				return nil
 			}
 		}
 		if final(err) || t.stream.Err() != nil || t.ctx.Err() != nil {
 			return err
 		}
+		if ctx.Err() != nil {
+			return context.Cause(ctx)
+		}
 		wait = t.timings.NextReconnect(wait)
 		timer := time.NewTimer(wait - time.Since(began))
 		select {
 		case <-timer.C:
-		case <-t.ctx.Done():
+		case <-ctx.Done():
 			timer.Stop()
-			return t.ctx.Err()
+			return context.Cause(ctx)
 		}
 	}
 }
@@ -223,15 +242,15 @@ func (t *Tunnel) resume() error {
 // final tells whether a try to Resume failed with err for a reason trying
 // again will not change.
 func final(err error) bool {
-	_, refused := errors.AsType[*refusedError](err)
+	_, refused := errors.AsType[*RefusedError](err)
 	return refused || errors.Is(err, ErrFinal) || errors.Is(err, serverconn.ErrDisconnected) || errors.Is(err, serverconn.ErrRevoked)
 }
 
 // connection returns the connection to Resume on: the one the Tunnel holds,
-// while it lasts, and once it has ended, a new one that redial reaches. One
-// that koko disconnect ended, or the koko server for a revocation, ends
-// the Resume instead.
-func (t *Tunnel) connection() (*connection, error) {
+// while it lasts, and once it has ended, a new one that redial reaches
+// before ctx ends. One that koko disconnect ended, or the koko server for a
+// revocation, ends the Resume instead.
+func (t *Tunnel) connection(ctx context.Context) (*connection, error) {
 	t.mu.Lock()
 	c := t.conn
 	t.mu.Unlock()
@@ -243,7 +262,7 @@ func (t *Tunnel) connection() (*connection, error) {
 	if final(c.err) {
 		return nil, c.err
 	}
-	conn, err := t.redial(t.ctx)
+	conn, err := t.redial(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -258,13 +277,15 @@ func (t *Tunnel) connection() (*connection, error) {
 }
 
 // resumeOn sends a resume, naming the Tunnel and the offset received of its
-// stream, on a new channel of c, and attaches the stream to it once the koko
-// server has answered, within timing.ResumeExchange. The koko server's
-// refusal, which a Device Mux passes back as it is, is a *refusedError.
-func (t *Tunnel) resumeOn(c *connection, received uint64) error {
-	ch, err := c.OpenChannel(t.ctx, wire.ChannelTunnel, wire.TunnelResume(t.id, received))
+// stream, on a new channel of c opened before ctx ends, and attaches the
+// stream to it once the koko server has answered, within
+// timing.ResumeExchange: a resume the koko server took is let finish, even
+// should ctx end meanwhile. The koko server's refusal, which a Device Mux
+// passes back as it is, is a *RefusedError.
+func (t *Tunnel) resumeOn(ctx context.Context, c *connection, received uint64) error {
+	ch, err := c.OpenChannel(ctx, wire.ChannelTunnel, wire.TunnelResume(t.id, received))
 	if e, ok := errors.AsType[*ssh.OpenChannelError](err); ok && e.Reason == ssh.Prohibited {
-		return &refusedError{message: e.Message}
+		return &RefusedError{Reason: e.Message}
 	}
 	if err != nil {
 		return err

@@ -83,10 +83,7 @@ func (g *Gateway) recheck(ts []*tunnel) {
 	for i, t := range ts {
 		switch {
 		case err != nil:
-			t.end(&ending{
-				reason: "access check failed",
-				notice: fmt.Sprintf("the koko server could not check access to %s, so this SSH Session is closed; its log says why.", t.hostName),
-			})
+			t.end(checkFailed(t))
 			ended++
 		case ends[i] != nil:
 			t.end(ends[i])
@@ -133,9 +130,19 @@ func revokedEnding(t *tunnel) *ending {
 // notice. The notice names the Host by the name the SSH Session was opened
 // with, so it tells of no later name.
 func withdrawn(t *tunnel, reason, why string) *ending {
-	notice := "access to " + t.hostName + " was withdrawn"
+	what := "access to " + t.hostName + " was withdrawn"
 	if why != "" {
-		notice += ": " + why
+		what += ": " + why
 	}
-	return &ending{reason: reason, notice: notice + "; this SSH Session is closed."}
+	return &ending{reason: reason, notice: what + "; this SSH Session is closed.", why: what}
+}
+
+// checkFailed ends the SSH Session in the Tunnel t once the koko server
+// could not read the record to check its access again.
+func checkFailed(t *tunnel) *ending {
+	return &ending{
+		reason: "access check failed",
+		notice: fmt.Sprintf("the koko server could not check access to %s, so this SSH Session is closed; its log says why.", t.hostName),
+		why:    fmt.Sprintf("the koko server could not check access to %s; its log says why", t.hostName),
+	}
 }

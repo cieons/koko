@@ -102,13 +102,11 @@ var clientClosed = &ending{reason: "client closed"}
 // ended it. Each notice names the Host.
 func (s *sshSession) hostEnding() *ending {
 	if e, ok := errors.AsType[*liveness.DeadError](s.host.Broken()); ok {
-		return &ending{
-			reason: "Host leg lost",
-			notice: fmt.Sprintf("lost the connection to %s (no answer for %s s); this SSH Session has ended.",
-				s.hostName, strconv.FormatFloat(e.Quiet.Seconds(), 'f', -1, 64)),
-		}
+		why := fmt.Sprintf("lost the connection to %s (no answer for %s s)", s.hostName, strconv.FormatFloat(e.Quiet.Seconds(), 'f', -1, 64))
+		return &ending{reason: "Host leg lost", notice: why + "; this SSH Session has ended.", why: why}
 	}
-	return &ending{reason: "Host closed", notice: s.hostName + " closed the connection."}
+	why := s.hostName + " closed the connection"
+	return &ending{reason: "Host closed", notice: why + ".", why: why}
 }
 
 // forwardRequests are the client's global requests the Gateway passes on to

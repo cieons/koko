@@ -100,6 +100,11 @@ const (
 	// answer to a resume once its channel opened; past it, the device tries
 	// again, on the next Device Connection should this one have died.
 	ResumeExchange = 5 * time.Second
+	// ResumeGiveUp is how long a Tunnel tries to Resume, from when its
+	// channel failed, before it gives up: time the device is awake, since
+	// the monotonic clock it is counted on stands still while the device
+	// sleeps. A koko server reached by then Resumes the Tunnel or refuses.
+	ResumeGiveUp = 2 * time.Minute
 )
 
 // Timings is the timing-constants hook. Each field is named after its
@@ -127,6 +132,7 @@ type Timings struct {
 	BareNameRefresh      time.Duration
 	Grace                time.Duration
 	ResumeExchange       time.Duration
+	ResumeGiveUp         time.Duration
 
 	// Wake and RouteChange stand in for the Device Mux's watches of the
 	// device waking from sleep and of a change of its network routes: each
@@ -160,6 +166,7 @@ func (t Timings) Resolve() Timings {
 	t.BareNameRefresh = cmp.Or(t.BareNameRefresh, BareNameRefresh)
 	t.Grace = cmp.Or(t.Grace, Grace)
 	t.ResumeExchange = cmp.Or(t.ResumeExchange, ResumeExchange)
+	t.ResumeGiveUp = cmp.Or(t.ResumeGiveUp, ResumeGiveUp)
 	return t
 }
 

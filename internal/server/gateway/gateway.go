@@ -24,6 +24,7 @@
 package gateway
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -68,6 +69,10 @@ type Gateway struct {
 	closed bool
 	// tunnels is the Tunnel registry.
 	tunnels map[tunnelID]*tunnel
+	// ended holds, by its id, how each Tunnel that left the registry with
+	// a notice ended, until its grace would have ended, so that a resume
+	// of it is refused with why (resume.go).
+	ended map[tunnelID]endedTunnel
 	// sshSessions counts, by Device Session, the Tunnels in the registry
 	// that the access check admitted, attached or Detached: from then until
 	// the Tunnel ends, its dial to the Host included.
@@ -93,6 +98,7 @@ func New(st *store.Store, rootKey *seal.RootKey, timings timing.Timings, log *sl
 		log:         log,
 		timings:     timings.Resolve(),
 		tunnels:     map[tunnelID]*tunnel{},
+		ended:       map[tunnelID]endedTunnel{},
 		sshSessions: map[string]int{},
 	}
 }
@@ -130,16 +136,22 @@ type tunnel struct {
 	watched  <-chan struct{}
 	resuming int
 	grace    *time.Timer
+	// detached is when the running grace started.
+	detached time.Time
 }
 
 // ending is why the Gateway ends an SSH Session, as its log line's reason
 // says, and the notice it gives the client, if any: one line on the stderr
 // of each session channel the client has open (wire.TunnelNoticeLine), then
 // the reason of the Tunnel's close frame, which koko exec shows when no
-// session channel of its took the line.
+// session channel of its took the line. why, set beside each notice, is
+// the notice's clause on why, such as "web1 closed the connection": the
+// message of a resume refused once the Tunnel has ended (resume.go), which
+// the device prints after "could not be resumed: ".
 type ending struct {
 	reason string
 	notice string
+	why    string
 }
 
 func (e *ending) Error() string { return e.reason }
@@ -158,7 +170,7 @@ var (
 	// errGraceOver: the Tunnel stayed Detached for the whole grace.
 	errGraceOver = &ending{reason: "grace over"}
 	// errStopping: the koko server is stopping, as for an upgrade.
-	errStopping = &ending{reason: "server stopping", notice: "the koko server is restarting; this SSH Session has ended."}
+	errStopping = &ending{reason: "server stopping", notice: "the koko server is restarting; this SSH Session has ended.", why: "the koko server is restarting"}
 	// errEnded: the SSH Session has ended, or never started.
 	errEnded = errors.New("the SSH Session ended")
 )
@@ -299,11 +311,15 @@ func (g *Gateway) withdrawalsTaken() uint64 {
 }
 
 func (g *Gateway) unregister(t *tunnel) {
-	t.stopGrace()
+	t.mu.Lock()
+	from := cmp.Or(t.detached, time.Now())
+	t.stopGraceLocked()
+	t.mu.Unlock()
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	close(t.done)
 	delete(g.tunnels, t.id)
+	g.keepEnding(t, from.Add(g.timings.Grace))
 	if ds := t.caller.DeviceSession; t.limited {
 		if g.sshSessions[ds]--; g.sshSessions[ds] == 0 {
 			delete(g.sshSessions, ds)
@@ -552,6 +568,9 @@ func (g *Gateway) session(t *tunnel, sshName string, a admission, stopEarlyClose
 		logged: map[string]bool{}, sessionChannels: map[ssh.Channel]struct{}{},
 	}
 	end := s.relay(t.ctx, client, chans, reqs)
+	// The Tunnel ends as its SSH Session did, which a resume refused after
+	// tells (resume.go).
+	t.end(end)
 	g.log.Info("ssh session ended", slices.Concat(who, []any{
 		"duration", time.Since(started).Round(time.Millisecond),
 		"bytes_from_device", counted.read.Load(), "bytes_to_device", counted.written.Load(),

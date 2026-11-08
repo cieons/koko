@@ -12,6 +12,7 @@ import (
 
 	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/client/tunnel"
+	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/resumable"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -90,6 +91,11 @@ func execute(ctx context.Context, in *Input) (int, error) {
 		}
 		return 0, errors.New(notice)
 	}
+	if _, ok := errors.AsType[*tunnel.LostError](t.Err()); ok {
+		// The command's channel closed with the Tunnel beneath it, which
+		// could not Resume.
+		return 0, sessionError(hostName, t, err)
+	}
 	if _, ok := errors.AsType[*ssh.ExitMissingError](err); ok {
 		return 0, fmt.Errorf("the command on %s ended without an exit status", hostName)
 	}
@@ -154,9 +160,32 @@ func sessionError(hostName string, t *tunnel.Tunnel, err error) error {
 		if errors.Is(lost, serverconn.ErrDisconnected) {
 			return fmt.Errorf("koko disconnect ended the SSH Session to %s", hostName)
 		}
-		return fmt.Errorf("%w; the SSH Session to %s could not be resumed", lost, hostName)
+		line := fmt.Sprintf("%v; the SSH Session to %s could not be resumed", lost, hostName)
+		if why := lostWhy(lost); why != "" {
+			line += ": " + why
+		}
+		// Not wrapping lost, whose error a revocation's code would print
+		// in place of the line.
+		return errors.New(line + ".")
 	}
 	return fmt.Errorf("the SSH Session to %s failed: %w", hostName, err)
+}
+
+// lostWhy says why the Tunnel that lost could not Resume, as the clause
+// its line ends with: the koko server's reason for refusing the resume,
+// the device's Device Session Revoked, or the device giving up; "" when
+// none is known, as when the koko server no longer held the Tunnel.
+func lostWhy(lost *tunnel.LostError) string {
+	if r, ok := errors.AsType[*tunnel.RefusedError](lost); ok {
+		return r.Reason
+	}
+	if _, e := classify(lost.Err); errors.Is(lost, serverconn.ErrRevoked) || e.Code == api.CodeRevoked.Name {
+		return "this device's Device Session was Revoked"
+	}
+	if errors.Is(lost, tunnel.ErrGaveUp) {
+		return tunnel.ErrGaveUp.Error()
+	}
+	return ""
 }
 
 // gatewayNotice returns the notice the Gateway closed the Tunnel t with,
