@@ -71,6 +71,10 @@ const (
 	minSystemd = 247
 	// systemdRunDir is there only while systemd runs the machine.
 	systemdRunDir = "/run/systemd/system"
+	// containerImage runs the koko server in a container that systemd does
+	// not run, as containerDocs shows.
+	containerImage = "ghcr.io/cieons/koko"
+	containerDocs  = "https://github.com/cieons/koko/blob/main/docs/install.md#in-a-container"
 )
 
 // Machine is everything install reaches on the machine beyond its files.
@@ -188,9 +192,10 @@ func (in *Installer) check(ctx context.Context, req install.Request) (plan, erro
 	// systemd runs the machine when it has made this directory, as
 	// sd_booted(3) tells; in a container whose init is something else,
 	// systemctl may still be there, and would fail only at daemon-reload,
-	// after the writes.
+	// after the writes. The image runs the koko server there instead.
 	if info, err := os.Stat(in.path(systemdRunDir)); err != nil || !info.IsDir() {
-		return plan{}, refuse(install.Unsupported, "the koko server runs only on Linux with systemd, and systemd is not running this machine (there is no %s)", systemdRunDir)
+		return plan{}, refuse(install.Unsupported, "the koko server runs only on Linux with systemd, and systemd is not running this machine (there is no %s): to run it in a container, use the image %s (%s)",
+			systemdRunDir, containerImage, containerDocs)
 	}
 	version, err := in.Machine.SystemdVersion(ctx)
 	if err != nil {

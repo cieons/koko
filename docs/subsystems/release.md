@@ -21,6 +21,58 @@ Each binary is self-contained, built with `CGO_ENABLED=0`, `-trimpath` and
 `-ldflags='-s -w'`. Every asset in `SHA256SUMS` has a GitHub artifact
 attestation, which `gh attestation verify <file> --repo cieons/koko` checks.
 
+Beside the Release, each release pushes [the image](#the-image).
+
+## The image
+
+`ghcr.io/cieons/koko` runs the koko server in a container that systemd does
+not run ([P1 spec: the container image](https://github.com/cieons/koko/issues/91)). It is one index for `linux/amd64`
+and `linux/arm64`, so `docker pull` picks the machine's.
+[`release/Dockerfile`](../../release/Dockerfile) builds it with no `RUN`
+step, so building for the other architecture needs no emulation:
+
+| What | Value |
+| --- | --- |
+| Base | `gcr.io/distroless/static-debian12`, the variant whose default user is root, pinned by digest; [Dependabot](../../.github/dependabot.yml) opens a pull request when the digest moves |
+| Binary | `/usr/local/bin/koko`: the release's `koko-linux-<arch>`, copied from `dist/`, never rebuilt: the binary `SHA256SUMS` lists, whose version the release checks is the tag |
+| Entrypoint, command | `["koko"]`, `["server", "run"]` |
+| Environment | `KOKO_DATA_DIR=/koko/data`, `KOKO_ROOT_KEY_FILE=/koko/root.key`, `KOKO_RUN_AS=65532:65532` |
+| Directories | `/koko` (0700, uid and gid 65532), a `VOLUME`, so a container without a mount keeps its data in an anonymous volume, which outlives `docker rm`; `/run/koko` (0755, 65532), the socket's directory |
+| Port | `EXPOSE 7822` |
+| Labels | `org.opencontainers.image.source`, `.version` (the tag without its `v`, or `git describe` elsewhere), `.revision` (the commit), `.licenses` (`Apache-2.0`) |
+
+The image starts as root and sets `KOKO_RUN_AS`, the user `koko server run`
+is to give `/koko` to and then run as. `koko server run` reads it only once
+the root-then-uid-65532 change (#96) lands, and no release is tagged before
+the container check (#97) gates it, so no image that serves as root is ever
+pushed.
+
+**Tags.** A release `vX.Y.Z` pushes the tag `X.Y.Z`, without the `v`, and
+moves `latest` to it, unless the version has a pre-release part
+(`0.3.0-rc.1`), which gets only its own tag, as `releases/latest` skips it.
+There are no floating `X.Y` or `X` tags.
+
+**`make image`** builds the index from the binaries `make dist` left in
+`dist/` (its context, of which
+[`Dockerfile.dockerignore`](../../release/Dockerfile.dockerignore) lets in
+only the two Linux binaries) into `dist/koko-image.tar`, an OCI layout
+archive. No `SHA256SUMS` lists it and no Release holds it. It needs Docker
+with buildx, through a builder named `koko-image` with the
+`docker-container` driver, which it makes once, since Docker's own driver
+may not export a multi-platform image. It adds no provenance or SBOM
+manifest of buildx's, so the index holds the two platforms only; the
+attestation is GitHub's. `make check` never runs it, and needs no Docker.
+
+**Checking it.** `gh attestation verify oci://ghcr.io/cieons/koko:X.Y.Z
+--repo cieons/koko` checks where the image was built. Each platform's
+`/usr/local/bin/koko` has the SHA-256 `SHA256SUMS` lists for its
+`koko-linux-<arch>`.
+
+**One step only the user can do.** After the first release pushes the
+image, set the GHCR package `koko` to public and link it to the repository
+(the package's settings on GitHub), so that `docker pull` works without
+signing in, as the release assets need the repository public.
+
 ## Building one
 
 `make dist` builds the assets into `dist/`, which git ignores: the web UI
@@ -39,14 +91,28 @@ The [release workflow](../../.github/workflows/release.yml) runs on a pushed
    nothing is built unless both pass;
 2. **build**, with a read-only token and no credentials left in the
    checkout, since it runs koko's and npm's code: `make dist`, a check that
-   `dist/koko-linux-amd64 version` is the tag, and `dist/` uploaded as a
-   workflow artifact;
+   `dist/koko-linux-amd64 version` is the tag, `make image`, and two
+   workflow artifacts: `dist/` without the image's archive, and the
+   archive;
 3. **publish**, which alone may write and sign, and runs no code of koko's
-   or npm's: one attestation that covers every subject in `SHA256SUMS`
-   (`actions/attest`, `subject-checksums`), then `gh release create` with
-   every file in `dist/` and notes generated from the commits. A tag with a
-   pre-release part (`v0.3.0-rc.1`) is published as a pre-release, which
-   `releases/latest` skips.
+   or npm's. In order:
+   1. one attestation that covers every subject in `SHA256SUMS`
+      (`actions/attest`, `subject-checksums`);
+   2. the image pushed from the archive to `ghcr.io/cieons/koko:X.Y.Z`, by
+      `skopeo copy --all --preserve-digests`, from Ubuntu 24.04's archive on
+      the job's `ubuntu-24.04` runner, which pins it, so the index
+      keeps the digest the build gave it, logged in with `docker login` and
+      the job's token (`packages: write`);
+   3. an attestation of that index digest, pushed to the registry beside
+      it (`actions/attest`, `subject-name`, `subject-digest`,
+      `push-to-registry`);
+   4. `gh release create` with every file in the `dist/` artifact and notes
+      generated from the commits. A tag with a pre-release part
+      (`v0.3.0-rc.1`) is published as a pre-release, which
+      `releases/latest` skips;
+   5. `latest` moved to the index digest by `skopeo copy`, unless the tag
+      has a pre-release part. Moved last, `latest` never names an image
+      whose Release failed to publish.
 
 Attestations and anonymous downloads need the repository public (or, for
 attestations, GitHub Enterprise Cloud).
@@ -66,7 +132,9 @@ line, so a download cut short runs nothing. In this order:
    - `uname -s` is not `Linux`;
    - `systemctl is-system-running` is missing, prints `offline` (systemd is
      not PID 1, as in most containers) or prints nothing (a chroot). A
-     booting or degraded systemd is taken;
+     booting or degraded systemd is taken. The refusal names
+     [the image](#the-image) and the install docs' "In a container"
+     section;
    - `uname -m` is neither `x86_64`/`amd64` nor `aarch64`/`arm64`;
    - not root, and `sudo -n true` fails: the hint is to pipe to `sudo sh`.
 2. **The release.** `KOKO_VERSION`, with or without its `v`, or else the tag
@@ -109,7 +177,12 @@ the test, so nothing imports it, and it is in no
 [package group](code-layout.md#the-package-groups).
 
 The release workflow runs only on a tag, and no test runs it; actionlint
-checks it by hand.
+checks it by hand. `make image` is checked by hand too, until the container
+check does it: the archive's index lists `linux/amd64` and `linux/arm64`
+only; in each platform's layers, `/usr/local/bin/koko` has the SHA-256
+`dist/SHA256SUMS` lists, `/koko` is 0700 and `/run/koko` 0755, both
+65532's; and its config holds the entrypoint, command, environment,
+volume, port and labels above.
 
 ## The real-systemd check
 

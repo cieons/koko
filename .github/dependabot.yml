@@ -1,0 +1,11 @@
+# Dependabot opens a pull request when the image's base, distroless/static
+# (release/Dockerfile), moves to another digest, so the image takes its fixes
+# with each release (docs/subsystems/release.md).
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /release
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: release

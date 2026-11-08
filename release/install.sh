@@ -42,9 +42,10 @@ main() {
 		fail "the koko server runs only on Linux with systemd, and this machine runs $os; nothing was written"
 	# systemctl prints "offline" when systemd is not the init (PID 1), as in
 	# most containers, and nothing in a chroot: no unit could start there.
+	# The image runs the koko server in a container instead.
 	state=$(systemctl is-system-running 2>/dev/null) || :
 	case $state in
-	'' | offline) fail "the koko server runs only on Linux with systemd, and systemd is not running this machine; nothing was written" ;;
+	'' | offline) fail "the koko server runs only on Linux with systemd, and systemd is not running this machine: to run it in a container, use the image ghcr.io/cieons/koko ($repo/blob/main/docs/install.md#in-a-container); nothing was written" ;;
 	esac
 	machine=$(uname -m)
 	case $machine in

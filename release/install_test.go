@@ -384,16 +384,18 @@ func TestRefusesAnotherArchitecture(t *testing.T) {
 }
 
 // The koko server runs only on Linux with systemd, so install.sh stops
-// elsewhere before it downloads or writes anything.
+// elsewhere before it downloads or writes anything. Where systemd does not
+// run the machine, as in a container, it names the image, which does.
 func TestRefusesAMachineThatIsNotLinuxWithSystemd(t *testing.T) {
 	t.Parallel()
+	namesTheImage := []string{"systemd", "ghcr.io/cieons/koko", "https://github.com/cieons/koko/blob/main/docs/install.md#in-a-container"}
 	for name, tc := range map[string]struct {
 		os, systemd string
 		want        []string
 	}{
 		"macOS":                        {os: "Darwin", systemd: "running", want: []string{"Linux", "Darwin"}},
-		"no systemctl":                 {os: "Linux", want: []string{"systemd"}},
-		"systemd not the init (PID 1)": {os: "Linux", systemd: "offline", want: []string{"systemd"}},
+		"no systemctl":                 {os: "Linux", want: namesTheImage},
+		"systemd not the init (PID 1)": {os: "Linux", systemd: "offline", want: namesTheImage},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

@@ -10,7 +10,7 @@ CROSS_TARGETS := $(RELEASE_TARGETS) windows/amd64
 # npm ci writes this file, so it is newer than the lockfile once installed.
 WEB_DEPS := web/node_modules/.package-lock.json
 
-.PHONY: check lint fmt vet test cross build dist webui generate clean
+.PHONY: check lint fmt vet test cross build dist image webui generate clean
 
 ## check: everything a change must pass before it is committed
 check: webui lint vet test cross
@@ -72,6 +72,23 @@ dist: webui
 	done
 	cp release/install.sh dist/install.sh
 	cd dist && sha256sum $(RELEASE_BINARIES) install.sh >SHA256SUMS
+
+## image: build the koko server's image (release/Dockerfile) for
+## IMAGE_PLATFORMS from the binaries make dist built, into dist/koko-image.tar,
+## an OCI layout archive that the release pushes to ghcr.io/cieons/koko and no
+## SHA256SUMS lists (docs/subsystems/release.md). It needs Docker with buildx,
+## and builder koko-image, which it makes once with the docker-container
+## driver, the one that exports a multi-platform image. Nothing runs in the
+## image, so no emulation is needed; make check never runs it.
+IMAGE_PLATFORMS := linux/amd64,linux/arm64
+image:
+	@docker buildx inspect koko-image >/dev/null 2>&1 || \
+		docker buildx create --name koko-image --driver docker-container >/dev/null
+	docker buildx build --builder koko-image --platform $(IMAGE_PLATFORMS) \
+		--provenance=false --sbom=false \
+		--build-arg VERSION=$(patsubst v%,%,$(shell git describe --tags --always --dirty)) \
+		--build-arg REVISION=$(shell git rev-parse HEAD) \
+		--file release/Dockerfile --output type=oci,dest=dist/koko-image.tar dist
 
 ## webui: build the web UI into internal/server/webui/site/app, which the koko
 ## binary embeds; a build without it embeds the placeholder page (ADR 0023)

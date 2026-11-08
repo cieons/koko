@@ -1,0 +1,1 @@
+koko: the koko server runs only on Linux with systemd, and systemd is not running this machine (there is no /run/systemd/system): to run it in a container, use the image ghcr.io/cieons/koko (https://github.com/cieons/koko/blob/main/docs/install.md#in-a-container); nothing was written

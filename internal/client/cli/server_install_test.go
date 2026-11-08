@@ -421,7 +421,8 @@ func TestServerInstallRefusesAPrivateSourceIP(t *testing.T) {
 // On a machine whose init is not systemd, as in a container, systemctl may
 // still be there to tell its version: install tells that systemd is not
 // running as sd_booted does, by /run/systemd/system, and refuses before it
-// asks the machine anything or writes anything.
+// asks the machine anything or writes anything. It names the image, which
+// runs the koko server in a container without systemd.
 func TestServerInstallRefusesWithoutSystemdRunning(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
@@ -429,12 +430,14 @@ func TestServerInstallRefusesWithoutSystemdRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	fresh := m.Files()
-	msg := m.Koko("server", "install", "--owner", "alice", "--json").WantError(t, 1, "unsupported_platform")
-	for _, want := range []string{"systemd is not running", "nothing was written"} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("message %q does not say %q", msg, want)
-		}
+	r := m.Koko("server", "install", "--owner", "alice", "--json")
+	r.WantError(t, 1, "unsupported_platform")
+	harness.Golden(t, "server-install-no-systemd.json", r.Stderr)
+	r = m.Koko("server", "install", "--owner", "alice")
+	if r.Status != 1 || r.Stdout != "" {
+		t.Errorf("status %d, stdout %q; want 1 and nothing", r.Status, r.Stdout)
 	}
+	harness.Golden(t, "server-install-no-systemd", r.Stderr)
 	if files := m.Files(); !slices.Equal(files, fresh) {
 		t.Errorf("the refusal wrote: %v", files)
 	}

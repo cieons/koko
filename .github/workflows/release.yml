@@ -3,9 +3,10 @@ name: release
 # Pushing a tag such as v0.3.0 publishes the GitHub Release of that version:
 # the koko binaries, install.sh and SHA256SUMS listing them, with one
 # artifact attestation that covers every asset SHA256SUMS lists (ADR 0026,
-# docs/subsystems/release.md). A tag with a pre-release part, such as
-# v0.3.0-rc.1, is published as a pre-release, which install.sh installs only
-# when KOKO_VERSION names it.
+# docs/subsystems/release.md); and the image ghcr.io/cieons/koko:0.3.0,
+# attested too, which latest then names. A tag with a pre-release part, such
+# as v0.3.0-rc.1, is published as a pre-release, which install.sh installs
+# only when KOKO_VERSION names it, and latest never names.
 on:
   push:
     tags: ['v*']
@@ -41,29 +42,64 @@ jobs:
       # the tag with nothing changed; koko version must say the tag.
       - name: The binaries are ${{ github.ref_name }}
         run: test "$(dist/koko-linux-amd64 version --json | jq -r .version)" = "$GITHUB_REF_NAME"
+      # The image holds the binaries make dist built, copied.
+      - run: make image
+      # The image goes to the registry, never to the Release.
       - uses: actions/upload-artifact@v7
         with:
           name: dist
-          path: dist/
+          path: |
+            dist/
+            !dist/koko-image.tar
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: image
+          path: dist/koko-image.tar
           if-no-files-found: error
 
   # Publishing runs no code of koko's or npm's: it attests and uploads what
-  # the build made.
+  # the build made. The image is pushed and attested before the Release is
+  # created, and latest moves to it only once the Release is published.
   publish:
     needs: build
-    runs-on: ubuntu-latest
+    # skopeo comes from the runner, pinned with Ubuntu 24.04's archive.
+    runs-on: ubuntu-24.04
     permissions:
       contents: write # create the release
-      id-token: write # sign the attestation
-      attestations: write # store it
+      id-token: write # sign the attestations
+      attestations: write # store them
+      packages: write # push the image
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
     steps:
       - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: image
+          path: image
       - uses: actions/attest@v4
         with:
           subject-checksums: dist/SHA256SUMS
+      # skopeo pushes the archive's index with the digest it has, and reads
+      # docker login's credentials, as actions/attest does.
+      - name: Push the image
+        id: push
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          skopeo copy --all --preserve-digests --digestfile "$RUNNER_TEMP/digest" \
+            oci-archive:image/koko-image.tar "docker://$IMAGE:${GITHUB_REF_NAME#v}"
+          echo "digest=$(cat "$RUNNER_TEMP/digest")" >>"$GITHUB_OUTPUT"
+      - uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -72,3 +108,8 @@ jobs:
           case $GITHUB_REF_NAME in *-*) prerelease=--prerelease ;; esac
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
             --verify-tag --generate-notes $prerelease dist/*
+      - name: Move latest to the image
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: skopeo copy --all --preserve-digests "docker://$IMAGE@$DIGEST" "docker://$IMAGE:latest"

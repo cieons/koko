@@ -59,7 +59,9 @@ In this order ([`Installer.Install`](../../internal/server/installer/installer.g
      `/run/systemd/system` directory under the root, as in a container
      whose init is something else, where `systemctl` may still be there and
      would fail only at `daemon-reload`, after the writes:
-     `unsupported_platform`, before install asks the machine anything;
+     `unsupported_platform`, before install asks the machine anything,
+     naming [the image](release.md#the-image) `ghcr.io/cieons/koko` and the
+     install docs' "In a container" section, which run it there instead;
    - systemd older than 247, which `LoadCredential=` needs:
      `unsupported_platform`;
    - a data directory on a network filesystem (NFS, SMB, Ceph, 9p, sshfs and
@@ -299,7 +301,8 @@ golden file, the `--json` golden, the koko server initialised), the order
 late socket waited for), a socket file there before the koko server accepts
 on it (`ListenDelay`), the printout for people, `--port` (and
 `CAP_NET_BIND_SERVICE` only for one below 1024), `--address`,
-every refusal writing nothing, systemd not running, private source IPs, bad
+every refusal writing nothing, systemd not running (with goldens for the
+text and `--json`, naming the image), private source IPs, bad
 flags, running again after a refused address and after a service that never
 opened its socket, and a Root Key file there already. Only a service that
 never opens its socket (`NoSocket`) has install wait less than the product's
