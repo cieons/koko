@@ -2,7 +2,8 @@
 
 The frame every page of the web UI sits in: routing, the header and who the
 web UI acts as, the language and its catalogues, the API client, the
-confirmation dialog, edit forms, reloading, and the notices. The pages
+confirmation dialog, edit forms, reloading, what a page shows once, and the
+notices. The pages
 themselves are their capabilities'; where an area adds its pages and its
 catalogue files is in [code layout](code-layout.md#where-an-area-adds-its-parts).
 How the app is built, embedded and typed is [the web UI build](web-ui.md); how
@@ -105,6 +106,16 @@ a browser reaches it is [`koko web` and the web front](web-front.md).
   the form opened with it, and after `saved()`, once a write succeeded, the
   values written. A field someone else changed meanwhile is never
   overwritten; the last writer wins per field.
+
+## Shown once
+
+What a page shows once and the browser must not keep, a Join Code just
+issued or a Secret value revealed, lives in
+[`useShownOnce`](../../web/src/shell/shownOnce.ts): the page's state alone,
+never the URL or the browser's storage. Leaving the page within the web UI
+loses it, the browser leaving the page (`pagehide`) forgets it, so a page
+the browser keeps in its back-forward cache holds it no more when Back brings
+it back, and the page forgets it at once by setting it to `undefined`.
 
 ## Confirmations
 

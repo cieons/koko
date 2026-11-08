@@ -8,7 +8,8 @@ import { useRead, useWrite } from "../../shell/data";
 import { formatDate } from "../../shell/format";
 import { ErrorMessage, type Translate, useT } from "../../shell/i18n";
 import { useQueryFlag } from "../../shell/router";
-import { JoinCodeLine, useShownOnce } from "../device/JoinCodeLine";
+import { useShownOnce } from "../../shell/shownOnce";
+import { JoinCodeLine } from "../device/JoinCodeLine";
 
 /**
  * PeoplePage, the Owner's alone, lists the Users, the Removed ones too when

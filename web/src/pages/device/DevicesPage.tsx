@@ -8,7 +8,8 @@ import { useRead, useWrite } from "../../shell/data";
 import { formatDate } from "../../shell/format";
 import { ErrorMessage, type Translate, useT } from "../../shell/i18n";
 import { useQueryFlag } from "../../shell/router";
-import { JoinCodeLine, useShownOnce } from "./JoinCodeLine";
+import { useShownOnce } from "../../shell/shownOnce";
+import { JoinCodeLine } from "./JoinCodeLine";
 
 /**
  * DevicesPage lists the caller's own Device Sessions, or everyone's for the

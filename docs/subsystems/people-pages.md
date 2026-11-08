@@ -63,10 +63,10 @@ code does. Once the time ran out the page shows the code no more and says to
 issue a new one. A browser that cannot copy says to select the line instead.
 
 The code lives only in the state of the page that issued it
-(`useShownOnce`): never in the URL or the browser's storage, so leaving the
-page within the web UI loses it, and the browser leaving the page
-(`pagehide`) forgets it, so a page the browser keeps in its back-forward
-cache holds it no more when Back brings it back.
+([shown once](web-shell.md#shown-once)): never in the URL or the browser's
+storage, so leaving the page within the web UI loses it, and the browser
+leaving the page (`pagehide`) forgets it, so a page the browser keeps in its
+back-forward cache holds it no more when Back brings it back.
 
 ## Verifying
 
