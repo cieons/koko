@@ -40,7 +40,7 @@ the real one, rooted at `/`:
 | Method | On the machine |
 | --- | --- |
 | `SystemdVersion` | the first line of `systemctl --version` |
-| `FilesystemType` | the latest mount on the longest mount point holding the path, in `/proc/self/mountinfo` |
+| `FilesystemType` | the latest mount on the longest mount point holding the path, in `/proc/self/mountinfo` ([`filesystem.System`](../../internal/server/filesystem/filesystem.go)) |
 | `PortOwner` | [`portowner.Lookup`](web-front.md#the-port-owner-lookup), which as root names any user's process |
 | `SourceIP` | the source address of a UDP socket connected to a documentation address (192.0.2.1, then 2001:db8::1), which only the default route covers; connecting sends nothing, and no one else is asked |
 | `AddUser` | `useradd --system --user-group --no-create-home --home-dir /var/lib/koko --shell /usr/sbin/nologin --comment "koko server" koko`, unless `koko` exists |
@@ -65,9 +65,10 @@ In this order ([`Installer.Install`](../../internal/server/installer/installer.g
    - systemd older than 247, which `LoadCredential=` needs:
      `unsupported_platform`;
    - a data directory on a network filesystem (NFS, SMB, Ceph, 9p, sshfs and
-     the like; `networkFilesystem`), where SQLite's WAL does not work:
+     the like; [`filesystem.Network`](../../internal/server/filesystem/filesystem.go)),
+     where SQLite's WAL does not work:
      `unsupported_platform`. Before `/var/lib/koko` exists, the filesystem it
-     will be made on is checked;
+     will be made on is checked (`filesystem.Nearest`);
    - a `koko.db` at a schema this koko predates, which the koko server would
      refuse to start on, as when an older koko is installed to go back
      before the snapshot is put back: `internal_error`, naming both schema
@@ -331,9 +332,10 @@ binary.
 [`checks_test.go`](../../internal/server/installer/checks_test.go),
 [`system_test.go`](../../internal/server/installer/system_test.go) and
 [`unit_test.go`](../../internal/server/installer/unit_test.go) test the
-address check, the network filesystems, reading systemd's version, reading
-mountinfo and reading the port from the unit's environment as systemd shows
-it. The real machine's own calls run in
-[the real-systemd check](release.md#the-real-systemd-check), all but
+address check, reading systemd's version and reading the port from the
+unit's environment as systemd shows it;
+[`filesystem_test.go`](../../internal/server/filesystem/filesystem_test.go)
+tests the network filesystems and reading mountinfo. The real machine's own
+calls run in [the real-systemd check](release.md#the-real-systemd-check), all but
 `SourceIP`, since every install there passes `--address`, and a
 `PortOwner` naming another process than the koko service.

@@ -40,15 +40,3 @@ func TestIsPublic(t *testing.T) {
 		}
 	}
 }
-
-// Network filesystems are named as Linux names them, and local ones pass.
-func TestNetworkFilesystem(t *testing.T) {
-	for fsType, want := range map[string]bool{
-		"nfs": true, "nfs4": true, "cifs": true, "smb3": true, "ceph": true, "fuse.sshfs": true, "9p": true,
-		"ext4": false, "xfs": false, "btrfs": false, "zfs": false, "tmpfs": false, "overlay": false, "fuse.mergerfs": false,
-	} {
-		if got := networkFilesystem(fsType); got != want {
-			t.Errorf("networkFilesystem(%q) = %v, want %v", fsType, got, want)
-		}
-	}
-}

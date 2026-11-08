@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/cieons/koko/internal/server/deployment"
+	"github.com/cieons/koko/internal/server/filesystem"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
@@ -373,22 +374,15 @@ func (in *Installer) checkPort(ctx context.Context, port int) error {
 // SQLite's WAL does not work. Before the data directory exists, the
 // filesystem it will be made on is checked.
 func (in *Installer) checkFilesystem() error {
-	dir := DataDir
-	for {
-		_, err := os.Stat(in.path(dir))
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, fs.ErrNotExist) || dir == "/" {
-			return fmt.Errorf("find the filesystem of %s: %w", DataDir, err)
-		}
-		dir = filepath.Dir(dir)
-	}
-	fsType, err := in.Machine.FilesystemType(in.path(dir))
+	dir, err := filesystem.Nearest(in.path(DataDir))
 	if err != nil {
 		return fmt.Errorf("find the filesystem of %s: %w", DataDir, err)
 	}
-	if networkFilesystem(fsType) {
+	fsType, err := in.Machine.FilesystemType(dir)
+	if err != nil {
+		return fmt.Errorf("find the filesystem of %s: %w", DataDir, err)
+	}
+	if filesystem.Network(fsType) {
 		return refuse(install.Unsupported, "the data directory %s would be on %s, a network filesystem, where SQLite's WAL does not work: put %s on a local filesystem",
 			DataDir, fsType, DataDir)
 	}

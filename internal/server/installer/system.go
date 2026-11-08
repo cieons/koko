@@ -1,21 +1,19 @@
 package installer
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/netip"
 	"os"
 	"os/exec"
 	"os/user"
-	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/cieons/koko/internal/server/filesystem"
 	"github.com/cieons/koko/internal/shared/portowner"
 )
 
@@ -60,58 +58,7 @@ func parseSystemdVersion(out []byte) (int, error) {
 // FilesystemType finds the mount holding path in /proc/self/mountinfo, the
 // one whose mount point is the longest prefix of path, and returns its type.
 func (System) FilesystemType(path string) (string, error) {
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return "", err
-	}
-	f, err := os.Open("/proc/self/mountinfo")
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = f.Close() }()
-	return mountType(f, resolved)
-}
-
-// mountType reads mountinfo (proc(5)'s /proc/<pid>/mountinfo) and returns the
-// filesystem type of the mount holding path, which is absolute and resolved.
-// A later mount on the same point hides an earlier one, as the kernel lists
-// them in the order they were mounted.
-func mountType(mountinfo io.Reader, path string) (string, error) {
-	best, bestType := "", ""
-	s := bufio.NewScanner(mountinfo)
-	for s.Scan() {
-		// 36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - ext3 /dev/root rw
-		before, after, ok := strings.Cut(s.Text(), " - ")
-		fields, typeFields := strings.Fields(before), strings.Fields(after)
-		if !ok || len(fields) < 5 || len(typeFields) < 1 {
-			return "", fmt.Errorf("a line of mountinfo does not parse: %q", s.Text())
-		}
-		point := unescapeMount(fields[4])
-		if !within(path, point) || len(point) < len(best) {
-			continue
-		}
-		best, bestType = point, typeFields[0]
-	}
-	if err := s.Err(); err != nil {
-		return "", err
-	}
-	if best == "" {
-		return "", fmt.Errorf("no mount holds %s", path)
-	}
-	return bestType, nil
-}
-
-// within tells whether path is dir or below it.
-func within(path, dir string) bool {
-	rel, err := filepath.Rel(dir, path)
-	return err == nil && filepath.IsLocal(rel)
-}
-
-// unescapeMount undoes mountinfo's octal escapes of a space, a tab, a
-// newline and a backslash in a path.
-func unescapeMount(s string) string {
-	r := strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, "\n", `\134`, `\`)
-	return r.Replace(s)
+	return filesystem.System.FilesystemType(path)
 }
 
 // PortOwner names the process listening on port, which root sees whatever
