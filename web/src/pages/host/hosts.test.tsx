@@ -40,6 +40,7 @@ function host(name: string, fields: Partial<Host> = {}): Host {
     address: `${name}.example.com`,
     port: 22,
     account: "deploy",
+    relay: null,
     state: "managed",
     host_key: null,
     attributes: {},

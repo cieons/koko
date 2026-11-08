@@ -28,6 +28,7 @@ type hostInput struct {
 	Address    string                  `json:"address"`
 	Port       *int                    `json:"port"`
 	Account    string                  `json:"account"`
+	Relay      *relayJSON              `json:"relay"`
 	Attributes map[string]record.Value `json:"attributes"`
 	Note       *string                 `json:"note"`
 
@@ -181,10 +182,33 @@ func readHostJSON(item jsontext.Value) (api.NewHost, error) {
 			return api.NewHost{}, fault("%v", err)
 		}
 	}
+	relay, err := readRelayJSON(h.Relay)
+	if err != nil {
+		return api.NewHost{}, fault("%v", err)
+	}
 	return api.NewHost{
-		Name: h.Name, Space: h.Space, Address: address, Port: h.Port, Account: h.Account,
+		Name: h.Name, Space: h.Space, Address: address, Port: h.Port, Account: h.Account, Relay: relay,
 		Attributes: attributes, Note: h.Note,
 	}, nil
+}
+
+// readRelayJSON returns what names the Relay r of a Host on stdin: its id,
+// which names it whatever its name became, or else its name; nil for no
+// Relay. A Relay with neither, as host ls --json prints one you cannot see,
+// is refused: koko sets only a Relay its setter can see, and drops none
+// unasked.
+func readRelayJSON(r *relayJSON) (*string, error) {
+	if r == nil {
+		return nil, nil
+	}
+	ref := cmp.Or(r.ID, r.Name)
+	if ref == nil {
+		return nil, errors.New(`"relay" names no Relay, as host ls --json prints one you cannot see: name one with "id" or "name", or leave "relay" out`)
+	}
+	if err := checkHostRef(*ref); err != nil {
+		return nil, fmt.Errorf(`"relay": %w`, err)
+	}
+	return ref, nil
 }
 
 // takes says what each kind of Go value in hostInput takes in JSON.
@@ -192,6 +216,7 @@ var takes = map[reflect.Kind]string{
 	reflect.Int:    "a whole number",
 	reflect.String: "a string",
 	reflect.Map:    "an object",
+	reflect.Struct: "an object",
 }
 
 // decodeFault says why a Host on stdin did not decode: a member, named by

@@ -15,8 +15,9 @@ import (
 // Withdraw ends each live SSH Session that the committed change c withdrew
 // access from, since one goes on only while a new one would be allowed (P0
 // spec: reach). Each of a Device Session c Revoked ends at once; each to a
-// Host c names, or of a Device Session it narrowed, ends once a read of the
-// record finds that a new one would now be refused (recheck). The channel
+// Host c names, through a Relay when c names any Host, or of a Device
+// Session it narrowed, ends once a read of the record finds that a new one
+// would now be refused (recheck). The channel
 // it returns is closed once the Revoked Device Sessions' SSH Sessions have
 // given their notice and ended, so that their Device Connections close only
 // after. It never blocks, since the access-change signal calls it before
@@ -44,7 +45,11 @@ func (g *Gateway) Withdraw(c access.Change) <-chan struct{} {
 				t.end(revokedEnding(t))
 			}
 			revoked = append(revoked, t.done)
-		case slices.Contains(c.Narrowed, t.caller.DeviceSession), slices.Contains(c.Hosts, t.hostID):
+		case slices.Contains(c.Narrowed, t.caller.DeviceSession), slices.Contains(c.Hosts, t.hostID),
+			// Any Host c names may be the Relay this SSH Session passes
+			// through, or the one its Host has had since, which only a read
+			// tells: check every SSH Session through a Relay.
+			t.relayID != "" && len(c.Hosts) > 0:
 			recheck = append(recheck, t)
 		}
 	}
@@ -95,12 +100,14 @@ func (g *Gateway) recheck(ts []*tunnel) {
 
 // withdrawal tells whether the live SSH Session in the Tunnel t may go on:
 // whether its caller would be allowed a new one to its Host, which it reads
-// by the Host's id, so that a rename changes nothing. It returns nil when
-// they would, and otherwise how the SSH Session ends. A Host the caller can
-// no longer see is withdrawn without a word more, so the line tells nothing
-// of where it went. It fails only on an error of the koko server's own.
+// by the Host's id, so that a rename changes nothing: the Host and its
+// Relay, if any, Managed. It returns nil when they would, and otherwise how
+// the SSH Session ends. A Host the caller can no longer see is withdrawn
+// without a word more, so the line tells nothing of where it went, and a
+// Relay they cannot see is "its Relay". It fails only on an error of the
+// koko server's own.
 func withdrawal(ctx context.Context, tx store.Tx, t *tunnel) (*ending, error) {
-	_, h, err := host.ReachOf(ctx, tx, t.caller, t.hostID)
+	who, h, err := host.ReachOf(ctx, tx, t.caller, t.hostID)
 	if e, ok := errors.AsType[*api.Error](err); ok {
 		if e.Code == api.CodeRevoked.Name {
 			return revokedEnding(t), nil
@@ -112,11 +119,34 @@ func withdrawal(ctx context.Context, tx store.Tx, t *tunnel) (*ending, error) {
 	}
 	switch h.State {
 	case api.HostManaged:
-		return nil, nil
+		return relayWithdrawal(ctx, tx, t, who, h.Relay)
 	case api.HostRetired:
 		return withdrawn(t, "host retired", t.hostName+" was Retired"), nil
 	}
 	return withdrawn(t, "host registered", ""), nil
+}
+
+// relayWithdrawal tells whether the live SSH Session in the Tunnel t to a
+// Managed Host may go on as far as Relays go: both the Relay it passes
+// through, which a change of the Host's Relay since leaves as it was, and
+// the Host's Relay now, current, which a new one would pass through, must
+// be Managed. A Relay that is not ends it, named only to a caller who can
+// see it.
+func relayWithdrawal(ctx context.Context, tx store.Tx, t *tunnel, who access.Identity, current *host.Relay) (*ending, error) {
+	relays := []*host.Relay{current}
+	if t.relayID != "" && (current == nil || current.ID != t.relayID) {
+		used, err := host.RelayByID(ctx, tx, who, t.relayID)
+		if err != nil {
+			return nil, err
+		}
+		relays = append(relays, used)
+	}
+	for _, r := range relays {
+		if r != nil && r.State != api.HostManaged {
+			return withdrawn(t, "relay "+r.State, r.Of(t.hostName)+" is no longer Managed"), nil
+		}
+	}
+	return nil, nil
 }
 
 // revokedEnding ends the SSH Session in the Tunnel t of a Revoked Device

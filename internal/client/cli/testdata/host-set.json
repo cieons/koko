@@ -5,6 +5,7 @@
   "address": "203.0.113.99",
   "port": 2222,
   "account": "admin",
+  "relay": null,
   "state": "registered",
   "host_key": null,
   "attributes": {

@@ -27,6 +27,7 @@ var steps = []string{
 	"secrets.sql",
 	"users_removed.sql",
 	"services.sql",
+	"hosts_relay.sql",
 }
 
 //go:embed migrations/*.sql

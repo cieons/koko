@@ -5,6 +5,7 @@
   "address": "127.0.0.1",
   "port": <port>,
   "account": "deploy",
+  "relay": null,
   "state": "managed",
   "host_key": "SHA256:<fingerprint>",
   "attributes": {},

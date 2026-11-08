@@ -30,6 +30,7 @@ Stored in `hosts`, with its Attributes in `host_attributes`
 | `address` | An IP address without a zone, kept in its canonical form (`2001:db8::1`), or a DNS name, kept in lowercase: labels of letters, digits and `-`, 253 characters at most, the last not all digits. Not unique. |
 | `port` | 1 to 65535; 22 when not given. Not unique. |
 | `account` | The Host Account: 1 to 32 of `a-z`, `A-Z`, `0-9`, `.`, `_` and `-`, not starting with `-`. No default. |
+| `relay` | The Host the Gateway passes through to reach this one, or `null` for none ([a Relay](#a-relay)): `{"id", "name"}`, both `null` for a Relay the reader cannot see ([ADR 0035](../adr/0035-a-relay-is-an-id-and-a-name-both-null-when-unseen.md)). Stored as `relay_id`, the Relay's id ([`hosts_relay.sql`](../../internal/server/store/migrations/hosts_relay.sql)). |
 | `state` | `registered`, `managed` or `retired`, set only by koko. Every Host is Registered until Enroll makes it Managed ([Enroll](enroll.md)), and `host retire` makes it Retired, which is terminal ([retiring a Host](#retiring-a-host)). A change of address or port keeps a Host Managed, since its pin proves the Host wherever it answers; a change of Host Account sends it back to Registered, keeping its pin, since the koko key went only to the old Host Account, and ends its live SSH Sessions ([the Gateway](gateway.md#access-during-a-live-ssh-session)). |
 | `host_key` | The pinned host key's SHA-256 fingerprint, `SHA256:...`, or `null` for a Host with no pin. Stored as the key in SSH wire format, which Enroll writes. |
 | `attributes` | Values by key, each of its key's type ([Attributes](#attributes-and-the-preset-attributes)). A key is snake_case (`a-z`, `0-9`, `_`, starting with a letter, 1 to 63 characters) and not a field's name: `id`, `name`, `space`, `address`, `port`, `account`, `relay`, `state`, `host_key`, `host`, `ports`, `attributes`, `note`, `created_at` or `updated_at`. |
@@ -79,7 +80,42 @@ pin, and the name it had, which it no longer holds. From then on:
 Retiring ends every live SSH Session to the Host, each with a line naming
 the retirement ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
 
-Not yet: a Relay in use cannot be retired once Relays exist (#72).
+A Relay that a Host that is not Retired uses is not retired: `host.retire`
+refuses it with `relay_in_use`, whose message names no Host, not even to a
+caller who can see them, and points at `koko host ls relay=<relay>`
+([a Relay](#a-relay)).
+
+## A Relay
+
+A Host's Relay is the one Host the Gateway passes through to reach it, for a
+Host the koko server cannot reach directly (P0 spec: the record, "Relay").
+`host.add` and `host.set` take it as `relay`, by name or id, and `host.set`
+clears it with `"unset": ["relay"]`; [`relayFor`](../../internal/server/host/host.go)
+checks it inside the write's transaction, and refuses with
+`invalid_relay` unless said otherwise:
+
+- **The setter must see it**: a Host in a Space they cannot act in is
+  refused as one that does not exist, `unknown_host`, its message starting
+  `the Relay of web1: `. A Relay may sit in another Space they can see.
+- **It is Managed**: a Registered Host is refused, naming `koko host enroll`,
+  and a Retired one too, which only its id names in the request.
+- **Exactly one hop**: not the Host itself, not a Host that has a Relay, and
+  no Relay at all for a Host that is the Relay of a Host that is not Retired.
+  That refusal names no Host and points at `koko host ls relay=<host>`.
+- **A Retired Host** takes no change of Relay, set or cleared: `host_retired`.
+
+The link is the Relay's id, so a rename keeps it, and a move of either Host
+leaves it: the visibility rule is checked only when the Relay is set. A
+Relay later in a Space the reader cannot see is present but unnamed: `null`
+id and name in `--json` ([ADR 0035](../adr/0035-a-relay-is-an-id-and-a-name-both-null-when-unseen.md)),
+`one you cannot see` in `host show` and `(unseen)` in `host ls`, as the
+Gateway calls it "its Relay" ([the Gateway](gateway.md#relay)). As P0
+spec: the record accepts, a refused `invalid_relay` or `relay_in_use` tells
+that some Host uses the Relay, and nothing about that Host.
+
+A new Relay, or none, interrupts no live SSH Session; a Relay that stops
+being Managed, as when its Host Account changes, ends every SSH Session
+through it ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
 
 ## A Service
 
@@ -148,9 +184,11 @@ others a value of the key's type in its JSON type. A sort key is `{"key",
 "desc"}`.
 
 - **Keys.** The fields of [`api.HostListFields`](../../internal/shared/api/host.go)
-  with their types: `id`, `name`, `space`, `address`, `account` and
-  `host_key` as text, `port` as a number, and `state` as an enum (`registered`,
-  `managed`, `retired`). Any other key is an Attribute key, of its Preset's
+  with their types: `id`, `name`, `space`, `address`, `account`, `relay` (the
+  Relay's name) and `host_key` as text, `port` as a number, and `state` as an
+  enum (`registered`, `managed`, `retired`). A Host without a Relay lacks
+  `relay`; one whose Relay the caller cannot see has it with an empty name,
+  so `relay.has` matches it and `relay=` never does. Any other key is an Attribute key, of its Preset's
   type or text. The Note, `created_at` and `updated_at` are not keys to
   filter or sort on: a timestamp is no date, and comparing one with a date
   would need the caller's time zone, which the API never sees.
@@ -205,10 +243,10 @@ resolvers cannot drift.
 | `host.add` | Records the Hosts in `hosts`, all or none, each Registered. One Host at fault is refused with its own error; in a batch of several, every Host is checked and the refusal lists each one at fault ([a refused batch](#a-refused-batch)). |
 | `host.list` | Every Host the caller can see that matches the filters, the Retired ones only with `all`, by the sort keys and then by name, in natural order, and id ([filtering and sorting](#filtering-and-sorting)); the Notes only with `with_note`. |
 | `host.show` | One Host, with its Services as `services`, by name in natural order, without their Notes, which the service area lists for it ([where an area adds its parts](code-layout.md#where-an-area-adds-its-parts)). |
-| `host.set` | Sets the address, port, Host Account, Attributes and Note it names, and clears the Attribute keys in `unset`, the Note for `note`, and the port back to 22 for `port`; nothing else changes. It refuses a request that changes nothing, a key both set and cleared, and clearing the address or the Host Account ([`record.Required`](../../internal/shared/record/record.go)). It takes no `name`, `space` or `state`, and on a Retired Host only Attributes and the Note ([retiring a Host](#retiring-a-host)). |
+| `host.set` | Sets the address, port, Host Account, Relay, Attributes and Note it names, and clears the Attribute keys in `unset`, the Note for `note`, the Relay for `relay`, and the port back to 22 for `port`; nothing else changes. It refuses a request that changes nothing, a key both set and cleared, and clearing the address or the Host Account ([`record.Required`](../../internal/shared/record/record.go)). It takes no `name`, `space` or `state`, and on a Retired Host only Attributes and the Note ([retiring a Host](#retiring-a-host)). |
 | `host.rename` | A new name, checked as on `host.add`; the id and everything else stay. A Retired Host is refused with `host_retired`. |
 | `host.move` | Another Space, with the Attributes, Note and Services; the name stays. A Retired Host moves too. It ends each live SSH Session to the Host of a caller who cannot act in the new Space ([the Gateway](gateway.md#access-during-a-live-ssh-session)). |
-| `host.retire` | Makes a Registered or Managed Host Retired, keeping its record, and answers it so; one Retired already is refused with `host_retired` ([retiring a Host](#retiring-a-host)). |
+| `host.retire` | Makes a Registered or Managed Host Retired, keeping its record, and answers it so; one Retired already is refused with `host_retired`, and the Relay of a Host that is not Retired with `relay_in_use` ([retiring a Host](#retiring-a-host)). |
 | `host.remove` | Deletes the Host with its Attributes, Note and Services; answers it as it was. A Host with a pin has been Managed, and is refused with `host_was_managed`: it stays on record, and retiring it is the way on. |
 | `host.enroll` | Makes the Host Managed with its pinned host key ([Enroll](enroll.md)). |
 | `service.add` | Records a Service on a Host, with its ports, none when left out. On a Retired Host it, `service.set`, `service.rename` and `service.remove` are refused with `host_retired`. |
@@ -219,12 +257,13 @@ resolvers cannot drift.
 | `service.remove` | Deletes the Service with its ports, Attributes and Note; answers it as it was. |
 | `attr.list` | Every Preset with its type, an enum's values and a number's least value, in the order of the Preset table, then every other key in use on what the caller can see, by key; each says whether it is a Preset and whether something the caller can see has it. A key held only in a Space the caller cannot act in is answered as if nothing held it. Each area whose records hold Attributes lists its keys through an `attr.Keys`, Hosts through `host.AttributeKeys`, Retired ones among them, and Services through `service.AttributeKeys`. |
 
-Enroll reads what logging in to a Host needs through
+Enroll and the Gateway read what logging in to a Host needs through
 [`host.ReachOf`](../../internal/server/host/reach.go) (address, port, Host
-Account, state and pin, under the same access check), and records the
-Registered to Managed transition through `host.Enrolled`, which refuses with
-`host_changed` a Host whose Host Account, state or pin changed while Enroll
-logged in to it.
+Account, state and pin, under the same access check), with its Relay's, read
+whether or not the caller can see it, and `Seen`, which says whether a
+message may name it (`Relay.Of`). Enroll records the Registered to Managed
+transition through `host.Enrolled`, which refuses with `host_changed` a Host
+whose Host Account, state, pin or Relay changed while Enroll logged in to it.
 
 - **Naming a Host.** A request names a Host by its name, which names only a
   Host that is not Retired, or by its id (`host_...`), which names any.
@@ -273,13 +312,16 @@ transaction.
 
 `koko host add`, `ls`, `show`, `set`, `rename`, `move`, `retire` and `rm`
 ([the commands so far](cli.md#the-commands-so-far)). Fields and Attributes are both
-`key=value`; `koko host set` refuses `name=`, `space=` and `state=`, naming
+`key=value`; `relay=<host>` takes a Host name or id, checked for its form before any call,
+and `koko host set --unset relay` clears it;
+`koko host set` refuses `name=`, `space=` and `state=`, naming
 `koko host rename`, `koko host move` and `koko host retire`. `--note-file <file>` reads the Note from a file
 and `--note-file -` from stdin, which it refuses when stdin is a terminal.
 `--json` prints the CLI's own Host, `hostJSON`, with its Attributes in their
-own object, each in its JSON type, and `note` a string or `null`, which `ls`
+own object, each in its JSON type, `relay` as [a Relay](#a-relay) says, and
+`note` a string or `null`, which `ls`
 leaves out without `--with-note`. For people, `ls` prints a table (`NAME
-SPACE STATE ADDRESS PORT ACCOUNT ID`) followed, with `--with-note`, by each
+SPACE STATE ADDRESS PORT ACCOUNT RELAY ID`, the Relay `-` for none) followed, with `--with-note`, by each
 Host's Note, and `show` prints the Host's Services, each name with its
 ports, after its Attributes; `show --json` stays the Host as `ls` prints
 one, and `koko service ls host=<host> --json` lists its Services. A Preset's
@@ -339,9 +381,11 @@ what `host ls --json` prints: one Host as an object, or several as an array,
 recorded in one `host.add` call, all or none.
 
 - **The members** are `hostJSON`'s. `name`, `address` and `account` are
-  required; `space`, `port`, `attributes` and `note` may be left out or
-  `null`, for the caller's Personal Space, port 22, no Attributes and no
-  Note. `id`, `state`, `host_key`, `created_at` and `updated_at`, which only
+  required; `space`, `port`, `relay`, `attributes` and `note` may be left out
+  or `null`, for the caller's Personal Space, port 22, no Relay, no
+  Attributes and no Note. `relay` names the Relay by its `id` when given,
+  else by its `name`; one with neither, as `ls --json` prints a Relay the
+  reader cannot see, is refused rather than dropped. `id`, `state`, `host_key`, `created_at` and `updated_at`, which only
   koko sets, are ignored whatever they hold, so every Host added is
   Registered, with no pin. Any other member is refused by name. An
   Attribute value comes in its JSON type, as `ls --json` prints it, and a
@@ -375,6 +419,15 @@ recorded in one `host.add` call, all or none.
 - [`internal/client/cli/enroll_test.go`](../../internal/client/cli/enroll_test.go):
   the state table through the real `koko host enroll`, and `host rm` refused
   once a Host has a pin.
+- [`internal/client/cli/relay_test.go`](../../internal/client/cli/relay_test.go):
+  a Relay set only when it can be one, each refusal changing nothing and a
+  malformed `relay=` refused before any call; the link kept across a rename
+  and moves; a Relay a Member cannot see unnamed in `host show`, `host ls`
+  and `--json` (golden files `host-show-relay*.json`), found by `relay.has`
+  and by no name, and passed through; a Member setting a Relay in another
+  Space they can see, and refused one they cannot; a Relay in use not
+  retired; and `relay` read on stdin. The Gateway and Enroll through a Relay
+  are in [the Gateway](gateway.md#verifying) and [Enroll](enroll.md#verifying).
 - [`internal/client/cli/host_retire_test.go`](../../internal/client/cli/host_retire_test.go):
   `koko host retire` with its goldens, a Registered and a Managed Host
   retiring, its name taken by a new Host while its id shows it, `host ls

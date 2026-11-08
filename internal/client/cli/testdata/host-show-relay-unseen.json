@@ -1,0 +1,18 @@
+{
+  "id": "host_<1>",
+  "name": "web1",
+  "space": "ops",
+  "address": "127.0.0.1",
+  "port": <port>,
+  "account": "deploy",
+  "relay": {
+    "id": null,
+    "name": null
+  },
+  "state": "managed",
+  "host_key": "SHA256:<fingerprint>",
+  "attributes": {},
+  "note": null,
+  "created_at": "<time>",
+  "updated_at": "<time>"
+}

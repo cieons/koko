@@ -150,27 +150,40 @@ func names(ctx context.Context, tx store.Tx, scope access.Scope, stmt string) (m
 	return names, nil
 }
 
-// stored is a Host as stored: the API's Host, the id of its Space, and its
-// pinned host key, nil for none.
+// stored is a Host as stored: the API's Host, the id of its Space, its
+// pinned host key, nil for none, and its Relay, nil for none. The API's Host
+// holds no Relay until seeRelay says how the caller sees it.
 type stored struct {
 	api.Host
 	spaceID string
 	pin     ssh.PublicKey
+	relay   *relayLink
 }
 
-// selectHosts reads the Hosts, each with the name of its Space, in the order
-// scan reads them.
+// relayLink is a Host's Relay as stored: its id, its name and the id of its
+// Space, which decides whether a caller sees it.
+type relayLink struct {
+	id, name, spaceID string
+}
+
+// selectHosts reads the Hosts, each with the name of its Space and its
+// Relay, in the order scan reads them.
 const selectHosts = `SELECT h.id, h.name, s.name, h.space_id, h.address, h.port, h.account, h.state, h.host_key,
-	coalesce(h.note, ''), h.created_at, h.updated_at FROM hosts h JOIN spaces s ON s.id = h.space_id`
+	coalesce(h.note, ''), h.created_at, h.updated_at, h.relay_id, r.name, r.space_id
+	FROM hosts h JOIN spaces s ON s.id = h.space_id LEFT JOIN hosts r ON r.id = h.relay_id`
 
 // scan reads one Host that selectHosts selected, without its Attributes.
 func scan(row interface{ Scan(...any) error }) (stored, error) {
 	var h stored
 	var key []byte
+	var relayID, relayName, relaySpaceID sql.NullString
 	err := row.Scan(&h.ID, &h.Name, &h.Space, &h.spaceID, &h.Address, &h.Port, &h.Account, &h.State, &key,
-		&h.Note, &h.CreatedAt, &h.UpdatedAt)
+		&h.Note, &h.CreatedAt, &h.UpdatedAt, &relayID, &relayName, &relaySpaceID)
 	if err != nil {
 		return stored{}, err
+	}
+	if relayID.Valid {
+		h.relay = &relayLink{id: relayID.String, name: relayName.String, spaceID: relaySpaceID.String}
 	}
 	if key != nil {
 		pub, err := ssh.ParsePublicKey(key)
@@ -182,6 +195,28 @@ func scan(row interface{ Scan(...any) error }) (stored, error) {
 	}
 	h.Attributes = map[string]record.Value{}
 	return h, nil
+}
+
+// seeRelay shows the Host's Relay, if it has one, as a caller who can act in
+// the Spaces scope holds sees it: by its id and name, or, in a Space they
+// cannot act in, present but unnamed (ADR 0035).
+func (h *stored) seeRelay(scope access.Scope) {
+	switch {
+	case h.relay == nil:
+		h.Relay = nil
+	case scope.Has(h.relay.spaceID):
+		h.Relay = &api.HostRelay{ID: new(h.relay.id), Name: new(h.relay.name)}
+	default:
+		h.Relay = &api.HostRelay{}
+	}
+}
+
+// relayID is the id of the Host's Relay, as the column relay_id holds it.
+func (h stored) relayID() sql.NullString {
+	if h.relay == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: h.relay.id, Valid: true}
 }
 
 // storedValue reads the stored text of the Attribute key of the Host named
@@ -225,13 +260,14 @@ func find(ctx context.Context, tx store.Tx, who access.Identity, ref string) (st
 	case err != nil:
 		return stored{}, fmt.Errorf("read the Host %q: %w", ref, err)
 	}
-	can, err := who.CanAct(ctx, tx, h.spaceID)
+	scope, err := who.Spaces(ctx, tx)
 	switch {
 	case err != nil:
 		return stored{}, err
-	case !can:
+	case !scope.Has(h.spaceID):
 		return stored{}, unknown
 	}
+	h.seeRelay(scope)
 	rows, err := tx.QueryContext(ctx, "SELECT key, value FROM host_attributes WHERE host_id = ?", h.ID)
 	if err != nil {
 		return stored{}, fmt.Errorf("read the Attributes of %s: %w", h.Name, err)
@@ -258,6 +294,7 @@ type values struct {
 	address    *string
 	port       *int
 	account    *string
+	relay      *string
 	attributes map[string]record.Value
 	note       *string
 }
@@ -357,7 +394,7 @@ func insert(ctx context.Context, tx store.Tx, who access.Identity, n api.NewHost
 	if err != nil {
 		return api.Host{}, err
 	}
-	v := values{address: &n.Address, port: n.Port, account: &n.Account, attributes: n.Attributes, note: n.Note}
+	v := values{address: &n.Address, port: n.Port, account: &n.Account, relay: n.Relay, attributes: n.Attributes, note: n.Note}
 	if v.port == nil {
 		v.port = new(record.DefaultPort)
 	}
@@ -372,12 +409,21 @@ func insert(ctx context.Context, tx store.Tx, who access.Identity, n api.NewHost
 		ID: store.NewID(idPrefix), Name: n.Name, Space: sp.Name, Address: *v.address, Port: *v.port, Account: *v.account,
 		State: api.HostRegistered, Attributes: map[string]record.Value{}, CreatedAt: now, UpdatedAt: now,
 	}
+	var relayID sql.NullString
+	if v.relay != nil {
+		r, err := relayFor(ctx, tx, who, h.ID, h.Name, *v.relay)
+		if err != nil {
+			return api.Host{}, err
+		}
+		// Whoever sets a Relay can see it.
+		h.Relay, relayID = &api.HostRelay{ID: new(r.ID), Name: new(r.Name)}, sql.NullString{String: r.ID, Valid: true}
+	}
 	var note sql.NullString
 	if v.note != nil {
 		h.Note, note = *v.note, sql.NullString{String: *v.note, Valid: true}
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO hosts (id, name, space_id, address, port, account, state, note, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, h.ID, h.Name, sp.ID, h.Address, h.Port, h.Account, h.State, note, now, now)
+	_, err = tx.ExecContext(ctx, `INSERT INTO hosts (id, name, space_id, address, port, account, state, note, created_at, updated_at, relay_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, h.ID, h.Name, sp.ID, h.Address, h.Port, h.Account, h.State, note, now, now, relayID)
 	if err != nil {
 		return api.Host{}, fmt.Errorf("record the Host %s: %w", h.Name, err)
 	}
@@ -412,6 +458,56 @@ func checkFree(ctx context.Context, tx store.Tx, hostName string) error {
 	return nil
 }
 
+// relayFor returns the Host ref names, by its name or its id, as the Relay
+// of the Host named hostName whose id is hostID, refusing one that cannot
+// be (P0 spec: the record, "Relay"): a Host the caller cannot see, as one
+// that does not exist; the Host itself; a Host that is not Managed, a
+// Retired one among them; one that has a Relay itself; and any Relay at all
+// for a Host that is the Relay of a Host that is not Retired, since a Relay
+// is exactly one hop. A refusal names no Host the caller cannot see.
+func relayFor(ctx context.Context, tx store.Tx, who access.Identity, hostID, hostName, ref string) (stored, error) {
+	r, err := find(ctx, tx, who, ref)
+	if e, ok := errors.AsType[*api.Error](err); ok {
+		return stored{}, &api.Error{Code: e.Code, Message: fmt.Sprintf("the Relay of %s: %s", hostName, e.Message)}
+	}
+	if err != nil {
+		return stored{}, err
+	}
+	switch {
+	case r.ID == hostID:
+		return stored{}, api.CodeInvalidRelay.Errorf("%s cannot be its own Relay", hostName)
+	case r.State == api.HostRetired:
+		return stored{}, api.CodeInvalidRelay.Errorf("%s (%s) is Retired, and a Retired Host is never a Relay", r.Name, r.ID)
+	case r.State != api.HostManaged:
+		return stored{}, api.CodeInvalidRelay.Errorf(
+			"%s is Registered, and a Relay must be Managed: Enroll it first, with koko host enroll %s", r.Name, r.Name)
+	case r.relay != nil:
+		return stored{}, api.CodeInvalidRelay.Errorf(
+			"%s has a Relay itself, and a Relay is exactly one hop: koko does not pass through two", r.Name)
+	}
+	used, err := usedAsRelay(ctx, tx, hostID)
+	switch {
+	case err != nil:
+		return stored{}, err
+	case used:
+		return stored{}, api.CodeInvalidRelay.Errorf(
+			"%s is the Relay of a Host that is not Retired, and a Relay is exactly one hop, so it takes no Relay itself; koko host ls relay=%s lists those you can see",
+			hostName, hostName)
+	}
+	return r, nil
+}
+
+// usedAsRelay tells whether a Host that is not Retired has the Host whose id
+// is hostID as its Relay.
+func usedAsRelay(ctx context.Context, tx store.Tx, hostID string) (bool, error) {
+	var used bool
+	err := tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM hosts WHERE relay_id = ? AND state <> 'retired')", hostID).Scan(&used)
+	if err != nil {
+		return false, fmt.Errorf("check whether a Host uses %s as its Relay: %w", hostID, err)
+	}
+	return used, nil
+}
+
 // setAttributes gives the Host whose id is hostID the Attributes attrs,
 // each checked, replacing the value of a key it has.
 func setAttributes(ctx context.Context, tx store.Tx, hostID string, attrs map[string]record.Value) error {
@@ -427,7 +523,9 @@ func setAttributes(ctx context.Context, tx store.Tx, hostID string, attrs map[st
 
 // hostLookup gives a Host's values to a query: its fields of
 // api.HostListFields, a Host with no pin lacking host_key, and its
-// Attributes.
+// Attributes. A Host without a Relay lacks relay; one whose Relay the caller
+// cannot see has it, with an empty name, so relay.has matches it, relay=
+// never does, and no term compares a name the caller may not see (ADR 0035).
 func hostLookup(h api.Host) query.Lookup {
 	return func(key string) (string, bool) {
 		switch key {
@@ -443,6 +541,14 @@ func hostLookup(h api.Host) query.Lookup {
 			return strconv.Itoa(h.Port), true
 		case "account":
 			return h.Account, true
+		case "relay":
+			switch {
+			case h.Relay == nil:
+				return "", false
+			case h.Relay.Name == nil:
+				return "", true
+			}
+			return *h.Relay.Name, true
 		case "state":
 			return h.State, true
 		case "host_key":
@@ -490,6 +596,7 @@ func list(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostListRe
 		if !scope.Has(h.spaceID) {
 			continue
 		}
+		h.seeRelay(scope)
 		if !req.WithNote {
 			h.Note = ""
 		}
@@ -560,13 +667,14 @@ func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequ
 	if err != nil {
 		return api.HostSetResponse{}, err
 	}
-	v := values{address: req.Address, port: req.Port, account: req.Account, attributes: req.Attributes, note: req.Note}
-	if v.address == nil && v.port == nil && v.account == nil && len(v.attributes) == 0 && v.note == nil && len(req.Unset) == 0 {
+	v := values{address: req.Address, port: req.Port, account: req.Account, relay: req.Relay, attributes: req.Attributes, note: req.Note}
+	if v.address == nil && v.port == nil && v.account == nil && v.relay == nil && len(v.attributes) == 0 && v.note == nil && len(req.Unset) == 0 {
 		return api.HostSetResponse{}, api.CodeInvalidRequest.Errorf("name at least one field, Attribute or Note of %s to change", h.Name)
 	}
-	if h.State == api.HostRetired && (v.address != nil || v.port != nil || v.account != nil || slices.Contains(req.Unset, "port")) {
+	if h.State == api.HostRetired && (v.address != nil || v.port != nil || v.account != nil || v.relay != nil ||
+		slices.Contains(req.Unset, "port") || slices.Contains(req.Unset, "relay")) {
 		return api.HostSetResponse{}, api.CodeHostRetired.Errorf(
-			"%s (%s) is Retired, so its address, port and Host Account stay as they were: %s", h.Name, h.ID, retiredTakes)
+			"%s (%s) is Retired, so its address, port, Host Account and Relay stay as they were: %s", h.Name, h.ID, retiredTakes)
 	}
 	if err := v.check(h.Name); err != nil {
 		return api.HostSetResponse{}, err
@@ -575,10 +683,12 @@ func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequ
 	for _, k := range req.Unset {
 		_, setToo := req.Attributes[k]
 		switch {
-		case setToo, k == "note" && req.Note != nil, k == "port" && req.Port != nil:
+		case setToo, k == "note" && req.Note != nil, k == "port" && req.Port != nil, k == "relay" && req.Relay != nil:
 			return api.HostSetResponse{}, api.CodeInvalidRequest.Errorf("%s is both set and cleared", k)
 		case k == "note":
 			h.Note = ""
+		case k == "relay":
+			h.relay = nil
 		case k == "port":
 			v.port = new(record.DefaultPort)
 		case slices.Contains(record.Required, k):
@@ -610,9 +720,18 @@ func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequ
 	if v.note != nil {
 		h.Note = *v.note
 	}
+	// A new Relay keeps access, so it publishes nothing: a live SSH Session
+	// goes on through the Relay it started through.
+	if v.relay != nil {
+		r, err := relayFor(ctx, tx, who, h.ID, h.Name, *v.relay)
+		if err != nil {
+			return api.HostSetResponse{}, err
+		}
+		h.relay = &relayLink{id: r.ID}
+	}
 
-	_, err = tx.ExecContext(ctx, "UPDATE hosts SET address = ?, port = ?, account = ?, state = ?, note = ?, updated_at = ? WHERE id = ?",
-		h.Address, h.Port, h.Account, h.State, sql.NullString{String: h.Note, Valid: h.Note != ""}, op.Now(ctx).Format(time.RFC3339), h.ID)
+	_, err = tx.ExecContext(ctx, "UPDATE hosts SET address = ?, port = ?, account = ?, relay_id = ?, state = ?, note = ?, updated_at = ? WHERE id = ?",
+		h.Address, h.Port, h.Account, h.relayID(), h.State, sql.NullString{String: h.Note, Valid: h.Note != ""}, op.Now(ctx).Format(time.RFC3339), h.ID)
 	if err != nil {
 		return api.HostSetResponse{}, fmt.Errorf("change the Host %s: %w", h.Name, err)
 	}
@@ -689,6 +808,17 @@ func retire(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostReti
 	}
 	if h.State == api.HostRetired {
 		return api.HostRetireResponse{}, api.CodeHostRetired.Errorf("%s (%s) is Retired already", h.Name, h.ID)
+	}
+	// The refusal shows through to a caller who cannot see the Host that
+	// uses it, telling only that one exists (ADR 0014's accepted cost).
+	used, err := usedAsRelay(ctx, tx, h.ID)
+	switch {
+	case err != nil:
+		return api.HostRetireResponse{}, err
+	case used:
+		return api.HostRetireResponse{}, api.CodeRelayInUse.Errorf(
+			"%s is the Relay of a Host that is not Retired, so it is not Retired: give that Host another Relay, with koko host set <host> relay=<relay>, or none, with --unset relay; koko host ls relay=%s lists those you can see",
+			h.Name, h.Name)
 	}
 	_, err = tx.ExecContext(ctx, "UPDATE hosts SET state = ?, updated_at = ? WHERE id = ?", api.HostRetired, op.Now(ctx).Format(time.RFC3339), h.ID)
 	if err != nil {

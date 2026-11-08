@@ -21,6 +21,7 @@ test("the web UI opens on the Hosts page, which lists the Hosts the API answers 
       address: `${name}.example.com`,
       port: 22,
       account: "deploy",
+      relay: null,
       state: "managed",
       host_key: null,
       attributes: {},

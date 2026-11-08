@@ -38,4 +38,6 @@ export default {
   "error.host_was_managed": "该主机曾被纳管，所以 koko 保留其记录，永不删除。",
   "error.invalid_batch": "其中多台主机各有各的问题，所以一台也没有添加。",
   "error.host_retired": "该主机已退役：只能修改其属性和备注，或将其移到别的空间。",
+  "error.invalid_relay": "该主机不能在此作为中继：中继必须是已纳管的另一台主机，且只能有一跳。",
+  "error.relay_in_use": "该主机是某台未退役主机的中继，所以暂时不能退役。",
 } satisfies Record<keyof typeof en, string>;

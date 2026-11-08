@@ -123,12 +123,14 @@ first call, through the dial it was given, and for each call:
 | `idempotency_key_reused` | 422 | The caller's `Idempotency-Key` came with another request (another operation or body) within the last 10 minutes. |
 | `unexpected_host_key` | 409 | Enroll met a host key other than the pinned one, or the one `host_key` names, and did not log in; the message holds both fingerprints ([Enroll](enroll.md)). |
 | `login_refused` | 403 | The Host refused the password or private key given to Enroll. |
-| `host_unreachable` | 502 | Enroll could not connect to the Host, after retrying network errors. |
+| `host_unreachable` | 502 | Enroll could not connect to the Host, after retrying network errors, or could not log in to its Relay with the koko key ([Enroll](enroll.md#through-a-relay)). |
 | `key_not_added` | 502 | Enroll logged in but could not append the koko key to the Host Account's `authorized_keys`. |
 | `already_managed` | 409 | Enroll of a Managed Host without `host_key` or `replace_host_key`. |
-| `host_changed` | 409 | The Host's Host Account, state or pin changed while Enroll logged in to it, so it recorded nothing. |
+| `host_changed` | 409 | The Host's Host Account, state, pin or Relay changed while Enroll logged in to it, so it recorded nothing. |
 | `host_was_managed` | 409 | `host.remove` of a Host that has been Managed, as its pin shows ([the record](record.md#operations)). |
 | `host_retired` | 409 | A Retired Host was asked for a change it does not take, or to be Enrolled or retired again ([retiring a Host](record.md#retiring-a-host)). |
+| `invalid_relay` | 409 | The Host named as a Relay cannot be one: the Host itself, not Managed, or with a Relay of its own; or the Host given a Relay is the Relay of a Host that is not Retired; or Enroll of a Host whose Relay is not Managed ([a Relay](record.md#a-relay)). |
+| `relay_in_use` | 409 | `host.retire` of the Relay of a Host that is not Retired; the message names no Host ([a Relay](record.md#a-relay)). |
 | `internal_error` | 500 | Anything the server did not expect; the message says to read the log, which holds the cause. |
 
 An area adds its codes beside its types (see

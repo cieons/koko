@@ -274,7 +274,9 @@ func TestHostValuesThatBreakTheirRulesAreRefusedBeforeAnyCall(t *testing.T) {
 		"Region=eu",
 		"1region=eu",
 		"region.name=eu",
-		"relay=web2",
+		"relay=",
+		"relay=Web2",
+		"relay=web2/nginx",
 		"host_key=SHA256:abc",
 		"state=managed",
 		"name=web2",
@@ -465,8 +467,8 @@ func TestHostLsForPeople(t *testing.T) {
 	r := h.Koko("host", "ls")
 	r.WantSuccess(t)
 	lines := strings.Split(strings.TrimSpace(r.Stdout), "\n")
-	if len(lines) != 2 || strings.Join(strings.Fields(lines[0]), " ") != "NAME SPACE STATE ADDRESS PORT ACCOUNT ID" ||
-		!strings.HasPrefix(strings.Join(strings.Fields(lines[1]), " "), "web1 "+harness.Owner+" registered 203.0.113.10 22 deploy host_") {
+	if len(lines) != 2 || strings.Join(strings.Fields(lines[0]), " ") != "NAME SPACE STATE ADDRESS PORT ACCOUNT RELAY ID" ||
+		!strings.HasPrefix(strings.Join(strings.Fields(lines[1]), " "), "web1 "+harness.Owner+" registered 203.0.113.10 22 deploy - host_") {
 		t.Errorf("stdout = %q, want a header and a row for web1", r.Stdout)
 	}
 }

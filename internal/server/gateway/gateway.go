@@ -6,9 +6,10 @@
 // beneath one SSH Session. The Gateway sends the Tunnel's id first, then runs
 // an SSH server on the stream with "none" authentication, the koko server's
 // sealed host key and AES-GCM ciphers only. It allows a new SSH Session only
-// when the caller passes the access check for the Host, the Host is Managed
-// and the caller's Device Session has fewer than 64 open, and dials the Host
-// while the client's handshake runs; every refusal is a banner on the
+// when the caller passes the access check for the Host, the Host and its
+// Relay, if any, are Managed and the caller's Device Session has fewer than
+// 64 open, and dials the Host, through its Relay, while the client's
+// handshake runs; every refusal is a banner on the
 // refused "none", the user name and the Host connector's failures among
 // them. Once the client is in, each channel it opens is opened on the Host as
 // asked, and the two are relayed both ways: every byte, EOF and request but
@@ -122,9 +123,10 @@ type tunnel struct {
 	// limited says the Tunnel counts against its Device Session's limit.
 	limited bool
 	// hostID and hostName are the Host the access check admitted the SSH
-	// Session to, by its id and by its name then, and user the name of the
+	// Session to, by its id and by its name then, relayID the id of the
+	// Relay it passes through, empty for none, and user the name of the
 	// User it acts as; hostID is empty for an SSH Session refused.
-	hostID, hostName, user string
+	hostID, hostName, relayID, user string
 	// done is closed once the Tunnel has left the registry.
 	done chan struct{}
 
@@ -297,6 +299,9 @@ func (g *Gateway) register(caller op.Caller, from net.Addr, stream *resumable.St
 		t.limited = true
 	}
 	t.hostID, t.hostName, t.user = a.host.ID, a.host.Name, a.who.User.Name
+	if r := a.host.Relay; r != nil {
+		t.relayID = r.ID
+	}
 	if g.withdrawals != seen {
 		g.wg.Go(func() { g.recheck([]*tunnel{t}) })
 	}
@@ -359,7 +364,7 @@ var errNotInitialised = errors.New("the koko server is not initialised, so it ha
 
 // admit reads, in one read-only transaction, the koko server's keys, and
 // whether the caller may start a new SSH Session to the Host named hostName:
-// the access check passes and the Host is Managed. An unknown name, a Host the
+// the access check passes and the Host and its Relay, if any, are Managed. An unknown name, a Host the
 // caller may not reach and a Retired Host, which holds no name, get the same
 // refusal, byte for byte. It fails only on an error of the koko server's
 // own.
@@ -402,6 +407,9 @@ func (g *Gateway) admit(ctx context.Context, caller op.Caller, hostName string) 
 		default:
 			a.refused = &refusal{banner: unknownHost(hostName), reason: "host " + a.host.State}
 		}
+		if r := a.host.Relay; a.refused == nil && r != nil && r.State != api.HostManaged {
+			a.refused = unmanagedRelay(hostName, r)
+		}
 		return nil
 	})
 	if err != nil {
@@ -427,6 +435,33 @@ func accessRefusal(hostName string, e *api.Error) string {
 	return "koko: " + e.Message + ".\n"
 }
 
+// unmanagedRelay refuses an SSH Session to the Host named hostName, whose
+// Relay r is not Managed: koko passes through a Relay only once it is
+// Enrolled. It names the Relay only to a caller who can see it.
+func unmanagedRelay(hostName string, r *host.Relay) *refusal {
+	way := "."
+	if r.Seen {
+		way = ", with koko host enroll " + r.Name + "."
+	}
+	return &refusal{
+		banner: fmt.Sprintf("koko: %s is %s: koko passes through it only once it is Enrolled%s\n", r.Of(hostName), stateName(r.State), way),
+		reason: "relay " + r.State,
+	}
+}
+
+// stateName is how a message names the state of a Host.
+func stateName(state string) string {
+	switch state {
+	case api.HostRegistered:
+		return "Registered"
+	case api.HostManaged:
+		return "Managed"
+	case api.HostRetired:
+		return "Retired"
+	}
+	return state
+}
+
 // userRefusal refuses the SSH user name user for the Host h, which the
 // caller may reach: the Gateway takes koko, which koko's ssh_config and koko
 // exec ask for, and the Host Account's own name, and no other, so that a
@@ -447,8 +482,12 @@ func userRefusal(h host.Reach, user string) *refusal {
 // connector's retries, its host key is not the pinned one, which the banner
 // shows beside the one offered and says how to pin, or it refused the koko
 // key. Each is logged as a warning, since the Owner may have to act; the
-// connector's error, which names addresses, goes to the log only.
+// connector's error, which names addresses, goes to the log only. A failure
+// on the leg to h's Relay is told as relayConnectRefusal tells it.
 func connectRefusal(h host.Reach, err error) *refusal {
+	if _, ok := errors.AsType[*hostconn.RelayError](err); ok && h.Relay != nil {
+		return relayConnectRefusal(h.Name, h.Relay, err)
+	}
 	if m, ok := errors.AsType[*hostconn.HostKeyMismatchError](err); ok {
 		return &refusal{
 			banner: fmt.Sprintf("koko: the host key of %s does not match the one pinned at Enroll (pinned %s, offered %s); koko did not log in. "+
@@ -472,6 +511,43 @@ func connectRefusal(h host.Reach, err error) *refusal {
 	return r
 }
 
+// relayConnectRefusal refuses an SSH Session to the Host named hostName,
+// since the Host connector failed to log in to its Relay r with err. It is a
+// Host's refusal, with the Relay in the Host's place, named only to a caller
+// who can see it: one who cannot learns neither its fingerprints nor its
+// Host Account, and cannot act on it.
+func relayConnectRefusal(hostName string, r *host.Relay, err error) *refusal {
+	relay := r.Of(hostName)
+	if m, ok := errors.AsType[*hostconn.HostKeyMismatchError](err); ok {
+		banner := fmt.Sprintf("koko: the host key of %s does not match the one pinned at Enroll; koko did not log in.\n", relay)
+		if r.Seen {
+			banner = fmt.Sprintf("koko: the host key of %s does not match the one pinned at Enroll (pinned %s, offered %s); koko did not log in. "+
+				"If %s was rebuilt, pin its new key with koko host enroll %s --host-key <the fingerprint its provider shows>, "+
+				"or with --replace-host-key, which trusts whatever key it offers.\n", relay, m.Pinned, m.Offered, r.Name, r.Name)
+		}
+		return &refusal{
+			banner: banner,
+			reason: "relay host key mismatch", attrs: []any{"relay_id", r.ID, "pinned", m.Pinned, "offered", m.Offered}, warn: true,
+		}
+	}
+	ref := &refusal{attrs: []any{"relay_id", r.ID, "err", err}, warn: true}
+	switch {
+	case errors.Is(err, hostconn.ErrUnreachable):
+		ref.banner = fmt.Sprintf("koko: %s is down or unreachable: koko could not connect to it; this SSH Session did not start.\n", relay)
+		ref.reason = "relay unreachable"
+	case errors.Is(err, hostconn.ErrLoginRefused) && r.Seen:
+		ref.banner = fmt.Sprintf("koko: %s refused the koko key for its Host Account %q; this SSH Session did not start.\n", relay, r.Account)
+		ref.reason = "relay login refused"
+	case errors.Is(err, hostconn.ErrLoginRefused):
+		ref.banner = fmt.Sprintf("koko: %s refused the koko key; this SSH Session did not start.\n", relay)
+		ref.reason = "relay login refused"
+	default:
+		ref.banner = fmt.Sprintf("koko: koko could not connect to %s; this SSH Session did not start.\n", relay)
+		ref.reason = "relay connection failed"
+	}
+	return ref
+}
+
 // hostLeg is the Gateway's SSH connection to the Host, dialled while the
 // client's handshake runs: done is closed once conn or err holds the
 // outcome.
@@ -482,7 +558,8 @@ type hostLeg struct {
 }
 
 // session runs the SSH Session inside the Tunnel t to the Host a admitted:
-// it dials the Host while the client's handshake runs, answers the client's
+// it dials the Host, through its Relay if any, while the client's handshake
+// runs, answers the client's
 // "none" with the outcome, then relays the client's channels to the Host
 // until either end closes the SSH Session or the Tunnel ends. Once the SSH
 // Session starts, it calls stopEarlyClose, which stops the Tunnel's end
@@ -491,16 +568,14 @@ func (g *Gateway) session(t *tunnel, sshName string, a admission, stopEarlyClose
 	var leg *hostLeg
 	if a.refused == nil {
 		leg = &hostLeg{done: make(chan struct{})}
-		target := hostconn.Target{
-			Address: a.host.Address,
-			Port:    a.host.Port,
-			Account: a.host.Account,
-			Login:   hostconn.KeyLogin(a.kokoKey),
-			Pin:     hostconn.PinKey(a.host.Pin),
+		target := kokoTarget(a.host, a.kokoKey)
+		var relay *hostconn.Target
+		if r := a.host.Relay; r != nil {
+			relay = new(kokoTarget(r.Reach, a.kokoKey))
 		}
 		g.wg.Go(func() {
 			defer close(leg.done)
-			leg.conn, leg.err = g.connector.Connect(t.ctx, target, nil)
+			leg.conn, leg.err = g.connector.Connect(t.ctx, target, relay)
 		})
 		defer func() {
 			<-leg.done
@@ -561,9 +636,15 @@ func (g *Gateway) session(t *tunnel, sshName string, a admission, stopEarlyClose
 	stopEarlyClose()
 	started := time.Now()
 	who := []any{"tunnel", t.id, "user", a.who.User.Name, "device_session", deviceSession(t.caller), "host", a.host.Name, "host_id", a.host.ID}
+	var relayName string
+	if r := a.host.Relay; r != nil {
+		// The log is the Owner's, so it names the Relay whoever connects.
+		who = append(who, "relay", r.Name, "relay_id", r.ID)
+		relayName = r.Of(a.host.Name)
+	}
 	g.log.Info("ssh session started", slices.Concat(who, []any{"addr", t.from})...)
 	s := &sshSession{
-		host: leg.conn, hostName: a.host.Name, stream: t.stream,
+		host: leg.conn, hostName: a.host.Name, relayName: relayName, stream: t.stream,
 		log:    g.log.With("tunnel", t.id, "host", a.host.Name),
 		logged: map[string]bool{}, sessionChannels: map[ssh.Channel]struct{}{},
 	}
@@ -575,6 +656,12 @@ func (g *Gateway) session(t *tunnel, sshName string, a admission, stopEarlyClose
 		"duration", time.Since(started).Round(time.Millisecond),
 		"bytes_from_device", counted.read.Load(), "bytes_to_device", counted.written.Load(),
 	}, s.exit(), []any{"reason", end.reason})...)
+}
+
+// kokoTarget is how the Gateway logs in to the Host or Relay h: as its Host
+// Account, with the koko key kokoKey, checking its pinned host key.
+func kokoTarget(h host.Reach, kokoKey ssh.Signer) hostconn.Target {
+	return hostconn.Target{Address: h.Address, Port: h.Port, Account: h.Account, Login: hostconn.KeyLogin(kokoKey), Pin: hostconn.PinKey(h.Pin)}
 }
 
 // deviceSession names who a Tunnel came from in a log line: its Device

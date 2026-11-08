@@ -17,6 +17,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/name"
 	"github.com/cieons/koko/internal/shared/record"
 )
 
@@ -28,7 +29,7 @@ var hostCommands = []Command{
 	{
 		Noun:    "host",
 		Verb:    "add",
-		Summary: "Record a Host: address= and account= are required, and space= defaults to your Personal Space; without <host>, record the Hosts JSON on stdin holds, in the shape host ls --json prints",
+		Summary: "Record a Host: address= and account= are required, space= defaults to your Personal Space, and relay= names a Managed Host to reach it through; without <host>, record the Hosts JSON on stdin holds, in the shape host ls --json prints",
 		Args:    []Arg{{Name: "host", Optional: true}},
 		Flags:   []Flag{noteFileFlag},
 		Pairs:   true,
@@ -117,6 +118,9 @@ type hostJSON struct {
 	Address string `json:"address"`
 	Port    int    `json:"port"`
 	Account string `json:"account"`
+	// Relay is the Host koko passes through to reach this one, or null for
+	// none.
+	Relay *relayJSON `json:"relay"`
 	// State is registered, managed or retired.
 	State string `json:"state"`
 	// HostKey is the pinned host key's SHA-256 fingerprint, or null for a
@@ -136,6 +140,34 @@ type hostJSON struct {
 	UpdatedAt string   `json:"updated_at"`
 }
 
+// relayJSON is a Host's Relay in the CLI's own --json (ADR 0035): its id
+// and its name, as a Host shows its own, both null for a Relay you cannot
+// see.
+type relayJSON struct {
+	ID   *string `json:"id"`
+	Name *string `json:"name"`
+}
+
+// relayFromAPI maps a Host's Relay from the API, nil for none.
+func relayFromAPI(r *api.HostRelay) *relayJSON {
+	if r == nil {
+		return nil
+	}
+	return &relayJSON{ID: r.ID, Name: r.Name}
+}
+
+// String is the Relay for people: its name, - for none, or (unseen) for
+// one you cannot see.
+func (r *relayJSON) String() string {
+	switch {
+	case r == nil:
+		return "-"
+	case r.Name == nil:
+		return "(unseen)"
+	}
+	return *r.Name
+}
+
 // hostFromAPI maps a Host from the API, with its Note.
 func hostFromAPI(h api.Host) hostJSON {
 	j := hostJSON{
@@ -145,6 +177,7 @@ func hostFromAPI(h api.Host) hostJSON {
 		Address:    h.Address,
 		Port:       h.Port,
 		Account:    h.Account,
+		Relay:      relayFromAPI(h.Relay),
 		State:      h.State,
 		HostKey:    h.HostKey,
 		Attributes: maps.Clone(h.Attributes),
@@ -183,14 +216,15 @@ var hostMappings = []mapping{
 	{api: reflect.TypeFor[api.HostRetireResponse]()},
 	{api: reflect.TypeFor[api.HostRemoveResponse]()},
 	{api: reflect.TypeFor[api.Host](), cli: reflect.TypeFor[hostJSON]()},
+	{api: reflect.TypeFor[api.HostRelay](), cli: reflect.TypeFor[relayJSON]()},
 }
 
 // hostPairs are the key=value words of host add or host set, sorted into
 // the Host's fields and its Attributes.
 type hostPairs struct {
-	address, account, space *string
-	port                    *int
-	attributes              map[string]record.Value
+	address, account, space, relay *string
+	port                           *int
+	attributes                     map[string]record.Value
 }
 
 // readHostPairs sorts the key=value words of koko host <verb> into fields
@@ -222,6 +256,11 @@ func readHostPairs(in *Input, verb string) (hostPairs, error) {
 			p.account = new(pr.Value)
 		case pr.Key == "space" && verb == "add":
 			p.space = new(pr.Value)
+		case pr.Key == "relay":
+			if err := checkHostRef(pr.Value); err != nil {
+				return hostPairs{}, usagef("relay=: %v", err)
+			}
+			p.relay = new(pr.Value)
 		case record.Reserved(pr.Key):
 			return hostPairs{}, hostFieldRefusal(pr.Key+"=", pr.Key, verb)
 		default:
@@ -236,6 +275,19 @@ func readHostPairs(in *Input, verb string) (hostPairs, error) {
 		}
 	}
 	return p, nil
+}
+
+// checkHostRef reports why ref names no Host, by name or id, before any
+// call, or nil when it could: whether a Host has it is the koko server's to
+// say.
+func checkHostRef(ref string) error {
+	if strings.HasPrefix(ref, "host_") {
+		return nil
+	}
+	if err := name.Check(ref); err != nil {
+		return fmt.Errorf("%q is neither a Host name nor a Host id: %w", ref, err)
+	}
+	return nil
 }
 
 // hostFieldRefusal refuses written, which gives or clears the field key
@@ -367,6 +419,7 @@ func hostAdd(ctx context.Context, in *Input) (addedHosts, error) {
 		Address:    *p.address,
 		Port:       p.port,
 		Account:    *p.account,
+		Relay:      p.relay,
 		Attributes: p.attributes,
 		Note:       note,
 	}}, true)
@@ -400,9 +453,9 @@ func (l hostList) Human(w io.Writer) error {
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	// A tabwriter reports a failed write when it flushes.
-	_, _ = fmt.Fprintln(tw, "NAME\tSPACE\tSTATE\tADDRESS\tPORT\tACCOUNT\tID")
+	_, _ = fmt.Fprintln(tw, "NAME\tSPACE\tSTATE\tADDRESS\tPORT\tACCOUNT\tRELAY\tID")
 	for _, h := range l {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n", h.Name, h.Space, h.State, h.Address, h.Port, h.Account, h.ID)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n", h.Name, h.Space, h.State, h.Address, h.Port, h.Account, h.Relay, h.ID)
 	}
 	if err := tw.Flush(); err != nil {
 		return err
@@ -456,8 +509,15 @@ func (h shownHost) Human(w io.Writer) error {
 	if h.HostKey != nil {
 		hostKey = *h.HostKey
 	}
-	fmt.Fprintf(&b, "Host %s (%s)\nSpace:       %s\nState:       %s\nAddress:     %s\nPort:        %d\nAccount:     %s\nHost key:    %s\nCreated:     %s\nUpdated:     %s\n",
-		h.Name, h.ID, h.Space, h.State, h.Address, h.Port, h.Account, hostKey, h.CreatedAt, h.UpdatedAt)
+	relay := "none"
+	switch r := h.Relay; {
+	case r != nil && r.Name == nil:
+		relay = "one you cannot see"
+	case r != nil:
+		relay = fmt.Sprintf("%s (%s)", *r.Name, *r.ID)
+	}
+	fmt.Fprintf(&b, "Host %s (%s)\nSpace:       %s\nState:       %s\nAddress:     %s\nPort:        %d\nAccount:     %s\nRelay:       %s\nHost key:    %s\nCreated:     %s\nUpdated:     %s\n",
+		h.Name, h.ID, h.Space, h.State, h.Address, h.Port, h.Account, relay, hostKey, h.CreatedAt, h.UpdatedAt)
 	writeAttributes(&b, h.Attributes)
 	writeServices(&b, h.services)
 	if note, ok := h.note(); ok {
@@ -520,7 +580,7 @@ func hostSet(ctx context.Context, in *Input) (changedHost, error) {
 	}
 	for _, k := range in.Unset() {
 		switch {
-		case k == "note", k == "port":
+		case k == "note", k == "port", k == "relay":
 		case record.Reserved(k):
 			return changedHost{}, hostFieldRefusal("--unset "+k, k, "set")
 		default:
@@ -544,6 +604,7 @@ func hostSet(ctx context.Context, in *Input) (changedHost, error) {
 		Address:    p.address,
 		Port:       p.port,
 		Account:    p.account,
+		Relay:      p.relay,
 		Attributes: p.attributes,
 		Note:       note,
 		Unset:      in.Unset(),

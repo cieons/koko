@@ -97,7 +97,9 @@ export const CodeLoginRefused = "login_refused";
 
 /**
  * CodeHostUnreachable: the koko server could not connect to the Host,
- * after retrying the network errors.
+ * after retrying the network errors, or could not log in to its Relay
+ * with the koko key, which the message says without naming a Relay the
+ * caller cannot see.
  */
 export const CodeHostUnreachable = "host_unreachable";
 
@@ -116,8 +118,8 @@ export const CodeKeyNotAdded = "key_not_added";
 export const CodeAlreadyManaged = "already_managed";
 
 /**
- * CodeHostChanged: the Host's Host Account, state or pinned host key
- * changed while Enroll logged in to it, so Enroll recorded nothing,
+ * CodeHostChanged: the Host's Host Account, state, pinned host key or
+ * Relay changed while Enroll logged in to it, so Enroll recorded nothing,
  * though the koko key may be in the authorized_keys of the Host Account
  * it logged in as; it may run again.
  */

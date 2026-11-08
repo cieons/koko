@@ -5,6 +5,7 @@
   "address": "203.0.113.10",
   "port": 22,
   "account": "deploy",
+  "relay": null,
   "state": "registered",
   "host_key": null,
   "attributes": {},

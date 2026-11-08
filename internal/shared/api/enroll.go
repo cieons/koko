@@ -114,7 +114,9 @@ var (
 	// for its Host Account.
 	CodeLoginRefused = Code{"login_refused", http.StatusForbidden}
 	// CodeHostUnreachable: the koko server could not connect to the Host,
-	// after retrying the network errors.
+	// after retrying the network errors, or could not log in to its Relay
+	// with the koko key, which the message says without naming a Relay the
+	// caller cannot see.
 	CodeHostUnreachable = Code{"host_unreachable", http.StatusBadGateway}
 	// CodeKeyNotAdded: koko logged in to the Host but could not append the
 	// koko key to the Host Account's authorized_keys, such as for an
@@ -124,8 +126,8 @@ var (
 	// host_key nor replace_host_key, which alone Enroll a Managed Host
 	// again.
 	CodeAlreadyManaged = Code{"already_managed", http.StatusConflict}
-	// CodeHostChanged: the Host's Host Account, state or pinned host key
-	// changed while Enroll logged in to it, so Enroll recorded nothing,
+	// CodeHostChanged: the Host's Host Account, state, pinned host key or
+	// Relay changed while Enroll logged in to it, so Enroll recorded nothing,
 	// though the koko key may be in the authorized_keys of the Host Account
 	// it logged in as; it may run again.
 	CodeHostChanged = Code{"host_changed", http.StatusConflict}

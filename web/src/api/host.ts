@@ -18,6 +18,11 @@ export interface Host {
   port: number;
   /** Account is the Host Account koko logs in as. */
   account: string;
+  /**
+   * Relay is the Host the Gateway passes through to reach this one, or
+   * null for none. A Relay the caller cannot see is present but unnamed.
+   */
+  relay: HostRelay | null;
   /** State is HostRegistered, HostManaged or HostRetired. */
   state: string;
   /**
@@ -41,6 +46,17 @@ export interface Host {
   updated_at: string;
 }
 
+/**
+ * HostRelay is a Host's Relay as the API returns it (ADR 0035): its id and
+ * its name, the name it had once it is Retired, as a Host shows its own; both
+ * null for a Relay the caller cannot see, which a move may have put in a
+ * Space they cannot act in.
+ */
+export interface HostRelay {
+  id: string | null;
+  name: string | null;
+}
+
 /** NewHost is a Host to record. */
 export interface NewHost {
   /** Name is a lowercase DNS label no Host that is not Retired holds. */
@@ -56,6 +72,11 @@ export interface NewHost {
   port?: number;
   /** Account is the Host Account, which has no default. */
   account: string;
+  /**
+   * Relay, when given, names the Host's Relay, by its name or its id: a
+   * Managed Host the caller can see, with no Relay itself.
+   */
+  relay?: string;
   /**
    * Attributes are values by key, each of its key's type (package
    * record): a Preset's, or free text.
@@ -84,8 +105,10 @@ export interface HostListRequest {
   /**
    * Filters are the terms a Host must match, every one. A term takes a
    * field of HostListFields: id, name, space, address, port (a number),
-   * account, state (an enum: registered, managed, retired) and host_key;
-   * or an Attribute key. A date is absolute.
+   * account, relay (the Relay's name), state (an enum: registered,
+   * managed, retired) and host_key; or an Attribute key. A date is
+   * absolute. A Relay the caller cannot see has an empty name: it
+   * matches relay.has and relay.ne, and never relay.eq.
    */
   filters?: Filter[];
   /**
@@ -136,13 +159,16 @@ export interface HostSetRequest {
   address?: string;
   port?: number;
   account?: string;
+  /** Relay, when given, names the Host's new Relay, as NewHost's does. */
+  relay?: string;
   /** Attributes set these Attributes, by key, leaving the others. */
   attributes?: Record<string, string | number>;
   /** Note, when given, replaces the Host's Note: never empty. */
   note?: string;
   /**
-   * Unset clears these Attribute keys, the Note for "note", and sets the
-   * port back to 22 for "port". A key the Host lacks is already clear.
+   * Unset clears these Attribute keys, the Note for "note", the Relay for
+   * "relay", and sets the port back to 22 for "port". A key the Host lacks
+   * is already clear.
    */
   unset?: string[];
 }
@@ -265,7 +291,8 @@ export const HostMove: Op<HostMoveRequest, HostMoveResponse> = {
  * terminal. It keeps its record, Attributes, Note, Services, Space and
  * pin, leaves host.list unless all asks for it, and frees its name, so
  * that only its id names it. A Host Retired already is refused with
- * CodeHostRetired.
+ * CodeHostRetired, and the Relay of a Host that is not Retired with
+ * CodeRelayInUse.
  */
 export const HostRetire: Op<HostRetireRequest, HostRetireResponse> = {
   name: "host.retire",
@@ -308,8 +335,23 @@ export const CodeInvalidBatch = "invalid_batch";
 
 /**
  * CodeHostRetired: the call would do what a Retired Host does not take:
- * change its address, port or Host Account, rename it, Enroll it,
+ * change its address, port, Host Account or Relay, rename it, Enroll it,
  * retire it again, or change its Services. A Retired Host takes only
  * changes to its Attributes and Note, and moves.
  */
 export const CodeHostRetired = "host_retired";
+
+/**
+ * CodeInvalidRelay: the Host named as a Relay cannot be one: it is the
+ * Host itself, it is not Managed, or it has a Relay itself; or the Host
+ * given a Relay is the Relay of a Host that is not Retired. A Relay is
+ * exactly one hop. host.enroll refuses with it a Host whose Relay is not
+ * Managed, which koko cannot pass through.
+ */
+export const CodeInvalidRelay = "invalid_relay";
+
+/**
+ * CodeRelayInUse: host.retire of a Host that a Host that is not Retired
+ * uses as its Relay. The message names neither that Host nor how many.
+ */
+export const CodeRelayInUse = "relay_in_use";

@@ -59,16 +59,38 @@ which prints and logs as its length) and `secret` (an `api.SecretRef`,
    transaction, it logs in through the [Host connector](host-connector.md)
    as the Host Account with the supplied password or key, never the koko
    key, and appends the koko key over one exec request, within
-   `timing.EnrollAddKey` (30 s). The Host's Relay is not used: Hosts have
-   none yet.
+   `timing.EnrollAddKey` (30 s). A Host with a Relay is reached through it
+   ([below](#through-a-relay)).
 2. **In the write's transaction.** [`host.Enrolled`](../../internal/server/host/reach.go)
    finds the Host again, refuses with `host_changed` when its Host Account,
-   state or pin changed meanwhile, and records the host key it offered as
+   state, pin or Relay changed meanwhile, and records the host key it offered as
    its pin, with the state Managed.
 
 A dropped caller cancels neither part, and the caller's retry with the same
 `Idempotency-Key` waits for the first attempt, then gets its stored
 response, without logging in again.
+
+## Through a Relay
+
+A Host with a [Relay](record.md#a-relay) is Enrolled through it, as the
+Gateway reaches it, since a Host is given a Relay because the koko server
+cannot reach it directly: the koko server logs in to the Relay as its Host
+Account with the koko key, checking the Relay's pin, then to the Host
+through a `direct-tcpip` channel there, with the supplied password or key.
+The caller need not see the Relay.
+
+- A Relay that is not Managed is refused with `invalid_relay` before any
+  login, since koko logs in to a Relay only with the koko key.
+- A failure on the Relay's leg is refused with `host_unreachable`: `koko
+  could not reach web1 through its Relay, so it did not log in to web1: `
+  and why, as the Gateway's banner says it ([the Gateway](gateway.md#relay)):
+  the Relay down, its host key not the pinned one, which `--host-key` and
+  `--replace-host-key` on this Enroll do not change, or the koko key
+  refused. It names the Relay, its fingerprints and its Host Account only
+  to a caller who can see it, and never the connector's error, which the
+  `enroll failed` line logs as `cause`, with `relay` and `relay_id`.
+- A Relay changed while Enroll logs in through the old one is refused with
+  `host_changed`.
 
 ## Reading a Secret
 
@@ -177,6 +199,11 @@ value: the request is kept only as the sealed digest of its
   key, a certificate and a line ending refused before any connection; and
   the value in no output, log line or file under any HOME, nor anywhere in
   the data directory but sealed.
+- [`internal/client/cli/relay_test.go`](../../internal/client/cli/relay_test.go):
+  Enroll through a Relay, which carries its connection, and refused through
+  a Relay whose host key changed, that is down, that refused the koko key,
+  or that is Registered, each as the Owner and as a Member who cannot see
+  the Relay, and with `host_changed` when the Relay changes meanwhile.
 - [`internal/server/access/matrix_enroll_test.go`](../../internal/server/access/matrix_enroll_test.go):
   `host.enroll` as each caller, with a password, with a Secret of the Host's
   Space, and with a Secret of a Space the caller cannot act in.

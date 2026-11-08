@@ -28,6 +28,9 @@ type Host struct {
 	Port    int    `json:"port"`
 	// Account is the Host Account koko logs in as.
 	Account string `json:"account"`
+	// Relay is the Host the Gateway passes through to reach this one, or
+	// null for none. A Relay the caller cannot see is present but unnamed.
+	Relay *HostRelay `json:"relay"`
 	// State is HostRegistered, HostManaged or HostRetired.
 	State string `json:"state"`
 	// HostKey is the pinned host key's SHA-256 fingerprint, as OpenSSH
@@ -45,6 +48,15 @@ type Host struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
+// HostRelay is a Host's Relay as the API returns it (ADR 0035): its id and
+// its name, the name it had once it is Retired, as a Host shows its own; both
+// null for a Relay the caller cannot see, which a move may have put in a
+// Space they cannot act in.
+type HostRelay struct {
+	ID   *string `json:"id"`
+	Name *string `json:"name"`
+}
+
 // NewHost is a Host to record.
 type NewHost struct {
 	// Name is a lowercase DNS label no Host that is not Retired holds.
@@ -58,6 +70,9 @@ type NewHost struct {
 	Port *int `json:"port,omitzero"`
 	// Account is the Host Account, which has no default.
 	Account string `json:"account"`
+	// Relay, when given, names the Host's Relay, by its name or its id: a
+	// Managed Host the caller can see, with no Relay itself.
+	Relay *string `json:"relay,omitzero"`
 	// Attributes are values by key, each of its key's type (package
 	// record): a Preset's, or free text.
 	Attributes map[string]record.Value `json:"attributes,omitempty"`
@@ -81,8 +96,10 @@ type HostAddResponse struct {
 type HostListRequest struct {
 	// Filters are the terms a Host must match, every one. A term takes a
 	// field of HostListFields: id, name, space, address, port (a number),
-	// account, state (an enum: registered, managed, retired) and host_key;
-	// or an Attribute key. A date is absolute.
+	// account, relay (the Relay's name), state (an enum: registered,
+	// managed, retired) and host_key; or an Attribute key. A date is
+	// absolute. A Relay the caller cannot see has an empty name: it
+	// matches relay.has and relay.ne, and never relay.eq.
 	Filters []Filter `json:"filters,omitempty"`
 	// Sort orders the Hosts by these keys, in turn, from the fields and
 	// Attribute keys Filters takes; Hosts that tie stay by name and then id.
@@ -107,6 +124,7 @@ var HostListFields = map[string]record.Type{
 	"address":  record.Text,
 	"port":     record.Number,
 	"account":  record.Text,
+	"relay":    record.Text,
 	"state":    record.Enum(HostRegistered, HostManaged, HostRetired),
 	"host_key": record.Text,
 }
@@ -139,12 +157,15 @@ type HostSetRequest struct {
 	Address *string `json:"address,omitzero"`
 	Port    *int    `json:"port,omitzero"`
 	Account *string `json:"account,omitzero"`
+	// Relay, when given, names the Host's new Relay, as NewHost's does.
+	Relay *string `json:"relay,omitzero"`
 	// Attributes set these Attributes, by key, leaving the others.
 	Attributes map[string]record.Value `json:"attributes,omitempty"`
 	// Note, when given, replaces the Host's Note: never empty.
 	Note *string `json:"note,omitzero"`
-	// Unset clears these Attribute keys, the Note for "note", and sets the
-	// port back to 22 for "port". A key the Host lacks is already clear.
+	// Unset clears these Attribute keys, the Note for "note", the Relay for
+	// "relay", and sets the port back to 22 for "port". A key the Host lacks
+	// is already clear.
 	Unset []string `json:"unset,omitempty"`
 }
 
@@ -230,7 +251,8 @@ var (
 	// terminal. It keeps its record, Attributes, Note, Services, Space and
 	// pin, leaves host.list unless all asks for it, and frees its name, so
 	// that only its id names it. A Host Retired already is refused with
-	// CodeHostRetired.
+	// CodeHostRetired, and the Relay of a Host that is not Retired with
+	// CodeRelayInUse.
 	HostRetire = Op[HostRetireRequest, HostRetireResponse]{Name: "host.retire", Write: true}
 	// HostRemove deletes a Host, with its Attributes, Note and Services.
 	HostRemove = Op[HostRemoveRequest, HostRemoveResponse]{Name: "host.remove", Write: true}
@@ -264,10 +286,19 @@ var (
 	// for different reasons; the error's items give each its own code.
 	CodeInvalidBatch = Code{"invalid_batch", http.StatusBadRequest}
 	// CodeHostRetired: the call would do what a Retired Host does not take:
-	// change its address, port or Host Account, rename it, Enroll it,
+	// change its address, port, Host Account or Relay, rename it, Enroll it,
 	// retire it again, or change its Services. A Retired Host takes only
 	// changes to its Attributes and Note, and moves.
 	CodeHostRetired = Code{"host_retired", http.StatusConflict}
+	// CodeInvalidRelay: the Host named as a Relay cannot be one: it is the
+	// Host itself, it is not Managed, or it has a Relay itself; or the Host
+	// given a Relay is the Relay of a Host that is not Retired. A Relay is
+	// exactly one hop. host.enroll refuses with it a Host whose Relay is not
+	// Managed, which koko cannot pass through.
+	CodeInvalidRelay = Code{"invalid_relay", http.StatusConflict}
+	// CodeRelayInUse: host.retire of a Host that a Host that is not Retired
+	// uses as its Relay. The message names neither that Host nor how many.
+	CodeRelayInUse = Code{"relay_in_use", http.StatusConflict}
 )
 
 var hostCodes = []Code{
@@ -276,6 +307,8 @@ var hostCodes = []Code{
 	CodeHostWasManaged,
 	CodeInvalidBatch,
 	CodeHostRetired,
+	CodeInvalidRelay,
+	CodeRelayInUse,
 }
 
 // HostBatchError is the refusal of a host.add of n Hosts, n above 1, for the
