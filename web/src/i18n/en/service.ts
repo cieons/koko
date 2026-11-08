@@ -1,4 +1,20 @@
 // The service area's messages: its pages and its API error codes.
 export default {
+  "service.nav": "Services",
+  "service.list.title": "Services",
+  "service.list.none": "No Service matches.",
+  "service.view.invalid": "This page's address holds {parts}, which the list of Services does not take.",
+  "service.view.reset": "Show the default view",
+  "service.detail.readOnly": "Its Host is Retired, so this Service is kept as it was and cannot be changed.",
+  "service.edit.button": "Edit",
+  "service.edit.title": "Edit {name}",
+  "service.rename.button": "Rename",
+  "service.rename.title": "Rename {name}",
+  "service.rename.name": "New name",
+  "service.rename.submit": "Rename",
+  "service.remove.button": "Delete",
+  "service.remove.title": "Delete {name}?",
+  "service.remove.consequence": "{name} is deleted for good, with its ports, Attributes and Note. Nothing brings it back.",
+  "service.remove.confirm": "Delete",
   "error.unknown_service": "The Host has no Service of that name.",
 };

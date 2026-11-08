@@ -105,6 +105,6 @@ that User, on a Device Session of their laptop unless another is given, and
   refusals.
 - The shell's page tests are listed in [the web UI shell](web-shell.md#verifying),
   those of the Spaces, People and Devices pages in
-  [their reference](people-pages.md#verifying), those of the Hosts list
-  in [the record's pages](record-pages.md#verifying), and those of the
-  Secrets page in [Secrets](secrets.md#verifying).
+  [their reference](people-pages.md#verifying), those of the Host and
+  Service pages in [the record's pages](record-pages.md#verifying), and
+  those of the Secrets page in [Secrets](secrets.md#verifying).

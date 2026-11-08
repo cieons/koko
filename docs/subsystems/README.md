@@ -29,7 +29,7 @@ ADR; a proposed change lives in its issue or PR.
 | The access check and Spaces: who is calling, the rule, unseen equals unknown, memberships, what a Space holds, the access matrix | [access.md](access.md) |
 | Users: the record, `user ls`, and `user remove` deleting a User who never joined or Removing anyone else | [users.md](users.md) |
 | The record: a Host's fields and their rules, a Service and its ports, Attributes, the Preset Attributes and the four types, the Note, the host and service operations and `attr.list`, filtering and sorting, relative dates, the one leak | [record.md](record.md) |
-| The record's pages: the Hosts list, its view in the URL, building a filter, relative dates, sorting and columns | [record-pages.md](record-pages.md) |
+| The record's pages: the Hosts list, its view in the URL, building a filter, relative dates, sorting and columns, a Host's page and its actions, edit forms, the Services list and a Service's page | [record-pages.md](record-pages.md) |
 | Secrets: the record and its name rule, the commands and the one that prints a value, values in JSON, access, sealing, and the web UI's Secrets page | [secrets.md](secrets.md) |
 
 ## Maintaining a reference

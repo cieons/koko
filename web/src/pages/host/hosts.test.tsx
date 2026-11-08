@@ -2,7 +2,8 @@ import { fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { type AttrKey, AttrList } from "../../api/attr";
-import { type Host, HostList, type HostListRequest } from "../../api/host";
+import { type Host, HostAdd, HostList, type HostListRequest, HostShow } from "../../api/host";
+import { SpaceList } from "../../api/space";
 import type { User } from "../../api/user";
 import { type FakeApi, fakeApi } from "../../test/fakeApi";
 import { actAs, renderAt, tableRows } from "../../test/pages";
@@ -56,9 +57,18 @@ const web1 = host("web1", {
 const db1 = host("db1", { space: "bob", state: "registered", attributes: { provider: "vultr", price: 12 } });
 const old1 = host("web1", { id: "host_old1", state: "retired", attributes: { provider: "hetzner" } });
 
-/** hosts answers attr.list, and host.list with the Hosts given, the Retired ones only under all. */
+/**
+ * hosts answers attr.list, space.list for the form that adds a Host, and
+ * host.list with the Hosts given, the Retired ones only under all.
+ */
 function hosts(api: FakeApi, list: Host[]): void {
   api.on(AttrList, () => ({ attributes }));
+  api.on(SpaceList, () => ({
+    spaces: [
+      { id: "space_1", name: "bob", personal: true, created_at: "2026-11-02T09:00:00Z" },
+      { id: "space_2", name: "ops", personal: false, created_at: "2026-11-02T09:00:00Z" },
+    ],
+  }));
   api.on(HostList, ({ all }) => ({ hosts: list.filter((h) => all || h.state !== "retired") }));
 }
 
@@ -180,8 +190,19 @@ test("each type offers its comparisons, an enum its values, and a date a picker 
   await screen.findByRole("table", { name: "Hosts" });
 
   const keys = options("Key");
-  expect(keys.slice(0, 9)).toEqual(["Pick a key", "id", "name", "space", "address", "port", "account", "state", "host_key"]);
-  expect(keys.slice(9)).toEqual([...attributes.map((a) => a.key)]);
+  expect(keys.slice(0, 10)).toEqual([
+    "Pick a key",
+    "id",
+    "name",
+    "space",
+    "address",
+    "port",
+    "account",
+    "relay",
+    "state",
+    "host_key",
+  ]);
+  expect(keys.slice(10)).toEqual([...attributes.map((a) => a.key)]);
 
   const equality = ["=", "!=", "has", "lacks"];
   const ordered = ["=", "!=", "<", "<=", ">", ">=", "has", "lacks"];
@@ -280,6 +301,7 @@ test("the column picker adds any Attribute key and takes a column away, in the U
     ["id", false],
     ["port", false],
     ["account", false],
+    ["relay", false],
     ["host_key", false],
     ["provider_account", false],
     ["currency", false],
@@ -369,4 +391,71 @@ test("a URL holding a term, sort key or column the list does not take says so an
   fireEvent.click(within(alert).getByRole("link", { name: "Show the default view" }));
   await screen.findByRole("table", { name: "Hosts" });
   expect(window.location.search).toBe("");
+});
+
+test("the relay column names a Host's Relay, or says it is one the caller cannot see", async () => {
+  const api = fakeApi();
+  actAs(api, bob);
+  hosts(api, [
+    host("app1", { relay: { id: "host_gw1", name: "gw1" } }),
+    host("app2", { relay: { id: null, name: null } }),
+    host("gw1"),
+  ]);
+
+  renderAt("/hosts?columns=relay");
+
+  await screen.findByRole("table", { name: "Hosts" });
+  expect(tableRows("Hosts")).toEqual([
+    ["app1", "gw1"],
+    ["app2", "(one you cannot see)"],
+    ["gw1", ""],
+  ]);
+});
+
+test("a Host added sends only the fields given, in the caller's Personal Space by default, and never asks", async () => {
+  const api = fakeApi();
+  actAs(api, bob);
+  hosts(api, []);
+  const added = host("web9", { state: "registered", space: "bob" });
+  api.on(HostAdd, () => ({ hosts: [added] }));
+  api.on(HostShow, () => ({ host: added, services: [] }));
+  const first = renderAt("/hosts");
+  fireEvent.click(await screen.findByRole("button", { name: "Add a Host" }));
+  const add = within(await screen.findByRole("region", { name: "Add a Host" }));
+  await add.findByRole("option", { name: "ops" });
+  const type = (label: string, value: string) => fireEvent.change(add.getByLabelText(label), { target: { value } });
+
+  type("name", "web9");
+  type("address", "203.0.113.9");
+  expect(add.getByRole("button", { name: "Add Host" }).hasAttribute("disabled")).toBe(true);
+  type("account", "root");
+  fireEvent.click(add.getByRole("button", { name: "Add Host" }));
+
+  expect(await screen.findByText("koko host enroll web9")).toBeDefined();
+  expect(window.location.pathname).toBe("/hosts/web9");
+  expect(api.requests(HostAdd)).toEqual([
+    { hosts: [{ name: "web9", space: "bob", address: "203.0.113.9", account: "root" }] },
+  ]);
+
+  first.unmount();
+  renderAt("/hosts");
+  fireEvent.click(await screen.findByRole("button", { name: "Add a Host" }));
+  const again = within(await screen.findByRole("region", { name: "Add a Host" }));
+  await again.findByRole("option", { name: "ops" });
+  for (const [label, value] of [
+    ["name", "web8"],
+    ["space", "ops"],
+    ["address", "web8.example.com"],
+    ["port", "2222"],
+    ["account", "deploy"],
+    ["relay", "gw1"],
+  ] as const) {
+    fireEvent.change(again.getByLabelText(label), { target: { value } });
+  }
+  fireEvent.click(again.getByRole("button", { name: "Add Host" }));
+  await vi.waitFor(() => expect(api.requests(HostAdd)).toHaveLength(2));
+  expect(api.requests(HostAdd)[1]).toEqual({
+    hosts: [{ name: "web8", space: "ops", address: "web8.example.com", port: 2222, account: "deploy", relay: "gw1" }],
+  });
+  expect(screen.queryByRole("dialog")).toBeNull();
 });

@@ -1,4 +1,7 @@
-/* The Hosts list: the filter builder, its terms, the column picker and sortable headers. */
+/*
+ * The record's pages. The Hosts and Services lists: the filter builder, its
+ * terms, the column picker and sortable headers.
+ */
 
 .filter-builder {
   display: flex;
@@ -37,6 +40,45 @@
   margin: 1rem 0;
   border: 1px solid #d0d7de;
   border-radius: 6px;
+}
+
+/* A Host's page and a Service's page: their fields, Note, actions and forms. */
+
+.fields > div {
+  display: flex;
+  gap: 1rem;
+}
+
+.fields dt {
+  min-width: 8rem;
+  font-weight: 600;
+}
+
+.fields dd {
+  margin: 0;
+}
+
+.note {
+  white-space: pre-wrap;
+}
+
+.record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.record-form label {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.record-form textarea {
+  display: block;
+  width: 100%;
+  max-width: 40rem;
+  min-height: 6rem;
 }
 
 th button.sort {

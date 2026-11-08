@@ -1,14 +1,18 @@
 import "./host.css";
 
-import { useId } from "react";
+import { useId, useState } from "react";
 
 import { type AttrKey, AttrList } from "../../api/attr";
-import { type Host, HostList } from "../../api/host";
-import { useRead } from "../../shell/data";
-import { ErrorMessage, useT } from "../../shell/i18n";
-import { Link, useSearchParams } from "../../shell/router";
+import { type Host, HostAdd, HostList, type NewHost } from "../../api/host";
+import { SpaceList } from "../../api/space";
+import { useCaller } from "../../shell/caller";
+import { useRead, useWrite } from "../../shell/data";
+import { ErrorMessage, type Translate, useT } from "../../shell/i18n";
+import { Link, navigate, useSearchParams } from "../../shell/router";
 import { FilterBuilder } from "./FilterBuilder";
 import { ColumnPicker, SortHeader, Terms, type ViewProps } from "./ListControls";
+import { hostPath, validPort } from "./record";
+import { ActionForm, Field } from "./RecordForm";
 import { browserTimeZone } from "./reldate";
 import {
   type Clock,
@@ -35,6 +39,7 @@ export const hostFields: Fields = {
   address: { type: "text" },
   port: { type: "number" },
   account: { type: "text" },
+  relay: { type: "text" },
   state: { type: "enum", values: ["registered", "managed", "retired"] },
   host_key: { type: "text" },
 };
@@ -47,14 +52,6 @@ const defaultColumns = ["space", "state", "address", "provider", "region", "pric
 
 /** columns are the list's columns besides its keys: the name, always first. */
 const columns: Columns = { fixed: ["name"], unsorted: [] };
-
-/**
- * hostPath is the path of a Host's page: by its name, or by its id once it
- * is Retired, since a new Host may hold its name.
- */
-export function hostPath(host: Host): string {
-  return `/hosts/${encodeURIComponent(host.state === "retired" ? host.id : host.name)}`;
-}
 
 /**
  * HostsPage lists the Hosts the caller can see, as `koko host ls` does,
@@ -77,6 +74,7 @@ export function HostsPage() {
       <h1 id={titleId}>{t("host.list.title")}</h1>
       {attrs.error !== undefined && <ErrorMessage error={attrs.error} />}
       {attrs.data && <HostsView view={view} setView={setView} attrs={attrs.data.attributes} titleId={titleId} />}
+      <AddHost />
     </>
   );
 }
@@ -158,7 +156,7 @@ function HostTable({ view, setView, query, titleId }: ViewProps & { query: ListQ
                   <Link to={hostPath(host)}>{host.name}</Link>
                 </td>
                 {view.columns.map((key) => (
-                  <td key={key}>{cell(host, key)}</td>
+                  <td key={key}>{cell(t, host, key)}</td>
                 ))}
               </tr>
             ))}
@@ -172,12 +170,97 @@ function HostTable({ view, setView, query, titleId }: ViewProps & { query: ListQ
 
 /**
  * cell is a Host's value of key, as stored: a field's or an Attribute's,
- * price with its currency, and nothing for a key it lacks.
+ * price with its currency, its Relay's name, or that it has one the caller
+ * cannot see, and nothing for a key it lacks.
  */
-function cell(host: Host, key: string): string {
+function cell(t: Translate, host: Host, key: string): string {
+  if (key === "relay") {
+    return host.relay === null ? "" : (host.relay.name ?? t("host.relay.unseen"));
+  }
   if (key === "price" && host.attributes.price !== undefined) {
     return [host.attributes.price, host.attributes.currency].filter((v) => v !== undefined).join(" ");
   }
   const value = Object.hasOwn(hostFields, key) ? host[key as keyof Host] : host.attributes[key];
   return typeof value === "string" || typeof value === "number" ? String(value) : "";
+}
+
+/**
+ * AddHost records a Host, in the caller's Personal Space unless they choose
+ * another Space they can act in, sending only the fields given; it never
+ * asks, and the page moves to the Host, whose page then sets its
+ * Attributes and Note.
+ */
+function AddHost() {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  return open ? (
+    <AddHostForm onCancel={() => setOpen(false)} />
+  ) : (
+    <button type="button" onClick={() => setOpen(true)}>
+      {t("host.add.title")}
+    </button>
+  );
+}
+
+/** AddHostForm is the form AddHost opens. */
+function AddHostForm({ onCancel }: { onCancel: () => void }) {
+  const t = useT();
+  const caller = useCaller();
+  const spaces = useRead(SpaceList, {});
+  const [values, setValues] = useState({
+    name: "",
+    space: caller.user.name,
+    address: "",
+    port: "",
+    account: "",
+    relay: "",
+  });
+  const add = useWrite(HostAdd);
+  const field = (key: keyof typeof values) => (
+    <Field name={key} value={values[key]} onChange={(value) => setValues((v) => ({ ...v, [key]: value }))} />
+  );
+  const { name, space, address, port, account, relay } = values;
+  const ready = name !== "" && address !== "" && account !== "" && (port === "" || validPort(port)) && !add.pending;
+  const submit = () => {
+    const host: NewHost = {
+      name,
+      space,
+      address,
+      ...(port !== "" && { port: Number(port) }),
+      account,
+      ...(relay !== "" && { relay }),
+    };
+    void add.submit({ hosts: [host] }).then((added) => {
+      const [recorded] = added?.hosts ?? [];
+      if (recorded) {
+        navigate(hostPath(recorded));
+      }
+    });
+  };
+  return (
+    <ActionForm
+      title={t("host.add.title")}
+      submit={t("host.add.submit")}
+      ready={ready}
+      error={add.error ?? spaces.error}
+      onSubmit={submit}
+      onCancel={onCancel}
+    >
+      {field("name")}
+      <label>
+        space{" "}
+        <select value={space} onChange={(e) => setValues((v) => ({ ...v, space: e.target.value }))}>
+          {(spaces.data?.spaces.map((s) => s.name) ?? [space]).map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+      </label>
+      {field("address")}
+      {field("port")}
+      {field("account")}
+      {field("relay")}
+    </ActionForm>
+  );
 }
