@@ -1,3 +1,7 @@
+---
+status: its start as root, giving the directory to uid 65532, superseded by ADR-0039
+---
+
 # The container keeps its data and its Root Key in one directory
 
 The koko server's container image keeps everything it needs in one
