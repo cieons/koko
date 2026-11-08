@@ -7,14 +7,15 @@
 koko is self-hosted. It keeps the record of the servers you rent across
 providers, and it is the one door people and AI agents use to reach them.
 
-**Status:** early design. Nothing is usable yet.
+**Status:** v0.1.0, the first release. It does what the list below says;
+expect rough edges.
 
 ## Installing
 
 [Installing and running the koko server](docs/install.md): one line on a
 Linux machine with systemd, then upgrading, going back and restoring.
 
-## Planned
+## What it does
 
 - A record of your hosts and the services on them, described by typed
   attributes such as provider, region and renewal date.
