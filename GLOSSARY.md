@@ -80,8 +80,12 @@ The part of the koko server that ends every SSH Session and opens its own SSH co
 _Avoid_: bastion, jump host, proxy
 
 **Web UI**:
-The pages a koko server serves to a browser, reached only through `koko web`, which acts as the User of the device running it.
+The pages a koko server serves to a browser: through `koko web`, as the User of the device running it, or at its Web URL, to a User signed in with their Password.
 _Avoid_: dashboard, console, admin panel, portal
+
+**Web URL**:
+The one `https://` address the Owner's reverse proxy serves the Web UI at, which the koko server checks every browser request on its web listener against.
+_Avoid_: public URL, domain, base URL
 
 **koko key**:
 The one SSH key pair a koko server uses to log in to every Managed Host.
@@ -122,7 +126,7 @@ The Space every User has to themselves, named after them, where what they record
 _Avoid_: home, private space
 
 **Invite**:
-The first Join Code of a new User, which the Owner issues and which creates that User.
+What creates a new User, issued by the Owner: their first Join Code, or their first Password Link.
 _Avoid_: enroll, signup, registration, invite link
 
 **Removed**:
@@ -136,8 +140,20 @@ To register a device's own key with a koko server by using a Join Code, which ma
 _Avoid_: sign in, log in, pair, register, enroll
 
 **Join Code**:
-A one-time, short-lived code that lets one device join a koko server for a User; it names the koko server and pins its host key.
+A one-time code, valid for 15 minutes unless its issuer chooses up to 7 days, that lets one device join a koko server for a User; it names the koko server and pins its host key.
 _Avoid_: token, pairing code, invite code, enrollment code
+
+**Password**:
+The one secret a User may set to sign in to the Web UI in a browser; it never reaches a Host.
+_Avoid_: credential, passphrase
+
+**Password Link**:
+A one-time, time-limited link the Owner issues that lets one User set their Password in a browser: a new User's Invite, or a reset.
+_Avoid_: reset link, magic link, invite link
+
+**Sign-in**:
+One browser signed in with a User's Password, until it signs out, expires or is revoked; it is not a Device Session and never reaches a Host.
+_Avoid_: web session, session (alone), login, cookie
 
 **Device Session**:
 The key one device registered when it joined a koko server, under a name that never changes: the identity that device acts as until it is Revoked.

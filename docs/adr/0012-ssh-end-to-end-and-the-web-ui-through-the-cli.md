@@ -1,5 +1,5 @@
 ---
-status: its default port, 443, superseded by ADR-0036
+status: its default port, 443, superseded by ADR-0036; its web UI only through the CLI, superseded by ADR-0042
 ---
 
 # SSH end to end; the web UI through the CLI

@@ -1,3 +1,7 @@
+---
+status: its web UI only through `koko web`, refined by ADR-0042
+---
+
 # The CLI is the only programmatic surface
 
 Scripts and agents drive koko through one CLI, which calls the same API over a

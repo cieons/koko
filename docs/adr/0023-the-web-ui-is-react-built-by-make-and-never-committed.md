@@ -1,3 +1,7 @@
+---
+status: its styling, refined by ADR-0045
+---
+
 # The web UI is React and TypeScript, built by make and never committed
 
 The web UI is a React and TypeScript single-page app in `web/`. Vite builds

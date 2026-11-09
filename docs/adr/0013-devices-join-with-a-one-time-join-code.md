@@ -1,3 +1,7 @@
+---
+status: its short life, refined by ADR-0044
+---
+
 # Devices join with a one-time Join Code
 
 A device joins a koko server with a one-time Join Code, which carries the
