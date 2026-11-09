@@ -21,6 +21,10 @@ type machine struct{}
 
 var _ cli.Kokod = machine{}
 
+func (machine) Self() build.Info {
+	return build.Read()
+}
+
 func (machine) Platform() string {
 	return runtime.GOOS + "/" + runtime.GOARCH
 }

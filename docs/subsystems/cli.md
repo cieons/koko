@@ -185,8 +185,10 @@ status. A command reaches the koko server only on its first `in.Call`, so
   list the command's operation; the message names the koko server's version
   and the command, and nothing was sent; or, so far for `koko ssh setup`
   only, the koko server answered without a field the command needs, which
-  names it), and `internal_error` for a failure
-  it did not expect. `kokod` reports `invalid_usage`, `unsupported_platform`
+  names it), `download_failed` (`koko server install` or `uninstall` could
+  not download the `kokod` of its release, or got a file it does not run;
+  the message names the URL and `--kokod`, [the download](installer.md#the-download)),
+  and `internal_error` for a failure it did not expect. `kokod` reports `invalid_usage`, `unsupported_platform`
   and `port_taken` too, so those three live in the shared
   [`install`](../../internal/shared/install/install.go) package, beside
   `install.Refusal`, and the CLI reads them from there. A refusal `kokod
@@ -362,8 +364,8 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
 | `koko status` | read | none: the koko server's version comes from its report | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_error", "device_mux", "revocation", "include_warning"}`, below |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
-| `koko server install [--owner <user>] [--address <host[:port]>] [--port <port>] [--kokod <file>]` | irreversible | `server.init`, after it runs `kokod install` | `{"upgraded", "address", "host_key_fingerprint", "root_key_file", "root_key_id", "listen_port", "join_code"}`, the Join Code as `device add` prints it; an upgrade has no `join_code`, and may have `devices_must_connect` ([the installer](installer.md#what-it-prints)) |
-| `koko server uninstall [--kokod <file>]` | irreversible | none: it runs `kokod uninstall` | `{"removed", "data_dir", "root_key_file", "system_user", "listen_port"}` ([the installer](installer.md#uninstall)) |
+| `koko server install [--owner <user>] [--address <host[:port]>] [--port <port>] [--kokod <file>]` | irreversible | `server.init`, after it runs `kokod install` | `{"upgraded", "address", "host_key_fingerprint", "root_key_file", "root_key_id", "listen_port", "join_code"}`, the Join Code as `device add` prints it; an upgrade has no `join_code`, and may have `devices_must_connect` ([the installer](installer.md#what-it-prints)). Without `--kokod` it runs the `kokod` installed of its build, or else downloads its release's ([the download](installer.md#the-download)) |
+| `koko server uninstall [--kokod <file>]` | irreversible | none: it runs `kokod uninstall` | `{"removed", "data_dir", "root_key_file", "system_user", "listen_port"}` ([the installer](installer.md#uninstall)). It gets `kokod` as install does, downloading it when none of its build is installed |
 | `koko server show` | read | `server.show` | `{"address", "listen_port", "host_key_fingerprint", "version", "root_key_file", "root_key_id", "data_dir"}` ([the deployment afterwards](initialisation.md#the-deployment-afterwards)) |
 | `koko server set address=<host[:port]>` (Owner, over the Unix socket only) | reversible | `server.set` | the settings as `server show` prints them, as the change left them |
 | `koko host add <host> address=<address> account=<account> [port=<port>] [space=<space>] [<key>=<value>...] [--note-file <file\|->]` | reversible | `host.add` | the Host: `{"id", "name", "space", "address", "port", "account", "state", "host_key", "attributes": {...}, "note", "created_at", "updated_at"}` ([the record](record.md)) |
@@ -439,3 +441,10 @@ missing or below a `Host` or `Match` line, or `~/.ssh/config` left alone or
 unreadable, [the device's ssh](device-connection.md#ssh)), or is `null`,
 also when the device has not joined. It exits 0 whether or not the koko
 server answered, and 1 only when the device's own files cannot be read.
+When it reached the koko server over the Unix socket, on its own machine,
+and `server_version` differs from `cli_version`, the human form adds one
+line under `This CLI`: `the koko server here is another build: run sudo
+koko server install to bring it to this CLI's`, since install keeps the two
+on one machine one build ([ADR 0041](../adr/0041-koko-installs-the-koko-server-of-its-own-version.md)).
+The JSON gains nothing, as both versions are in it. Over a Device
+Connection, two versions are normal, and it adds nothing.

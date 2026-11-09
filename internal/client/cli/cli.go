@@ -77,6 +77,12 @@ type Runner struct {
 	// The CLI reads it for today's date, which a relative date such as +30d
 	// counts from. No flag or environment variable sets it.
 	Clock func() time.Time
+
+	// Releases is the releases hook, for tests only: where koko server
+	// install and uninstall download the kokod of koko's release from. The
+	// zero Releases is GitHub's. No flag or environment variable sets it,
+	// and cmd/koko never does (ADR 0041).
+	Releases Releases
 }
 
 // Invocation is one command line with its streams and environment.

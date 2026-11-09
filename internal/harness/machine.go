@@ -93,14 +93,21 @@ type Machine struct {
 	// kokod is the kokod file koko server install is given with --kokod,
 	// outside the root.
 	kokod string
+	// tmp is the TMPDIR koko runs with, outside the root.
+	tmp string
 	// builds are the builds of the files the machine made, by their bytes.
 	builds map[string]build.Info
-	// releases counts the kokod files NewRelease made.
-	releases int
+	// newReleaseFiles counts the kokod files NewRelease made.
+	newReleaseFiles int
+	// releases is the fake GitHub koko downloads from, once Release made
+	// one.
+	releases *Releases
 	// ran are the kokod command lines run on the machine, in order.
 	ran []string
 
-	mu      sync.Mutex
+	mu sync.Mutex
+	// self is the build of koko on the machine.
+	self    build.Info
 	calls   []Call
 	owners  []owned
 	users   []string
@@ -148,9 +155,10 @@ var (
 var skeleton = []string{"/etc/systemd/system", "/usr/local/bin", "/var/lib", "/run/systemd/system"}
 
 // NewMachine makes a fresh fake machine: a root holding only the system
-// directories, linux/amd64 with koko running as root, systemd 252, an ext4
-// filesystem, SourceIP on the default route and no port taken, with a kokod
-// file of this koko's build outside its root, for --kokod.
+// directories, linux/amd64 with koko, of the test binary's build, running
+// as root, systemd 252, an ext4 filesystem, SourceIP on the default route
+// and no port taken, with a kokod file of koko's build outside its root, for
+// --kokod, and no release to download from.
 func NewMachine(t testing.TB) *Machine {
 	t.Helper()
 	m := &Machine{
@@ -163,9 +171,11 @@ func NewMachine(t testing.TB) *Machine {
 		// The socket under the root must fit macOS's 104 bytes.
 		root:   ShortTempDir(t),
 		home:   t.TempDir(),
+		tmp:    t.TempDir(),
 		builds: map[string]build.Info{},
+		self:   build.Read(),
 	}
-	m.kokod = m.NewKokod(KokodBuild())
+	m.kokod = m.NewKokod(m.kokodBuild())
 	for _, dir := range skeleton {
 		if err := os.MkdirAll(m.Path(dir), 0o755); err != nil {
 			t.Fatal(err)
@@ -184,17 +194,36 @@ func KokodBuild() build.Info {
 	return b
 }
 
+// kokodBuild is the build of a kokod of the build of koko on the machine,
+// for linux/amd64, a fresh machine's platform.
+func (m *Machine) kokodBuild() build.Info {
+	b := KokodBuild()
+	m.mu.Lock()
+	b.Version, b.Revision = m.self.Version, m.self.Revision
+	m.mu.Unlock()
+	return b
+}
+
 // Koko runs one koko command line in process, as root on this machine under
-// a temporary HOME, with empty stdin: `koko server install` and `uninstall`
-// act on it, and every other command reaches the koko service's socket under
-// its root.
+// a temporary HOME and TMPDIR, with empty stdin: `koko server install` and
+// `uninstall` act on it, downloading from the fake GitHub Release made, and
+// every other command reaches the koko service's socket under its root.
 func (m *Machine) Koko(args ...string) Result {
 	m.t.Helper()
-	return Run(m.t, cli.Runner{Kokod: m, SocketPath: m.SocketPath()}, []string{"HOME=" + m.home}, args...)
+	r := cli.Runner{Kokod: m, SocketPath: m.SocketPath()}
+	if m.releases != nil {
+		r.Releases = m.releases.hook()
+	}
+	return Run(m.t, r, []string{"HOME=" + m.home, "TMPDIR=" + m.tmp}, args...)
+}
+
+// TempDir is the TMPDIR koko runs with on the machine, outside its root.
+func (m *Machine) TempDir() string {
+	return m.tmp
 }
 
 // Kokod is the kokod file to give koko server install with --kokod, outside
-// the machine's root: one of this koko's build.
+// the machine's root: one of the build of koko on the machine.
 func (m *Machine) Kokod() string {
 	return m.kokod
 }
@@ -234,13 +263,13 @@ func (m *Machine) SocketPath() string {
 }
 
 // NewRelease makes the kokod file Kokod names from now on a new one, of
-// this koko's build too, as a newer release's kokod beside its koko is, and
+// koko's build too, as a newer release's kokod beside its koko is, and
 // returns its bytes.
 func (m *Machine) NewRelease() []byte {
 	m.t.Helper()
-	m.releases++
-	text := fmt.Sprintf("#!/bin/sh\n# kokod of %s, release %d\n", m.t.Name(), m.releases+1)
-	m.kokod = m.newFile(KokodBuild(), text)
+	m.newReleaseFiles++
+	text := fmt.Sprintf("#!/bin/sh\n# kokod of %s, release %d\n", m.t.Name(), m.newReleaseFiles+1)
+	m.kokod = m.newFile(m.kokodBuild(), text)
 	return []byte(text)
 }
 
@@ -249,6 +278,14 @@ func (m *Machine) Ran() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return slices.Clone(m.ran)
+}
+
+// Self is the build of koko on the machine: the test binary's, unless
+// Release stated another.
+func (m *Machine) Self() build.Info {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.self
 }
 
 // Platform is the machine's OSArch.

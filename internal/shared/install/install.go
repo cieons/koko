@@ -34,6 +34,13 @@ const (
 // name them: the koko server runs on Linux only (ADR 0040).
 var KokodPlatforms = []string{"linux/amd64", "linux/arm64"}
 
+// KokodAsset is the name of a release's asset that holds the kokod for
+// platform, such as kokod-linux-amd64, which koko server install downloads
+// (ADR 0041).
+func KokodAsset(platform string) string {
+	return "kokod-" + strings.ReplaceAll(platform, "/", "-")
+}
+
 // The image runs the koko server where systemd does not, as on macOS or in
 // a container, as ContainerDocs shows.
 const (

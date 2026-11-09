@@ -169,10 +169,11 @@ func serverInstall(ctx context.Context, in *Input) (installedJSON, error) {
 	if err != nil {
 		return installedJSON{}, refusalError(err)
 	}
-	kokod, err := kokodToRun(in)
+	kokod, done, err := kokodToRun(ctx, in)
 	if err != nil {
 		return installedJSON{}, err
 	}
+	defer done()
 	var report install.Report
 	if err := runKokod(ctx, in, kokod, append([]string{"install"}, req.Flags()...), &report); err != nil {
 		return installedJSON{}, err
@@ -256,10 +257,11 @@ System user:     %s
 // serverUninstall is koko server uninstall: it gets the kokod of its own
 // build, as install does, which does the machine's part (kokod uninstall).
 func serverUninstall(ctx context.Context, in *Input) (uninstalledJSON, error) {
-	kokod, err := kokodToRun(in)
+	kokod, done, err := kokodToRun(ctx, in)
 	if err != nil {
 		return uninstalledJSON{}, err
 	}
+	defer done()
 	var report install.UninstallReport
 	if err := runKokod(ctx, in, kokod, []string{"uninstall"}, &report); err != nil {
 		return uninstalledJSON{}, err

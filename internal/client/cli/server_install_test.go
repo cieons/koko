@@ -508,14 +508,17 @@ func TestServerInstallRefusesBadFlags(t *testing.T) {
 
 // Until initialisation has succeeded, running install again finishes the
 // job: here, after a run refused for its address, which wrote nothing, so
-// kokod is given again.
+// kokod is downloaded again.
 func TestServerInstallAgainAfterARefusedAddress(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
+	rel := m.Release(release)
 	m.Source = netip.MustParseAddr("10.0.0.5")
-	m.Koko("server", "install", "--owner", "alice", "--kokod", m.Kokod(), "--json").WantError(t, 2, "invalid_usage")
+	m.Koko("server", "install", "--owner", "alice", "--json").WantError(t, 2, "invalid_usage")
+	wantNoTempDir(t, m)
 
-	out := install(t, m, "--owner", "alice", "--address", "koko.example.com")
+	out := installAgain(t, m, "--owner", "alice", "--address", "koko.example.com")
+	wantRequests(t, rel, "SHA256SUMS", "kokod-linux-amd64", "SHA256SUMS", "kokod-linux-amd64")
 	if out.Address != "koko.example.com" {
 		t.Errorf("install set the Server Address %q, want koko.example.com", out.Address)
 	}

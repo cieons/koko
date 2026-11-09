@@ -36,17 +36,21 @@ any write:
    `/run/systemd/system`, with the refusal `kokod install` makes too
    (`install.NoSystemd`), so that a container gets it at once.
 3. **Getting `kokod`:** the file `--kokod` names, or else
-   `/usr/local/bin/kokod` when its build is this `koko`'s. Otherwise it is
-   refused with exit 2, naming the build, what is at `/usr/local/bin/kokod`
-   (nothing, another build, or a file that is no `kokod`) and `--kokod`, with
-   `--kokod bin/kokod` for a development build; the download of a release's
-   `kokod-linux-<arch>` comes with #104.
+   `/usr/local/bin/kokod` when its build is this `koko`'s, or else, when
+   this `koko` is a release, [the download](#the-download) of that
+   release's `kokod-linux-<arch>`. A `koko` that is no release (a
+   pseudo-version, `+dirty` or `(devel)`, `build.Info.Release`) has no
+   release to download from: it is refused with exit 2, naming the build,
+   what is at `/usr/local/bin/kokod` (nothing, another build, or a file that
+   is no `kokod`) and `--kokod`, with `--kokod bin/kokod` for a development
+   build, and asks GitHub nothing.
 4. **The build.** koko reads the file's Go build information without
    running it: a file that is not a Go binary, another program (its main
    package is not `github.com/cieons/koko/cmd/kokod`), a `kokod` of
    another build (its module version, `+dirty` included, or its commit
    differ), naming both builds, or one built for another platform than the
-   machine's, naming both, is refused with exit 2, and nothing runs.
+   machine's, naming both, is refused, and nothing runs: with exit 2 for
+   `--kokod`'s, and as `download_failed` for a download's.
 5. **`kokod install --json`**, with `--owner`, `--address` and `--port` as
    given, stdin empty, through `cli.Runner.Kokod`
    ([code layout](code-layout.md#the-package-groups)): a child process in
@@ -87,6 +91,40 @@ machine and gets `kokod` as install does (steps 2 to 4), then runs `kokod
 uninstall --json` and prints its
 [`install.UninstallReport`](../../internal/shared/install/install.go)
 ([uninstall](#uninstall)).
+
+## The download
+
+[`downloadKokod`](../../internal/client/cli/download.go) gets the `kokod`
+of this `koko`'s release, `v<version>`, for the machine's platform
+([ADR 0041](../adr/0041-koko-installs-the-koko-server-of-its-own-version.md)):
+
+1. It downloads `SHA256SUMS` from
+   `https://github.com/cieons/koko/releases/download/v<version>/`, and
+   finds the line `sha256sum` wrote for `kokod-linux-<arch>`. A
+   `SHA256SUMS` that lists none is refused before `kokod` is asked for.
+2. It makes a new directory under `TMPDIR` (0700, `koko-kokod-*`) and
+   downloads `kokod-linux-<arch>` from the same release into it (0700),
+   hashing it as it writes.
+3. A SHA-256 other than the one listed is refused, and so is a file of
+   another build (step 4 above). Either way nothing runs.
+4. `kokod` runs from that directory, which `koko` removes once it has
+   ended, and on every refusal before.
+
+Every request is HTTPS: a URL that is not is refused before it is asked
+for, and a redirect is followed only to HTTPS, at most 10 deep, as GitHub
+redirects each asset to its own storage. The whole download has 10 minutes,
+about 40 MiB over a link of 0.6 Mbit/s. `SHA256SUMS` may be 1 MiB and
+`kokod` 512 MiB; a longer answer is refused as it arrives. Go's default
+transport makes the requests, so `HTTPS_PROXY` applies, and the system's
+CA certificates check GitHub's. Each refusal is `download_failed` (exit 1),
+naming the URL that failed and saying to give `kokod-linux-<arch>` of the
+version with `--kokod <file>` on a machine that cannot download it, such as
+one offline; nothing was written. `SHA256SUMS` stays in memory, as nothing
+runs it.
+
+`--kokod` and an installed `kokod` of this build make no request. Where
+downloads come from is [the releases hook](code-layout.md#test-only-hooks),
+`cli.Runner.Releases`, which only tests set: no flag or variable moves it.
 
 ## The machine interface
 
@@ -340,7 +378,8 @@ that `--port`. There is no purge: P0 has no backup, and one command
 would erase the record, the Secrets and the koko key. Drop-ins are the
 Owner's and stay. What is not there is not removed, so running it again
 removes nothing and asks systemd nothing; it removed `kokod`, so a run
-after it is given one with `--kokod`, as install after it is. Install
+after it downloads it again, or is given one with `--kokod`, as install
+after it is. Install
 without `--owner` then runs the koko server again on the data it kept, as
 [the upgrade](#the-upgrade). With `--json` (`listen_port` left out when
 systemd did not tell it):
@@ -418,7 +457,23 @@ and `/usr/local/bin/koko` untouched.
 tests uninstall: the service stopped while its unit is there, the unit and
 `kokod` gone, `/usr/local/bin/koko` kept, what it keeps, the port, the
 golden, running it again, install after it, and on a machine as v0.2.0 left
-it the unit alone removed. The fake machine's `PortOwner` names the koko
+it, with no `kokod`, the unit alone removed.
+[`server_download_test.go`](../../internal/client/cli/server_download_test.go)
+tests the download, with `koko` stated as release `v9.9.9` on the fake
+machine (`m.Release`), whose fake GitHub serves that release and logs every
+request: exactly `SHA256SUMS` and `kokod-linux-<arch>` downloaded for each
+platform, installed and initialised, and the temporary directory gone; a
+`kokod` `SHA256SUMS` does not list, one with another SHA-256 or of another
+build, a missing `SHA256SUMS` or `kokod`, and a redirect to plain HTTP each
+refused, nothing run or written, no temporary directory left; `--kokod`
+and a `kokod` installed of koko's build making no request; and a
+pseudo-version, `+dirty` and `(devel)` refused without a request, as is a
+machine that cannot run the koko server. The tests of running install
+again after a refused address, uninstall again then install, an upgrade
+after uninstall, the drop-in port across uninstall and a machine as v0.2.0
+left it download too.
+
+The fake machine's `PortOwner` names the koko
 service on the port its loaded unit's `KOKO_LISTEN` names while it runs.
 [`install_test.go`](../../internal/server/kokod/install_test.go) tests that
 `kokod install` and `uninstall` print the shared reports as JSON, and that

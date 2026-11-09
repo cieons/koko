@@ -115,18 +115,19 @@ func TestServerUninstallForPeople(t *testing.T) {
 	}
 }
 
-// Uninstalling again, given kokod since the first removed it, removes
-// nothing and asks systemd nothing, and install then runs the koko server
-// again on the data uninstall kept: it is the upgrade of the koko server
-// initialised there.
+// Uninstalling again, downloading kokod since the first removed it, removes
+// nothing and asks systemd nothing, and install then, downloading it too,
+// runs the koko server again on the data uninstall kept: it is the upgrade
+// of the koko server initialised there.
 func TestServerUninstallAgainThenInstall(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
+	m.Release(release)
 	before := install(t, m, "--owner", "alice")
 	m.Koko("server", "uninstall", "--json").WantSuccess(t)
 	calls := len(m.Calls())
 
-	r := m.Koko("server", "uninstall", "--kokod", m.Kokod(), "--json")
+	r := m.Koko("server", "uninstall", "--json")
 	r.WantSuccess(t)
 	var out uninstalled
 	if err := json.Unmarshal([]byte(r.Stdout), &out); err != nil {
@@ -138,26 +139,30 @@ func TestServerUninstallAgainThenInstall(t *testing.T) {
 	if again := m.Calls()[calls:]; len(again) != 0 {
 		t.Errorf("uninstalling again asked the machine %v", again)
 	}
-	if r := m.Koko("server", "uninstall", "--kokod", m.Kokod()); !strings.Contains(r.Stdout, "nothing to remove") {
+	if r := m.Koko("server", "uninstall"); !strings.Contains(r.Stdout, "nothing to remove") {
 		t.Errorf("uninstalling again printed\n%s\nwhich does not say there was nothing to remove", r.Stdout)
 	}
 
-	back := upgrade(t, m, "--kokod", m.Kokod())
+	back := upgrade(t, m)
 	if back.HostKeyFingerprint != before.HostKeyFingerprint || back.RootKeyID != before.RootKeyID {
 		t.Errorf("install after uninstall printed %+v, want the host key and Root Key of %+v", back, before)
 	}
 	wantInitialised(t, m, "alice")
 }
 
-// On a machine as v0.1.0 or v0.2.0 left it, /usr/local/bin/koko is the CLI
-// now, which uninstall keeps: it removes only the unit.
+// On a machine as v0.1.0 or v0.2.0 left it, there is no kokod, which
+// uninstall downloads, and /usr/local/bin/koko is the CLI now, which it
+// keeps: it removes only the unit.
 func TestServerUninstallOnAMachineAsAnOldReleaseLeftIt(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
+	rel := m.Release(release)
 	install(t, m, "--owner", "alice")
 	koko := asOldRelease(t, m)
-	r := m.Koko("server", "uninstall", "--kokod", m.Kokod(), "--json")
+	r := m.Koko("server", "uninstall", "--json")
 	r.WantSuccess(t)
+	wantRequests(t, rel, "SHA256SUMS", "kokod-linux-amd64")
+	wantNoTempDir(t, m)
 	var out uninstalled
 	if err := json.Unmarshal([]byte(r.Stdout), &out); err != nil {
 		t.Fatal(err)

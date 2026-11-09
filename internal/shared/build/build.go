@@ -5,6 +5,7 @@ package build
 
 import (
 	"fmt"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -63,6 +64,23 @@ func setting(bi *debug.BuildInfo, key string) string {
 // says +dirty for a build from changed files, and the same commit.
 func (i Info) Same(o Info) bool {
 	return i.Version == o.Version && i.Revision == o.Revision
+}
+
+// releaseVersion matches a release's version, the tag it was built at: a
+// semantic version with an optional pre-release part, such as v0.3.0 or
+// v0.3.0-rc.1, and no build metadata, such as Go's +dirty.
+var releaseVersion = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$`)
+
+// pseudoVersion matches the end of a pseudo-version, which Go stamps on a
+// build from a commit no tag names: a 14-digit time and the commit, as in
+// v0.3.1-0.20261109080000-0123456789ab.
+var pseudoVersion = regexp.MustCompile(`[-.][0-9]{14}-[0-9A-Za-z]+$`)
+
+// Release tells whether i is a release's build, built at its tag with
+// nothing changed, so that the release's other assets are of its build: not
+// a pseudo-version, not +dirty and not (devel).
+func (i Info) Release() bool {
+	return releaseVersion.MatchString(i.Version) && !pseudoVersion.MatchString(i.Version)
 }
 
 // String is the build as `koko version` and `kokod version` print it after

@@ -58,8 +58,9 @@ file install copies (`installer.System` and `os.Executable` in
 nor the web UI. `koko server install` and `koko server uninstall` reach the
 koko server's code only by running a `kokod` file of their own build
 ([the installer](installer.md#the-two-halves)), through
-[`cli.Runner.Kokod`](../../internal/client/cli/kokod.go): the machine, and
-how to read a file's build and run it. `cmd/koko` sets it to this machine
+[`cli.Runner.Kokod`](../../internal/client/cli/kokod.go): the machine,
+koko's own build on it, and how to read a file's build and run it.
+`cmd/koko` sets it to this machine
 ([`machine.go`](../../cmd/koko/machine.go): `debug/buildinfo` and
 `os/exec`), and the harness to its fake machine, which runs `kokod`'s
 command line in process. The two agree on the shared
@@ -174,8 +175,8 @@ its own only when an agent would act on it differently.
    command does not know which it has.
 10. **Test helpers.** The S1 harness and the in-process Host (#32) grow by
     addition: a ticket adds helpers and `harness.Option`s, and never changes an
-    existing helper's signature. The four test-only hooks are made by their
-    first user and reused by everyone; no ticket adds a fifth (below).
+    existing helper's signature. The five test-only hooks are made by their
+    first user and reused by everyone; no ticket adds a sixth (below).
 11. **Golden files.** One file per command and case. `koko skill` is tested by
     properties (every command under its tier, every registered error code, the
     Presets), not by a whole-output golden, so adding a command never touches
@@ -214,6 +215,7 @@ variables keep parallel tests apart.
 | The fake terminal | `cli.Runner.Terminal` | #28 |
 | The P0 timing constants | `hostconn.Connector.Timings`, `installer.Installer.Timings`, `kokod.Program.Timings`, `server.Config.Timings` (the harness's `harness.Timings(timings)`), `cli.Runner.Timings` and `devicemux.Config.Timings` (the harness's `harness.NewMuxDevice(t, timings)` and `d.UseTimings(timings)`), each a [`timing.Timings`](../../internal/shared/timing/timing.go), where a ticket that uses a new timing adds its constant and field; it also carries the wake and route-change signals the Device Mux probes on (`Timings.Wake`, `Timings.RouteChange`) | #32 |
 | The clock | `server.Config.Clock`, which every operation reads once per call through `op.Now`, and `cli.Runner.Clock`, which a relative date counts from; the harness's `h.Now()`, `h.Advance(d)` and `h.SetNow(t)` | #36, the CLI's side #51 |
+| The releases | `cli.Runner.Releases`, a [`cli.Releases`](../../internal/client/cli/download.go): the base URL and the HTTP client `koko server install` and `uninstall` download the `kokod` of koko's release with, under koko's own rules for redirects and time; its zero value is GitHub's ([ADR 0041](../adr/0041-koko-installs-the-koko-server-of-its-own-version.md) rejects a variable or flag for it). The harness's `m.Release(version)` states that koko on the fake machine is that release and points the hook at a fake GitHub, an `httptest` TLS server that serves the release's `kokod-linux-<arch>` and `SHA256SUMS` and logs every request (`harness.Releases`) | #104 |
 
 ## The S1 harness
 

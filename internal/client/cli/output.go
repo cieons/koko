@@ -48,6 +48,11 @@ const (
 	// answered without a field the command needs, as koko ssh setup needs
 	// server.show's host_key.
 	codeServerTooOld = "server_too_old"
+	// codeDownloadFailed: koko server install or uninstall could not
+	// download the kokod of koko's release, or the file it got is not the
+	// one the release's SHA256SUMS lists, or not koko's build; nothing ran,
+	// and nothing was written.
+	codeDownloadFailed = "download_failed"
 )
 
 // cliCodes lists the CLI's own codes, for `koko skill` and for the test that
@@ -62,6 +67,7 @@ var cliCodes = []string{
 	codeUnsupportedPlatform,
 	codePortTaken,
 	codeServerTooOld,
+	codeDownloadFailed,
 }
 
 // The exit statuses, part of the CLI's contract: new ones may be added, and

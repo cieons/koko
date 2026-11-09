@@ -258,7 +258,8 @@ migration step is a file added to `internal/server/store/migrations/`,
    that entry as the installer reads it;
 5. install.sh of the newer build, without `--owner` or `--port`, and with
    `--kokod` naming the newer `kokod-linux-<arch>`, since `koko server
-   install` downloads none yet (#104), upgrades: `/usr/local/bin/koko` and
+   install` downloads `kokod` in Go, over real HTTPS, which the check's
+   fake `curl` does not serve (#106), upgrades: `/usr/local/bin/koko` and
    `/usr/local/bin/kokod` are the newer builds, the unit runs
    `/usr/local/bin/kokod run`, the service runs `kokod` again under a new
    process on the port it kept, with no capability held or to be gained (`CapEff`

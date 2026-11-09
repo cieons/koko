@@ -25,6 +25,9 @@ import (
 // harness to a fake machine (harness.NewMachine), which runs kokod's command
 // line in process.
 type Kokod interface {
+	// Self is the build of koko on the machine, which every kokod it runs
+	// must be: this binary's, build.Read().
+	Self() build.Info
 	// Platform is the machine's OS and architecture, as GOOS/GOARCH, such
 	// as linux/amd64.
 	Platform() string
@@ -47,54 +50,62 @@ var kokodFlag = Flag{
 	Name:  "kokod",
 	Value: "file",
 	Summary: "the kokod file of this koko's build to run, as on a machine offline; without it, the kokod installed at " +
-		install.KokodPath + " when it is this koko's build",
+		install.KokodPath + " when it is this koko's build, or else the one of this koko's release, downloaded from GitHub",
 }
 
 // kokodToRun returns the real path of the kokod file koko server install or
-// uninstall is to run: --kokod's, or else the kokod installed, when it is
-// this koko's build. Before it reads any kokod, it refuses a --kokod that
-// names no file, then a machine that cannot run the koko server; it refuses
-// a kokod of another build, before it runs.
-func kokodToRun(in *Input) (string, error) {
+// uninstall is to run, and a function to call once it is done with it: the
+// file --kokod names, or else the kokod installed, when it is this koko's
+// build, or else, for a release, the kokod of that release, downloaded into
+// a temporary directory the function removes. Before it reads any kokod, it
+// refuses a --kokod that names no file, then a machine that cannot run the
+// koko server; it refuses a kokod of another build, before it runs.
+func kokodToRun(ctx context.Context, in *Input) (file string, done func(), err error) {
 	given := in.Flag("kokod")
 	if given != "" {
 		abs, err := filepath.Abs(given)
 		if err != nil {
-			return "", fmt.Errorf("find --kokod %s: %w", given, err)
+			return "", nil, fmt.Errorf("find --kokod %s: %w", given, err)
 		}
 		switch info, err := os.Stat(abs); {
 		case errors.Is(err, fs.ErrNotExist):
-			return "", usagef("--kokod names %s, which is not there; nothing was written", given)
+			return "", nil, usagef("--kokod names %s, which is not there; nothing was written", given)
 		case err != nil:
-			return "", fmt.Errorf("read --kokod %s: %w", given, err)
+			return "", nil, fmt.Errorf("read --kokod %s: %w", given, err)
 		case !info.Mode().IsRegular():
-			return "", usagef("--kokod names %s, which is not a file; nothing was written", given)
+			return "", nil, usagef("--kokod names %s, which is not a file; nothing was written", given)
 		}
 		given = abs
 	}
 	k := in.runner.Kokod
 	if k == nil {
-		return "", errors.New("this koko has no way to run kokod")
+		return "", nil, errors.New("this koko has no way to run kokod")
 	}
 	if err := checkMachine(in, k); err != nil {
-		return "", refusalError(err)
+		return "", nil, refusalError(err)
 	}
-	self := build.Read()
+	self := k.Self()
 	if given != "" {
-		return given, checkKokod(k, given, self)
+		if problem := kokodProblem(k, given); problem != "" {
+			return "", nil, usagef("--kokod names %s; give the kokod of this koko's build for %s; nothing was written", problem, k.Platform())
+		}
+		return given, func() {}, nil
 	}
 	installed := k.Path(install.KokodPath)
 	there := "there is none at " + install.KokodPath
 	if b, err := k.Build(installed); err == nil && b.Path == install.KokodPackage {
 		if b.Same(self) && b.Platform == k.Platform() {
-			return installed, nil
+			return installed, func() {}, nil
 		}
 		there = fmt.Sprintf("the one at %s is %s", install.KokodPath, b)
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		there = "the file at " + install.KokodPath + " is no kokod"
 	}
-	return "", usagef("koko server %s runs the kokod of this koko's build, %s, and %s: give it with --kokod <file>, such as --kokod bin/kokod beside a development build's bin/koko; nothing was written",
-		in.line.cmd.Verb, self, there)
+	if !self.Release() {
+		return "", nil, usagef("koko server %s runs the kokod of this koko's build, %s, which is no release to download it from, and %s: give it with --kokod <file>, such as --kokod bin/kokod beside a development build's bin/koko; nothing was written",
+			in.line.cmd.Verb, self, there)
+	}
+	return downloadKokod(ctx, in, k)
 }
 
 // checkMachine refuses, before any kokod is read, a machine that cannot run
@@ -122,23 +133,23 @@ func checkMachine(in *Input, k Kokod) error {
 	return nil
 }
 
-// checkKokod refuses the file given with --kokod, before it runs, unless it
-// is kokod of the build self, built for the machine's platform.
-func checkKokod(k Kokod, file string, self build.Info) error {
+// kokodProblem says why koko does not run file, as what file is, or
+// returns "" when it is kokod of koko's own build, built for the machine's
+// platform.
+func kokodProblem(k Kokod, file string) string {
+	self := k.Self()
 	b, err := k.Build(file)
 	switch {
 	case err != nil:
-		return usagef("--kokod names %s, which is not kokod: %v; nothing was written", file, err)
+		return fmt.Sprintf("%s, which is not kokod: %v", file, err)
 	case b.Path != install.KokodPackage:
-		return usagef("--kokod names %s, which is %s, not kokod (%s); nothing was written", file, b.Path, install.KokodPackage)
+		return fmt.Sprintf("%s, which is %s, not kokod (%s)", file, b.Path, install.KokodPackage)
 	case !b.Same(self):
-		return usagef("--kokod names kokod %s, and this koko is %s: koko runs only the kokod of its own build, so give that one; nothing was written",
-			b, self)
+		return fmt.Sprintf("kokod %s, and this koko is %s: koko runs only the kokod of its own build", b, self)
 	case b.Platform != k.Platform():
-		return usagef("--kokod names kokod for %s, and this machine is %s: give the kokod built for it; nothing was written",
-			b.Platform, k.Platform())
+		return fmt.Sprintf("kokod for %s, and this machine is %s", b.Platform, k.Platform())
 	}
-	return nil
+	return ""
 }
 
 // runKokod runs `kokod <args> --json` from file and reads the report it

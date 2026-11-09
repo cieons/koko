@@ -331,9 +331,10 @@ func TestServerInstallUpgradeAndTheUnit(t *testing.T) {
 	t.Parallel()
 	t.Run("gone", func(t *testing.T) {
 		m := harness.NewMachine(t)
+		m.Release(release)
 		install(t, m, "--owner", "alice", "--port", "8443")
 		m.Koko("server", "uninstall", "--json").WantSuccess(t)
-		out := upgrade(t, m, "--kokod", m.Kokod())
+		out := upgrade(t, m)
 		if out.ListenPort != 7822 || out.DevicesMustConnect != harness.SourceIP+":7822" {
 			t.Errorf("the upgrade printed %+v, want port 7822 and devices_must_connect %s:7822", out, harness.SourceIP)
 		}
@@ -364,6 +365,7 @@ func TestServerInstallUpgradeAndTheUnit(t *testing.T) {
 func TestServerInstallUpgradeWithADropInPort(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
+	m.Release(release)
 	install(t, m, "--owner", "alice")
 	if err := os.MkdirAll(m.Path("/etc/systemd/system/koko.service.d"), 0o755); err != nil {
 		t.Fatal(err)
@@ -388,7 +390,7 @@ func TestServerInstallUpgradeWithADropInPort(t *testing.T) {
 	refused := func(t *testing.T) {
 		t.Helper()
 		untouched := watch(t, m)
-		msg := m.Koko("server", "install", "--port", "9443", "--kokod", m.Kokod(), "--json").WantError(t, 2, "invalid_usage")
+		msg := m.Koko("server", "install", "--port", "9443", "--json").WantError(t, 2, "invalid_usage")
 		for _, want := range []string{"/etc/systemd/system/koko.service.d/port.conf", "8443", "systemctl edit koko", "nothing was written"} {
 			if !strings.Contains(msg, want) {
 				t.Errorf("message %q does not say %q", msg, want)
@@ -400,7 +402,7 @@ func TestServerInstallUpgradeWithADropInPort(t *testing.T) {
 
 	m.Koko("server", "uninstall", "--json").WantSuccess(t)
 	refused(t)
-	out = upgrade(t, m, "--kokod", m.Kokod())
+	out = upgrade(t, m)
 	if out.ListenPort != 8443 || out.DevicesMustConnect != "" {
 		t.Errorf("install after uninstall printed %+v, want the drop-in's port 8443 and no devices_must_connect", out)
 	}
@@ -535,12 +537,14 @@ func asOldRelease(t *testing.T, m *harness.Machine) string {
 }
 
 // A machine as v0.1.0 or v0.2.0 left it, whose unit runs /usr/local/bin/koko
-// server run, upgrades like any other: install puts kokod beside that koko,
-// which is the CLI now and which it leaves as it is, rewrites the unit to
-// run kokod run, and keeps the port and the drop-ins.
+// server run, upgrades like any other: install downloads kokod, which that
+// machine has none of, puts it beside that koko, which is the CLI now and
+// which it leaves as it is, rewrites the unit to run kokod run, and keeps
+// the port and the drop-ins.
 func TestServerInstallUpgradesAMachineAsAnOldReleaseLeftIt(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
+	rel := m.Release(release)
 	before := install(t, m, "--owner", "alice", "--port", "8443")
 	dropIn := "[Service]\nEnvironment=KOKO_LOG_LEVEL=debug\n"
 	if err := os.MkdirAll(m.Path("/etc/systemd/system/koko.service.d"), 0o755); err != nil {
@@ -551,7 +555,8 @@ func TestServerInstallUpgradesAMachineAsAnOldReleaseLeftIt(t *testing.T) {
 	}
 	koko := asOldRelease(t, m)
 
-	out := upgrade(t, m, "--kokod", m.Kokod())
+	out := upgrade(t, m)
+	wantRequests(t, rel, "SHA256SUMS", "kokod-linux-amd64")
 	if out.ListenPort != 8443 || out.DevicesMustConnect != "" || out.HostKeyFingerprint != before.HostKeyFingerprint {
 		t.Errorf("the upgrade printed %+v, want port 8443 and the host key of %+v", out, before)
 	}

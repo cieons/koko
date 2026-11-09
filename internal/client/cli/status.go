@@ -122,6 +122,11 @@ func (s statusJSON) Human(w io.Writer) error {
 		}
 	}
 	line("This CLI", "koko %s", s.CLIVersion)
+	if s.Socket != nil && s.ServerVersion != nil && *s.ServerVersion != s.CLIVersion {
+		// On the koko server's own machine, koko server install keeps the
+		// two one build; elsewhere, two versions are normal.
+		fmt.Fprintf(&b, "%17s%s\n", "", "the koko server here is another build: run sudo koko server install to bring it to this CLI's")
+	}
 	if r := s.Revocation; r != nil {
 		d := r.DeviceSession
 		line("Revoked", "%s's device %s (%s) at %s, learned at %s", d.User, d.Device, d.ID, r.ServerAddress, r.LearnedAt)
