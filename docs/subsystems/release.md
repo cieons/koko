@@ -239,64 +239,90 @@ which needs it. It runs `make dist` twice: on the commit, and in a worktree
 on the commit just before the one that added the latest migration step, so
 that the upgrade from that older build migrates and snapshots (every
 migration step is a file added to `internal/server/store/migrations/`,
-[the store](store.md#migrations)). Then
+[the store](store.md#migrations)). Each build must be a release's, since
+`koko server install` downloads only the `kokod` of its own release, and Go
+stamps a release's version only at a tag ([Building one](#building-one)):
+so the workflow first tags the commit `v0.0.2` and the older one `v0.0.1`,
+in its checkout only, never pushed. On a release's tag, that tag is the
+higher, and Go stamps it. Then
 [`release/systemd-check.sh`](../../release/systemd-check.sh)
 `<older dist> <newer dist>` checks, in order:
 
 1. install.sh refuses a release whose binary does not match its
    `SHA256SUMS`, runs nothing and writes nothing;
-2. install.sh installs the older build with `--owner alice --address
+2. install.sh of the older build installs it with `--owner alice --address
    localhost --port 7822`, the port given since the older build may be from
    before 7822 was the default
-   ([ADR 0036](../adr/0036-the-koko-server-listens-on-7822-by-default.md)):
-   the service is active, its process runs as `koko` and
+   ([ADR 0036](../adr/0036-the-koko-server-listens-on-7822-by-default.md)),
+   through its own `server install`, which in a build from before `kokod`
+   installs the whole koko server: the service is active, its process runs
+   as `koko` and
    listens on 7822, systemd holds its `root-key` credential
    (`LoadCredential=`, asked over D-Bus, since `systemctl show` prints it
    as `[unprintable]`), and `koko` cannot read `/etc/koko/root.key`;
 3. a device joins with the printed Join Code and lists the Users;
 4. with a drop-in setting `KOKO_LISTEN=[::]:7822`, `systemctl show` quotes
    that entry as the installer reads it;
-5. install.sh of the newer build, without `--owner` or `--port`, and with
-   `--kokod` naming the newer `kokod-linux-<arch>`, since `koko server
-   install` downloads `kokod` in Go, over real HTTPS, which the check's
-   fake `curl` does not serve (#106), upgrades: `/usr/local/bin/koko` and
-   `/usr/local/bin/kokod` are the newer builds, the unit runs
-   `/usr/local/bin/kokod run`, the service runs `kokod` again under a new
+5. install.sh of the newer build, without arguments, upgrades both: the fake
+   GitHub served the newer release's `kokod-linux-<arch>` once, and nothing
+   of the download is left in `/tmp`; `/usr/local/bin/koko` and
+   `/usr/local/bin/kokod` are the newer build's files, and `koko version`
+   and `kokod version` say its version; the unit runs
+   `/usr/local/bin/kokod run`, the service runs `kokod` as `koko` under a new
    process on the port it kept, with no capability held or to be gained (`CapEff`
    and `CapBnd` in `/proc/<pid>/status`), a `koko.db.before-<n>` snapshot
-   is there, and the device still works;
-6. `koko server uninstall`, running the `kokod` installed, leaves nothing
-   running or listening, removes the unit and `kokod`, and keeps
-   `/usr/local/bin/koko`, `koko.db`, the Root Key and the `koko` user;
+   is there, and the device still works. Then the device installs the
+   newer CLI, as **The device** below says;
+6. `koko server uninstall`, running the `kokod` installed and asking the
+   fake GitHub nothing, leaves nothing running or listening, removes the
+   unit and `kokod`, and keeps `/usr/local/bin/koko`, `koko.db`, the Root
+   Key and the `koko` user;
 7. with the drop-in removed, and after `chown -R root:root /var/lib/koko`,
-   as a copy put back by root would be, install.sh without `--owner` or
-   `--port`, given `--kokod` again since uninstall removed it, starts the
-   koko server again on the newer build's default port,
-   7822, saying devices must connect to `localhost:7822`, as it does for a
-   port it cannot know was the same; systemd gives every file back to
-   `koko`, and the device still works.
+   as a copy put back by root would be, `sudo koko server install` without
+   arguments downloads the newer `kokod` again, once, since uninstall
+   removed it, and starts the koko server again on the newer build's
+   default port, 7822, saying devices must connect to `localhost:7822`, as
+   it does for a port it cannot know was the same; systemd gives every file
+   back to `koko`, and the device still works.
 
-**How install.sh reaches a local build.** install.sh runs unchanged. A fake
-`curl`, first on its `PATH`, serves `https://github.com/cieons/koko` from a
-directory: `releases/latest` redirects to the tag a file there names, and
-`releases/download/<tag>/<file>` is a file. The older build is release
-`v0.0.1`, the newer `v0.0.2`, and `v0.0.3` the newer one with its binary
-swapped for a script that would leave a mark if it ran. Real curl, TLS and
-GitHub are what the check leaves out; a setting in install.sh to download
-from elsewhere would be one more input to the script that runs as root on
-every koko server, for a test alone.
+**The fake GitHub.** install.sh and `koko server install` run unchanged,
+with the real curl and Go's own HTTPS client. The script makes a test CA
+and a certificate it signs for `github.com` with `openssl`, adds the CA to
+the system's trust store (`update-ca-certificates`), which curl and Go both
+read, maps `github.com` to `127.0.0.1` in `/etc/hosts`, and serves
+`https://github.com/cieons/koko` on `127.0.0.1:443` with a small Python
+server of its own (`python3`'s `http.server` and `ssl`), so that no Go code
+is added under `release/`. `releases/latest` redirects to the tag page of
+the tag a file names, `releases/tag/<tag>` answers for a release there, and
+`releases/download/<tag>/<file>` is a file. Each build is the release of
+its own version (`koko version --json`), holding every asset its
+`SHA256SUMS` lists, and the release `v0.0.0-damaged` is the newer one with
+its `koko-linux-<arch>` swapped for a script that would leave a mark if it
+ran. The server logs every request, before it answers, as
+`<method> <path> <status>`, so that a step counts its downloads. On exit,
+the script puts `/etc/hosts` and the trust store back. A setting in
+install.sh or koko to download from elsewhere would be one more input to
+what runs as root on every koko server, for a test alone.
 
 **The device** is a Docker container (`ubuntu:24.04`) on the host's network,
-with the older build's binary as its `koko`. Its own filesystem has no
-`/run/koko/koko.sock`, so its commands go over TCP to `localhost:7822`, as
-a device's do, through its Device Mux, and not through the Unix socket as
-the Local caller. It keeps the older CLI through the upgrade, as a device
-does when its koko server is upgraded.
+with the older build's binary copied in as its `/usr/local/bin/koko`. Its
+own filesystem has no `/run/koko/koko.sock`, so its commands go over TCP to
+`localhost:7822`, as a device's do, through its Device Mux, and not through
+the Unix socket as the Local caller. It keeps the older CLI through the
+upgrade, as a device does when its koko server is upgraded. After step 5,
+it installs the newer CLI as a device does: `curl` and `ca-certificates`
+from Ubuntu's archive, the test CA in its own trust store, `github.com`
+mapped by `--add-host`, and the newer install.sh run without arguments. It
+then has the newer `/usr/local/bin/koko`, downloaded once, and no
+`kokod`, and lists the Users with it, through a Device Mux of the newer
+build.
 
-The script refuses a machine where koko was installed, and leaves koko's
-data, Root Key and user behind: run it only on a throwaway machine with
-systemd, Docker, `jq`, `ss` and passwordless `sudo`. On a failure it prints
-the koko service's journal and the device's Device Mux log.
+The script refuses a machine where koko was installed, or where something
+listens on 443, and leaves koko's data, Root Key and user behind: run it
+only on a throwaway machine with systemd, Docker, `jq`, `ss`, `python3`,
+`openssl`, `update-ca-certificates` and passwordless `sudo`. On a failure it
+prints the koko service's journal, the device's Device Mux log, and the
+fake GitHub's requests and log.
 
 ## The container check
 
@@ -347,9 +373,10 @@ both give the `install -d` line it runs, then, in order:
    `state/` without `root.key`, is refused at start with `KOKO_OWNER` set,
    naming the Root Key's id the sealed data needs, and no `root.key` is
    written;
-8. `koko server install` in a plain `ubuntu:24.04` container refuses with
-   `unsupported_platform`, naming `ghcr.io/cieons/koko`, and writes
-   nothing there;
+8. `koko server install` in a plain `ubuntu:24.04` container with no
+   network (`--network none`) refuses with `unsupported_platform`, naming
+   `ghcr.io/cieons/koko`, and writes nothing there: a download tried first
+   would have failed as `download_failed` instead;
 9. the archive's index holds `linux/amd64` and `linux/arm64` and nothing
    else, and in each platform's layers `/usr/local/bin/kokod` and
    `/usr/local/bin/koko` have the SHA-256s `SHA256SUMS` lists for its

@@ -1,9 +1,11 @@
 name: systemd
 
 # Installs koko on a real systemd Linux machine as its Owner would, through
-# install.sh, from releases built here as the release workflow builds them:
-# the install, a device joining, the upgrade with its snapshot, uninstall and
-# the restore (release/systemd-check.sh, docs/subsystems/release.md).
+# install.sh, from releases built here as the release workflow builds them
+# and served by a fake GitHub over HTTPS: the install, a device joining, the
+# upgrade with its snapshot and its kokod download, the device's own CLI,
+# uninstall and the restore (release/systemd-check.sh,
+# docs/subsystems/release.md).
 on:
   push:
     branches: [main]
@@ -35,14 +37,21 @@ jobs:
           node-version-file: web/package.json
           cache: npm
           cache-dependency-path: web/package-lock.json
+      # koko server install downloads only the kokod of a release's build,
+      # and Go stamps a release's version only at a tag, so each build is
+      # tagged first, here and never pushed: v0.0.2 this commit and v0.0.1
+      # the older one. A release's own tag there wins, being the higher.
       - name: Build this commit's release
-        run: make dist
+        run: |
+          git tag v0.0.2
+          make dist
       # The upgrade must migrate to leave a snapshot, so the older build is
       # the commit just before the one that added the latest migration step.
       - name: Build the release before the latest migration step
         run: |
           added=$(git log -1 --format=%H --diff-filter=A -- internal/server/store/migrations)
           [ -n "$added" ] || { echo "no commit added a migration step, so no older build to upgrade from" >&2; exit 1; }
+          git tag v0.0.1 "$added^"
           git worktree add "$RUNNER_TEMP/older" "$added^"
           make -C "$RUNNER_TEMP/older" dist
       - name: Install, join, upgrade, uninstall and restore

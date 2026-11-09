@@ -24,7 +24,8 @@
 # KOKO_ADDRESS logs the warning and changes no record; docker compose down,
 # then up, keeps the record on the same state/, and the device still works;
 # a copy of data/ without root.key is refused, writing no Root Key;
-# koko server install refuses in a plain container, naming the image; and
+# koko server install refuses in a plain container with no network, naming
+# the image, before any download; and
 # the image's index holds linux/amd64 and linux/arm64, each with the kokod
 # and the koko SHA256SUMS list. Upgrades and going back are the
 # real-systemd check's and the tests', since the image holds the same
@@ -360,9 +361,11 @@ refused copy
 says "the sealed data needs $key_id"
 ! sudo test -e "$work/copy/state/root.key" || fail "the refused start wrote a Root Key"
 
-step "koko server install refuses a container that systemd does not run, naming the image"
+step "koko server install refuses a container that systemd does not run, naming the image, before any download"
+# With no network, a download tried before the refusal would fail as
+# download_failed instead.
 status=0
-docker run --rm --init -v "$dist/$asset:/usr/local/bin/koko:ro" "$ubuntu" sh -c '
+docker run --rm --init --network none -v "$dist/$asset:/usr/local/bin/koko:ro" "$ubuntu" sh -c '
 	status=0
 	koko server install --owner alice --address localhost --json || status=$?
 	for path in /etc/koko /var/lib/koko /etc/systemd/system/koko.service; do

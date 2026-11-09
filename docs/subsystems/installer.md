@@ -486,7 +486,7 @@ unit's environment as systemd shows it;
 [`filesystem_test.go`](../../internal/server/filesystem/filesystem_test.go)
 tests the network filesystems and reading mountinfo. The real machine's own
 calls run in [the real-systemd check](release.md#the-real-systemd-check), all but
-`SourceIP`, since every install there passes `--address`, and a
+`SourceIP`, since every fresh install there passes `--address`, and a
 `PortOwner` naming another process than the koko service. The refusal of a
 container that systemd does not run runs in
 [the container check](release.md#the-container-check).
