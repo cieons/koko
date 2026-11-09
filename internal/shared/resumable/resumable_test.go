@@ -751,6 +751,71 @@ func TestAMalformedResumeAnswerEndsTheStream(t *testing.T) {
 	})
 }
 
+// closedByPeer is a channel whose other end sent what it holds, then closed
+// it: as an SSH channel then does, it fails every write, and its reads
+// return what arrived, then io.EOF. Its reads wait for a write to fail, so
+// the stream fails a send before it reads anything.
+type closedByPeer struct {
+	arrived     io.Reader
+	writeFailed chan struct{}
+	fail        func()
+}
+
+func newClosedByPeer(arrived ...byte) *closedByPeer {
+	c := &closedByPeer{arrived: bytes.NewReader(arrived), writeFailed: make(chan struct{})}
+	c.fail = sync.OnceFunc(func() { close(c.writeFailed) })
+	return c
+}
+
+func (c *closedByPeer) Write([]byte) (int, error) {
+	c.fail()
+	return 0, io.EOF
+}
+
+func (c *closedByPeer) Read(p []byte) (int, error) {
+	<-c.writeFailed
+	return c.arrived.Read(p)
+}
+
+func (c *closedByPeer) Close() error { return nil }
+
+// The other end's close frame, followed by its channel's close, fails a
+// send of this end's that crosses it, but the frame has arrived: the stream
+// still reads it, and ends with the other end's close rather than coming off
+// the channel Detached, which would leave the Gateway holding a Tunnel the
+// device closed for its whole grace.
+func TestAFailedSendStillReadsTheCloseFrameThatArrived(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := resumable.New(newClosedByPeer(0x00, 0x82, 0x80, 0x02, 0x03, 'b', 'y', 'e'))
+		t.Cleanup(func() { _ = s.Close() })
+		if _, err := s.Write([]byte("x")); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		await(t, "the stream comes off its channel", func() { <-s.Detached() })
+		synctest.Wait()
+		if err := s.Err(); !isPeerClose(err, "bye") {
+			t.Errorf("Err once the send failed: %v, want the other end's close saying bye", err)
+		}
+	})
+}
+
+// A malformed frame read after a send failed ends the stream and takes it
+// off its channel, though no close frame can tell the other end why.
+func TestAMalformedFrameAfterAFailedSendEndsTheStream(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := resumable.New(newClosedByPeer(0x00, 0x83, 0x80, 0x02))
+		t.Cleanup(func() { _ = s.Close() })
+		if _, err := s.Write([]byte("x")); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		await(t, "the stream comes off its channel", func() { <-s.Detached() })
+		if err := s.Err(); !errors.Is(err, resumable.ErrMalformed) {
+			t.Errorf("Err after the malformed frame: %v, want ErrMalformed", err)
+		}
+		await(t, "close", func() { _ = s.Close() })
+	})
+}
+
 func TestErrSaysWhyTheStreamEnded(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		dev, gw := open(t)

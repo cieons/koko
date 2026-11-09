@@ -158,6 +158,21 @@ wait to the outcome, and read any failure after Ctrl-C as interrupted.
 **Seen:** 1 (2026-11-08)
 **Evidence:** #90
 
+### A channel a write fails on is given up only once its reads have failed too
+
+**Why:** an SSH channel the other end has closed fails every write at once,
+while its reads still return what arrived before the close. The resumable
+stream took a failed write for its channel's end and came off it unread, so
+when `koko exec`'s Ctrl-C sent the Tunnel's close frame and closed the
+channel just as the Gateway sent a frame, the Gateway dropped the close
+frame and held the Tunnel Detached for its grace instead of logging the SSH
+Session's end: about 1 in 1,000 runs of
+`TestExecEndsTheSSHSessionWhenInterrupted` under load, and CI on `main` went
+red at fae944b, which changed no Go code.
+**Seen:** 1 (2026-11-09)
+**Evidence:** 4ca37b3 (#31); surfaced by 1a0b0ec (#90) in check run
+42539501558; #99
+
 ## Moved to the code standards
 
 _None yet._

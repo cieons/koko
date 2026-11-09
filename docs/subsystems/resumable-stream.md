@@ -14,7 +14,7 @@ any `io.ReadWriteCloser`, owns that channel and closes it when it comes off.
 | `New(ch)` | both | Starts a new Tunnel's stream on its first channel. Both ends start at position 0, so nothing is exchanged. |
 | `Read`, `Write` | both | `Write` returns once the bytes are in the replay buffer, and blocks while it is full. |
 | `CloseWrite` | both | Half-closes: the other end reads what came before, then `io.EOF`. |
-| `CloseWithReason(r)`, `Close` | both | Ends the stream for good: sends what is unsent, then a close frame carrying `r`, and returns once the channel took them or failed. On a stalled channel that is when the connection's liveness check fails it, or when `Detach` is called. |
+| `CloseWithReason(r)`, `Close` | both | Ends the stream for good: sends what is unsent, then a close frame carrying `r`, and returns once the channel took them or failed. On a stalled channel that is when the connection's liveness check fails it, or when `Detach` is called. Once a write on the channel has failed, nothing more is sent, and it returns once the channel's reads have failed too. |
 | `Err()` | both | Why the stream ended, or nil while it lives. |
 | `Detached()` | both | A channel closed once the stream is off its latest channel. |
 | `Detach()` | device | Takes the stream off its channel and returns its received offset, for the resume payload. |
@@ -64,10 +64,10 @@ other gave.
 
 | Event | The stream |
 | --- | --- |
-| The channel fails, or `Detach` or a newer attach takes the stream off it | Detached. `Write` keeps filling the buffer; `Read` waits. The old channel is closed in a goroutine of its own, since closing an SSH channel can block on a stalled connection. |
+| The channel fails, or `Detach` or a newer attach takes the stream off it | Detached. `Write` keeps filling the buffer; `Read` waits. The old channel is closed in a goroutine of its own, since closing an SSH channel can block on a stalled connection. A failed write stops only the sending: the stream comes off the channel once its reads fail too, after what arrived before, such as the other end's close frame, which an SSH channel the other end has closed still holds. |
 | A resume exchange fails on the channel | Stays Detached, to resume on another channel. |
 | The other end's offset is outside the buffer | Ends with `ErrOffset`, and tells the other end in a close frame. |
-| A malformed frame or resume answer, or a frame its state forbids (an acknowledgement of unsent positions, data after the EOF, more than 2 MiB unacknowledged) | Ends with `ErrMalformed`, and tells the other end in a close frame. |
+| A malformed frame or resume answer, or a frame its state forbids (an acknowledgement of unsent positions, data after the EOF, more than 2 MiB unacknowledged) | Ends with `ErrMalformed`, and tells the other end in a close frame, unless a write on the channel has failed. |
 | The other end's close frame | Ends with `*PeerClosedError` carrying the reason. `Read` first returns what arrived before it; once the other end has half-closed, `Read` returns `io.EOF` and only `Err` tells of the close. |
 | `CloseWithReason` | Ends with `ErrClosed`, after sending what was unsent and the close frame. An attach in progress fails. |
 

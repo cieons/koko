@@ -90,6 +90,11 @@ type attachment struct {
 	ch   io.ReadWriteCloser
 	r    *byteReader
 	done chan struct{} // closed when the stream comes off the channel
+	// sendFailed and receiveStopped, under the stream's mu, tell that a
+	// write failed, and that a malformed frame stopped the reading: each
+	// side leaves taking the stream off the channel to the other, so
+	// whichever stops second does it.
+	sendFailed, receiveStopped bool
 }
 
 // New starts a new Tunnel's stream on its first channel, which it then owns.
@@ -303,6 +308,8 @@ func (s *Stream) Close() error {
 // unsent, then a close frame carrying reason (cut to MaxData bytes), and
 // returns once the channel took them or failed; on a stalled channel, that is
 // when the connection's liveness check fails it, or when Detach is called.
+// Once a write on the channel has failed, nothing more is sent, and it
+// returns once the channel's reads have failed too.
 func (s *Stream) CloseWithReason(reason string) error {
 	if len(reason) > MaxData {
 		reason = strings.ToValidUTF8(reason[:MaxData], "")
@@ -394,7 +401,13 @@ func (s *Stream) owesFrameLocked() bool {
 	return s.outSent < s.outEnd || s.owesClose || s.inDelivered-s.inAcked >= ackThreshold
 }
 
-// send writes frames on a's channel for as long as the stream is on it.
+// send writes frames on a's channel for as long as the stream is on it. A
+// write that fails stops the sending but leaves the stream on the channel:
+// the other end may have sent frames and closed the channel before them, as
+// its close frame then the channel's close, which fail this end's writes
+// while its reads still return what arrived. receive takes the stream off
+// once its reads fail too, having read those frames, or once a malformed
+// frame stops them, which no close frame can then tell the other end of.
 func (s *Stream) send(a *attachment) {
 	buf := make([]byte, 0, maxFrameLen)
 	s.mu.Lock()
@@ -411,8 +424,15 @@ func (s *Stream) send(a *attachment) {
 		s.mu.Unlock()
 		_, err := a.ch.Write(buf)
 		s.mu.Lock()
-		if err != nil || last {
+		if last {
 			s.dropLocked(a)
+			return
+		}
+		if err != nil {
+			a.sendFailed = true
+			if a.receiveStopped {
+				s.dropLocked(a)
+			}
 			return
 		}
 	}
@@ -468,8 +488,9 @@ func (s *Stream) receive(a *attachment) {
 }
 
 // stopLocked handles what stopped the receiving on a: the other end's close,
-// or a malformed frame, which the other end is told of, ends the stream; any
-// other error is the channel's, and leaves the stream Detached.
+// or a malformed frame, which the other end is told of by send unless a
+// write has failed, ends the stream; any other error is the channel's, and
+// leaves the stream Detached.
 func (s *Stream) stopLocked(a *attachment, err error) {
 	if _, ok := errors.AsType[*PeerClosedError](err); ok {
 		s.endLocked(err)
@@ -478,6 +499,10 @@ func (s *Stream) stopLocked(a *attachment, err error) {
 	}
 	if errors.Is(err, ErrMalformed) {
 		s.closeLocked(err, err.Error())
+		a.receiveStopped = true
+		if a.sendFailed {
+			s.dropLocked(a)
+		}
 		return
 	}
 	s.dropLocked(a)
