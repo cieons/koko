@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -24,16 +25,20 @@ const repo = "https://github.com/cieons/koko"
 // machine is a fake machine for install.sh. Its bin directory is the
 // script's whole PATH: fakes for the commands that answer about the machine
 // (uname, systemctl, id, sudo), a fake curl that serves a fake GitHub from a
-// directory and logs every URL it is asked for, and the real tools the
+// directory and logs every URL it is asked for, fakes for the commands that
+// write the CLI (mkdir, install, mv), which log each call and write under
+// the machine's own root directory instead of /, and the real tools the
 // script needs besides. The release binaries it serves are shell scripts
-// that log how install.sh ran them.
+// that log how install.sh ran them, to the same log as the writing fakes.
 type machine struct {
 	t *testing.T
 	// OS and Arch are what uname -s and uname -m print.
 	OS, Arch string
-	// Systemd is what systemctl is-system-running prints; with "", the
-	// machine has no systemctl.
-	Systemd string
+	// Systemctl gives the machine systemctl, and Service a koko service
+	// that systemctl cat koko.service shows.
+	Systemctl, Service bool
+	// NoSha256sum leaves sha256sum out, as on macOS, which has shasum.
+	NoSha256sum bool
 	// Root runs install.sh as root; otherwise as uid 1000.
 	Root bool
 	// Sudo is "nopasswd" for sudo that runs a command as root without a
@@ -49,16 +54,26 @@ type machine struct {
 	dir string
 }
 
-// newMachine makes a Linux amd64 machine running systemd, where install.sh
-// runs as a user with passwordless sudo, and GitHub has no koko release yet.
+// newMachine makes a Linux amd64 machine with systemd and no koko server,
+// where install.sh runs as a user with passwordless sudo, and GitHub has no
+// koko release yet.
 func newMachine(t *testing.T) *machine {
 	t.Helper()
-	m := &machine{t: t, OS: "Linux", Arch: "x86_64", Systemd: "running", Sudo: "nopasswd", dir: t.TempDir()}
-	for _, d := range []string{"bin", "web", "log", "tmp", "home"} {
+	m := &machine{t: t, OS: "Linux", Arch: "x86_64", Systemctl: true, Sudo: "nopasswd", dir: t.TempDir()}
+	for _, d := range []string{"bin", "web", "log", "tmp", "home", "root"} {
 		if err := os.Mkdir(m.path(d), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
+	return m
+}
+
+// newMac makes newMachine a Mac on Apple silicon, which has no systemctl
+// and no sha256sum.
+func newMac(t *testing.T) *machine {
+	t.Helper()
+	m := newMachine(t)
+	m.OS, m.Arch, m.Systemctl, m.NoSha256sum = "Darwin", "arm64", false, true
 	return m
 }
 
@@ -79,11 +94,13 @@ func (m *machine) serve(url string, body []byte) {
 }
 
 // binary is the release binary asset of tag: a script that logs which binary
-// it is, the uid it runs as, its arguments and what it reads on stdin.
+// it is, the path it ran from, the uid it runs as, its arguments and what it
+// reads on stdin.
 func (m *machine) binary(tag, asset string) []byte {
 	return fmt.Appendf(nil, `#!/bin/sh
 {
 	printf 'binary=%%s\n' '%s %s'
+	printf 'path=%%s\n' "$0"
 	printf 'uid=%%s\n' "$(id -u)"
 	printf 'args=%%s\n' "$*"
 	printf 'stdin=%%s\n' "$(%s)"
@@ -91,16 +108,28 @@ func (m *machine) binary(tag, asset string) []byte {
 echo 'koko server install ran'
 echo 'koko on stderr' >&2
 exit %d
-`, asset, tag, m.tool("cat"), m.path("log", "koko"), m.KokoStatus)
+`, asset, tag, m.tool("cat"), m.path("log", "ran"), m.KokoStatus)
 }
 
-// release publishes tag on the fake GitHub: its page, its three binaries and
-// a SHA256SUMS that lists them.
+// release publishes tag on the fake GitHub as a release since the split:
+// its page, its binaries, koko's and kokod's, and a SHA256SUMS that lists
+// them.
 func (m *machine) release(tag string) {
+	m.publish(tag, "koko-linux-amd64", "koko-linux-arm64", "koko-darwin-arm64", "kokod-linux-amd64", "kokod-linux-arm64")
+}
+
+// releaseBeforeTheSplit publishes tag as v0.1.0 and v0.2.0 were: koko's
+// binaries alone, each the whole koko, whose server install installs the
+// koko server by itself.
+func (m *machine) releaseBeforeTheSplit(tag string) {
+	m.publish(tag, "koko-linux-amd64", "koko-linux-arm64", "koko-darwin-arm64")
+}
+
+func (m *machine) publish(tag string, assets ...string) {
 	m.t.Helper()
 	m.serve(repo+"/releases/tag/"+tag, []byte("<html>"))
 	var sums bytes.Buffer
-	for _, asset := range []string{"koko-linux-amd64", "koko-linux-arm64", "koko-darwin-arm64"} {
+	for _, asset := range assets {
 		body := m.binary(tag, asset)
 		m.serve(repo+"/releases/download/"+tag+"/"+asset, body)
 		sum := sha256.Sum256(body)
@@ -142,22 +171,43 @@ func (m *machine) fake(name, script string) {
 // runs install.sh once.
 func (m *machine) fakes() {
 	m.t.Helper()
-	for _, name := range []string{"mktemp", "rm", "chmod", "awk", "sha256sum", "true"} {
+	realTools := []string{"rm", "chmod", "awk", "true"}
+	if !m.NoSha256sum {
+		realTools = append(realTools, "sha256sum")
+	}
+	for _, name := range realTools {
 		if err := os.Symlink(m.tool(name), m.path("bin", name)); err != nil {
 			m.t.Fatal(err)
 		}
 	}
+	// mktemp -d makes its directory under the machine's tmp directory, as
+	// GNU's does under TMPDIR, where macOS's would take the user's own.
+	m.fake("mktemp", fmt.Sprintf(`[ "$*" = -d ] || { echo "fake mktemp: unexpected $*" >&2; exit 1; }
+exec '%s' -d '%s/tmp.XXXXXXXXXX'
+`, m.tool("mktemp"), m.path("tmp")))
+	// shasum answers only as install.sh asks it, -a 256, as macOS's does.
+	m.fake("shasum", fmt.Sprintf(`[ "$1 $2" = '-a 256' ] || { echo "fake shasum: unexpected $*" >&2; exit 1; }
+shift 2
+exec '%s' "$@"
+`, m.tool("sha256sum")))
 	m.fake("uname", fmt.Sprintf(`case $1 in
 -s) echo '%s' ;;
 -m) echo '%s' ;;
 *) echo "fake uname: unexpected $*" >&2; exit 1 ;;
 esac
 `, m.OS, m.Arch))
-	if m.Systemd != "" {
-		m.fake("systemctl", fmt.Sprintf(`[ "$*" = is-system-running ] || { echo "fake systemctl: unexpected $*" >&2; exit 1; }
-echo '%s'
-[ '%[1]s' = running ]
-`, m.Systemd))
+	if m.Systemctl {
+		// What it prints for a koko service goes to stdout, as systemctl's
+		// does, so that a run that let it through would show it there.
+		m.fake("systemctl", fmt.Sprintf(`[ "$*" = 'cat koko.service' ] || { echo "fake systemctl: unexpected $*" >&2; exit 1; }
+if [ '%t' = true ]; then
+	echo '# /etc/systemd/system/koko.service'
+	echo '[Service]'
+else
+	echo 'No files found for koko.service.' >&2
+	exit 1
+fi
+`, m.Service))
 	}
 	uid := 1000
 	if m.Root {
@@ -178,6 +228,22 @@ exec "$@"
 		m.fake("sudo", `echo "sudo: a password is required" >&2
 exit 1
 `)
+	}
+	// mkdir, install and mv log each call with the uid it runs as, then run
+	// the real command with every absolute path outside the temporary
+	// directories moved under the machine's root directory.
+	for _, name := range []string{"mkdir", "install", "mv"} {
+		m.fake(name, fmt.Sprintf(`printf '%%s %%s (uid %%s)\n' '%[1]s' "$*" "$(id -u)" >>'%[2]s'
+for arg; do
+	case $arg in
+	'%[3]s'/*) ;;
+	/*) arg='%[4]s'$arg ;;
+	esac
+	set -- "$@" "$arg"
+	shift
+done
+exec '%[5]s' "$@"
+`, name, m.path("log", "ran"), m.path("tmp"), m.path("root"), m.tool(name)))
 	}
 	// curl serves <url> from web/<url without https://>, where <url>.location
 	// holds where it redirects to, followed only with -L. As the real one
@@ -224,9 +290,10 @@ fi
 type result struct {
 	Status         int
 	Stdout, Stderr string
-	// Curl is every URL the script asked curl for, and Koko what each release
-	// binary that ran logged.
-	Curl, Koko string
+	// Curl is every URL the script asked curl for. Ran is, in order, what
+	// each release binary that ran logged and each call of mkdir, install
+	// and mv, with the temporary directory install.sh made shown as <tmp>.
+	Curl, Ran string
 	// Tmp lists what the script left in its temporary directory.
 	Tmp []string
 }
@@ -274,7 +341,8 @@ func (m *machine) run(args ...string) result {
 	} else if err != nil {
 		m.t.Fatalf("run install.sh: %v", err)
 	}
-	r.Curl, r.Koko = m.log("curl"), m.log("koko")
+	tmp := regexp.MustCompile(regexp.QuoteMeta(m.path("tmp")) + `/[^/\s]+`)
+	r.Curl, r.Ran = m.log("curl"), tmp.ReplaceAllString(m.log("ran"), "<tmp>")
 	entries, err := os.ReadDir(m.path("tmp"))
 	if err != nil {
 		m.t.Fatal(err)
@@ -293,11 +361,58 @@ func (m *machine) log(name string) string {
 	return string(b)
 }
 
-// A pasted line with no KOKO_VERSION installs the latest release's binary
-// for the machine, checked against that release's SHA256SUMS, by running its
-// koko server install as root with the script's arguments, and leaves
-// nothing behind. stdout is koko's alone, so --json output stays clean.
-func TestInstallsTheLatestRelease(t *testing.T) {
+// serverInstall is what the release binary asset of tag logs when
+// install.sh runs its koko server install as root with args.
+func serverInstall(tag, asset, args string) string {
+	return "binary=" + asset + " " + tag + "\npath=<tmp>/" + asset + "\nuid=0\nargs=" + strings.TrimSpace("server install "+args) + "\nstdin=\n"
+}
+
+// writesTheCLI is what the writing fakes log when install.sh writes asset
+// as root beside /usr/local/bin/koko and renames it into place.
+func writesTheCLI(asset string) string {
+	return "mkdir -p -m 0755 /usr/local/bin (uid 0)\n" +
+		"install -m 0755 <tmp>/" + asset + " /usr/local/bin/.koko.new (uid 0)\n" +
+		"mv -f /usr/local/bin/.koko.new /usr/local/bin/koko (uid 0)\n"
+}
+
+// installed checks that the machine's /usr/local/bin/koko is the release
+// binary asset of tag, executable by everyone, in a /usr/local/bin made
+// 0755, with nothing beside it.
+func (m *machine) installed(tag, asset string) {
+	t := m.t
+	t.Helper()
+	got, err := os.ReadFile(m.path("root", "usr", "local", "bin", "koko"))
+	if err != nil {
+		t.Fatalf("no CLI was installed: %v", err)
+	}
+	if !bytes.Equal(got, m.binary(tag, asset)) {
+		t.Errorf("/usr/local/bin/koko is not %s of %s:\n%s", asset, tag, got)
+	}
+	for path, mode := range map[string]os.FileMode{"usr/local/bin": os.ModeDir | 0o755, "usr/local/bin/koko": 0o755} {
+		info, err := os.Stat(m.path("root", path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode() != mode {
+			t.Errorf("/%s has mode %v, want %v", path, info.Mode(), mode)
+		}
+	}
+	entries, err := os.ReadDir(m.path("root", "usr", "local", "bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("/usr/local/bin holds %v, want koko alone", entries)
+	}
+}
+
+// A pasted line with arguments and no KOKO_VERSION installs the latest
+// release's binary for the machine, checked against that release's
+// SHA256SUMS: it runs its koko server install as root with the script's
+// arguments, then writes it as /usr/local/bin/koko, and leaves nothing
+// behind. stdout is koko's alone, so --json output stays clean. kokod is
+// koko server install's to download, never install.sh's.
+func TestInstallsTheLatestReleaseWithTheKokoServer(t *testing.T) {
 	t.Parallel()
 	m := newMachine(t)
 	m.release("v0.1.0")
@@ -315,53 +430,158 @@ func TestInstallsTheLatestRelease(t *testing.T) {
 	if r.Curl != wantCurl {
 		t.Errorf("curl was asked for:\n%s\nwant:\n%s", r.Curl, wantCurl)
 	}
-	wantKoko := "binary=koko-linux-amd64 v0.2.0\nuid=0\nargs=server install --owner alice --address koko.example.com\nstdin=\n"
-	if r.Koko != wantKoko {
-		t.Errorf("the release binary logged:\n%s\nwant:\n%s", r.Koko, wantKoko)
+	wantRan := serverInstall("v0.2.0", "koko-linux-amd64", "--owner alice --address koko.example.com") + writesTheCLI("koko-linux-amd64")
+	if r.Ran != wantRan {
+		t.Errorf("ran:\n%s\nwant:\n%s", r.Ran, wantRan)
 	}
+	m.installed("v0.2.0", "koko-linux-amd64")
 	if r.Stdout != "koko server install ran\n" {
 		t.Errorf("stdout = %q, want koko's alone", r.Stdout)
 	}
-	if !strings.Contains(r.Stderr, "koko v0.2.0") || !strings.HasSuffix(r.Stderr, "koko on stderr\n") {
-		t.Errorf("stderr should name the version, then carry koko's:\n%s", r.Stderr)
+	if !strings.Contains(r.Stderr, "koko v0.2.0 for linux/amd64") || !strings.Contains(r.Stderr, "koko on stderr\n") ||
+		!strings.HasSuffix(r.Stderr, "install.sh: installed koko v0.2.0 at /usr/local/bin/koko\n") {
+		t.Errorf("stderr should name the version, carry koko's, then say where koko went:\n%s", r.Stderr)
 	}
 	if r.Tmp != nil {
 		t.Errorf("install.sh left %v in its temporary directory", r.Tmp)
 	}
 }
 
-// install.sh picks the binary for the machine's architecture.
-func TestPicksTheBinaryForTheArchitecture(t *testing.T) {
+// With no arguments, on a machine with no koko server, install.sh installs
+// the CLI alone: the binary for the machine's OS and architecture, written
+// beside /usr/local/bin/koko and renamed into place. It runs no
+// koko server install, and needs no systemd. A Mac, which has shasum and no
+// sha256sum, checks the binary with shasum -a 256.
+func TestInstallsTheCLIAlone(t *testing.T) {
 	t.Parallel()
-	for arch, asset := range map[string]string{"x86_64": "koko-linux-amd64", "aarch64": "koko-linux-arm64", "arm64": "koko-linux-arm64"} {
-		t.Run(arch, func(t *testing.T) {
-			t.Parallel()
+	linux := func(arch string) func(*testing.T) *machine {
+		return func(t *testing.T) *machine {
 			m := newMachine(t)
 			m.Arch = arch
+			return m
+		}
+	}
+	for name, tc := range map[string]struct {
+		machine func(*testing.T) *machine
+		asset   string
+	}{
+		"Linux x86_64":  {linux("x86_64"), "koko-linux-amd64"},
+		"Linux amd64":   {linux("amd64"), "koko-linux-amd64"},
+		"Linux aarch64": {linux("aarch64"), "koko-linux-arm64"},
+		"Linux arm64":   {linux("arm64"), "koko-linux-arm64"},
+		"Linux with no systemctl": {func(t *testing.T) *machine {
+			m := newMachine(t)
+			m.Systemctl = false
+			return m
+		}, "koko-linux-amd64"},
+		"Linux as root": {func(t *testing.T) *machine {
+			m := newMachine(t)
+			m.Root, m.Sudo = true, ""
+			return m
+		}, "koko-linux-amd64"},
+		"macOS arm64 with shasum": {newMac, "koko-darwin-arm64"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			m := tc.machine(t)
 			m.release("v0.2.0")
 			m.latest("v0.2.0")
 
-			r := m.run("--owner", "alice")
+			r := m.run()
 
-			if r.Status != 0 || !strings.HasPrefix(r.Koko, "binary="+asset+" v0.2.0\n") {
-				t.Errorf("status %d, the release binary logged:\n%s\nstderr:\n%s", r.Status, r.Koko, r.Stderr)
+			if r.Status != 0 {
+				t.Fatalf("status %d, stderr:\n%s", r.Status, r.Stderr)
 			}
-			if !strings.HasSuffix(r.Curl, "/releases/download/v0.2.0/"+asset+"\n") {
-				t.Errorf("curl was asked for:\n%s", r.Curl)
+			wantCurl := repo + "/releases/latest\n" +
+				repo + "/releases/download/v0.2.0/SHA256SUMS\n" +
+				repo + "/releases/download/v0.2.0/" + tc.asset + "\n"
+			if r.Curl != wantCurl {
+				t.Errorf("curl was asked for:\n%s\nwant:\n%s", r.Curl, wantCurl)
+			}
+			if r.Ran != writesTheCLI(tc.asset) {
+				t.Errorf("ran:\n%s\nwant:\n%s", r.Ran, writesTheCLI(tc.asset))
+			}
+			m.installed("v0.2.0", tc.asset)
+			if r.Stdout != "" || !strings.HasSuffix(r.Stderr, "install.sh: installed koko v0.2.0 at /usr/local/bin/koko\n") {
+				t.Errorf("stdout = %q, stderr:\n%s", r.Stdout, r.Stderr)
+			}
+			if r.Tmp != nil {
+				t.Errorf("install.sh left %v in its temporary directory", r.Tmp)
 			}
 		})
 	}
 }
 
-// refused checks that a run stopped before downloading or running anything,
-// saying why on stderr with every word of want.
+// The install line again, without arguments, on a machine whose systemd
+// knows koko.service upgrades both: koko server install first, from the
+// temporary directory with no arguments, and the CLI only after it.
+func TestUpgradesAnInstalledKokoServerFirst(t *testing.T) {
+	t.Parallel()
+	m := newMachine(t)
+	m.Service = true
+	m.release("v0.2.0")
+	m.latest("v0.2.0")
+
+	r := m.run()
+
+	if r.Status != 0 {
+		t.Fatalf("status %d, stderr:\n%s", r.Status, r.Stderr)
+	}
+	wantRan := serverInstall("v0.2.0", "koko-linux-amd64", "") + writesTheCLI("koko-linux-amd64")
+	if r.Ran != wantRan {
+		t.Errorf("ran:\n%s\nwant:\n%s", r.Ran, wantRan)
+	}
+	m.installed("v0.2.0", "koko-linux-amd64")
+	if r.Stdout != "koko server install ran\n" {
+		t.Errorf("stdout = %q, want koko's alone", r.Stdout)
+	}
+}
+
+// A release from before the split, v0.1.0 or v0.2.0, has no kokod, and its
+// koko-<os>-<arch> is the whole koko, whose server install installs the
+// koko server by itself. install.sh installs it by the same rules.
+func TestInstallsAReleaseFromBeforeTheSplit(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		args    []string
+		service bool
+		want    string
+	}{
+		"with arguments":             {args: []string{"--owner", "alice"}, want: serverInstall("v0.1.0", "koko-linux-amd64", "--owner alice")},
+		"onto its koko server":       {service: true, want: serverInstall("v0.1.0", "koko-linux-amd64", "")},
+		"as the CLI, no koko server": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			m := newMachine(t)
+			m.Service = tc.service
+			m.releaseBeforeTheSplit("v0.1.0")
+			m.release("v0.2.0")
+			m.latest("v0.2.0")
+			m.Env = []string{"KOKO_VERSION=v0.1.0"}
+
+			r := m.run(tc.args...)
+
+			if r.Status != 0 {
+				t.Fatalf("status %d, stderr:\n%s", r.Status, r.Stderr)
+			}
+			if want := tc.want + writesTheCLI("koko-linux-amd64"); r.Ran != want {
+				t.Errorf("ran:\n%s\nwant:\n%s", r.Ran, want)
+			}
+			m.installed("v0.1.0", "koko-linux-amd64")
+		})
+	}
+}
+
+// refused checks that a run stopped before downloading, running or writing
+// anything, saying why on stderr with every word of want.
 func refused(t *testing.T, r result, status int, want ...string) {
 	t.Helper()
 	if r.Status != status {
 		t.Errorf("status %d, want %d", r.Status, status)
 	}
-	if r.Curl != "" || r.Koko != "" || r.Stdout != "" || r.Tmp != nil {
-		t.Errorf("a refused run downloaded, ran or wrote something:\ncurl: %s\nkoko: %s\nstdout: %s\ntmp: %v", r.Curl, r.Koko, r.Stdout, r.Tmp)
+	if r.Curl != "" || r.Ran != "" || r.Stdout != "" || r.Tmp != nil {
+		t.Errorf("a refused run downloaded, ran or wrote something:\ncurl: %s\nran: %s\nstdout: %s\ntmp: %v", r.Curl, r.Ran, r.Stdout, r.Tmp)
 	}
 	for _, w := range want {
 		if !strings.Contains(r.Stderr, w) {
@@ -370,64 +590,28 @@ func refused(t *testing.T, r result, status int, want ...string) {
 	}
 }
 
-// A machine type with no koko binary is refused before any download.
-func TestRefusesAnotherArchitecture(t *testing.T) {
+// A machine a release has no koko binary for is refused before any
+// download: another OS, another architecture, and a Mac on Intel.
+func TestRefusesAMachineWithNoKokoBinary(t *testing.T) {
 	t.Parallel()
-	m := newMachine(t)
-	m.Arch = "riscv64"
-	m.release("v0.2.0")
-	m.latest("v0.2.0")
-
-	r := m.run("--owner", "alice")
-
-	refused(t, r, 1, "riscv64", "amd64", "arm64")
-}
-
-// The koko server runs only on Linux with systemd, so install.sh stops
-// elsewhere before it downloads or writes anything. Where systemd does not
-// run the machine, as in a container, it names the image, which does.
-func TestRefusesAMachineThatIsNotLinuxWithSystemd(t *testing.T) {
-	t.Parallel()
-	namesTheImage := []string{"systemd", "ghcr.io/cieons/koko", "https://github.com/cieons/koko/blob/main/docs/install.md#in-a-container"}
 	for name, tc := range map[string]struct {
-		os, systemd string
-		want        []string
+		os, arch string
+		want     []string
 	}{
-		"macOS":                        {os: "Darwin", systemd: "running", want: []string{"Linux", "Darwin"}},
-		"no systemctl":                 {os: "Linux", want: namesTheImage},
-		"systemd not the init (PID 1)": {os: "Linux", systemd: "offline", want: namesTheImage},
+		"Linux riscv64": {os: "Linux", arch: "riscv64", want: []string{"riscv64", "amd64", "arm64"}},
+		"macOS x86_64":  {os: "Darwin", arch: "x86_64", want: []string{"x86_64", "arm64", "Apple silicon"}},
+		"FreeBSD":       {os: "FreeBSD", arch: "amd64", want: []string{"FreeBSD", "Linux", "macOS"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			m := newMachine(t)
-			m.OS, m.Systemd = tc.os, tc.systemd
+			m.OS, m.Arch = tc.os, tc.arch
 			m.release("v0.2.0")
 			m.latest("v0.2.0")
 
 			r := m.run("--owner", "alice")
 
 			refused(t, r, 1, append(tc.want, "nothing was written")...)
-		})
-	}
-}
-
-// systemd that is still booting, or running with a failed unit, runs the
-// koko service all the same.
-func TestTakesSystemdThatIsBootingOrDegraded(t *testing.T) {
-	t.Parallel()
-	for _, state := range []string{"initializing", "starting", "degraded"} {
-		t.Run(state, func(t *testing.T) {
-			t.Parallel()
-			m := newMachine(t)
-			m.Systemd = state
-			m.release("v0.2.0")
-			m.latest("v0.2.0")
-
-			r := m.run("--owner", "alice")
-
-			if r.Status != 0 || r.Koko == "" {
-				t.Errorf("status %d, the release binary logged %q, stderr:\n%s", r.Status, r.Koko, r.Stderr)
-			}
 		})
 	}
 }
@@ -447,9 +631,10 @@ func TestKokoVersionPinsARelease(t *testing.T) {
 
 			r := m.run("--owner", "alice")
 
-			if r.Status != 0 || !strings.HasPrefix(r.Koko, "binary=koko-linux-amd64 v0.1.0\n") {
-				t.Errorf("status %d, the release binary logged:\n%s\nstderr:\n%s", r.Status, r.Koko, r.Stderr)
+			if r.Status != 0 || !strings.HasPrefix(r.Ran, "binary=koko-linux-amd64 v0.1.0\n") {
+				t.Errorf("status %d, ran:\n%s\nstderr:\n%s", r.Status, r.Ran, r.Stderr)
 			}
+			m.installed("v0.1.0", "koko-linux-amd64")
 			wantCurl := repo + "/releases/download/v0.1.0/SHA256SUMS\n" +
 				repo + "/releases/download/v0.1.0/koko-linux-amd64\n"
 			if r.Curl != wantCurl {
@@ -478,15 +663,15 @@ func TestRefusesAKokoVersionThatIsNotAVersion(t *testing.T) {
 	}
 }
 
-// stopped checks that a run downloaded but ran nothing, left nothing behind,
-// and said why on stderr with every word of want.
+// stopped checks that a run downloaded but ran and wrote nothing, left
+// nothing behind, and said why on stderr with every word of want.
 func stopped(t *testing.T, r result, want ...string) {
 	t.Helper()
 	if r.Status != 1 {
 		t.Errorf("status %d, want 1", r.Status)
 	}
-	if r.Koko != "" || r.Stdout != "" || r.Tmp != nil {
-		t.Errorf("a stopped run ran or left something:\nkoko: %s\nstdout: %s\ntmp: %v", r.Koko, r.Stdout, r.Tmp)
+	if r.Ran != "" || r.Stdout != "" || r.Tmp != nil {
+		t.Errorf("a stopped run ran, wrote or left something:\nran: %s\nstdout: %s\ntmp: %v", r.Ran, r.Stdout, r.Tmp)
 	}
 	for _, w := range want {
 		if !strings.Contains(r.Stderr, w) {
@@ -496,17 +681,22 @@ func stopped(t *testing.T, r result, want ...string) {
 }
 
 // A binary whose bytes do not match the release's SHA256SUMS, damaged or
-// swapped, never runs, as root or at all.
+// swapped, is never run or installed, with or without arguments.
 func TestStopsWhenTheChecksumDoesNotMatch(t *testing.T) {
 	t.Parallel()
-	m := newMachine(t)
-	m.release("v0.2.0")
-	m.latest("v0.2.0")
-	m.serve(repo+"/releases/download/v0.2.0/koko-linux-amd64", append(m.binary("v0.2.0", "koko-linux-amd64"), '#'))
+	for name, args := range map[string][]string{"the CLI alone": nil, "with the koko server": {"--owner", "alice"}} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			m := newMachine(t)
+			m.release("v0.2.0")
+			m.latest("v0.2.0")
+			m.serve(repo+"/releases/download/v0.2.0/koko-linux-amd64", append(m.binary("v0.2.0", "koko-linux-amd64"), '#'))
 
-	r := m.run("--owner", "alice")
+			r := m.run(args...)
 
-	stopped(t, r, "koko-linux-amd64", "SHA256SUMS", "not run")
+			stopped(t, r, "koko-linux-amd64", "SHA256SUMS", "not run")
+		})
+	}
 }
 
 // A binary the release's SHA256SUMS does not list is never run.
@@ -565,8 +755,8 @@ func TestFindsTheLatestReleaseOfAMovedRepository(t *testing.T) {
 
 	r := m.run("--owner", "alice")
 
-	if r.Status != 0 || !strings.HasPrefix(r.Koko, "binary=koko-linux-amd64 v0.2.0\n") {
-		t.Errorf("status %d, the release binary logged:\n%s\nstderr:\n%s", r.Status, r.Koko, r.Stderr)
+	if r.Status != 0 || !strings.HasPrefix(r.Ran, "binary=koko-linux-amd64 v0.2.0\n") {
+		t.Errorf("status %d, ran:\n%s\nstderr:\n%s", r.Status, r.Ran, r.Stderr)
 	}
 }
 
@@ -583,7 +773,8 @@ func TestStopsWhenThereIsNoRelease(t *testing.T) {
 	}
 }
 
-// Run as root, install.sh runs koko server install itself, without sudo.
+// Run as root, install.sh runs koko server install and writes the CLI
+// itself, without sudo.
 func TestRunsAsRootWithoutSudo(t *testing.T) {
 	t.Parallel()
 	m := newMachine(t)
@@ -593,43 +784,76 @@ func TestRunsAsRootWithoutSudo(t *testing.T) {
 
 	r := m.run("--owner", "alice")
 
-	if r.Status != 0 || !strings.Contains(r.Koko, "uid=0\n") {
-		t.Errorf("status %d, the release binary logged:\n%s\nstderr:\n%s", r.Status, r.Koko, r.Stderr)
+	if want := serverInstall("v0.2.0", "koko-linux-amd64", "--owner alice") + writesTheCLI("koko-linux-amd64"); r.Status != 0 || r.Ran != want {
+		t.Errorf("status %d, ran:\n%s\nwant:\n%s\nstderr:\n%s", r.Status, r.Ran, want, r.Stderr)
 	}
 }
 
-// koko server install runs as root, and sudo that would ask for a password
-// is never left to ask: install.sh stops before any download and says how to
-// run it as root.
+// install.sh writes /usr/local/bin and runs koko server install as root,
+// and sudo that would ask for a password is never left to ask: install.sh
+// stops before any download and says how to run it as root, with the same
+// arguments when it was given some.
 func TestRefusesAUserWhoCannotBeRootWithoutAPassword(t *testing.T) {
 	t.Parallel()
-	for _, sudo := range []string{"password", ""} {
-		t.Run("sudo="+sudo, func(t *testing.T) {
+	for name, tc := range map[string]struct {
+		sudo string
+		args []string
+		hint string
+	}{
+		"sudo asks for a password": {sudo: "password", args: []string{"--owner", "alice"}, hint: "| sudo sh -s -- <the same arguments>"},
+		"no sudo":                  {args: []string{"--owner", "alice"}, hint: "| sudo sh -s -- <the same arguments>"},
+		"no sudo, no arguments":    {hint: "| sudo sh;"},
+	} {
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			m := newMachine(t)
-			m.Sudo = sudo
+			m.Sudo = tc.sudo
 			m.release("v0.2.0")
 			m.latest("v0.2.0")
 
-			r := m.run("--owner", "alice")
+			r := m.run(tc.args...)
 
-			refused(t, r, 1, "root", "| sudo sh -s --", "nothing was written")
+			refused(t, r, 1, "root", tc.hint, "nothing was written")
 		})
 	}
 }
 
-// install.sh exits with koko server install's status, so a script or an
-// agent reads koko's answer as if it ran koko itself.
-func TestExitsWithKokosStatus(t *testing.T) {
+// When koko server install fails, install.sh exits with its status, so a
+// script or an agent reads koko's answer as if it ran koko itself, and
+// leaves the CLI as it was: a failed upgrade of the koko server never
+// leaves a CLI of another version beside it.
+func TestLeavesTheCLIAsItWasWhenKokoServerInstallFails(t *testing.T) {
 	t.Parallel()
-	m := newMachine(t)
-	m.KokoStatus = 2
-	m.release("v0.2.0")
-	m.latest("v0.2.0")
+	for name, tc := range map[string]struct {
+		args    []string
+		service bool
+		want    string
+	}{
+		"with arguments":       {args: []string{"--port", "0"}, want: "--port 0"},
+		"onto its koko server": {service: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			m := newMachine(t)
+			m.Service = tc.service
+			m.KokoStatus = 2
+			m.release("v0.2.0")
+			m.latest("v0.2.0")
 
-	r := m.run("--port", "0")
+			r := m.run(tc.args...)
 
-	if r.Status != 2 || r.Koko == "" || r.Tmp != nil {
-		t.Errorf("status %d, the release binary logged %q, tmp %v; want koko's 2, and nothing left", r.Status, r.Koko, r.Tmp)
+			if r.Status != 2 {
+				t.Errorf("status %d, want koko's 2", r.Status)
+			}
+			if want := serverInstall("v0.2.0", "koko-linux-amd64", tc.want); r.Ran != want {
+				t.Errorf("ran:\n%s\nwant koko server install alone:\n%s", r.Ran, want)
+			}
+			if r.Stdout != "koko server install ran\n" || !strings.Contains(r.Stderr, "left as it was") {
+				t.Errorf("stdout = %q, stderr should say the CLI was left as it was:\n%s", r.Stdout, r.Stderr)
+			}
+			if r.Tmp != nil {
+				t.Errorf("install.sh left %v in its temporary directory", r.Tmp)
+			}
+		})
 	}
 }

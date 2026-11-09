@@ -122,37 +122,64 @@ attestations, GitHub Enterprise Cloud).
 ## install.sh
 
 ```
-curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh -s -- --owner alice
+curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh                       # the CLI
+curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh -s -- --owner alice   # the koko server too
 ```
 
-A POSIX `sh` script that needs `curl`, `sha256sum`, `awk`, `mktemp` and,
-when not run as root, `sudo`. Everything is in `main`, called on the last
-line, so a download cut short runs nothing. In this order:
+A POSIX `sh` script that installs `koko`, the CLI, as `/usr/local/bin/koko`
+on Linux and macOS, and installs or upgrades the koko server first when asked
+for or already there
+([ADR 0041](../adr/0041-koko-installs-the-koko-server-of-its-own-version.md)).
+It needs `curl`, `sha256sum` or `shasum`, `awk`, `mktemp`, `mkdir`,
+`install`, `mv` and, when not run as root, `sudo`. Everything is in `main`,
+called on the last line, so a download cut short runs nothing. In this
+order:
 
 1. **Checks before any download or write**, each ending with "nothing was
    written":
-   - `uname -s` is not `Linux`;
-   - `systemctl is-system-running` is missing, prints `offline` (systemd is
-     not PID 1, as in most containers) or prints nothing (a chroot). A
-     booting or degraded systemd is taken. The refusal names
-     [the image](#the-image) and the install docs' "In a container"
-     section;
-   - `uname -m` is neither `x86_64`/`amd64` nor `aarch64`/`arm64`;
-   - not root, and `sudo -n true` fails: the hint is to pipe to `sudo sh`.
+   - `uname -s` is neither `Linux` nor `Darwin`;
+   - `uname -m` is neither `x86_64`/`amd64` nor `aarch64`/`arm64` on Linux,
+     or not `arm64` on macOS, since a release has no Intel macOS binary;
+   - not root, and `sudo -n true` fails: the hint is to pipe to `sudo sh`,
+     with `-s -- <the same arguments>` when it was given some.
+
+   It does not check for systemd: the CLI needs none, and
+   `koko server install` checks the machine itself.
 2. **The release.** `KOKO_VERSION`, with or without its `v`, or else the tag
    of the page that `releases/latest` redirects to, followed through every
    redirect (a moved repository adds one) and read once. A `KOKO_VERSION`
    that is not `v<digit>` followed by letters, digits, `.`, `+` and `-` is
    refused with exit 2.
-3. **Download** `SHA256SUMS` and `koko-linux-<arch>` from
+3. **Download** `SHA256SUMS` and `koko-<os>-<arch>`, and nothing else, from
    `releases/download/<tag>/` over HTTPS only (`--proto =https`), into a
-   `mktemp -d` directory removed on every exit. It is under `TMPDIR`, so on
-   a machine whose `/tmp` is mounted `noexec`, `TMPDIR` names another.
-4. **The checksum.** A binary that `SHA256SUMS` does not list, or whose
-   SHA-256 differs, is never run.
-5. **`koko server install "$@"`**, as root (directly, or through `sudo -n`),
-   with stdin from `/dev/null`, since under `curl | sh` stdin is the rest of
-   the script. install.sh exits with its status.
+   `mktemp -d` directory removed on every exit. On Linux it is under
+   `TMPDIR`, so on a machine whose `/tmp` is mounted `noexec`, `TMPDIR`
+   names another.
+4. **The checksum**, with `sha256sum`, or `shasum -a 256` where that is
+   missing, as on macOS. A binary that `SHA256SUMS` does not list, or whose
+   SHA-256 differs, is never run or installed.
+5. **The koko server, when asked for or there.** With any argument, or with
+   none when `systemctl cat koko.service` succeeds, it runs
+   `<tmp>/koko-<os>-<arch> server install "$@"` as root (directly, or
+   through `sudo -n`), with stdin from `/dev/null`, since under `curl | sh`
+   stdin is the rest of the script. When that fails, install.sh exits with
+   its status, says `/usr/local/bin/koko` was left as it was, and writes
+   nothing.
+6. **The CLI.** As root, `mkdir -p -m 0755 /usr/local/bin`, then
+   `install -m 0755` the binary as `/usr/local/bin/.koko.new`, then
+   `mv -f` it onto `/usr/local/bin/koko`. A rename in one directory, it
+   leaves a running `koko`, such as a Device Mux, its file, and nobody sees
+   one half written. The name beside it is fixed, so a run cut short leaves
+   at most one such file, which the next run replaces. install.sh says
+   `install.sh: installed koko <tag> at /usr/local/bin/koko` and exits 0.
+
+The koko server goes first and the CLI last: a failed upgrade of the koko
+server leaves the CLI of the version that matches it, and a v0.1.0 or
+v0.2.0 koko server, whose unit runs `/usr/local/bin/koko server run`, has
+its unit rewritten before that file is replaced. Every release is installed
+by these rules: `koko-<os>-<arch>` is a name every release has, and one from
+before `kokod` (v0.1.0, v0.2.0) is the whole koko, whose `server install`
+installs the koko server by itself.
 
 Nothing prompts. install.sh writes only to stderr, as `install.sh: ...`, and
 exits 1 when it stops; stdout is `koko server install`'s alone, so `--json`
@@ -163,17 +190,26 @@ passes through clean.
 [`release/install_test.go`](../../release/install_test.go) runs `install.sh`
 as `curl … | sh -s -- <args>` does, the script on `sh`'s stdin, which stays
 open so that anything reading stdin, as a prompt would, times the test out.
-The fake machine is a `PATH` of its own: fakes for `uname`, `systemctl`,
-`id` and `sudo`, a `curl` that serves a fake GitHub from a directory and logs
-every URL, and the real `mktemp`, `rm`, `chmod`, `awk`, `sha256sum` and
-`true`. The fake `curl` follows redirects only with `-L` and fails on a
-missing file only with `-f`, writing the error page otherwise, as curl does,
-and refuses a call without `--proto =https`. Its release binaries are
-scripts that log their arguments, uid and stdin. The tests cover the latest
-release (through a moved repository too) and `KOKO_VERSION`, each
-architecture, every refusal before a download, a checksum that does not
-match, a binary `SHA256SUMS` does not list, failed downloads, a release not
-published, no release at all, root and sudo, and koko's exit status. CI runs
+The fake machine is a `PATH` of its own: fakes for `uname` (Linux or
+`Darwin`), `systemctl cat koko.service`, `id` and `sudo`; a `curl` that
+serves a fake GitHub from a directory and logs every URL; a `mktemp -d` that
+makes its directory under the test's own, as GNU's does under `TMPDIR`; a
+`shasum -a 256`; `mkdir`, `install` and `mv` that log each call with its
+uid and write under the fake machine's root directory instead of `/`; and the real `rm`, `chmod`, `awk`,
+`true` and, unless the machine is a Mac, `sha256sum`. The fake `curl`
+follows redirects only with `-L` and fails on a missing file only with
+`-f`, writing the error page otherwise, as curl does, and refuses a call
+without `--proto =https`. Its release binaries are scripts that log their
+path, arguments, uid and stdin to the same log as `mkdir`, `install` and
+`mv`, so a test reads what ran in order. The tests cover the CLI alone on
+Linux amd64 and arm64 and macOS arm64 (with `shasum`), with no systemd too;
+the koko server with arguments and the upgrade of one `systemctl` knows,
+each before the CLI; a release from before the split; the latest release
+(through a moved repository too) and `KOKO_VERSION`; every refusal before a
+download, an Intel Mac's included; a checksum that does not match, a binary
+`SHA256SUMS` does not list, failed downloads, a release not published, no
+release at all; root and sudo; and a `koko server install` that fails,
+whose exit status install.sh takes, writing no CLI. CI runs
 them under Ubuntu's `sh` (dash) and macOS's. `release/` holds no Go code but
 the test, so nothing imports it, and it is in no
 [package group](code-layout.md#the-package-groups).
