@@ -7,8 +7,8 @@
 koko is self-hosted. It keeps the record of the servers you rent across
 providers, and it is the one door people and AI agents use to reach them.
 
-**Status:** v0.1.0, the first release. It does what the list below says;
-expect rough edges.
+**Status:** v0.2.0, the first release with a container image. It does what
+the list below says; expect rough edges.
 
 ## Installing
 
