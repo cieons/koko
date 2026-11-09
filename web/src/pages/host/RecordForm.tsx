@@ -1,122 +1,71 @@
-import { type ReactNode, useState } from "react";
+import { Banner } from "@astryxdesign/core/Banner";
+import { Selector } from "@astryxdesign/core/Selector";
+import { Spinner } from "@astryxdesign/core/Spinner";
+import { Text } from "@astryxdesign/core/Text";
+import { TextArea } from "@astryxdesign/core/TextArea";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { useState } from "react";
 
 import { AttrList } from "../../api/attr";
+import { FormDialog } from "../../shell/AdaptiveDialog";
 import { useRead } from "../../shell/data";
 import { useEditForm } from "../../shell/form";
-import { ErrorMessage, useT } from "../../shell/i18n";
+import { useT } from "../../shell/i18n";
 import { browserTimeZone } from "./reldate";
 import { keyTypes, readValue } from "./view";
 
-// What a Host's page and a Service's page share: their Attributes and Note
-// as stored, the form of a reversible action, and the edit form that sends
-// only what changed.
-
-/** Attributes shows a record's Attributes by key, as stored, never translated. */
-export function Attributes({ attributes }: { attributes: Readonly<Record<string, string | number>> }) {
-  const t = useT();
-  const keys = Object.keys(attributes).sort();
-  return (
-    <>
-      <h2>{t("host.attributes")}</h2>
-      {keys.length === 0 ? (
-        <p>{t("host.attributes.none")}</p>
-      ) : (
-        <table aria-label={t("host.attributes")}>
-          <thead>
-            <tr>
-              <th>{t("host.attributes.key")}</th>
-              <th>{t("host.attributes.value")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {keys.map((key) => (
-              <tr key={key}>
-                <td>{key}</td>
-                <td>{attributes[key]}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </>
-  );
-}
-
-/** Note shows a record's Note as stored, its lines kept. */
-export function Note({ note }: { note: string | undefined }) {
-  const t = useT();
-  return (
-    <>
-      <h2>{t("host.note")}</h2>
-      {note === undefined ? (
-        <p>{t("host.note.none")}</p>
-      ) : (
-        <pre className="note" aria-label={t("host.note")}>
-          {note}
-        </pre>
-      )}
-    </>
-  );
-}
+// The forms of a Host's and a Service's actions, in the shell's FormDialog:
+// their fields, and the edit form that sends only what changed.
 
 /**
- * ActionForm frames the form of one reversible action on a record: its
- * title, its fields, the button that acts, which never asks first, Cancel,
- * and the refusal, if any.
+ * Field is a text field of a form: a record's key, labelled by the key as
+ * stored and never translated, or a message such as "New name".
  */
-export function ActionForm({
-  title,
-  submit,
-  ready,
-  error,
-  onSubmit,
-  onCancel,
-  children,
+export function Field({
+  label,
+  value,
+  onChange,
+  inputMode,
 }: {
-  title: string;
-  submit: string;
-  ready: boolean;
-  error: unknown;
-  onSubmit: () => void;
-  onCancel?: () => void;
-  children: ReactNode;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  inputMode?: "numeric" | "decimal";
 }) {
-  const t = useT();
   return (
-    <section aria-label={title}>
-      <h2>{title}</h2>
-      <form
-        className="record-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (ready) {
-            onSubmit();
-          }
-        }}
-      >
-        {children}
-        <div>
-          <button type="submit" disabled={!ready}>
-            {submit}
-          </button>{" "}
-          {onCancel && (
-            <button type="button" onClick={onCancel}>
-              {t("host.form.cancel")}
-            </button>
-          )}
-        </div>
-        {error !== undefined && <ErrorMessage error={error} />}
-      </form>
-    </section>
+    <TextInput
+      label={label}
+      value={value}
+      onChange={onChange}
+      inputMode={inputMode}
+      autoComplete="off"
+      autoCapitalize="off"
+      hasAutoCorrect={false}
+      hasSpellCheck={false}
+    />
   );
 }
 
-/** Field is a field of a form, labelled by its key, as stored, never translated. */
-export function Field({ name, value, onChange }: { name: string; value: string; onChange: (value: string) => void }) {
+/** SpaceField chooses a Space among spaces, by name. */
+export function SpaceField({
+  label,
+  spaces,
+  value,
+  onChange,
+}: {
+  label: string;
+  spaces: readonly string[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
-    <label>
-      {name} <input value={value} onChange={(e) => onChange(e.target.value)} autoComplete="off" spellCheck={false} />
-    </label>
+    <Selector
+      label={label}
+      options={spaces.map((s) => ({ value: s, label: s }))}
+      value={value === "" ? undefined : value}
+      onChange={onChange}
+      presentation="adaptive"
+    />
   );
 }
 
@@ -130,6 +79,7 @@ export interface OwnField {
   value: string;
   clearable: boolean;
   valid?: (value: string) => boolean;
+  inputMode?: "numeric";
 }
 
 /**
@@ -146,12 +96,12 @@ export interface Changes {
 
 /**
  * EditRecord is the edit form of a record's own fields, Attributes and
- * Note. It sends only what differs from the record as the form opened with
- * it, so a field someone else changed meanwhile is never overwritten; an
- * emptied value is cleared, and one more Attribute may be added. A value of
- * an Attribute is checked against its key's type first, and a relative
- * date, such as +1y, is resolved in the browser's time zone. Saving never
- * asks.
+ * Note, in a FormDialog. It sends only what differs from the record as the
+ * form opened with it (useEditForm), so a field someone else changed
+ * meanwhile is never overwritten; an emptied value is cleared, and one more
+ * Attribute may be added. A value of an Attribute is checked against its
+ * key's type first, an enum's chosen from its list, and a relative date,
+ * such as +1y, is resolved in the browser's time zone. Saving never asks.
  */
 export function EditRecord({
   title,
@@ -161,7 +111,7 @@ export function EditRecord({
   error,
   pending,
   onSave,
-  onCancel,
+  onClose,
 }: {
   title: string;
   own: readonly OwnField[];
@@ -170,7 +120,7 @@ export function EditRecord({
   error: unknown;
   pending: boolean;
   onSave: (changes: Changes) => void;
-  onCancel: () => void;
+  onClose: () => void;
 }) {
   const t = useT();
   const attrs = useRead(AttrList, {});
@@ -181,10 +131,7 @@ export function EditRecord({
   });
   const [newKey, setNewKey] = useState("");
   const [newValue, setNewValue] = useState("");
-  if (!attrs.data) {
-    return attrs.error !== undefined ? <ErrorMessage error={attrs.error} /> : null;
-  }
-  const types = keyTypes({}, attrs.data.attributes);
+  const types = keyTypes({}, attrs.data?.attributes ?? []);
   const clock = { now: new Date(), timeZone: browserTimeZone() };
 
   const changes: Changes = { fields: {}, attributes: {}, unset: [] };
@@ -230,56 +177,55 @@ export function EditRecord({
     changes.note !== undefined;
 
   return (
-    <ActionForm
+    <FormDialog
       title={title}
       submit={t("host.form.save")}
-      ready={changed && faults.length === 0 && !pending}
-      error={error}
+      ready={attrs.data !== undefined && changed && faults.length === 0 && !pending}
+      error={error ?? attrs.error}
       onSubmit={() => onSave(changes)}
-      onCancel={onCancel}
+      onClose={onClose}
     >
-      <p className="tag">{t("host.form.clearHint")}</p>
-      {own.map((f) => (
-        <Field key={f.key} name={f.key} value={form.values[f.key] ?? ""} onChange={(v) => form.set(f.key, v)} />
-      ))}
-      {Object.keys(attributes)
-        .sort()
-        .map((key) => {
-          const values = types(key)?.values;
-          const value = form.values[key] ?? "";
-          return values ? (
-            <label key={key}>
-              {key}{" "}
-              <select value={value} onChange={(e) => form.set(key, e.target.value)}>
-                <option value="" />
-                {values.map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : (
-            <Field key={key} name={key} value={value} onChange={(v) => form.set(key, v)} />
-          );
-        })}
-      <label>
-        {t("host.form.newKey")}{" "}
-        <input value={newKey} onChange={(e) => setNewKey(e.target.value)} autoComplete="off" spellCheck={false} />
-      </label>
-      <label>
-        {t("host.form.newValue")}{" "}
-        <input value={newValue} onChange={(e) => setNewValue(e.target.value)} autoComplete="off" spellCheck={false} />
-      </label>
-      <label>
-        {t("host.note")}
-        <textarea value={form.values["note"] ?? ""} onChange={(e) => form.set("note", e.target.value)} />
-      </label>
-      {faults.length > 0 && (
-        <p className="error" role="alert">
-          {t("host.form.invalid", { keys: faults.join(", ") })}
-        </p>
+      {attrs.data === undefined ? (
+        attrs.error === undefined && <Spinner label={t("shell.loading")} />
+      ) : (
+        <>
+          <Text type="supporting" color="secondary">
+            {t("host.form.clearHint")}
+          </Text>
+          {own.map((f) => (
+            <Field
+              key={f.key}
+              label={f.key}
+              value={form.values[f.key] ?? ""}
+              inputMode={f.inputMode}
+              onChange={(v) => form.set(f.key, v)}
+            />
+          ))}
+          {Object.keys(attributes)
+            .sort()
+            .map((key) => {
+              const values = types(key)?.values;
+              const value = form.values[key] ?? "";
+              return values ? (
+                <Selector
+                  key={key}
+                  label={key}
+                  options={values.map((v) => ({ value: v, label: v }))}
+                  value={value === "" ? null : value}
+                  onChange={(v: string | null) => form.set(key, v ?? "")}
+                  hasClear
+                  presentation="adaptive"
+                />
+              ) : (
+                <Field key={key} label={key} value={value} onChange={(v) => form.set(key, v)} />
+              );
+            })}
+          <Field label={t("host.form.newKey")} value={newKey} onChange={setNewKey} />
+          <Field label={t("host.form.newValue")} value={newValue} onChange={setNewValue} />
+          <TextArea label={t("host.note")} value={form.values["note"] ?? ""} onChange={(v) => form.set("note", v)} rows={5} />
+          {faults.length > 0 && <Banner status="error" role="alert" title={t("host.form.invalid", { keys: faults.join(", ") })} />}
+        </>
       )}
-    </ActionForm>
+    </FormDialog>
   );
 }

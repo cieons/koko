@@ -6,21 +6,34 @@ import { HostShow } from "../../api/host";
 import {
   type Service,
   ServiceList,
+  type ServiceListRequest,
   ServiceRemove,
   ServiceRename,
   ServiceSet,
   ServiceShow,
   type ServiceShowRequest,
 } from "../../api/service";
-import type { User } from "../../api/user";
+import { expectAccessible } from "../../test/axe";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { actAs, findAlert, renderAt, tableRows } from "../../test/pages";
+import {
+  actions,
+  addFilter,
+  bob,
+  metadata,
+  offered,
+  openColumns,
+  query,
+  service as record,
+  tokens,
+  visibleText,
+} from "../host/records.fixture";
 
-// The Services list and a Service's page, against the fake API: the list's
-// filters, sorting and columns in the URL as on the Hosts list, and a
-// Service's actions, where only deleting asks first.
-
-const bob: User = { id: "user_2", name: "bob", role: "member", created_at: "2026-11-02T09:00:00Z" };
+// The Services list and a Service's page, against the fake API, one test
+// for each action of the page inventory (docs/subsystems/web-shell.md): the
+// list's PowerSearch tokens, sorting and columns in the URL as on the Hosts
+// list, its detail pane, and a Service's actions, where only deleting asks
+// first.
 
 const attributes: AttrKey[] = [
   { key: "provider", type: "text", preset: true, in_use: false },
@@ -29,16 +42,7 @@ const attributes: AttrKey[] = [
 ];
 
 function service(host: string, name: string, fields: Partial<Service> = {}): Service {
-  return {
-    id: `service_${host}_${name}`,
-    name,
-    host,
-    ports: [],
-    attributes: {},
-    created_at: "2026-11-01T09:00:00Z",
-    updated_at: "2026-11-04T09:00:00Z",
-    ...fields,
-  };
+  return record(name, { id: `service_${host}_${name}`, host, updated_at: "2026-11-04T09:00:00Z", ...fields });
 }
 
 const nginx = service("web1", "nginx", {
@@ -61,23 +65,30 @@ function services(api: FakeApi, list: Service[]): void {
   });
 }
 
-function query(): string[][] {
-  return [...new URLSearchParams(window.location.search).entries()];
-}
-
 function headers(): string[] {
   return within(screen.getByRole("table", { name: "Services" }))
     .getAllByRole("columnheader")
-    .map((th) => th.textContent ?? "");
+    .map(visibleText);
 }
 
-test("the Services list shows Host, name and ports, takes the same filters and sorting, and keeps them in the URL", async () => {
+function table(): Promise<HTMLElement> {
+  return screen.findByRole("table", { name: "Services" });
+}
+
+async function dialog(title: string) {
+  return within(await screen.findByRole("dialog", { name: title }));
+}
+
+const filter = "Filter Services";
+
+test("the Services list shows Host, name and ports, each linking to its page", async () => {
   const api = fakeApi();
   actAs(api, bob);
   services(api, [pg, nginx]);
-  const first = renderAt("/services");
 
-  await screen.findByRole("table", { name: "Services" });
+  renderAt("/services");
+
+  await table();
   expect(headers()).toEqual(["host", "name", "ports"]);
   expect(tableRows("Services")).toEqual([
     ["db1", "pg", "5432/tcp"],
@@ -88,38 +99,93 @@ test("the Services list shows Host, name and ports, takes the same filters and s
   expect(api.requests(ServiceList)).toEqual([{}]);
   // The ports, a set, neither filter nor sort the list.
   expect(within(screen.getByRole("columnheader", { name: "ports" })).queryByRole("button")).toBeNull();
-  const keys = within(screen.getByLabelText("Key"))
-    .getAllByRole("option")
-    .map((o) => o.textContent);
-  expect(keys).toEqual(["Pick a key", "id", "name", "host", "provider", "price", "kind"]);
+  await expectAccessible();
+});
 
-  fireEvent.change(screen.getByLabelText("Key"), { target: { value: "host" } });
-  fireEvent.change(screen.getByLabelText("Value"), { target: { value: "web1" } });
-  fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
-  fireEvent.click(await screen.findByRole("button", { name: "name" }));
-  fireEvent.click(within(screen.getByRole("group", { name: "Columns" })).getByRole("checkbox", { name: "kind" }));
+test("the Services list takes the Hosts list's tokens, sorting and columns, and keeps them in the URL", async () => {
+  const api = fakeApi();
+  actAs(api, bob);
+  services(api, [pg, nginx]);
+  const first = renderAt("/services");
+  await table();
+
+  expect(await offered(filter, "host")).toEqual(["host", "host =", "host !=", "host has", "host lacks"]);
+  await addFilter(filter, "host", "=", "web1");
+  fireEvent.click(within(await table()).getByRole("button", { name: "name" }));
+  await table();
+  const options = within(await openColumns());
+  await expectAccessible();
+  fireEvent.click(options.getByRole("button", { name: "Show kind" }));
 
   expect(query()).toEqual([
     ["filter", "host=web1"],
     ["sort", "name"],
     ["columns", "ports,kind"],
   ]);
-  await screen.findByRole("table", { name: "Services" });
-  expect(api.requests(ServiceList).at(-1)).toEqual({
+  await table();
+  expect(api.requests(ServiceList).at(-1) as ServiceListRequest).toEqual({
     filters: [{ key: "host", op: "eq", value: "web1" }],
     sort: [{ key: "name" }],
   });
-  expect(headers()).toEqual(["host", "name ▲", "ports", "kind"]);
+  expect(headers()).toEqual(["host", "name", "ports", "kind"]);
+  expect(screen.getByRole("columnheader", { name: /^name/ }).getAttribute("aria-sort")).toBe("ascending");
 
-  // A URL holding a key, a sort or a column the list does not take lists nothing.
+  // A bookmark from before the redesign opens the same view.
+  const bookmark = window.location.pathname + window.location.search;
   first.unmount();
-  const listed = api.requests(ServiceList).length;
-  renderAt("/services?filter=state=managed&sort=ports&columns=name&all=1");
-  expect(await findAlert()).toContain("state=managed, ports, name");
-  expect(api.requests(ServiceList)).toHaveLength(listed);
+  renderAt(bookmark);
+  await table();
+  expect(tokens(filter)).toEqual(["host: = web1"]);
+  expect(headers()).toEqual(["host", "name", "ports", "kind"]);
+
+  // A column hidden no longer sorts the list.
+  fireEvent.click(within(await openColumns()).getByRole("button", { name: "Hide ports" }));
+  expect(query()).toEqual([
+    ["filter", "host=web1"],
+    ["sort", "name"],
+    ["columns", "kind"],
+  ]);
+  await table();
+  expect(headers()).toEqual(["host", "name", "kind"]);
 });
 
-test("a Service's page shows its fields, Attributes and Note", async () => {
+test("a URL holding a key, a sort or a column the list does not take says which and lists nothing", async () => {
+  const api = fakeApi();
+  actAs(api, bob);
+  services(api, [nginx]);
+
+  renderAt("/services?filter=state=managed&sort=ports&columns=name&all=1");
+
+  expect(
+    await screen.findByText("The address of this page holds state=managed, ports, name, which the list of Services does not take."),
+  ).toBeDefined();
+  expect(api.requests(ServiceList)).toEqual([]);
+  await expectAccessible();
+  fireEvent.click(screen.getByRole("link", { name: "Show the default view" }));
+  await table();
+  expect(window.location.search).toBe("");
+});
+
+test("a Service selected opens beside the list with what service.show answers, and its page a click away", async () => {
+  const api = fakeApi();
+  actAs(api, bob);
+  services(api, [pg, nginx]);
+  renderAt("/services");
+  await table();
+
+  fireEvent.click(screen.getByRole("link", { name: "nginx" }));
+
+  const pane = within(await screen.findByRole("region", { name: "Details of web1/nginx" }));
+  expect(await pane.findByText("Terminates TLS.")).toBeDefined();
+  expect(pane.getByRole("link", { name: "Open page" }).getAttribute("href")).toBe("/services/web1/nginx");
+  expect(api.requests(ServiceShow)).toEqual([{ host: "web1", name: "nginx" }]);
+  await expectAccessible();
+
+  fireEvent.click(pane.getByRole("link", { name: "Open page" }));
+  expect(await screen.findByRole("heading", { level: 1, name: "web1/nginx" })).toBeDefined();
+});
+
+test("a Service's page shows its fields, Attributes and its Note in the rail", async () => {
   const api = fakeApi();
   actAs(api, bob);
   services(api, [nginx]);
@@ -127,10 +193,7 @@ test("a Service's page shows its fields, Attributes and Note", async () => {
   renderAt("/services/web1/nginx");
 
   expect(await screen.findByRole("heading", { level: 1, name: "web1/nginx" })).toBeDefined();
-  const fields = within(screen.getByRole("group", { name: "Fields" }))
-    .getAllByRole("term")
-    .map((dt) => [dt.textContent, dt.nextElementSibling?.textContent]);
-  expect(fields).toEqual([
+  expect(metadata("Fields")).toEqual([
     ["host", "web1"],
     ["name", "nginx"],
     ["id", "service_web1_nginx"],
@@ -138,12 +201,13 @@ test("a Service's page shows its fields, Attributes and Note", async () => {
     ["created_at", "2026-11-01"],
     ["updated_at", "2026-11-04"],
   ]);
-  expect(tableRows("Attributes")).toEqual([["kind", "proxy"]]);
-  expect(screen.getByLabelText("Note").textContent).toBe("Terminates TLS.");
+  expect(metadata("Attributes")).toEqual([["kind", "proxy"]]);
+  expect(within(screen.getByRole("region", { name: "Note" })).getByText("Terminates TLS.")).toBeDefined();
   expect(api.requests(ServiceShow)).toEqual([{ host: "web1", name: "nginx" }]);
+  await expectAccessible();
 });
 
-test("a Service's edit form sends only what changed, clearing its ports when emptied, and rename never asks", async () => {
+test("a Service's edit dialog sends only what changed, clearing its ports when emptied, and rename never asks", async () => {
   const api = fakeApi();
   actAs(api, bob);
   const proxy = service("web1", "proxy");
@@ -151,37 +215,44 @@ test("a Service's edit form sends only what changed, clearing its ports when emp
   api.on(ServiceSet, () => ({ service: nginx }));
   api.on(ServiceRename, () => ({ service: proxy }));
   renderAt("/services/web1/nginx");
+  const edit = async () => {
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    const opened = await dialog("Edit web1/nginx");
+    await opened.findByRole("textbox", { name: "ports" });
+    return opened;
+  };
+  const closed = () => vi.waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit web1/nginx" })).toBeNull());
+  const type = (scope: Awaited<ReturnType<typeof dialog>>, label: string, value: string) =>
+    fireEvent.change(scope.getByRole("textbox", { name: label }), { target: { value } });
 
-  fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
-  const edit = within(await screen.findByRole("region", { name: "Edit web1/nginx" }));
-  const type = (label: string, value: string) => fireEvent.change(edit.getByLabelText(label), { target: { value } });
-  type("ports", "");
-  type("kind", "edge");
-  fireEvent.click(edit.getByRole("button", { name: "Save" }));
-  await vi.waitFor(() => expect(screen.queryByRole("region", { name: "Edit web1/nginx" })).toBeNull());
+  const first = await edit();
+  await expectAccessible();
+  type(first, "ports", "");
+  type(first, "kind", "edge");
+  type(first, "Note", "Terminates TLS for the app.");
+  fireEvent.click(first.getByRole("button", { name: "Save" }));
+  await closed();
   expect(api.requests(ServiceSet)).toEqual([
-    { host: "web1", name: "nginx", attributes: { kind: "edge" }, unset: ["ports"] },
+    { host: "web1", name: "nginx", attributes: { kind: "edge" }, note: "Terminates TLS for the app.", unset: ["ports"] },
   ]);
 
-  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-  const again = within(await screen.findByRole("region", { name: "Edit web1/nginx" }));
-  fireEvent.change(again.getByLabelText("ports"), { target: { value: "8080 8443/tcp" } });
+  const again = await edit();
+  type(again, "ports", "8080 8443/tcp");
   fireEvent.click(again.getByRole("button", { name: "Save" }));
-  await vi.waitFor(() => expect(api.requests(ServiceSet)).toHaveLength(2));
+  await closed();
   expect(api.requests(ServiceSet)[1]).toEqual({ host: "web1", name: "nginx", ports: ["8080", "8443/tcp"] });
 
   // Ports that split to none clear them: service.set refuses "ports": [].
-  await vi.waitFor(() => expect(screen.queryByRole("region", { name: "Edit web1/nginx" })).toBeNull());
-  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-  const third = within(await screen.findByRole("region", { name: "Edit web1/nginx" }));
-  fireEvent.change(third.getByLabelText("ports"), { target: { value: " , " } });
+  const third = await edit();
+  type(third, "ports", " , ");
   fireEvent.click(third.getByRole("button", { name: "Save" }));
-  await vi.waitFor(() => expect(api.requests(ServiceSet)).toHaveLength(3));
+  await closed();
   expect(api.requests(ServiceSet)[2]).toEqual({ host: "web1", name: "nginx", unset: ["ports"] });
 
-  fireEvent.click(await screen.findByRole("button", { name: "Rename" }));
-  const rename = within(screen.getByRole("region", { name: "Rename web1/nginx" }));
-  fireEvent.change(rename.getByLabelText("New name"), { target: { value: "proxy" } });
+  fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+  const rename = await dialog("Rename web1/nginx");
+  await expectAccessible();
+  type(rename, "New name", "proxy");
   fireEvent.click(rename.getByRole("button", { name: "Rename" }));
   expect(await screen.findByRole("heading", { level: 1, name: "web1/proxy" })).toBeDefined();
   expect(window.location.pathname).toBe("/services/web1/proxy");
@@ -200,9 +271,10 @@ test("deleting a Service asks first, stating the consequence, and goes back to i
   renderAt("/services/web1/nginx");
 
   fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
-  const dialog = screen.getByRole("alertdialog", { name: "Delete web1/nginx?" });
-  expect(dialog.textContent).toContain("web1/nginx is deleted for good, with its ports, Attributes and Note.");
-  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  const asked = screen.getByRole("alertdialog", { name: "Delete web1/nginx" });
+  expect(asked.textContent).toContain("web1/nginx is deleted permanently, with its ports, Attributes and Note.");
+  await expectAccessible();
+  fireEvent.click(within(asked).getByRole("button", { name: "Cancel" }));
   expect(api.requests(ServiceRemove)).toEqual([]);
 
   fireEvent.click(screen.getByRole("button", { name: "Delete" }));
@@ -220,6 +292,21 @@ test("a Service on a Retired Host is read-only", async () => {
   renderAt("/services/host_old1/nginx");
 
   expect(await screen.findByText(/Its Host is Retired/)).toBeDefined();
-  expect(within(screen.getByRole("main")).queryAllByRole("button").map((b) => b.textContent)).toEqual([]);
-  expect(screen.getByRole("link", { name: "host_old1" }).getAttribute("href")).toBe("/hosts/host_old1");
+  expect(screen.getByRole("heading", { level: 1, name: "host_old1/nginx" })).toBeDefined();
+  expect(actions()).toEqual([]);
+  await expectAccessible();
+  expect(metadata("Fields")[0]).toEqual(["host", "host_old1"]);
+  expect(within(screen.getByRole("main")).getAllByRole("link", { name: "host_old1" })[0]?.getAttribute("href")).toBe(
+    "/hosts/host_old1",
+  );
+});
+
+test("a Service no one can see says so", async () => {
+  const api = fakeApi();
+  actAs(api, bob);
+  services(api, []);
+
+  renderAt("/services/web1/nope");
+
+  expect(await findAlert()).toBe("The Host has no Service of that name.");
 });

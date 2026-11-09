@@ -1,91 +1,47 @@
 /*
- * The record's pages. The Hosts and Services lists: the filter builder, its
- * terms, the column picker and sortable headers.
+ * The record's pages, on Astryx: what its components have no prop for.
+ * Every rule names a koko- class the pages set, so nothing here reaches
+ * another page.
  */
 
-.filter-builder {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 1rem;
-  margin: 1rem 0;
+/*
+ * A list page fills the AppShell's main area, so the table scrolls inside it
+ * and the detail pane stays beside it. The Shell still wraps each page in
+ * .koko-legacy.
+ */
+.koko-legacy:has(> .koko-list) {
+  block-size: 100%;
 }
 
-.terms {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 0 0 1rem;
-  padding: 0;
-  list-style: none;
-}
-
-.terms li {
-  padding: 0.125rem 0.25rem 0.125rem 0.5rem;
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-element);
-}
-
-.terms button {
-  margin-left: 0.25rem;
-  border: none;
-  background: none;
-  cursor: pointer;
-}
-
-.columns {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1rem;
-  margin: 1rem 0;
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-element);
-}
-
-/* A Host's page and a Service's page: their fields, Note, actions and forms. */
-
-.fields > div {
-  display: flex;
-  gap: 1rem;
-}
-
-.fields dt {
-  min-width: 8rem;
-  font-weight: 600;
-}
-
-.fields dd {
+/*
+ * shell/app.css gives a bare table inside .koko-legacy a margin for the
+ * pages not yet redone; Astryx's Table sets none of its own.
+ */
+.koko-list table {
   margin: 0;
 }
 
-.note {
-  white-space: pre-wrap;
+/* The filter bar takes the toolbar's width before the controls after it. */
+.koko-list-filter {
+  min-width: min(100%, calc(var(--spacing-12) * 6));
 }
 
-.record-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 1rem 0;
-}
-
-.record-form label {
-  display: block;
-  margin-bottom: 0.5rem;
-}
-
-.record-form textarea {
-  display: block;
-  width: 100%;
-  max-width: 40rem;
-  min-height: 6rem;
-}
-
-th button.sort {
-  padding: 0;
-  border: none;
-  background: none;
-  font: inherit;
-  font-weight: 600;
+/* A row selects its record; the one selected keeps a pressed fill. */
+.koko-row {
   cursor: pointer;
+}
+
+.koko-row-selected {
+  background-color: var(--color-overlay-pressed);
+  --table-row-overlay: var(--color-overlay-pressed);
+}
+
+/* A record's name breaks anywhere on a phone; a Note keeps its lines. */
+.koko-record-name {
+  overflow-wrap: anywhere;
+}
+
+.koko-note {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

@@ -2,7 +2,8 @@
 
 The frame every page of the web UI sits in, and the parts pages share: the
 side navigation and the account menu, routing and who the web UI acts as,
-the language, the mode and the catalogues, the API client, the confirmation
+the language, the mode and the catalogues, the API client, pages that load
+when first shown, the dialogs of actions that never ask, the confirmation
 dialog, edit forms, reloading, what a page shows once, and the notices and
 refusals. The pages themselves are their capabilities'; where an area adds its pages and its
 catalogue files is in [code layout](code-layout.md#where-an-area-adds-its-parts).
@@ -94,6 +95,14 @@ re-skin"):
   [`web/src/routes.ts`](../../web/src/routes.ts), and `/` goes, keeping its
   query, to the first linked page the caller may see. A path no route
   matches, or one that does not decode, shows that there is no page there.
+- **A page loads when first shown.** An area's `routes.ts` gives a page as
+  [`lazyPage(load)`](../../web/src/shell/lazyPage.tsx), so its code is a
+  chunk of its own, outside [the first load](web-ui.md#size); so far the
+  record's pages do, and each page's redesign on Astryx moves its own. A
+  spinner shows while the chunk loads, and a chunk that does not load, as
+  after the koko server was upgraded under an open tab, shows an error
+  `Banner` saying to reload the browser page, in place of the page; any
+  other error a page throws goes on past it.
 - **Page state lives in the URL's query** (`useSearchParams`, and
   `useQueryFlag` for a yes-or-no state kept as `name=1`), so a bookmark
   is a saved view and Back returns to the earlier state. The router uses the
@@ -204,13 +213,34 @@ line today and a Password Link later, shows in
 [`ShownOnceLine`](../../web/src/shell/ShownOnceLine.tsx): a region named for
 what it holds, in an Astryx `Card`, with the line in Astryx's `Code`, which
 breaks anywhere on a phone and one click selects whole; a copy
-`IconButton` beside it, which says whether the browser copied it; and the
+`IconButton` beside it, which says whether the browser copied it (the two
+are [`CopyLine`](../../web/src/shell/CopyLine.tsx), which any line to copy
+shows in, such as a Registered Host's `koko host enroll`); and the
 time left as text, counted each second on the browser's clock from when the
 line showed, for the validity the page asked for (`validFor`). The time
 left reads in minutes and seconds (`14:59`) for its last hour, and before
 that in days and whole hours in the language (`6 days, 23 hours`, `6天23小时`,
 `Intl.DurationFormat`), as a validity of up to 7 days (#115) calls for. Once
 it ran out, the line goes and the page's own words say what to do instead.
+
+## Dialogs
+
+An action that never asks first opens a dialog of the shell's
+([`AdaptiveDialog.tsx`](../../web/src/shell/AdaptiveDialog.tsx)), open
+while the page renders it:
+
+- **`AdaptiveDialog`** is an Astryx `Dialog` named by its `title`, with an
+  optional `description` under it, its content, and a `footer` for its
+  buttons; below Astryx's `md` width (`phone`, 768 pixels) it is a
+  `BottomSheet` named so, its title a heading. It takes the focus as it
+  opens and gives it back where it was when it closes; Escape and the close
+  button close it (`onClose`), and a click beside it too, unless `isForm`.
+  A value shown or a step of a wizard is one, with the page's own buttons in
+  its footer.
+- **`FormDialog`** is the form of one action in an `AdaptiveDialog` with
+  `isForm`: its fields, the refusal in place (`error`, an `ErrorMessage`),
+  Cancel, and the button that acts (`submit`), which, like Enter in a
+  field, sends the form (`onSubmit`) only when it is `ready`.
 
 ## Confirmations
 
@@ -403,3 +433,11 @@ and [the Spaces, People and Devices pages](people-pages.md).
   in either language.
 - [`App.test.tsx`](../../web/src/App.test.tsx): the web UI opens on its first
   page.
+- [`AdaptiveDialog.test.tsx`](../../web/src/shell/AdaptiveDialog.test.tsx):
+  a dialog named and described by its title and description, axe, the focus
+  back on its opener when it closes; a bottom sheet on a phone; a form
+  dialog sending only when ready, from its button or Enter, its refusal,
+  and Cancel sending nothing.
+- [`lazyPage.test.tsx`](../../web/src/shell/lazyPage.test.tsx): a lazy
+  page's spinner, then the page; a chunk that does not load saying so in
+  the frame; another error not taken for one.

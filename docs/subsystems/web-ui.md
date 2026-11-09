@@ -86,8 +86,13 @@ its providers is [the web UI shell](web-shell.md#providers).
 on disk, and at most 450 KiB gzipped for the first load, the files a
 browser loads to show the first page (`index.html`, the scripts and
 stylesheets it names, and the fonts their stylesheets name). The reverse
-proxy compresses them for browsers. The size test logs each size, and a
-commit that changes the build much records them in its body.
+proxy compresses them for browsers. A page redone on Astryx keeps its own
+code out of the first load: its area's `routes.ts` gives it through
+[`lazyPage`](web-shell.md#pages-and-routing), a chunk of its own, as the
+record's pages are given, and it drops what its pattern's template offers
+that its inventory does not need, such as row selection for bulk actions or
+grouping. The size test logs each
+size, and a commit that changes the build much records them in its body.
 
 ## Building and embedding
 

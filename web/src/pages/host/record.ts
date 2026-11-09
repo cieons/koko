@@ -1,7 +1,27 @@
 import type { Host } from "../../api/host";
+import type { Service } from "../../api/service";
+import type { Fields } from "./view";
 
-// What the record's pages share of the record itself: the paths of a Host's
-// and a Service's pages, and how a form reads a port and a Service's ports.
+// What the record's pages share of the record itself: the fields a Host's
+// list takes, the paths of a Host's and a Service's pages, and how a form
+// reads a port and a Service's ports.
+
+/**
+ * hostFields are the fields host.list filters and sorts on, with their
+ * types, as api.HostListFields has them; every other key is an Attribute
+ * key.
+ */
+export const hostFields: Fields = {
+  id: { type: "text" },
+  name: { type: "text" },
+  space: { type: "text" },
+  address: { type: "text" },
+  port: { type: "number" },
+  account: { type: "text" },
+  relay: { type: "text" },
+  state: { type: "enum", values: ["registered", "managed", "retired"] },
+  host_key: { type: "text" },
+};
 
 /**
  * hostPathOf is the path of the page of the Host that handle names: its
@@ -25,6 +45,11 @@ export function hostPath(host: Host): string {
  */
 export function servicePath(host: string, name: string): string {
   return `/services/${encodeURIComponent(host)}/${encodeURIComponent(name)}`;
+}
+
+/** qualified names a Service as every command does: <host>/<service>. */
+export function qualified(service: Service): string {
+  return `${service.host}/${service.name}`;
 }
 
 /** validPort tells whether value is a port, 1 to 65535. */

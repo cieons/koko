@@ -1,5 +1,11 @@
 import "../host/host.css";
 
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button } from "@astryxdesign/core/Button";
+import { useMediaQuery } from "@astryxdesign/core/hooks";
+import { Layout, LayoutContent, LayoutPanel, VStack } from "@astryxdesign/core/Layout";
+import { Link } from "@astryxdesign/core/Link";
+import { Spinner } from "@astryxdesign/core/Spinner";
 import { useState } from "react";
 
 import {
@@ -10,18 +16,15 @@ import {
   type ServiceSetRequest,
   ServiceShow,
 } from "../../api/service";
+import { FormDialog } from "../../shell/AdaptiveDialog";
 import { ConfirmDialog } from "../../shell/ConfirmDialog";
 import { useRead, useWrite } from "../../shell/data";
 import { formatDate } from "../../shell/format";
 import { ErrorMessage, useT } from "../../shell/i18n";
-import { Link, navigate, type PageProps } from "../../shell/router";
-import { hostPathOf, servicePath, splitPorts } from "../host/record";
-import { ActionForm, Attributes, type Changes, EditRecord, Note } from "../host/RecordForm";
-
-/** qualified names a Service as every command does: <host>/<service>. */
-function qualified(service: Service): string {
-  return `${service.host}/${service.name}`;
-}
+import { navigate, type PageProps } from "../../shell/router";
+import { hostPathOf, qualified, servicePath, splitPorts } from "../host/record";
+import { type Changes, EditRecord, Field } from "../host/RecordForm";
+import { Attributes, FieldList, narrow, Note, RecordHeader } from "../host/RecordView";
 
 /**
  * onRetiredHost tells whether a Service's Host is Retired: the Service then
@@ -32,88 +35,98 @@ function onRetiredHost(service: Service): boolean {
 }
 
 /**
- * ServicePage shows a Service, as `koko service show` does: its fields,
- * Attributes and Note. It sets and clears its ports, Attributes and Note
- * and renames it, which never ask, and deletes it, which asks first. A
- * Service on a Retired Host is read-only.
+ * ServicePage shows a Service, as `koko service show` does, on the Host
+ * page's pattern: a summary header with its name and actions, its fields
+ * and Attributes, and its Note in the rail. It sets and clears its ports,
+ * Attributes and Note and renames it, which never ask, and deletes it,
+ * which asks first. A Service on a Retired Host is read-only.
  */
 export function ServicePage({ params }: PageProps) {
   const t = useT();
   const show = useRead(ServiceShow, { host: params["host"] ?? "", name: params["name"] ?? "" });
-  const [action, setAction] = useState<"edit" | "rename">();
-  const [asking, setAsking] = useState(false);
+  const [action, setAction] = useState<"edit" | "rename" | "remove">();
   const remove = useWrite(ServiceRemove);
+  const isNarrow = useMediaQuery(narrow);
   if (!show.data) {
-    return show.error !== undefined ? <ErrorMessage error={show.error} /> : null;
+    return show.error !== undefined ? <ErrorMessage error={show.error} /> : <Spinner label={t("shell.loading")} />;
   }
   const { service } = show.data;
-  const fields: [string, string][] = [
-    ["id", service.id],
-    ["ports", service.ports.join(", ")],
-    ["created_at", formatDate(service.created_at)],
-    ["updated_at", formatDate(service.updated_at)],
-  ];
+  const readOnly = onRetiredHost(service);
+  const close = () => setAction(undefined);
+  const actions = readOnly
+    ? []
+    : [
+        <Button key="edit" label={t("service.edit.button")} onClick={() => setAction("edit")} />,
+        <Button key="rename" label={t("service.rename.button")} onClick={() => setAction("rename")} />,
+        <Button key="remove" label={t("service.remove.button")} onClick={() => setAction("remove")} />,
+      ];
 
   return (
     <>
-      <h1>{qualified(service)}</h1>
-      {show.error !== undefined && <ErrorMessage error={show.error} />}
-      <dl className="fields" role="group" aria-label={t("host.detail.fields")}>
-        <div>
-          <dt>host</dt>
-          <dd>
-            <Link to={hostPathOf(service.host)}>{service.host}</Link>
-          </dd>
-        </div>
-        <div>
-          <dt>name</dt>
-          <dd>{service.name}</dd>
-        </div>
-        {fields.map(([key, value]) => (
-          <div key={key}>
-            <dt>{key}</dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
-      </dl>
-      <Attributes attributes={service.attributes} />
-      <Note note={service.note} />
-      {onRetiredHost(service) ? (
-        <p>{t("service.detail.readOnly")}</p>
-      ) : (
-        <div className="record-actions">
-          <button type="button" onClick={() => setAction("edit")}>
-            {t("service.edit.button")}
-          </button>
-          <button type="button" onClick={() => setAction("rename")}>
-            {t("service.rename.button")}
-          </button>
-          <button type="button" onClick={() => setAsking(true)}>
-            {t("service.remove.button")}
-          </button>
-        </div>
-      )}
-      {remove.error !== undefined && <ErrorMessage error={remove.error} />}
+      <Layout
+        // The page scrolls as a whole in the AppShell's main area: a Layout
+        // that fills it scrolls its content in a region Astryx does not make
+        // focusable when nothing in it is.
+        height="auto"
+        defaultHasDividers
+        header={
+          <RecordHeader
+            back={{ href: hostPathOf(service.host), label: service.host }}
+            name={qualified(service)}
+            about={[]}
+            actions={actions}
+          >
+            {readOnly && <Banner status="info" title={t("service.detail.readOnly")} />}
+            {show.error !== undefined && <ErrorMessage error={show.error} />}
+            {remove.error !== undefined && <ErrorMessage error={remove.error} />}
+          </RecordHeader>
+        }
+        content={
+          <LayoutContent>
+            <VStack gap={6}>
+              <FieldList
+                label={t("host.detail.fields")}
+                fields={[
+                  ["host", <Link href={hostPathOf(service.host)}>{service.host}</Link>],
+                  ["name", service.name],
+                  ["id", service.id],
+                  ["ports", service.ports.join(", ")],
+                  ["created_at", formatDate(service.created_at)],
+                  ["updated_at", formatDate(service.updated_at)],
+                ]}
+              />
+              <Attributes attributes={service.attributes} />
+              {isNarrow && <Note note={service.note} />}
+            </VStack>
+          </LayoutContent>
+        }
+        end={
+          isNarrow ? undefined : (
+            <LayoutPanel width={320} padding={4} role="region" label={t("host.note")}>
+              <Note note={service.note} />
+            </LayoutPanel>
+          )
+        }
+      />
       {action === "edit" && (
         <EditService
-          key={service.id}
           service={service}
           onDone={() => {
-            setAction(undefined);
+            close();
             show.reload();
           }}
-          onCancel={() => setAction(undefined)}
+          onClose={close}
         />
       )}
-      {action === "rename" && <RenameService service={service} onCancel={() => setAction(undefined)} />}
-      {asking && (
+      {action === "rename" && <RenameService service={service} onClose={close} />}
+      {action === "remove" && (
         <ConfirmDialog
           title={t("service.remove.title", { name: qualified(service) })}
           consequence={t("service.remove.consequence", { name: qualified(service) })}
           confirm={t("service.remove.confirm")}
-          onCancel={() => setAsking(false)}
+          onCancel={close}
           onConfirm={() => {
-            setAsking(false);
+            close();
             void remove.submit({ host: service.host, name: service.name }).then((removed) => {
               if (removed) {
                 navigate(hostPathOf(service.host), { replace: true });
@@ -127,7 +140,7 @@ export function ServicePage({ params }: PageProps) {
 }
 
 /** EditService sets and clears a Service's ports, Attributes and Note, sending only those changed. */
-function EditService({ service, onDone, onCancel }: { service: Service; onDone: () => void; onCancel: () => void }) {
+function EditService({ service, onDone, onClose }: { service: Service; onDone: () => void; onClose: () => void }) {
   const t = useT();
   const set = useWrite(ServiceSet);
   const save = ({ fields, attributes, note, unset }: Changes) => {
@@ -155,22 +168,23 @@ function EditService({ service, onDone, onCancel }: { service: Service; onDone: 
       error={set.error}
       pending={set.pending}
       onSave={save}
-      onCancel={onCancel}
+      onClose={onClose}
     />
   );
 }
 
 /** RenameService gives a Service a new name on its Host, and the page moves to it. */
-function RenameService({ service, onCancel }: { service: Service; onCancel: () => void }) {
+function RenameService({ service, onClose }: { service: Service; onClose: () => void }) {
   const t = useT();
   const [newName, setNewName] = useState("");
   const rename = useWrite(ServiceRename);
   return (
-    <ActionForm
+    <FormDialog
       title={t("service.rename.title", { name: qualified(service) })}
       submit={t("service.rename.submit")}
       ready={newName !== "" && !rename.pending}
       error={rename.error}
+      onClose={onClose}
       onSubmit={() =>
         void rename.submit({ host: service.host, name: service.name, new_name: newName }).then((renamed) => {
           // The old name names no Service now, so it leaves no history entry.
@@ -179,12 +193,8 @@ function RenameService({ service, onCancel }: { service: Service; onCancel: () =
           }
         })
       }
-      onCancel={onCancel}
     >
-      <label>
-        {t("service.rename.name")}{" "}
-        <input value={newName} onChange={(e) => setNewName(e.target.value)} autoComplete="off" spellCheck={false} />
-      </label>
-    </ActionForm>
+      <Field label={t("service.rename.name")} value={newName} onChange={setNewName} />
+    </FormDialog>
   );
 }

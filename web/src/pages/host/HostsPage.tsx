@@ -1,23 +1,43 @@
 import "./host.css";
 
-import { useId, useState } from "react";
+import { Button } from "@astryxdesign/core/Button";
+import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { Icon } from "@astryxdesign/core/Icon";
+import { Link } from "@astryxdesign/core/Link";
+import { List, ListItem } from "@astryxdesign/core/List";
+import { Spinner } from "@astryxdesign/core/Spinner";
+import { Switch } from "@astryxdesign/core/Switch";
+import { Heading, Text } from "@astryxdesign/core/Text";
+import { Plus, SearchX } from "lucide-react";
+import { type ReactNode, useCallback, useState } from "react";
 
 import { type AttrKey, AttrList } from "../../api/attr";
-import { type Host, HostAdd, HostList, type NewHost } from "../../api/host";
+import { type Host, HostAdd, HostList, HostShow, type NewHost } from "../../api/host";
+import type { Service } from "../../api/service";
 import { SpaceList } from "../../api/space";
+import { FormDialog } from "../../shell/AdaptiveDialog";
 import { useCaller } from "../../shell/caller";
 import { useRead, useWrite } from "../../shell/data";
+import { formatDate } from "../../shell/format";
 import { ErrorMessage, type Translate, useT } from "../../shell/i18n";
-import { Link, navigate, useSearchParams } from "../../shell/router";
-import { FilterBuilder } from "./FilterBuilder";
-import { ColumnPicker, SortHeader, Terms, type ViewProps } from "./ListControls";
-import { hostPath, validPort } from "./record";
-import { ActionForm, Field } from "./RecordForm";
+import { navigate, useSearchParams } from "../../shell/router";
+import {
+  ColumnOptions,
+  FilterBar,
+  ListLayout,
+  RecordTable,
+  selectingLink,
+  Toolbar,
+  ViewFault,
+  type ViewProps,
+} from "./ListParts";
+import { hostFields, hostPath, servicePath, validPort } from "./record";
+import { Field, SpaceField } from "./RecordForm";
+import { Attributes, DetailPane, FieldList, Note, StateBadge } from "./RecordView";
 import { browserTimeZone } from "./reldate";
 import {
   type Clock,
   type Columns,
-  type Fields,
   keyTypes,
   type ListQuery,
   readQuery,
@@ -26,23 +46,6 @@ import {
   type View,
   writeView,
 } from "./view";
-
-/**
- * hostFields are the fields host.list filters and sorts on, with their
- * types, as api.HostListFields has them; every other key is an Attribute
- * key.
- */
-export const hostFields: Fields = {
-  id: { type: "text" },
-  name: { type: "text" },
-  space: { type: "text" },
-  address: { type: "text" },
-  port: { type: "number" },
-  account: { type: "text" },
-  relay: { type: "text" },
-  state: { type: "enum", values: ["registered", "managed", "retired"] },
-  host_key: { type: "text" },
-};
 
 /**
  * defaultColumns are the columns the list shows after the name unless its
@@ -54,27 +57,38 @@ const defaultColumns = ["space", "state", "address", "provider", "region", "pric
 const columns: Columns = { fixed: ["name"], unsorted: [] };
 
 /**
- * HostsPage lists the Hosts the caller can see, as `koko host ls` does,
- * through a view its URL keeps, so a bookmark is a saved view: the filter
- * terms built in three steps, the sort keys a click or a Shift-click on a
- * column header sets, the columns the picker chooses, and the Retired Hosts
- * when asked for (all=1, as --all). Relative dates stay as written in the
- * URL and are resolved in the browser's time zone on each load.
+ * HostsPage lists the Hosts the caller can see, as `koko host ls` does, on
+ * Astryx's table-filter pattern, through a view its URL keeps, so a
+ * bookmark is a saved view: the PowerSearch tokens, each a filter term as
+ * the CLI writes it, the sort keys a click or a Shift-click on a column
+ * header sets, the columns the column options choose, and the Retired
+ * Hosts when asked for (all=1, as --all). Relative dates stay as written in
+ * the URL and are resolved in the browser's time zone on each load. A Host
+ * selected opens in the detail pane, which opens its page; Add Host records
+ * one.
  */
 export function HostsPage() {
   const t = useT();
-  const titleId = useId();
-  const [params, setParams] = useSearchParams();
   const attrs = useRead(AttrList, {});
-  const view = readView(params, defaultColumns);
-  const setView = (next: View) => setParams(writeView(next, defaultColumns));
-
+  const [adding, setAdding] = useState(false);
+  const add = (
+    <Button
+      label={t("host.add.open")}
+      variant="primary"
+      icon={<Icon icon={Plus} size="sm" />}
+      onClick={() => setAdding(true)}
+    />
+  );
   return (
     <>
-      <h1 id={titleId}>{t("host.list.title")}</h1>
-      {attrs.error !== undefined && <ErrorMessage error={attrs.error} />}
-      {attrs.data && <HostsView view={view} setView={setView} attrs={attrs.data.attributes} titleId={titleId} />}
-      <AddHost />
+      {attrs.data ? (
+        <HostsView attrs={attrs.data.attributes} actions={add} />
+      ) : (
+        <ListLayout title={t("host.list.title")} actions={add}>
+          {attrs.error !== undefined ? <ErrorMessage error={attrs.error} /> : <Spinner label={t("shell.loading")} />}
+        </ListLayout>
+      )}
+      {adding && <AddHost onClose={() => setAdding(false)} />}
     </>
   );
 }
@@ -88,8 +102,11 @@ function asksForRetired({ filter }: ReadTerm): boolean {
 }
 
 /** HostsView is the list and its controls, once the Attribute keys and their types are known. */
-function HostsView({ view, setView, attrs, titleId }: ViewProps & { attrs: readonly AttrKey[]; titleId: string }) {
+function HostsView({ attrs, actions }: { attrs: readonly AttrKey[]; actions: ReactNode }) {
   const t = useT();
+  const [params, setParams] = useSearchParams();
+  const view = readView(params, defaultColumns);
+  const setView = (next: View) => setParams(writeView(next, defaultColumns));
   const types = keyTypes(hostFields, attrs);
   const clock: Clock = { now: new Date(), timeZone: browserTimeZone() };
   const { query, terms, faults } = readQuery(view, types, clock, columns);
@@ -97,83 +114,119 @@ function HostsView({ view, setView, attrs, titleId }: ViewProps & { attrs: reado
   if (retiredAsked) {
     query.all = true;
   }
-
-  return (
-    <>
-      <FilterBuilder
-        fields={hostFields}
-        attrs={attrs}
-        types={types}
-        clock={clock}
-        onAdd={(term) => setView({ ...view, filters: [...view.filters, term] })}
+  const toolbar = (count?: number) => (
+    <Toolbar
+      filter={
+        <FilterBar
+          label={t("host.filter.label")}
+          fields={hostFields}
+          attrs={attrs}
+          types={types}
+          clock={clock}
+          terms={terms}
+          view={view}
+          setView={setView}
+          count={count}
+        />
+      }
+    >
+      <Switch
+        label={t("host.list.showRetired")}
+        value={query.all === true}
+        isDisabled={retiredAsked}
+        disabledMessage={retiredAsked ? t("host.list.retiredAsked") : undefined}
+        onChange={(all) => setView({ ...view, all })}
       />
-      <Terms view={view} setView={setView} terms={terms} />
-      <label>
-        <input
-          type="checkbox"
-          checked={query.all === true}
-          disabled={retiredAsked}
-          onChange={(e) => setView({ ...view, all: e.target.checked })}
-        />{" "}
-        {t("host.list.showRetired")}
-      </label>
-      <ColumnPicker
+      <ColumnOptions
         view={view}
         setView={setView}
         keys={[...Object.keys(hostFields), ...attrs.map((a) => a.key)].filter((k) => !columns.fixed.includes(k))}
       />
-      {faults.length > 0 ? (
-        <p className="error" role="alert">
-          {t("host.view.invalid", { parts: faults.join(", ") })} <Link to="/hosts">{t("host.view.reset")}</Link>
-        </p>
-      ) : (
-        <HostTable view={view} setView={setView} query={query} titleId={titleId} />
-      )}
-    </>
+    </Toolbar>
+  );
+  return faults.length > 0 ? (
+    <ListLayout title={t("host.list.title")} actions={actions} toolbar={toolbar()}>
+      <ViewFault message={t("host.view.invalid", { parts: faults.join(", ") })} reset="/hosts" />
+    </ListLayout>
+  ) : (
+    <HostTable view={view} setView={setView} query={query} types={types} actions={actions} toolbar={toolbar} />
   );
 }
 
-/** HostTable lists the Hosts host.list answers for query, in the view's columns. */
-function HostTable({ view, setView, query, titleId }: ViewProps & { query: ListQuery; titleId: string }) {
+/** HostTable lists the Hosts host.list answers for query, in the view's columns, with the one selected beside them. */
+function HostTable({
+  view,
+  setView,
+  query,
+  types,
+  actions,
+  toolbar,
+}: ViewProps & {
+  query: ListQuery;
+  types: ReturnType<typeof keyTypes>;
+  actions: ReactNode;
+  toolbar: (count?: number) => ReactNode;
+}) {
   const t = useT();
   const list = useRead(HostList, query);
+  const [selected, setSelected] = useState<string>();
+  const hosts = list.data?.hosts;
+  const open = hosts?.find((h) => h.id === selected);
+  const close = useCallback(() => setSelected(undefined), []);
   return (
-    <>
+    <ListLayout
+      title={t("host.list.title")}
+      count={hosts?.length}
+      actions={actions}
+      toolbar={toolbar(hosts?.length)}
+      detail={
+        open && {
+          label: t("host.detail.label", { name: open.name }),
+          content: <HostDetail key={open.id} host={open} onClose={close} />,
+          onClose: close,
+        }
+      }
+    >
       {list.error !== undefined && <ErrorMessage error={list.error} />}
-      {list.data && (
-        <table aria-labelledby={titleId}>
-          <thead>
-            <tr>
-              {[...columns.fixed, ...view.columns].map((key) => (
-                <SortHeader key={key} view={view} setView={setView} column={key} />
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {list.data.hosts.map((host) => (
-              <tr key={host.id}>
-                <td>
-                  <Link to={hostPath(host)}>{host.name}</Link>
-                </td>
-                {view.columns.map((key) => (
-                  <td key={key}>{cell(t, host, key)}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {list.data?.hosts.length === 0 && <p>{t("host.list.none")}</p>}
-    </>
+      {hosts &&
+        (hosts.length === 0 ? (
+          <EmptyState icon={<Icon icon={SearchX} />} title={t("host.list.none")} headingLevel={2} />
+        ) : (
+          <RecordTable
+            label={t("host.list.title")}
+            records={hosts}
+            idOf={hostId}
+            columns={columns}
+            types={types}
+            view={view}
+            setView={setView}
+            selected={selected}
+            onSelect={setSelected}
+            cell={(host, key) =>
+              key === "name" ? (
+                <Link href={hostPath(host)} onClick={selectingLink(() => setSelected(host.id))}>
+                  {host.name}
+                </Link>
+              ) : key === "state" ? (
+                <StateBadge state={host.state} />
+              ) : (
+                hostCell(t, host, key)
+              )
+            }
+          />
+        ))}
+    </ListLayout>
   );
 }
 
+const hostId = (host: Host) => host.id;
+
 /**
- * cell is a Host's value of key, as stored: a field's or an Attribute's,
+ * hostCell is a Host's value of key, as stored: a field's or an Attribute's,
  * price with its currency, its Relay's name, or that it has one the caller
  * cannot see, and nothing for a key it lacks.
  */
-function cell(t: Translate, host: Host, key: string): string {
+function hostCell(t: Translate, host: Host, key: string): string {
   if (key === "relay") {
     return host.relay === null ? "" : (host.relay.name ?? t("host.relay.unseen"));
   }
@@ -185,25 +238,75 @@ function cell(t: Translate, host: Host, key: string): string {
 }
 
 /**
+ * HostDetail is the detail pane of a Host selected in the list: what
+ * host.show answers, as on its page, and a button that opens the page.
+ */
+function HostDetail({ host, onClose }: { host: Host; onClose: () => void }) {
+  const t = useT();
+  const shown = useRead(HostShow, { host: host.id });
+  const current = shown.data?.host ?? host;
+  const services = shown.data?.services;
+  return (
+    <DetailPane
+      name={current.name}
+      badge={<StateBadge state={current.state} />}
+      about={t("host.detail.about", { space: current.space, id: current.id })}
+      href={hostPath(current)}
+      onClose={onClose}
+      sections={[
+        <FieldList
+          label={t("host.detail.fields")}
+          fields={[
+            ["address", current.address],
+            ["port", current.port],
+            ["account", current.account],
+            ["relay", current.relay === null ? t("host.relay.none") : (current.relay.name ?? t("host.relay.unseen"))],
+            ["host_key", current.host_key ?? t("host.hostKey.none")],
+            ["updated_at", formatDate(current.updated_at)],
+          ]}
+        />,
+        <Attributes attributes={current.attributes} />,
+        shown.error !== undefined ? (
+          <ErrorMessage error={shown.error} />
+        ) : shown.data === undefined ? (
+          <Spinner label={t("shell.loading")} />
+        ) : (
+          <Note note={current.note} />
+        ),
+        <PaneServices services={services} />,
+      ]}
+    />
+  );
+}
+
+/** PaneServices lists a Host's Services in its detail pane, each linking to its page. */
+function PaneServices({ services }: { services: readonly Service[] | undefined }) {
+  const t = useT();
+  return (
+    <>
+      <Heading level={2}>{t("host.services")}</Heading>
+      {services === undefined ? null : services.length === 0 ? (
+        <Text type="body" color="secondary">
+          {t("host.services.none")}
+        </Text>
+      ) : (
+        <List density="compact" edge="outset">
+          {services.map((s) => (
+            <ListItem key={s.id} label={s.name} description={s.ports.length === 0 ? t("host.services.noPorts") : s.ports.join(", ")} href={servicePath(s.host, s.name)} />
+          ))}
+        </List>
+      )}
+    </>
+  );
+}
+
+/**
  * AddHost records a Host, in the caller's Personal Space unless they choose
  * another Space they can act in, sending only the fields given; it never
  * asks, and the page moves to the Host, whose page then sets its
  * Attributes and Note.
  */
-function AddHost() {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  return open ? (
-    <AddHostForm onCancel={() => setOpen(false)} />
-  ) : (
-    <button type="button" onClick={() => setOpen(true)}>
-      {t("host.add.title")}
-    </button>
-  );
-}
-
-/** AddHostForm is the form AddHost opens. */
-function AddHostForm({ onCancel }: { onCancel: () => void }) {
+function AddHost({ onClose }: { onClose: () => void }) {
   const t = useT();
   const caller = useCaller();
   const spaces = useRead(SpaceList, {});
@@ -216,9 +319,7 @@ function AddHostForm({ onCancel }: { onCancel: () => void }) {
     relay: "",
   });
   const add = useWrite(HostAdd);
-  const field = (key: keyof typeof values) => (
-    <Field name={key} value={values[key]} onChange={(value) => setValues((v) => ({ ...v, [key]: value }))} />
-  );
+  const set = (key: keyof typeof values) => (value: string) => setValues((v) => ({ ...v, [key]: value }));
   const { name, space, address, port, account, relay } = values;
   const ready = name !== "" && address !== "" && account !== "" && (port === "" || validPort(port)) && !add.pending;
   const submit = () => {
@@ -238,29 +339,25 @@ function AddHostForm({ onCancel }: { onCancel: () => void }) {
     });
   };
   return (
-    <ActionForm
+    <FormDialog
       title={t("host.add.title")}
       submit={t("host.add.submit")}
       ready={ready}
       error={add.error ?? spaces.error}
       onSubmit={submit}
-      onCancel={onCancel}
+      onClose={onClose}
     >
-      {field("name")}
-      <label>
-        space{" "}
-        <select value={space} onChange={(e) => setValues((v) => ({ ...v, space: e.target.value }))}>
-          {(spaces.data?.spaces.map((s) => s.name) ?? [space]).map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      </label>
-      {field("address")}
-      {field("port")}
-      {field("account")}
-      {field("relay")}
-    </ActionForm>
+      <Field label="name" value={name} onChange={set("name")} />
+      <SpaceField
+        label="space"
+        spaces={spaces.data?.spaces.map((s) => s.name) ?? [space]}
+        value={space}
+        onChange={set("space")}
+      />
+      <Field label="address" value={address} onChange={set("address")} />
+      <Field label="port" value={port} onChange={set("port")} inputMode="numeric" />
+      <Field label="account" value={account} onChange={set("account")} />
+      <Field label="relay" value={relay} onChange={set("relay")} />
+    </FormDialog>
   );
 }

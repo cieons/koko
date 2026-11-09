@@ -262,6 +262,12 @@ export interface ReadTerm {
   filter?: Filter;
 }
 
+/** readWritten reads one term, as written, into its parts and the API's Filter, as readQuery reads each. */
+export function readWritten(written: string, types: KeyTypes, clock: Clock): ReadTerm {
+  const term = readTerm(written);
+  return { written, term, filter: term && readFilter(term, types, clock) };
+}
+
 /**
  * Columns are a list's columns besides those of its keys: fixed, the ones it
  * always shows first, such as a Host's name, and unsorted, the ones it may
@@ -291,10 +297,7 @@ export interface QueryRead {
  */
 export function readQuery(view: View, types: KeyTypes, clock: Clock, columns: Columns): QueryRead {
   const faults: string[] = [];
-  const terms = view.filters.map((written): ReadTerm => {
-    const term = readTerm(written);
-    return { written, term, filter: term && readFilter(term, types, clock) };
-  });
+  const terms = view.filters.map((written) => readWritten(written, types, clock));
   const filters: Filter[] = [];
   for (const { written, filter } of terms) {
     if (filter) {

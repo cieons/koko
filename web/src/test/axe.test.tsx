@@ -18,7 +18,7 @@ test("the accessibility check passes on the web UI's first page and on an open A
   api.on(AttrList, () => ({ attributes: [] }));
   api.on(HostList, () => ({ hosts: [] }));
   const { unmount } = renderAt("/hosts");
-  await screen.findByRole("table", { name: "Hosts" });
+  await screen.findByRole("heading", { name: "No Host matches this view." });
   await expectAccessible();
   unmount();
 
