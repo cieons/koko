@@ -1,3 +1,7 @@
+---
+status: its one binary superseded by ADR-0040
+---
+
 # Go, one binary, embedded SQLite
 
 koko ships as one Go binary that is the koko server, the CLI and the Gateway,

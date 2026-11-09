@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0040
+---
+
 # The server and the CLI are separable, and only Linux builds carry the server
 
 koko stays one binary (ADR 0001), but its code is kept ready to split into a

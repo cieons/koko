@@ -1,3 +1,7 @@
+---
+status: refined by ADR-0041
+---
+
 # The koko server installs itself and has no configuration file
 
 The koko binary installs its own koko server. A thin `install.sh` downloads

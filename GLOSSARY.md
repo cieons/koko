@@ -63,6 +63,10 @@ _Avoid_: built-in field, standard tag
 One running deployment of koko, holding the record, the Secrets and the Gateway.
 _Avoid_: asset server, daemon, backend
 
+**kokod**:
+The program that is the koko server, on Linux; `koko` is the CLI, on every OS.
+_Avoid_: koko server binary, daemon binary
+
 **Server Address**:
 The one `host:port` a koko server writes into its Join Codes, which its devices store and connect to.
 _Avoid_: advertised address, public address, endpoint, URL
@@ -92,7 +96,7 @@ A sensitive value the koko server holds in one Space and shows only when asked t
 _Avoid_: credential, password
 
 **Skill**:
-The reference for agents that `koko skill` prints, generated from the binary's own command tree; the `SKILL.md` that `koko skill install` writes is only a stub that says to run it.
+The reference for agents that `koko skill` prints, generated from `koko`'s own command tree; the `SKILL.md` that `koko skill install` writes is only a stub that says to run it.
 _Avoid_: manual, agent docs, prompt
 
 ### People

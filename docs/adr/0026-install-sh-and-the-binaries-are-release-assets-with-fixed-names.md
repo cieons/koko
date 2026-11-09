@@ -1,3 +1,7 @@
+---
+status: refined by ADR-0041
+---
+
 # install.sh and the binaries are release assets with fixed names
 
 Each koko release on GitHub publishes `install.sh`, one binary per platform,
