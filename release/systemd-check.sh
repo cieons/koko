@@ -18,8 +18,8 @@
 # the koko user; and install, run again on that data directory put back by
 # root, starts the koko server with its record on the default port, 7822.
 # On the way it checks what only a real systemd shows: the Environment
-# systemctl show quotes, and koko server install refusing a container that
-# systemd does not run.
+# systemctl show quotes. koko server install refusing a container that
+# systemd does not run is the container check's (release/container-check.sh).
 #
 # install.sh downloads from GitHub, and runs here unchanged: a fake curl
 # first on its PATH serves a fake GitHub from a directory, where release
@@ -197,19 +197,6 @@ grep -q "$asset does not match the SHA256SUMS" "$work/err" || fail "install.sh d
 for path in /usr/local/bin/koko /etc/systemd/system/koko.service /etc/koko /var/lib/koko; do
 	[ ! -e "$path" ] || fail "install.sh wrote $path"
 done
-
-step "koko server install refuses a container that systemd does not run"
-status=0
-docker run --rm --init -v "$newer/$asset:/usr/local/bin/koko:ro" "$image" sh -c '
-	status=0
-	koko server install --owner alice --address localhost --json || status=$?
-	for path in /etc/koko /var/lib/koko /etc/systemd/system/koko.service; do
-		[ ! -e "$path" ] || { echo "koko server install wrote $path" >&2; exit 99; }
-	done
-	exit "$status"' 2>"$work/err" || status=$?
-cat "$work/err" >&2
-[ "$status" = 1 ] || fail "koko server install exited $status, not 1"
-jq -e '.error.code == "unsupported_platform"' "$work/err" >/dev/null || fail "koko server install did not refuse with unsupported_platform"
 
 step "install.sh installs the older build, which runs as the koko user on $port"
 echo v0.0.1 >"$github/latest"

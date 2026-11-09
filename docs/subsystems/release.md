@@ -86,10 +86,11 @@ changed, and a pseudo-version (with `+dirty` for changes) anywhere else.
 The [release workflow](../../.github/workflows/release.yml) runs on a pushed
 `v*` tag, in these jobs:
 
-1. **check** and **systemd**: the
+1. **check**, **systemd** and **container**: the
    [check workflow](../../.github/workflows/check.yml) on the tag, on Linux
-   and macOS, and [the real-systemd check](#the-real-systemd-check);
-   nothing is built unless both pass;
+   and macOS, [the real-systemd check](#the-real-systemd-check) and
+   [the container check](#the-container-check), on each platform; nothing
+   is built unless all three pass;
 2. **build**, with a read-only token and no credentials left in the
    checkout, since it runs koko's and npm's code: `make dist`, a check that
    `dist/koko-linux-amd64 version` is the tag, `make image`, and two
@@ -178,12 +179,10 @@ the test, so nothing imports it, and it is in no
 [package group](code-layout.md#the-package-groups).
 
 The release workflow runs only on a tag, and no test runs it; actionlint
-checks it by hand. `make image` is checked by hand too, until the container
-check does it: the archive's index lists `linux/amd64` and `linux/arm64`
-only; in each platform's layers, `/usr/local/bin/koko` has the SHA-256
-`dist/SHA256SUMS` lists, `/koko` is 0700 and `/run/koko` 0755, both
-65532's; and its config holds the user `65532`, the entrypoint, command,
-environment, volume, port and labels above.
+checks it by hand. [The container check](#the-container-check) runs what
+`make image` builds: its index's platforms and binaries, and, by running
+it, its user, entrypoint, command, environment, `/koko` and `/run/koko`.
+Its `EXPOSE` and labels are checked by hand.
 
 ## The real-systemd check
 
@@ -200,9 +199,7 @@ migration step is a file added to `internal/server/store/migrations/`,
 
 1. install.sh refuses a release whose binary does not match its
    `SHA256SUMS`, runs nothing and writes nothing;
-2. `koko server install` refuses, with `unsupported_platform`, a Docker
-   container that systemd does not run, and writes nothing there;
-3. install.sh installs the older build with `--owner alice --address
+2. install.sh installs the older build with `--owner alice --address
    localhost --port 7822`, the port given since the older build may be from
    before 7822 was the default
    ([ADR 0036](../adr/0036-the-koko-server-listens-on-7822-by-default.md)):
@@ -210,18 +207,18 @@ migration step is a file added to `internal/server/store/migrations/`,
    listens on 7822, systemd holds its `root-key` credential
    (`LoadCredential=`, asked over D-Bus, since `systemctl show` prints it
    as `[unprintable]`), and `koko` cannot read `/etc/koko/root.key`;
-4. a device joins with the printed Join Code and lists the Users;
-5. with a drop-in setting `KOKO_LISTEN=[::]:7822`, `systemctl show` quotes
+3. a device joins with the printed Join Code and lists the Users;
+4. with a drop-in setting `KOKO_LISTEN=[::]:7822`, `systemctl show` quotes
    that entry as the installer reads it;
-6. install.sh of the newer build, without `--owner` or `--port`, upgrades:
+5. install.sh of the newer build, without `--owner` or `--port`, upgrades:
    the binary is the newer one, the service runs again under a new process
    on the port it kept, with no capability held or to be gained (`CapEff`
    and `CapBnd` in `/proc/<pid>/status`), a `koko.db.before-<n>` snapshot
    is there, and the device still works;
-7. `koko server uninstall` leaves nothing running or listening, removes the
+6. `koko server uninstall` leaves nothing running or listening, removes the
    unit and the binary, and keeps `koko.db`, the Root Key and the `koko`
    user;
-8. with the drop-in removed, and after `chown -R root:root /var/lib/koko`,
+7. with the drop-in removed, and after `chown -R root:root /var/lib/koko`,
    as a copy put back by root would be, install.sh without `--owner` or
    `--port` starts the koko server again on the newer build's default port,
    7822, saying devices must connect to `localhost:7822`, as it does for a
@@ -249,3 +246,83 @@ The script refuses a machine where koko was installed, and leaves koko's
 data, Root Key and user behind: run it only on a throwaway machine with
 systemd, Docker, `jq`, `ss` and passwordless `sudo`. On a failure it prints
 the koko service's journal and the device's Device Mux log.
+
+## The container check
+
+The [container workflow](../../.github/workflows/container.yml) runs
+[the image](#the-image) as its Owner would, through the install docs'
+[`release/compose.yaml`](../../release/compose.yaml), on every push to
+`main`, on every pull request, and on a release's tag before the build job,
+which needs it. It runs once for each platform the image is built for, each
+on a runner of that platform (`ubuntu-24.04` and `ubuntu-24.04-arm`), so
+the image runs natively, with no emulation. Each runs `make dist` and `make
+image` once, as the release's build job does, and loads its own platform's
+image from the archive into Docker with `skopeo`. Then
+[`release/container-check.sh`](../../release/container-check.sh) `<dist>`
+checks, first, that the Compose file `docs/install.md` and
+`docs/install.zh-CN.md` show is `release/compose.yaml` as it is, and that
+both give the `install -d` line it runs, then, in order:
+
+1. the first start, through the Compose file, in a deployment folder whose
+   `state/` the docs' `sudo install -d -o 65532 -g 65532 -m 0700` line made,
+   with the port published as `17822:7822` and `KOKO_ADDRESS` set to
+   `localhost:17822`, so that the published port differs from the
+   container's: the koko server answers over its socket with that Server
+   Address; its real, effective, saved and filesystem uid and gid are 65532,
+   it is in no group but 65532 (which Docker lists as a supplementary
+   group), and `CapEff` and `CapPrm` are 0 (`/proc/<pid>/status`);
+   `state/` (0700), `root.key` (0600, one line) and `data/` (0700) are
+   65532's, and so is `data/koko.db`; `docker logs koko` says `koko server
+   initialised` and names `koko device add`, and never holds the Root Key;
+2. without that line, Docker makes `state/` as root, and the start is
+   refused, naming `/koko` and uid and gid 65532, with nothing written in
+   it; run with `--user 0` there, the image is refused, naming the rule,
+   with nothing written; and with a named volume in place of `./state`, it
+   starts and initialises with no step on the host;
+3. `docker exec koko koko device add` prints a Join Code, which no log
+   line holds, and a device joins with it at `localhost:17822` and lists
+   the Users;
+4. `docker kill`, then `docker start`: the socket file the kill left in the
+   container is taken over, as the log says, and the device still works;
+5. a restart with another `KOKO_ADDRESS` logs the warning naming that
+   address, the recorded one and `koko server set address=`, and the
+   Server Address stays the first one;
+6. `docker compose down`, then `up -d`, recreates the container on the
+   same `state/`: the Server Address, the Root Key's id and the host key's
+   fingerprint are the same, nothing warns, and the device still works;
+7. a copy of `data/`, taken with the container stopped, in a new
+   `state/` without `root.key`, is refused at start with `KOKO_OWNER` set,
+   naming the Root Key's id the sealed data needs, and no `root.key` is
+   written;
+8. `koko server install` in a plain `ubuntu:24.04` container refuses with
+   `unsupported_platform`, naming `ghcr.io/cieons/koko`, and writes
+   nothing there;
+9. the archive's index holds `linux/amd64` and `linux/arm64` and nothing
+   else, and in each platform's layers `/usr/local/bin/koko` has the
+   SHA-256 `SHA256SUMS` lists for its `koko-linux-<arch>`.
+
+**One build.** The check runs only the image of the commit it checks.
+Upgrading across a migration step and going back belong to the binary,
+which is the same in the image as on systemd: [the real-systemd
+check](#the-real-systemd-check) and the store's tests cover them.
+
+**How the image runs.** The deployment folder holds `release/compose.yaml`
+as `compose.yaml` and a `.env` naming `KOKO_VERSION`, as the docs say. The
+`compose.override.yaml` beside them, which Compose reads by itself, names
+the local image, `koko-check:${KOKO_VERSION}`, replaces the published port
+(`!override`, Compose v2.24 or later), and sets `KOKO_ADDRESS`. The
+refused starts run with `docker compose run --rm`, so that no restart
+policy starts them again, within 60 s, so that a start that no longer
+refuses fails the check rather than holding it until the job's timeout.
+The log lines it looks for are waited for, since Docker copies what a
+container writes into its log on its own time.
+
+**The device** is a Docker container (`ubuntu:24.04`) on the host's
+network, with the release's `koko-linux-<arch>` as its `koko`, so that its
+commands go over TCP to the published port, as a device's do.
+
+Run the script only on a throwaway Linux machine with Docker, `skopeo`,
+`jq` and passwordless `sudo`, where no container is named `koko` and
+nothing listens on 17822; it removes the containers, networks, volumes,
+image and files it made. On a failure it prints `docker logs koko` and the device's Device
+Mux log.
