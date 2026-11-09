@@ -17,7 +17,7 @@ import { type Service, ServiceAdd } from "../../api/service";
 import { SpaceList } from "../../api/space";
 import type { User } from "../../api/user";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
-import { actAs, renderAt, tableRows } from "../../test/pages";
+import { actAs, findAlert, renderAt, tableRows } from "../../test/pages";
 
 // A Host's page and the Host actions, against the fake API: what the page
 // shows, which actions ask first, and edit forms that send only what changed.
@@ -197,7 +197,7 @@ test("a Host no one can see says so", async () => {
 
   renderAt("/hosts/nope");
 
-  expect((await screen.findByRole("alert")).textContent).toBe("No Host you can see has that name.");
+  expect(await findAlert()).toBe("No Host you can see has that name.");
 });
 
 test("the edit form sends only the fields that changed, clears what was emptied, and never asks", async () => {
@@ -227,7 +227,7 @@ test("the edit form sends only the fields that changed, clears what was emptied,
   fireEvent.click(edit.getByRole("button", { name: "Save" }));
 
   await vi.waitFor(() => expect(screen.queryByRole("region", { name: "Edit web1" })).toBeNull());
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(api.requests(HostSet)).toEqual([
     {
       host: "host_web1",
@@ -286,7 +286,7 @@ test("rename moves the page to the new name and move to another Space, neither a
   fireEvent.change(move.getByLabelText("To Space"), { target: { value: "bob" } });
   fireEvent.click(move.getByRole("button", { name: "Move" }));
   await vi.waitFor(() => expect(api.requests(HostMove)).toEqual([{ host: "host_web1", space: "bob" }]));
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
 });
 
 test("retire asks first, stating the consequence, and the page then names the Host by its id", async () => {
@@ -299,17 +299,17 @@ test("retire asks first, stating the consequence, and the page then names the Ho
   renderAt("/hosts/web1");
 
   fireEvent.click(await screen.findByRole("button", { name: "Retire" }));
-  const dialog = screen.getByRole("dialog", { name: "Retire web1?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Retire web1?" });
   expect(dialog.textContent).toContain(
     "web1 leaves the list of Hosts and gives up its name, which a new Host may then take",
   );
   expect(dialog.textContent).toContain("named only by its id, host_web1, from then on");
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(writes(api)).toEqual([]);
 
   fireEvent.click(screen.getByRole("button", { name: "Retire" }));
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Retire" }));
+  fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Retire" }));
 
   expect(await screen.findByText("(Retired)")).toBeDefined();
   expect(window.location.pathname).toBe("/hosts/host_web1");
@@ -324,7 +324,7 @@ test("a Retired Host takes only changes to its Attributes and Note, and moves; i
   renderAt("/hosts/host_old1");
 
   await screen.findByText("(Retired)");
-  const actions = screen.getAllByRole("button").map((b) => b.textContent);
+  const actions = within(screen.getByRole("main")).getAllByRole("button").map((b) => b.textContent);
   expect(actions).toEqual(["Edit", "Move"]);
   expect(screen.getByRole("link", { name: "nginx" }).getAttribute("href")).toBe("/services/host_old1/nginx");
   expect(screen.queryByRole("region", { name: "Add a Service" })).toBeNull();
@@ -350,7 +350,7 @@ test("delete is offered only for a Host never Managed, asks first, and goes back
 
   renderAt("/hosts/db1");
   fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
-  const dialog = screen.getByRole("dialog", { name: "Delete db1?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Delete db1?" });
   expect(dialog.textContent).toContain(
     "db1 is deleted for good, with its Attributes, its Note and every Service on it, 2 in all.",
   );
@@ -418,7 +418,7 @@ test("deleting a Host with no Services says so without a count", async () => {
 
   fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
 
-  expect(screen.getByRole("dialog").textContent).toContain(
+  expect(screen.getByRole("alertdialog").textContent).toContain(
     "db1 is deleted for good, with its Attributes and its Note. Nothing brings it back.",
   );
 });

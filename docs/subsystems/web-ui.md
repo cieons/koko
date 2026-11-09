@@ -31,6 +31,7 @@ its providers is [the web UI shell](web-shell.md#providers).
   | --- | --- | --- |
   | `@astryxdesign/core` | `dependencies` | the components, `reset.css` and `astryx.css` |
   | `@astryxdesign/theme-neutral` | `dependencies` | the Neutral theme: `theme.css` and the built theme object; it brings `lucide-react` for icons |
+  | `lucide-react` | `dependencies` | the Lucide icons koko names itself, such as each page's in the side navigation; pinned at the version the theme brings, so there is one copy, and moved with it on each Astryx upgrade |
   | `@stylexjs/stylex` | `dependencies` | the peer dependency of `@astryxdesign/core`, on its `0.19` line; no StyleX build step, since the CSS is prebuilt |
   | `@astryxdesign/cli` | `devDependencies` | component docs and the agent docs for agents working in `web/`; never in the build |
   | `axe-core` | `devDependencies` | the accessibility check of page tests |
@@ -61,7 +62,8 @@ its providers is [the web UI shell](web-shell.md#providers).
   yet; a page that adopts one checks it under the CSP first.
 - **An upgrade** is a commit of its own: it bumps the three `@astryxdesign`
   packages together (the theme pins core exactly, the CLI is at core's
-  version), reviews what `npx astryx upgrade --from <old version>`
+  version) and `lucide-react` to the version the new theme brings, reviews
+  what `npx astryx upgrade --from <old version>`
   proposes, runs `npm run astryx-layer-rules`, refreshes the agent docs
   (below) in the same commit, and passes the page tests, the size budget
   and the real-browser check. koko stays on its pinned version until such a
@@ -151,19 +153,24 @@ requests as a dropped connection does, and `api.drop()` every one, as when
 `koko web` stopped, until `api.drop(0)`. So a page test runs the web UI's own
 client ([the shell](web-shell.md#calls)), with its retry and
 `Idempotency-Key`. The setup puts each test back at `/` with an empty
-`localStorage` and the system in light mode, gives the document
+`localStorage`, the system in light mode and a desktop's viewport, gives the document
 `index.html`'s title and its link to Astryx's layer rules, and stands in
 for what jsdom lacks: the `showModal` and `close` of a `<dialog>` (a test sends Escape as
 the dialog's `cancel` event); `matchMedia`, whose colour scheme
-[`setSystemScheme`](../../web/src/test/media.ts) changes and every other
-query of which matches nothing; and a `ResizeObserver` and an
+[`setSystemScheme`](../../web/src/test/media.ts) changes, whose width,
+1280 pixels unless `setViewportWidth` makes it a phone's, answers Astryx's
+queries of the forms `(width < 768px)` and `(max-width: 640px)`, and every other query of which
+matches nothing; and a `ResizeObserver` and an
 `IntersectionObserver` that observe nothing, since jsdom lays nothing out.
 A test of a capability's pages runs the whole app, inside the same
 [providers](web-shell.md#providers) as `main.tsx`'s, through
 [`test/pages.tsx`](../../web/src/test/pages.tsx): `renderAt(path)` renders it
 at a path, `actAs(api, user, deviceSession?)` makes `user.current` answer
-that User, on a Device Session of their laptop unless another is given, and
-`tableRows(name)` reads the cells of the table that name labels.
+that User, on a Device Session of their laptop unless another is given,
+`tableRows(name)` reads the cells of the table that name labels,
+`alerts()`, `findAlert()` and `statuses()` read the alerts and statuses
+that say something (Astryx keeps empty live regions of both roles), and
+`chooseInAccountMenu(name)` chooses a language or a mode.
 `await expectAccessible()` ([`test/axe.ts`](../../web/src/test/axe.ts)) runs
 axe-core on what is rendered and fails naming each violation of WCAG 2.2 A
 and AA, all rules but `color-contrast`, which jsdom cannot compute and the

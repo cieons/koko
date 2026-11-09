@@ -1,5 +1,5 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { expect, onTestFinished, test, vi } from "vitest";
+import { expect, type MockInstance, onTestFinished, test, vi } from "vitest";
 
 import {
   CodeLastDeviceSession,
@@ -12,7 +12,7 @@ import {
 import { SpaceList } from "../../api/space";
 import { type User, UserCurrent, UserList } from "../../api/user";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
-import { actAs, renderAt, tableRows } from "../../test/pages";
+import { actAs, findAlert, renderAt, statuses, tableRows } from "../../test/pages";
 
 // The Devices page, against the fake API, as the Owner and as a Member, and
 // how a Join Code shows once.
@@ -74,22 +74,30 @@ function clipboard(available = true) {
  */
 function clockAt(instant: string): void {
   vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+  intervals = vi.spyOn(window, "setInterval");
   vi.setSystemTime(new Date(instant));
   onTestFinished(() => {
     vi.useRealTimers();
   });
 }
 
+/** intervals records each setInterval since clockAt, with its period. */
+let intervals: MockInstance<typeof window.setInterval> | undefined;
+
 /**
  * advanceCountdown moves the stopped clock on by ms once the shown Join
- * Code's countdown runs: React starts its interval, the page's only one, in
- * an effect that may run only after the line shows, and a clock moved on
- * before then moves no countdown (#79). It looks with vi.waitUntil, on the
- * real clock, since a testing-library wait starts a faked interval of its
- * own; an interval of 0 keeps vi.waitUntil from moving the faked clock.
+ * Code's countdown runs, its own interval of a second and not another, such
+ * as one of Astryx's components: React starts it in an effect that may run
+ * only after the line shows, and a clock moved on before then moves no
+ * countdown (#79). It looks with vi.waitUntil, on the real clock, since a
+ * testing-library wait starts a faked interval of its own; an interval of 0
+ * keeps vi.waitUntil from moving the faked clock.
  */
 async function advanceCountdown(ms: number): Promise<void> {
-  await vi.waitUntil(() => vi.getTimerCount() > 0, { interval: 0, message: "the Join Code's countdown never started" });
+  await vi.waitUntil(() => intervals?.mock.calls.some(([, period]) => period === 1000), {
+    interval: 0,
+    message: "the Join Code's countdown never started",
+  });
   act(() => vi.advanceTimersByTime(ms));
 }
 
@@ -139,7 +147,7 @@ test("adding a device never asks, and shows its koko join line once, with copy a
   fireEvent.click(screen.getByRole("button", { name: "Add a device" }));
 
   const line = await screen.findByText(`koko join ${desktopCode.code}`);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(api.requests(DeviceAdd)).toEqual([{ device: "desktop" }]);
   const shown = screen.getByRole("region", { name: "Join Code" });
   expect(shown.textContent).toContain("On bob's new device desktop, run this line:");
@@ -154,9 +162,9 @@ test("adding a device never asks, and shows its koko join line once, with copy a
   expect(writeText.mock.calls).toEqual([[line.textContent]]);
 
   // Leaving the page and coming back loses the line.
-  fireEvent.click(within(screen.getByRole("banner")).getByRole("link", { name: "Spaces" }));
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Pages" })).getByRole("link", { name: "Spaces" }));
   await screen.findByRole("heading", { name: "Spaces" });
-  fireEvent.click(within(screen.getByRole("banner")).getByRole("link", { name: "Devices" }));
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Pages" })).getByRole("link", { name: "Devices" }));
   await screen.findByRole("table", { name: "Devices" });
   expect(screen.queryByRole("region", { name: "Join Code" })).toBeNull();
   expect(document.body.textContent).not.toContain(desktopCode.code);
@@ -189,7 +197,9 @@ test("a browser that cannot copy says to select the line instead", async () => {
 
   fireEvent.click(within(shown).getByRole("button", { name: "Copy" }));
 
-  expect((await within(shown).findByRole("status")).textContent).toBe("Could not copy: select the line and copy it.");
+  const said = "This browser did not allow copying. Select the text and copy it.";
+  await waitFor(() => expect(statuses()).toContain(said));
+  expect(within(shown).getByText(said)).toBeDefined();
   expect(shown.textContent).toContain(`koko join ${desktopCode.code}`);
 });
 
@@ -230,7 +240,7 @@ test("the Owner sees everyone's Device Sessions, and adds a device for another U
   const shown = await screen.findByRole("region", { name: "Join Code" });
   expect(shown.textContent).toContain("On bob's new device device-3, run this line:");
   expect(api.requests(DeviceAdd)).toEqual([{ user: "bob" }]);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
 });
 
 test.each([
@@ -254,14 +264,14 @@ test.each([
   await screen.findByRole("table", { name: "Devices" });
 
   fireEvent.click(screen.getByRole("button", { name: `Revoke ${device}` }));
-  const dialog = screen.getByRole("dialog", { name: `Revoke ${device}?` });
+  const dialog = screen.getByRole("alertdialog", { name: `Revoke ${device}?` });
   expect(dialog.textContent).toContain(consequence);
   expect(within(dialog).queryByRole("textbox")).toBeNull();
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
   expect(api.requests(DeviceRevoke)).toEqual([]);
 
   fireEvent.click(screen.getByRole("button", { name: `Revoke ${device}` }));
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Revoke" }));
+  fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Revoke" }));
 
   await waitFor(() => expect(rows()).toHaveLength(1));
   expect(api.requests(DeviceRevoke)).toEqual([{ user: "bob", device }]);
@@ -292,13 +302,13 @@ test.each([
     await screen.findByRole("table", { name: "Devices" });
 
     fireEvent.click(screen.getByRole("button", { name: "Revoke bob/laptop" }));
-    const bobs = screen.getByRole("dialog", { name: "Revoke bob/laptop?" });
+    const bobs = screen.getByRole("alertdialog", { name: "Revoke bob/laptop?" });
     expect(within(bobs).queryByRole("textbox")).toBeNull();
     fireEvent.click(within(bobs).getByRole("button", { name: "Revoke" }));
     await waitFor(() => expect(api.requests(DeviceRevoke)).toEqual([{ user: "bob", device: "laptop" }]));
 
     fireEvent.click(screen.getByRole("button", { name: "Revoke laptop" }));
-    const dialog = screen.getByRole("dialog", { name: "Revoke laptop?" });
+    const dialog = screen.getByRole("alertdialog", { name: "Revoke laptop?" });
     expect(dialog.textContent).toContain(consequence);
     const confirm = within(dialog).getByRole<HTMLButtonElement>("button", { name: "Revoke" });
     expect(confirm.disabled).toBe(true);
@@ -321,7 +331,7 @@ test("the Owner with another live device revokes this one without typing its nam
   await screen.findByRole("table", { name: "Devices" });
 
   fireEvent.click(screen.getByRole("button", { name: "Revoke desktop" }));
-  const dialog = screen.getByRole("dialog", { name: "Revoke desktop?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Revoke desktop?" });
   expect(within(dialog).queryByRole("textbox")).toBeNull();
   fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
@@ -342,14 +352,14 @@ test("a revoke refused because the list was out of date says why, and the list i
   await screen.findByRole("table", { name: "Devices" });
 
   fireEvent.click(screen.getByRole("button", { name: "Revoke desktop" }));
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Revoke" }));
+  fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Revoke" }));
 
-  expect((await screen.findByRole("alert")).textContent).toBe(
+  expect(await findAlert()).toBe(
     "This is the Owner's last device: revoking it needs its name typed.",
   );
   await waitFor(() => expect(rows()).toHaveLength(1));
   fireEvent.click(screen.getByRole("button", { name: "Revoke desktop" }));
-  expect(within(screen.getByRole("dialog")).getByLabelText("Type desktop to confirm.")).toBeDefined();
+  expect(within(screen.getByRole("alertdialog")).getByLabelText("Type desktop to confirm.")).toBeDefined();
 });
 
 test("Revoked Device Sessions show only when asked for, with when they were Revoked", async () => {

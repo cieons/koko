@@ -7,6 +7,7 @@ import { expect, test } from "vitest";
 import { type User, UserCurrent } from "../api/user";
 import { fakeApi } from "../test/fakeApi";
 import { setSystemScheme } from "../test/media";
+import { chooseInAccountMenu } from "../test/pages";
 import { applyStoredMode, modes, useMode } from "./mode";
 import { type Route, useLocation } from "./router";
 import { Shell } from "./Shell";
@@ -128,7 +129,7 @@ test("Astryx's own strings follow koko's language: a dialog's close label in Eng
   renderShell("/dialog");
   expect(await screen.findByRole("button", { name: "Close" })).toBeDefined();
 
-  fireEvent.change(screen.getByRole("combobox", { name: "Language" }), { target: { value: "zh-CN" } });
+  await chooseInAccountMenu("简体中文");
   expect(await screen.findByRole("button", { name: "关闭" })).toBeDefined();
   expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
 });
@@ -138,7 +139,7 @@ test("the providers put no style element in the page, which the CSP, default-src
   renderShell("/dialog");
   await screen.findByRole("dialog");
 
-  fireEvent.change(screen.getByRole("combobox", { name: "Language" }), { target: { value: "zh-CN" } });
+  await chooseInAccountMenu("简体中文");
   await screen.findByRole("button", { name: "关闭" });
   expect(document.querySelectorAll("style")).toHaveLength(0);
 });

@@ -40,14 +40,15 @@ body {
 }
 
 /*
- * The shell's rules for the frame and the pages not yet redone on Astryx,
- * many of them on bare elements, so they reach only inside .koko-legacy:
- * an Astryx component elsewhere takes none of them. They sit in Astryx's
+ * The rules for the pages not yet redone on Astryx, many of them on bare
+ * elements, so they reach only inside .koko-legacy: an Astryx component
+ * elsewhere takes none of them. They sit in Astryx's
  * lowest layer, reset: there they win over its bare defaults, which take
  * every border, padding and background off a native control, and lose to
  * every property an Astryx component sets itself, which an unlayered rule
- * here would override. The pages' own CSS files name only koko's classes.
- * Each page's redesign removes what it no longer uses.
+ * here would override. The Shell wraps each page in .koko-legacy; the
+ * pages' own CSS files name only koko's classes. Each page's redesign
+ * removes what it no longer uses.
  */
 @layer reset {
   /* Native controls, styled as they were before Astryx's reset. */
@@ -65,41 +66,6 @@ body {
 
   .koko-legacy button:disabled {
     color: var(--color-text-disabled);
-  }
-
-  /* The shell's frame: header, notices and the confirmation dialog. */
-
-  .shell-header {
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-    padding: 0.75rem 1.5rem;
-    border-bottom: var(--border-width) solid var(--color-border);
-  }
-
-  .shell-header nav {
-    display: flex;
-    gap: 1rem;
-  }
-
-  .shell-header nav a[aria-current="page"] {
-    font-weight: 600;
-  }
-
-  .shell-header .who {
-    margin-left: auto;
-    color: var(--color-text-secondary);
-  }
-
-  .notice {
-    padding: 0.75rem 1.5rem;
-    color: var(--color-on-warning-muted);
-    background: var(--color-warning-muted);
-    border-bottom: var(--border-width) solid var(--color-border-warning);
-  }
-
-  main.koko-legacy {
-    padding: 1.5rem;
   }
 
   .error {
@@ -126,35 +92,18 @@ body {
   .tag {
     color: var(--color-text-secondary);
   }
+}
 
-  .dialog {
-    max-width: 28rem;
-    padding: 1.5rem;
-    color: var(--color-text-primary);
-    background: var(--color-background-popover);
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-container);
-  }
-
-  .dialog::backdrop {
-    background: var(--color-overlay);
-  }
-
-  .dialog label {
-    display: block;
-    margin-bottom: 1rem;
-  }
-
-  .dialog input {
-    display: block;
-    width: 100%;
-    margin-top: 0.25rem;
-    box-sizing: border-box;
-  }
-
-  .dialog-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.75rem;
+/*
+ * A line shown once (ShownOnceLine), in Astryx's Code, which has no prop for
+ * either: a koko join line is longer than a phone is wide, so it breaks
+ * anywhere, and a click selects it whole for a browser that cannot copy.
+ * Code sets neither property, so the lowest layer, reset, holds the rule,
+ * and anything Code sets itself still wins.
+ */
+@layer reset {
+  .koko-shown-once-line {
+    overflow-wrap: anywhere;
+    user-select: all;
   }
 }

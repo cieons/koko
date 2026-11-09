@@ -7,7 +7,7 @@ import { CodeSpaceNotEmpty, SpaceList } from "../../api/space";
 import { type User, UserInvite, UserList, UserRemove } from "../../api/user";
 import { navigate } from "../../shell/router";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
-import { actAs, renderAt, tableRows } from "../../test/pages";
+import { actAs, findAlert, renderAt, statuses, tableRows } from "../../test/pages";
 
 // The People page, against the fake API: the Owner's alone.
 
@@ -45,7 +45,7 @@ test("a Member sees no People page, nor a link to it", async () => {
 
   act(() => navigate("/people"));
 
-  expect(await screen.findByText("There is no page here.")).toBeDefined();
+  expect(await screen.findByRole("heading", { level: 1, name: "Page not found" })).toBeDefined();
   expect(api.requests(UserList)).toEqual([]);
 });
 
@@ -104,7 +104,7 @@ test("an Invite never asks, and shows its koko join line once, until the page is
   expect(within(shown).getByRole("button", { name: "Copy" })).toBeDefined();
   expect(shown.textContent).toMatch(/It expires in 1[45]:\d\d\./);
   expect(screen.getByText("Invited dave as a Member.")).toBeDefined();
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(api.requests(UserInvite)).toEqual([{ name: "dave" }]);
   await waitFor(() => expect(rows().map((r) => r[0])).toEqual(["alice", "bob", "dave"]));
 
@@ -137,7 +137,7 @@ test.each([
   await screen.findByRole("table", { name: "People" });
 
   fireEvent.click(screen.getByRole("button", { name: "Remove bob" }));
-  const dialog = screen.getByRole("dialog", { name: "Remove bob?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Remove bob?" });
   expect(dialog.textContent).toContain(
     "If bob never joined, they are deleted and the name is free again. Otherwise they are Removed for good: their devices are revoked, they leave every Space, their Personal Space passes to the Owner, and the name bob is never used again.",
   );
@@ -145,9 +145,9 @@ test.each([
   expect(api.requests(UserRemove)).toEqual([]);
 
   fireEvent.click(screen.getByRole("button", { name: "Remove bob" }));
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Remove" }));
+  fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove" }));
 
-  expect((await screen.findByRole("status")).textContent).toBe(said);
+  await waitFor(() => expect(statuses()).toContain(said));
   await waitFor(() => expect(rows().map((r) => r[0])).toEqual(["alice"]));
   expect(api.requests(UserRemove)).toEqual([{ name: "bob" }]);
 });
@@ -163,11 +163,11 @@ test("a User whose Personal Space still holds records is not removed, and the pa
   await screen.findByRole("table", { name: "People" });
 
   fireEvent.click(screen.getByRole("button", { name: "Remove bob" }));
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Remove" }));
+  fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove" }));
 
-  expect((await screen.findByRole("alert")).textContent).toBe(
+  expect(await findAlert()).toBe(
     "bob never joined, and their Personal Space bob still holds records. Move or remove them first, then remove bob.",
   );
-  expect(screen.queryByRole("status")).toBeNull();
+  expect(statuses().filter((s) => s.includes("bob"))).toEqual([]); // no word of a removal
   expect(rows().map((r) => r[0])).toEqual(["alice", "bob"]);
 });

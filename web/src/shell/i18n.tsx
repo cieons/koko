@@ -1,10 +1,11 @@
-import { createContext, type ReactNode, useContext, useEffect, useId, useState } from "react";
+import { Banner } from "@astryxdesign/core/Banner";
+import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 
 import { ApiError, DroppedError } from "../client";
 import { catalogues, type Language, languages, type MessageKey } from "../i18n/catalogues";
 
 // Language: the web UI follows the browser's preferred languages until the
-// header's switch picks one, which the browser then remembers. Names, keys,
+// account menu picks one, which the browser then remembers. Names, keys,
 // values and Notes are never translated: they reach a message only as its
 // parameters, shown as stored.
 
@@ -101,30 +102,18 @@ export function errorMessage(t: Translate, error: unknown): string {
   return t("shell.error.unexpected");
 }
 
-/** ErrorMessage shows why a call failed: for an API error, its code's message. */
+/**
+ * ErrorMessage shows why a call failed, in place, where the action was: an
+ * error Banner with the message of the API error's code, announced as an
+ * alert, never a toast.
+ */
 export function ErrorMessage({ error }: { error: unknown }) {
   const t = useT();
-  return (
-    <p className="error" role="alert">
-      {errorMessage(t, error)}
-    </p>
-  );
+  return <Banner status="error" role="alert" title={errorMessage(t, error)} />;
 }
 
-/** LanguageSwitch picks the language, which the browser remembers. */
-export function LanguageSwitch() {
-  const { language, setLanguage, t } = useLanguageState();
-  const id = useId();
-  return (
-    <span className="language">
-      <label htmlFor={id}>{t("shell.language")}</label>{" "}
-      <select id={id} value={language} onChange={(e) => setLanguage(e.target.value as Language)}>
-        {languages.map((l) => (
-          <option key={l} value={l} lang={l}>
-            {t(`shell.language.${l}`)}
-          </option>
-        ))}
-      </select>
-    </span>
-  );
+/** useLanguageChoice is the language, and a function that chooses another, which the browser remembers. */
+export function useLanguageChoice(): [Language, (language: Language) => void] {
+  const { language, setLanguage } = useLanguageState();
+  return [language, setLanguage];
 }

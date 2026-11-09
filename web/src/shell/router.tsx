@@ -1,3 +1,4 @@
+import type { LucideIcon } from "lucide-react";
 import {
   type AnchorHTMLAttributes,
   type ComponentType,
@@ -29,8 +30,10 @@ export interface Route {
    */
   path: string;
   page: ComponentType<PageProps>;
-  /** nav, when set, links the page from the header under this message. */
+  /** nav, when set, links the page from the side navigation under this message. */
   nav?: MessageKey;
+  /** icon is the Lucide icon beside a linked page's name in the side navigation. */
+  icon?: LucideIcon;
   /** ownerOnly hides the page, and its link, from a Member. */
   ownerOnly?: boolean;
 }

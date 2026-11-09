@@ -15,7 +15,7 @@ import {
 } from "../../api/space";
 import { type User, UserList } from "../../api/user";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
-import { actAs, renderAt } from "../../test/pages";
+import { actAs, findAlert, renderAt } from "../../test/pages";
 import { spacePath } from "./SpaceListPage";
 
 // The Spaces page and a Space's page, against the fake API, as the Owner and
@@ -61,7 +61,7 @@ test("a Member sees the Spaces they can act in, a Space's Members and counts, an
 
   const list = await screen.findByRole("list", { name: "Spaces" });
   expect(within(list).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["bob Personal", "ops"]);
-  expect(screen.queryAllByRole("button")).toEqual([]);
+  expect(within(screen.getByRole("main")).queryAllByRole("button")).toEqual([]);
   expect(screen.queryAllByRole("textbox")).toEqual([]);
 
   fireEvent.click(within(list).getByRole("link", { name: "ops" }));
@@ -72,7 +72,7 @@ test("a Member sees the Spaces they can act in, a Space's Members and counts, an
   expect(within(members).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["bob", "carol"]);
   expect(screen.getAllByRole("term").map((dt) => dt.textContent)).toEqual(["Hosts", "Retired Hosts", "Secrets"]);
   expect(screen.getAllByRole("definition").map((dd) => dd.textContent)).toEqual(["3", "1", "2"]);
-  expect(screen.queryAllByRole("button")).toEqual([]);
+  expect(within(screen.getByRole("main")).queryAllByRole("button")).toEqual([]);
   expect(screen.queryAllByRole("textbox")).toEqual([]);
   expect(screen.queryAllByRole("combobox", { name: "User" })).toEqual([]);
 });
@@ -94,7 +94,7 @@ test("the Owner adds a Space, which is never asked about", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Add Space" }));
 
   expect(await screen.findByRole("link", { name: "web" })).toBeDefined();
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(api.requests(SpaceAdd)).toEqual([{ name: "web" }]);
   expect(screen.getByRole<HTMLInputElement>("textbox", { name: "New Space" }).value).toBe("");
 });
@@ -112,7 +112,7 @@ test("a Space the Owner cannot add says why", async () => {
   fireEvent.change(screen.getByRole("textbox", { name: "New Space" }), { target: { value: "ops" } });
   fireEvent.click(screen.getByRole("button", { name: "Add Space" }));
 
-  expect((await screen.findByRole("alert")).textContent).toBe("That name is taken.");
+  expect(await findAlert()).toBe("This name is already in use.");
   expect(screen.getByRole<HTMLInputElement>("textbox", { name: "New Space" }).value).toBe("ops");
 });
 
@@ -145,7 +145,7 @@ test("the Owner renames a Space, which is never asked about, and its page moves 
 
   expect(await screen.findByRole("heading", { name: "infra" })).toBeDefined();
   expect(window.location.pathname).toBe("/spaces/infra");
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(api.requests(SpaceRename)).toEqual([{ name: "ops", new_name: "infra" }]);
 });
 
@@ -154,16 +154,16 @@ test("removing a Space asks first, stating the consequence, then goes back to th
   api.on(SpaceRemove, ({ name }) => ({ space: { id: "space_2", name, personal: false } }));
 
   fireEvent.click(screen.getByRole("button", { name: "Remove Space" }));
-  const dialog = screen.getByRole("dialog", { name: "Remove ops?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Remove ops?" });
   expect(dialog.textContent).toContain(
     "ops is removed for good, with its memberships. A Space that still holds a Host, a Retired Host or a Secret is refused.",
   );
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(api.requests(SpaceRemove)).toEqual([]);
 
   fireEvent.click(screen.getByRole("button", { name: "Remove Space" }));
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Remove" }));
+  fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove" }));
 
   expect(await screen.findByRole("heading", { name: "Spaces" })).toBeDefined();
   expect(window.location.pathname).toBe("/spaces");
@@ -177,9 +177,9 @@ test("a Space that still holds records is not removed, and its page says why", a
   });
 
   fireEvent.click(screen.getByRole("button", { name: "Remove Space" }));
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Remove" }));
+  fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove" }));
 
-  expect((await screen.findByRole("alert")).textContent).toBe(
+  expect(await findAlert()).toBe(
     "This Space still holds records. Move or remove them first.",
   );
   expect(window.location.pathname).toBe("/spaces/ops");
@@ -208,7 +208,7 @@ test("the Owner adds a Member and takes one out, which are never asked about", a
   fireEvent.click(screen.getByRole("button", { name: "Take carol out of ops" }));
 
   await waitFor(() => expect(members().map((li) => li.firstChild?.textContent)).toEqual(["bob", "dave"]));
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(api.requests(SpaceMemberAdd)).toEqual([{ space: "ops", users: ["dave"] }]);
   expect(api.requests(SpaceMemberRemove)).toEqual([{ space: "ops", users: ["carol"] }]);
 });
@@ -218,7 +218,7 @@ test("a Personal Space shows the Owner nothing to rename, remove or give Members
 
   expect(screen.getByText("Personal Space")).toBeDefined();
   expect(screen.getByText("No Members.")).toBeDefined();
-  expect(screen.queryAllByRole("button")).toEqual([]);
+  expect(within(screen.getByRole("main")).queryAllByRole("button")).toEqual([]);
   expect(screen.queryAllByRole("textbox")).toEqual([]);
   expect(api.requests(UserList)).toEqual([]);
 });

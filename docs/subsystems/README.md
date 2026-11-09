@@ -13,7 +13,7 @@ ADR; a proposed change lives in its issue or PR.
 | The store: SQLite, transactions, migrations and record ids | [store.md](store.md) |
 | The Seal: the Root Key's file, sealed values, and the Root Key at start-up | [seal.md](seal.md) |
 | The web UI build: Node, the embedded app and placeholder, the generated types, page tests | [web-ui.md](web-ui.md) |
-| The web UI shell: routing, the header and who the web UI acts as, language and catalogues, the API client, confirmations, edit forms, notices | [web-shell.md](web-shell.md) |
+| The web UI shell: the frame (side navigation, account menu), routing and who the web UI acts as, language, mode and catalogues, the API client, confirmations, edit forms, notices, what a page shows once | [web-shell.md](web-shell.md) |
 | The Spaces, People and Devices pages: who sees and does what, what asks first, and a Join Code shown once | [people-pages.md](people-pages.md) |
 | The Host connector: logging in to a Host through its Relay, the pinned host key and connect retries | [host-connector.md](host-connector.md) |
 | Enroll: `koko host enroll`, its inputs, the host key it pins, the states, and the one line it adds to `authorized_keys` | [enroll.md](enroll.md) |

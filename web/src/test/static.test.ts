@@ -105,13 +105,16 @@ test("index.html links Astryx's layer rules as they stand in the pinned version,
   );
 });
 
-test("index.html runs no inline script, and carries the viewport and color-scheme tags", () => {
+test("index.html runs no inline script, and carries the viewport, color-scheme and icon tags", () => {
   const scripts = [...indexHTML.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
   expect(scripts.length).toBeGreaterThan(0);
   for (const [script, attributes, body] of scripts) {
     expect({ script, src: /\bsrc=/.test(attributes ?? ""), body: body?.trim() }).toEqual({ script, src: true, body: "" });
   }
   expect(indexHTML.match(/<[^>]*\son[a-z]+\s*=/gi) ?? []).toEqual([]);
-  expect(indexHTML).toContain('<meta name="viewport" content="width=device-width, initial-scale=1">');
+  // viewport-fit=cover lets Astryx's AppShell keep its top bar in a phone's safe area.
+  expect(indexHTML).toContain('<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">');
   expect(indexHTML).toContain('<meta name="color-scheme" content="light dark">');
+  // An icon of its own, so the browser asks for no /favicon.ico.
+  expect(indexHTML).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml">');
 });

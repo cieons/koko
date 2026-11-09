@@ -7,7 +7,10 @@ import { CodeRevoked, DeviceRevoke, type DeviceSession } from "../api/device";
 import { CodeNameTaken } from "../api/errors";
 import { type User, UserCurrent } from "../api/user";
 import { CodeCookieRequired } from "../api/web";
+import { expectAccessible } from "../test/axe";
 import { type FakeApi, fakeApi, refusal } from "../test/fakeApi";
+import { setViewportWidth } from "../test/media";
+import { alerts, chooseInAccountMenu, findAlert } from "../test/pages";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useRead, useWrite } from "./data";
 import { useEditForm } from "./form";
@@ -97,7 +100,7 @@ function ThingEditor({ thing }: { thing: Thing }) {
       </OwnerOnly>
       {removing && (
         <ConfirmDialog
-          title={`Remove ${thing.name}?`}
+          title={`Remove ${thing.name}`}
           consequence={`${thing.name} is deleted for good.`}
           confirm="Remove"
           onCancel={() => setRemoving(false)}
@@ -174,7 +177,7 @@ test("the header shows the User and the device name the web UI acts as", async (
   renderShell("/home");
 
   await screen.findByText("home page");
-  expect(screen.getByRole("banner").textContent).toContain("bob on laptop");
+  expect(shownOutsideMenus("bob on laptop")).toHaveLength(1);
 });
 
 test("over the Unix socket the header shows the Owner on the koko server's machine", async () => {
@@ -184,7 +187,113 @@ test("over the Unix socket the header shows the Owner on the koko server's machi
   renderShell("/home");
 
   await screen.findByText("home page");
-  expect(screen.getByRole("banner").textContent).toContain("alice on the koko server's machine");
+  expect(shownOutsideMenus("alice on the koko server's machine")).toHaveLength(1);
+});
+
+/**
+ * shownOutsideMenus are the elements of the top bar that show text in the
+ * bar itself: a closed menu's rows are in the document too, and are left out.
+ */
+function shownOutsideMenus(text: string): HTMLElement[] {
+  return within(screen.getByRole("banner"))
+    .queryAllByText(text)
+    .filter((e) => !e.closest('[role="menu"]'));
+}
+
+// The frame: the side navigation, MobileNav and the account menu.
+
+/** pageNav is the side navigation, or the MobileNav drawer's on a phone. */
+function pageNav(): HTMLElement {
+  return screen.getByRole("navigation", { name: "Pages" });
+}
+
+test("the side navigation links each page the caller may see and marks the one the URL is in", async () => {
+  const api = fakeApi();
+  asDevice(api, alice, "laptop");
+  await openThing(api);
+
+  const spaces = within(pageNav()).getByRole("link", { name: "Spaces" });
+  expect(spaces.getAttribute("aria-current")).toBeNull();
+  await expectAccessible();
+
+  fireEvent.click(spaces);
+  expect(await screen.findByText("people page")).toBeDefined();
+  expect(spaces.getAttribute("aria-current")).toBe("page");
+  expect(screen.getByRole("main").textContent).toContain("people page");
+});
+
+test("on a phone the side navigation is a drawer the top bar opens, which a visit closes", async () => {
+  setViewportWidth(390);
+  const api = fakeApi();
+  asDevice(api, alice, "laptop");
+  await openThing(api);
+  expect(screen.queryByRole("navigation", { name: "Pages" })).toBeNull();
+
+  fireEvent.click(within(screen.getByRole("banner")).getByRole("button", { name: "Open navigation" }));
+  const drawer = await screen.findByRole("dialog");
+  await within(drawer).findByRole("link", { name: "koko" }); // once the drawer takes input
+  await expectAccessible();
+  fireEvent.click(await within(drawer).findByRole("link", { name: "Spaces" }));
+
+  expect(await screen.findByText("people page")).toBeDefined();
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
+test("on a phone a Member's drawer links no Owner-only page", async () => {
+  setViewportWidth(390);
+  const api = fakeApi();
+  asDevice(api, bob, "laptop");
+  await openThing(api);
+
+  fireEvent.click(within(screen.getByRole("banner")).getByRole("button", { name: "Open navigation" }));
+
+  const drawer = await screen.findByRole("dialog");
+  await within(drawer).findByRole("link", { name: "koko" }); // once the drawer takes input
+  expect(within(drawer).queryByRole("link", { name: "Spaces" })).toBeNull();
+});
+
+test("on a phone the account menu, not the top bar, says whom the web UI acts as", async () => {
+  setViewportWidth(390);
+  const api = fakeApi();
+  asDevice(api, bob, "laptop");
+  renderShell("/home");
+  await screen.findByText("home page");
+  expect(shownOutsideMenus("bob on laptop")).toEqual([]);
+
+  fireEvent.click(within(screen.getByRole("banner")).getByRole("button", { name: "Account" }));
+
+  expect((await screen.findByRole("menu")).textContent).toContain("bob on laptop");
+  await expectAccessible();
+});
+
+test("the account menu chooses Light, Dark or System, which the browser remembers", async () => {
+  const api = fakeApi();
+  asDevice(api, bob, "laptop");
+  renderShell("/home");
+  await screen.findByText("home page");
+
+  fireEvent.click(within(screen.getByRole("banner")).getByRole("button", { name: "Account" }));
+  expect(await screen.findByRole("menuitemradio", { name: "System", checked: true })).toBeDefined();
+  await expectAccessible();
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Dark" }));
+  expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+  expect(localStorage.getItem("koko.theme")).toBe("dark");
+
+  await chooseInAccountMenu("System");
+  expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+  expect(localStorage.getItem("koko.theme")).toBe("system");
+});
+
+test("a path with no page says so, with a way to the first page", async () => {
+  const api = fakeApi();
+  asDevice(api, alice, "laptop");
+  renderShell("/nowhere");
+
+  expect(await screen.findByRole("heading", { level: 1, name: "Page not found" })).toBeDefined();
+  await expectAccessible();
+  fireEvent.click(screen.getByRole("link", { name: "Go to the first page" }));
+
+  expect(await screen.findByText("people page")).toBeDefined();
 });
 
 // The API client: retries and Idempotency-Key.
@@ -203,7 +312,7 @@ test("a write whose connection drops is retried once, with the same Idempotency-
   const [first, retry] = keysOf(api, ThingSet);
   expect(first).toMatch(/^[0-9a-f]{32}$/);
   expect(retry).toBe(first);
-  expect(screen.queryByRole("alert")).toBeNull();
+  expect(alerts()).toEqual([]);
 });
 
 test("a read whose connection drops is retried once, without an Idempotency-Key", async () => {
@@ -232,7 +341,7 @@ test("submitting a form again after its write failed reuses its key; another req
 
   api.drop(2); // the write and its retry
   fireEvent.click(save);
-  expect(await screen.findByText("The connection to koko web dropped.")).toBeDefined();
+  await waitFor(() => expect(alerts()).toContain("The connection to koko web was lost."));
   api.drop(0);
   fireEvent.click(save); // refused this time
   await waitFor(() => expect(keysOf(api, ThingSet)).toHaveLength(3));
@@ -311,7 +420,7 @@ test("an edit form sends only the fields that changed", async () => {
 
   await waitFor(() => expect(api.calls.filter((c) => c.path === ThingSet.path)).toHaveLength(1));
   expect(api.calls.find((c) => c.path === ThingSet.path)?.request).toEqual({ name: "web1", note: "renewed" });
-  expect(screen.queryByRole("dialog")).toBeNull(); // a reversible write never asks
+  expect(screen.queryByRole("alertdialog")).toBeNull(); // a reversible write never asks
 });
 
 test("once a write succeeds, its values are the edit form's baseline", async () => {
@@ -342,15 +451,20 @@ test("an irreversible action asks first, in a dialog that states the consequence
   api.on(ThingRemove, () => ({ thing: web1 }));
   await openThing(api);
 
-  fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-  const dialog = screen.getByRole("dialog", { name: "Remove web1?" });
+  const remove = screen.getByRole("button", { name: "Remove" });
+  remove.focus(); // as a click or a key does in a browser
+  fireEvent.click(remove);
+  const dialog = screen.getByRole("alertdialog", { name: "Remove web1" });
   expect(dialog.textContent).toContain("web1 is deleted for good.");
+  expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Cancel" }));
+  await expectAccessible();
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  await waitFor(() => expect(document.activeElement).toBe(remove));
   expect(api.calls.filter((c) => c.path === ThingRemove.path)).toEqual([]);
 
   fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Remove" }));
+  fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Remove" }));
 
   expect(await screen.findByText("removed")).toBeDefined();
   expect(api.calls.filter((c) => c.path === ThingRemove.path)).toHaveLength(1);
@@ -361,7 +475,7 @@ test("Escape closes the dialog without acting", async () => {
   const onCancel = vi.fn();
   await renderDialog({ onConfirm, onCancel });
 
-  fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true })); // Escape
+  fireEvent(screen.getByRole("alertdialog"), new Event("cancel", { cancelable: true })); // Escape
 
   expect(onCancel).toHaveBeenCalledOnce();
   expect(onConfirm).not.toHaveBeenCalled();
@@ -370,11 +484,13 @@ test("Escape closes the dialog without acting", async () => {
 test("the typed-name variant confirms only once the name is typed exactly", async () => {
   const onConfirm = vi.fn();
   await renderDialog({ onConfirm, onCancel: vi.fn(), typedName: "laptop" });
-  const dialog = screen.getByRole("dialog", { name: "Revoke laptop?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Revoke laptop" });
   const confirm = within(dialog).getByRole<HTMLButtonElement>("button", { name: "Revoke" });
   const input = within(dialog).getByLabelText("Type laptop to confirm.");
 
   expect(dialog.textContent).toContain("laptop can never connect again.");
+  expect(document.activeElement).toBe(input);
+  await expectAccessible();
   expect(confirm.disabled).toBe(true);
   fireEvent.click(confirm);
   fireEvent.change(input, { target: { value: "lapto" } });
@@ -388,13 +504,52 @@ test("the typed-name variant confirms only once the name is typed exactly", asyn
   expect(onConfirm).toHaveBeenCalledOnce();
 });
 
+test("the typed-name variant gives the focus back when it closes, and on a phone puts the action above Cancel", async () => {
+  setViewportWidth(390);
+  const api = fakeApi();
+  asDevice(api, alice, "laptop");
+  function TypedPage() {
+    const [asking, setAsking] = useState(false);
+    return (
+      <>
+        <button type="button" onClick={() => setAsking(true)}>
+          revoke laptop
+        </button>
+        {asking && (
+          <ConfirmDialog
+            title="Revoke laptop"
+            consequence="laptop can never connect again."
+            confirm="Revoke"
+            typedName="laptop"
+            onConfirm={() => setAsking(false)}
+            onCancel={() => setAsking(false)}
+          />
+        )}
+      </>
+    );
+  }
+  window.history.replaceState(null, "", "/typed");
+  render(<Shell routes={[{ path: "/typed", page: TypedPage }]} />);
+  const opener = await screen.findByRole("button", { name: "revoke laptop" });
+  opener.focus();
+  fireEvent.click(opener);
+
+  const dialog = screen.getByRole("alertdialog", { name: "Revoke laptop" });
+  expect(within(dialog).getAllByRole("button").map((b) => b.textContent)).toEqual(["Revoke", "Cancel"]);
+  await expectAccessible();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  await waitFor(() => expect(document.activeElement).toBe(opener));
+});
+
 function renderDialog(props: { onConfirm: () => void; onCancel: () => void; typedName?: string }) {
   const api = fakeApi();
   asDevice(api, alice, "laptop");
   function DialogPage() {
     return (
       <ConfirmDialog
-        title="Revoke laptop?"
+        title="Revoke laptop"
         consequence="laptop can never connect again."
         confirm="Revoke"
         {...props}
@@ -403,7 +558,7 @@ function renderDialog(props: { onConfirm: () => void; onCancel: () => void; type
   }
   window.history.replaceState(null, "", "/dialog");
   render(<Shell routes={[{ path: "/dialog", page: DialogPage }]} />);
-  return screen.findByRole("dialog");
+  return screen.findByRole("alertdialog");
 }
 
 // Owner-only pages and buttons.
@@ -413,11 +568,11 @@ test("a Member sees no Owner-only page, link or button", async () => {
   asDevice(api, bob, "laptop");
   await openThing(api);
 
-  expect(within(screen.getByRole("banner")).queryByRole("link", { name: "Spaces" })).toBeNull();
+  expect(within(pageNav()).queryByRole("link", { name: "Spaces" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
 
   act(() => navigate("/people"));
-  expect(await screen.findByText("There is no page here.")).toBeDefined();
+  expect(await screen.findByRole("heading", { level: 1, name: "Page not found" })).toBeDefined();
   expect(screen.queryByText("people page")).toBeNull();
 });
 
@@ -430,7 +585,7 @@ test.each([
   await openThing(api);
 
   expect(screen.getByRole("button", { name: "Remove" })).toBeDefined();
-  fireEvent.click(within(screen.getByRole("banner")).getByRole("link", { name: "Spaces" }));
+  fireEvent.click(within(pageNav()).getByRole("link", { name: "Spaces" }));
   expect(await screen.findByText("people page")).toBeDefined();
   expect(window.location.pathname).toBe("/people");
 });
@@ -446,8 +601,9 @@ test("the language follows the browser's preferred languages: Chinese of any reg
 
   await screen.findByText("home page");
   expect(screen.getByRole("banner").textContent).toContain("bob · 设备 laptop");
-  expect(screen.getByLabelText<HTMLSelectElement>("语言").value).toBe("zh-CN");
   expect(document.documentElement.lang).toBe("zh-CN");
+  fireEvent.click(within(screen.getByRole("banner")).getByRole("button", { name: "账户" }));
+  expect(await screen.findByRole("menuitemradio", { name: "简体中文", checked: true })).toBeDefined();
 });
 
 test.each([
@@ -465,20 +621,21 @@ test.each([
   expect(document.documentElement.lang).toBe(want);
 });
 
-test("the header's switch overrides the browser's language, and the browser remembers it", async () => {
+test("the account menu's choice overrides the browser's language, and the browser remembers it", async () => {
   preferLanguages("en-GB");
   const api = fakeApi();
   asDevice(api, bob, "laptop");
   const { unmount } = renderShell("/home");
   await screen.findByText("home page");
 
-  fireEvent.change(screen.getByLabelText("Language"), { target: { value: "zh-CN" } });
+  await chooseInAccountMenu("简体中文");
   expect(screen.getByRole("banner").textContent).toContain("bob · 设备 laptop");
   unmount();
 
   renderShell("/home"); // a reload of the page
   await screen.findByText("home page");
-  expect(screen.getByLabelText<HTMLSelectElement>("语言").value).toBe("zh-CN");
+  expect(document.documentElement.lang).toBe("zh-CN");
+  expect(screen.getByRole("banner").textContent).toContain("bob · 设备 laptop");
 });
 
 test("an API error shows its code's message in the current language", async () => {
@@ -491,9 +648,10 @@ test("an API error shows its code's message in the current language", async () =
   fireEvent.change(screen.getByLabelText("provider"), { target: { value: "ovh" } });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-  expect((await screen.findByRole("alert")).textContent).toBe("That name is taken.");
-  fireEvent.change(screen.getByLabelText("Language"), { target: { value: "zh-CN" } });
-  expect(screen.getByRole("alert").textContent).toBe("这个名称已被占用。");
+  expect(await findAlert()).toBe("This name is already in use.");
+  await expectAccessible();
+  await chooseInAccountMenu("简体中文");
+  expect(alerts()).toEqual(["此名称已被占用。"]);
 });
 
 test("names, keys, values and Notes show as stored, in either language", async () => {
@@ -517,14 +675,15 @@ test("when koko web stops the page says to run it again, until a call gets throu
   api.drop();
   fireEvent.focus(window);
 
-  expect((await screen.findByRole("alert")).textContent).toBe(
-    "koko web is not running. Run koko web again, then come back to this page.",
-  );
+  const stopped = await findAlert();
+  expect(stopped).toContain("koko web is not running");
+  expect(stopped).toContain("Run koko web again, then return to this page.");
   expect(screen.getByText("home page")).toBeDefined();
+  await expectAccessible();
 
   api.drop(0);
   fireEvent.focus(window);
-  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  await waitFor(() => expect(alerts()).toEqual([]));
 });
 
 test("a refusal shows koko web runs again, so the notice that it stopped goes", async () => {
@@ -537,14 +696,12 @@ test("a refusal shows koko web runs again, so the notice that it stopped goes", 
   fireEvent.change(screen.getByLabelText("provider"), { target: { value: "ovh" } });
   api.drop(2);
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
-  await screen.findByText("koko web is not running. Run koko web again, then come back to this page.");
+  await screen.findByText("koko web is not running");
 
   api.drop(0);
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-  await waitFor(() =>
-    expect(screen.getAllByRole("alert").map((a) => a.textContent)).toEqual(["That name is taken."]),
-  );
+  await waitFor(() => expect(alerts()).toEqual(["This name is already in use."]));
 });
 
 test("when the Device Session is Revoked the page says so, for good", async () => {
@@ -558,12 +715,12 @@ test("when the Device Session is Revoked the page says so, for good", async () =
   fireEvent.change(screen.getByLabelText("provider"), { target: { value: "ovh" } });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-  const notice = "This device's Device Session was Revoked, so this page can do nothing more.";
-  await waitFor(() => expect(screen.getAllByRole("alert")[0]?.textContent).toContain(notice));
+  const notice = "The Device Session of this device was Revoked";
+  await waitFor(() => expect(alerts()[0]).toContain(notice));
   fireEvent.focus(window); // reads that still answer, as one sent before the revocation would
   await waitFor(() => expect(api.calls.filter((c) => c.path === ThingShow.path)).toHaveLength(2));
   await waitFor(() => expect(api.calls.filter((c) => c.path === UserCurrent.path)).toHaveLength(2));
-  expect(screen.getAllByRole("alert")[0]?.textContent).toContain(notice);
+  expect(alerts()[0]).toContain(notice);
 });
 
 /** A page that revokes a Device Session, as the Devices page does. */
@@ -602,11 +759,10 @@ test.each([
   fireEvent.click(await screen.findByRole("button", { name: button }));
 
   await screen.findByText("revoked");
-  const alert = screen.queryByRole("alert");
   if (notice) {
-    expect(alert?.textContent).toContain("This device's Device Session was Revoked");
+    expect(alerts()[0]).toContain("The Device Session of this device was Revoked");
   } else {
-    expect(alert).toBeNull();
+    expect(alerts()).toEqual([]);
   }
   expect(api.calls.filter((c) => c.path === DeviceRevoke.path)).toHaveLength(1);
 });
@@ -626,8 +782,8 @@ test("when the browser's cookie is no longer valid, the page says to open koko w
   ended = true; // koko web ran again over the Unix socket, with a new cookie
   fireEvent.focus(window);
 
-  expect((await screen.findByRole("alert")).textContent).toBe(
-    "This browser no longer holds a valid cookie for this page. Open the address koko web printed.",
+  expect(await findAlert()).toBe(
+    "This browser no longer holds a valid cookie for this page. Open the address that koko web printed.",
   );
 });
 
@@ -667,7 +823,7 @@ test("a page keeps its state in the URL, and back returns to the earlier state",
   expect(window.location.search).toBe("");
 });
 
-test("/ goes to the first page the header links, keeping the query", async () => {
+test("/ goes to the first page the side navigation links, keeping the query", async () => {
   const api = fakeApi();
   asDevice(api, alice, "laptop");
 

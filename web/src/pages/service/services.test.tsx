@@ -14,7 +14,7 @@ import {
 } from "../../api/service";
 import type { User } from "../../api/user";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
-import { actAs, renderAt, tableRows } from "../../test/pages";
+import { actAs, findAlert, renderAt, tableRows } from "../../test/pages";
 
 // The Services list and a Service's page, against the fake API: the list's
 // filters, sorting and columns in the URL as on the Hosts list, and a
@@ -115,7 +115,7 @@ test("the Services list shows Host, name and ports, takes the same filters and s
   first.unmount();
   const listed = api.requests(ServiceList).length;
   renderAt("/services?filter=state=managed&sort=ports&columns=name&all=1");
-  expect((await screen.findByRole("alert")).textContent).toContain("state=managed, ports, name");
+  expect(await findAlert()).toContain("state=managed, ports, name");
   expect(api.requests(ServiceList)).toHaveLength(listed);
 });
 
@@ -186,7 +186,7 @@ test("a Service's edit form sends only what changed, clearing its ports when emp
   expect(await screen.findByRole("heading", { level: 1, name: "web1/proxy" })).toBeDefined();
   expect(window.location.pathname).toBe("/services/web1/proxy");
   expect(api.requests(ServiceRename)).toEqual([{ host: "web1", name: "nginx", new_name: "proxy" }]);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
 });
 
 test("deleting a Service asks first, stating the consequence, and goes back to its Host", async () => {
@@ -200,13 +200,13 @@ test("deleting a Service asks first, stating the consequence, and goes back to i
   renderAt("/services/web1/nginx");
 
   fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
-  const dialog = screen.getByRole("dialog", { name: "Delete web1/nginx?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Delete web1/nginx?" });
   expect(dialog.textContent).toContain("web1/nginx is deleted for good, with its ports, Attributes and Note.");
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
   expect(api.requests(ServiceRemove)).toEqual([]);
 
   fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+  fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete" }));
 
   await vi.waitFor(() => expect(window.location.pathname).toBe("/hosts/web1"));
   expect(api.requests(ServiceRemove)).toEqual([{ host: "web1", name: "nginx" }]);
@@ -220,6 +220,6 @@ test("a Service on a Retired Host is read-only", async () => {
   renderAt("/services/host_old1/nginx");
 
   expect(await screen.findByText(/Its Host is Retired/)).toBeDefined();
-  expect(screen.queryAllByRole("button").map((b) => b.textContent)).toEqual([]);
+  expect(within(screen.getByRole("main")).queryAllByRole("button").map((b) => b.textContent)).toEqual([]);
   expect(screen.getByRole("link", { name: "host_old1" }).getAttribute("href")).toBe("/hosts/host_old1");
 });

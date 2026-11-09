@@ -1,19 +1,33 @@
-// The shell's messages: the frame every page sits in.
+// The shell's messages: the frame every page sits in, and the parts pages
+// share.
 export default {
   "shell.brand": "koko",
   "shell.nav": "Pages",
   "shell.header.device": "{user} on {device}",
   "shell.header.local": "{user} on the koko server's machine",
+  "shell.account": "Account",
   "shell.language": "Language",
   "shell.language.en": "English",
   "shell.language.zh-CN": "简体中文",
-  "shell.loading": "Loading…",
-  "shell.notFound": "There is no page here.",
-  "shell.notice.stopped": "koko web is not running. Run koko web again, then come back to this page.",
-  "shell.notice.revoked":
-    "This device's Device Session was Revoked, so this page can do nothing more. To use koko from this device again, join it with a new Join Code.",
-  "shell.error.dropped": "The connection to koko web dropped.",
-  "shell.error.unexpected": "Something unexpected went wrong.",
+  "shell.mode": "Appearance",
+  "shell.mode.light": "Light",
+  "shell.mode.dark": "Dark",
+  "shell.mode.system": "System",
+  "shell.loading": "Loading",
+  "shell.notFound.title": "Page not found",
+  "shell.notFound.description": "No page of the web UI is at this address.",
+  "shell.notFound.home": "Go to the first page",
+  "shell.notice.stopped.title": "koko web is not running",
+  "shell.notice.stopped.description": "Run koko web again, then return to this page.",
+  "shell.notice.revoked.title": "The Device Session of this device was Revoked",
+  "shell.notice.revoked.description":
+    "This page can no longer act. To use koko from this device again, join it with a new Join Code.",
+  "shell.error.dropped": "The connection to koko web was lost.",
+  "shell.error.unexpected": "An unexpected error occurred.",
   "shell.confirm.cancel": "Cancel",
   "shell.confirm.typeName": "Type {name} to confirm.",
+  "shell.shownOnce.copy": "Copy",
+  "shell.shownOnce.copied": "Copied.",
+  "shell.shownOnce.copyFailed": "This browser did not allow copying. Select the text and copy it.",
+  "shell.shownOnce.expiresIn": "It expires in {time}. It is shown only here, and leaving this page discards it.",
 };

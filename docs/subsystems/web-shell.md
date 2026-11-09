@@ -1,10 +1,10 @@
 # The web UI shell
 
-The frame every page of the web UI sits in: routing, the header and who the
-web UI acts as, the language and its catalogues, the API client, the
-confirmation dialog, edit forms, reloading, what a page shows once, and the
-notices. The pages
-themselves are their capabilities'; where an area adds its pages and its
+The frame every page of the web UI sits in, and the parts pages share: the
+side navigation and the account menu, routing and who the web UI acts as,
+the language, the mode and the catalogues, the API client, the confirmation
+dialog, edit forms, reloading, what a page shows once, and the notices and
+refusals. The pages themselves are their capabilities'; where an area adds its pages and its
 catalogue files is in [code layout](code-layout.md#where-an-area-adds-its-parts).
 How the app is built, embedded and typed is [the web UI build](web-ui.md); how
 a browser reaches it is [`koko web` and the web front](web-front.md).
@@ -31,10 +31,43 @@ which loads Figtree from Google Fonts, is never imported: `app.css` declares
 the copy in `web/src/assets/fonts/` (Figtree's variable WOFF2, latin, under
 the SIL Open Font License beside it) and names the system's Chinese fonts
 after it in `--font-family-body`. koko's CSS uses Astryx's tokens and never
-a literal colour. Its rules for the frame and the pages not yet redone on
-Astryx reach only inside an element of class `koko-legacy` (the header and
-`<main>` today), in Astryx's lowest layer, `reset`, so no Astryx component
+a literal colour. Its rules for the pages not yet redone on Astryx reach
+only inside an element of class `koko-legacy`, which the Shell wraps each
+page in, in Astryx's lowest layer, `reset`, so no Astryx component
 outside it takes them, and one inside keeps every property it sets.
+
+## The frame
+
+The [`Shell`](../../web/src/shell/Shell.tsx) is Astryx's `AppShell`, laid
+out as its `AppShellTopNavWithSideNav` pattern (spec #108: "Patterns, not a
+re-skin"):
+
+- **The top bar** (`TopNav`) holds koko's name, linking `/`; whom the web UI
+  acts as ([below](#who-the-web-ui-acts-as)); and the
+  [account menu](../../web/src/shell/AccountMenu.tsx), a `DropdownMenu` behind
+  the User's `Avatar` that chooses the language and the mode, each a group
+  of radio items. The account page and signing out join it with Sign-ins
+  (#114, #116).
+- **The side navigation** (`SideNav`, named "Pages") links each page the
+  caller may see, in the order of `routes`, under its name and its Lucide
+  icon (`Route.icon`), and marks the one the URL is in (`aria-current`), a
+  page beneath it such as a Host included.
+- **On a phone**, below Astryx's `md` width (768 pixels), the top bar
+  carries a button that opens the side navigation's links in a `MobileNav`
+  drawer, which every visit closes; whom the web UI acts as moves into the
+  account menu, where the bar has no room for it.
+- **The content** is `AppShell`'s `<main>`, with Astryx's skip link before
+  the frame. A page not yet redone on Astryx sits inside an element of class
+  `koko-legacy` ([Providers](#providers)).
+- **The notices** are the `AppShell`'s banner, above the top bar
+  ([Notices](#notices)).
+- **A path with no page** shows Astryx's `EmptyState`, "Page not found",
+  with a link to the first page; so does a path only the Owner may open, to
+  a Member.
+- **The icon** of the browser's tab is `web/public/favicon.svg`, which
+  `index.html` links, so the browser asks for no `/favicon.ico`.
+  `index.html`'s viewport tag carries `viewport-fit=cover`, which lets
+  `AppShell` keep its top bar in a phone's safe area.
 
 ## Light and dark
 
@@ -42,8 +75,7 @@ outside it takes them, and one inside keeps every property it sets.
   dark mode (`prefers-color-scheme`). Light or Dark overrides it, and the
   browser keeps the choice in `localStorage` (`koko.theme`), as it keeps
   the language. `useMode()` is the mode chosen and the function that
-  chooses another; the switch in the header that calls it comes with the
-  frame's redesign.
+  chooses another, which the account menu calls: Light, Dark or System.
 - **`<html data-theme>`** holds `light` or `dark` for a choice of either,
   and is absent for System; Astryx's `Theme` writes it, and its tokens
   follow. `index.html` carries `<meta name="color-scheme" content="light
@@ -55,9 +87,10 @@ outside it takes them, and one inside keeps every property it sets.
 
 - **A page is a path.** A [`Route`](../../web/src/shell/router.tsx) names a
   path (a `:name` segment matches any one segment, decoded, and reaches the
-  page as `params.name`), the page component, the message the header links it
-  under (`nav`), and whether only the Owner sees it (`ownerOnly`). The header
-  links pages in the order of `routes` in
+  page as `params.name`), the page component, the message the side
+  navigation links it under (`nav`) and its Lucide icon there (`icon`), and
+  whether only the Owner sees it (`ownerOnly`). The side navigation links
+  pages in the order of `routes` in
   [`web/src/routes.ts`](../../web/src/routes.ts), and `/` goes, keeping its
   query, to the first linked page the caller may see. A path no route
   matches, or one that does not decode, shows that there is no page there.
@@ -73,8 +106,8 @@ outside it takes them, and one inside keeps every property it sets.
 
 ## Who the web UI acts as
 
-- **The header** shows the User and the device name, the links to the pages
-  the caller may see, and the language switch.
+- **The top bar** shows the User and the device name, and the side
+  navigation the links to the pages the caller may see.
 - **It learns them from `user.current`**
   ([`api.UserCurrent`](../../internal/shared/api/user.go)), the operation
   `koko join` asks, so the web UI adds no operation of its own (ADR 0006). It
@@ -82,7 +115,7 @@ outside it takes them, and one inside keeps every property it sets.
   renders a page only once it has answered, and pages read the answer as a
   [`Caller`](../../web/src/shell/caller.tsx) (`useCaller`).
 - **Over the Unix socket** `user.current` answers the Owner with no Device
-  Session, for the Local caller (ADR 0008), so the header shows the Owner's
+  Session, for the Local caller (ADR 0008), so the top bar shows the Owner's
   name "on the koko server's machine" where a device name would be.
 - **Owner-only pages and buttons.** The role in `user.current`'s User decides:
   a Member gets no link to an `ownerOnly` route, and its path shows no page;
@@ -113,7 +146,7 @@ outside it takes them, and one inside keeps every property it sets.
 - **Choosing.** The first of the browser's preferred languages
   (`navigator.languages`) that the web UI ships wins: Chinese of any region
   gives Simplified Chinese, English gives English, and none gives English.
-  The header's switch overrides it, and the browser keeps the choice in
+  The account menu overrides it, and the browser keeps the choice in
   `localStorage` (`koko.language`). `<html lang>` follows the language, and
   so do Astryx's own strings ([Providers](#providers)).
 - **Never translated.** Names, keys, values and Notes reach a message only as
@@ -166,23 +199,44 @@ loses it, the browser leaving the page (`pagehide`) forgets it, so a page
 the browser keeps in its back-forward cache holds it no more when Back brings
 it back, and the page forgets it at once by setting it to `undefined`.
 
+A line a page shows once to be pasted elsewhere, a Join Code's `koko join`
+line today and a Password Link later, shows in
+[`ShownOnceLine`](../../web/src/shell/ShownOnceLine.tsx): a region named for
+what it holds, in an Astryx `Card`, with the line in Astryx's `Code`, which
+breaks anywhere on a phone and one click selects whole; a copy
+`IconButton` beside it, which says whether the browser copied it; and the
+time left as text, counted each second on the browser's clock from when the
+line showed, for the validity the page asked for (`validFor`). The time
+left reads in minutes and seconds (`14:59`) for its last hour, and before
+that in days and whole hours in the language (`6 days, 23 hours`, `6天23小时`,
+`Intl.DurationFormat`), as a validity of up to 7 days (#115) calls for. Once
+it ran out, the line goes and the page's own words say what to do instead.
+
 ## Confirmations
 
 [`ConfirmDialog`](../../web/src/shell/ConfirmDialog.tsx) asks before an
 irreversible action (retire, removing a record, revoke, removing a User) with
-a title, the consequence and the action's button. It is the browser's modal
-`<dialog>` (`showModal`), so the page behind takes no input, Escape cancels,
-and the focus returns where it was when it closes. Its first control takes the
-focus: Cancel, so Enter never acts by accident, or, with `typedName`, the
-field for the name, and the action stays disabled until that name is typed
-exactly: the web UI's form of `--last`, for the Owner's own last Device
-Session. Reversible writes, revealing a Secret and issuing a Join Code never
-ask.
+a title, the consequence and the action's button, as Astryx's
+`AlertDialogDeleteConfirmation` pattern does. It is Astryx's `AlertDialog`
+(`role="alertdialog"`, named by its title and described by the
+consequence), open while the page renders it, so the page behind takes no
+input, a click beside it does nothing, Escape cancels, and the focus returns
+where it was when it closes. Its first control takes the focus: Cancel, so
+Enter never acts by accident. With `typedName`, it adds the field for the
+name, which takes the focus, and the action stays disabled until that name
+is typed exactly: the web UI's form of `--last`, for the Owner's own last
+Device Session. `AlertDialog` takes no content of its own, so that variant
+is its composition (`Dialog`, `Layout`, `Heading`, `Text` and two `Button`s)
+with the field added. On a phone, at 640 pixels wide and below, the buttons
+fill the width, the action above Cancel; Astryx offers no bottom sheet for
+an alert dialog. Reversible writes, revealing a Secret and issuing a Join
+Code never ask.
 
 ## Notices
 
 Every call's outcome reaches the shell (`observeCalls`), which shows one
-notice above the page ([`notice.ts`](../../web/src/shell/notice.ts)):
+notice above the frame, an Astryx `Banner` across the width, announced as
+an alert ([`notice.ts`](../../web/src/shell/notice.ts)):
 
 | Notice | When | Ends |
 | --- | --- | --- |
@@ -192,6 +246,14 @@ notice above the page ([`notice.ts`](../../web/src/shell/notice.ts)):
 
 When the Device Session is Revoked elsewhere, `koko web` exits, and the page
 can tell only that it stopped.
+
+**A refusal** shows in place, where the action was, never as a toast:
+`ErrorMessage` is an error `Banner` with the message of the API error's
+code, announced as an alert (`role="alert"` on its message alone). Astryx
+keeps live regions of roles `alert` and `status` of its own, empty until
+it announces something, so a test reads the alerts that say something
+(`alerts()`, `findAlert()`, `statuses()` in
+[`web/src/test/pages.tsx`](../../web/src/test/pages.tsx)).
 
 ## The page inventory
 
@@ -212,6 +274,7 @@ and [the Spaces, People and Devices pages](people-pages.md).
 | See who the web UI acts as, from which device | `user.current` | anyone |
 | Follow a link to each page the caller may see | none | anyone; People the Owner alone |
 | Choose the language, which the browser keeps | none | anyone |
+| Choose Light, Dark or System, which the browser keeps | none | anyone |
 
 **Hosts** (`/hosts`; the view in the query: `filter`, `sort`, `columns`, `all=1`):
 
@@ -303,15 +366,22 @@ and [the Spaces, People and Devices pages](people-pages.md).
 
 - [`Shell.test.tsx`](../../web/src/shell/Shell.test.tsx), Vitest and React
   Testing Library against the [fake API](web-ui.md#testing-pages), with test
-  pages of their own: the header on a device and over the Unix socket; a
+  pages of their own: the top bar on a device and over the Unix socket;
+  the side navigation marking the page the URL is in, and axe on the
+  frame; on a phone, the drawer the top bar opens, linking no Owner-only
+  page to a Member and closed by a visit, and the account menu naming whom
+  the web UI acts as; the account menu choosing the mode, remembered; "Page
+  not found" with its link to the first page; a
   write and a read retried once, with and without the same key; a form
   resubmitted with its key, a new key after success or for another request,
   and overlapping writes; an edit form sending only changed fields, its
-  baseline after a save, and Save never asking; the dialog, Escape, and its
-  typed-name variant; a Member seeing no Owner-only page, link or button, and
+  baseline after a save, and Save never asking; the dialog, its focus going
+  to Cancel and back to the button that opened it, axe, Escape, and its
+  typed-name variant with the focus on its field and back on the button
+  that opened it, its action above Cancel on a phone; a Member seeing no Owner-only page, link or button, and
   the Owner seeing them; the language from the browser's preferences, the
-  switch overriding it and remembered; an API error's message in either
-  language; values shown as stored; the three notices, revoking the web UI's
+  account menu overriding it and remembered; an API error's message, in its
+  `Banner`, in either language, and axe on it; values shown as stored; the three notices, revoking the web UI's
   own Device Session, and a refusal ending the stopped notice; reloads on
   focus and on each visit; page state in the URL and Back; `/` going to the
   first page.
@@ -325,7 +395,11 @@ and [the Spaces, People and Devices pages](people-pages.md).
   koko's router.
 - [`catalogues.test.ts`](../../web/src/i18n/catalogues.test.ts): the
   completeness test above.
+- [`ShownOnceLine.test.tsx`](../../web/src/shell/ShownOnceLine.test.tsx):
+  a line valid for 7 days counting down in days and hours, then in minutes
+  and seconds, then gone; axe; the copy button copying the line whole.
 - [`format.test.ts`](../../web/src/shell/format.test.ts): dates as
-  `YYYY-MM-DD`.
+  `YYYY-MM-DD`; the time left in minutes and seconds, and in days and hours
+  in either language.
 - [`App.test.tsx`](../../web/src/App.test.tsx): the web UI opens on its first
   page.

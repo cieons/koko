@@ -10,7 +10,7 @@ Host and Service pages".
 ## The Hosts list
 
 [`HostsPage`](../../web/src/pages/host/HostsPage.tsx), at `/hosts`, the
-first page the header links, so `/` goes to it. Anyone sees it: it lists
+first page the side navigation links, so `/` goes to it. Anyone sees it: it lists
 what `host.list` answers the caller, so a Member sees the Hosts of their
 Spaces alone, as `koko host ls` shows them. Each Host's name links to
 `/hosts/<name>`, or `/hosts/<id>` for a Retired Host, since a new Host may

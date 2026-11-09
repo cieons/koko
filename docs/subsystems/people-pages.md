@@ -53,7 +53,8 @@ Owner, for the Owner's last; or both of the last two.
 ## A Join Code on screen
 
 An Invite or an added device shows its Join Code once
-([`JoinCodeLine`](../../web/src/pages/device/JoinCodeLine.tsx)): the `koko join
+([`JoinCodeLine`](../../web/src/pages/device/JoinCodeLine.tsx)), in the
+shell's [line shown once](web-shell.md#shown-once): the `koko join
 koko_...` line, which one click selects whole, a button that copies it, and
 the time left of its 15 minutes, counted each second on the browser's clock
 from when the line showed. It does not count to the code's `expires_at`,

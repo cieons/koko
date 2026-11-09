@@ -1,19 +1,32 @@
-import { useEffect } from "react";
+import { AppShell, useAppShellMobile } from "@astryxdesign/core/AppShell";
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button } from "@astryxdesign/core/Button";
+import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { NavIcon } from "@astryxdesign/core/NavIcon";
+import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
+import { Spinner } from "@astryxdesign/core/Spinner";
+import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
+import { Server, SearchX } from "lucide-react";
+import { useEffect, useEffectEvent } from "react";
 
 import { UserCurrent } from "../api/user";
+import type { MessageKey } from "../i18n/catalogues";
+import { AccountMenu } from "./AccountMenu";
+import { CallerContext, callerOf } from "./caller";
 import { useRead } from "./data";
-import { ErrorMessage, LanguageSwitch, useT } from "./i18n";
-import { type Caller, CallerContext, callerOf } from "./caller";
+import { ErrorMessage, useT } from "./i18n";
 import { type Notice, useNotice } from "./notice";
 import { Providers } from "./providers";
-import { Link, matchRoute, navigate, type Route, useLocation } from "./router";
+import { matchRoute, navigate, type Route, useLocation } from "./router";
 
 /**
- * Shell is the frame every page sits in, inside the Providers: the header
- * with the User, the device name, the links to the pages and the language
- * switch; the notices; and the page the URL names. It learns who the web UI
- * acts as from user.current, reloaded as every read is, and renders a page
- * only once it knows, so a Member never sees an Owner-only page or button.
+ * Shell is the frame every page sits in, inside the Providers: Astryx's
+ * AppShell with a top bar (koko's name, whom the web UI acts as, and the
+ * account menu), the side navigation to the pages, a MobileNav drawer in its
+ * place on a phone, the notices above them, and the page the URL names. It
+ * learns who the web UI acts as from user.current, reloaded as every read
+ * is, and renders a page only once it knows, so a Member never sees an
+ * Owner-only page or link.
  */
 export function Shell({ routes }: { routes: readonly Route[] }) {
   return (
@@ -32,71 +45,107 @@ function Frame({ routes }: { routes: readonly Route[] }) {
 
   return (
     <CallerContext value={caller}>
-      <header className="shell-header koko-legacy">
-        <strong className="brand">{t("shell.brand")}</strong>
-        {caller && (
-          <nav aria-label={t("shell.nav")}>
-            {visible.flatMap((r) =>
-              r.nav ? [
-                <Link key={r.path} to={r.path}>
-                  {t(r.nav)}
-                </Link>,
-              ] : [],
-            )}
-          </nav>
-        )}
-        {caller && <Who caller={caller} />}
-        <LanguageSwitch />
-      </header>
-      {notice && <NoticeBanner notice={notice} />}
-      <main className="koko-legacy">
+      <AppShell
+        contentPadding={6}
+        banner={notice && <NoticeBanner notice={notice} />}
+        topNav={
+          <TopNav
+            label={t("shell.brand")}
+            heading={
+              <TopNavHeading heading={t("shell.brand")} headingHref="/" logo={<NavIcon icon={<Server />} />} />
+            }
+            endContent={<AccountMenu caller={caller} />}
+          />
+        }
+        sideNav={caller && <PageNav routes={visible} />}
+      >
+        <CloseMobileNavOnVisit />
         {caller ? (
           <Page routes={visible} />
         ) : notice ? null : userCurrent.error ? (
           <ErrorMessage error={userCurrent.error} />
         ) : (
-          <p>{t("shell.loading")}</p>
+          <Spinner label={t("shell.loading")} />
         )}
-      </main>
+      </AppShell>
     </CallerContext>
   );
 }
 
-/** Who says whom the web UI acts as, and from which device. */
-function Who({ caller }: { caller: Caller }) {
+/** PageNav links each page the caller may see, in the order of routes, and marks the one the URL is in. */
+function PageNav({ routes }: { routes: readonly Route[] }) {
   const t = useT();
-  const user = caller.user.name;
+  const { pathname } = useLocation();
   return (
-    <span className="who">
-      {caller.deviceSession
-        ? t("shell.header.device", { user, device: caller.deviceSession.device })
-        : t("shell.header.local", { user })}
-    </span>
+    <SideNav aria-label={t("shell.nav")}>
+      <SideNavSection title={t("shell.nav")} isHeaderHidden>
+        {routes.flatMap((r) =>
+          r.nav
+            ? [
+                <SideNavItem
+                  key={r.path}
+                  label={t(r.nav)}
+                  href={r.path}
+                  icon={r.icon}
+                  isSelected={pathname === r.path || pathname.startsWith(`${r.path}/`)}
+                />,
+              ]
+            : [],
+        )}
+      </SideNavSection>
+    </SideNav>
   );
 }
 
+/** CloseMobileNavOnVisit closes the MobileNav drawer on every visit, such as one its links made. */
+function CloseMobileNavOnVisit() {
+  const { visit } = useLocation();
+  const { closeMobileNav } = useAppShellMobile();
+  // closeMobileNav changes as the drawer opens, which is no visit.
+  const close = useEffectEvent(() => closeMobileNav());
+  useEffect(() => close(), [visit]);
+  return null;
+}
+
+/** notices are how each notice shows: its status, and the messages of its title and description. */
+const notices = {
+  stopped: {
+    status: "warning",
+    title: "shell.notice.stopped.title",
+    description: "shell.notice.stopped.description",
+  },
+  revoked: {
+    status: "error",
+    title: "shell.notice.revoked.title",
+    description: "shell.notice.revoked.description",
+  },
+  cookie: { status: "warning", title: "error.cookie_required", description: undefined },
+} as const satisfies Record<Notice, { status: string; title: MessageKey; description: MessageKey | undefined }>;
+
+/** NoticeBanner says, above the frame, why the web UI cannot act, announced as an alert. */
 function NoticeBanner({ notice }: { notice: Notice }) {
   const t = useT();
-  const message = {
-    stopped: t("shell.notice.stopped"),
-    revoked: t("shell.notice.revoked"),
-    cookie: t("error.cookie_required"),
-  }[notice];
+  const { status, title, description } = notices[notice];
   return (
-    <div className="notice" role="alert">
-      {message}
-    </div>
+    <Banner
+      status={status}
+      container="section"
+      role="alert"
+      title={t(title)}
+      description={description && t(description)}
+    />
   );
 }
 
 /**
  * Page renders the page the URL names among the routes the caller may see;
- * / goes to the first page the header links.
+ * / goes to the first page the side navigation links.
  */
 function Page({ routes }: { routes: readonly Route[] }) {
   const t = useT();
   const { pathname, search } = useLocation();
-  const home = pathname === "/" ? routes.find((r) => r.nav) : undefined;
+  const first = routes.find((r) => r.nav);
+  const home = pathname === "/" ? first : undefined;
   useEffect(() => {
     if (home) {
       navigate(home.path + search, { replace: true });
@@ -107,8 +156,22 @@ function Page({ routes }: { routes: readonly Route[] }) {
   }
   const match = matchRoute(routes, pathname);
   if (!match) {
-    return <p>{t("shell.notFound")}</p>;
+    return (
+      <EmptyState
+        headingLevel={1}
+        icon={<SearchX />}
+        title={t("shell.notFound.title")}
+        description={t("shell.notFound.description")}
+        actions={first && <Button variant="secondary" label={t("shell.notFound.home")} href={first.path} />}
+      />
+    );
   }
   const { page: PageComponent } = match.route;
-  return <PageComponent params={match.params} />;
+  return (
+    // The pages not yet redone on Astryx keep their own CSS, which reaches
+    // only inside .koko-legacy (shell/app.css).
+    <div className="koko-legacy">
+      <PageComponent params={match.params} />
+    </div>
+  );
 }

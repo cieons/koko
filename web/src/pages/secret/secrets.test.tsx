@@ -1,5 +1,5 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { expect, onTestFinished, test, vi } from "vitest";
+import { expect, type MockInstance, onTestFinished, test, vi } from "vitest";
 
 import { CodeNameTaken } from "../../api/errors";
 import {
@@ -58,7 +58,7 @@ test("a Member sees the names of the Secrets in their Spaces, and no value until
   // The koko server answers only the Spaces the caller can act in.
   expect(api.requests(SecretList)).toEqual([{}]);
   expect(api.requests(SecretShow)).toEqual([]);
-  expect(within(screen.getByRole("banner")).getByRole("link", { name: "Secrets" })).toBeDefined();
+  expect(within(screen.getByRole("navigation", { name: "Pages" })).getByRole("link", { name: "Secrets" })).toBeDefined();
   const choice = screen.getByRole<HTMLSelectElement>("combobox", { name: "Space" });
   expect(Array.from(choice.options, (o) => o.value)).toEqual(["bob", "ops", "web"]);
   expect(choice.value).toBe("bob");
@@ -107,19 +107,27 @@ function clipboard(available = true) {
  */
 function fakeTimeouts(): void {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"], shouldAdvanceTime: true });
+  timeouts = vi.spyOn(window, "setTimeout");
   onTestFinished(() => {
     vi.useRealTimers();
   });
 }
 
+/** timeouts records each setTimeout since fakeTimeouts, with its delay. */
+let timeouts: MockInstance<typeof window.setTimeout> | undefined;
+
 /**
- * hideTimerStarted waits until the revealed value's timer runs: React
- * starts it in an effect that may run only after the value shows (#79). It
- * looks with vi.waitUntil, on the real clock, with an interval of 0, which
- * never moves the faked clock.
+ * hideTimerStarted waits until the revealed value's own timer of 30 seconds
+ * runs, not any other, such as one of Astryx's components: React starts it
+ * in an effect that may run only after the value shows (#79). It looks with
+ * vi.waitUntil, on the real clock, with an interval of 0, which never moves
+ * the faked clock.
  */
 async function hideTimerStarted(): Promise<void> {
-  await vi.waitUntil(() => vi.getTimerCount() > 0, { interval: 0, message: "the revealed value's timer never started" });
+  await vi.waitUntil(() => timeouts?.mock.calls.some(([, delay]) => delay === 30_000), {
+    interval: 0,
+    message: "the revealed value's timer never started",
+  });
 }
 
 test("a click reveals the value, never asking, and 30 seconds later it is gone", async () => {
@@ -129,7 +137,7 @@ test("a click reveals the value, never asking, and 30 seconds later it is gone",
 
   const shown = await reveal("ops/db-password");
 
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(api.requests(SecretShow)).toEqual([{ space: "ops", name: "db-password" }]);
   expect(within(shown).getByText("s3cret-marker", { exact: false })).toBeDefined();
 
@@ -211,7 +219,7 @@ test("leaving the page hides the value, and coming back shows it no more", async
   answerShow(api, "czNjcmV0LW1hcmtlcgo=");
   await reveal("ops/db-password");
 
-  const nav = within(screen.getByRole("banner"));
+  const nav = within(screen.getByRole("navigation", { name: "Pages" }));
   fireEvent.click(nav.getByRole("link", { name: "Spaces" }));
   await screen.findByRole("heading", { name: "Spaces" });
   expect(document.body.textContent).not.toContain("s3cret-marker");
@@ -273,11 +281,11 @@ test("adding never asks, sends the typed value as base64 of its UTF-8, and a ret
 
   api.drop(2); // the call and its own retry
   fireEvent.click(screen.getByRole("button", { name: "Add Secret" }));
-  expect(await screen.findByText("The connection to koko web dropped.")).toBeDefined();
+  expect(await screen.findByText("The connection to koko web was lost.")).toBeDefined();
   fireEvent.click(screen.getByRole("button", { name: "Add Secret" }));
   await waitFor(() => expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Value" }).value).toBe(""));
 
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   const sent = { space: "ops", name: "api-key", value_base64: "cMOkc3N3w7ZyZAo=" };
   expect(api.requests(SecretAdd)).toEqual([sent, sent, sent]);
   const keys = idempotencyKeys(api, SecretAdd);
@@ -298,11 +306,11 @@ test("setting a value never asks, hides the value shown, and a retry after a dro
   fireEvent.change(within(form).getByRole("textbox", { name: "New value" }), { target: { value: "n3w-s3cret" } });
   api.drop(2);
   fireEvent.click(within(form).getByRole("button", { name: "Set value" }));
-  expect(await within(form).findByText("The connection to koko web dropped.")).toBeDefined();
+  expect(await within(form).findByText("The connection to koko web was lost.")).toBeDefined();
   fireEvent.click(within(form).getByRole("button", { name: "Set value" }));
   await waitFor(() => expect(screen.queryByRole("region", { name: "Set the value of ops/db-password" })).toBeNull());
 
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   const sent = { space: "ops", name: "db-password", value_base64: "bjN3LXMzY3JldA==" };
   expect(api.requests(SecretSet)).toEqual([sent, sent, sent]);
   expect(new Set(idempotencyKeys(api, SecretSet)).size).toBe(1);
@@ -346,7 +354,7 @@ test("renaming and moving never ask", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Move" }));
   await waitFor(() => expect(screen.queryByRole("region", { name: "Move ops/db-password" })).toBeNull());
 
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(api.requests(SecretRename)).toEqual([{ space: "ops", name: "db-password", new_name: "db-pass" }]);
   expect(api.requests(SecretMove)).toEqual([{ space: "ops", name: "db-password", new_space: "web" }]);
   await waitFor(() => expect(api.requests(SecretList)).toHaveLength(3));
@@ -363,7 +371,7 @@ test("a refused write says why, in the form it came from", async () => {
   fireEvent.change(within(form).getByRole("textbox", { name: "New name" }), { target: { value: "token" } });
   fireEvent.click(within(form).getByRole("button", { name: "Rename" }));
 
-  expect(await within(form).findByText("That name is taken.")).toBeDefined();
+  expect(await within(form).findByText("This name is already in use.")).toBeDefined();
 });
 
 test("deleting asks first, saying what it does, and deletes only once confirmed", async () => {
@@ -371,16 +379,16 @@ test("deleting asks first, saying what it does, and deletes only once confirmed"
   api.on(SecretRemove, ({ space, name }) => ({ secret: secret(space, name) }));
 
   fireEvent.click(screen.getByRole("button", { name: "Delete ops/db-password" }));
-  const dialog = screen.getByRole("dialog", { name: "Delete ops/db-password?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Delete ops/db-password?" });
   expect(dialog.textContent).toContain(
     "ops/db-password and its value are deleted for good. koko keeps no earlier value, so nothing brings it back.",
   );
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(api.requests(SecretRemove)).toEqual([]);
 
   fireEvent.click(screen.getByRole("button", { name: "Delete ops/db-password" }));
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+  fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete" }));
 
   await waitFor(() => expect(api.requests(SecretRemove)).toEqual([{ space: "ops", name: "db-password" }]));
   await waitFor(() => expect(api.requests(SecretList)).toHaveLength(2));

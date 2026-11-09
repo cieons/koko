@@ -118,7 +118,7 @@ test("a Member sees the Hosts host.list answers them in the default columns, eac
   ]);
   expect(api.requests(HostList)).toEqual([{}]);
   expect(screen.getByRole("link", { name: "web1" }).getAttribute("href")).toBe("/hosts/web1");
-  const nav = screen.getByRole("navigation");
+  const nav = screen.getByRole("navigation", { name: "Pages" });
   expect(within(nav).getByRole("link", { name: "Hosts" }).getAttribute("aria-current")).toBe("page");
 });
 
@@ -383,7 +383,7 @@ test("a URL holding a term, sort key or column the list does not take says so an
   hosts(api, [web1]);
   renderAt("/hosts?filter=note=x&filter=price.gt=ten&filter=__proto__=x&sort=created_at&columns=space,Bad,name,space");
 
-  const alert = await screen.findByRole("alert");
+  const alert = (await screen.findByText(/^This page's address holds/)).closest<HTMLElement>('[role="alert"]')!;
   expect(alert.textContent).toContain("note=x, price.gt=ten, __proto__=x, created_at, Bad, name, space");
   expect(screen.queryByRole("table")).toBeNull();
   expect(api.requests(HostList)).toEqual([]);
@@ -457,5 +457,5 @@ test("a Host added sends only the fields given, in the caller's Personal Space b
   expect(api.requests(HostAdd)[1]).toEqual({
     hosts: [{ name: "web8", space: "ops", address: "web8.example.com", port: 2222, account: "deploy", relay: "gw1" }],
   });
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
 });
