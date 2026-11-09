@@ -145,7 +145,8 @@ const unixSocket = "unix socket"
 // joined is a Device Session a join made.
 type joined struct {
 	id, user, device, code string
-	// addedBy is the issuing Device Session's id, or unixSocket.
+	// addedBy is the issuing Device Session's or Sign-in's id, or
+	// unixSocket.
 	addedBy string
 }
 
@@ -186,8 +187,11 @@ func (s *Authenticator) join(ctx context.Context, key ssh.PublicKey, password []
 			j.addedBy = issuedBy.String
 		}
 		stamp := now.Format(time.RFC3339)
+		// added_by names the Device Session that issued the code, and is
+		// left NULL for a code a Sign-in issued, as for the Unix socket's.
 		_, err = tx.ExecContext(ctx, `INSERT INTO device_sessions (id, user_id, device, public_key, added_by, created_at)
-			VALUES (?, ?, ?, ?, ?, ?)`, j.id, userID, j.device, key.Marshal(), issuedBy, stamp)
+			VALUES (?1, ?2, ?3, ?4, (SELECT id FROM device_sessions WHERE id = ?5), ?6)`,
+			j.id, userID, j.device, key.Marshal(), issuedBy, stamp)
 		if err != nil {
 			return fmt.Errorf("record %s's Device Session %q: %w", j.user, j.device, err)
 		}

@@ -77,8 +77,8 @@ func (i *Issuer) add(ctx context.Context, tx store.Tx, caller op.Caller, req api
 // is returned once: the koko server keeps only the hash of its secret.
 //
 // The caller's own User is its Device Session's, or the Owner for the Local
-// caller (ADR 0008). The issuer is recorded: the caller's Device Session, or
-// the Unix socket.
+// caller (ADR 0008). The issuer is recorded: the caller's Device Session or
+// Sign-in, or the Unix socket.
 func (i *Issuer) Issue(ctx context.Context, tx store.Tx, caller op.Caller, req api.DeviceAddRequest) (api.JoinCode, error) {
 	validity, err := api.Validity(req.ValidFor)
 	if err != nil {
@@ -96,10 +96,6 @@ func (i *Issuer) Issue(ctx context.Context, tx store.Tx, caller op.Caller, req a
 		if u, err = user.Active(ctx, tx, req.User); err != nil {
 			return api.JoinCode{}, err
 		}
-	}
-	var issuer *string
-	if who.DeviceSession != nil {
-		issuer = &who.DeviceSession.ID
 	}
 	now := op.Now(ctx)
 	device, err := deviceName(ctx, tx, u, req.Device, now)
@@ -124,7 +120,7 @@ func (i *Issuer) Issue(ctx context.Context, tx store.Tx, caller op.Caller, req a
 		ExpiresAt: now.Add(validity).Format(time.RFC3339),
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO join_codes (id, user_id, secret_hash, device, issued_by, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?)`, jc.ID, u.ID, secretHash(c.Secret), jc.Device, issuer, jc.ExpiresAt)
+		VALUES (?, ?, ?, ?, ?, ?)`, jc.ID, u.ID, secretHash(c.Secret), jc.Device, who.Issuer(), jc.ExpiresAt)
 	if err != nil {
 		return api.JoinCode{}, fmt.Errorf("record a Join Code for %s's device %q: %w", u.Name, jc.Device, err)
 	}

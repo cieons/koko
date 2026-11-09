@@ -2,6 +2,7 @@
 
 import type { Op } from "./api";
 import type { DeviceSession, JoinCode } from "./device";
+import type { CurrentSignIn, PasswordLink } from "./signin";
 
 /** User is a User as the API returns it. */
 export interface User {
@@ -16,6 +17,12 @@ export interface User {
    * second; empty while they belong to the koko server.
    */
   removed_at?: string;
+  /**
+   * PasswordSetAt is when the User last set their Password, RFC 3339 in
+   * UTC to the second, as user.list answers it; empty while they have
+   * none, and in every other answer.
+   */
+  password_set_at?: string;
 }
 
 /** UserInviteRequest invites a new User under a name no User or Space holds. */
@@ -26,15 +33,23 @@ export interface UserInviteRequest {
    * 604,800 (7 days); left out, 15 minutes.
    */
   valid_for?: number;
+  /**
+   * Web makes the Invite a Password Link, for a person who will use the
+   * web UI in a browser, instead of a Join Code.
+   */
+  web?: boolean;
 }
 
 /**
  * UserInviteResponse is the User user.invite created and their Invite: their
- * first Join Code.
+ * first Join Code, or with web their first Password Link.
  */
 export interface UserInviteResponse {
   user: User;
-  join_code: JoinCode;
+  /** JoinCode is the Invite without web; left out with it. */
+  join_code?: JoinCode;
+  /** PasswordLink is the Invite with web; left out without it. */
+  password_link?: PasswordLink;
 }
 
 /** UserCurrentRequest asks who the call acts as. */
@@ -42,15 +57,20 @@ export type UserCurrentRequest = Record<string, never>;
 
 /**
  * UserCurrentResponse is who the call acts as: its User and the Device
- * Session it came on.
+ * Session or the Sign-in it came on.
  */
 export interface UserCurrentResponse {
   user: User;
   /**
    * DeviceSession is the Device Session the call came on, left out for the
-   * Local caller, which has none and acts as the Owner.
+   * Local caller, which has none and acts as the Owner, and for a Sign-in.
    */
   device_session?: DeviceSession;
+  /**
+   * SignIn is the Sign-in the call came on, from a browser on the web
+   * listener; left out for every other caller.
+   */
+  signin?: CurrentSignIn;
 }
 
 /** UserListRequest lists the Users. */
@@ -88,9 +108,11 @@ export interface UserRemoveResponse {
 
 /**
  * UserInvite creates a Member with their Personal Space and issues their
- * first Join Code, in one transaction. A name any User, Removed ones
- * included, or any Space holds is refused with CodeNameTaken, and a
- * ValidFor outside 60 to 604,800 seconds with CodeInvalidValue.
+ * first Join Code, or with Web their first Password Link, in one
+ * transaction. A name any User, Removed ones included, or any Space
+ * holds is refused with CodeNameTaken, a ValidFor outside 60 to 604,800
+ * seconds with CodeInvalidValue, and Web while the Web URL is not set
+ * with CodeWebURLUnset.
  */
 export const UserInvite: Op<UserInviteRequest, UserInviteResponse> = {
   name: "user.invite",
@@ -100,7 +122,7 @@ export const UserInvite: Op<UserInviteRequest, UserInviteResponse> = {
 
 /**
  * UserCurrent answers who the call acts as: the User of the Device
- * Session it came on, or the Owner for the Local caller. `koko join`
+ * Session or the Sign-in it came on, or the Owner for the Local caller. `koko join`
  * asks it, to learn the User and device name its Join Code bound.
  */
 export const UserCurrent: Op<UserCurrentRequest, UserCurrentResponse> = {
@@ -120,11 +142,13 @@ export const UserList: Op<UserListRequest, UserListResponse> = {
 };
 
 /**
- * UserRemove deletes a User who never joined, with their memberships,
- * their Join Codes and their Personal Space, which must hold nothing
- * (CodeSpaceNotEmpty), and Removes any other User, in one transaction:
- * it revokes their Device Sessions, voids their valid Join Codes and
- * those their Device Sessions issued, takes them out of every Space,
+ * UserRemove deletes a User who never used koko, with their
+ * memberships, their Join Codes, their Password Links and their
+ * Personal Space, which must hold nothing (CodeSpaceNotEmpty), and
+ * Removes any other User, in one transaction: it revokes their Device
+ * Sessions, voids their valid Join Codes and those their Device
+ * Sessions issued, ends their Sign-ins, deletes their Password, voids
+ * their unused Password Links, takes them out of every Space,
  * and turns their Personal Space into an ordinary shared Space with no
  * Members, which only the Owner sees. Once it commits, their Device
  * Sessions' Device Connections close. Only the Owner removes Users, and

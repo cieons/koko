@@ -35,7 +35,8 @@ var deviceRows = []row{
 	},
 	{
 		// Anyone revokes their own device, the one in use included; the
-		// Owner's last one needs last.
+		// Owner's last one needs last. The Local caller and a Sign-in come
+		// on no device, so the caller's device is none of theirs.
 		op:      api.DeviceRevoke,
 		name:    "the caller's own device",
 		request: func(string) any { return api.DeviceRevokeRequest{Device: callersDevice} },
@@ -43,6 +44,7 @@ var deviceRows = []row{
 			ownerDevice: allowedBut(api.CodeLastDeviceSession),
 			local:       allowedBut(api.CodeUnknownDevice),
 			member:      allowed, personal: allowed, outsider: allowed,
+			ownerSignIn: allowedBut(api.CodeUnknownDevice), memberSignIn: allowedBut(api.CodeUnknownDevice),
 		},
 	},
 	{
@@ -53,6 +55,7 @@ var deviceRows = []row{
 			ownerDevice: allowed,
 			local:       allowedBut(api.CodeUnknownDevice),
 			member:      allowed, personal: allowed, outsider: allowed,
+			ownerSignIn: allowedBut(api.CodeUnknownDevice), memberSignIn: allowedBut(api.CodeUnknownDevice),
 		},
 	},
 	{
@@ -65,7 +68,8 @@ var deviceRows = []row{
 		want: map[caller]answer{
 			ownerDevice: allowedBut(api.CodeUnknownDevice), local: allowedBut(api.CodeUnknownDevice),
 			member: allowedBut(api.CodeUnknownDevice), personal: allowedBut(api.CodeUnknownDevice),
-			outsider: allowedBut(api.CodeUnknownDevice),
+			outsider:    allowedBut(api.CodeUnknownDevice),
+			ownerSignIn: allowedBut(api.CodeUnknownDevice), memberSignIn: allowedBut(api.CodeUnknownDevice),
 		},
 	},
 }

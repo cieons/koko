@@ -39,6 +39,7 @@ import (
 	"github.com/cieons/koko/internal/server/deployment"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
+	"github.com/cieons/koko/internal/server/signin"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/server/transport"
 	"github.com/cieons/koko/internal/server/webui"
@@ -56,7 +57,10 @@ const TokenLifetime = 5 * time.Minute
 
 // Front is the web front.
 type Front struct {
-	api     http.Handler
+	api http.Handler
+	// signins answers the web listener's /auth/ endpoints and its Sign-in
+	// cookies.
+	signins *signin.Service
 	files   fs.FS
 	store   *store.Store
 	rootKey *seal.RootKey
@@ -71,10 +75,11 @@ type Front struct {
 }
 
 // New returns the web front, which hands authenticated /v1/ requests to api,
-// signs cookies with the cookie key kept in st under rootKey, and reads a
+// signs koko web's cookies with the cookie key kept in st under rootKey,
+// signs browsers in on the web listener through signins, and reads a
 // token's expiry on clock, the koko server's.
-func New(api http.Handler, st *store.Store, rootKey *seal.RootKey, clock func() time.Time, log *slog.Logger) *Front {
-	return &Front{api: api, files: webui.FS(), store: st, rootKey: rootKey, log: log, clock: clock, runs: newRuns()}
+func New(api http.Handler, signins *signin.Service, st *store.Store, rootKey *seal.RootKey, clock func() time.Time, log *slog.Logger) *Front {
+	return &Front{api: api, signins: signins, files: webui.FS(), store: st, rootKey: rootKey, log: log, clock: clock, runs: newRuns()}
 }
 
 // Register registers the web area's operation.
@@ -92,10 +97,14 @@ func (f *Front) Withdraw(c access.Change) {
 // start is web.start: it issues a token for the caller's Device Session, or,
 // for the Local caller, for the run of koko web on the caller's connection,
 // which it starts if none runs there yet. A Revoked Device Session gets
-// none.
+// none, and a Sign-in, which runs no koko web, is refused.
 func (f *Front) start(ctx context.Context, tx store.Tx, caller op.Caller, _ api.WebStartRequest) (api.WebStartResponse, error) {
-	if _, err := access.Who(ctx, tx, caller); err != nil {
+	who, err := access.Who(ctx, tx, caller)
+	if err != nil {
 		return api.WebStartResponse{}, err
+	}
+	if who.SignIn != nil {
+		return api.WebStartResponse{}, api.CodeDeviceOnly.Errorf("web.start answers koko web on a device, and a browser's Sign-in runs none")
 	}
 	conn, ok := transport.ConnectionFrom(ctx)
 	if !ok {
@@ -311,10 +320,16 @@ func refuse(w http.ResponseWriter, r *http.Request, code api.Code, message strin
 		refusePage(w, code.Status, message)
 		return
 	}
-	body, _ := json.Marshal(api.ErrorResponse{Error: *code.Errorf("%s", message)})
+	writeAPIError(w, code.Status, code.Errorf("%s", message))
+}
+
+// writeAPIError answers with status and e as the API's error object, which
+// no cache keeps.
+func writeAPIError(w http.ResponseWriter, status int, e *api.Error) {
+	body, _ := json.Marshal(api.ErrorResponse{Error: *e}) // strings and ints: never fails
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code.Status)
+	w.WriteHeader(status)
 	_, _ = w.Write(body)
 }
 

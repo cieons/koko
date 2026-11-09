@@ -227,19 +227,31 @@ func TestTheWebListenerChecksTheHost(t *testing.T) {
 	}
 }
 
-// Every POST must carry an Origin header equal to the Web URL, on /v1/ and
-// on any other path; another, or none, is refused with bad_origin before
-// the API is reached. With the Web URL's Origin, a call still has no
-// Sign-in, so it is answered signin_required, without reaching the API.
+// Every POST must carry an Origin header equal to the Web URL, on /v1/, on
+// each /auth/ endpoint and on any other path; another, or none, is refused
+// with bad_origin before the API is reached or anything is counted. With
+// the Web URL's Origin, a call without a Sign-in is answered
+// signin_required, without reaching the API.
 func TestTheWebListenerChecksTheOriginOfEveryPost(t *testing.T) {
 	t.Parallel()
 	h := startListening(t, webURL)
 	calls := h.Calls()
 	for _, origin := range []string{"", "https://attacker.example", "http://koko.example.com", "https://koko.example.com:8443", "null"} {
 		wantAPIError(t, call(t, h, "user.current", origin), http.StatusForbidden, "bad_origin")
-		a := send(t, h, request{method: http.MethodPost, path: "/auth/signin", host: "koko.example.com", origin: origin, body: "{}"})
+		for _, path := range []string{"/auth/signin", "/auth/link", "/auth/password", "/auth/signout"} {
+			a := send(t, h, request{method: http.MethodPost, path: path, host: "koko.example.com", origin: origin, body: "{}"})
+			wantAPIError(t, a, http.StatusForbidden, "bad_origin")
+		}
+		a := send(t, h, request{method: http.MethodPost, path: "/hosts", host: "koko.example.com", origin: origin, body: "{}"})
 		wantPage(t, a, http.StatusForbidden, "no page of "+webURL)
 	}
+	// Refused before anything was counted: a sign-in from the same address
+	// is not limited.
+	a := send(t, h, request{
+		method: http.MethodPost, path: "/auth/signin", host: "koko.example.com", origin: webURL,
+		body: `{"name": "alice", "password": "not the password at all"}`,
+	})
+	wantAPIError(t, a, http.StatusUnauthorized, "wrong_password")
 	wantAPIError(t, call(t, h, "user.current", webURL), http.StatusUnauthorized, "signin_required")
 	wantAPIError(t, call(t, h, "server.show", webURL), http.StatusUnauthorized, "signin_required")
 	if n := h.Calls() - calls; n != 0 {

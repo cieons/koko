@@ -23,7 +23,8 @@ export interface WebStartResponse {
  * channel of any of its Device Connections, and the cookie lasts until
  * the Device Session is Revoked. Over the Unix socket the run is the
  * caller's connection: the token and the cookie work only on its
- * web@koko channels, and end with it.
+ * web@koko channels, and end with it. A Sign-in, which runs no koko
+ * web, is refused with CodeDeviceOnly.
  */
 export const WebStart: Op<WebStartRequest, WebStartResponse> = {
   name: "web.start",
@@ -49,3 +50,9 @@ export const CodeSignInRequired = "signin_required";
  * was refused before anything of it was read.
  */
 export const CodeBadOrigin = "bad_origin";
+
+/**
+ * CodeDeviceOnly: the operation answers a device alone, and a Sign-in
+ * in a browser is none, as web.start, which only koko web calls.
+ */
+export const CodeDeviceOnly = "device_only";

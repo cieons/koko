@@ -15,6 +15,7 @@ func addWeb1(f *fixture, target string) {
 // outside it is answered as for a Host that does not exist.
 var hostAnswers = map[caller]answer{
 	ownerDevice: allowed, local: allowed, member: allowed, personal: allowed, outsider: unknown,
+	ownerSignIn: allowed, memberSignIn: allowed,
 }
 
 // unseenSpace is the answer to a call that names a second Space, one the
@@ -41,6 +42,7 @@ var hostRows = []row{
 		want: map[caller]answer{
 			ownerDevice: allowedBut(api.CodeNameTaken), local: allowedBut(api.CodeNameTaken), member: allowedBut(api.CodeNameTaken),
 			personal: allowedBut(api.CodeNameTaken), outsider: allowedBut(api.CodeNameTaken),
+			ownerSignIn: allowedBut(api.CodeNameTaken), memberSignIn: allowedBut(api.CodeNameTaken),
 		},
 	},
 	{
@@ -84,6 +86,7 @@ var hostRows = []row{
 		request: func(string) any { return api.HostMoveRequest{Host: "web1", Space: "dave"} },
 		want: map[caller]answer{
 			ownerDevice: allowed, local: allowed, member: unseenSpace, personal: unseenSpace, outsider: unknown,
+			ownerSignIn: allowed, memberSignIn: unseenSpace,
 		},
 	},
 	{

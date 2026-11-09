@@ -14,11 +14,18 @@ import (
 
 var userCommands = []Command{
 	{
-		Noun:      "user",
-		Verb:      "invite",
-		Summary:   "Create a Member and issue their Invite, valid for 15 minutes unless --valid says otherwise",
-		Args:      []Arg{{Name: "user"}},
-		Flags:     []Flag{validFlag("the Invite")},
+		Noun:    "user",
+		Verb:    "invite",
+		Summary: "Create a Member and issue their Invite, valid for 15 minutes unless --valid says otherwise",
+		Args:    []Arg{{Name: "user"}},
+		Flags: []Flag{
+			{
+				Name:    "web",
+				Bool:    true,
+				Summary: "issue a Password Link, for a person who will use the web UI in a browser, instead of a Join Code",
+			},
+			validFlag("the Invite"),
+		},
 		Tier:      Irreversible, // it prints a credential (ADR 0019)
 		OwnerOnly: true,
 		Op:        api.UserInvite,
@@ -53,19 +60,24 @@ var userCommands = []Command{
 }
 
 // userJSON is a User in the CLI's own --json. removed_at is null while the
-// User belongs to the koko server.
+// User belongs to the koko server, and password_set_at while they have no
+// Password.
 type userJSON struct {
-	ID        string  `json:"id"`
-	Name      string  `json:"name"`
-	Role      string  `json:"role"`
-	CreatedAt string  `json:"created_at"`
-	RemovedAt *string `json:"removed_at"`
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	Role          string  `json:"role"`
+	CreatedAt     string  `json:"created_at"`
+	RemovedAt     *string `json:"removed_at"`
+	PasswordSetAt *string `json:"password_set_at"`
 }
 
 func userFromAPI(u api.User) userJSON {
 	j := userJSON{ID: u.ID, Name: u.Name, Role: u.Role, CreatedAt: u.CreatedAt}
 	if u.RemovedAt != "" {
 		j.RemovedAt = new(u.RemovedAt)
+	}
+	if u.PasswordSetAt != "" {
+		j.PasswordSetAt = new(u.PasswordSetAt)
 	}
 	return j
 }
@@ -84,13 +96,13 @@ func (l userList) Human(w io.Writer) error {
 	removed := slices.ContainsFunc(l, func(u userJSON) bool { return u.RemovedAt != nil })
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	// A tabwriter reports a failed write when it flushes.
-	_, _ = fmt.Fprint(tw, "NAME\tROLE\tID\tCREATED")
+	_, _ = fmt.Fprint(tw, "NAME\tROLE\tID\tCREATED\tPASSWORD")
 	if removed {
 		_, _ = fmt.Fprint(tw, "\tREMOVED")
 	}
 	_, _ = fmt.Fprintln(tw)
 	for _, u := range l {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s", u.Name, u.Role, u.ID, u.CreatedAt)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s", u.Name, u.Role, u.ID, u.CreatedAt, cmp.Or(deref(u.PasswordSetAt), "-"))
 		if removed {
 			_, _ = fmt.Fprintf(tw, "\t%s", cmp.Or(deref(u.RemovedAt), "-"))
 		}
@@ -112,15 +124,20 @@ func userLs(ctx context.Context, in *Input) (userList, error) {
 }
 
 // invitation is what user invite prints: the User it created and their
-// Invite.
+// Invite, a Join Code, or with --web a Password Link and its expiry.
 type invitation struct {
-	User     userJSON     `json:"user"`
-	JoinCode joinCodeJSON `json:"join_code"`
+	User         userJSON      `json:"user"`
+	JoinCode     *joinCodeJSON `json:"join_code,omitzero"`
+	PasswordLink string        `json:"password_link,omitzero"`
+	ExpiresAt    string        `json:"expires_at,omitzero"`
 }
 
 func (i invitation) Human(w io.Writer) error {
 	if _, err := fmt.Fprintf(w, "Invited %s (%s) as a Member.\n", i.User.Name, i.User.ID); err != nil {
 		return err
+	}
+	if i.JoinCode == nil {
+		return writeLinkLine(w, i.User.Name, i.ExpiresAt, i.PasswordLink)
 	}
 	return i.JoinCode.writeJoinLine(w)
 }
@@ -130,11 +147,18 @@ func userInvite(ctx context.Context, in *Input) (invitation, error) {
 	if err != nil {
 		return invitation{}, err
 	}
-	resp, err := in.Call(ctx, api.UserInvite, api.UserInviteRequest{Name: in.Arg("user"), ValidFor: validFor})
+	resp, err := in.Call(ctx, api.UserInvite, api.UserInviteRequest{Name: in.Arg("user"), ValidFor: validFor, Web: in.Bool("web")})
 	if err != nil {
 		return invitation{}, err
 	}
-	return invitation{User: userFromAPI(resp.User), JoinCode: joinCodeFromAPI(resp.JoinCode)}, nil
+	i := invitation{User: userFromAPI(resp.User)}
+	switch {
+	case resp.PasswordLink != nil:
+		i.PasswordLink, i.ExpiresAt = resp.PasswordLink.Link, resp.PasswordLink.ExpiresAt
+	case resp.JoinCode != nil:
+		i.JoinCode = new(joinCodeFromAPI(*resp.JoinCode))
+	}
+	return i, nil
 }
 
 // userRemoval is what user remove prints: what it did, "deleted" or

@@ -123,7 +123,7 @@ func TestUserRemoveRemovesAUserWhoJoined(t *testing.T) {
 	for _, want := range []string{
 		`msg="device revoked" user=bob device=desktop device_session=` + desktopID + ` revoked_by="unix socket"`,
 		`msg="device revoked" user=bob device=device-1 device_session=` + laptopID + ` revoked_by="unix socket"`,
-		`msg="user removed" user=bob user_id=` + inv.User.ID + ` device_sessions_revoked=2 join_codes_voided=2 removed_by="unix socket"`,
+		`msg="user removed" user=bob user_id=` + inv.User.ID + ` device_sessions_revoked=2 join_codes_voided=2 signins_ended=0 password_links_voided=0 removed_by="unix socket"`,
 	} {
 		if !strings.Contains(log, want) {
 			t.Errorf("the log holds no line with %s:\n%s", want, log)

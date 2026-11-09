@@ -13,6 +13,7 @@ import enSecret from "./en/secret";
 import enServer from "./en/server";
 import enService from "./en/service";
 import enShell from "./en/shell";
+import enSignin from "./en/signin";
 import enSpace from "./en/space";
 import enUser from "./en/user";
 import enWeb from "./en/web";
@@ -24,6 +25,7 @@ import zhSecret from "./zh-CN/secret";
 import zhServer from "./zh-CN/server";
 import zhService from "./zh-CN/service";
 import zhShell from "./zh-CN/shell";
+import zhSignin from "./zh-CN/signin";
 import zhSpace from "./zh-CN/space";
 import zhUser from "./zh-CN/user";
 import zhWeb from "./zh-CN/web";
@@ -40,6 +42,7 @@ const en = {
   ...enWeb,
   ...enEnroll,
   ...enService,
+  ...enSignin,
 };
 
 /** MessageKey is the key of a message, such as "shell.language". */
@@ -60,6 +63,7 @@ const zhCN: Catalogue = {
   ...zhWeb,
   ...zhEnroll,
   ...zhService,
+  ...zhSignin,
 };
 
 /** The languages the web UI ships, English first: the default. */

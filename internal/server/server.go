@@ -32,6 +32,7 @@ import (
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/secret"
 	"github.com/cieons/koko/internal/server/service"
+	"github.com/cieons/koko/internal/server/signin"
 	"github.com/cieons/koko/internal/server/space"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/server/transport"
@@ -244,9 +245,13 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 		clock = time.Now
 	}
 	a := op.New(st, key, log, deployment.Initialised, clock)
+	// The signin area seals Password hashes with the Root Key, and the web
+	// front hands it the web listener's /auth/ requests and Sign-in
+	// cookies.
+	signins := signin.New(st, key, clock, log)
 	// The web area's front holds the runs of koko web, so it registers its
 	// operation itself, below.
-	front := web.New(a, st, key, clock, log)
+	front := web.New(a, signins, st, key, clock, log)
 	version := build.Read().Version
 	// Each connection is reported every operation registered below.
 	report := func() wire.Report { return wire.Report{Version: version, Operations: a.Names()} }
@@ -283,7 +288,8 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	issuer := device.NewIssuer(joinTarget(key, tcp.port))
 	rootKeyFile := cmp.Or(cfg.RootKeySource, cfg.RootKeyPath)
 	device.Register(a, issuer, &changes, log)
-	user.Register(a, issuer.Issue, holdings, &changes, log)
+	user.Register(a, issuer.Issue, signins, holdings, &changes, log)
+	signins.Register(a)
 	registerServer(a, key, issuer, tcp, log)
 	registerSettings(a, &settings{
 		rootKey:     key,

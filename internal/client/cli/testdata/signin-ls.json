@@ -1,0 +1,13 @@
+[
+  {
+    "id": "signin_<1>",
+    "user": "bob",
+    "client": "Firefox on Linux",
+    "address": "192.0.2.10",
+    "started_at": "<time>",
+    "last_used_at": "<time>",
+    "expires_at": "<time>",
+    "ended_at": null,
+    "end_reason": null
+  }
+]

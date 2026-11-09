@@ -35,9 +35,10 @@ import (
 	"github.com/cieons/koko/internal/shared/api"
 )
 
-// Caller is who a call comes from, as the transport saw it: the Local
-// caller, or a Device Connection's Device Session. Who that is, its User,
-// comes from the current records on every call (package access).
+// Caller is who a call comes from, as the transport or the web listener
+// saw it: the Local caller, a Device Connection's Device Session, or a
+// browser's Sign-in. Who that is, its User, comes from the current records
+// on every call (package access).
 type Caller struct {
 	// Local is set for a call over the Unix socket. The Local caller acts as
 	// the Owner (ADR 0008).
@@ -45,6 +46,9 @@ type Caller struct {
 	// DeviceSession is the id of the Device Session a Device Connection
 	// authenticated as, for a call over TCP.
 	DeviceSession string
+	// SignIn is the id of the Sign-in whose cookie a call on the web
+	// listener carried (ADR 0043).
+	SignIn string
 }
 
 type callerKey struct{}
@@ -361,7 +365,9 @@ func (a *API) serve(r *http.Request) (body []byte, replayed bool, err error) {
 // Do runs fn as a write of the koko server's own, which no caller asked
 // for: in a transaction of its own, which commits only when fn returns no
 // error, with Now and AfterTx as an operation has them. Start-up uses it to
-// initialise a fresh koko server before it serves anything (ADR 0038).
+// initialise a fresh koko server before it serves anything (ADR 0038), and
+// the signin area for the web listener's /auth/ endpoints, which come
+// before any call.
 func (a *API) Do(ctx context.Context, fn func(ctx context.Context, tx store.Tx) error) error {
 	ctx, finish := a.begin(ctx)
 	committed := false

@@ -20,7 +20,7 @@ operation asks who is calling, even one every caller may make, such as
 
 | Question | Answer |
 | --- | --- |
-| Who is calling | `access.Who(ctx, tx, caller)`: an `Identity`, the User and the Device Session the call came on, or the Owner with no Device Session for the Local caller. A Revoked Device Session is refused with `revoked`; so is a Removed User's, since Removing revokes each of theirs ([Users](users.md#removing)) |
+| Who is calling | `access.Who(ctx, tx, caller)`: an `Identity`, the User and the Device Session or the Sign-in the call came on, or the Owner with neither for the Local caller. A Revoked Device Session is refused with `revoked`; so is a Removed User's, since Removing revokes each of theirs ([Users](users.md#removing)). An ended Sign-in, a Removed User's among them, is refused with `signin_required` ([Sign-ins](signin.md)). `Identity.By` names the caller in log lines |
 | Is this caller the Owner | `Identity.IsOwner()`; `access.OwnerOnly(ctx, tx, caller, does)` also refuses anyone else with `owner_only`, "only the Owner `<does>`" |
 | Which Spaces can this caller act in | `Identity.Spaces(ctx, tx)`, the one place the rule is written: every Space for the Owner; for any other User their own Personal Space and each Space they are a Member of. A `Scope` whose `Has(spaceID)` filters lists and counts |
 | Can this caller act in this Space | `Identity.CanAct(ctx, tx, spaceID)`, by that rule |
@@ -42,7 +42,7 @@ membership.
   gets the same `owner_only` for a name that is taken, free, unseen or
   unknown, and learns nothing about the records. `space.add`, `space.rename`,
   `space.remove`, `space.member.add`, `space.member.remove`, `user.invite`,
-  `user.list` and `user.remove` do so. `device.add` is anyone's for their own User; naming another User is
+  `user.list`, `user.remove`, `password.link` and `password.remove` do so. `device.add` is anyone's for their own User; naming another User is
   refused with `owner_only` before that User is looked up.
 
 ## Spaces and memberships
@@ -107,8 +107,9 @@ states.
 
 - **The callers**, each acting in a target Space of a fresh koko server: the
   Owner through a Device Session and the Local caller, in the shared Space
-  `ops`; a Member of `ops`; a Member in their own Personal Space; and a
-  Member outside `ops`.
+  `ops`; a Member of `ops`; a Member in their own Personal Space; a
+  Member outside `ops`; and the Owner and a Member of `ops` through a
+  Sign-in, calling on the web listener as a browser does (`h.SignIn`).
 - **The answers:** `allowed` (the call succeeds), `ownerOnly`, `localOnly`,
   `unknown` (byte for byte the answer to the same call on a koko server where
   the target Space was never recorded), and `allowedBut(code)` for a call the
@@ -137,10 +138,16 @@ states.
   revoked it ([Users](users.md#removing)), and for the same reason is called
   beneath the transport, by
   [`TestARemovedUsersDeviceSessionIsRefusedByEveryOperation`](../../internal/server/revoked_test.go).
+- **An ended Sign-in** gets nothing either: each operation answers
+  `signin_required`, or `local_only`. The web front refuses its cookie
+  before any call, so
+  [`TestAnEndedSignInIsRefusedByEveryOperation`](../../internal/server/revoked_test.go)
+  calls every registered operation as that caller beneath it.
 
 ## Verifying
 
-- The matrix above, and its Revoked and Removed User's Device Sessions in
+- The matrix above, and its Revoked and Removed User's Device Sessions and
+  its ended Sign-in in
   [`revoked_test.go`](../../internal/server/revoked_test.go).
 - [`internal/client/cli/space_test.go`](../../internal/client/cli/space_test.go):
   every `space` command over the CLI, with its goldens; what a Member lists

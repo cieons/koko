@@ -107,10 +107,7 @@ func (r revoker) revoke(ctx context.Context, tx store.Tx, caller op.Caller, req 
 	if err != nil {
 		return api.DeviceRevokeResponse{}, fmt.Errorf("count the Join Codes %s issued: %w", named, err)
 	}
-	by := unixSocket
-	if who.DeviceSession != nil {
-		by = who.DeviceSession.ID
-	}
+	by := who.By()
 	op.AfterTx(ctx, func(committed bool) {
 		if committed {
 			r.log.Info("device revoked", "user", d.User, "device", d.Device, "device_session", d.ID,

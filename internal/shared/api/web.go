@@ -22,7 +22,8 @@ var (
 	// channel of any of its Device Connections, and the cookie lasts until
 	// the Device Session is Revoked. Over the Unix socket the run is the
 	// caller's connection: the token and the cookie work only on its
-	// web@koko channels, and end with it.
+	// web@koko channels, and end with it. A Sign-in, which runs no koko
+	// web, is refused with CodeDeviceOnly.
 	WebStart = Op[WebStartRequest, WebStartResponse]{Name: "web.start"}
 )
 
@@ -42,10 +43,14 @@ var (
 	// header naming the Web URL, so from no page of this koko server's, and
 	// was refused before anything of it was read.
 	CodeBadOrigin = Code{"bad_origin", http.StatusForbidden}
+	// CodeDeviceOnly: the operation answers a device alone, and a Sign-in
+	// in a browser is none, as web.start, which only koko web calls.
+	CodeDeviceOnly = Code{"device_only", http.StatusForbidden}
 )
 
 var webCodes = []Code{
 	CodeCookieRequired,
 	CodeSignInRequired,
 	CodeBadOrigin,
+	CodeDeviceOnly,
 }

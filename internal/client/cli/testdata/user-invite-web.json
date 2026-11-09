@@ -1,0 +1,12 @@
+{
+  "user": {
+    "id": "user_<1>",
+    "name": "erin",
+    "role": "member",
+    "created_at": "<time>",
+    "removed_at": null,
+    "password_set_at": null
+  },
+  "password_link": "https://koko.example.com/password#<secret>",
+  "expires_at": "<time>"
+}

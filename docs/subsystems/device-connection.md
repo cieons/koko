@@ -411,12 +411,13 @@ still runs; with its key deleted, no device can use it again.
 
 | Table | What it holds |
 | --- | --- |
-| `device_sessions` | One row per device that joined: its id (`device_...`), its User, its device name, its public key (SSH wire format, plain, unique across every row), the Device Session that added it (NULL for the Unix socket), and its created, last used and revoked times. A device name is unique among a User's live Device Sessions. |
+| `device_sessions` | One row per device that joined: its id (`device_...`), its User, its device name, its public key (SSH wire format, plain, unique across every row), the Device Session that added it (NULL for the Unix socket and for a Sign-in, which `join_codes.issued_by` names), and its created, last used and revoked times. A device name is unique among a User's live Device Sessions. |
 
 ## Logging
 
 Each join logs `device joined` with the User, the device, the Device
-Session, `added_by` (a Device Session's id or `unix socket`), the Join Code's
+Session, `added_by` (a Device Session's or a Sign-in's id, or `unix
+socket`), the Join Code's
 id and the address it came from; each failed join logs `join failed` with
 the address, the reason and the Join Code's id when the secret is one's.
 Neither ever holds a code or its secret. Each revocation logs

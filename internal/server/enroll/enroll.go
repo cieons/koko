@@ -345,14 +345,10 @@ func (e *enroller) failed(who access.Identity, h host.Reach, err *api.Error, mor
 
 // logAttrs are the fields of every log line about an Enroll of the Host
 // named hostName, whose id is hostID: the Host, the User who ran it, and
-// the Device Session it came on as enrolled_by, or the Unix socket, as
-// other lines name who acted.
+// the Device Session or the Sign-in it came on as enrolled_by, or the Unix
+// socket, as other lines name who acted.
 func logAttrs(who access.Identity, hostName, hostID string) []any {
-	by := "unix socket"
-	if who.DeviceSession != nil {
-		by = who.DeviceSession.ID
-	}
-	return []any{"host", hostName, "host_id", hostID, "user", who.User.Name, "enrolled_by", by}
+	return []any{"host", hostName, "host_id", hostID, "user", who.User.Name, "enrolled_by", who.By()}
 }
 
 // addKeyScript appends the koko key to the Host Account's authorized_keys.

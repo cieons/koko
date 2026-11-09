@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/cieons/koko/internal/server/deployment"
+	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/weburl"
@@ -16,9 +17,11 @@ import (
 // HTTP listener the Owner's reverse proxy reaches at the Web URL (ADR
 // 0042), in this order: the 503 pages before initialisation and without a
 // Web URL; the Host check against the Web URL, with a 421 page; the Origin
-// check on every POST, before anything of it is read; then every /v1/ call
-// is answered signin_required, since no Sign-in exists yet, and every other
-// path serves the web UI as on web@koko. No answer reads or sets a cookie.
+// check on every POST, before anything of it is read; then the /auth/
+// endpoints (auth.go), every /v1/ call as the Sign-in its cookie names, or
+// signin_required without a live one, and on every other path the web UI
+// as on web@koko. Only the /auth/ endpoints set the Sign-in cookie, and
+// only they and the API calls read it.
 func (f *Front) Listener() http.Handler {
 	return http.HandlerFunc(f.serveListener)
 }
@@ -49,11 +52,27 @@ func (f *Front) serveListener(w http.ResponseWriter, r *http.Request) {
 		f.log.Debug("web listener request refused", "reason", "origin", "client", clientAddress(r))
 		refuseOnListener(w, r, api.CodeBadOrigin, "this request came from no page of "+webURL+", so it was refused")
 		return
+	case isAuth(r):
+		f.serveAuth(w, r)
+		return
 	case isAPI(r):
-		refuseOnListener(w, r, api.CodeSignInRequired, "sign in at "+webURL+" first")
+		f.serveSignedIn(w, r)
 		return
 	}
 	f.serveFile(w, r, listenerPage)
+}
+
+// serveSignedIn hands an API call to the API as the live Sign-in its cookie
+// names, which the call reads again in its own transaction, or refuses it
+// with signin_required.
+func (f *Front) serveSignedIn(w http.ResponseWriter, r *http.Request) {
+	id, err := f.signins.Check(r.Context(), signInToken(r), attempt(r))
+	if err != nil {
+		f.refuseAPI(w, r, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	f.api.ServeHTTP(w, r.WithContext(op.WithCaller(r.Context(), op.Caller{SignIn: id})))
 }
 
 // hostMatches tells whether a request's Host header names the Web URL's
@@ -91,11 +110,11 @@ func clientAddress(r *http.Request) string {
 }
 
 // refuseOnListener answers a refusal with code on the web listener: to an
-// API call, the error object the web UI reads, as on web@koko; to a page,
-// the message as text a person reads.
+// API call or an /auth/ endpoint, the error object the web UI reads, as on
+// web@koko; to a page, the message as text a person reads.
 func refuseOnListener(w http.ResponseWriter, r *http.Request, code api.Code, message string) {
-	if isAPI(r) {
-		refuse(w, r, code, message)
+	if isAPI(r) || isAuth(r) {
+		writeAPIError(w, code.Status, code.Errorf("%s", message))
 		return
 	}
 	listenerPage(w, code.Status, message)

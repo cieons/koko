@@ -27,8 +27,8 @@ import (
 // koko server's clock.
 const responseKept = 10 * time.Minute
 
-// localCaller names the Local caller in the store; no Device Session's id
-// takes this form.
+// localCaller names the Local caller in the store; no Device Session's or
+// Sign-in's id takes this form. A call carries one of the three alone.
 const localCaller = "local"
 
 // idempotencyKey is one caller's Idempotency-Key: a key belongs to its
@@ -55,7 +55,7 @@ type keyedWrite struct {
 // newKeyedWrite is the write of the operation name, with body, that caller
 // sent carrying key.
 func newKeyedWrite(caller Caller, key, name string, body []byte) keyedWrite {
-	w := keyedWrite{key: idempotencyKey{caller: caller.DeviceSession, key: key}}
+	w := keyedWrite{key: idempotencyKey{caller: caller.DeviceSession + caller.SignIn, key: key}}
 	if caller.Local {
 		w.key.caller = localCaller
 	}

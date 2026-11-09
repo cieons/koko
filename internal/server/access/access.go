@@ -17,6 +17,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/store"
@@ -29,8 +30,36 @@ type Identity struct {
 	// the Local caller (ADR 0008).
 	User api.User
 	// DeviceSession is the Device Session the call came on, or nil for the
-	// Local caller, which has none.
+	// Local caller, which has none, and for a Sign-in.
 	DeviceSession *api.DeviceSession
+	// SignIn is the Sign-in the call came on, from a browser on the web
+	// listener, or nil for every other caller.
+	SignIn *api.SignIn
+}
+
+// unixSocket stands in the log for the Unix socket where the id of the
+// Device Session or the Sign-in a call came on would.
+const unixSocket = "unix socket"
+
+// By names the caller in a log line, as what issued, revoked or removed
+// something: its Device Session's id, its Sign-in's id, or "unix socket".
+func (i Identity) By() string {
+	switch {
+	case i.DeviceSession != nil:
+		return i.DeviceSession.ID
+	case i.SignIn != nil:
+		return i.SignIn.ID
+	}
+	return unixSocket
+}
+
+// Issuer is the id a record keeps of the caller as what issued it: its
+// Device Session's or its Sign-in's, or nil for the Unix socket.
+func (i Identity) Issuer() *string {
+	if i.DeviceSession == nil && i.SignIn == nil {
+		return nil
+	}
+	return new(i.By())
 }
 
 // IsOwner tells whether the call acts as the Owner.
@@ -38,11 +67,13 @@ func (i Identity) IsOwner() bool {
 	return i.User.Role == api.RoleOwner
 }
 
-// Who answers who is calling: it turns a Device Connection's Device Session
-// into its User, and the Local caller into the Owner. A Revoked Device
-// Session is refused with api.CodeRevoked, and so is a Removed User's, since
-// Removing a User revokes each of theirs. A caller that is neither, or a
-// Device Session no record holds, is a bug in the transport, and fails.
+// Who answers who is calling: it turns a Device Connection's Device Session,
+// or a browser's Sign-in, into its User, and the Local caller into the
+// Owner. A Revoked Device Session is refused with api.CodeRevoked, and so is
+// a Removed User's, since Removing a User revokes each of theirs; a Sign-in
+// that has ended, a Removed User's among them, with api.CodeSignInRequired.
+// A caller that is none of these, or a Device Session or Sign-in no record
+// holds, is a bug in the transport or the web front, and fails.
 func Who(ctx context.Context, tx store.Tx, c op.Caller) (Identity, error) {
 	switch {
 	case c.Local:
@@ -69,8 +100,26 @@ func Who(ctx context.Context, tx store.Tx, c op.Caller) (Identity, error) {
 			return Identity{}, fmt.Errorf("read the User of the Device Session %s: %w", d.ID, err)
 		}
 		return Identity{User: u, DeviceSession: &d}, nil
+	case c.SignIn != "":
+		found, err := SignIns(ctx, tx, op.Now(ctx), "s.id = ?", c.SignIn)
+		if err != nil {
+			return Identity{}, err
+		}
+		if len(found) == 0 {
+			return Identity{}, fmt.Errorf("no Sign-in is %s", c.SignIn)
+		}
+		s := found[0]
+		if s.EndedAt != "" {
+			return Identity{}, api.CodeSignInRequired.Errorf("this browser's Sign-in has ended: sign in again")
+		}
+		u, err := scanUser(tx.QueryRowContext(ctx, `SELECT u.id, u.name, u.role, u.created_at
+			FROM signins s JOIN users u ON u.id = s.user_id WHERE s.id = ?`, s.ID))
+		if err != nil {
+			return Identity{}, fmt.Errorf("read the User of the Sign-in %s: %w", s.ID, err)
+		}
+		return Identity{User: u, SignIn: &s}, nil
 	}
-	return Identity{}, errors.New("the call came from neither the Unix socket nor a Device Session")
+	return Identity{}, errors.New("the call came from neither the Unix socket, a Device Session nor a Sign-in")
 }
 
 // OwnerOnly answers who is calling, as Who does, and refuses with
@@ -180,4 +229,62 @@ func DeviceSessions(ctx context.Context, tx store.Tx, where string, args ...any)
 		return nil, fmt.Errorf("read Device Sessions: %w", err)
 	}
 	return list, nil
+}
+
+// How long a Sign-in lasts (ADR 0043): SignInLifetime after it began, or
+// SignInIdle after it was last used, whichever comes first.
+const (
+	SignInLifetime = 30 * 24 * time.Hour
+	SignInIdle     = 7 * 24 * time.Hour
+)
+
+// SignIns returns the Sign-ins, live and ended, that the SQL condition where
+// selects with args, as the API returns them at now, ordered by their User's
+// name and then in the order they began. The condition reads the Sign-in as
+// s and its User as u. A Sign-in past its expiry at now is answered as
+// ended then, "expired", whether or not its record says so yet. It is the
+// one way a Sign-in record is read, so who is calling and the signin
+// operations answer alike.
+func SignIns(ctx context.Context, tx store.Tx, now time.Time, where string, args ...any) ([]api.SignIn, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT s.id, u.name, s.client, s.address, s.started_at, s.last_used_at,
+			s.expires_at, s.ended_at, s.end_reason
+		FROM signins s JOIN users u ON u.id = s.user_id
+		WHERE `+where+` ORDER BY u.name, s.started_at, s.id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("read Sign-ins: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var list []api.SignIn
+	for rows.Next() {
+		var s api.SignIn
+		var ended, reason sql.NullString
+		err := rows.Scan(&s.ID, &s.User, &s.Client, &s.Address, &s.StartedAt, &s.LastUsedAt, &s.ExpiresAt, &ended, &reason)
+		if err != nil {
+			return nil, fmt.Errorf("read Sign-ins: %w", err)
+		}
+		s.EndedAt, s.EndReason = ended.String, reason.String
+		if s.ExpiresAt, err = signInExpiry(s); err != nil {
+			return nil, err
+		}
+		if s.EndedAt == "" && s.ExpiresAt <= now.Format(time.RFC3339) {
+			s.EndedAt, s.EndReason = s.ExpiresAt, api.EndExpired
+		}
+		list = append(list, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read Sign-ins: %w", err)
+	}
+	return list, nil
+}
+
+// signInExpiry is when s ends unless it is used again: SignInIdle after it
+// was last used, and never later than its record's expiry, SignInLifetime
+// after it began.
+func signInExpiry(s api.SignIn) (string, error) {
+	last, err := time.Parse(time.RFC3339, s.LastUsedAt)
+	if err != nil {
+		return "", fmt.Errorf("read when the Sign-in %s was last used: %w", s.ID, err)
+	}
+	idle := last.Add(SignInIdle).UTC().Format(time.RFC3339)
+	return min(idle, s.ExpiresAt), nil
 }

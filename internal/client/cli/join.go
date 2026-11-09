@@ -64,7 +64,8 @@ var joinMappings = []mapping{
 		api: reflect.TypeFor[api.UserCurrentResponse](),
 		cli: reflect.TypeFor[joined](),
 		omitted: map[string]string{
-			"user": "join prints the device's Device Session, which names its User",
+			"user":   "join prints the device's Device Session, which names its User",
+			"signin": "a join calls on its new Device Session, never through a Sign-in",
 		},
 	},
 }

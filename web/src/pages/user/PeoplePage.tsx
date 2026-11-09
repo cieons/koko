@@ -164,7 +164,7 @@ function InviteUser({ onInvited }: { onInvited: () => void }) {
       {invited && (
         <>
           <p>{t("user.invite.done", { name: invited.user.name })}</p>
-          <JoinCodeLine key={invited.join_code.id} joinCode={invited.join_code} />
+          {invited.join_code && <JoinCodeLine key={invited.join_code.id} joinCode={invited.join_code} />}
         </>
       )}
     </>

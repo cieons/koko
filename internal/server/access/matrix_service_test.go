@@ -34,6 +34,7 @@ var serviceRows = []row{
 		want: map[caller]answer{
 			ownerDevice: allowedBut(api.CodeNameTaken), local: allowedBut(api.CodeNameTaken), member: allowedBut(api.CodeNameTaken),
 			personal: allowedBut(api.CodeNameTaken), outsider: unknown,
+			ownerSignIn: allowedBut(api.CodeNameTaken), memberSignIn: allowedBut(api.CodeNameTaken),
 		},
 	},
 	{

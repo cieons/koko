@@ -118,6 +118,7 @@ var codes = [][]Code{
 	secretCodes,
 	enrollCodes,
 	serviceCodes,
+	signinCodes,
 }
 
 // Codes returns every error code the API answers with.

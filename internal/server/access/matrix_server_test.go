@@ -11,6 +11,7 @@ var serverRows = []row{
 		want: map[caller]answer{
 			ownerDevice: localOnly, local: allowedBut(api.CodeAlreadyInitialised),
 			member: localOnly, personal: localOnly, outsider: localOnly,
+			ownerSignIn: localOnly, memberSignIn: localOnly,
 		},
 	},
 	{
@@ -24,6 +25,7 @@ var serverRows = []row{
 		// No device, the Owner's own included, moves where devices connect.
 		want: map[caller]answer{
 			ownerDevice: localOnly, local: allowed, member: localOnly, personal: localOnly, outsider: localOnly,
+			ownerSignIn: localOnly, memberSignIn: localOnly,
 		},
 	},
 }

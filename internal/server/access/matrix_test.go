@@ -28,6 +28,7 @@ var areaRows = [][]row{
 	attrRows,
 	enrollRows,
 	serviceRows,
+	signinRows,
 }
 
 // A row states, for one operation, the answer each caller gets.
@@ -71,20 +72,31 @@ const (
 	personal
 	// outsider is carol, in ops, which she is no Member of.
 	outsider
+	// ownerSignIn is the Owner, alice, through a Sign-in in a browser on
+	// the web listener, in ops.
+	ownerSignIn
+	// memberSignIn is bob, a Member of ops, through a Sign-in, in ops.
+	memberSignIn
 )
 
-var callers = []caller{ownerDevice, local, member, personal, outsider}
+var callers = []caller{ownerDevice, local, member, personal, outsider, ownerSignIn, memberSignIn}
 
 func (c caller) String() string {
 	return [...]string{
 		"the Owner's device", "the Local caller", "a Member of the Space",
 		"the User whose Personal Space it is", "a Member outside the Space",
+		"the Owner's Sign-in", "a Member of the Space's Sign-in",
 	}[c]
 }
 
 // user is the User the caller acts as; the Local caller acts as the Owner.
 func (c caller) user() string {
-	return [...]string{harness.Owner, harness.Owner, "bob", "carol", "carol"}[c]
+	return [...]string{harness.Owner, harness.Owner, "bob", "carol", "carol", harness.Owner, "bob"}[c]
+}
+
+// signedIn tells whether the caller calls through a Sign-in.
+func (c caller) signedIn() bool {
+	return c == ownerSignIn || c == memberSignIn
 }
 
 // target is the Space the caller acts in.
@@ -128,11 +140,13 @@ func allowedBut(code api.Code) answer {
 // a Member is refused whatever the call names.
 var ownerOnlyAnswers = map[caller]answer{
 	ownerDevice: allowed, local: allowed, member: ownerOnly, personal: ownerOnly, outsider: ownerOnly,
+	ownerSignIn: allowed, memberSignIn: ownerOnly,
 }
 
 // anyoneAnswers is the answers to an operation every caller may make.
 var anyoneAnswers = map[caller]answer{
 	ownerDevice: allowed, local: allowed, member: allowed, personal: allowed, outsider: allowed,
+	ownerSignIn: allowed, memberSignIn: allowed,
 }
 
 // Every operation has a row, and every row states each caller's answer.
@@ -162,10 +176,10 @@ func TestAccessMatrix(t *testing.T) {
 			}
 			t.Run(fmt.Sprintf("%s as %s", r, c), func(t *testing.T) {
 				t.Parallel()
-				status, body := newFixture(t, true).send(c, r)
+				status, body := newFixture(t, true, c).send(c, r)
 				switch {
 				case want.unknown:
-					twinStatus, twinBody := newFixture(t, false).send(c, r)
+					twinStatus, twinBody := newFixture(t, false, c).send(c, r)
 					if twinStatus == http.StatusOK {
 						t.Fatalf("with no %s recorded the call succeeded: %s", c.target(), twinBody)
 					}
@@ -190,7 +204,8 @@ func TestAccessMatrix(t *testing.T) {
 
 // fixture is a koko server with the matrix's records: the Owner alice; the
 // Members bob, carol and dave, who has not joined; and, unless the twin of a
-// call answered as unknown, the shared Space ops with the Member bob.
+// call answered as unknown, the shared Space ops with the Member bob. For a
+// caller through a Sign-in, its web listener is on.
 type fixture struct {
 	t *testing.T
 	h *harness.Harness
@@ -198,9 +213,13 @@ type fixture struct {
 	withTarget bool
 }
 
-func newFixture(t *testing.T, withTarget bool) *fixture {
+func newFixture(t *testing.T, withTarget bool, c caller) *fixture {
 	t.Helper()
-	h := harness.Start(t)
+	var opts []harness.Option
+	if c.signedIn() {
+		opts = append(opts, harness.WebListen("127.0.0.1:0"))
+	}
+	h := harness.Start(t, opts...)
 	for _, u := range []string{"bob", "carol", "dave"} {
 		h.Koko("user", "invite", u).WantSuccess(t)
 	}
@@ -211,8 +230,9 @@ func newFixture(t *testing.T, withTarget bool) *fixture {
 	return &fixture{t: t, h: h, withTarget: withTarget}
 }
 
-// send makes r's call as c, joining a device of c's User for it, after r's
-// setup where c's target Space is recorded.
+// send makes r's call as c, joining a device of c's User for it, or
+// signing them in in a browser, after r's setup where c's target Space is
+// recorded.
 func (f *fixture) send(c caller, r row) (int, []byte) {
 	f.t.Helper()
 	if r.setup != nil && (f.withTarget || c.target() != targetSpace) {
@@ -222,8 +242,11 @@ func (f *fixture) send(c caller, r row) (int, []byte) {
 	if err != nil {
 		f.t.Fatalf("encode the request of %s: %v", r, err)
 	}
-	if c == local {
+	switch {
+	case c == local:
 		return f.h.Send(r.op, body)
+	case c.signedIn():
+		return f.h.SignIn(c.user()).Send(r.op, body)
 	}
 	return f.h.Join(c.user()).Send(r.op, body)
 }

@@ -19,6 +19,10 @@ type User struct {
 	// RemovedAt is when the User was Removed, RFC 3339 in UTC to the
 	// second; empty while they belong to the koko server.
 	RemovedAt string `json:"removed_at,omitempty"`
+	// PasswordSetAt is when the User last set their Password, RFC 3339 in
+	// UTC to the second, as user.list answers it; empty while they have
+	// none, and in every other answer.
+	PasswordSetAt string `json:"password_set_at,omitempty"`
 }
 
 // UserInviteRequest invites a new User under a name no User or Space holds.
@@ -27,25 +31,34 @@ type UserInviteRequest struct {
 	// ValidFor is how long the Invite stays valid, in seconds, 60 to
 	// 604,800 (7 days); left out, 15 minutes.
 	ValidFor *int `json:"valid_for,omitzero"`
+	// Web makes the Invite a Password Link, for a person who will use the
+	// web UI in a browser, instead of a Join Code.
+	Web bool `json:"web,omitzero"`
 }
 
 // UserInviteResponse is the User user.invite created and their Invite: their
-// first Join Code.
+// first Join Code, or with web their first Password Link.
 type UserInviteResponse struct {
-	User     User     `json:"user"`
-	JoinCode JoinCode `json:"join_code"`
+	User User `json:"user"`
+	// JoinCode is the Invite without web; left out with it.
+	JoinCode *JoinCode `json:"join_code,omitzero"`
+	// PasswordLink is the Invite with web; left out without it.
+	PasswordLink *PasswordLink `json:"password_link,omitzero"`
 }
 
 // UserCurrentRequest asks who the call acts as.
 type UserCurrentRequest struct{}
 
 // UserCurrentResponse is who the call acts as: its User and the Device
-// Session it came on.
+// Session or the Sign-in it came on.
 type UserCurrentResponse struct {
 	User User `json:"user"`
 	// DeviceSession is the Device Session the call came on, left out for the
-	// Local caller, which has none and acts as the Owner.
+	// Local caller, which has none and acts as the Owner, and for a Sign-in.
 	DeviceSession *DeviceSession `json:"device_session,omitzero"`
+	// SignIn is the Sign-in the call came on, from a browser on the web
+	// listener; left out for every other caller.
+	SignIn *CurrentSignIn `json:"signin,omitzero"`
 }
 
 // UserListRequest lists the Users.
@@ -66,11 +79,12 @@ type UserRemoveRequest struct {
 
 // What user.remove did, as UserRemoveResponse.Outcome names it.
 const (
-	// OutcomeDeleted: the User had never joined, so they are gone with
-	// their Personal Space, and their name is free again.
+	// OutcomeDeleted: the User had never used koko, neither joining a
+	// device nor setting a Password, so they are gone with their Personal
+	// Space, and their name is free again.
 	OutcomeDeleted = "deleted"
-	// OutcomeRemoved: the User had joined, so they are Removed and kept on
-	// record, and their name is never used again.
+	// OutcomeRemoved: the User had used koko, so they are Removed and kept
+	// on record, and their name is never used again.
 	OutcomeRemoved = "removed"
 )
 
@@ -88,22 +102,26 @@ type UserRemoveResponse struct {
 // The user operations.
 var (
 	// UserInvite creates a Member with their Personal Space and issues their
-	// first Join Code, in one transaction. A name any User, Removed ones
-	// included, or any Space holds is refused with CodeNameTaken, and a
-	// ValidFor outside 60 to 604,800 seconds with CodeInvalidValue.
+	// first Join Code, or with Web their first Password Link, in one
+	// transaction. A name any User, Removed ones included, or any Space
+	// holds is refused with CodeNameTaken, a ValidFor outside 60 to 604,800
+	// seconds with CodeInvalidValue, and Web while the Web URL is not set
+	// with CodeWebURLUnset.
 	UserInvite = Op[UserInviteRequest, UserInviteResponse]{Name: "user.invite", Write: true}
 	// UserCurrent answers who the call acts as: the User of the Device
-	// Session it came on, or the Owner for the Local caller. `koko join`
+	// Session or the Sign-in it came on, or the Owner for the Local caller. `koko join`
 	// asks it, to learn the User and device name its Join Code bound.
 	UserCurrent = Op[UserCurrentRequest, UserCurrentResponse]{Name: "user.current"}
 	// UserList lists the Users, without the Removed ones unless All asks
 	// for them. Only the Owner lists Users.
 	UserList = Op[UserListRequest, UserListResponse]{Name: "user.list"}
-	// UserRemove deletes a User who never joined, with their memberships,
-	// their Join Codes and their Personal Space, which must hold nothing
-	// (CodeSpaceNotEmpty), and Removes any other User, in one transaction:
-	// it revokes their Device Sessions, voids their valid Join Codes and
-	// those their Device Sessions issued, takes them out of every Space,
+	// UserRemove deletes a User who never used koko, with their
+	// memberships, their Join Codes, their Password Links and their
+	// Personal Space, which must hold nothing (CodeSpaceNotEmpty), and
+	// Removes any other User, in one transaction: it revokes their Device
+	// Sessions, voids their valid Join Codes and those their Device
+	// Sessions issued, ends their Sign-ins, deletes their Password, voids
+	// their unused Password Links, takes them out of every Space,
 	// and turns their Personal Space into an ordinary shared Space with no
 	// Members, which only the Owner sees. Once it commits, their Device
 	// Sessions' Device Connections close. Only the Owner removes Users, and

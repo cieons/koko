@@ -82,12 +82,14 @@ refused Invite records nothing, its transaction rolled back. `device.add`
 and `user.invite` take `valid_for`; initialisation's first code always has
 the 15 minutes. Only the expiry recorded changes: the code's string is the
 same whatever its validity. Several codes may be valid at once. The issuer
-is recorded: the caller's Device Session, or the Unix socket; it becomes the
-"added by" of the Device Session the code joins
-([the Device Connection](device-connection.md)).
+is recorded: the caller's Device Session or Sign-in, or the Unix socket; a
+Device Session that issued it becomes the "added by" of the Device Session
+the code joins ([the Device Connection](device-connection.md)).
 
 `koko device add [<device>] [--user <user>] [--valid <duration>]` and `koko
-user invite <user> [--valid <duration>]` print the code ([the
+user invite <user> [--valid <duration>]` print the code (`user invite
+--web` prints a Password Link instead, valid as `--valid` says too:
+[Sign-ins](signin.md#password-links)) ([the
 CLI](cli.md#the-commands-so-far)); both are in the irreversible tier, since
 they print a credential (ADR 0019). `--valid` takes a whole number of
 minutes, hours or days from `1m` to `7d`, such as `30m`, `12h` or `7d`, and
@@ -102,7 +104,7 @@ User or any Space holds, then issues their first code, in one transaction.
 
 | Table | What it holds |
 | --- | --- |
-| `join_codes` | One row per code issued: its id (`joincode_...`), its User, the hash of its secret, its device name, its issuer (NULL for the Unix socket, else the issuing Device Session's id), its expiry, and the times it was used or voided. A code is valid while it is neither used nor voided and has not expired; a join marks it used, and revoking its issuer, or Removing its User or its issuer's User, voids it while it is valid ([revoking](device-connection.md#revoking), [Users](users.md#removing)). Spent codes are kept, for the P1 audit log, but go with a User who never joined when that User is deleted. |
+| `join_codes` | One row per code issued: its id (`joincode_...`), its User, the hash of its secret, its device name, its issuer (NULL for the Unix socket, else the issuing Device Session's or Sign-in's id), its expiry, and the times it was used or voided. A code is valid while it is neither used nor voided and has not expired; a join marks it used, and revoking its issuer, or Removing its User or its issuer's User, voids it while it is valid ([revoking](device-connection.md#revoking), [Users](users.md#removing)). Spent codes are kept, for the P1 audit log, but go with a User who never used koko when that User is deleted. |
 
 The koko server keeps neither the code nor its secret, only
 `SHA-256("koko Join Code secret\0" ‖ secret)`, unique per row, which joining

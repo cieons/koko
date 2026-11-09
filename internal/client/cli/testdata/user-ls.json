@@ -4,13 +4,15 @@
     "name": "alice",
     "role": "owner",
     "created_at": "<time>",
-    "removed_at": null
+    "removed_at": null,
+    "password_set_at": null
   },
   {
     "id": "user_<2>",
     "name": "bob",
     "role": "member",
     "created_at": "<time>",
-    "removed_at": null
+    "removed_at": null,
+    "password_set_at": null
   }
 ]

@@ -5,6 +5,7 @@
     "name": "bob",
     "role": "member",
     "created_at": "<time>",
-    "removed_at": "<time>"
+    "removed_at": "<time>",
+    "password_set_at": null
   }
 }

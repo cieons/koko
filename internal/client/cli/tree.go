@@ -238,6 +238,7 @@ var commands = [][]Command{
 	versionCommands,
 	deviceCommands,
 	userCommands,
+	signinCommands,
 	webCommands,
 	joinCommands,
 	hostCommands,

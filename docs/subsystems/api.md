@@ -23,11 +23,12 @@ UI's TypeScript types are generated from them
   joining with a Join Code's secret
   ([the Device Connection](device-connection.md)).
 - **The web listener**, when `kokod run --web-listen` turns it on, is
-  plain HTTP/1.1 for the Owner's reverse proxy, at the Web URL, not SSH. It
-  hands no call to the API yet: every `/v1/` call on it is answered
-  `signin_required` (401) by the web front, after the Host and Origin
-  checks, whose `bad_origin` (403) refuses a `POST` from another page
-  ([the web listener](web-front.md#the-web-listener)).
+  plain HTTP/1.1 for the Owner's reverse proxy, at the Web URL, not SSH.
+  After the Host and Origin checks, whose `bad_origin` (403) refuses a
+  `POST` from another page, the web front hands a `/v1/` call to the API as
+  the Sign-in its cookie names, and answers one without a live Sign-in
+  `signin_required` (401) ([the web listener](web-front.md#the-web-listener),
+  [Sign-ins](signin.md)).
 - **Channels.** On either SSH way in, an `api@koko` channel carries HTTP/1.1 to
   the API. A `web@koko` channel carries one browser connection of `koko web`
   to the web front, which asks for its cookie before it hands a call to the
@@ -204,11 +205,13 @@ has them, no caller, no Idempotency-Key and no log line of its own.
 Start-up uses it to initialise a fresh koko server at its first start
 ([initialisation](initialisation.md#at-first-start)).
 
-The caller (`op.Caller`) is the Local caller or a Device Connection's Device
-Session. Who it acts as comes from the current records on every call
-([`access.Who`](../../internal/server/access/access.go)): a Device Session's
-User, or the Owner for the Local caller; `user.current` answers it. A
-Revoked Device Session is refused with `revoked`. What each caller may do,
+The caller (`op.Caller`) is the Local caller, a Device Connection's Device
+Session, or a browser's Sign-in on the web listener. Who it acts as comes
+from the current records on every call
+([`access.Who`](../../internal/server/access/access.go)): a Device
+Session's or a Sign-in's User, or the Owner for the Local caller;
+`user.current` answers it. A Revoked Device Session is refused with
+`revoked`, an ended Sign-in with `signin_required` ([Sign-ins](signin.md)). What each caller may do,
 and in which Spaces, is the access check's
 ([the access check and Spaces](access.md)), which each operation asks inside
 its transaction; the access matrix states every operation's answer to each
@@ -238,8 +241,8 @@ The store is [`op/idempotency.go`](../../internal/server/op/idempotency.go),
 over the table `idempotency_keys`; the design is P0 spec: reach and
 [ADR 0021](../adr/0021-an-ssh-session-survives-a-network-drop-by-resuming-its-tunnel.md).
 
-- **Per caller.** A key belongs to its caller: a Device Session, or the
-  Local caller. Another caller's write with the same key is a write of its
+- **Per caller.** A key belongs to its caller: a Device Session, a
+  Sign-in, or the Local caller. Another caller's write with the same key is a write of its
   own.
 - **What is kept.** For each write that succeeded, in its own transaction:
   the caller, the key, when it expires, and, sealed under the Root Key for

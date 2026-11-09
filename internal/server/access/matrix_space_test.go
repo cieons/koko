@@ -18,6 +18,7 @@ var spaceRows = []row{
 		request: func(target string) any { return api.SpaceShowRequest{Name: target} },
 		want: map[caller]answer{
 			ownerDevice: allowed, local: allowed, member: allowed, personal: allowed, outsider: unknown,
+			ownerSignIn: allowed, memberSignIn: allowed,
 		},
 	},
 	{

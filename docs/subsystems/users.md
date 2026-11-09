@@ -14,31 +14,34 @@ where is in [the access check](access.md).
 
 Every User has a Personal Space, named after them, from the moment they are
 recorded (`spaces.user_id`; [Spaces and memberships](access.md#spaces-and-memberships)).
-A User **never joined** while they have never had a Device Session, Revoked
-ones included.
+A User **never used koko** while they have never had a Device Session,
+Revoked ones included, never set a Password and never had a Sign-in
+([Sign-ins](signin.md)).
 
 ## Listing
 
 `koko user ls [--all]` (`user.list`, Owner only, read tier) lists the Users
-by name, each with their role and created time; `--all` adds the Removed
-ones, whose `removed_at` says when. A User deleted is listed by neither. Its
-`--json` is a bare array of `{"id", "name", "role", "created_at",
-"removed_at"}`, `removed_at` being `null` while the User belongs to the koko
-server; `user invite` prints a User in the same shape.
+by name, each with their role, created time and when they set their
+Password (`PASSWORD`, `-` for none); `--all` adds the Removed ones, whose
+`removed_at` says when. A User deleted is listed by neither. Its `--json`
+is a bare array of `{"id", "name", "role", "created_at", "removed_at",
+"password_set_at"}`, `removed_at` being `null` while the User belongs to
+the koko server and `password_set_at` while they have no Password; `user
+invite` prints a User in the same shape, `password_set_at` `null`.
 
 ## Removing
 
 `koko user remove <user>` (`user.remove`, Owner only, irreversible tier)
 takes the least permanent outcome the records allow, and says which: it
-deletes a User who never joined, and Removes anyone else. A Member is
+deletes a User who never used koko, and Removes anyone else. A Member is
 refused with `owner_only` before the name is read.
 
 - **The Owner** is refused with `owner_not_removable`, before and after their
   first join.
 - **A Removed User** is refused with `user_removed`: there is nothing left to
   remove.
-- **Deleting** a User who never joined removes their row, their Join Codes
-  (all unused) and their Personal Space, and their memberships go with the
+- **Deleting** a User who never used koko removes their row, their Join
+  Codes and Password Links (all unused) and their Personal Space, and their memberships go with the
   row (`ON DELETE CASCADE`); the name is free again. The Personal Space must
   hold nothing: while it holds a Host, a Retired Host or a Secret, the call is
   refused with `space_not_empty`, naming what is left
@@ -47,13 +50,15 @@ refused with `owner_only` before the name is read.
 - **Removing** anyone else, in the call's one transaction:
   1. revokes every live Device Session they hold, at the call's time;
   2. voids their valid Join Codes, and those their Device Sessions issued;
-  3. takes them out of every Space, and turns their Personal Space into an
+  3. ends their live Sign-ins (`user_removed`), deletes their Password and
+     voids their unused Password Links ([Sign-ins](signin.md#users));
+  4. takes them out of every Space, and turns their Personal Space into an
      ordinary shared Space with no Members by clearing `spaces.user_id`
      ([`space.PassToOwner`](../../internal/server/space/space.go)): it keeps
      its name and what it holds, only the Owner sees it, and the Owner can
      rename it, give it Members, move its Hosts and Secrets out and remove
      it once it is empty;
-  4. marks them Removed, keeping the row.
+  5. marks them Removed, keeping the row.
 
   Once it commits, the access-change signal names the Device Sessions it
   Revoked, as a Removed User's, so their live SSH Sessions end, each with
@@ -88,8 +93,10 @@ does ([logging](device-connection.md#logging)) but without
 `join_codes_voided`, which the next line counts for them all; then `user
 removed` with the
 User, their id, how many Device Sessions it Revoked
-(`device_sessions_revoked`), `join_codes_voided` and `removed_by`. `revoked_by`
-and `removed_by` are a Device Session's id or `unix socket`. Deleting logs
+(`device_sessions_revoked`), `join_codes_voided`, `signins_ended`,
+`password_links_voided` and `removed_by`, after a `sign-in ended` line for
+each Sign-in it ended. `revoked_by` and `removed_by` are a Device Session's
+or a Sign-in's id, or `unix socket`. Deleting logs
 `user deleted` with the User, their id and `deleted_by`. Each line is
 written once the call's transaction commits.
 
@@ -104,7 +111,13 @@ written once the call's transaction commits.
   Removed User and `space member rm` leaving them out, the Owner never
   removed, and the output for people; with their goldens.
 - [`user_test.go`](../../internal/client/cli/user_test.go): `koko user ls`
-  with and without `--all`, for people, and the Owner-only refusals.
+  with and without `--all`, for people, and the Owner-only refusals;
+  [`signin_test.go`](../../internal/client/cli/signin_test.go): its
+  `password_set_at`.
+- [`internal/server/web/signin_test.go`](../../internal/server/web/signin_test.go):
+  Removing a User who only set a Password, ending their Sign-in and counting
+  it, and deleting one invited with `--web` who never set it, with their
+  link.
 - [`revoked_test.go`](../../internal/server/revoked_test.go): a Removed
   User's Device Session refused by every operation, the access matrix's
   caller for it ([the access matrix](access.md#the-access-matrix)).

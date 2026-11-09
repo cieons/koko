@@ -151,8 +151,8 @@ default, is off: a koko server without it listens on nothing new.
 
 [`Front.Listener`](../../internal/server/web/listener.go) answers each
 request in this order, reading the deployment's row at every request, so a
-change of the Web URL takes effect on the next one. No answer reads or sets
-a cookie.
+change of the Web URL takes effect on the next one. Only the `/auth/`
+endpoints set the Sign-in cookie, and only they and `/v1/` read it.
 
 1. **Before initialisation**, every request gets a `503` page saying the
    koko server is not initialised yet.
@@ -168,15 +168,20 @@ a cookie.
    $host`. `X-Forwarded-Host` and `X-Forwarded-Proto` are never read.
 4. **The Origin check.** Every `POST`, on any path, must carry an `Origin`
    header equal to the Web URL; another, or none, is refused with
-   `bad_origin` (403) from its headers alone, before its body is read. An
-   API path gets the error object, any other path a page.
-5. **`/v1/`** is answered `signin_required` (401) without reaching the API,
-   until Sign-ins exist (#114).
-6. **Every other path** serves the web UI's files as `web@koko` does, the
+   `bad_origin` (403) from its headers alone, before its body is read or
+   anything is counted. An API path and an `/auth/` endpoint get the error
+   object, any other path a page.
+5. **`/auth/`** is the web front's own endpoints, which sign a browser in,
+   set a Password and sign out ([Sign-ins](signin.md#the-auth-endpoints)).
+6. **`/v1/`** goes to the API as the live Sign-in the `__Host-koko` cookie
+   names (`op.Caller.SignIn`), moving its Last used time; without one it is
+   answered `signin_required` (401) without reaching the API
+   ([`Front.serveSignedIn`](../../internal/server/web/listener.go)).
+7. **Every other path** serves the web UI's files as `web@koko` does, the
    same code path (`Front.serveFile`).
 
-Refusals and API answers carry `Cache-Control: no-store`. The client's
-address, which the log names, is the last address in `X-Forwarded-For`, the
+Refusals, `/auth/` and API answers carry `Cache-Control: no-store`. The
+client's address, which the log names and the sign-in limits count, is the last address in `X-Forwarded-For`, the
 one the proxy appended, or the TCP peer's when the header is absent or its
 last entry is not an IP address
 ([`clientAddress`](../../internal/server/web/listener.go)); no list of
@@ -186,7 +191,7 @@ address.
 
 | Code | Status | When |
 | --- | --- | --- |
-| `signin_required` | 401 | A call on the web listener came without a valid Sign-in. |
+| `signin_required` | 401 | A call on the web listener came without a live Sign-in, or as one that has ended. |
 | `bad_origin` | 403 | A `POST` on the web listener came without an `Origin` header equal to the Web URL. |
 
 ### The headers every answer carries
@@ -293,8 +298,8 @@ and user. It is per OS ([rule 13](code-layout.md#rules-for-working-in-parallel))
   refused; the token and the cookie absent from stderr and every log;
   `koko disconnect` ending `koko web` and counting it; and, in
   `realTime`, a running `koko web` keeping the Device Mux from idling out.
-- `web.start`'s rows in the [access matrix](access.md), and its refusal of
-  a Revoked Device Session in
+- `web.start`'s rows in the [access matrix](access.md), `device_only` for a
+  Sign-in among them, and its refusal of a Revoked Device Session in
   [`revoked_test.go`](../../internal/server/revoked_test.go).
 - [`listener_test.go`](../../internal/server/web/listener_test.go), S1
   against the web listener on `127.0.0.1:0` (`harness.WebListen`, with
@@ -303,8 +308,9 @@ and user. It is per OS ([rule 13](code-layout.md#rules-for-working-in-parallel))
   initialisation and without a Web URL, and again once it is cleared; the
   Host check, 443 written or not, another port or host refused with the
   page naming the Web URL alone, and a change taking effect at once; the
-  Origin check on `/v1/` and another path, before the API and before the
-  body; `signin_required`; every answer's headers and `no-store` on
+  Origin check on `/v1/`, each `/auth/` endpoint and another path, before
+  the API, before the body and before anything is counted;
+  `signin_required`; every answer's headers and `no-store` on
   refusals; the client's address in the log; and the start log naming the
   Web URL.
 - [`run_checks_test.go`](../../internal/server/kokod/run_checks_test.go):

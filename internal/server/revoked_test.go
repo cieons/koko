@@ -57,6 +57,80 @@ func TestARemovedUsersDeviceSessionIsRefusedByEveryOperation(t *testing.T) {
 	b.wantRefusedByEveryOperation(id, "laptop")
 }
 
+// An ended Sign-in gets nothing from any operation: each answers it
+// signin_required, or local_only when only the Local caller may call it.
+// This is the access matrix's "ended Sign-in" caller, for every registered
+// operation at once, called beneath the web front, which refuses an ended
+// Sign-in's cookie before any call, so that a new operation that does not
+// ask who is calling fails it.
+func TestAnEndedSignInIsRefusedByEveryOperation(t *testing.T) {
+	b := startBeneathTransport(t)
+	for _, c := range []struct{ op, body string }{
+		{api.ServerSet.Name, `{"web_url": "https://koko.example.com"}`},
+		{api.UserInvite.Name, `{"name": "bob", "web": true}`},
+	} {
+		if status, body := b.call(local, c.op, c.body); status != http.StatusOK {
+			t.Fatalf("%s: %d %s", c.op, status, body)
+		}
+	}
+	_, linked := b.call(local, api.PasswordLinkIssue.Name, `{"user": "bob"}`)
+	var issued api.PasswordLinkResponse
+	if err := json.Unmarshal([]byte(linked), &issued); err != nil {
+		t.Fatalf("password.link answered %s: %v", linked, err)
+	}
+	_, secret, _ := strings.Cut(issued.PasswordLink.Link, "#")
+	cookie := b.auth(api.AuthPasswordPath, `{"link": "`+secret+`", "password": "correct horse battery staple"}`, "")
+	_, listed := b.call(local, api.SignInList.Name, `{}`)
+	var signins api.SignInListResponse
+	if err := json.Unmarshal([]byte(listed), &signins); err != nil || len(signins.SignIns) != 1 {
+		t.Fatalf("signin.list answered %s", listed)
+	}
+	b.auth(api.AuthSignOutPath, `{}`, cookie)
+
+	for _, name := range b.srv.api.Names() {
+		status, body := b.call(op.Caller{SignIn: signins.SignIns[0].ID}, name, `{}`)
+		var e api.ErrorResponse
+		_ = json.Unmarshal([]byte(body), &e)
+		required := status == api.CodeSignInRequired.Status && e.Error.Code == api.CodeSignInRequired.Name
+		localOnly := status == api.CodeLocalOnly.Status && e.Error.Code == api.CodeLocalOnly.Name
+		if !required && !localOnly {
+			t.Errorf("%s answers an ended Sign-in %d %s, want signin_required (or local_only)", name, status, body)
+		}
+	}
+}
+
+// auth posts body to the /auth/ endpoint path on the web listener, as a
+// browser at the Web URL, with the Sign-in cookie cookie when it is not
+// empty, and returns the cookie the answer sets.
+func (b *beneathTransport) auth(path, body, cookie string) string {
+	b.t.Helper()
+	req, err := http.NewRequestWithContext(b.t.Context(), http.MethodPost, "http://"+b.srv.WebAddress()+path, strings.NewReader(body))
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	req.Host = "koko.example.com"
+	req.Header.Set("Origin", "https://koko.example.com")
+	req.Header.Set("Content-Type", "application/json")
+	if cookie != "" {
+		req.AddCookie(&http.Cookie{Name: "__Host-koko", Value: cookie})
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	answer, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		b.t.Fatalf("%s answered %s %s", path, resp.Status, answer)
+	}
+	for _, c := range resp.Cookies() {
+		if c.Name == "__Host-koko" {
+			return c.Value
+		}
+	}
+	return ""
+}
+
 // local is the Local caller.
 var local = op.Caller{Local: true}
 
@@ -88,6 +162,7 @@ func startBeneathTransport(t *testing.T) *beneathTransport {
 		Filesystems: localDisk{},
 		ProcessUIDs: notRoot,
 		SocketPath:  filepath.Join(socketDir, "koko.sock"),
+		WebListen:   "127.0.0.1:0",
 	})
 	if err != nil {
 		t.Fatalf("start the koko server: %v", err)

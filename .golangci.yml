@@ -11,6 +11,10 @@ linters:
     - unconvert
     - usestdlibvars
   settings:
+    misspell:
+      # signins is the Sign-ins' table and their list's JSON key (ADR 0043).
+      ignore-rules:
+        - signins
     paralleltest:
       ignore-missing-subtests: true
   exclusions:
