@@ -177,18 +177,24 @@ func theDeviceMuxProbesItsDeviceConnectionAndReplacesADeadOne(t *testing.T) {
 	// The probe's answer comes, so dead stays long beside it: an answer
 	// slow under load must not pass for none.
 	const probe, dead = 50 * time.Millisecond, time.Second
-	_, fwd, d := muxDevice(t, timing.Timings{DeviceProbe: probe, DeviceDead: dead})
+	// Only the probe's timer probes: a wake or route change of the machine
+	// running the test would send a probe at once, which gets only
+	// dead-probe to be answered, so the drop could come before dead.
+	never := make(chan struct{})
+	_, fwd, d := muxDevice(t, timing.Timings{DeviceProbe: probe, DeviceDead: dead, Wake: never, RouteChange: never})
 	waitLogs(t, d, `msg="device connection opened"`, 1)
 	time.Sleep(3 * dead)
 	if strings.Contains(d.MuxLog(), "device connection dropped") || fwd.Conns() != 2 {
 		t.Fatalf("a quiet Device Connection whose koko server answers dropped (%d connections); the Device Mux logged:\n%s", fwd.Conns(), d.MuxLog())
 	}
 
-	fwd.Stall()
-	stalled := time.Now()
+	// The Device Mux counts timing.DeviceDead from the last byte that came
+	// from the koko server, which on a loaded machine may have come several
+	// probes before the stall: time it from the last the path passed it.
+	heard := fwd.Stall().Back
 	waitLogs(t, d, `msg="device connection dropped"`, 1)
-	if took := time.Since(stalled); took < dead-2*probe {
-		t.Errorf("the Device Connection was declared dead %v after the path stalled, want about %v", took, dead)
+	if took := time.Since(heard); took < dead {
+		t.Errorf("the Device Connection was declared dead %v after the last byte from the koko server, want after %v", took, dead)
 	}
 	if !strings.Contains(d.MuxLog(), "no answer for") {
 		t.Errorf("the Device Mux does not say why the Device Connection dropped:\n%s", d.MuxLog())
@@ -221,11 +227,13 @@ func theKokoServerProbesADeviceConnectionAndClosesADeadOne(t *testing.T) {
 	}
 	_ = ch.Close()
 
-	fwd.Stall()
-	stalled := time.Now()
+	// The koko server counts timing.ServerDead from the last byte that came
+	// from the device, which on a loaded machine may have come several probes
+	// before the stall: time it from the last the path passed it.
+	heard := fwd.Stall().Out
 	waitServerLog(t, h, `msg="device connection closed" device_session=device_\S+ addr=\S+ reason=dead err="no answer for`)
-	if took := time.Since(stalled); took < dead-2*probe {
-		t.Errorf("the koko server declared the Device Connection dead %v after the path stalled, want about %v", took, dead)
+	if took := time.Since(heard); took < dead {
+		t.Errorf("the koko server declared the Device Connection dead %v after the last byte from the device, want after %v", took, dead)
 	}
 }
 

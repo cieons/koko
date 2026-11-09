@@ -287,7 +287,10 @@ included, so a test that cuts one among several first waits until
 `f.Carried()`, the connections the forwarder carries now, has let the
 others go. `f.Stall()` makes the connections it carries pass nothing more,
 either way, without closing them, as a network path that went dead does,
-while connections it accepts after pass as before; `f.Partition()` also
+while connections it accepts after pass as before. It returns when they
+last passed bytes, out to the target and back from it, so a test timing
+how long an end went without a byte times it from the last that reached
+that end rather than from the stall. `f.Partition()` stalls them and also
 passes on no close, so each end finds its connection dead by itself.
 
 ### Running the S1 tests

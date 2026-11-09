@@ -173,6 +173,21 @@ red at fae944b, which changed no Go code.
 **Evidence:** 4ca37b3 (#31); surfaced by 1a0b0ec (#90) in check run
 42539501558; #99
 
+### A test times a wait from the moment the product counts it from
+
+**Why:** the probe tests of both ends of a Device Connection timed the
+drop from the moment they stalled the path, but each end counts
+`DeviceDead` or `ServerDead` from the last byte that reached it, which a
+loaded machine may have delivered several probes before the stall. The
+test allowed two probe intervals for that and no more, so a drop the Device
+Mux declared on time looked early to the test, and CI's macOS job on `main`
+went red at 71971a9, which touched nothing near the probe. The Device Mux's
+test also left its real wake and route watches on, and a probe either
+sends at once gets less time than `DeviceDead`, so the moment it counts
+from can be another one still.
+**Seen:** 1 (2026-11-09)
+**Evidence:** c152887 (#54); check run 42542720470; #100
+
 ## Moved to the code standards
 
 _None yet._
