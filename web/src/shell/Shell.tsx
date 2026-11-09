@@ -1,26 +1,25 @@
-import "./shell.css";
-
 import { useEffect } from "react";
 
 import { UserCurrent } from "../api/user";
 import { useRead } from "./data";
-import { ErrorMessage, LanguageProvider, LanguageSwitch, useT } from "./i18n";
+import { ErrorMessage, LanguageSwitch, useT } from "./i18n";
 import { type Caller, CallerContext, callerOf } from "./caller";
 import { type Notice, useNotice } from "./notice";
+import { Providers } from "./providers";
 import { Link, matchRoute, navigate, type Route, useLocation } from "./router";
 
 /**
- * Shell is the frame every page sits in: the header with the User, the
- * device name, the links to the pages and the language switch; the notices;
- * and the page the URL names. It learns who the web UI acts as from
- * user.current, reloaded as every read is, and renders a page only once it
- * knows, so a Member never sees an Owner-only page or button.
+ * Shell is the frame every page sits in, inside the Providers: the header
+ * with the User, the device name, the links to the pages and the language
+ * switch; the notices; and the page the URL names. It learns who the web UI
+ * acts as from user.current, reloaded as every read is, and renders a page
+ * only once it knows, so a Member never sees an Owner-only page or button.
  */
 export function Shell({ routes }: { routes: readonly Route[] }) {
   return (
-    <LanguageProvider>
+    <Providers>
       <Frame routes={routes} />
-    </LanguageProvider>
+    </Providers>
   );
 }
 
@@ -33,7 +32,7 @@ function Frame({ routes }: { routes: readonly Route[] }) {
 
   return (
     <CallerContext value={caller}>
-      <header className="shell-header">
+      <header className="shell-header koko-legacy">
         <strong className="brand">{t("shell.brand")}</strong>
         {caller && (
           <nav aria-label={t("shell.nav")}>
@@ -50,7 +49,7 @@ function Frame({ routes }: { routes: readonly Route[] }) {
         <LanguageSwitch />
       </header>
       {notice && <NoticeBanner notice={notice} />}
-      <main>
+      <main className="koko-legacy">
         {caller ? (
           <Page routes={visible} />
         ) : notice ? null : userCurrent.error ? (

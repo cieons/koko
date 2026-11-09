@@ -19,6 +19,74 @@ Serving it on `web@koko` is the [web front](web-front.md)'s job.
 - [`web/go.mod`](../../web/go.mod) makes `web/` a Go module of its own, so
   `./...` skips it, and with it the `.go` files some npm packages ship.
 
+## Astryx
+
+The web UI is built on Astryx, in its Neutral theme ([ADR
+0045](../adr/0045-the-web-ui-is-built-on-astryx.md)); how the app sits in
+its providers is [the web UI shell](web-shell.md#providers).
+
+- **The packages**, each at an exact version:
+
+  | Package | In | Why |
+  | --- | --- | --- |
+  | `@astryxdesign/core` | `dependencies` | the components, `reset.css` and `astryx.css` |
+  | `@astryxdesign/theme-neutral` | `dependencies` | the Neutral theme: `theme.css` and the built theme object; it brings `lucide-react` for icons |
+  | `@stylexjs/stylex` | `dependencies` | the peer dependency of `@astryxdesign/core`, on its `0.19` line; no StyleX build step, since the CSS is prebuilt |
+  | `@astryxdesign/cli` | `devDependencies` | component docs and the agent docs for agents working in `web/`; never in the build |
+  | `axe-core` | `devDependencies` | the accessibility check of page tests |
+
+  Not adopted: `@astryxdesign/build`, Tailwind, canary releases, `vega`
+  and `charts`, and `astryx swizzle`.
+- **Install scripts.** `allowScripts` sets `@astryxdesign/core` and
+  `@astryxdesign/cli` to `false`: each ships a `postinstall` that only prints
+  a hint. No dependency's install script runs.
+- **Provenance.** CI's check job runs `npm audit signatures` after `npm ci`,
+  and fails on a registry signature or provenance attestation that does not
+  verify. It needs the registry, so `make check` does not run it.
+- **Components** are imported from their subpaths
+  (`@astryxdesign/core/Button`), never the package's root, so the build
+  leaves out the rest; `astryx.css` is taken whole.
+- **The CSP**, `default-src 'self'` ([the web front](web-front.md)), refuses
+  an inline script, a `<style>` element and a `data:` URL, so the web UI
+  needs none: `index.html` runs no inline script, Vite inlines no asset
+  (`assetsInlineLimit: 0`), and the theme is the built one, whose CSS is a
+  file. Astryx's layers (Dialog, Popover, Menu, Tooltip) would inject their
+  slide rules (`@position-try`) in a `<style>` element unless the document
+  holds an element of its id already, so
+  [`web/public/astryx-layer-rules.css`](../../web/public/astryx-layer-rules.css)
+  holds those rules and `index.html` links it under that id,
+  `astryx-layer-slide-rules`; Vite copies `public/` as it is, keeping the
+  link. `npm run astryx-layer-rules` writes the file from the pinned core.
+  Astryx's code blocks and date inputs inject styles too, and are not used
+  yet; a page that adopts one checks it under the CSP first.
+- **An upgrade** is a commit of its own: it bumps the three `@astryxdesign`
+  packages together (the theme pins core exactly, the CLI is at core's
+  version), reviews what `npx astryx upgrade --from <old version>`
+  proposes, runs `npm run astryx-layer-rules`, refreshes the agent docs
+  (below) in the same commit, and passes the page tests, the size budget
+  and the real-browser check. koko stays on its pinned version until such a
+  commit; nothing moves it by itself.
+- **Agents working in `web/`** run the CLI at the pinned version there:
+  `npx astryx component <Name> --json` for a component's props,
+  `npx astryx build "<the page>"` for the template to start from,
+  `npx astryx template --list --type page` and `npx astryx template <name>`
+  for the templates, and `npx astryx search "<words>"`. `npx astryx init
+  --features agents --agent-docs-path AGENTS.md CLAUDE.md` wrote Astryx's
+  managed block into [`web/AGENTS.md`](../../web/AGENTS.md) and
+  [`web/CLAUDE.md`](../../web/CLAUDE.md), both committed; an edit goes
+  outside its markers, and an upgrade refreshes it with the same command.
+  `init --user` and its other features are never run, and the repository's
+  own `AGENTS.md` and `CLAUDE.md` stay koko's.
+
+## Size
+
+`kokod` embeds the build uncompressed, so it has a budget: at most 3 MiB
+on disk, and at most 450 KiB gzipped for the first load, the files a
+browser loads to show the first page (`index.html`, the scripts and
+stylesheets it names, and the fonts their stylesheets name). The reverse
+proxy compresses them for browsers. The size test logs each size, and a
+commit that changes the build much records them in its body.
+
 ## Building and embedding
 
 - `make webui` type-checks the app (`tsc`) and builds it with Vite into
@@ -83,20 +151,54 @@ requests as a dropped connection does, and `api.drop()` every one, as when
 `koko web` stopped, until `api.drop(0)`. So a page test runs the web UI's own
 client ([the shell](web-shell.md#calls)), with its retry and
 `Idempotency-Key`. The setup puts each test back at `/` with an empty
-`localStorage`, and stands in for the `showModal` and `close` of a
-`<dialog>`, which jsdom lacks; a test sends Escape as the dialog's `cancel`
-event. A test of a capability's pages runs the whole app through
+`localStorage` and the system in light mode, gives the document
+`index.html`'s title and its link to Astryx's layer rules, and stands in
+for what jsdom lacks: the `showModal` and `close` of a `<dialog>` (a test sends Escape as
+the dialog's `cancel` event); `matchMedia`, whose colour scheme
+[`setSystemScheme`](../../web/src/test/media.ts) changes and every other
+query of which matches nothing; and a `ResizeObserver` and an
+`IntersectionObserver` that observe nothing, since jsdom lays nothing out.
+A test of a capability's pages runs the whole app, inside the same
+[providers](web-shell.md#providers) as `main.tsx`'s, through
 [`test/pages.tsx`](../../web/src/test/pages.tsx): `renderAt(path)` renders it
 at a path, `actAs(api, user, deviceSession?)` makes `user.current` answer
 that User, on a Device Session of their laptop unless another is given, and
 `tableRows(name)` reads the cells of the table that name labels.
+`await expectAccessible()` ([`test/axe.ts`](../../web/src/test/axe.ts)) runs
+axe-core on what is rendered and fails naming each violation of WCAG 2.2 A
+and AA, all rules but `color-contrast`, which jsdom cannot compute and the
+real-browser check covers.
+
+## Static checks
+
+[`static.test.ts`](../../web/src/test/static.test.ts) reads the app's own
+files and fails on an import of `@astryxdesign/core`'s root, a colour
+literal in koko's CSS (hex, a colour function or a named colour), an import
+of the theme's `fonts.css`, a URL of another site in any CSS file or in
+`index.html`, or an inline script or event handler in `index.html`, and
+when `index.html` lacks the viewport or `color-scheme` tag, or the link to
+Astryx's layer rules under the id the pinned core looks for, or the file
+differs from what that core would inject. It reads every CSS file as
+written, which Vitest gives a test only for a `?raw` import
+(`vite.config.ts`), and fails when one reads empty.
 
 ## Verifying
 
 - [`internal/server/webui/webui_test.go`](../../internal/server/webui/webui_test.go):
   every file of the build output on disk is embedded; a plain `go build`
   (`go run` of `testdata/page` with an overlay that hides the build output)
-  serves the placeholder; the placeholder says how to build the web UI.
+  serves the placeholder; the placeholder says how to build the web UI;
+  and, when the build is embedded, `TestTheBuiltWebUIStaysWithinItsSizeBudget`
+  fails above [the budget](#size), logging each size.
+- [`static.test.ts`](../../web/src/test/static.test.ts): the static checks
+  above; [`axe.test.tsx`](../../web/src/test/axe.test.tsx): the
+  accessibility check passing on the first page and on an Astryx dialog,
+  and naming a violation.
+- The real-browser check, an acceptance check rather than a test (spec
+  #108: "Phones, dark mode and the real browser"): every page a change
+  touches, at 360×740, 390×844 and 1280×800, light and dark, English and
+  Chinese, with axe-core's `color-contrast` too, no CSP violation and no
+  request to another origin.
 - [`internal/server/webui_test.go`](../../internal/server/webui_test.go): the
   start log says `web_ui_built`.
 - [`internal/shared/api/typescript_test.go`](../../internal/shared/api/typescript_test.go):

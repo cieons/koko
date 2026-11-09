@@ -55,4 +55,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y openssh-client openssh-sftp-server rsync
+      # npm ci installs the web UI's dependencies as make would, and npm
+      # audit signatures fails on any whose registry signature or provenance
+      # attestation does not verify. It needs the registry, so it runs here
+      # and make check stays offline; make check then finds them installed.
+      - name: Install the web UI's dependencies and verify their signatures
+        working-directory: web
+        run: |
+          npm ci
+          npm audit signatures
       - run: make check

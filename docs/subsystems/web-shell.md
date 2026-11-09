@@ -9,6 +9,48 @@ catalogue files is in [code layout](code-layout.md#where-an-area-adds-its-parts)
 How the app is built, embedded and typed is [the web UI build](web-ui.md); how
 a browser reaches it is [`koko web` and the web front](web-front.md).
 
+## Providers
+
+The web UI is built on Astryx ([ADR
+0045](../adr/0045-the-web-ui-is-built-on-astryx.md)). The `Shell` renders
+everything inside [`Providers`](../../web/src/shell/providers.tsx), so the
+app [`main.tsx`](../../web/src/main.tsx) renders and the app a page test
+renders sit in the same ones, outermost first:
+
+| Provider | Gives |
+| --- | --- |
+| `LanguageProvider` | koko's language and its catalogues ([Language](#language)) |
+| [`ModeProvider`](../../web/src/shell/mode.tsx) | the mode chosen, and Astryx's `Theme` with `neutralTheme` (from `@astryxdesign/theme-neutral/built`) in that mode |
+| `InternationalizationProvider` | Astryx's own strings, such as a dialog's close label, in koko's language: `en`, or `zh-CN` from Astryx's `locales/zh-CN.generated.js` |
+| `LinkProvider` | koko's router `Link` behind every link an Astryx component renders |
+
+`main.tsx` imports Astryx's `reset.css`, `astryx.css` and the theme's
+`theme.css`, in that order, then koko's
+[`shell/app.css`](../../web/src/shell/app.css). The theme's `fonts.css`,
+which loads Figtree from Google Fonts, is never imported: `app.css` declares
+the copy in `web/src/assets/fonts/` (Figtree's variable WOFF2, latin, under
+the SIL Open Font License beside it) and names the system's Chinese fonts
+after it in `--font-family-body`. koko's CSS uses Astryx's tokens and never
+a literal colour. Its rules for the frame and the pages not yet redone on
+Astryx reach only inside an element of class `koko-legacy` (the header and
+`<main>` today), in Astryx's lowest layer, `reset`, so no Astryx component
+outside it takes them, and one inside keeps every property it sets.
+
+## Light and dark
+
+- **The mode** is System by default: Astryx follows the system's light or
+  dark mode (`prefers-color-scheme`). Light or Dark overrides it, and the
+  browser keeps the choice in `localStorage` (`koko.theme`), as it keeps
+  the language. `useMode()` is the mode chosen and the function that
+  chooses another; the switch in the header that calls it comes with the
+  frame's redesign.
+- **`<html data-theme>`** holds `light` or `dark` for a choice of either,
+  and is absent for System; Astryx's `Theme` writes it, and its tokens
+  follow. `index.html` carries `<meta name="color-scheme" content="light
+  dark">` for the first frame, and `main.tsx` writes a stored choice to
+  `<html>` (`applyStoredMode`) before React's first render, which runs in
+  a later task, since `index.html` may run no inline script.
+
 ## Pages and routing
 
 - **A page is a path.** A [`Route`](../../web/src/shell/router.tsx) names a
@@ -65,11 +107,15 @@ a browser reaches it is [`koko web` and the web front](web-front.md).
   either language, an area's file holds another area's keys, or
   `catalogues.ts` leaves an area's file out. So a change that registers an
   error code adds its message in both languages.
+- **The register.** Every string is in the formal register of product UI
+  (spec #108). Review checks it: a commit that adds or changes strings
+  lists them in its body, English and Chinese side by side.
 - **Choosing.** The first of the browser's preferred languages
   (`navigator.languages`) that the web UI ships wins: Chinese of any region
   gives Simplified Chinese, English gives English, and none gives English.
   The header's switch overrides it, and the browser keeps the choice in
-  `localStorage` (`koko.language`). `<html lang>` follows the language.
+  `localStorage` (`koko.language`). `<html lang>` follows the language, and
+  so do Astryx's own strings ([Providers](#providers)).
 - **Never translated.** Names, keys, values and Notes reach a message only as
   its `{name}` parameters, shown as stored.
   [`formatDate`](../../web/src/shell/format.ts) shows a date as `YYYY-MM-DD`
@@ -147,6 +193,112 @@ notice above the page ([`notice.ts`](../../web/src/shell/notice.ts)):
 When the Device Session is Revoked elsewhere, `koko web` exits, and the page
 can tell only that it stopped.
 
+## The page inventory
+
+Every action each page offered before its redesign on Astryx, with the
+call it makes and who may take it. A redesign may move an action, but each
+stays possible by the same call with the same request, and each page's
+test holds one test per action (spec #108: "Patterns, not a re-skin").
+"In the Space" is anyone who can act in the record's Space: the Owner, and
+its Members; the koko server answers anyone else as for a record that does
+not exist. The page's references hold the rules each action follows:
+[the record's pages](record-pages.md), [Secrets](secrets.md#the-web-uis-secrets-page)
+and [the Spaces, People and Devices pages](people-pages.md).
+
+**The frame**, on every page:
+
+| Action | Call | Who |
+| --- | --- | --- |
+| See who the web UI acts as, from which device | `user.current` | anyone |
+| Follow a link to each page the caller may see | none | anyone; People the Owner alone |
+| Choose the language, which the browser keeps | none | anyone |
+
+**Hosts** (`/hosts`; the view in the query: `filter`, `sort`, `columns`, `all=1`):
+
+| Action | Call | Who |
+| --- | --- | --- |
+| List the Hosts, filtered, sorted, in the columns chosen | `host.list` (and `attr.list` for the keys) | anyone: the Hosts of their Spaces |
+| Build a filter term: a key, a comparison, a value; take one away | none (the URL) | anyone |
+| Sort by a header; Shift-click for a further key | none (the URL) | anyone |
+| Show or hide a column | none (the URL) | anyone |
+| Show the Retired Hosts; ticked and fixed while a `state=retired` term is there | none (`all=1`) | anyone |
+| Go back to the default view from a URL the list does not take, which says which term | none | anyone |
+| Open a Host, a Retired one by its id | none | anyone |
+| Add a Host: `name`, `space`, `address`, `port`, `account`, `relay` | `host.add` (and `space.list` for the Spaces) | anyone, in a Space they can act in |
+
+**A Host** (`/hosts/<name or id>`); a Retired Host offers only what says so:
+
+| Action | Call | Who |
+| --- | --- | --- |
+| See its fields, Attributes, Note, Services (read-only when Retired) and fingerprint | `host.show` | in the Space; Retired too |
+| Copy `koko host enroll <host>`, for a Registered Host | none | in the Space |
+| Edit: set or clear `address`, `port`, `account`, `relay`, Attributes and Note (`unset` for a value emptied) | `host.set` (and `attr.list`) | in the Space; Retired: Attributes and Note alone |
+| Rename | `host.rename` | in the Space |
+| Move to another Space | `host.move` (and `space.list`) | in both Spaces; Retired too |
+| Add a Service: `name`, `ports` | `service.add` | in the Space |
+| Retire, asking first | `host.retire` | in the Space |
+| Delete, with no pin, asking first | `host.remove` | in the Space; Retired too |
+| Open a Service, or the Relay | none | in the Space; Retired too |
+
+**Services** (`/services`; the view in the query: `filter`, `sort`, `columns`):
+
+| Action | Call | Who |
+| --- | --- | --- |
+| List the Services, filtered, sorted, in the columns chosen | `service.list` (and `attr.list`) | anyone: the Services of their Spaces |
+| Build a filter term, sort, show or hide a column | none (the URL) | anyone |
+| Go back to the default view from a URL the list does not take, which says which term | none | anyone |
+| Open a Service or its Host | none | anyone |
+
+**A Service** (`/services/<host>/<service>`):
+
+| Action | Call | Who |
+| --- | --- | --- |
+| See its fields, Attributes and Note | `service.show` | in the Space |
+| Edit: set or clear its ports, Attributes and Note | `service.set` (and `attr.list`) | in the Space, on a Host not Retired |
+| Rename | `service.rename` | in the Space, on a Host not Retired |
+| Delete, asking first | `service.remove` | in the Space, on a Host not Retired |
+
+**Secrets** (`/secrets`):
+
+| Action | Call | Who |
+| --- | --- | --- |
+| List the Secrets by Space | `secret.list` (and `space.list`) | anyone: the Secrets of their Spaces |
+| Show a value, then copy it or hide it | `secret.show` | in the Space |
+| Add: `space`, `name`, a value of several lines | `secret.add` | in the Space |
+| Set a new value | `secret.set` | in the Space |
+| Rename | `secret.rename` | in the Space |
+| Move to another Space | `secret.move` | in both Spaces |
+| Delete, asking first | `secret.remove` | in the Space |
+
+**Spaces** (`/spaces`) and **a Space** (`/spaces/<name>`):
+
+| Action | Call | Who |
+| --- | --- | --- |
+| List the Spaces, a Personal Space marked so | `space.list` | anyone: the Spaces they can act in |
+| Add a Space | `space.add` | the Owner |
+| See a Space's Members and its counts of Hosts, Retired Hosts and Secrets | `space.show` | in the Space |
+| Rename a Space | `space.rename` | the Owner, on a shared Space |
+| Remove a Space, asking first | `space.remove` | the Owner, on a shared Space |
+| Add a Member, chosen among the Users who are not one | `space.member.add` (and `user.list`) | the Owner, on a shared Space |
+| Take a Member out | `space.member.remove` | the Owner, on a shared Space |
+
+**People** (`/people`, the Owner alone; `all=1` in the query):
+
+| Action | Call | Who |
+| --- | --- | --- |
+| List the Users, the Removed ones when asked for | `user.list` | the Owner |
+| Invite a User, their Join Code shown once, with Copy and its countdown | `user.invite` | the Owner |
+| Remove a User, asking first, then say whether they were deleted or Removed | `user.remove` | the Owner, on any User but the Owner who is not Removed |
+
+**Devices** (`/devices`; `all=1` in the query):
+
+| Action | Call | Who |
+| --- | --- | --- |
+| List the Device Sessions, the Revoked ones when asked for, this one marked | `device.list` | anyone: their own; the Owner everyone's |
+| Add a device, with an optional name, its Join Code shown once, with Copy and its countdown | `device.add` | anyone for themselves |
+| Add a device for another User, chosen among those not Removed | `device.add` (and `user.list`) | the Owner |
+| Revoke a live Device Session, asking first; the Owner's own last only once its name is typed, with `last` | `device.revoke` | anyone for their own; the Owner for anyone's |
+
 ## Verifying
 
 - [`Shell.test.tsx`](../../web/src/shell/Shell.test.tsx), Vitest and React
@@ -163,6 +315,14 @@ can tell only that it stopped.
   own Device Session, and a refusal ending the stopped notice; reloads on
   focus and on each visit; page state in the URL and Back; `/` going to the
   first page.
+- [`providers.test.tsx`](../../web/src/shell/providers.test.tsx): the mode
+  System by default and following a faked system mode; Light and Dark
+  chosen, kept in `localStorage`, written to `<html data-theme>`, and
+  System again; a stored choice applied before the first render, and one
+  that is no choice read as System; an Astryx dialog's close label in
+  English and in Chinese; no `<style>` element in the page, which the CSP
+  refuses, with an Astryx dialog open; an Astryx link followed through
+  koko's router.
 - [`catalogues.test.ts`](../../web/src/i18n/catalogues.test.ts): the
   completeness test above.
 - [`format.test.ts`](../../web/src/shell/format.test.ts): dates as

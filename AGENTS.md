@@ -19,6 +19,9 @@ test rules, acceptance checks and the commit format.
 
 Before editing Go code, load the `use-modern-go` skill when it is available.
 
+Work in `web/` reads [web/AGENTS.md](web/AGENTS.md) too: Astryx's own
+guidance and its CLI, at the version koko pins.
+
 ## Language
 
 Everything committed to this repo is in English: code, comments, docs,

@@ -1,4 +1,12 @@
-import { type ComponentType, type MouseEvent, type ReactNode, useMemo, useSyncExternalStore } from "react";
+import {
+  type AnchorHTMLAttributes,
+  type ComponentType,
+  type MouseEvent,
+  type ReactNode,
+  type Ref,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
 
 import type { MessageKey } from "../i18n/catalogues";
 
@@ -134,22 +142,52 @@ export function useQueryFlag(name: string): [boolean, (on: boolean) => void] {
   return [params.get(name) === "1", set];
 }
 
-/** Link is a link to a page of the web UI, followed without a page load. */
-export function Link({ to, children }: { to: string; children: ReactNode }) {
+/**
+ * LinkProps are a link's: where it goes, and any attribute of an <a>, which
+ * Astryx's components pass to the link component LinkProvider gives them.
+ */
+export type LinkProps = Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "href"> & {
+  to: string;
+  /** href, which Astryx passes beside to, is ignored for to. */
+  href?: string;
+  ref?: Ref<HTMLAnchorElement>;
+  children?: ReactNode;
+};
+
+/**
+ * Link is a link to a page of the web UI, followed without a page load. A
+ * link to another origin, or one opened in another window, the browser
+ * follows itself.
+ */
+export function Link({ to, onClick, ...anchor }: LinkProps) {
   const { pathname } = useLocation();
   const follow = (event: MouseEvent<HTMLAnchorElement>) => {
+    onClick?.(event);
     // A modified click, or another button, opens the link as the browser
     // would, in a new tab or window.
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey ||
+      (anchor.target !== undefined && anchor.target !== "_self") ||
+      anchor.download !== undefined ||
+      new URL(to, window.location.href).origin !== window.location.origin
+    ) {
       return;
     }
     event.preventDefault();
     navigate(to);
   };
   return (
-    <a href={to} onClick={follow} aria-current={pathname === to ? "page" : undefined}>
-      {children}
-    </a>
+    <a
+      {...anchor}
+      href={to}
+      onClick={follow}
+      aria-current={anchor["aria-current"] ?? (pathname === to ? "page" : undefined)}
+    />
   );
 }
 

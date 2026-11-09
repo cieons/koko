@@ -79,6 +79,11 @@ function useLanguageState(): LanguageState {
   return state;
 }
 
+/** useLanguage is the current language. */
+export function useLanguage(): Language {
+  return useLanguageState().language;
+}
+
 /** useT is the message function of the current language. */
 export function useT(): Translate {
   return useLanguageState().t;
