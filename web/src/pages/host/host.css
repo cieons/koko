@@ -6,19 +6,11 @@
 
 /*
  * A list page fills the AppShell's main area, so the table scrolls inside it
- * and the detail pane stays beside it. The Shell still wraps each page in
- * .koko-legacy.
+ * and the detail pane stays beside it. The Shell wraps each page in
+ * .koko-page.
  */
-.koko-legacy:has(> .koko-list) {
+.koko-page:has(> .koko-list) {
   block-size: 100%;
-}
-
-/*
- * shell/app.css gives a bare table inside .koko-legacy a margin for the
- * pages not yet redone; Astryx's Table sets none of its own.
- */
-.koko-list table {
-  margin: 0;
 }
 
 /* The filter bar takes the toolbar's width before the controls after it. */

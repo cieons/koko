@@ -1,6 +1,21 @@
 import "./secret.css";
 
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { Badge } from "@astryxdesign/core/Badge";
+import { Button } from "@astryxdesign/core/Button";
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { Icon } from "@astryxdesign/core/Icon";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { HStack, Layout, LayoutContent, StackItem, VStack } from "@astryxdesign/core/Layout";
+import { Selector } from "@astryxdesign/core/Selector";
+import { Spinner } from "@astryxdesign/core/Spinner";
+import { proportional, Table, type TableColumn, useTableStickyColumns } from "@astryxdesign/core/Table";
+import { Heading, Text } from "@astryxdesign/core/Text";
+import { TextArea } from "@astryxdesign/core/TextArea";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
+import { Ellipsis, KeyRound, Plus, Search } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   type Secret,
@@ -12,29 +27,47 @@ import {
   SecretSet,
   SecretShow,
 } from "../../api/secret";
-import { type Space, SpaceList } from "../../api/space";
+import { SpaceList } from "../../api/space";
 import { call } from "../../client";
+import { AdaptiveDialog, FormDialog } from "../../shell/AdaptiveDialog";
 import { useCaller } from "../../shell/caller";
 import { ConfirmDialog } from "../../shell/ConfirmDialog";
+import { CopyLine } from "../../shell/CopyLine";
 import { useRead, useWrite } from "../../shell/data";
 import { formatDate } from "../../shell/format";
 import { ErrorMessage, useT } from "../../shell/i18n";
+import { useSearchParams } from "../../shell/router";
 import { useShownOnce } from "../../shell/shownOnce";
 import { encodeValue, type ShownValue, showValue } from "./value";
 
+/**
+ * dateWidth is a date column's: never narrower than a date, so on a phone
+ * the table scrolls sideways in its own box rather than break one.
+ */
+const dateWidth = proportional(1, { minWidth: 112 });
 /** revealFor is how long a revealed value stays on screen: 30 seconds (P0 spec: Secrets). */
 const revealFor = 30_000;
 
-/** Revealed is the one value on screen, and the Secret it is the value of. */
-interface Revealed {
-  id: string;
-  value: ShownValue;
+/**
+ * Reveal is the one Secret whose value is asked for or on screen: the
+ * value once secret.show answered it, or why it refused.
+ */
+interface Reveal {
+  secret: Secret;
+  value?: ShownValue;
+  error?: unknown;
 }
 
-/** Change is a reversible write a person is filling in for one Secret. */
+/** Change is a write a person is filling in for one Secret. */
 interface Change {
   secret: Secret;
-  action: "set" | "rename" | "move";
+  action: "set" | "rename" | "move" | "remove";
+}
+
+/** SecretRow is a Secret as a row of the table. */
+interface SecretRow extends Record<string, unknown> {
+  id: string;
+  secret: Secret;
 }
 
 /** qualified names a Secret as every command does: <space>/<secret>. */
@@ -44,26 +77,29 @@ function qualified(secret: Secret): string {
 
 /**
  * SecretsPage lists the names of the Secrets in every Space the caller can
- * act in, as `koko secret ls` does, and never a value until one is clicked:
- * secret.show reveals it, with a copy button, until 30 seconds pass, the
- * page is left or another value is revealed. A value lives only in the
- * page's state, never in the URL or the browser's storage, and the web
+ * act in, as `koko secret ls` does, searched by name in place (?q= in the
+ * URL), and never a value until one is asked for: Show calls secret.show
+ * and the value shows in a dialog, with a button that copies it, until the
+ * dialog closes, 30 seconds pass or the page is left. A value lives only in
+ * the page's state, never in the URL or the browser's storage, and the web
  * front sends it with Cache-Control: no-store. The page adds, sets,
- * renames, moves and deletes Secrets, a value typed into a form; only
- * deleting asks first.
+ * renames, moves and deletes Secrets, each in a dialog; only deleting asks
+ * first.
  */
 export function SecretsPage() {
   const t = useT();
-  const titleId = useId();
   const list = useRead(SecretList, {});
   const spaces = useRead(SpaceList, {});
-  const [revealed, setRevealed] = useShownOnce<Revealed>();
-  const [revealError, setRevealError] = useState<unknown>();
+  const [params, setParams] = useSearchParams();
+  const query = params.get("q") ?? "";
+  const [reveal, setReveal] = useShownOnce<Reveal>();
   const [changing, setChanging] = useState<Change>();
-  const [deleting, setDeleting] = useState<Secret>();
+  const [adding, setAdding] = useState(false);
   const remove = useWrite(SecretRemove);
   const secrets = list.data?.secrets ?? [];
-  const spaceNames = spaces.data?.spaces.map((s: Space) => s.name);
+  const spaceNames = spaces.data?.spaces.map((s) => s.name);
+  const term = query.trim().toLowerCase();
+  const shown = term === "" ? secrets : secrets.filter((s) => qualified(s).toLowerCase().includes(term));
   // asking is the latest reveal, a new object for each reveal and each
   // hide, with the id of the Secret asked for. A value secret.show answers
   // after a later reveal, a hide, a write to its Secret or the browser
@@ -71,13 +107,17 @@ export function SecretsPage() {
   // date, or no longer wanted.
   const asking = useRef<{ id?: string }>({});
 
+  const value = reveal?.value;
   useEffect(() => {
-    if (!revealed) {
+    if (!value) {
       return;
     }
-    const hide = setTimeout(() => setRevealed(undefined), revealFor);
+    const hide = setTimeout(() => {
+      asking.current = {};
+      setReveal(undefined);
+    }, revealFor);
     return () => clearTimeout(hide);
-  }, [revealed, setRevealed]);
+  }, [value, setReveal]);
 
   useEffect(() => {
     const left = () => {
@@ -87,180 +127,260 @@ export function SecretsPage() {
     return () => window.removeEventListener("pagehide", left);
   }, []);
 
+  const search = (next: string) => {
+    const nextParams = new URLSearchParams(params);
+    if (next === "") {
+      nextParams.delete("q");
+    } else {
+      nextParams.set("q", next);
+    }
+    // Each keystroke refines the view in place rather than adding a visit.
+    setParams(nextParams, { replace: true });
+  };
   const hide = () => {
     asking.current = {};
-    setRevealed(undefined);
+    setReveal(undefined);
   };
   // secret.show is a read the person asks for, so it is called here, on
   // the click, rather than through useRead, which reads as the page loads.
-  const reveal = (secret: Secret) => {
+  const show = (secret: Secret) => {
     const ask = { id: secret.id };
     asking.current = ask;
-    setRevealError(undefined);
+    setReveal({ secret });
     call(SecretShow, { space: secret.space, name: secret.name }).then(
-      (shown) => ask === asking.current && setRevealed({ id: secret.id, value: showValue(shown.value_base64) }),
-      (error: unknown) => ask === asking.current && setRevealError(error),
+      (answer) => ask === asking.current && setReveal({ secret, value: showValue(answer.value_base64) }),
+      (error: unknown) => ask === asking.current && setReveal({ secret, error }),
     );
   };
   // A Secret written to shows its value no more: it may be out of date.
   const changed = (secret: Secret) => {
-    if (revealed?.id === secret.id || asking.current.id === secret.id) {
+    if (reveal?.secret.id === secret.id || asking.current.id === secret.id) {
       hide();
     }
-    if (changing?.secret.id === secret.id) {
-      setChanging(undefined);
-    }
+    setChanging(undefined);
     list.reload();
   };
   const stopChanging = () => setChanging(undefined);
 
+  // On a phone the table scrolls sideways in its own box, its name in view.
+  const sticky = useTableStickyColumns<SecretRow>({ startKeys: ["space", "name"] });
+  const columns: TableColumn<SecretRow>[] = [
+    { key: "space", header: t("secret.column.space"), renderCell: ({ secret }) => secret.space },
+    { key: "name", header: t("secret.column.name"), renderCell: ({ secret }) => secret.name },
+    {
+      key: "updated",
+      header: t("secret.column.updated"),
+      width: dateWidth,
+      renderCell: ({ secret }) => formatDate(secret.updated_at),
+    },
+    {
+      key: "value",
+      header: t("secret.column.value"),
+      renderCell: ({ secret }) => (
+        <Button
+          variant="secondary"
+          size="sm"
+          label={t("secret.show.button")}
+          aria-label={t("secret.show.label", { name: qualified(secret) })}
+          onClick={() => show(secret)}
+        />
+      ),
+    },
+    {
+      key: "actions",
+      header: <VisuallyHidden>{t("secret.column.actions")}</VisuallyHidden>,
+      align: "end",
+      renderCell: ({ secret }) => (
+        <RowActions name={qualified(secret)} onChoose={(action) => setChanging({ secret, action })} />
+      ),
+    },
+  ];
+
   return (
-    <>
-      <h1 id={titleId}>{t("secret.list.title")}</h1>
-      {list.error !== undefined && <ErrorMessage error={list.error} />}
-      {revealError !== undefined && <ErrorMessage error={revealError} />}
-      {remove.error !== undefined && <ErrorMessage error={remove.error} />}
-      {list.data && secrets.length === 0 && <p>{t("secret.list.empty")}</p>}
-      {secrets.length > 0 && (
-        <table aria-labelledby={titleId}>
-          <thead>
-            <tr>
-              <th>{t("secret.column.space")}</th>
-              <th>{t("secret.column.name")}</th>
-              <th>{t("secret.column.updated")}</th>
-              <th>{t("secret.column.value")}</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {secrets.map((secret) => (
-              <tr key={secret.id}>
-                <td>{secret.space}</td>
-                <td>{secret.name}</td>
-                <td>{formatDate(secret.updated_at)}</td>
-                <td>
-                  {revealed?.id === secret.id ? (
-                    <ValueShown name={qualified(secret)} value={revealed.value} onHide={hide} />
-                  ) : (
-                    <button
-                      type="button"
-                      aria-label={t("secret.show.label", { name: qualified(secret) })}
-                      onClick={() => reveal(secret)}
-                    >
-                      {t("secret.show.button")}
-                    </button>
-                  )}
-                </td>
-                <td className="secret-actions">
-                  <button
-                    type="button"
-                    aria-label={t("secret.set.label", { name: qualified(secret) })}
-                    onClick={() => setChanging({ secret, action: "set" })}
-                  >
-                    {t("secret.set.button")}
-                  </button>{" "}
-                  <button
-                    type="button"
-                    aria-label={t("secret.rename.label", { name: qualified(secret) })}
-                    onClick={() => setChanging({ secret, action: "rename" })}
-                  >
-                    {t("secret.rename.button")}
-                  </button>{" "}
-                  <button
-                    type="button"
-                    aria-label={t("secret.move.label", { name: qualified(secret) })}
-                    onClick={() => setChanging({ secret, action: "move" })}
-                  >
-                    {t("secret.move.button")}
-                  </button>{" "}
-                  <button
-                    type="button"
-                    aria-label={t("secret.remove.label", { name: qualified(secret) })}
-                    onClick={() => setDeleting(secret)}
-                  >
-                    {t("secret.remove.button")}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {changing?.action === "set" && (
-        <SetValue key={changing.secret.id} secret={changing.secret} onDone={changed} onCancel={stopChanging} />
-      )}
-      {changing?.action === "rename" && (
-        <RenameSecret key={changing.secret.id} secret={changing.secret} onDone={changed} onCancel={stopChanging} />
-      )}
-      {changing?.action === "move" && (
-        <MoveSecret
-          key={changing.secret.id}
-          secret={changing.secret}
-          spaces={spaceNames ?? []}
-          onDone={changed}
-          onCancel={stopChanging}
+    <Layout
+      contentWidth={1080}
+      content={
+        <LayoutContent>
+          <VStack gap={6}>
+            <HStack gap={3} vAlign="center" wrap="wrap">
+              <StackItem size="fill">
+                <HStack gap={2} vAlign="center">
+                  <Heading level={1}>{t("secret.list.title")}</Heading>
+                  {list.data && <Badge variant="neutral" label={String(secrets.length)} />}
+                </HStack>
+              </StackItem>
+              <Button
+                variant="primary"
+                label={t("secret.add.button")}
+                icon={<Icon icon={Plus} size="sm" />}
+                onClick={() => setAdding(true)}
+              />
+            </HStack>
+            {list.error !== undefined && <ErrorMessage error={list.error} />}
+            {remove.error !== undefined && <ErrorMessage error={remove.error} />}
+            {list.data && secrets.length === 0 && (
+              <EmptyState
+                headingLevel={2}
+                icon={<Icon icon={KeyRound} size="lg" />}
+                title={t("secret.list.empty")}
+                description={t("secret.list.emptyHint")}
+              />
+            )}
+            {secrets.length > 0 && (
+              <VStack gap={4}>
+                <TextInput
+                  type="search"
+                  label={t("secret.search.label")}
+                  isLabelHidden
+                  placeholder={t("secret.search.placeholder")}
+                  startIcon={<Icon icon={Search} size="sm" />}
+                  value={query}
+                  onChange={search}
+                  autoComplete="off"
+                  hasSpellCheck={false}
+                />
+                {shown.length === 0 ? (
+                  <EmptyState
+                    headingLevel={2}
+                    icon={<Icon icon={Search} size="lg" />}
+                    title={t("secret.search.none")}
+                    description={t("secret.search.noneHint", { query: query.trim() })}
+                    actions={<Button variant="secondary" label={t("secret.search.clear")} onClick={() => search("")} />}
+                  />
+                ) : (
+                  <Table<SecretRow>
+                    aria-label={t("secret.list.title")}
+                    data={shown.map((secret) => ({ id: secret.id, secret }))}
+                    columns={columns}
+                    idKey="id"
+                    plugins={{ sticky }}
+                    hasHover
+                    textOverflow="wrap"
+                  />
+                )}
+              </VStack>
+            )}
+          </VStack>
+          {reveal && <ValueDialog reveal={reveal} onClose={hide} />}
+          {adding && (
+            <AddSecret
+              spaces={spaceNames}
+              spacesError={spaces.error}
+              onAdded={() => {
+                setAdding(false);
+                list.reload();
+              }}
+              onCancel={() => setAdding(false)}
+            />
+          )}
+          {changing?.action === "set" && (
+            <SetValue key={changing.secret.id} secret={changing.secret} onDone={changed} onCancel={stopChanging} />
+          )}
+          {changing?.action === "rename" && (
+            <RenameSecret key={changing.secret.id} secret={changing.secret} onDone={changed} onCancel={stopChanging} />
+          )}
+          {changing?.action === "move" && (
+            <MoveSecret
+              key={changing.secret.id}
+              secret={changing.secret}
+              spaces={spaceNames ?? []}
+              spacesError={spaces.error}
+              onDone={changed}
+              onCancel={stopChanging}
+            />
+          )}
+          {changing?.action === "remove" && (
+            <ConfirmDialog
+              title={t("secret.remove.title", { name: qualified(changing.secret) })}
+              consequence={t("secret.remove.consequence", { name: qualified(changing.secret) })}
+              confirm={t("secret.remove.confirm")}
+              onCancel={stopChanging}
+              onConfirm={() => {
+                const { secret } = changing;
+                setChanging(undefined);
+                void remove.submit({ space: secret.space, name: secret.name }).then((removed) => {
+                  if (removed) {
+                    changed(secret);
+                  }
+                });
+              }}
+            />
+          )}
+        </LayoutContent>
+      }
+    />
+  );
+}
+
+/** RowActions is a Secret's overflow menu: set its value, rename, move or delete it. */
+function RowActions({ name, onChoose }: { name: string; onChoose: (action: Change["action"]) => void }) {
+  const t = useT();
+  return (
+    <DropdownMenu
+      alignment="end"
+      presentation="adaptive"
+      renderTrigger={(trigger) => (
+        <IconButton
+          {...trigger}
+          variant="ghost"
+          size="sm"
+          label={t("secret.actions.label", { name })}
+          tooltip={t("secret.actions.label", { name })}
+          icon={<Icon icon={Ellipsis} size="sm" />}
         />
       )}
-      {deleting && (
-        <ConfirmDialog
-          title={t("secret.remove.title", { name: qualified(deleting) })}
-          consequence={t("secret.remove.consequence", { name: qualified(deleting) })}
-          confirm={t("secret.remove.confirm")}
-          onCancel={() => setDeleting(undefined)}
-          onConfirm={() => {
-            setDeleting(undefined);
-            void remove.submit({ space: deleting.space, name: deleting.name }).then((removed) => {
-              if (removed) {
-                changed(deleting);
-              }
-            });
-          }}
-        />
-      )}
-      {spaces.error !== undefined && <ErrorMessage error={spaces.error} />}
-      <AddSecret spaces={spaceNames} onAdded={list.reload} />
-    </>
+      items={[
+        { label: t("secret.set.button"), onClick: () => onChoose("set") },
+        { label: t("secret.rename.button"), onClick: () => onChoose("rename") },
+        { label: t("secret.move.button"), onClick: () => onChoose("move") },
+        { type: "divider" },
+        { label: t("secret.remove.button"), variant: "destructive", onClick: () => onChoose("remove") },
+      ]}
+    />
   );
 }
 
 /**
- * ValueShown is a revealed value: as text, or as its base64 when its bytes
- * are not UTF-8, which a click selects whole, with buttons that copy it and
- * hide it.
+ * ValueDialog shows the value of the Secret asked for, once secret.show
+ * answered: as text, its lines kept, or as its base64 when its bytes are not
+ * UTF-8, in a CopyLine, which a click selects whole and a button copies.
+ * Closing the dialog forgets the value.
  */
-function ValueShown({ name, value, onHide }: { name: string; value: ShownValue; onHide: () => void }) {
+function ValueDialog({ reveal, onClose }: { reveal: Reveal; onClose: () => void }) {
   const t = useT();
-  const [copied, setCopied] = useState<boolean>();
-  // A browser without the clipboard API, or one that refuses it, still
-  // shows the value, which a click selects whole.
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value.text);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
-  };
+  const { secret, value, error } = reveal;
   return (
-    <div role="group" aria-label={t("secret.value.label", { name })}>
-      {!value.utf8 && <p className="tag">{t("secret.value.base64")}</p>}
-      <code className="secret-value">{value.text}</code>
-      <div>
-        <button type="button" onClick={() => void copy()}>
-          {t("secret.value.copy")}
-        </button>{" "}
-        <button type="button" onClick={onHide}>
-          {t("secret.value.hide")}
-        </button>{" "}
-        {copied !== undefined && (
-          <span role="status">{copied ? t("secret.value.copied") : t("secret.value.copyFailed")}</span>
-        )}
-      </div>
-    </div>
+    <AdaptiveDialog
+      title={t("secret.value.label", { name: qualified(secret) })}
+      onClose={onClose}
+      footer={
+        <HStack hAlign="end">
+          <Button variant="secondary" label={t("secret.value.hide")} onClick={onClose} />
+        </HStack>
+      }
+    >
+      {error !== undefined ? (
+        <ErrorMessage error={error} />
+      ) : value ? (
+        <VStack gap={3}>
+          {!value.utf8 && (
+            <Text type="body" color="secondary">
+              {t("secret.value.base64")}
+            </Text>
+          )}
+          <CopyLine line={value.text} />
+          <Text type="body" color="secondary">
+            {t("secret.value.note")}
+          </Text>
+        </VStack>
+      ) : (
+        <Spinner label={t("secret.value.loading")} />
+      )}
+    </AdaptiveDialog>
   );
 }
 
-/** ChangeProps are what the form of a reversible write to one Secret gets. */
+/** ChangeProps are what the dialog of a write to one Secret gets. */
 interface ChangeProps {
   secret: Secret;
   /** onDone hears that the write succeeded. */
@@ -268,49 +388,20 @@ interface ChangeProps {
   onCancel: () => void;
 }
 
-/**
- * ChangeForm frames the form of one reversible write to a Secret: its
- * title, its field, the button that writes, which never asks first, Cancel,
- * and the refusal, if any.
- */
-function ChangeForm({
-  title,
-  submit,
-  ready,
-  error,
-  onSubmit,
-  onCancel,
-  children,
-}: {
-  title: string;
-  submit: string;
-  ready: boolean;
-  error: unknown;
-  onSubmit: () => void;
-  onCancel: () => void;
-  children: ReactNode;
-}) {
-  const t = useT();
+/** ValueField is the field a value is typed into: several lines, such as a private key, kept as typed. */
+function ValueField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
-    <section aria-label={title}>
-      <h2>{title}</h2>
-      <form
-        className="inline-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSubmit();
-        }}
-      >
-        {children}{" "}
-        <button type="submit" disabled={!ready}>
-          {submit}
-        </button>{" "}
-        <button type="button" onClick={onCancel}>
-          {t("secret.change.cancel")}
-        </button>
-        {error !== undefined && <ErrorMessage error={error} />}
-      </form>
-    </section>
+    <TextArea
+      label={label}
+      value={value}
+      onChange={onChange}
+      rows={5}
+      autoComplete="off"
+      hasSpellCheck={false}
+      autoCapitalize="off"
+      hasAutoCorrect={false}
+      controlClassName="koko-secret-field"
+    />
   );
 }
 
@@ -320,7 +411,7 @@ function SetValue({ secret, onDone, onCancel }: ChangeProps) {
   const [value, setValue] = useState("");
   const set = useWrite(SecretSet);
   return (
-    <ChangeForm
+    <FormDialog
       title={t("secret.set.title", { name: qualified(secret) })}
       submit={t("secret.set.submit")}
       ready={value !== "" && !set.pending}
@@ -330,13 +421,10 @@ function SetValue({ secret, onDone, onCancel }: ChangeProps) {
           .submit({ space: secret.space, name: secret.name, value_base64: encodeValue(value) })
           .then((written) => written && onDone(secret))
       }
-      onCancel={onCancel}
+      onClose={onCancel}
     >
-      <label className="secret-field">
-        {t("secret.set.value")}
-        <textarea value={value} onChange={(e) => setValue(e.target.value)} autoComplete="off" spellCheck={false} />
-      </label>
-    </ChangeForm>
+      <ValueField label={t("secret.set.value")} value={value} onChange={setValue} />
+    </FormDialog>
   );
 }
 
@@ -346,7 +434,7 @@ function RenameSecret({ secret, onDone, onCancel }: ChangeProps) {
   const [newName, setNewName] = useState("");
   const rename = useWrite(SecretRename);
   return (
-    <ChangeForm
+    <FormDialog
       title={t("secret.rename.title", { name: qualified(secret) })}
       submit={t("secret.rename.submit")}
       ready={newName !== "" && !rename.pending}
@@ -356,48 +444,54 @@ function RenameSecret({ secret, onDone, onCancel }: ChangeProps) {
           .submit({ space: secret.space, name: secret.name, new_name: newName })
           .then((written) => written && onDone(secret))
       }
-      onCancel={onCancel}
+      onClose={onCancel}
     >
-      <label>
-        {t("secret.rename.name")}{" "}
-        <input value={newName} onChange={(e) => setNewName(e.target.value)} autoComplete="off" spellCheck={false} />
-      </label>
-    </ChangeForm>
+      <TextInput
+        label={t("secret.rename.name")}
+        value={newName}
+        onChange={setNewName}
+        autoComplete="off"
+        autoCapitalize="off"
+        hasAutoCorrect={false}
+        hasSpellCheck={false}
+      />
+    </FormDialog>
   );
 }
 
 /** MoveSecret takes a Secret, under its name, to another Space the caller can act in. */
-function MoveSecret({ secret, spaces, onDone, onCancel }: ChangeProps & { spaces: string[] }) {
+function MoveSecret({
+  secret,
+  spaces,
+  spacesError,
+  onDone,
+  onCancel,
+}: ChangeProps & { spaces: string[]; spacesError: unknown }) {
   const t = useT();
   const [newSpace, setNewSpace] = useState("");
   const move = useWrite(SecretMove);
   return (
-    <ChangeForm
+    <FormDialog
       title={t("secret.move.title", { name: qualified(secret) })}
       submit={t("secret.move.submit")}
       ready={newSpace !== "" && !move.pending}
-      error={move.error}
+      error={move.error ?? spacesError}
       onSubmit={() =>
         void move
           .submit({ space: secret.space, name: secret.name, new_space: newSpace })
           .then((written) => written && onDone(secret))
       }
-      onCancel={onCancel}
+      onClose={onCancel}
     >
-      <label>
-        {t("secret.move.space")}{" "}
-        <select value={newSpace} onChange={(e) => setNewSpace(e.target.value)}>
-          <option value="">{t("secret.move.choose")}</option>
-          {spaces
-            .filter((space) => space !== secret.space)
-            .map((space) => (
-              <option key={space} value={space}>
-                {space}
-              </option>
-            ))}
-        </select>
-      </label>
-    </ChangeForm>
+      <Selector
+        label={t("secret.move.space")}
+        placeholder={t("secret.move.choose")}
+        options={spaces.filter((space) => space !== secret.space)}
+        value={newSpace}
+        onChange={setNewSpace}
+        presentation="adaptive"
+      />
+    </FormDialog>
   );
 }
 
@@ -405,7 +499,17 @@ function MoveSecret({ secret, spaces, onDone, onCancel }: ChangeProps & { spaces
  * AddSecret adds a Secret, its value typed in, to a Space the caller can
  * act in: their Personal Space unless they choose another. It never asks.
  */
-function AddSecret({ spaces, onAdded }: { spaces: string[] | undefined; onAdded: () => void }) {
+function AddSecret({
+  spaces,
+  spacesError,
+  onAdded,
+  onCancel,
+}: {
+  spaces: string[] | undefined;
+  spacesError: unknown;
+  onAdded: () => void;
+  onCancel: () => void;
+}) {
   const t = useT();
   const caller = useCaller();
   const [space, setSpace] = useState(caller.user.name);
@@ -413,44 +517,33 @@ function AddSecret({ spaces, onAdded }: { spaces: string[] | undefined; onAdded:
   const [value, setValue] = useState("");
   const add = useWrite(SecretAdd);
   return (
-    <>
-      <h2>{t("secret.add.title")}</h2>
-      <form
-        className="inline-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void add.submit({ space, name, value_base64: encodeValue(value) }).then((added) => {
-            if (added) {
-              setName("");
-              setValue("");
-              onAdded();
-            }
-          });
-        }}
-      >
-        <label>
-          {t("secret.add.space")}{" "}
-          <select value={space} onChange={(e) => setSpace(e.target.value)}>
-            {(spaces ?? [space]).map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </label>{" "}
-        <label>
-          {t("secret.add.name")}{" "}
-          <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" spellCheck={false} />
-        </label>
-        <label className="secret-field">
-          {t("secret.add.value")}
-          <textarea value={value} onChange={(e) => setValue(e.target.value)} autoComplete="off" spellCheck={false} />
-        </label>
-        <button type="submit" disabled={name === "" || value === "" || add.pending}>
-          {t("secret.add.submit")}
-        </button>
-        {add.error !== undefined && <ErrorMessage error={add.error} />}
-      </form>
-    </>
+    <FormDialog
+      title={t("secret.add.title")}
+      submit={t("secret.add.submit")}
+      ready={name !== "" && value !== "" && !add.pending}
+      error={add.error ?? spacesError}
+      onSubmit={() =>
+        void add.submit({ space, name, value_base64: encodeValue(value) }).then((added) => added && onAdded())
+      }
+      onClose={onCancel}
+    >
+      <Selector
+        label={t("secret.add.space")}
+        options={spaces ?? [space]}
+        value={space}
+        onChange={setSpace}
+        presentation="adaptive"
+      />
+      <TextInput
+        label={t("secret.add.name")}
+        value={name}
+        onChange={setName}
+        autoComplete="off"
+        autoCapitalize="off"
+        hasAutoCorrect={false}
+        hasSpellCheck={false}
+      />
+      <ValueField label={t("secret.add.value")} value={value} onChange={setValue} />
+    </FormDialog>
   );
 }

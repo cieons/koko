@@ -40,69 +40,16 @@ body {
 }
 
 /*
- * The rules for the pages not yet redone on Astryx, many of them on bare
- * elements, so they reach only inside .koko-legacy: an Astryx component
- * elsewhere takes none of them. They sit in Astryx's
- * lowest layer, reset: there they win over its bare defaults, which take
- * every border, padding and background off a native control, and lose to
- * every property an Astryx component sets itself, which an unlayered rule
- * here would override. The Shell wraps each page in .koko-legacy; the
- * pages' own CSS files name only koko's classes. Each page's redesign
- * removes what it no longer uses.
- */
-@layer reset {
-  /* Native controls, styled as they were before Astryx's reset. */
-
-  .koko-legacy :is(button, input:not([type="checkbox"], [type="radio"]), select, textarea) {
-    padding: 0.25rem 0.5rem;
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-inner);
-    background: var(--color-background-surface);
-  }
-
-  .koko-legacy button {
-    background: var(--color-background-muted);
-  }
-
-  .koko-legacy button:disabled {
-    color: var(--color-text-disabled);
-  }
-
-  .error {
-    color: var(--color-text-error);
-  }
-
-  /* What pages share: lists of records as tables, short forms and tags. */
-
-  .koko-legacy table {
-    border-collapse: collapse;
-    margin: 1rem 0;
-  }
-
-  .koko-legacy :is(th, td) {
-    padding: 0.375rem 0.75rem;
-    border-bottom: var(--border-width) solid var(--color-border);
-    text-align: left;
-  }
-
-  .inline-form {
-    margin: 1rem 0;
-  }
-
-  .tag {
-    color: var(--color-text-secondary);
-  }
-}
-
-/*
- * A line shown once (ShownOnceLine), in Astryx's Code, which has no prop for
- * either: a koko join line is longer than a phone is wide, so it breaks
- * anywhere, and a click selects it whole for a browser that cannot copy.
- * Code sets neither property, so the lowest layer, reset, holds the rule,
- * and anything Code sets itself still wins.
+ * A line to copy (CopyLine), in Astryx's Code, which has no prop for any of
+ * these: a koko join line is longer than a phone is wide, so it breaks
+ * anywhere; a Secret value keeps its lines and spaces, such as a private
+ * key's; and a click selects it whole for a browser that cannot copy. Code
+ * sets none of these properties, so the lowest layer, reset, holds the
+ * rule, and anything Code sets itself still wins.
  */
 @layer reset {
   .koko-shown-once-line {
+    white-space: pre-wrap;
     overflow-wrap: anywhere;
     user-select: all;
   }

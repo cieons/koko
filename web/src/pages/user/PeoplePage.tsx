@@ -1,7 +1,20 @@
-import { useId, useState } from "react";
+import { Badge } from "@astryxdesign/core/Badge";
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button } from "@astryxdesign/core/Button";
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { Icon } from "@astryxdesign/core/Icon";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { HStack, Layout, LayoutContent, StackItem, VStack } from "@astryxdesign/core/Layout";
+import { Switch } from "@astryxdesign/core/Switch";
+import { proportional, Table, type TableColumn, useTableStickyColumns } from "@astryxdesign/core/Table";
+import { Heading } from "@astryxdesign/core/Text";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
+import { Ellipsis, UserPlus } from "lucide-react";
+import { useState } from "react";
 
 import { CodeSpaceNotEmpty } from "../../api/space";
-import { type User, UserInvite, type UserInviteResponse, UserList, UserRemove, type UserRemoveResponse } from "../../api/user";
+import { type User, UserInvite, UserList, UserRemove, type UserRemoveResponse } from "../../api/user";
 import { ApiError } from "../../client";
 import { ConfirmDialog } from "../../shell/ConfirmDialog";
 import { useRead, useWrite } from "../../shell/data";
@@ -9,88 +22,144 @@ import { formatDate } from "../../shell/format";
 import { ErrorMessage, type Translate, useT } from "../../shell/i18n";
 import { useQueryFlag } from "../../shell/router";
 import { useShownOnce } from "../../shell/shownOnce";
-import { JoinCodeLine } from "../device/JoinCodeLine";
+import { type Issued, IssueWizard } from "../device/IssueWizard";
+
+/**
+ * dateWidth is a date column's: never narrower than a date, so on a phone
+ * the table scrolls sideways in its own box rather than break one.
+ */
+const dateWidth = proportional(1, { minWidth: 112 });
+/** UserRow is a User as a row of the table. */
+interface UserRow extends Record<string, unknown> {
+  id: string;
+  user: User;
+}
 
 /**
  * PeoplePage, the Owner's alone, lists the Users, the Removed ones too when
- * asked (?all=1, as `koko user ls --all`). The Owner invites a User here,
- * whose Invite shows once, and removes one once they confirm; the page then
+ * asked (?all=1, as `koko user ls --all`). Invite is a wizard: the new
+ * User's name, then their Invite, their first Join Code, shown once. A User
+ * is removed, from their row's menu, once the Owner confirms; the page then
  * says whether the User was deleted or Removed, from the answer.
  */
 export function PeoplePage() {
   const t = useT();
-  const titleId = useId();
   const [all, showRemoved] = useQueryFlag("all");
   const list = useRead(UserList, all ? { all: true } : {});
   const remove = useWrite(UserRemove);
   const [asking, setAsking] = useState<User>();
+  const [inviting, setInviting] = useState(false);
   // removing is the User the last removal was for, and removed its answer.
   const [removing, setRemoving] = useState<string>();
   const [removed, setRemoved] = useState<UserRemoveResponse>();
+  const users = list.data?.users ?? [];
+
+  // On a phone the table scrolls sideways in its own box, its name in view.
+  const sticky = useTableStickyColumns<UserRow>({ startKeys: ["name"] });
+  const columns: TableColumn<UserRow>[] = [
+    { key: "name", header: t("user.column.name"), renderCell: ({ user }) => user.name },
+    { key: "role", header: t("user.column.role"), renderCell: ({ user }) => roleName(t, user.role) },
+    {
+      key: "created",
+      header: t("user.column.created"),
+      width: dateWidth,
+      renderCell: ({ user }) => formatDate(user.created_at),
+    },
+    ...(all
+      ? [
+          {
+            key: "removed",
+            header: t("user.column.removed"),
+            width: dateWidth,
+            renderCell: ({ user }: UserRow) => (user.removed_at ? formatDate(user.removed_at) : ""),
+          },
+        ]
+      : []),
+    {
+      key: "actions",
+      header: <VisuallyHidden>{t("user.column.actions")}</VisuallyHidden>,
+      align: "end",
+      renderCell: ({ user }) =>
+        user.role !== "owner" &&
+        !user.removed_at && (
+          <DropdownMenu
+            alignment="end"
+            presentation="adaptive"
+            renderTrigger={(trigger) => (
+              <IconButton
+                {...trigger}
+                variant="ghost"
+                size="sm"
+                label={t("user.actions.label", { name: user.name })}
+                tooltip={t("user.actions.label", { name: user.name })}
+                icon={<Icon icon={Ellipsis} size="sm" />}
+              />
+            )}
+            items={[{ label: t("user.remove.button"), variant: "destructive", onClick: () => setAsking(user) }]}
+          />
+        ),
+    },
+  ];
 
   return (
-    <>
-      <h1 id={titleId}>{t("user.list.title")}</h1>
-      <label>
-        <input type="checkbox" checked={all} onChange={(e) => showRemoved(e.target.checked)} />{" "}
-        {t("user.list.showRemoved")}
-      </label>
-      {list.error !== undefined && <ErrorMessage error={list.error} />}
-      {removed && <p role="status">{removalMessage(t, removed)}</p>}
-      {remove.error !== undefined && removing !== undefined && <RemovalRefused error={remove.error} name={removing} />}
-      {list.data && (
-        <table aria-labelledby={titleId}>
-          <thead>
-            <tr>
-              <th>{t("user.column.name")}</th>
-              <th>{t("user.column.role")}</th>
-              <th>{t("user.column.created")}</th>
-              {all && <th>{t("user.column.removed")}</th>}
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {list.data.users.map((user) => (
-              <tr key={user.id}>
-                <td>{user.name}</td>
-                <td>{roleName(t, user.role)}</td>
-                <td>{formatDate(user.created_at)}</td>
-                {all && <td>{user.removed_at ? formatDate(user.removed_at) : ""}</td>}
-                <td>
-                  {user.role !== "owner" && !user.removed_at && (
-                    <button
-                      type="button"
-                      aria-label={t("user.remove.label", { name: user.name })}
-                      onClick={() => setAsking(user)}
-                    >
-                      {t("user.remove.button")}
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {asking && (
-        <ConfirmDialog
-          title={t("user.remove.title", { name: asking.name })}
-          consequence={t("user.remove.consequence", { name: asking.name })}
-          confirm={t("user.remove.confirm")}
-          onCancel={() => setAsking(undefined)}
-          onConfirm={() => {
-            setAsking(undefined);
-            setRemoving(asking.name);
-            setRemoved(undefined);
-            void remove.submit({ name: asking.name }).then((answer) => {
-              setRemoved(answer);
-              list.reload();
-            });
-          }}
-        />
-      )}
-      <InviteUser onInvited={list.reload} />
-    </>
+    <Layout
+      contentWidth={1080}
+      content={
+        <LayoutContent>
+          <VStack gap={6}>
+            <HStack gap={3} vAlign="center" wrap="wrap">
+              <StackItem size="fill">
+                <HStack gap={2} vAlign="center">
+                  <Heading level={1}>{t("user.list.title")}</Heading>
+                  {list.data && <Badge variant="neutral" label={String(users.length)} />}
+                </HStack>
+              </StackItem>
+              <Button
+                variant="primary"
+                label={t("user.invite.button")}
+                icon={<Icon icon={UserPlus} size="sm" />}
+                onClick={() => setInviting(true)}
+              />
+            </HStack>
+            <Switch label={t("user.list.showRemoved")} value={all} onChange={showRemoved} />
+            {list.error !== undefined && <ErrorMessage error={list.error} />}
+            {removed && <Banner status="success" role="status" title={removalMessage(t, removed)} />}
+            {remove.error !== undefined && removing !== undefined && (
+              <RemovalRefused error={remove.error} name={removing} />
+            )}
+            {list.data && (
+              <Table<UserRow>
+                aria-label={t("user.list.title")}
+                data={users.map((user) => ({ id: user.id, user }))}
+                columns={columns}
+                idKey="id"
+                plugins={{ sticky }}
+                hasHover
+                textOverflow="wrap"
+              />
+            )}
+          </VStack>
+          {asking && (
+            <ConfirmDialog
+              title={t("user.remove.title", { name: asking.name })}
+              consequence={t("user.remove.consequence", { name: asking.name })}
+              confirm={t("user.remove.confirm")}
+              onCancel={() => setAsking(undefined)}
+              onConfirm={() => {
+                setAsking(undefined);
+                setRemoving(asking.name);
+                setRemoved(undefined);
+                void remove.submit({ name: asking.name }).then((answer) => {
+                  setRemoved(answer);
+                  list.reload();
+                });
+              }}
+            />
+          )}
+          {inviting && <InviteUser onClose={() => setInviting(false)} onInvited={list.reload} />}
+        </LayoutContent>
+      }
+    />
   );
 }
 
@@ -118,55 +187,51 @@ function removalMessage(t: Translate, { outcome, user }: UserRemoveResponse): st
 function RemovalRefused({ error, name }: { error: unknown; name: string }) {
   const t = useT();
   if (error instanceof ApiError && error.code === CodeSpaceNotEmpty) {
-    return (
-      <p className="error" role="alert">
-        {t("user.remove.spaceNotEmpty", { name })}
-      </p>
-    );
+    return <Banner status="error" role="alert" title={t("user.remove.spaceNotEmpty", { name })} />;
   }
   return <ErrorMessage error={error} />;
 }
 
 /**
- * InviteUser is the Owner's form for a new User, a Member at once, whose
- * Invite, their first Join Code, then shows once. It never asks.
+ * InviteUser is the Owner's wizard for a new User, a Member at once: their
+ * name, then their Invite, their first Join Code, shown once. It never asks.
  */
-function InviteUser({ onInvited }: { onInvited: () => void }) {
+function InviteUser({ onClose, onInvited }: { onClose: () => void; onInvited: () => void }) {
   const t = useT();
   const [name, setName] = useState("");
-  const [invited, setInvited] = useShownOnce<UserInviteResponse>();
+  const [issued, setIssued] = useShownOnce<Issued>();
   const invite = useWrite(UserInvite);
   return (
-    <>
-      <h2>{t("user.invite.title")}</h2>
-      <form
-        className="inline-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void invite.submit({ name }).then((answer) => {
-            if (answer) {
-              setName("");
-              setInvited(answer);
-              onInvited();
-            }
-          });
-        }}
-      >
-        <label>
-          {t("user.invite.name")}{" "}
-          <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" />
-        </label>{" "}
-        <button type="submit" disabled={name === "" || invite.pending}>
-          {t("user.invite.submit")}
-        </button>
-        {invite.error !== undefined && <ErrorMessage error={invite.error} />}
-      </form>
-      {invited && (
-        <>
-          <p>{t("user.invite.done", { name: invited.user.name })}</p>
-          {invited.join_code && <JoinCodeLine key={invited.join_code.id} joinCode={invited.join_code} />}
-        </>
-      )}
-    </>
+    <IssueWizard
+      title={t("user.invite.title")}
+      step={t("user.invite.step")}
+      submit={t("user.invite.submit")}
+      ready={name !== "" && !invite.pending}
+      error={invite.error}
+      issued={issued}
+      onSubmit={() =>
+        void invite.submit({ name }).then((answer) => {
+          if (answer) {
+            setIssued({ joinCode: answer.join_code, said: t("user.invite.done", { name: answer.user.name }) });
+            onInvited();
+          }
+        })
+      }
+      onClose={() => {
+        setIssued(undefined);
+        onClose();
+      }}
+    >
+      <TextInput
+        label={t("user.invite.name")}
+        description={t("user.invite.nameHint")}
+        value={name}
+        onChange={setName}
+        autoComplete="off"
+        autoCapitalize="off"
+        hasAutoCorrect={false}
+        hasSpellCheck={false}
+      />
+    </IssueWizard>
   );
 }

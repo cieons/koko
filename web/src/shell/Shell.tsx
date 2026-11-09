@@ -168,9 +168,9 @@ function Page({ routes }: { routes: readonly Route[] }) {
   }
   const { page: PageComponent } = match.route;
   return (
-    // The pages not yet redone on Astryx keep their own CSS, which reaches
-    // only inside .koko-legacy (shell/app.css).
-    <div className="koko-legacy">
+    // .koko-page is the element a page's own CSS may size, such as the
+    // Hosts list, which fills the main area (host.css).
+    <div className="koko-page">
       <PageComponent params={match.params} />
     </div>
   );

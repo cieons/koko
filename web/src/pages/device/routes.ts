@@ -1,7 +1,14 @@
 import { MonitorSmartphone } from "lucide-react";
 
+import { lazyPage } from "../../shell/lazyPage";
 import type { Route } from "../../shell/router";
-import { DevicesPage } from "./DevicesPage";
 
-/** The device area's pages. */
-export const deviceRoutes: Route[] = [{ path: "/devices", page: DevicesPage, nav: "device.nav", icon: MonitorSmartphone }];
+/** The device area's pages, each a chunk of its own that loads when first shown. */
+export const deviceRoutes: Route[] = [
+  {
+    path: "/devices",
+    page: lazyPage(async () => (await import("./DevicesPage")).DevicesPage),
+    nav: "device.nav",
+    icon: MonitorSmartphone,
+  },
+];

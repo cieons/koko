@@ -10,12 +10,16 @@ import {
   type JoinCode,
 } from "../../api/device";
 import { SpaceList } from "../../api/space";
+import { CodeNameTaken } from "../../api/errors";
 import { type User, UserCurrent, UserList } from "../../api/user";
+import { navigate } from "../../shell/router";
+import { expectAccessible } from "../../test/axe";
+import { chooseOption, chooseRowAction } from "../../test/controls";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { actAs, findAlert, renderAt, statuses, tableRows } from "../../test/pages";
 
 // The Devices page, against the fake API, as the Owner and as a Member, and
-// how a Join Code shows once.
+// how a Join Code shows once in the Add device wizard.
 
 const alice: User = { id: "user_1", name: "alice", role: "owner", created_at: "2026-11-01T09:00:00Z" };
 const bob: User = { id: "user_2", name: "bob", role: "member", created_at: "2026-11-02T09:00:00Z" };
@@ -23,7 +27,13 @@ const bob: User = { id: "user_2", name: "bob", role: "member", created_at: "2026
 // Device Sessions, made afresh for each use, so no test sees another's changes.
 
 function bobLaptop(): DeviceSession {
-  return { id: "device_1", user: "bob", device: "laptop", created_at: "2026-11-03T09:00:00Z", last_used_at: "2026-11-06T08:59:00Z" };
+  return {
+    id: "device_1",
+    user: "bob",
+    device: "laptop",
+    created_at: "2026-11-03T09:00:00Z",
+    last_used_at: "2026-11-06T08:59:00Z",
+  };
 }
 
 function bobPhone(): DeviceSession {
@@ -37,7 +47,13 @@ function bobPhone(): DeviceSession {
 }
 
 function aliceLaptop(): DeviceSession {
-  return { id: "device_3", user: "alice", device: "laptop", created_at: "2026-11-01T09:00:00Z", last_used_at: "2026-11-06T09:00:00Z" };
+  return {
+    id: "device_3",
+    user: "alice",
+    device: "laptop",
+    created_at: "2026-11-01T09:00:00Z",
+    last_used_at: "2026-11-06T09:00:00Z",
+  };
 }
 
 function aliceDesktop(): DeviceSession {
@@ -101,6 +117,12 @@ async function advanceCountdown(ms: number): Promise<void> {
   act(() => vi.advanceTimersByTime(ms));
 }
 
+/** openWizard opens the Add device wizard, and is its dialog. */
+function openWizard(): HTMLElement {
+  fireEvent.click(screen.getByRole("button", { name: "Add device" }));
+  return screen.getByRole("dialog", { name: "Add device" });
+}
+
 /** issueAsBob renders the Devices page as bob on his laptop and adds a device, whose Join Code is joinCode. */
 async function issueAsBob(joinCode: JoinCode = desktopCode): Promise<{ api: FakeApi; shown: HTMLElement }> {
   const api = fakeApi();
@@ -110,7 +132,7 @@ async function issueAsBob(joinCode: JoinCode = desktopCode): Promise<{ api: Fake
   api.on(SpaceList, () => ({ spaces: [] }));
   renderAt("/devices");
   await screen.findByRole("table", { name: "Devices" });
-  fireEvent.click(screen.getByRole("button", { name: "Add a device" }));
+  fireEvent.click(within(openWizard()).getByRole("button", { name: "Issue Join Code" }));
   const shown = await screen.findByRole("region", { name: "Join Code" });
   return { api, shown };
 }
@@ -124,12 +146,16 @@ test("a Member sees their own Device Sessions and no Owner-only control", async 
 
   await screen.findByRole("table", { name: "Devices" });
   expect(rows()).toEqual([
-    ["laptop (this device)", "the koko server's machine", "2026-11-03", "2026-11-06", "Revoke"],
-    ["phone", "bob/laptop", "2026-11-04", "never", "Revoke"],
+    ["laptopThis device", "The koko server's machine", "2026-11-03", "2026-11-06", ""],
+    ["phone", "bob/laptop", "2026-11-04", "Never", ""],
   ]);
-  expect(screen.queryByRole("combobox", { name: "User" })).toBeNull();
-  expect(screen.getByRole("textbox", { name: "Device name (optional)" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Actions for laptop" })).toBeDefined();
+  await expectAccessible();
+  const wizard = openWizard();
+  expect(within(wizard).queryByRole("combobox", { name: "User" })).toBeNull();
+  expect(within(wizard).getByRole("textbox", { name: /^Device name/ })).toBeDefined();
   expect(api.requests(DeviceList)).toEqual([{}]);
+  await expectAccessible();
 });
 
 test("adding a device never asks, and shows its koko join line once, with copy and its countdown", async () => {
@@ -143,16 +169,17 @@ test("adding a device never asks, and shows its koko join line once, with copy a
   renderAt("/devices");
   await screen.findByRole("table", { name: "Devices" });
 
-  fireEvent.change(screen.getByRole("textbox", { name: "Device name (optional)" }), { target: { value: "desktop" } });
-  fireEvent.click(screen.getByRole("button", { name: "Add a device" }));
+  const wizard = openWizard();
+  fireEvent.change(within(wizard).getByRole("textbox", { name: /^Device name/ }), { target: { value: "desktop" } });
+  fireEvent.click(within(wizard).getByRole("button", { name: "Issue Join Code" }));
 
-  const line = await screen.findByText(`koko join ${desktopCode.code}`);
+  const line = await within(wizard).findByText(`koko join ${desktopCode.code}`);
   expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(api.requests(DeviceAdd)).toEqual([{ device: "desktop" }]);
-  const shown = screen.getByRole("region", { name: "Join Code" });
-  expect(shown.textContent).toContain("On bob's new device desktop, run this line:");
+  const shown = within(wizard).getByRole("region", { name: "Join Code" });
+  expect(shown.textContent).toContain("Run this line on bob's new device desktop:");
   expect(shown.textContent).toContain("It expires in 15:00.");
-  expect(screen.getByRole<HTMLInputElement>("textbox", { name: "Device name (optional)" }).value).toBe("");
+  await expectAccessible();
 
   await advanceCountdown(61_000);
   expect(shown.textContent).toContain("It expires in 13:59.");
@@ -161,15 +188,25 @@ test("adding a device never asks, and shows its koko join line once, with copy a
   expect(await within(shown).findByText("Copied.")).toBeDefined();
   expect(writeText.mock.calls).toEqual([[line.textContent]]);
 
-  // Leaving the page and coming back loses the line.
-  fireEvent.click(within(screen.getByRole("navigation", { name: "Pages" })).getByRole("link", { name: "Spaces" }));
-  await screen.findByRole("heading", { name: "Spaces" });
-  fireEvent.click(within(screen.getByRole("navigation", { name: "Pages" })).getByRole("link", { name: "Devices" }));
-  await screen.findByRole("table", { name: "Devices" });
-  expect(screen.queryByRole("region", { name: "Join Code" })).toBeNull();
+  // Closing the wizard forgets the line.
+  fireEvent.click(within(wizard).getByRole("button", { name: "Done" }));
+  expect(screen.queryByRole("dialog", { name: "Add device" })).toBeNull();
   expect(document.body.textContent).not.toContain(desktopCode.code);
   expect(window.location.href).not.toContain(desktopCode.code);
   expect(localStorage.length + sessionStorage.length).toBe(0);
+  expect(within(openWizard()).getByRole<HTMLInputElement>("textbox", { name: /^Device name/ }).value).toBe("");
+});
+
+test("leaving the page loses the line", async () => {
+  await issueAsBob();
+
+  act(() => navigate("/spaces"));
+  await screen.findByRole("heading", { name: "Spaces" });
+  act(() => navigate("/devices"));
+  await screen.findByRole("table", { name: "Devices" });
+
+  expect(screen.queryByRole("region", { name: "Join Code" })).toBeNull();
+  expect(document.body.textContent).not.toContain(desktopCode.code);
 });
 
 test("leaving the web UI loses the line, even when the browser keeps the page to come back to", async () => {
@@ -203,7 +240,7 @@ test("a browser that cannot copy says to select the line instead", async () => {
   expect(shown.textContent).toContain(`koko join ${desktopCode.code}`);
 });
 
-test("a Join Code that expired is no longer shown, and the page says to issue a new one", async () => {
+test("a Join Code that expired is no longer shown, and the wizard says to issue a new one", async () => {
   clockAt("2026-11-06T09:00:00Z");
   const { api, shown } = await issueAsBob();
 
@@ -211,9 +248,28 @@ test("a Join Code that expired is no longer shown, and the page says to issue a 
   expect(shown.textContent).toContain("It expires in 0:01.");
   await advanceCountdown(1_000);
 
-  await waitFor(() => expect(shown.textContent).toBe("This Join Code expired. Add a device again for a new one."));
+  await waitFor(() => expect(shown.textContent).toBe("This Join Code has expired. Issue a new one with Add device."));
   expect(document.body.textContent).not.toContain(desktopCode.code);
   expect(api.requests(DeviceAdd)).toEqual([{}]);
+});
+
+test("a refused Add device says why on its first step", async () => {
+  const api = fakeApi();
+  actAs(api, bob, bobLaptop());
+  api.on(DeviceList, () => ({ device_sessions: [bobLaptop()] }));
+  api.on(DeviceAdd, () => {
+    throw refusal(CodeNameTaken, 409);
+  });
+  renderAt("/devices");
+  await screen.findByRole("table", { name: "Devices" });
+
+  const wizard = openWizard();
+  fireEvent.change(within(wizard).getByRole("textbox", { name: /^Device name/ }), { target: { value: "laptop" } });
+  fireEvent.click(within(wizard).getByRole("button", { name: "Issue Join Code" }));
+
+  expect(await within(wizard).findByText("This name is already in use.")).toBeDefined();
+  expect(within(wizard).queryByRole("region", { name: "Join Code" })).toBeNull();
+  await expectAccessible();
 });
 
 test("the Owner sees everyone's Device Sessions, and adds a device for another User", async () => {
@@ -226,29 +282,36 @@ test("the Owner sees everyone's Device Sessions, and adds a device for another U
   await screen.findByRole("table", { name: "Devices" });
 
   expect(rows()).toEqual([
-    ["alice", "laptop (this device)", "the koko server's machine", "2026-11-01", "2026-11-06", "Revoke"],
-    ["bob", "laptop", "the koko server's machine", "2026-11-03", "2026-11-06", "Revoke"],
-    ["bob", "phone", "bob/laptop", "2026-11-04", "never", "Revoke"],
+    ["alice", "laptopThis device", "The koko server's machine", "2026-11-01", "2026-11-06", ""],
+    ["bob", "laptop", "The koko server's machine", "2026-11-03", "2026-11-06", ""],
+    ["bob", "phone", "bob/laptop", "2026-11-04", "Never", ""],
   ]);
-  const user = screen.getByRole<HTMLSelectElement>("combobox", { name: "User" });
-  expect(user.value).toBe("alice");
-  await waitFor(() => expect(within(user).getAllByRole("option").map((o) => o.textContent)).toEqual(["alice", "bob"]));
+  expect(screen.getByRole("button", { name: "Actions for bob/phone" })).toBeDefined();
+  await expectAccessible();
 
-  fireEvent.change(user, { target: { value: "bob" } });
-  fireEvent.click(screen.getByRole("button", { name: "Add a device" }));
+  const wizard = openWizard();
+  const user = within(wizard).getByRole("combobox", { name: "User" });
+  expect(user.textContent).toContain("alice");
+  await chooseOption(user, "bob", ["alice", "bob"]);
+  await expectAccessible();
+  fireEvent.click(within(wizard).getByRole("button", { name: "Issue Join Code" }));
 
-  const shown = await screen.findByRole("region", { name: "Join Code" });
-  expect(shown.textContent).toContain("On bob's new device device-3, run this line:");
+  const shown = await within(wizard).findByRole("region", { name: "Join Code" });
+  expect(shown.textContent).toContain("Run this line on bob's new device device-3:");
   expect(api.requests(DeviceAdd)).toEqual([{ user: "bob" }]);
   expect(screen.queryByRole("alertdialog")).toBeNull();
 });
 
 test.each([
-  ["another device", "phone", "phone is cut off at once and can never connect again. The devices it added keep working."],
+  [
+    "another device",
+    "phone",
+    "phone is disconnected at once and can never connect again. The devices it added keep working.",
+  ],
   [
     "the device this page runs through",
     "laptop",
-    "laptop is the device this page runs through: once it is revoked, this page can do nothing more and this device deletes its key. The devices it added keep working.",
+    "laptop is the device this page runs through. Once it is revoked, this page can take no further action and this device deletes its key. The devices it added keep working.",
   ],
 ])("revoking %s asks first, stating the consequence", async (_, device, consequence) => {
   const api = fakeApi();
@@ -263,14 +326,15 @@ test.each([
   renderAt("/devices");
   await screen.findByRole("table", { name: "Devices" });
 
-  fireEvent.click(screen.getByRole("button", { name: `Revoke ${device}` }));
-  const dialog = screen.getByRole("alertdialog", { name: `Revoke ${device}?` });
+  await chooseRowAction(`Actions for ${device}`, "Revoke");
+  const dialog = screen.getByRole("alertdialog", { name: `Revoke ${device}` });
   expect(dialog.textContent).toContain(consequence);
   expect(within(dialog).queryByRole("textbox")).toBeNull();
+  await expectAccessible();
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
   expect(api.requests(DeviceRevoke)).toEqual([]);
 
-  fireEvent.click(screen.getByRole("button", { name: `Revoke ${device}` }));
+  await chooseRowAction(`Actions for ${device}`, "Revoke");
   fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Revoke" }));
 
   await waitFor(() => expect(rows()).toHaveLength(1));
@@ -281,12 +345,12 @@ test.each([
   [
     "on that device",
     (api: FakeApi) => actAs(api, alice, aliceLaptop()),
-    "laptop is the Owner's last device and the one this page runs through: once it is revoked, this page can do nothing more, this device deletes its key, and only koko device add on the koko server's own machine adds a device for the Owner.",
+    "laptop is the Owner's last device and the one this page runs through. Once it is revoked, this page can take no further action, this device deletes its key, and only koko device add on the koko server's own machine can add a device for the Owner.",
   ],
   [
     "over the Unix socket",
     (api: FakeApi) => api.on(UserCurrent, () => ({ user: alice })),
-    "laptop is the Owner's last device: once it is revoked, only koko device add on the koko server's own machine adds a device for the Owner.",
+    "laptop is the Owner's last device. Once it is revoked, only koko device add on the koko server's own machine can add a device for the Owner.",
   ],
 ])(
   "revoking the Owner's own last Device Session %s needs its name typed; another User's last one does not",
@@ -301,17 +365,18 @@ test.each([
     renderAt("/devices");
     await screen.findByRole("table", { name: "Devices" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Revoke bob/laptop" }));
-    const bobs = screen.getByRole("alertdialog", { name: "Revoke bob/laptop?" });
+    await chooseRowAction("Actions for bob/laptop", "Revoke");
+    const bobs = screen.getByRole("alertdialog", { name: "Revoke bob/laptop" });
     expect(within(bobs).queryByRole("textbox")).toBeNull();
     fireEvent.click(within(bobs).getByRole("button", { name: "Revoke" }));
     await waitFor(() => expect(api.requests(DeviceRevoke)).toEqual([{ user: "bob", device: "laptop" }]));
 
-    fireEvent.click(screen.getByRole("button", { name: "Revoke laptop" }));
-    const dialog = screen.getByRole("alertdialog", { name: "Revoke laptop?" });
+    await chooseRowAction("Actions for laptop", "Revoke");
+    const dialog = screen.getByRole("alertdialog", { name: "Revoke laptop" });
     expect(dialog.textContent).toContain(consequence);
     const confirm = within(dialog).getByRole<HTMLButtonElement>("button", { name: "Revoke" });
     expect(confirm.disabled).toBe(true);
+    await expectAccessible();
     fireEvent.change(within(dialog).getByLabelText("Type laptop to confirm."), { target: { value: "laptop" } });
     expect(confirm.disabled).toBe(false);
     fireEvent.click(confirm);
@@ -330,8 +395,8 @@ test("the Owner with another live device revokes this one without typing its nam
   renderAt("/devices");
   await screen.findByRole("table", { name: "Devices" });
 
-  fireEvent.click(screen.getByRole("button", { name: "Revoke desktop" }));
-  const dialog = screen.getByRole("alertdialog", { name: "Revoke desktop?" });
+  await chooseRowAction("Actions for desktop", "Revoke");
+  const dialog = screen.getByRole("alertdialog", { name: "Revoke desktop" });
   expect(within(dialog).queryByRole("textbox")).toBeNull();
   fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
@@ -351,14 +416,13 @@ test("a revoke refused because the list was out of date says why, and the list i
   renderAt("/devices");
   await screen.findByRole("table", { name: "Devices" });
 
-  fireEvent.click(screen.getByRole("button", { name: "Revoke desktop" }));
+  await chooseRowAction("Actions for desktop", "Revoke");
   fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Revoke" }));
 
-  expect(await findAlert()).toBe(
-    "This is the Owner's last device: revoking it needs its name typed.",
-  );
+  expect(await findAlert()).toBe("This is the Owner's last device. Type its name to revoke it.");
   await waitFor(() => expect(rows()).toHaveLength(1));
-  fireEvent.click(screen.getByRole("button", { name: "Revoke desktop" }));
+  await expectAccessible();
+  await chooseRowAction("Actions for desktop", "Revoke");
   expect(within(screen.getByRole("alertdialog")).getByLabelText("Type desktop to confirm.")).toBeDefined();
 });
 
@@ -369,16 +433,18 @@ test("Revoked Device Sessions show only when asked for, with when they were Revo
   api.on(DeviceList, ({ all }) => ({ device_sessions: all ? [bobLaptop(), revokedPhone] : [bobLaptop()] }));
   renderAt("/devices");
   await screen.findByRole("table", { name: "Devices" });
-  expect(rows().map((r) => r[0])).toEqual(["laptop (this device)"]);
+  expect(rows().map((r) => r[0])).toEqual(["laptopThis device"]);
 
-  fireEvent.click(screen.getByRole("checkbox", { name: "Show Revoked devices" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Show Revoked devices" }));
 
   await waitFor(() =>
     expect(rows()).toEqual([
-      ["laptop (this device)", "the koko server's machine", "2026-11-03", "2026-11-06", "", "Revoke"],
-      ["phone", "bob/laptop", "2026-11-04", "never", "2026-11-05", ""],
+      ["laptopThis device", "The koko server's machine", "2026-11-03", "2026-11-06", "", ""],
+      ["phone", "bob/laptop", "2026-11-04", "Never", "2026-11-05", ""],
     ]),
   );
+  // A Revoked Device Session has nothing left to revoke.
+  expect(screen.queryByRole("button", { name: "Actions for phone" })).toBeNull();
   expect(window.location.search).toBe("?all=1");
   expect(api.requests(DeviceList)).toContainEqual({ all: true });
 });

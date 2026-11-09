@@ -32,10 +32,11 @@ which loads Figtree from Google Fonts, is never imported: `app.css` declares
 the copy in `web/src/assets/fonts/` (Figtree's variable WOFF2, latin, under
 the SIL Open Font License beside it) and names the system's Chinese fonts
 after it in `--font-family-body`. koko's CSS uses Astryx's tokens and never
-a literal colour. Its rules for the pages not yet redone on Astryx reach
-only inside an element of class `koko-legacy`, which the Shell wraps each
-page in, in Astryx's lowest layer, `reset`, so no Astryx component
-outside it takes them, and one inside keeps every property it sets.
+a literal colour. Every page is built on Astryx (#110, #111, #112), so
+`app.css` holds no rules for pages not yet redone any more; what a page's
+components have no prop for is in the page's own CSS file, on koko's own
+classes, in Astryx's lowest layer, `reset`, so every property a component
+sets itself still wins.
 
 ## The frame
 
@@ -58,8 +59,8 @@ re-skin"):
   drawer, which every visit closes; whom the web UI acts as moves into the
   account menu, where the bar has no room for it.
 - **The content** is `AppShell`'s `<main>`, with Astryx's skip link before
-  the frame. A page not yet redone on Astryx sits inside an element of class
-  `koko-legacy` ([Providers](#providers)).
+  the frame. Each page sits inside an element of class `koko-page`, which
+  a page's own CSS may size: the Hosts list's fills the main area with it.
 - **The notices** are the `AppShell`'s banner, above the top bar
   ([Notices](#notices)).
 - **A path with no page** shows Astryx's `EmptyState`, "Page not found",
@@ -217,7 +218,8 @@ what it holds, in an Astryx `Card`, with the line in Astryx's `Code`, which
 breaks anywhere on a phone and one click selects whole; a copy
 `IconButton` beside it, which says whether the browser copied it (the two
 are [`CopyLine`](../../web/src/shell/CopyLine.tsx), which any line to copy
-shows in, such as a Registered Host's `koko host enroll`); and the
+shows in, such as a Registered Host's `koko host enroll` or a revealed
+Secret value, whose lines it keeps); and the
 time left as text, counted each second on the browser's clock from when the
 line showed, for the validity the page asked for (`validFor`). The time
 left reads in minutes and seconds (`14:59`) for its last hour, and before
