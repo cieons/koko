@@ -1,30 +1,42 @@
 # koko
 
-> 你的服务器，都在这里。
+> 你的服务器，都在ここ。
 
 [English](README.md)
 
-koko 是自托管的。它记录你在各家厂商租用的服务器，也是人和 AI agent
-访问这些服务器的唯一入口。
+koko 是一个自托管系统。它记录在各家云服务商租用的服务器，并作为人与 AI agent 访问这些服务器的唯一入口。
 
-**状态：** v0.2.0，首个提供容器镜像的版本，已经能做到下面列出的事；仍是早期版本，难免粗糙。
+**状态：** v0.3.0，首个将 `koko`（CLI）与 `kokod`（koko 服务器）拆分为两个程序的版本。已提供下列功能，仍处于早期阶段。
 
 ## 安装
 
-[安装和运行 koko 服务器](docs/install.zh-CN.md)：在装有 systemd 的 Linux
-机器上运行一行命令，以及升级、回退和恢复。
-没有 systemd 时，用 Docker 运行镜像 `ghcr.io/cieons/koko`
-（[在容器中运行](docs/install.zh-CN.md#在容器中运行)）。
+koko 由两个程序组成：`koko` 为 CLI，支持 Linux 和 macOS；`kokod` 为 koko 服务器，仅支持 Linux。
+
+安装 CLI，适用于 Linux（amd64 或 arm64）和 macOS（Apple Silicon）：
+
+```sh
+curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh
+```
+
+在由 systemd 管理的 Linux 机器上同时安装 koko 服务器，并指定所有者以及设备访问它所用的地址：
+
+```sh
+curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh -s -- --owner alice --address koko.example.com
+```
+
+非 root 用户请将任一行命令中管道后的 `sh` 改为 `sudo sh`。
+
+[安装 koko](docs/install.zh-CN.md) 介绍各行命令的作用，以及升级、回退和恢复。没有 systemd 的环境中，可使用 Docker 运行镜像 `ghcr.io/cieons/koko`（见[在容器中运行](docs/install.zh-CN.md#在容器中运行)）。
 
 ## 功能
 
-- 记录主机及其上运行的服务，用带类型的属性描述，比如厂商、地区、续费日期。
-- 用 Space 决定谁能看到、访问哪些主机。
-- Secret：把密码、密钥、令牌存放在 Space 中，用一把从不与数据放在一起的密钥加密封存，只有 `koko secret show` 会打印出来。凭据只放进 Secret：备注和属性都是明文存储的。
-- 网关终结每一个 SSH 会话，只有 koko 持有主机信任的密钥。
-- 接入主机只追加一个公钥，其他什么都不改。
-- 只占用一个 SSH 端口（默认 7822），不需要证书；`ssh`、`scp`、`rsync` 无需改动即可使用。
-- 以 CLI 为核心，内置给编程 agent 用的 skill（`koko skill`）。
+- 记录主机及其上运行的服务，并以带类型的属性描述，例如云服务商、地区和续费日期。
+- 通过空间控制谁能查看和访问哪些主机。
+- 机密：密码、密钥和令牌保存在空间中，以一把从不与数据存放在一起的密钥密封，只有 `koko secret show` 会输出其内容。凭据只应存入机密：备注和属性均以明文存储。
+- 网关终结每一个 SSH 会话，因此只有 koko 持有主机所信任的密钥。
+- 纳管主机时只添加一个公钥，不作其他任何更改。
+- 只使用一个 SSH 端口（默认 7822），无需证书；`ssh`、`scp` 和 `rsync` 可直接经由该端口使用，无需改动。
+- 以 CLI 为核心，内置供编程 agent 使用的 skill（`koko skill`）。
 
 ## 许可证
 

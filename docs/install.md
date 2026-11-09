@@ -1,11 +1,14 @@
-# Installing and running the koko server
+# Installing koko
 
 [中文](install.zh-CN.md)
 
-The koko server runs on one Linux machine with systemd, or in a container
-from its image, `ghcr.io/cieons/koko` ([In a container](#in-a-container)).
-This page covers installing it, checking a release, upgrading and going
-back, keeping the Root Key, restoring onto another machine, and what to do
+koko is two programs from one release: `koko`, the CLI, on Linux and macOS,
+and `kokod`, the koko server, on Linux. One line installs the CLI, and the
+same line with `--owner` installs the koko server too, on one Linux machine
+with systemd. Without systemd, the koko server runs in a container from its
+image, `ghcr.io/cieons/koko` ([In a container](#in-a-container)). This page
+covers installing them, checking a release, upgrading and going back,
+keeping the Root Key, restoring onto another machine, and what to do
 without the Root Key, then the same for the container. How each step works
 is in the [installer](subsystems/installer.md) and
 [release](subsystems/release.md) references.
@@ -13,62 +16,86 @@ is in the [installer](subsystems/installer.md) and
 ## What the machine needs
 
 - Linux on amd64 or arm64, with systemd 247 or later running it: Debian 11,
-  Ubuntu 22.04, RHEL 9 or later. A container that systemd does not run is
-  refused: run [the image](#in-a-container) there instead.
+  Ubuntu 22.04, RHEL 9 or later. `koko server install` refuses a container
+  that systemd does not run, before it downloads anything: run
+  [the image](#in-a-container) there instead.
 - `/var/lib/koko` on a local filesystem, not NFS or another network
   filesystem.
-- A free TCP port, 7822 unless you pick another with `--port`.
+- A free TCP port, 7822, or the one given with `--port`.
 - `curl`, `sha256sum`, `awk` and `mktemp`, and root, as the root user or
   through `sudo`.
 
 ## Installing
 
-Run this on the machine, as root, naming yourself as the Owner and the
-address your devices will reach it at:
+On the machine, run the following as root, naming the Owner and the
+address devices will use to reach the koko server:
 
 ```sh
 curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh -s -- --owner alice --address koko.example.com
 ```
 
-Not root? Pipe it to `sudo sh` instead of `sh`.
+When not running as root, change the `sh` after the pipe to `sudo sh`.
 
-- **`--address`**: a DNS name is best. It is the Server Address every Join
+- **`--address`**: a DNS name is recommended. It is the Server Address every Join
   Code carries, and devices keep reaching the koko server through it when
   the machine's IP changes. Without `--address`, install takes the
   machine's public IP, and refuses a private one (10.x, 192.168.x,
-  100.64.x and the like), since your devices could not reach it. Behind NAT
-  that maps another port, write that port: `--address koko.example.com:8443`.
+  100.64.x and the like), since devices could not reach it. Behind NAT that
+  maps a different port, include that port: `--address koko.example.com:8443`.
 - **`--port`**: the port the koko server listens on, 7822 by default. Install
   never moves to another port by itself: when the port is taken, it names
   the process holding it and stops. A network that lets only web traffic
-  out (ports 80 and 443) cannot reach 7822: pick `--port 443` if your
-  devices sit behind one and nothing else on the machine holds 443.
+  out (ports 80 and 443) cannot reach 7822: choose `--port 443` when
+  devices are behind such a network and no other program on the machine
+  holds port 443.
 - **`KOKO_VERSION`** pins a release instead of the latest:
-  `curl … | sudo env KOKO_VERSION=v0.3.0 sh -s -- …`. Plain `sudo` drops
-  the variable, hence `env`.
-- **A `/tmp` mounted `noexec`**: install.sh runs the binary from a
-  temporary directory, so point `TMPDIR` at one that allows running
-  programs: `curl … | TMPDIR=/var/tmp sh -s -- …`, or through `sudo`,
-  `curl … | sudo env TMPDIR=/var/tmp sh -s -- …`.
+  `curl … | sudo env KOKO_VERSION=v0.3.0 sh -s -- …`. `sudo` alone does
+  not pass the variable on, so the line uses `env`.
+- **A `/tmp` mounted `noexec`**: install.sh runs `koko`, and `koko` runs
+  `kokod`, from a temporary directory, so point `TMPDIR` at one that allows
+  running programs: as root, `curl … | TMPDIR=/var/tmp sh -s -- …`, and
+  otherwise `curl … | sudo env TMPDIR=/var/tmp sh -s -- …`, since `sudo`
+  does not pass `TMPDIR` on either.
 
-install.sh downloads the binary for the machine, checks it against the
-release's `SHA256SUMS`, and runs it only when it matches. It prints:
+install.sh downloads `koko` for the machine, checks it against the
+release's `SHA256SUMS`, and runs it only when it matches, as
+`koko server install` with the arguments given. That downloads `kokod` of the
+same version, `kokod-linux-<arch>`, checks it against the same
+`SHA256SUMS`, and runs it only when it matches. `kokod` installs itself as
+`/usr/local/bin/kokod`, writes the systemd unit, `koko.service`, and starts
+the koko server, which `koko` then initialises. Once that has succeeded,
+install.sh installs `koko` as `/usr/local/bin/koko`. It prints:
 
 - the Server Address and the host key's fingerprint;
 - where the Root Key is and its id ([keep a copy](#keeping-the-root-key));
-- the port to open: **open that TCP port in your provider's firewall**, since
-  koko opens none itself;
-- your first Join Code, which works once, within 15 minutes, and the
+- the port to open: **open that TCP port in the provider's firewall**,
+  since koko opens none itself;
+- the first Join Code, which works once, within 15 minutes, and the
   `koko join` line to run with it.
 
-On your own computer, put the koko CLI on your `PATH` (below), then run the
-printed `koko join koko_…` line. Lost the code, or it expired? On the
-machine, `koko device add` prints a new one.
+On the Owner's computer, install the CLI ([below](#the-cli-alone)), then
+run the printed `koko join koko_…` line. If the code is lost or has
+expired, `koko device add` on the machine prints a new one.
 
-### The CLI on your computer
+### The CLI alone
 
-The same release holds the CLI: `koko-darwin-arm64` for Apple Silicon Macs,
-and `koko-linux-amd64` or `koko-linux-arm64` for Linux. For a Mac:
+The same line without arguments installs the CLI alone, on Linux (amd64 or
+arm64) and macOS (Apple Silicon):
+
+```sh
+curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh
+```
+
+It downloads `koko` for the machine, checks it against the release's
+`SHA256SUMS`, and installs it as `/usr/local/bin/koko`. It needs root to
+write there: as the root user, or as a user with passwordless `sudo`.
+Otherwise, change the `sh` after the pipe to `sudo sh`. It needs no
+systemd, so it also works in a container. It never prompts, and writes
+only to stderr.
+
+Without install.sh, download the file for the machine, `koko-darwin-arm64`
+for a Mac, and `koko-linux-amd64` or `koko-linux-arm64` for Linux, check it
+and install it. For a Mac:
 
 ```sh
 base=https://github.com/cieons/koko/releases/latest/download
@@ -77,6 +104,45 @@ grep ' koko-darwin-arm64$' SHA256SUMS | shasum -a 256 -c
 sudo install -m 0755 koko-darwin-arm64 /usr/local/bin/koko
 ```
 
+For Linux on amd64:
+
+```sh
+base=https://github.com/cieons/koko/releases/latest/download
+curl -fsSL -O "$base/koko-linux-amd64" -O "$base/SHA256SUMS"
+grep ' koko-linux-amd64$' SHA256SUMS | sha256sum -c
+sudo install -m 0755 koko-linux-amd64 /usr/local/bin/koko
+```
+
+### Offline
+
+On a machine that cannot reach GitHub, `koko server install` cannot
+download `kokod`: it says so, naming `--kokod`, and writes nothing. On
+such a machine, install the koko server from copied files. On a machine
+with access to GitHub, download `koko-linux-<arch>`, `kokod-linux-<arch>`
+and `SHA256SUMS` from one release, for the target machine's architecture,
+amd64 below:
+
+```sh
+base=https://github.com/cieons/koko/releases/latest/download
+curl -fsSL -O "$base/koko-linux-amd64" -O "$base/kokod-linux-amd64" -O "$base/SHA256SUMS"
+```
+
+Copy the three files onto the target machine. There, in the directory
+that holds them, check them, then install the koko server and the CLI:
+
+```sh
+grep -E ' kokod?-linux-amd64$' SHA256SUMS | sha256sum -c
+chmod 0755 koko-linux-amd64 kokod-linux-amd64
+sudo ./koko-linux-amd64 server install --kokod ./kokod-linux-amd64 --owner alice --address koko.example.com
+sudo install -m 0755 koko-linux-amd64 /usr/local/bin/koko
+```
+
+`koko server install --kokod` reads the file's build without running it,
+and runs the file only when it is the same build as the `koko` running it:
+a `kokod` from another release is refused, naming both versions, and
+nothing runs. It runs the file in place, so the file must be executable,
+as the `chmod` above makes it. It prints what the install line prints.
+
 ## Checking a release
 
 Every file of a release is attested by the GitHub workflow that built it.
@@ -84,25 +150,40 @@ With the [GitHub CLI](https://cli.github.com), check that a downloaded file
 was built by koko's release workflow:
 
 ```sh
-gh attestation verify koko-linux-amd64 --repo cieons/koko
+gh attestation verify kokod-linux-amd64 --repo cieons/koko
 ```
 
-This works for every file `SHA256SUMS` lists, `install.sh` included. The
-koko server's machine needs no `gh`: install.sh checks the SHA-256 alone.
+This works for every file `SHA256SUMS` lists: `koko-<os>-<arch>`,
+`kokod-linux-<arch>` and `install.sh`. The koko server's machine needs no
+`gh`: install.sh and `koko server install` check the SHA-256 alone.
 
 ## Upgrading
 
-Run the install line again, without `--owner` and without `--address`:
+Run the install line again, without arguments:
 
 ```sh
-curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sudo sh -s --
+curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sudo sh
 ```
 
-It replaces the binary, writes the systemd unit again and restarts the koko
-server, which keeps its record, its Owner, its Server Address and its keys.
-Every open SSH Session ends, with a line saying the koko server is
-restarting. `--owner` and `--address` are refused on an upgrade: change the
-Server Address with `koko server set address=<host[:port]>` instead.
+On the koko server's machine, it upgrades the koko server first, then the
+CLI. `koko server install` replaces `kokod` with the new release's, writes
+the systemd unit again and restarts the koko server, which keeps its
+record, its Owner, its Server Address and its keys. Every open SSH Session
+ends, with a line saying the koko server is restarting. Only then does
+install.sh replace `koko`. When the koko server's upgrade fails, install.sh
+stops there and leaves the CLI as it was, so the CLI never runs ahead of
+the koko server beside it. On every other machine, the same line upgrades
+the CLI alone. If the two diverge nonetheless, for example after the CLI
+is installed by hand, `koko status` on the koko server's machine reports
+that the koko server there is another build and names
+`sudo koko server install`, which brings it to the CLI's build.
+
+A koko server installed by v0.1.0 or v0.2.0, from before `koko` and `kokod`
+were two programs, takes the same upgrade: its unit then runs
+`/usr/local/bin/kokod run`, and `/usr/local/bin/koko` is the CLI.
+
+`--owner` and `--address` are refused on an upgrade: change the Server
+Address with `koko server set address=<host[:port]>` instead.
 
 The upgrade keeps the port the koko server listens on, even one set with a
 drop-in (`systemctl edit koko`); after a drop-in moves it below 1024, run
@@ -117,17 +198,21 @@ snapshot, and keeps only the latest one.
 
 ## Going back
 
-To go back to the koko you upgraded from, install its release. On the
-machine, as root:
+To go back to the release that ran before the upgrade, install it with
+the newest install.sh, naming the release in `KOKO_VERSION`. On the machine, as
+root:
 
 ```sh
-curl -fsSL https://github.com/cieons/koko/releases/download/v0.3.0/install.sh | env KOKO_VERSION=v0.3.0 sh -s --
+curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | env KOKO_VERSION=v0.3.0 sh
 ```
 
-with the version you upgraded from in place of `v0.3.0`. When the upgrade
-changed no schema, that is all. When it did, the older koko refuses to
-install over the newer database and writes nothing, while the newer koko
-server keeps running. Its refusal names the snapshot to put in place:
+with that release in place of `v0.3.0`. The release's own install.sh, at
+`releases/download/v0.3.0/install.sh`, also works, with the same
+`KOKO_VERSION`. When the upgrade changed no schema, nothing more is
+needed. When it did, the older koko refuses to install over the newer
+database and writes nothing, while the newer koko server keeps running, and
+install.sh leaves the CLI as it was. Its refusal names the snapshot to put
+in place:
 
 ```text
 koko: /var/lib/koko/koko.db: it is at schema version 14, which this koko (schema version 13) predates: run the newer koko that migrated it, or go back by putting koko.db.before-14 in place of koko.db; nothing was written
@@ -142,13 +227,22 @@ mkdir /var/lib/koko-newer
 mv koko.db /var/lib/koko-newer/
 mv koko.db-wal koko.db-shm /var/lib/koko-newer/ 2>/dev/null # there only after a crash
 mv koko.db.before-<n> koko.db
-curl -fsSL https://github.com/cieons/koko/releases/download/v0.3.0/install.sh | env KOKO_VERSION=v0.3.0 sh -s --
+curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | env KOKO_VERSION=v0.3.0 sh
 ```
 
 with the snapshot the refusal named in place of `koko.db.before-<n>`, and
 the same version as above in place of `v0.3.0`. Anything written after the
 upgrade is lost with the newer database, which stays in
 `/var/lib/koko-newer`.
+
+Going back to v0.2.0 or v0.1.0, from before `koko` and `kokod` were two
+programs, takes one more line, with or without a snapshot. The older koko
+installs its own binary and unit, and leaves `/usr/local/bin/kokod` behind,
+unused. Once the older koko server runs, remove it:
+
+```sh
+rm /usr/local/bin/kokod
+```
 
 ## Keeping the Root Key
 
@@ -171,14 +265,17 @@ koko has no backup command yet. A copy of the data directory taken while the
 koko server is stopped, kept with the Root Key, restores it:
 
 1. On the old machine: `systemctl stop koko`, copy `/var/lib/koko` as a
-   whole directory, and keep it with your copy of the Root Key: a restore
+   whole directory, and keep it with the copy of the Root Key: a restore
    needs both.
 2. On the new machine, as root, put both back: the directory at
    `/var/lib/koko`, and the Root Key at `/etc/koko/root.key`, owned by root
    with mode 0600, in `/etc/koko`, mode 0700.
-3. Run the install line without `--owner`, adding `--port <port>` if the old
-   koko server listened on another port than 7822. It finds the koko
-   server's record and starts it.
+3. Install the CLI with the line without arguments
+   ([The CLI alone](#the-cli-alone)), then run
+   `sudo koko server install` without `--owner`, adding `--port <port>` if
+   the old koko server listened on another port than 7822. It finds the
+   koko server's record, installs the `kokod` of its own version and
+   starts it.
 
 The host key travels in the data directory, so devices still trust the koko
 server. If its address changed, set the new one with
@@ -187,45 +284,51 @@ server. If its address changed, set the new one with
 
 systemd gives the data directory and everything in it to the `koko` user
 when the directory itself belongs to someone else, as a copy put back by
-root does. If you copied the files into a `/var/lib/koko` that already
+root does. If the files were copied into a `/var/lib/koko` that already
 belongs to `koko`, run `chown -R koko:koko /var/lib/koko` before installing.
 
 ## Without the Root Key
 
 If the Root Key and every copy of it are lost, the record cannot be opened
-again. The only way on is to start over: move `/var/lib/koko` aside, along
-with any `/etc/koko/root.key` that does not load, and install again with
-`--owner`. That costs everything sealed and everything joined: every Host
+again. The only remaining option is to start over: move `/var/lib/koko`
+aside, along with any `/etc/koko/root.key` that does not load, and install
+again with `--owner`. That costs everything sealed and everything joined: every Host
 is added and Enrolled anew, every Secret is added again, and every device
 runs `koko leave`, then joins with a new Join Code.
 
 ## Uninstalling
 
 `koko server uninstall` stops the koko server and removes its unit and
-binary. It keeps the data directory, the Root Key and the `koko` user, and
-prints the port it listened on: install again without `--owner`, with that
-`--port`, to run it on the same data.
+`/usr/local/bin/kokod`. It keeps the CLI, `/usr/local/bin/koko`, the data
+directory, the Root Key and the `koko` user, and prints the port it
+listened on. To run the koko server again on the same data, run
+`sudo koko server install` without `--owner`, with that `--port`: it
+installs the `kokod` of its own version again.
 
 ## In a container
 
 The image `ghcr.io/cieons/koko` runs the koko server where systemd does
-not, such as beside your other containers in Docker. Each release pushes
-it for amd64 and arm64, holding that release's own `koko-linux-<arch>`
-binary. The container runs as uid 65532 from the start, never as root,
-with no capability, and koko changes no file's owner. Why it works this
-way is in [ADR 0037](adr/0037-the-container-keeps-its-data-and-its-root-key-in-one-directory.md),
+not, such as alongside other containers in Docker. Each release pushes
+it for amd64 and arm64, holding both of that release's programs:
+`kokod-linux-<arch>` as `/usr/local/bin/kokod` and `koko-linux-<arch>` as
+`/usr/local/bin/koko`. It runs the koko server as `kokod run`, so a Compose
+file that sets no `entrypoint` and no `command`, as the one below, needs
+only its `KOKO_VERSION` changed from release to release. The container
+runs as uid 65532 from the start, never as root, with no capability, and
+koko changes no file's owner. The reasons are recorded in
+[ADR 0037](adr/0037-the-container-keeps-its-data-and-its-root-key-in-one-directory.md),
 [ADR 0038](adr/0038-a-container-initialises-at-its-first-start-and-gives-its-first-join-code-to-docker-exec.md)
 and [ADR 0039](adr/0039-the-container-runs-as-uid-65532-from-the-start-and-koko-changes-no-owner.md).
 
 ### What the Docker host needs
 
 - Docker with Compose v2 (`docker compose`), on amd64 or arm64.
-- A folder of its own for koko, `/srv/koko` below, that you can write
-  (`sudo install -d -o "$USER" /srv/koko`), on a local filesystem, not NFS
-  or another network filesystem: the koko server refuses one at start. It
+- A folder dedicated to koko, `/srv/koko` below, writable by the current
+  user (`sudo install -d -o "$USER" /srv/koko`), on a local filesystem,
+  not NFS or another network filesystem: the koko server refuses one at start. It
   holds the whole deployment: the Compose file, its `.env`, and `state/`,
   everything the container keeps.
-- A free TCP port to publish, 7822 below. **Open it in your provider's
+- A free TCP port to publish, 7822 below. **Open it in the provider's
   firewall**, since koko opens none itself.
 
 No user and no key are prepared on the Docker host, only `state/`, once,
@@ -275,19 +378,19 @@ services:
       KOKO_ADDRESS: koko.example.com     # host[:published port]; read only at the first start
 ```
 
-Put yourself as the Owner in `KOKO_OWNER`, and in `KOKO_ADDRESS` the
-address your devices will reach the koko server at: a DNS name is best, as
-for [`--address`](#installing). Then, beside the file:
+Set `KOKO_OWNER` to the Owner's User name, and `KOKO_ADDRESS` to the
+address devices will use to reach the koko server: a DNS name is
+recommended, as for [`--address`](#installing). Then, beside the file:
 
 ```sh
 echo KOKO_VERSION=0.2.0 > .env     # the release to run, without its v
-sudo install -d -o 65532 -g 65532 -m 0700 state   # once, unless you took a named volume
+sudo install -d -o 65532 -g 65532 -m 0700 state   # once, unless a named volume is used
 docker compose up -d
 docker exec koko koko device add   # your first Join Code
 ```
 
-`KOKO_VERSION` is required, so the container always runs a release you
-chose. At its first start the koko server makes the Root Key,
+`KOKO_VERSION` is required, so the container always runs a release
+chosen explicitly. At its first start the koko server makes the Root Key,
 `state/root.key`, and initialises itself. `docker logs koko` then says
 `koko server initialised`, with the host key's fingerprint, the listen
 address, the Root Key's path and id, and the `koko device add` line to run
@@ -295,10 +398,10 @@ next. No log line holds the Root Key or a Join Code. A fresh koko server
 without `KOKO_ADDRESS` refuses to start, naming it: the container's own IP
 is private, and no device could reach it.
 
-`koko device add` prints your first Join Code, which works once, within 15
-minutes, and the `koko join` line to run with it on your computer
-([the CLI on your computer](#the-cli-on-your-computer)). Lost the code, or
-it expired? Run the same line again, as you do after losing every device.
+`koko device add` prints the first Join Code, which works once, within 15
+minutes, and the `koko join` line to run with it on the Owner's computer
+([The CLI alone](#the-cli-alone)). If the code is lost or has expired, run
+the same line again, as after losing every device.
 
 Without Compose, the same container with `docker run`, in `/srv/koko`:
 
@@ -374,10 +477,10 @@ an installed koko server. So:
 2. Back up `state/data/` on its own, copied as root while the container is
    stopped (`docker compose stop`, then `docker compose start`). That copy
    can be kept anywhere.
-3. Keep a copy of the whole of `state/` only where you would keep the
-   Secrets themselves.
-4. A disk snapshot of the machine holds both, but your provider controls
-   the machine already.
+3. Keep a copy of the whole of `state/` only where the Secrets themselves
+   would be kept.
+4. A disk snapshot of the machine holds both, but the provider already
+   controls the machine.
 
 The koko server never makes a Root Key over sealed data: a missing or wrong
 `root.key` is refused at start, naming the id the data needs. Without any
@@ -400,9 +503,9 @@ With `docker run`, run `docker stop koko` and `docker rm koko`, which keep
 
 ### Going back in a container
 
-To go back to the koko you upgraded from, set its version in `.env` and run
-`docker compose up -d`. When the upgrade changed no schema, that is all.
-When it did, the older image refuses at start and writes nothing, and
+To go back to the release that ran before the upgrade, set its version in
+`.env` and run `docker compose up -d`. When the upgrade changed no schema,
+nothing more is needed. When it did, the older image refuses at start and writes nothing, and
 `docker logs koko` names the version it needs and the snapshot to put in
 place. Put it in place on the Docker host, in a root shell (`sudo -s`),
 beside `compose.yaml`:
@@ -424,8 +527,8 @@ stays in `newer/`.
 
 1. On the old machine: `docker compose down`, then copy `/srv/koko` as a
    whole folder, as root, so the Compose file and `.env` travel with
-   `state/`. Or copy `state/data/` alone and keep it with your copy of
-   `root.key`: a restore needs both.
+   `state/`. Alternatively, copy `state/data/` alone and keep it with the
+   copy of `root.key`: a restore needs both.
 2. On the new machine, put them back in `/srv/koko`: the whole folder, or
    `compose.yaml`, `.env`, `state/data/` and `state/root.key`. Then give
    `state/` to uid 65532, as root, in `/srv/koko`, since koko changes no
@@ -453,7 +556,7 @@ chown -R 65532:65532 state
 ```
 
 Then start the Compose file as above, without `docker exec … device add`:
-the devices you joined keep working. Set `KOKO_OWNER` and `KOKO_ADDRESS`
+the devices already joined keep working. Set `KOKO_OWNER` and `KOKO_ADDRESS`
 to its Owner and Server Address, or each start logs a warning that they
 differ. If the installed koko server listened on another port than 7822,
 publish that port (`"443:7822"` for 443), and, when its Server Address
@@ -474,8 +577,9 @@ Each image carries a GitHub artifact attestation, which the
 gh attestation verify oci://ghcr.io/cieons/koko:0.2.0 --repo cieons/koko
 ```
 
-The image's `/usr/local/bin/koko` is the release's `koko-linux-<arch>`
-byte for byte, the file `SHA256SUMS` lists.
+The image's `/usr/local/bin/kokod` and `/usr/local/bin/koko` are the
+release's `kokod-linux-<arch>` and `koko-linux-<arch>` byte for byte, the
+files `SHA256SUMS` lists.
 
 ### Kubernetes and other users
 
@@ -489,10 +593,10 @@ such as with a tmpfs on `/run/koko` owned by it.
 
 ### The Root Key kept apart
 
-To keep the Root Key out of the directory you back up, mount it read-only
+To keep the Root Key out of the backed-up directory, mount it read-only
 from elsewhere and point `KOKO_ROOT_KEY_FILE` at it. After the first start,
 run `docker compose down`, then, as root, move `state/root.key` into a
-directory of its own, say `/etc/koko-key/root.key` (`mkdir /etc/koko-key`
+directory of its own, such as `/etc/koko-key/root.key` (`mkdir /etc/koko-key`
 first), still uid 65532's, and `chmod 0400` it. Then add
 `/etc/koko-key/root.key:/run/secrets/koko-root.key:ro` to `volumes:` and
 `KOKO_ROOT_KEY_FILE: /run/secrets/koko-root.key` to `environment:`, and run
