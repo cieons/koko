@@ -21,6 +21,11 @@ export interface User {
 /** UserInviteRequest invites a new User under a name no User or Space holds. */
 export interface UserInviteRequest {
   name: string;
+  /**
+   * ValidFor is how long the Invite stays valid, in seconds, 60 to
+   * 604,800 (7 days); left out, 15 minutes.
+   */
+  valid_for?: number;
 }
 
 /**
@@ -84,7 +89,8 @@ export interface UserRemoveResponse {
 /**
  * UserInvite creates a Member with their Personal Space and issues their
  * first Join Code, in one transaction. A name any User, Removed ones
- * included, or any Space holds is refused with CodeNameTaken.
+ * included, or any Space holds is refused with CodeNameTaken, and a
+ * ValidFor outside 60 to 604,800 seconds with CodeInvalidValue.
  */
 export const UserInvite: Op<UserInviteRequest, UserInviteResponse> = {
   name: "user.invite",

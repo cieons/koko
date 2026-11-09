@@ -26,11 +26,11 @@ type invitation struct {
 	JoinCode joinCodeOut `json:"join_code"`
 }
 
-// userInvite runs user invite --json for the User named user, and returns
-// what it printed.
-func userInvite(t *testing.T, h *harness.Harness, user string) invitation {
+// userInvite runs user invite --json for the User named user, with args
+// after it, and returns what it printed.
+func userInvite(t *testing.T, h *harness.Harness, user string, args ...string) invitation {
 	t.Helper()
-	r := h.Koko("user", "invite", user, "--json")
+	r := h.Koko(append([]string{"user", "invite", user, "--json"}, args...)...)
 	r.WantSuccess(t)
 	var inv invitation
 	if err := json.Unmarshal([]byte(r.Stdout), &inv); err != nil {

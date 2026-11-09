@@ -18,7 +18,7 @@ var deviceCommands = []Command{
 	{
 		Noun:    "device",
 		Verb:    "add",
-		Summary: "Issue a Join Code for a new device, valid for 15 minutes",
+		Summary: "Issue a Join Code for a new device, valid for 15 minutes unless --valid says otherwise",
 		Args:    []Arg{{Name: "device", Optional: true}},
 		Flags: []Flag{
 			{
@@ -26,6 +26,7 @@ var deviceCommands = []Command{
 				Value:   "user",
 				Summary: "issue it for this User's device instead of your own (the Owner only)",
 			},
+			validFlag("the Join Code"),
 		},
 		// It prints a credential (ADR 0019).
 		Tier: Irreversible,
@@ -143,7 +144,11 @@ func (c issuedCode) Human(w io.Writer) error {
 }
 
 func deviceAdd(ctx context.Context, in *Input) (issuedCode, error) {
-	resp, err := in.Call(ctx, api.DeviceAdd, api.DeviceAddRequest{Device: in.Arg("device"), User: in.Flag("user")})
+	validFor, err := in.validFor()
+	if err != nil {
+		return issuedCode{}, err
+	}
+	resp, err := in.Call(ctx, api.DeviceAdd, api.DeviceAddRequest{Device: in.Arg("device"), User: in.Flag("user"), ValidFor: validFor})
 	if err != nil {
 		return issuedCode{}, err
 	}

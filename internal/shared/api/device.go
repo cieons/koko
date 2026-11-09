@@ -1,6 +1,36 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
+	"time"
+)
+
+// How long a Join Code or a Password Link stays valid from its issue (ADR
+// 0044): DefaultValidity, unless the request that issues it chooses from
+// MinValidity to MaxValidity with valid_for.
+const (
+	DefaultValidity = 15 * time.Minute
+	MinValidity     = time.Minute
+	MaxValidity     = 7 * 24 * time.Hour
+)
+
+// Validity is how long the Join Code or Password Link a request issues
+// stays valid, given the request's valid_for: that many seconds, or
+// DefaultValidity when it is nil. Any number of seconds outside MinValidity
+// to MaxValidity is refused with CodeInvalidValue.
+func Validity(validFor *int) (time.Duration, error) {
+	if validFor == nil {
+		return DefaultValidity, nil
+	}
+	// The seconds are compared before they become a Duration, which a huge
+	// number would overflow.
+	s := *validFor
+	if s < int(MinValidity/time.Second) || s > int(MaxValidity/time.Second) {
+		return 0, CodeInvalidValue.Errorf("valid_for is %d seconds; it takes %d to %d seconds (1 minute to 7 days)",
+			s, int(MinValidity/time.Second), int(MaxValidity/time.Second))
+	}
+	return time.Duration(s) * time.Second, nil
+}
 
 // JoinCode is a Join Code just issued, as the API returns it once: the code
 // itself is never stored and never shown again.
@@ -12,8 +42,9 @@ type JoinCode struct {
 	User string `json:"user"`
 	// Device is the new device's name, bound to the code.
 	Device string `json:"device"`
-	// ExpiresAt is when the code stops working, 15 minutes after its issue,
-	// as RFC 3339 in UTC to the second.
+	// ExpiresAt is when the code stops working, as long after its issue as
+	// the request's valid_for chose, 15 minutes by default, as RFC 3339 in
+	// UTC to the second.
 	ExpiresAt string `json:"expires_at"`
 }
 
@@ -56,6 +87,9 @@ type DeviceAddRequest struct {
 	// User is the User the code is for. Empty means the caller's own User;
 	// for the Local caller, the Owner.
 	User string `json:"user,omitempty"`
+	// ValidFor is how long the code stays valid, in seconds, 60 to 604,800
+	// (7 days); left out, 15 minutes.
+	ValidFor *int `json:"valid_for,omitzero"`
 }
 
 // DeviceAddResponse is the Join Code device.add issued.
@@ -96,11 +130,12 @@ type DeviceRevokeResponse struct {
 
 // The device operations.
 var (
-	// DeviceAdd issues a Join Code, valid for 15 minutes, for one new device
-	// of the caller's own User or, for the Owner, of any User; a Member
-	// naming another User is refused with CodeOwnerOnly. A device name
-	// another live device or valid Join Code of that User holds is refused
-	// with CodeNameTaken.
+	// DeviceAdd issues a Join Code, valid for 15 minutes unless ValidFor
+	// chooses otherwise, for one new device of the caller's own User or, for
+	// the Owner, of any User; a Member naming another User is refused with
+	// CodeOwnerOnly. A device name another live device or valid Join Code
+	// of that User holds is refused with CodeNameTaken, and a ValidFor
+	// outside 60 to 604,800 seconds with CodeInvalidValue.
 	DeviceAdd = Op[DeviceAddRequest, DeviceAddResponse]{Name: "device.add", Write: true}
 	// DeviceList lists the caller's own Device Sessions or, for the Owner,
 	// every User's; a Member naming another User is refused with

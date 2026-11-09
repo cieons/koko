@@ -87,7 +87,7 @@ func invite(issue IssueFunc) op.Func[api.UserInviteRequest, api.UserInviteRespon
 		if err != nil {
 			return api.UserInviteResponse{}, err
 		}
-		code, err := issue(ctx, tx, caller, api.DeviceAddRequest{User: u.Name})
+		code, err := issue(ctx, tx, caller, api.DeviceAddRequest{User: u.Name, ValidFor: req.ValidFor})
 		if err != nil {
 			return api.UserInviteResponse{}, err
 		}

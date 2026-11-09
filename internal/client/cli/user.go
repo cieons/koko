@@ -16,8 +16,9 @@ var userCommands = []Command{
 	{
 		Noun:      "user",
 		Verb:      "invite",
-		Summary:   "Create a Member and issue their Invite, valid for 15 minutes",
+		Summary:   "Create a Member and issue their Invite, valid for 15 minutes unless --valid says otherwise",
 		Args:      []Arg{{Name: "user"}},
+		Flags:     []Flag{validFlag("the Invite")},
 		Tier:      Irreversible, // it prints a credential (ADR 0019)
 		OwnerOnly: true,
 		Op:        api.UserInvite,
@@ -125,7 +126,11 @@ func (i invitation) Human(w io.Writer) error {
 }
 
 func userInvite(ctx context.Context, in *Input) (invitation, error) {
-	resp, err := in.Call(ctx, api.UserInvite, api.UserInviteRequest{Name: in.Arg("user")})
+	validFor, err := in.validFor()
+	if err != nil {
+		return invitation{}, err
+	}
+	resp, err := in.Call(ctx, api.UserInvite, api.UserInviteRequest{Name: in.Arg("user"), ValidFor: validFor})
 	if err != nil {
 		return invitation{}, err
 	}

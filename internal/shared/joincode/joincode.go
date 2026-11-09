@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"strings"
-	"time"
 
 	"github.com/cieons/koko/internal/shared/serveraddr"
 )
@@ -38,10 +37,6 @@ const Version = 1
 
 // SecretSize is the length of a Join Code's secret: 128 bits.
 const SecretSize = 16
-
-// Lifetime is how long a Join Code is valid from its issue, whoever issues
-// it. It is a constant: no flag or setting changes it.
-const Lifetime = 15 * time.Minute
 
 // MaxAddressLen is the longest address a Join Code carries, in bytes: its
 // length fits one byte.

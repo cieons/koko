@@ -72,14 +72,18 @@ func (i *Issuer) add(ctx context.Context, tx store.Tx, caller op.Caller, req api
 // Issue issues, as caller, a Join Code for one new device of the User
 // req.User names, or of the caller's own User when it names none, and binds
 // the device name req.Device to it, or device-<n> when it names none. Only
-// the Owner names another User. The code is valid for joincode.Lifetime from
-// the call's time. It is returned once: the koko server keeps only the hash
-// of its secret.
+// the Owner names another User. The code is valid from the call's time for
+// as long as req.ValidFor chooses, 15 minutes by default (api.Validity). It
+// is returned once: the koko server keeps only the hash of its secret.
 //
 // The caller's own User is its Device Session's, or the Owner for the Local
 // caller (ADR 0008). The issuer is recorded: the caller's Device Session, or
 // the Unix socket.
 func (i *Issuer) Issue(ctx context.Context, tx store.Tx, caller op.Caller, req api.DeviceAddRequest) (api.JoinCode, error) {
+	validity, err := api.Validity(req.ValidFor)
+	if err != nil {
+		return api.JoinCode{}, err
+	}
 	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
 		return api.JoinCode{}, err
@@ -117,7 +121,7 @@ func (i *Issuer) Issue(ctx context.Context, tx store.Tx, caller op.Caller, req a
 		Code:      code,
 		User:      u.Name,
 		Device:    device,
-		ExpiresAt: now.Add(joincode.Lifetime).Format(time.RFC3339),
+		ExpiresAt: now.Add(validity).Format(time.RFC3339),
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO join_codes (id, user_id, secret_hash, device, issued_by, expires_at)
 		VALUES (?, ?, ?, ?, ?, ?)`, jc.ID, u.ID, secretHash(c.Secret), jc.Device, issuer, jc.ExpiresAt)

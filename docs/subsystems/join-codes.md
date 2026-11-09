@@ -73,15 +73,27 @@ call it inside their own transaction. It:
 4. makes a 16-byte secret with `crypto/rand`, records the code, and returns
    it once, as `{"id", "code", "user", "device", "expires_at"}`.
 
-A code is valid for 15 minutes (`joincode.Lifetime`, a constant) from the
-call's time, `op.Now`. Several codes may be valid at once. The issuer is
-recorded: the caller's Device Session, or the Unix socket; it becomes the
+A code is valid from the call's time, `op.Now`, for as long as the request's
+`valid_for` chooses, in seconds from 60 to 604,800 (1 minute to 7 days), or
+15 minutes when it is left out ([ADR 0044](../adr/0044-the-owner-chooses-how-long-a-join-code-or-password-link-stays-valid.md)).
+`Issue` reads it with [`api.Validity`](../../internal/shared/api/device.go)
+before anything else, refusing any other number with `invalid_value`; a
+refused Invite records nothing, its transaction rolled back. `device.add`
+and `user.invite` take `valid_for`; initialisation's first code always has
+the 15 minutes. Only the expiry recorded changes: the code's string is the
+same whatever its validity. Several codes may be valid at once. The issuer
+is recorded: the caller's Device Session, or the Unix socket; it becomes the
 "added by" of the Device Session the code joins
 ([the Device Connection](device-connection.md)).
 
-`koko device add [<device>] [--user <user>]` and `koko user invite <user>`
-print the code ([the CLI](cli.md#the-commands-so-far)); both are in the
-irreversible tier, since they print a credential (ADR 0019).
+`koko device add [<device>] [--user <user>] [--valid <duration>]` and `koko
+user invite <user> [--valid <duration>]` print the code ([the
+CLI](cli.md#the-commands-so-far)); both are in the irreversible tier, since
+they print a credential (ADR 0019). `--valid` takes a whole number of
+minutes, hours or days from `1m` to `7d`, such as `30m`, `12h` or `7d`, and
+sends it as `valid_for`; anything else, `0m`, `8d`, `1h30m` or `7D` among
+them, is refused with exit 2 and `invalid_usage` before any call
+([`valid.go`](../../internal/client/cli/valid.go)).
 `user.invite` creates the Member and their Personal Space
 ([`user.Register`](../../internal/server/user/user.go)), refusing a name any
 User or any Space holds, then issues their first code, in one transaction.
@@ -119,5 +131,11 @@ logs a call's path and status only, and a join its Join Code's id.
   invite`, its refusals, names per User, and an expired Invite that leaves
   its User to join with a new code; the one transaction is
   [`user/user_test.go`](../../internal/server/user/user_test.go).
+- [`valid_test.go`](../../internal/client/cli/valid_test.go): `--valid` on
+  `device add` and `user invite`, each value outside its form or range
+  refused with exit 2 and no call, the expiry it sets within its range,
+  `valid_for` outside 60 to 604,800 seconds refused by the API with
+  `invalid_value` and a refused Invite leaving its name free, and a code of
+  `7d` joining after 6 days and refused after 7 (the clock moved).
 - [`init_test.go`](../../internal/server/init_test.go): initialisation's
   first code, and a Server Address no code carries.

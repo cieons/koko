@@ -24,6 +24,9 @@ type User struct {
 // UserInviteRequest invites a new User under a name no User or Space holds.
 type UserInviteRequest struct {
 	Name string `json:"name"`
+	// ValidFor is how long the Invite stays valid, in seconds, 60 to
+	// 604,800 (7 days); left out, 15 minutes.
+	ValidFor *int `json:"valid_for,omitzero"`
 }
 
 // UserInviteResponse is the User user.invite created and their Invite: their
@@ -86,7 +89,8 @@ type UserRemoveResponse struct {
 var (
 	// UserInvite creates a Member with their Personal Space and issues their
 	// first Join Code, in one transaction. A name any User, Removed ones
-	// included, or any Space holds is refused with CodeNameTaken.
+	// included, or any Space holds is refused with CodeNameTaken, and a
+	// ValidFor outside 60 to 604,800 seconds with CodeInvalidValue.
 	UserInvite = Op[UserInviteRequest, UserInviteResponse]{Name: "user.invite", Write: true}
 	// UserCurrent answers who the call acts as: the User of the Device
 	// Session it came on, or the Owner for the Local caller. `koko join`
