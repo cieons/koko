@@ -1,5 +1,6 @@
 // Package deployment is the koko server's own record, which initialisation
-// makes once: the Server Address, and the koko server's own private keys,
+// makes once: the Server Address, the Web URL once the Owner sets it, and
+// the koko server's own private keys,
 // the koko key and the host key, each sealed under the Root Key (ADR 0018).
 // The koko server is initialised once this record exists, and opens its keys
 // at every start after that.
@@ -20,6 +21,7 @@ import (
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/serveraddr"
+	"github.com/cieons/koko/internal/shared/weburl"
 )
 
 // keyIDPrefix starts the id of each of the koko server's own keys, as in
@@ -141,6 +143,39 @@ func SetAddress(ctx context.Context, tx store.Tx, address string) error {
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE deployment SET address = ?", address); err != nil {
 		return fmt.Errorf("change the Server Address: %w", err)
+	}
+	return nil
+}
+
+// WebURL returns the Web URL, "" while it is not set, and whether the koko
+// server is initialised, which it must be for a Web URL: the web listener
+// reads both in one step at each request.
+func WebURL(ctx context.Context, tx store.Tx) (webURL string, initialised bool, err error) {
+	var u sql.NullString
+	err = tx.QueryRowContext(ctx, "SELECT web_url FROM deployment").Scan(&u)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return "", false, nil
+	case err != nil:
+		return "", false, fmt.Errorf("read the Web URL: %w", err)
+	}
+	return u.String, true, nil
+}
+
+// SetWebURL sets the Web URL to webURL, which it checks and stores as
+// weburl.Parse writes it, refusing what is not one with
+// api.CodeInvalidWebURL; "" clears it.
+func SetWebURL(ctx context.Context, tx store.Tx, webURL string) error {
+	var stored sql.NullString
+	if webURL != "" {
+		u, err := weburl.Parse(webURL)
+		if err != nil {
+			return api.CodeInvalidWebURL.Errorf("invalid Web URL: %v", err)
+		}
+		stored = sql.NullString{String: u, Valid: true}
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE deployment SET web_url = ?", stored); err != nil {
+		return fmt.Errorf("change the Web URL: %w", err)
 	}
 	return nil
 }

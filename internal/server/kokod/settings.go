@@ -89,6 +89,12 @@ var runFlags = []flag{
 		Summary: "where devices reach the koko server over TCP, once it is initialised",
 	},
 	{
+		Name:    "web-listen",
+		Value:   "host:port",
+		Env:     "KOKO_WEB_LISTEN",
+		Summary: "where the koko server serves the web UI over plain HTTP to a reverse proxy, such as 127.0.0.1:7823; off unless given",
+	},
+	{
 		Name:    "log-level",
 		Value:   "level",
 		Env:     "KOKO_LOG_LEVEL",
@@ -114,8 +120,11 @@ type settings struct {
 	Owner   string
 	Address string
 	// Listen is the TCP listen address, such as :7822.
-	Listen   string
-	LogLevel slog.Level
+	Listen string
+	// WebListen is the web listener's address, such as 127.0.0.1:7823, or
+	// empty for off.
+	WebListen string
+	LogLevel  slog.Level
 }
 
 // readSettings makes the settings of runFlags' values, refusing with an
@@ -144,6 +153,10 @@ func readSettings(value func(name string) string, getenv func(key string) string
 	if !isListenAddr(listen) {
 		return settings{}, usagef("--listen (KOKO_LISTEN) takes host:port or :port, not %q", listen)
 	}
+	webListen := value("web-listen")
+	if host, _, _ := net.SplitHostPort(webListen); webListen != "" && (!isListenAddr(webListen) || host == "") {
+		return settings{}, usagef("--web-listen (KOKO_WEB_LISTEN) takes host:port, such as 127.0.0.1:7823, not %q", webListen)
+	}
 	return settings{
 		DataDir:       value("data-dir"),
 		RootKeyPath:   rootKey,
@@ -151,6 +164,7 @@ func readSettings(value func(name string) string, getenv func(key string) string
 		Owner:         owner,
 		Address:       address,
 		Listen:        listen,
+		WebListen:     webListen,
 		LogLevel:      level,
 	}, nil
 }

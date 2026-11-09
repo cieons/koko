@@ -16,18 +16,21 @@ the order, the paths and the unit's settings are P0 spec: install and run.
 
 ## The two halves
 
-`koko server install [--owner <user>] [--address <host[:port]>] [--port <port>] [--kokod <file>]`
+`koko server install [--owner <user>] [--address <host[:port]>] [--port <port>] [--web-listen <host:port|off>] [--kokod <file>]`
 is in the irreversible tier: it changes the machine and prints a credential,
 the first Join Code. It never prompts. In this order, each refusal before
 any write:
 
 1. **Its flags.** A `--port` outside 1 to 65535, an `--owner` that is not a
-   User name and an `--address` that is not a Server Address are refused
+   User name, an `--address` that is not a Server Address and a
+   `--web-listen` that is neither `host:port`, with a port from 1 to 65535,
+   nor `off` are refused
    with exit 2 ([`install.ParseRequest`](../../internal/shared/install/install.go),
    which `kokod install` checks with too), and so is a `--kokod` that names
    no file. `--port` has no fixed default: a port not given is 0, which is
    7822 on a fresh machine and the port the koko server listens on now on
-   [an upgrade](#the-upgrade).
+   [an upgrade](#the-upgrade). `--web-listen` not given is off on a fresh
+   machine, and on an upgrade the web listener the installed unit names.
 2. **The machine, before any `kokod` is read**, each `unsupported_platform`:
    not Linux, such as macOS, naming the image `ghcr.io/cieons/koko` and the
    install docs' "In a container"; an architecture no `kokod` is built for
@@ -186,6 +189,9 @@ the real one, rooted at `/`:
      it: install asks systemd for the service's `MainPID` and compares it
      with the PID holding the port, so another process, even one named
      `koko` or run by the `koko` user, is refused;
+   - with `--web-listen`, its port checked the same way, with the hint to
+     pass `--web-listen`: `port_taken`; and a web listener on the port the
+     koko server listens on for devices: exit 2;
    - without `--address`, a default route's source IP that is not public,
      or none: exit 2, with the hint to pass `--address`. The address check
      ([`isPublic`](../../internal/server/installer/checks.go)) is a pure
@@ -276,9 +282,19 @@ running koko server as it was:
   [uninstall](#uninstall) or on a restore, the port the koko server
   listened on is unknown, and it listens on 7822 or the port given. The port
   is then checked as on a fresh machine, the service's own process allowed.
-  Install never reads its own unit: it writes it again at every run. It
-  reads `KOKO_LISTEN` from `Environment=` settings only, not from an
+  Install reads `KOKO_LISTEN` from `Environment=` settings only, not from an
   `EnvironmentFile=`.
+- **The web listener.** Without `--web-listen` the upgrade keeps the
+  `KOKO_WEB_LISTEN` the installed unit at `/etc/systemd/system/koko.service`
+  sets, which install wrote, and none when there is no unit, as after
+  [uninstall](#uninstall); `--web-listen <host:port>` replaces it, and
+  `--web-listen off` removes it, which later upgrades keep. Its port is
+  checked as on a fresh machine. This is the one setting install reads from
+  its own unit, which it otherwise writes again at every run. A drop-in
+  that sets `KOKO_WEB_LISTEN` overrides the unit at the restart, and is not
+  copied into it; install reads the drop-ins for it, the last winning, only
+  to grant the right to bind its port below 1024, as for a drop-in's
+  `KOKO_LISTEN`.
 - **The Root Key.** Install loads `/etc/koko/root.key` and opens the koko
   server's sealed keys with it, as the restarted koko server will. A file
   that is missing, does not parse or names another Root Key is refused
@@ -306,14 +322,17 @@ installer's own:
 - **The startup settings are `Environment=KOKO_*` lines, not flags**, so that
   a drop-in's own `Environment=` line overrides one and outlasts the next
   install, which rewrites the unit; a flag in `ExecStart=` would beat it.
-  `KOKO_LISTEN` carries `--port`, for `kokod run`'s listen address.
+  `KOKO_LISTEN` carries `--port`, for `kokod run`'s listen address, and
+  `KOKO_WEB_LISTEN`, written only while the web listener is on, carries
+  `--web-listen` ([the web listener](web-front.md#the-web-listener)).
 - **The Root Key's path is not written**: `kokod run`'s default,
   `$CREDENTIALS_DIRECTORY/root-key`, is the file `LoadCredential=` makes,
   which is where systemd hands the key to the service and nowhere else.
 - **`CAP_NET_BIND_SERVICE` only for a port below 1024**: the unit's
   `AmbientCapabilities=` and `CapabilityBoundingSet=` grant it only when
-  the port install writes is one, such as `--port 443`, since the `koko`
-  user binds such a port with it alone. The default 7822 needs none, and
+  the port install writes, or the web listener's, is one, such as
+  `--port 443` or `--web-listen 127.0.0.1:80`, since the `koko` user binds
+  such a port with it alone. The default 7822 needs none, and
   the unit says instead that a drop-in moving `KOKO_LISTEN` below 1024
   needs install run again, which reads the drop-in's port and grants it
   ([ADR 0036](../adr/0036-the-koko-server-listens-on-7822-by-default.md)).
@@ -425,7 +444,10 @@ golden file, the `--json` golden, the koko server initialised), the order
 (checks before any write, the Root Key and the binary before the start, a
 late socket waited for), a socket file there before the koko server accepts
 on it (`ListenDelay`), the printout for people, `--port` (and
-`CAP_NET_BIND_SERVICE` only for one below 1024), `--address`,
+`CAP_NET_BIND_SERVICE` only for one below 1024), `--web-listen` (written
+into the unit, its port checked and taken refused, the capability for one
+below 1024, and `koko server show` naming it beside the Web URL),
+`--address`,
 every refusal writing nothing, systemd not running (with goldens for the
 text and `--json`, naming the image, and `kokod install` refusing the same),
 macOS, an architecture with no `kokod` and not root refused before any
@@ -452,7 +474,10 @@ after uninstall; no unit after
 uninstall, and a unit changed by hand; the P0 restore of a copy onto a fresh
 machine; data at a newer schema refused; and a machine as v0.2.0 left it,
 whose unit is written again to run `kokod run`, its port and drop-in kept
-and `/usr/local/bin/koko` untouched.
+and `/usr/local/bin/koko` untouched; and the web listener kept without
+`--web-listen`, replaced with it, removed by `off` and kept off, its port
+checked and a taken one refused, and a drop-in's web listener below 1024
+granted the bind.
 [`server_uninstall_test.go`](../../internal/client/cli/server_uninstall_test.go)
 tests uninstall: the service stopped while its unit is there, the unit and
 `kokod` gone, `/usr/local/bin/koko` kept, what it keeps, the port, the
@@ -474,7 +499,9 @@ after uninstall, the drop-in port across uninstall and a machine as v0.2.0
 left it download too.
 
 The fake machine's `PortOwner` names the koko
-service on the port its loaded unit's `KOKO_LISTEN` names while it runs.
+service on the port its loaded unit's `KOKO_LISTEN`, or `KOKO_WEB_LISTEN`,
+names while it runs; the koko server it runs listens on loopback ports of
+the test's choosing for both.
 [`install_test.go`](../../internal/server/kokod/install_test.go) tests that
 `kokod install` and `uninstall` print the shared reports as JSON, and that
 their refusals have koko's error shape and exit statuses.

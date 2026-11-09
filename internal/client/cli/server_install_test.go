@@ -319,6 +319,55 @@ func TestServerInstallOnAnotherPort(t *testing.T) {
 	}
 }
 
+// --web-listen turns the web listener on: install checks its port, writes
+// it into the unit, and grants the koko user the right to bind it below
+// 1024; the koko server then listens there, as koko server show names,
+// beside the Web URL once it is set. Without it, the unit turns no web
+// listener on.
+func TestServerInstallWithAWebListener(t *testing.T) {
+	t.Parallel()
+	t.Run("off", func(t *testing.T) {
+		t.Parallel()
+		m := harness.NewMachine(t)
+		install(t, m, "--owner", "alice")
+		if unit := readFile(t, m, "/etc/systemd/system/koko.service"); strings.Contains(unit, "Environment=KOKO_WEB_LISTEN") {
+			t.Errorf("the unit turns the web listener on without --web-listen:\n%s", unit)
+		}
+		if s := parseServer(t, m.Koko("server", "show", "--json")); s.WebListen != nil {
+			t.Errorf("server show names the web listener %s without --web-listen", *s.WebListen)
+		}
+	})
+	for _, tc := range []struct {
+		webListen  string
+		port       int
+		grantsBind bool
+	}{
+		{"127.0.0.1:7823", 7823, false},
+		{"[::1]:443", 443, true},
+	} {
+		t.Run(tc.webListen, func(t *testing.T) {
+			t.Parallel()
+			m := harness.NewMachine(t)
+			install(t, m, "--owner", "alice", "--web-listen", tc.webListen)
+			unit := readFile(t, m, "/etc/systemd/system/koko.service")
+			if !strings.Contains(unit, "\nEnvironment=KOKO_WEB_LISTEN="+tc.webListen+"\n") {
+				t.Errorf("the unit does not turn the web listener on at %s:\n%s", tc.webListen, unit)
+			}
+			wantBindGrant(t, unit, tc.grantsBind)
+			if what := fmt.Sprintf("port %d", tc.port); !slices.ContainsFunc(m.Calls(), func(c harness.Call) bool { return c.What == what }) {
+				t.Errorf("install did not check that port %d is free", tc.port)
+			}
+			m.Koko("server", "set", "web_url=https://koko.example.com").WantSuccess(t)
+			// The fake machine's koko server listens on a loopback port of
+			// the test's choosing, never the unit's.
+			s := parseServer(t, m.Koko("server", "show", "--json"))
+			if s.WebListen == nil || !strings.HasPrefix(*s.WebListen, "127.0.0.1:") || s.WebURL == nil || *s.WebURL != "https://koko.example.com" {
+				t.Errorf("server show names the web listener %v and the Web URL %v, want both", s.WebListen, s.WebURL)
+			}
+		})
+	}
+}
+
 // With --address, install initialises with that Server Address and never
 // asks for the machine's IP.
 func TestServerInstallWithAnAddress(t *testing.T) {
@@ -363,6 +412,22 @@ func TestServerInstallRefusals(t *testing.T) {
 			[]string{"--port", "8443"},
 			1, "port_taken",
 			[]string{"port 8443", "a process of user www-data", "--port"},
+		},
+		{
+			"a web listener port in use",
+			func(m *harness.Machine) {
+				m.Listening[7823] = portowner.Process{PID: 812, Name: "nginx", User: "www-data"}
+			},
+			[]string{"--web-listen", "127.0.0.1:7823"},
+			1, "port_taken",
+			[]string{"port 7823", "nginx (pid 812, user www-data)", "--web-listen"},
+		},
+		{
+			"a web listener on the port for devices",
+			func(*harness.Machine) {},
+			[]string{"--web-listen", "127.0.0.1:7822"},
+			2, "invalid_usage",
+			[]string{"--web-listen 127.0.0.1:7822", "port 7822", "another port"},
 		},
 		{
 			"systemd 246",
@@ -488,6 +553,11 @@ func TestServerInstallRefusesBadFlags(t *testing.T) {
 		{[]string{"--owner", "Alice"}, "--owner takes the Owner's User name"},
 		{[]string{"--address", "https://koko.example.com"}, "--address takes the Server Address"},
 		{[]string{"--address", "koko.example.com:0"}, "--address takes the Server Address"},
+		{[]string{"--web-listen", "127.0.0.1"}, "--web-listen takes host:port, such as 127.0.0.1:7823, or off"},
+		{[]string{"--web-listen", "127.0.0.1:0"}, "--web-listen takes host:port"},
+		{[]string{"--web-listen", ":7823"}, "--web-listen takes host:port"},
+		{[]string{"--web-listen", "http://127.0.0.1:7823"}, "--web-listen takes host:port"},
+		{[]string{"--web-listen", "on"}, "--web-listen takes host:port"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			m := harness.NewMachine(t)

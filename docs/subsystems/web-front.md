@@ -2,7 +2,9 @@
 
 How a browser reaches the web UI: `koko web` on the person's machine, the
 `web@koko` channel, and the web front on the koko server, which answers that
-channel before the API does. The design is
+channel before the API does; and the web listener, where the Owner's
+reverse proxy reaches the same web front at the Web URL
+([ADR 0042](../adr/0042-the-web-ui-is-also-served-over-plain-http-to-the-owners-reverse-proxy.md)). The design is
 [ADR 0022](../adr/0022-the-web-ui-cookie-lasts-until-its-device-session-is-revoked.md);
 the web UI it serves is built as [the web UI build](web-ui.md) says.
 
@@ -103,6 +105,9 @@ request on a `web@koko` channel in this order:
    build without the web UI's output serves the placeholder page there.
 
 No answer carries a CORS header, so another site's page fails its preflight.
+Every answer carries the headers the web listener's carry
+([below](#the-headers-every-answer-carries)) but
+`Strict-Transport-Security`, since `koko web` serves `http://localhost`.
 Refusals, the trade's redirect and every answer of the API carry
 `Cache-Control: no-store`, so the browser's cache holds no record, nor the
 Secret value `secret.show` answers with. The
@@ -115,6 +120,86 @@ info level.
 | `cookie_required` | 401 | An API call on `web@koko` came without a valid cookie of this `koko web`. |
 
 The refusal of a Revoked Device Session is the device area's `revoked`.
+
+## The web listener
+
+[`kokod run --web-listen <host:port>`](initialisation.md) (`KOKO_WEB_LISTEN`)
+turns on a second listener: plain HTTP/1.1, no TLS, meant for the Owner's
+reverse proxy alone, which holds the domain and its certificate. Empty, the
+default, is off: a koko server without it listens on nothing new.
+
+- **Its address** is `host:port` with a numeric port; anything else is
+  refused with exit 2 before the koko server starts. It is bound
+  ([`listenWeb`](../../internal/server/weblisten.go)) before the store
+  opens; an address another process holds is refused with `port_taken`,
+  naming that process when [`portowner`](#the-port-owner-lookup) finds it.
+  The docs give `127.0.0.1:7823` on systemd, and `0.0.0.0:7823` in a
+  container, published on the host's loopback. Outside a container
+  (`server.Config.InContainer`, which `cmd/kokod` sets when `/.dockerenv` or
+  `/run/.containerenv` is there), an address that is not loopback, every
+  address included, gets a warning at start. `koko server install
+  --web-listen` writes it into the unit ([the installer](installer.md)).
+- **It serves** on a fresh koko server too, from the start, once the Unix
+  socket listens. Its start log line, just before `koko server started`, is
+  `web listener` with `listen=` its bound address, or `off`, and `web_url=`
+  the Web URL, or that none is set.
+- **At shutdown** it is closed first, before the Gateway's notices: it
+  stops accepting and waits up to 5 s for its calls in flight, then cuts
+  them ([`Server.Close`](../../internal/server/server.go)).
+- **`server.show`** names its bound address as `web_listen`, `null` while it
+  is off ([initialisation](initialisation.md#the-deployment-afterwards)).
+
+[`Front.Listener`](../../internal/server/web/listener.go) answers each
+request in this order, reading the deployment's row at every request, so a
+change of the Web URL takes effect on the next one. No answer reads or sets
+a cookie.
+
+1. **Before initialisation**, every request gets a `503` page saying the
+   koko server is not initialised yet.
+2. **Without a Web URL**, every request gets a `503` page naming `koko
+   server set web_url=https://…`.
+3. **The Host header** must name the Web URL's host and port, without
+   regard to case, the default port 443 written or not
+   (`https://koko.example.com` takes `koko.example.com` and
+   `koko.example.com:443`). Any other gets a `421` page saying that this
+   koko server answers at its Web URL alone and that the proxy must pass
+   the Host header on; it names the Web URL, never the Host the request
+   carried. Caddy passes it by default; nginx needs `proxy_set_header Host
+   $host`. `X-Forwarded-Host` and `X-Forwarded-Proto` are never read.
+4. **The Origin check.** Every `POST`, on any path, must carry an `Origin`
+   header equal to the Web URL; another, or none, is refused with
+   `bad_origin` (403) from its headers alone, before its body is read. An
+   API path gets the error object, any other path a page.
+5. **`/v1/`** is answered `signin_required` (401) without reaching the API,
+   until Sign-ins exist (#114).
+6. **Every other path** serves the web UI's files as `web@koko` does, the
+   same code path (`Front.serveFile`).
+
+Refusals and API answers carry `Cache-Control: no-store`. The client's
+address, which the log names, is the last address in `X-Forwarded-For`, the
+one the proxy appended, or the TCP peer's when the header is absent or its
+last entry is not an IP address
+([`clientAddress`](../../internal/server/web/listener.go)); no list of
+trusted proxies is kept, since every peer is the proxy. A refusal of the
+Host or Origin check is logged at debug level with its reason and that
+address.
+
+| Code | Status | When |
+| --- | --- | --- |
+| `signin_required` | 401 | A call on the web listener came without a valid Sign-in. |
+| `bad_origin` | 403 | A `POST` on the web listener came without an `Origin` header equal to the Web URL. |
+
+### The headers every answer carries
+
+Every answer of the web listener carries
+`Content-Security-Policy: default-src 'self'; frame-ancestors 'none';
+base-uri 'none'; form-action 'self'`, `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: no-referrer` and `Strict-Transport-Security:
+max-age=31536000`; `koko web`'s carry the same but the last
+([`securityHeaders`](../../internal/server/web/listener.go)). The policy
+lets a page load nothing from another site, nor run an inline script, apply
+an inline style sheet or load a `data:` URL, so the web UI's build must
+hold none of them.
 
 ## Runs, tokens and the cookie
 
@@ -211,6 +296,26 @@ and user. It is per OS ([rule 13](code-layout.md#rules-for-working-in-parallel))
 - `web.start`'s rows in the [access matrix](access.md), and its refusal of
   a Revoked Device Session in
   [`revoked_test.go`](../../internal/server/revoked_test.go).
+- [`listener_test.go`](../../internal/server/web/listener_test.go), S1
+  against the web listener on `127.0.0.1:0` (`harness.WebListen`, with
+  `h.WebAddress`), the test setting `Host`, `Origin` and `X-Forwarded-For`
+  as a proxy would: off by default; the two `503` pages, before
+  initialisation and without a Web URL, and again once it is cleared; the
+  Host check, 443 written or not, another port or host refused with the
+  page naming the Web URL alone, and a change taking effect at once; the
+  Origin check on `/v1/` and another path, before the API and before the
+  body; `signin_required`; every answer's headers and `no-store` on
+  refusals; the client's address in the log; and the start log naming the
+  Web URL.
+- [`run_checks_test.go`](../../internal/server/kokod/run_checks_test.go):
+  a taken web listener address refused naming the process holding it;
+  [`kokod_test.go`](../../internal/server/kokod/kokod_test.go):
+  `--web-listen` and `KOKO_WEB_LISTEN`, and their refusals;
+  [`weblisten_internal_test.go`](../../internal/server/weblisten_internal_test.go):
+  which addresses draw the warning.
+- `TestWebAnswersCarryTheSecurityHeaders` in
+  [`web_test.go`](../../internal/client/cli/web_test.go): `koko web`'s
+  answers carry the headers, without `Strict-Transport-Security`.
 - [`internal/server/web/web_test.go`](../../internal/server/web/web_test.go):
   the cookie key made on first use, sealed under the Root Key, and in no file
   of the data directory; [`host_test.go`](../../internal/server/web/host_test.go):

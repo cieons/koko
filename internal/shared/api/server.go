@@ -52,6 +52,14 @@ type Server struct {
 	RootKeyID string `json:"root_key_id"`
 	// DataDir is the data directory, which holds koko.db.
 	DataDir string `json:"data_dir"`
+	// WebURL is the Web URL, the https:// origin the Owner's reverse proxy
+	// serves the web UI at, which every request on the web listener is
+	// checked against; null while it is not set.
+	WebURL *string `json:"web_url"`
+	// WebListen is the address the web listener listens on, plain HTTP for
+	// the reverse proxy alone; null while it is off, as it is unless kokod
+	// run is given --web-listen.
+	WebListen *string `json:"web_listen"`
 }
 
 // ServerShowRequest asks for the koko server's deployment.
@@ -68,6 +76,12 @@ type ServerSetRequest struct {
 	// (package serveraddr). Join Codes issued before keep the address they
 	// carry.
 	Address *string `json:"address,omitzero"`
+	// WebURL, when given, is the new Web URL, an https:// origin (package
+	// weburl), checked on the web listener's next request.
+	WebURL *string `json:"web_url,omitzero"`
+	// Unset clears these settings: only "web_url", which turns the web
+	// listener's answers into a page naming koko server set web_url=.
+	Unset []string `json:"unset,omitempty"`
 }
 
 // ServerSetResponse is the koko server's deployment as server.set left it.
@@ -89,11 +103,13 @@ var (
 	// directory.
 	ServerShow = Op[ServerShowRequest, ServerShowResponse]{Name: "server.show"}
 	// ServerSet changes the deployment settings the request names: the
-	// Server Address, for the Join Codes issued afterwards. It answers only
+	// Server Address, for the Join Codes issued afterwards, and the Web URL,
+	// for the web listener's next request. It answers only
 	// the Local caller, over the Unix socket, and never a browser tab of
 	// koko web there, so no device and no browser tab can move where
 	// devices connect. A Server Address a Join Code cannot carry is refused
-	// with CodeInvalidAddress.
+	// with CodeInvalidAddress, and a Web URL that is not an https:// origin
+	// with CodeInvalidWebURL.
 	ServerSet = Op[ServerSetRequest, ServerSetResponse]{Name: "server.set", Write: true}
 )
 
@@ -110,9 +126,13 @@ var (
 	CodeAlreadyInitialised = Code{"already_initialised", http.StatusConflict}
 	// CodeInvalidAddress: a Server Address is not host or host:port.
 	CodeInvalidAddress = Code{"invalid_address", http.StatusBadRequest}
+	// CodeInvalidWebURL: a Web URL is not an https:// origin,
+	// https://<host>[:<port>] with no path.
+	CodeInvalidWebURL = Code{"invalid_web_url", http.StatusBadRequest}
 )
 
 var serverCodes = []Code{
 	CodeAlreadyInitialised,
 	CodeInvalidAddress,
+	CodeInvalidWebURL,
 }

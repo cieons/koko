@@ -483,23 +483,28 @@ func (m *Machine) PortOwner(_ context.Context, port int) (portowner.Process, err
 }
 
 // serviceListens tells whether the koko service runs with its unit's
-// listen address on port, as an initialised koko server listens. One not
-// initialised yet listens on no port, which install takes the same way: the
-// restart leaves the port free.
+// listen address, or its web listener's, on port, as an initialised koko
+// server listens. One not initialised yet listens on no TCP port for
+// devices, which install takes the same way: the restart leaves the port
+// free.
 func (m *Machine) serviceListens(port int) bool {
 	if !m.Running() {
 		return false
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	listen := ""
+	listen := map[string]string{}
 	for _, kv := range m.running.env {
-		if v, ok := strings.CutPrefix(kv, "KOKO_LISTEN="); ok {
-			listen = v
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			listen[k] = v
 		}
 	}
-	_, p, _ := strings.CutLast(listen, ":")
-	return p == strconv.Itoa(port)
+	for _, k := range []string{"KOKO_LISTEN", "KOKO_WEB_LISTEN"} {
+		if _, p, ok := strings.CutLast(listen[k], ":"); ok && p == strconv.Itoa(port) {
+			return true
+		}
+	}
+	return false
 }
 
 // ServiceShow shows, as systemctl show does, the koko service's main PID,
@@ -733,8 +738,12 @@ func (m *Machine) startService() error {
 		return fmt.Errorf("the fake systemd runs kokod run or koko server run, not %q", u.execStart)
 	}
 	// The unit's own settings, then what systemd adds. The koko server
-	// listens on a loopback port of the test's choosing, never the unit's.
+	// listens on a loopback port of the test's choosing, never the unit's,
+	// and so does its web listener when the unit turns it on.
 	env := append(slices.Clone(u.env), "CREDENTIALS_DIRECTORY="+creds, "KOKO_LISTEN=127.0.0.1:0")
+	if slices.ContainsFunc(u.env, func(kv string) bool { return strings.HasPrefix(kv, "KOKO_WEB_LISTEN=") }) {
+		env = append(env, "KOKO_WEB_LISTEN=127.0.0.1:0")
+	}
 	noSocket, delay, listenDelay := m.NoSocket, m.StartDelay, m.ListenDelay
 	serve := func(ctx context.Context, c server.Config) error {
 		if noSocket {

@@ -19,8 +19,8 @@ import (
 // settings are what kokod run hands the koko server in its config from its
 // command line.
 type settings struct {
-	DataDir, RootKeyPath, RootKeySource, Owner, Address, Listen string
-	LogLevel                                                    slog.Level
+	DataDir, RootKeyPath, RootKeySource, Owner, Address, Listen, WebListen string
+	LogLevel                                                               slog.Level
 }
 
 // fakeServer records the settings kokod run hands the koko server in its
@@ -42,6 +42,7 @@ func (f *fakeServer) program() kokod.Program {
 			Owner:         c.Owner,
 			Address:       c.Address,
 			Listen:        c.Listen,
+			WebListen:     c.WebListen,
 			LogLevel:      c.LogLevel,
 		}
 		return f.err
@@ -110,8 +111,26 @@ func TestRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
 			withInit(defaults, "alice", "koko.example.com"),
 		},
 		{
+			"the web listener as a flag",
+			[]string{credentialsDirectory},
+			[]string{"--web-listen", "127.0.0.1:7823"},
+			withWebListen(defaults, "127.0.0.1:7823"),
+		},
+		{
+			"the web listener in the environment",
+			[]string{credentialsDirectory, "KOKO_WEB_LISTEN=0.0.0.0:7823"},
+			nil,
+			withWebListen(defaults, "0.0.0.0:7823"),
+		},
+		{
+			"the web listener, flag over environment",
+			[]string{credentialsDirectory, "KOKO_WEB_LISTEN=0.0.0.0:7823"},
+			[]string{"--web-listen=[::1]:7823"},
+			withWebListen(defaults, "[::1]:7823"),
+		},
+		{
 			"empty variable is unset",
-			[]string{credentialsDirectory, "KOKO_DATA_DIR=", "KOKO_ROOT_KEY_FILE=", "KOKO_LISTEN="},
+			[]string{credentialsDirectory, "KOKO_DATA_DIR=", "KOKO_ROOT_KEY_FILE=", "KOKO_LISTEN=", "KOKO_WEB_LISTEN="},
 			nil,
 			defaults,
 		},
@@ -130,6 +149,12 @@ func TestRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
 			}
 		})
 	}
+}
+
+// withWebListen is s with the web listener on at addr.
+func withWebListen(s settings, addr string) settings {
+	s.WebListen = addr
+	return s
 }
 
 // withInit is s with the Owner and the Server Address a fresh koko server
@@ -162,6 +187,11 @@ func TestRunRefusesBadSettings(t *testing.T) {
 		{"listen address without a port", []string{credentialsDirectory}, []string{"--listen", "0.0.0.0"}, `--listen (KOKO_LISTEN) takes host:port or :port, not "0.0.0.0"`},
 		{"listen port out of range", []string{credentialsDirectory}, []string{"--listen", ":65536"}, `--listen (KOKO_LISTEN) takes host:port or :port, not ":65536"`},
 		{"listen port by name", []string{credentialsDirectory, "KOKO_LISTEN=:https"}, nil, `--listen (KOKO_LISTEN) takes host:port or :port, not ":https"`},
+		{"web listener without a port", []string{credentialsDirectory}, []string{"--web-listen", "127.0.0.1"}, `--web-listen (KOKO_WEB_LISTEN) takes host:port, such as 127.0.0.1:7823, not "127.0.0.1"`},
+		{"web listener with a URL", []string{credentialsDirectory}, []string{"--web-listen", "http://127.0.0.1:7823"}, `--web-listen (KOKO_WEB_LISTEN) takes host:port`},
+		{"web listener port by name", []string{credentialsDirectory, "KOKO_WEB_LISTEN=127.0.0.1:http"}, nil, `--web-listen (KOKO_WEB_LISTEN) takes host:port, such as 127.0.0.1:7823, not "127.0.0.1:http"`},
+		{"web listener without a host", []string{credentialsDirectory}, []string{"--web-listen", ":7823"}, `--web-listen (KOKO_WEB_LISTEN) takes host:port, such as 127.0.0.1:7823, not ":7823"`},
+		{"web listener off by word", []string{credentialsDirectory, "KOKO_WEB_LISTEN=off"}, nil, `--web-listen (KOKO_WEB_LISTEN) takes host:port`},
 		{"Owner without Server Address", []string{credentialsDirectory}, []string{"--owner", "alice"}, "--owner (KOKO_OWNER) needs --address (KOKO_ADDRESS)"},
 		{"Owner without Server Address in the environment", []string{credentialsDirectory, "KOKO_OWNER=alice"}, nil, "--owner (KOKO_OWNER) needs --address (KOKO_ADDRESS)"},
 		{"Server Address without Owner", []string{credentialsDirectory}, []string{"--address", "koko.example.com"}, "--address (KOKO_ADDRESS) needs --owner (KOKO_OWNER)"},

@@ -36,3 +36,16 @@ export const WebStart: Op<WebStartRequest, WebStartResponse> = {
  * valid cookie of this koko web; open the address koko web prints.
  */
 export const CodeCookieRequired = "cookie_required";
+
+/**
+ * CodeSignInRequired: a call on the web listener came without a valid
+ * Sign-in; the web UI goes to its sign-in page.
+ */
+export const CodeSignInRequired = "signin_required";
+
+/**
+ * CodeBadOrigin: a POST on the web listener came without an Origin
+ * header naming the Web URL, so from no page of this koko server's, and
+ * was refused before anything of it was read.
+ */
+export const CodeBadOrigin = "bad_origin";

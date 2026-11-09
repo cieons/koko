@@ -42,6 +42,7 @@ var commands = []*command{
 			{Name: "owner", Value: "user", Summary: "the Owner's User name, which a koko server not initialised yet needs"},
 			{Name: "address", Value: "host[:port]", Summary: "the Server Address devices connect to; without it, this machine's public IP"},
 			{Name: "port", Value: "port", Summary: "the TCP port the koko server listens on: 7822 on a fresh install, and on an upgrade the port it listens on now"},
+			{Name: "web-listen", Value: "host:port|off", Summary: "the web listener's address, for a reverse proxy, or off: off on a fresh install, and on an upgrade the one the unit names now"},
 		},
 		json: "Print a refusal as JSON; the report is JSON always",
 		run:  installCmd,
@@ -74,6 +75,7 @@ func run(ctx context.Context, p *Program, inv *Invocation, line *parsed) error {
 		Owner:         s.Owner,
 		Address:       s.Address,
 		Listen:        s.Listen,
+		WebListen:     s.WebListen,
 		LogLevel:      s.LogLevel,
 		Log:           inv.Stderr,
 	})
@@ -83,7 +85,7 @@ func run(ctx context.Context, p *Program, inv *Invocation, line *parsed) error {
 // socket, then its report as JSON, which says what initialising a fresh
 // koko server needs.
 func installCmd(ctx context.Context, p *Program, inv *Invocation, line *parsed) error {
-	req, err := install.ParseRequest(line.value("owner"), line.value("address"), line.value("port"))
+	req, err := install.ParseRequest(line.value("owner"), line.value("address"), line.value("port"), line.value("web-listen"))
 	if err != nil {
 		return err
 	}

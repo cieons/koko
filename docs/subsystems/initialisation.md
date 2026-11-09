@@ -120,13 +120,16 @@ The operation framework asks
 inside each call's transaction. Until the `deployment` row exists, every
 operation but `server.init` is refused with `not_initialised` (409), and
 records nothing: no Space or other record exists without an Owner, so the
-Owner's name can never be taken before it is given. Nothing listens on TCP.
+Owner's name can never be taken before it is given. Nothing listens on TCP
+for devices; the web listener, when it is on, answers every request with a
+`503` page saying the koko server is not initialised
+([the web listener](web-front.md#the-web-listener)).
 
 ## The record
 
 | Table | What it holds |
 | --- | --- |
-| `deployment` | One row: the Server Address. The koko server is initialised once it exists. |
+| `deployment` | One row: the Server Address, and the Web URL (`web_url`), `NULL` until the Owner sets it. The koko server is initialised once it exists. |
 | `own_keys` | One row per key the koko server makes for itself, sealed for the row's id: `koko` and `host`, each PKCS #8, made at initialisation; and `cookie`, the web front's 32-byte cookie key, made on first use ([`koko web` and the web front](web-front.md#runs-tokens-and-the-cookie)). |
 | `users` | The Owner, with the role `owner`; a partial unique index allows one. Invited Users have the role `member` ([Users](users.md#the-record)). |
 | `spaces.user_id` | The User a Personal Space belongs to, which is not a membership; empty for a shared Space. |
@@ -141,7 +144,10 @@ Root Key is the one they were sealed under; its refusals are in
 the sealed host key, and refuses to start when it cannot. Its `koko server
 started` log line says `initialised=true host_key=SHA256:... listen=<addr>`
 once initialised, and `initialised=false` before; initialisation itself logs
-`koko server initialised` with the host key and the listen address.
+`koko server initialised` with the host key and the listen address. A
+`web listener` line comes just before `koko server started`, with
+`listen=off`, or the web listener's address and the Web URL
+(`web_url=none: …` while it is not set).
 
 ## The deployment afterwards
 
@@ -161,6 +167,8 @@ loaded and runs with. Each returns `{"server": {...}}`
 | `version` | the koko server's version, as `koko version` names its own |
 | `root_key_file`, `root_key_id` | the Root Key's file as the Owner keeps it, and the id it names; never the key |
 | `data_dir` | the data directory, as `kokod run` was given it |
+| `web_url` | the Web URL, as stored: lowercased, without the default port 443; `null` while it is not set |
+| `web_listen` | the web listener's bound address, such as `127.0.0.1:7823`; `null` while it is off |
 
 - **`server.show`** ([`koko server show`](cli.md#the-commands-so-far), read
   tier) answers every caller, a Member's Device Session included: the
@@ -172,15 +180,16 @@ loaded and runs with. Each returns `{"server": {...}}`
   (`server.Config.RootKeySource`). A drop-in that loads the credential from
   another file leaves it naming `/etc/koko/root.key`, since the service is
   never told where its credential came from.
-- **`server.set`** (`koko server set address=<host[:port]>`, reversible tier)
+- **`server.set`** (`koko server set address=<host[:port]>`,
+  `web_url=<https://host[:port]>` and `--unset web_url`, reversible tier)
   answers only the Local caller (`op.LocalOnly`): over a Device Connection,
   the Owner's own Device Session included, it is refused with `local_only`,
   so no device can move where devices connect. A browser tab of `koko web`
   on the koko server's machine, whose calls come over the Unix socket as the
   Local caller, is refused with `local_only` too (a `web@koko` channel,
   `transport.WebPortFrom`), so no browser tab can either. It changes only
-  what the request names, `{"address": "<host[:port]>"}`; naming nothing, it
-  changes nothing. The address is checked as at initialisation, and refused
+  what the request names, `{"address": "<host[:port]>", "web_url": "<url>",
+  "unset": ["web_url"]}`; naming nothing, it changes nothing. The address is checked as at initialisation, and refused
   with `invalid_address` when it is not a Server Address or, with the listen
   port written, is longer than a Join Code carries
   ([`joincode.CheckAddress`](../../internal/shared/joincode/joincode.go),
@@ -189,10 +198,24 @@ loaded and runs with. Each returns `{"server": {...}}`
   address it carries, and still joins there while the koko server answers
   at it. A joined device takes the new address with `koko connect
   <host:port>`; nothing moves a device by itself.
+- **The Web URL** ([`weburl.Parse`](../../internal/shared/weburl/weburl.go),
+  ADR 0042) is an origin, `https://<host>[:<port>]`, whose host is a DNS
+  name or an IP address as a Server Address's is, with no path, query,
+  fragment or user information; a lone trailing `/` is dropped. It is
+  stored lowercased and without the port 443. Anything else, an empty value
+  included, is refused with `invalid_web_url` (400). `"unset": ["web_url"]`
+  clears it; the Server Address is never cleared, and an unset of anything
+  else, or a Web URL both set and cleared, is `invalid_request`. A change
+  takes effect on the web listener's next request
+  ([the web listener](web-front.md#the-web-listener)).
 
-The CLI refuses a `key=value` other than `address=`, an address that is not a
-Server Address and a `server set` naming nothing, with exit 2, before any
-call.
+The CLI refuses a `key=value` other than `address=` and `web_url=`, an
+address that is not a Server Address, a Web URL that is not one, an
+`--unset` of anything but `web_url`, and a `server set` naming nothing, with
+exit 2, before any call. `koko server show` prints the web listener's
+address, or `off`, and the Web URL, or `not set`; `koko server set
+web_url=` says what changed, and how to turn the web listener on while it
+is off.
 
 ## Verifying
 
@@ -223,7 +246,11 @@ call.
   before and after a change and where each joins, the refusals before any
   call and of an address no Join Code carries, `server set` refused and
   `server show` answered from the Owner's and a Member's devices and from a
-  browser tab of `koko web`, and the two commands' tiers.
+  browser tab of `koko web`, and the two commands' tiers; the Web URL set
+  as stored and cleared, `server show` naming it and the web listener, and
+  its refusals in the CLI (exit 2) and in `server.set` (`invalid_web_url`).
+- [`weburl_test.go`](../../internal/shared/weburl/weburl_test.go): the Web
+  URL's forms and refusals.
 - [`listen_test.go`](../../internal/server/listen_test.go): nothing on TCP
   before initialisation, the sealed host key once initialised and after a
   restart, and nothing listening after a refused initialisation.

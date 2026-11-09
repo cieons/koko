@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"encoding/json/v2"
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -17,13 +18,15 @@ import (
 // serverOut is the koko server's settings, as koko server show --json and
 // koko server set --json print them.
 type serverOut struct {
-	Address            string `json:"address"`
-	ListenPort         int    `json:"listen_port"`
-	HostKeyFingerprint string `json:"host_key_fingerprint"`
-	Version            string `json:"version"`
-	RootKeyFile        string `json:"root_key_file"`
-	RootKeyID          string `json:"root_key_id"`
-	DataDir            string `json:"data_dir"`
+	Address            string  `json:"address"`
+	ListenPort         int     `json:"listen_port"`
+	HostKeyFingerprint string  `json:"host_key_fingerprint"`
+	Version            string  `json:"version"`
+	RootKeyFile        string  `json:"root_key_file"`
+	RootKeyID          string  `json:"root_key_id"`
+	DataDir            string  `json:"data_dir"`
+	WebURL             *string `json:"web_url"`
+	WebListen          *string `json:"web_listen"`
 }
 
 // parseServer wants r, a koko server show or set with --json, to have
@@ -134,6 +137,8 @@ func TestServerShowPrintsTheSettings(t *testing.T) {
 	for _, line := range []string{
 		"Server Address:  " + harness.Address + ":" + k.port,
 		"Listen port:     " + k.port,
+		"Web listener:    off",
+		"Web URL:         not set",
 		"Host key:        " + pinned,
 		"Version:         " + want.Version,
 		"Root Key:        " + k.keyFile + " (" + want.RootKeyID + ")",
@@ -342,6 +347,111 @@ func TestServerSetRefusesABrowserTab(t *testing.T) {
 	wantAPIError(t, b.postJSON("/v1/server.set", `{"address": "moved.example.com"}`), http.StatusForbidden, "local_only")
 	if show := b.postJSON("/v1/server.show", "{}"); show.StatusCode != http.StatusOK || !strings.Contains(show.body, `"address":"`+harness.Address+`"`) {
 		t.Errorf("server.show through koko web = %s %q, want the Server Address unchanged", show.Status, show.body)
+	}
+}
+
+// koko server set web_url= sets the Web URL as stored, lowercased and
+// without the default port, and --unset web_url clears it; server show
+// names it and the web listener's address, both null while unset or off.
+func TestServerSetWebURL(t *testing.T) {
+	t.Parallel()
+	h := harness.Start(t, harness.WebListen("127.0.0.1:0"))
+	s := parseServer(t, h.Koko("server", "set", "web_url=HTTPS://Koko.Example.COM:443/", "--json"))
+	if s.WebURL == nil || *s.WebURL != "https://koko.example.com" || s.WebListen == nil || *s.WebListen != h.WebAddress() {
+		t.Errorf("server set printed the Web URL %v and the web listener %v, want https://koko.example.com and %s", s.WebURL, s.WebListen, h.WebAddress())
+	}
+	if s.Address != harness.Address {
+		t.Errorf("setting the Web URL changed the Server Address to %s", s.Address)
+	}
+	if shown := parseServer(t, h.Koko("server", "show", "--json")); *shown.WebURL != *s.WebURL || *shown.WebListen != *s.WebListen {
+		t.Errorf("server show = %+v after server set printed %+v", shown, s)
+	}
+
+	// For people: what changed, and server show's lines.
+	r := h.Koko("server", "set", "web_url=https://koko.example.com:8443")
+	r.WantSuccess(t)
+	if want := "Changed the Web URL to https://koko.example.com:8443. "; !strings.HasPrefix(r.Stdout, want) || strings.Contains(r.Stdout, "Server Address") {
+		t.Errorf("server set printed %q, want only %q and what it does", r.Stdout, want)
+	}
+	r = h.Koko("server", "show")
+	for _, line := range []string{"Web listener:    " + h.WebAddress() + "\n", "Web URL:         https://koko.example.com:8443\n"} {
+		if !strings.Contains(r.Stdout, line) {
+			t.Errorf("server show printed %q, want the line %q", r.Stdout, line)
+		}
+	}
+
+	r = h.Koko("server", "set", "--unset", "web_url")
+	r.WantSuccess(t)
+	if !strings.HasPrefix(r.Stdout, "Cleared the Web URL.") {
+		t.Errorf("server set --unset web_url printed %q", r.Stdout)
+	}
+	if s := parseServer(t, h.Koko("server", "show", "--json")); s.WebURL != nil {
+		t.Errorf("after --unset web_url, server show names the Web URL %s", *s.WebURL)
+	}
+}
+
+// With the web listener off, koko server set web_url= says how to turn it
+// on.
+func TestServerSetWebURLSaysTheWebListenerIsOff(t *testing.T) {
+	t.Parallel()
+	h := harness.Start(t)
+	r := h.Koko("server", "set", "web_url=https://koko.example.com")
+	r.WantSuccess(t)
+	if !strings.Contains(r.Stdout, "The web listener is off: turn it on with koko server install --web-listen 127.0.0.1:7823") {
+		t.Errorf("server set printed %q, want how to turn the web listener on", r.Stdout)
+	}
+	if s := parseServer(t, h.Koko("server", "show", "--json")); s.WebListen != nil {
+		t.Errorf("server show names the web listener %s though it is off", *s.WebListen)
+	}
+}
+
+// What is not an https:// origin is refused as a Web URL: by koko server
+// set with exit 2 before any call, and by server.set with invalid_web_url;
+// neither changes the Web URL. The Server Address is never cleared.
+func TestServerSetRefusesWhatIsNotAWebURL(t *testing.T) {
+	t.Parallel()
+	h := harness.Start(t)
+	h.Koko("server", "set", "web_url=https://koko.example.com").WantSuccess(t)
+	calls := h.Calls()
+	for name, args := range map[string][]string{
+		"http://":                 {"web_url=http://koko.example.com"},
+		"no scheme":               {"web_url=koko.example.com"},
+		"a path":                  {"web_url=https://example.com/koko"},
+		"a query":                 {"web_url=https://koko.example.com/?a=b"},
+		"user information":        {"web_url=https://alice@koko.example.com"},
+		"a port out of range":     {"web_url=https://koko.example.com:65536"},
+		"empty":                   {"web_url="},
+		"set and cleared":         {"web_url=https://koko.example.com", "--unset", "web_url"},
+		"the address cleared":     {"--unset", "address"},
+		"a setting it lacks":      {"--unset", "listen_port"},
+		"the Web URL given twice": {"web_url=https://a.example.com", "web_url=https://b.example.com"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h.Koko(append([]string{"server", "set", "--json"}, args...)...).WantError(t, 2, "invalid_usage")
+		})
+	}
+	if n := h.Calls() - calls; n != 0 {
+		t.Errorf("the refused command lines made %d calls, want none", n)
+	}
+
+	for _, u := range []string{"http://koko.example.com", "https://example.com/koko", "https://koko.example.com#top", ""} {
+		_, err := h.Call(api.ServerSet, api.ServerSetRequest{WebURL: new(u)})
+		if e, ok := errors.AsType[*api.Error](err); !ok || e.Code != "invalid_web_url" {
+			t.Errorf("server.set web_url=%q = %v, want invalid_web_url", u, err)
+		}
+	}
+	for _, unset := range [][]string{{"address"}, {"listen_port"}} {
+		_, err := h.Call(api.ServerSet, api.ServerSetRequest{Unset: unset})
+		if e, ok := errors.AsType[*api.Error](err); !ok || e.Code != "invalid_request" {
+			t.Errorf("server.set unsetting %v = %v, want invalid_request", unset, err)
+		}
+	}
+	_, err := h.Call(api.ServerSet, api.ServerSetRequest{WebURL: new("https://b.example.com"), Unset: []string{"web_url"}})
+	if e, ok := errors.AsType[*api.Error](err); !ok || e.Code != "invalid_request" {
+		t.Errorf("server.set setting and clearing the Web URL = %v, want invalid_request", err)
+	}
+	if s := parseServer(t, h.Koko("server", "show", "--json")); s.WebURL == nil || *s.WebURL != "https://koko.example.com" {
+		t.Errorf("after the refusals the Web URL is %v, want https://koko.example.com", s.WebURL)
 	}
 }
 

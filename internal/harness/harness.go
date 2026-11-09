@@ -63,6 +63,8 @@ type Harness struct {
 	stop func() error
 	// startCalls is how many API calls Start made itself.
 	startCalls int
+	// web is the web listener's bound address, "" while it is off.
+	web string
 }
 
 // Option changes how Start sets up the harness.
@@ -73,6 +75,7 @@ type options struct {
 	dataDir     string
 	rootKeyFile string
 	listen      string
+	webListen   string
 	socket      string
 	timings     timing.Timings
 	filesystems filesystem.Types
@@ -159,6 +162,13 @@ func RootKeyFile(path string) Option {
 // before initialisation or across a restart.
 func Listen(addr string) Option {
 	return func(o *options) { o.listen = addr }
+}
+
+// WebListen turns the koko server's web listener on at addr, such as
+// 127.0.0.1:0 for a loopback port of the system's choosing, which
+// h.WebAddress names.
+func WebListen(addr string) Option {
+	return func(o *options) { o.webListen = addr }
 }
 
 // SocketPath makes the koko server serve its Unix socket at path, instead
@@ -251,6 +261,7 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		DataDir:     o.dataDir,
 		RootKeyPath: o.rootKeyFile,
 		Listen:      cmp.Or(o.listen, listenAddr),
+		WebListen:   o.webListen,
 		LogLevel:    slog.LevelDebug,
 		Log:         h.log,
 		Filesystems: o.filesystemsOrLocalDisk(),
@@ -263,6 +274,7 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		t.Fatalf("start the koko server: %v", err)
 	}
 	h.stop = sync.OnceValue(srv.Close)
+	h.web = srv.WebAddress()
 	t.Cleanup(func() {
 		if err := h.stop(); err != nil {
 			t.Errorf("stop the koko server: %v", err)
@@ -436,6 +448,12 @@ func (c *clock) set(now time.Time) {
 func (h *Harness) Background(env []string, args ...string) *Process {
 	h.t.Helper()
 	return background(h.t, h.runner(), append([]string{"HOME=" + h.home}, env...), args...)
+}
+
+// WebAddress returns the address the koko server's web listener listens
+// on, such as 127.0.0.1:52817, or "" when WebListen did not turn it on.
+func (h *Harness) WebAddress() string {
+	return h.web
 }
 
 // Log returns what the koko server has logged so far.

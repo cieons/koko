@@ -7,6 +7,9 @@
 // another site's page cannot call the API. It also serves web.start, which
 // koko web calls for its token.
 //
+// It also answers the web listener, where the Owner's reverse proxy reaches
+// the web UI at the Web URL (Listener).
+//
 // A token and a cookie are bound to the Device Session koko web runs as: the
 // cookie lets in a web@koko channel of any Device Connection of that Device
 // Session, so it outlives koko web, a dropped Device Connection and a koko
@@ -22,6 +25,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -102,6 +106,7 @@ func (f *Front) start(ctx context.Context, tx store.Tx, caller op.Caller, _ api.
 
 // ServeHTTP answers one request on a web@koko channel.
 func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	securityHeaders(w.Header(), false)
 	ctx := r.Context()
 	port, hasPort := transport.WebPortFrom(ctx)
 	conn, hasConn := transport.ConnectionFrom(ctx)
@@ -122,7 +127,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if state == subjectFound {
 		var err error
 		if cookieValid, err = f.checkCookie(ctx, r, name, sub); err != nil {
-			f.fail(w, r, err)
+			f.fail(w, r, err, refusePage)
 			return
 		}
 	}
@@ -148,7 +153,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.api.ServeHTTP(w, r)
 		return
 	}
-	f.serveFile(w, r)
+	f.serveFile(w, r, refusePage)
 }
 
 // trade spends the token and gives the browser the cookie of sub, the
@@ -157,7 +162,7 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (f *Front) trade(w http.ResponseWriter, r *http.Request, sub subject, name, token string) {
 	key, err := f.cookieKey(r.Context())
 	if err != nil {
-		f.fail(w, r, err)
+		f.fail(w, r, err, refusePage)
 		return
 	}
 	// As op.Now reads it for web.start, which issued the token.
@@ -218,32 +223,43 @@ func (f *Front) cookieKey(ctx context.Context) ([]byte, error) {
 }
 
 // serveFile serves a file of the web UI, and its index.html for any path
-// that names none, since the web UI routes its pages itself.
-func (f *Front) serveFile(w http.ResponseWriter, r *http.Request) {
+// that names none, since the web UI routes its pages itself, on either
+// listener; page writes its refusals as that listener's pages read.
+func (f *Front) serveFile(w http.ResponseWriter, r *http.Request, page pageWriter) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
-		refusePage(w, http.StatusMethodNotAllowed, "the web UI's pages are read with GET; its API takes a POST under "+api.PathPrefix)
+		page(w, http.StatusMethodNotAllowed, "the web UI's pages are read with GET; its API takes a POST under "+api.PathPrefix)
 		return
 	}
 	name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
-	page, err := fs.ReadFile(f.files, name)
+	file, err := fs.ReadFile(f.files, name)
 	if name == "" || err != nil {
 		name = "index.html"
-		page, err = fs.ReadFile(f.files, name)
+		file, err = fs.ReadFile(f.files, name)
 	}
 	if err != nil {
-		f.fail(w, r, fmt.Errorf("read the web UI's %s: %w", name, err))
+		f.fail(w, r, fmt.Errorf("read the web UI's %s: %w", name, err), page)
 		return
 	}
-	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(page))
+	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(file))
 }
 
-// fail answers a failure the web front did not expect; the log holds the
-// cause.
-func (f *Front) fail(w http.ResponseWriter, r *http.Request, err error) {
+// fail answers a failure the web front did not expect, to a page as page
+// writes it; the log holds the cause.
+func (f *Front) fail(w http.ResponseWriter, r *http.Request, err error, page pageWriter) {
 	f.log.Error("web request failed", "path", r.URL.Path, "err", err)
-	refuse(w, r, api.CodeInternal, "the koko server failed; its log says why")
+	const message = "the koko server failed; its log says why"
+	if isAPI(r) {
+		refuse(w, r, api.CodeInternal, message)
+		return
+	}
+	page(w, api.CodeInternal.Status, message)
 }
+
+// pageWriter answers a page's request with status and a message a person
+// reads in the browser, as one listener's pages read: refusePage on
+// web@koko, listenerPage on the web listener.
+type pageWriter func(w http.ResponseWriter, status int, message string)
 
 // hostAllowed tells whether a Host header names koko web's own port on
 // localhost or 127.0.0.1, as a browser opening koko web's address sends it:
@@ -302,12 +318,33 @@ func refuse(w http.ResponseWriter, r *http.Request, code api.Code, message strin
 	_, _ = w.Write(body)
 }
 
-// refusePage answers a page's request with status and a message a person
-// reads in the browser.
+// refusePage answers a page's request on web@koko with status and a message
+// a person reads in the browser.
 func refusePage(w http.ResponseWriter, status int, message string) {
+	writePage(w, status, "koko web: "+message+".\n")
+}
+
+// writePage answers a page's request with status and text, which no cache
+// keeps.
+func writePage(w http.ResponseWriter, status int, text string) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, "koko web: %s.\n", message)
+	_, _ = io.WriteString(w, text)
+}
+
+// securityHeaders sets the headers every answer of the web front carries,
+// on either listener, so that both serve the web UI alike: a Content
+// Security Policy that loads nothing from another site and lets no other
+// site frame a page, no MIME sniffing, and no Referer. hsts adds
+// Strict-Transport-Security, for the web listener alone, whose answers
+// reach the browser over the reverse proxy's HTTPS; koko web serves
+// http://localhost.
+func securityHeaders(h http.Header, hsts bool) {
+	h.Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Referrer-Policy", "no-referrer")
+	if hsts {
+		h.Set("Strict-Transport-Security", "max-age=31536000")
+	}
 }

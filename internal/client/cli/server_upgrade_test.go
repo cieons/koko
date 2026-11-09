@@ -270,6 +270,63 @@ func TestServerInstallUpgradeChecksThePort(t *testing.T) {
 	}
 }
 
+// An upgrade keeps the web listener the installed unit names unless
+// --web-listen names another, and --web-listen off removes it, which later
+// upgrades keep off. The port it keeps is checked, the koko service's own
+// process holding it being no refusal.
+func TestServerInstallUpgradeAndTheWebListener(t *testing.T) {
+	t.Parallel()
+	m := harness.NewMachine(t)
+	install(t, m, "--owner", "alice", "--web-listen", "127.0.0.1:7823")
+	webListen := func() string {
+		t.Helper()
+		unit := readFile(t, m, "/etc/systemd/system/koko.service")
+		if strings.Count(unit, "KOKO_WEB_LISTEN=") > 1 {
+			t.Errorf("the unit sets KOKO_WEB_LISTEN more than once:\n%s", unit)
+		}
+		_, rest, ok := strings.Cut(unit, "\nEnvironment=KOKO_WEB_LISTEN=")
+		if !ok {
+			return "off"
+		}
+		addr, _, _ := strings.Cut(rest, "\n")
+		return addr
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+		// port is the web listener's port the upgrade checks, 0 for none.
+		port int
+	}{
+		{nil, "127.0.0.1:7823", 7823},
+		{[]string{"--web-listen", "127.0.0.1:7824"}, "127.0.0.1:7824", 7824},
+		{[]string{"--port", "8443"}, "127.0.0.1:7824", 7824},
+		{[]string{"--web-listen", "off"}, "off", 0},
+		{nil, "off", 0},
+		{[]string{"--web-listen", "127.0.0.1:80"}, "127.0.0.1:80", 80},
+	} {
+		calls := len(m.Calls())
+		upgrade(t, m, tc.args...)
+		if got := webListen(); got != tc.want {
+			t.Errorf("after an upgrade with %q the web listener is %s, want %s", tc.args, got, tc.want)
+		}
+		if tc.port != 0 && !slices.Contains(callNames(m.Calls()[calls:]), fmt.Sprintf("port %d", tc.port)) {
+			t.Errorf("an upgrade with %q did not check that port %d is free", tc.args, tc.port)
+		}
+	}
+	wantBindGrant(t, readFile(t, m, "/etc/systemd/system/koko.service"), true)
+	wantInitialised(t, m, "alice")
+
+	m.Listening[7825] = portowner.Process{PID: 812, Name: "nginx", User: "www-data"}
+	untouched := watch(t, m)
+	msg := m.Koko("server", "install", "--json", "--web-listen", "127.0.0.1:7825").WantError(t, 1, "port_taken")
+	for _, want := range []string{"port 7825", "nginx (pid 812, user www-data)", "--web-listen", "nothing was written"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message %q does not say %q", msg, want)
+		}
+	}
+	untouched()
+}
+
 // An upgrade needs the Root Key the koko server's keys are sealed under, as
 // the restarted koko server will: a Root Key file that is missing, another
 // Root Key's or one that does not parse is refused before anything is
@@ -435,6 +492,35 @@ func TestServerInstallUpgradeGrantsTheBindToADropInPortBelow1024(t *testing.T) {
 			t.Errorf("the upgrade printed %+v, want the drop-in's port %d", out, tc.port)
 		}
 		wantBindGrant(t, readFile(t, m, "/etc/systemd/system/koko.service"), tc.grants)
+	}
+}
+
+// A drop-in that moves the web listener below 1024 gets the right to bind
+// it from the next install, as one that moves the port does, though the
+// unit keeps its own KOKO_WEB_LISTEN.
+func TestServerInstallUpgradeGrantsTheBindToADropInWebListenerBelow1024(t *testing.T) {
+	t.Parallel()
+	m := harness.NewMachine(t)
+	install(t, m, "--owner", "alice", "--web-listen", "127.0.0.1:7823")
+	if err := os.MkdirAll(m.Path("/etc/systemd/system/koko.service.d"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		dropIn string
+		grants bool
+	}{
+		{"[Service]\nEnvironment=KOKO_WEB_LISTEN=127.0.0.1:443\n", true},
+		{"[Service]\n#Environment=KOKO_WEB_LISTEN=127.0.0.1:443\n", false},
+	} {
+		if err := os.WriteFile(m.Path("/etc/systemd/system/koko.service.d/web.conf"), []byte(tc.dropIn), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		upgrade(t, m)
+		unit := readFile(t, m, "/etc/systemd/system/koko.service")
+		wantBindGrant(t, unit, tc.grants)
+		if !strings.Contains(unit, "\nEnvironment=KOKO_WEB_LISTEN=127.0.0.1:7823\n") {
+			t.Errorf("the upgrade did not keep the unit's own web listener:\n%s", unit)
+		}
 	}
 }
 

@@ -10,6 +10,7 @@ package install
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 
@@ -74,13 +75,21 @@ type Request struct {
 	// was not given: a fresh koko server then listens on 7822, and an
 	// upgrade keeps the port the koko unit names.
 	Port int
+	// WebListen is the web listener's address, host:port, WebListenOff to
+	// turn it off, or empty when --web-listen was not given: a fresh koko
+	// server's is then off, and an upgrade keeps the one the koko unit
+	// names.
+	WebListen string
 }
+
+// WebListenOff is --web-listen's value that turns the web listener off.
+const WebListenOff = "off"
 
 // ParseRequest reads install's flags, each "" when not given, refusing with
 // Usage a value that could never work, before anything asks the machine. A
 // port not given is 0.
-func ParseRequest(owner, address, port string) (Request, error) {
-	req := Request{Owner: owner, Address: address}
+func ParseRequest(owner, address, port, webListen string) (Request, error) {
+	req := Request{Owner: owner, Address: address, WebListen: webListen}
 	if port != "" {
 		n, err := strconv.Atoi(port)
 		if err != nil || n < 1 || n > 65535 {
@@ -98,7 +107,24 @@ func ParseRequest(owner, address, port string) (Request, error) {
 			return Request{}, usagef("--address takes the Server Address, host or host:port: %v", err)
 		}
 	}
+	if webListen != "" && webListen != WebListenOff && WebListenPort(webListen) == 0 {
+		return Request{}, usagef("--web-listen takes host:port, such as 127.0.0.1:7823, or off, not %q", webListen)
+	}
 	return req, nil
+}
+
+// WebListenPort returns the TCP port of a web listener address, host:port
+// with a host and a port from 1 to 65535, or 0 when addr is not one.
+func WebListenPort(addr string) int {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil || host == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 || strconv.Itoa(n) != port {
+		return 0
+	}
+	return n
 }
 
 // usagef is a refusal of a flag's value, which exits 2.
@@ -119,6 +145,9 @@ func (r Request) Flags() []string {
 	}
 	if r.Port != 0 {
 		flags = append(flags, "--port", strconv.Itoa(r.Port))
+	}
+	if r.WebListen != "" {
+		flags = append(flags, "--web-listen", r.WebListen)
 	}
 	return flags
 }

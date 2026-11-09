@@ -13,6 +13,11 @@ Type=exec
 ExecStart={{.Binary}} run
 Environment=KOKO_DATA_DIR={{.DataDir}}
 Environment=KOKO_LISTEN=:{{.Port}}
+{{- if .WebListen}}
+# The web listener, for a reverse proxy: koko server install --web-listen
+# sets it, and --web-listen off removes it.
+Environment=KOKO_WEB_LISTEN={{.WebListen}}
+{{- end}}
 Environment=KOKO_LOG_LEVEL=info
 # The Root Key's file is kokod run's default,
 # $CREDENTIALS_DIRECTORY/{{.Credential}}, which LoadCredential= makes.
@@ -23,15 +28,16 @@ StateDirectory={{.StateDirectory}}
 StateDirectoryMode=0700
 RuntimeDirectory={{.RuntimeDirectory}}
 RuntimeDirectoryMode=0755
-{{- if lt .Port 1024}}
-# Port {{.Port}} is below 1024, which only CAP_NET_BIND_SERVICE lets the koko
+{{- if .LowPorts}}
+# {{.LowPorts}} below 1024, which only CAP_NET_BIND_SERVICE lets the koko
 # user bind.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 {{- else}}
-# Port {{.Port}} needs no capability, so the koko server holds none. A port
-# below 1024 needs CAP_NET_BIND_SERVICE: after moving KOKO_LISTEN below 1024
-# with a drop-in, run koko server install again, which grants it here.
+# No port needs a capability, so the koko server holds none. A port below
+# 1024 needs CAP_NET_BIND_SERVICE: after moving KOKO_LISTEN or
+# KOKO_WEB_LISTEN below 1024 with a drop-in, run koko server install
+# again, which grants it here.
 CapabilityBoundingSet=
 {{- end}}
 NoNewPrivileges=yes

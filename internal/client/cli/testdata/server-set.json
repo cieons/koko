@@ -5,5 +5,7 @@
   "version": "<version>",
   "root_key_file": "<root-key-file>",
   "root_key_id": "rootkey_<1>",
-  "data_dir": "<data-dir>"
+  "data_dir": "<data-dir>",
+  "web_url": null,
+  "web_listen": null
 }

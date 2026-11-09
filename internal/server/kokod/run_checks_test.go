@@ -80,6 +80,40 @@ func TestRunRefusesToStartBesideARunningKokoServer(t *testing.T) {
 	}
 }
 
+// A web listener address another process holds is refused at start,
+// naming that process, before anything is written; given a free one, the
+// koko server starts and its log names it.
+func TestRunRefusesATakenWebListenerAddress(t *testing.T) {
+	t.Parallel()
+	var lc net.ListenConfig
+	taken, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = taken.Close() })
+	dataDir := filepath.Join(t.TempDir(), "data")
+	keyFile := filepath.Join(t.TempDir(), "root.key")
+	newKeyFile(t, keyFile)
+	run := func(webListen string) harness.Result {
+		return harness.RunKokod(t, harness.Kokod(t), nil,
+			"run", "--json", "--data-dir", dataDir, "--root-key-file", keyFile, "--web-listen", webListen)
+	}
+	msg := run(taken.Addr().String()).WantError(t, 1, "port_taken")
+	for _, want := range []string{taken.Addr().String(), fmt.Sprintf("pid %d", os.Getpid()), "--web-listen"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message %q does not say %q", msg, want)
+		}
+	}
+	if _, err := os.Stat(dataDir); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the refused start made its data directory: %v", err)
+	}
+
+	r := run("127.0.0.1:0")
+	if r.Status != 0 || !strings.Contains(r.Stderr, `msg="web listener" listen=127.0.0.1:`) {
+		t.Errorf("kokod run --web-listen 127.0.0.1:0: exit status %d, stderr %q", r.Status, r.Stderr)
+	}
+}
+
 // A file at the socket's path that is not a socket is never taken for a
 // stale one: start-up refuses and leaves it as it was.
 func TestRunRefusesAFileThatIsNotASocketAtTheSocketPath(t *testing.T) {

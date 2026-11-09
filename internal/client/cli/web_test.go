@@ -390,6 +390,32 @@ func TestWebAPITakesOnlyAJSONPost(t *testing.T) {
 	}
 }
 
+// koko web's answers carry the headers the web listener's carry, but
+// Strict-Transport-Security, so that both serve the web UI alike: its pages,
+// the trade, its refusals and the API's answers.
+func TestWebAnswersCarryTheSecurityHeaders(t *testing.T) {
+	t.Parallel()
+	h := harness.Start(t)
+	w := startWeb(t, h)
+	b := newBrowser(t, w.port)
+	answers := map[string]*answer{"a refused page": b.get("/"), "a refused call": b.postJSON("/v1/space.list", "{}")}
+	answers["the trade"] = b.get("/?t=" + w.token)
+	answers["a page"] = b.get("/hosts")
+	answers["a call"] = b.postJSON("/v1/space.list", "{}")
+	for name, a := range answers {
+		for header, want := range map[string]string{
+			"Content-Security-Policy":   "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+			"X-Content-Type-Options":    "nosniff",
+			"Referrer-Policy":           "no-referrer",
+			"Strict-Transport-Security": "",
+		} {
+			if got := a.Header.Get(header); got != want {
+				t.Errorf("%s (%s): %s = %q, want %q", name, a.Status, header, got, want)
+			}
+		}
+	}
+}
+
 // Over the Unix socket the cookie lasts only for that run of koko web: once
 // it exits, the next run on the same port refuses the old cookie and the old
 // token.

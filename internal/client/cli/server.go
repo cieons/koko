@@ -34,6 +34,11 @@ var serverCommands = []Command{
 				Value:   "port",
 				Summary: "the TCP port the koko server listens on: 7822 on a fresh install, and on an upgrade the port it listens on now; install never moves to another by itself",
 			},
+			{
+				Name:    "web-listen",
+				Value:   "host:port|off",
+				Summary: "where the koko server serves the web UI to a reverse proxy on this machine, such as 127.0.0.1:7823, or off: off on a fresh install, and kept on an upgrade",
+			},
 			kokodFlag,
 		},
 		// It prints a credential, the first Join Code (P0 spec: install and
@@ -55,7 +60,7 @@ var serverCommands = []Command{
 	{
 		Noun:    "server",
 		Verb:    "show",
-		Summary: "Show the koko server's Server Address, port, host key, version, Root Key file and data directory",
+		Summary: "Show the koko server's Server Address, port, web listener, Web URL, host key, version, Root Key file and data directory",
 		Tier:    Read,
 		Op:      api.ServerShow,
 		Run:     action(serverShow),
@@ -63,8 +68,9 @@ var serverCommands = []Command{
 	{
 		Noun:    "server",
 		Verb:    "set",
-		Summary: "Change the Server Address that Join Codes issued from now on carry, on the koko server's machine",
+		Summary: "Change the Server Address that Join Codes issued from now on carry, or the Web URL the web listener answers at, on the koko server's machine",
 		Pairs:   true,
+		Unset:   true,
 		Tier:    Reversible,
 		// Only the Owner, as the Local caller on the koko server's machine,
 		// may run it: the koko server answers it only over its Unix socket.
@@ -165,7 +171,7 @@ koko connect %s
 // (kokod install), then initialises a fresh koko server over its Unix
 // socket and prints what the Owner needs next.
 func serverInstall(ctx context.Context, in *Input) (installedJSON, error) {
-	req, err := install.ParseRequest(in.Flag("owner"), in.Flag("address"), in.Flag("port"))
+	req, err := install.ParseRequest(in.Flag("owner"), in.Flag("address"), in.Flag("port"), in.Flag("web-listen"))
 	if err != nil {
 		return installedJSON{}, refusalError(err)
 	}

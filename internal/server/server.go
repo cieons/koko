@@ -2,7 +2,8 @@
 // dispatches into. It opens the store, loads the Root Key and opens the
 // koko server's own keys with it, registers every area's operations and
 // serves them, and the web front, on the Unix socket and, once the koko
-// server is initialised, to devices on TCP. It also serves the server area's
+// server is initialised, to devices on TCP; and, when given an address, the
+// web UI on the web listener, to the Owner's reverse proxy. It also serves the server area's
 // operations, such as initialisation, which act on the process itself.
 //
 // The packages under internal/server are the server-only group: no client
@@ -90,6 +91,15 @@ type Config struct {
 	// the koko server once it is initialised. A Server Address without a
 	// port names its port.
 	Listen string
+	// WebListen is the web listener's address, such as 127.0.0.1:7823,
+	// where the Owner's reverse proxy reaches the web UI over plain HTTP;
+	// empty means off.
+	WebListen string
+	// InContainer tells that the koko server runs in a container, where
+	// the web listener listens on every address of the container and the
+	// container publishes it on the host's loopback, so a WebListen that
+	// is not loopback draws no warning there.
+	InContainer bool
 	// LogLevel is the lowest level written to Log.
 	LogLevel slog.Level
 	// Log receives the log, one structured line per event: stderr, which
@@ -124,6 +134,8 @@ type Server struct {
 	transport *transport.Server
 	gateway   *gateway.Gateway
 	tcp       *tcpListener
+	// web is the web listener, nil while it is off.
+	web *webListener
 	// api serves every operation the areas registered.
 	api *op.API
 	// stopNotice bounds how long Close, and a revocation, wait for the
@@ -157,7 +169,11 @@ type Server struct {
 // Given an Owner and a Server Address, a fresh koko server makes its
 // missing Root Key and initialises itself before the socket opens; an
 // initialised one warns when they differ from its record (ADR 0038).
-func Start(ctx context.Context, cfg Config) (*Server, error) {
+//
+// Given a web listener address, it binds it before the store opens, and
+// refuses to start when something else holds it, naming the process; it
+// serves there from the start, a fresh koko server too.
+func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	log := slog.New(slog.NewTextHandler(cfg.Log, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	if cfg.ProcessUIDs == nil {
 		return nil, errors.New("start the koko server: Config.ProcessUIDs is not set")
@@ -190,6 +206,17 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	if err := claimSocket(ctx, socket, log); err != nil {
 		return nil, err
 	}
+	webLn, err := listenWeb(ctx, cfg.WebListen)
+	if err != nil {
+		return nil, err
+	}
+	// Until the Server holds it, which closes it on a failure from then on.
+	webHeld := false
+	defer func() {
+		if webLn != nil && !webHeld {
+			err = errors.Join(err, webLn.close())
+		}
+	}()
 	st, err := store.Open(ctx, cfg.DataDir)
 	if err != nil {
 		return nil, err
@@ -230,7 +257,8 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	gw := gateway.New(st, key, cfg.Timings, log)
 	t.HandleTunnels(gw)
 	tcp := &tcpListener{addr: cfg.Listen, transport: t, devices: device.NewAuthenticator(st, clock, log)}
-	srv := &Server{store: st, transport: t, gateway: gw, tcp: tcp, api: a, stopNotice: cfg.Timings.Resolve().StopNotice}
+	srv := &Server{store: st, transport: t, gateway: gw, tcp: tcp, web: webLn, api: a, stopNotice: cfg.Timings.Resolve().StopNotice}
+	webHeld = true
 	for _, register := range areas {
 		register(a)
 	}
@@ -263,6 +291,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 		dataDir:     cfg.DataDir,
 		version:     build.Read().Version,
 		listenPort:  tcp.port,
+		webListen:   srv.WebAddress(),
 	})
 	front.Register(a)
 	initialisedNow := keys == nil && initReq.Owner != ""
@@ -290,6 +319,9 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	if keys != nil {
 		attrs = append(attrs, "host_key", keys.HostKeyFingerprint(), "listen", tcp.address())
 	}
+	if err := srv.serveWeb(ctx, front, cfg.WebListen, cfg.InContainer, log); err != nil {
+		return nil, errors.Join(err, srv.Close())
+	}
 	log.Info("koko server started", attrs...)
 	if initialisedNow {
 		log.Info("keep a copy of the Root Key file off this machine, such as in a password manager: without it, nothing sealed in the koko server's data can be opened again",
@@ -299,10 +331,48 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	return srv, nil
 }
 
-// Close ends every SSH Session, telling each that the koko server is
-// restarting, stops serving, waits for calls in flight to end, and closes the
-// store.
+// serveWeb serves the web UI on the web listener, when it is on, and logs
+// where, with the Web URL, warning when the listener reaches beyond this
+// machine outside a container.
+func (s *Server) serveWeb(ctx context.Context, front *web.Front, webListen string, inContainer bool, log *slog.Logger) error {
+	if s.web == nil {
+		log.Info("web listener", "listen", "off")
+		return nil
+	}
+	var webURL string
+	err := s.store.Read(ctx, func(tx store.Tx) (err error) {
+		webURL, _, err = deployment.WebURL(ctx, tx)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	s.web.serve(front.Listener(), log)
+	log.Info("web listener", "listen", s.web.address(), "web_url", cmp.Or(webURL, "none: set it with koko server set web_url=https://…"))
+	if exposed(webListen) && !inContainer {
+		log.Warn("the web listener serves plain HTTP, without TLS, beyond this machine's loopback: give it a loopback address, such as 127.0.0.1:7823, behind a reverse proxy on this machine",
+			"listen", s.web.address())
+	}
+	return nil
+}
+
+// WebAddress is the web listener's bound address, such as 127.0.0.1:7823,
+// or "" while it is off.
+func (s *Server) WebAddress() string {
+	if s.web == nil {
+		return ""
+	}
+	return s.web.address()
+}
+
+// Close stops the web listener, waiting for its calls in flight, then ends
+// every SSH Session, telling each that the koko server is restarting, stops
+// serving, waits for calls in flight to end, and closes the store.
 func (s *Server) Close() error {
+	var webErr error
+	if s.web != nil {
+		webErr = s.web.close()
+	}
 	// The Gateway first gives each SSH Session its notice and closes its
 	// Tunnel with it, then the transport closes the connections, so that
 	// each device learns why at once rather than as a drop. A connection too
@@ -325,7 +395,7 @@ func (s *Server) Close() error {
 	s.mu.Unlock()
 	s.revoking.Wait()
 	s.tcp.unbind()
-	return errors.Join(err, s.store.Close())
+	return errors.Join(webErr, err, s.store.Close())
 }
 
 // withdraw acts on a change that withdrew access, once it has committed: the

@@ -17,13 +17,15 @@ import (
 // serverOut is the koko server's settings, as koko server show --json
 // prints them.
 type serverOut struct {
-	Address            string `json:"address"`
-	ListenPort         int    `json:"listen_port"`
-	HostKeyFingerprint string `json:"host_key_fingerprint"`
-	Version            string `json:"version"`
-	RootKeyFile        string `json:"root_key_file"`
-	RootKeyID          string `json:"root_key_id"`
-	DataDir            string `json:"data_dir"`
+	Address            string  `json:"address"`
+	ListenPort         int     `json:"listen_port"`
+	HostKeyFingerprint string  `json:"host_key_fingerprint"`
+	Version            string  `json:"version"`
+	RootKeyFile        string  `json:"root_key_file"`
+	RootKeyID          string  `json:"root_key_id"`
+	DataDir            string  `json:"data_dir"`
+	WebURL             *string `json:"web_url"`
+	WebListen          *string `json:"web_listen"`
 }
 
 // parseServer wants r, a koko server show with --json, to have succeeded,

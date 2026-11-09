@@ -156,6 +156,11 @@ func (in *Installer) Install(ctx context.Context, req install.Request) (install.
 type plan struct {
 	// port is the TCP port the koko server is to listen on.
 	port int
+	// webListen is the web listener's address, "" for off.
+	webListen string
+	// dropInWebPort is the port of the KOKO_WEB_LISTEN a drop-in sets, which
+	// overrides webListen at the start; 0 when none does.
+	dropInWebPort int
 	// address is the Server Address a fresh koko server is to be
 	// initialised with.
 	address string
@@ -218,7 +223,11 @@ func (in *Installer) check(ctx context.Context, req install.Request) (plan, erro
 		return plan{}, install.Refuse(install.Usage, "the koko server here is not initialised yet: name its Owner with --owner <user>")
 	}
 	port := cmp.Or(req.Port, defaultPort)
-	if err := in.checkPort(ctx, port); err != nil {
+	if err := in.checkPort(ctx, port, "--port <port>"); err != nil {
+		return plan{}, err
+	}
+	webListen := webListenGiven(req)
+	if err := in.checkWebListen(ctx, webListen, port); err != nil {
 		return plan{}, err
 	}
 	address, err := in.address(ctx, req.Address)
@@ -230,7 +239,29 @@ func (in *Installer) check(ctx context.Context, req install.Request) (plan, erro
 	if _, err := seal.Load(in.path(RootKeyFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return plan{}, err
 	}
-	return plan{port: port, address: address}, nil
+	return plan{port: port, webListen: webListen, address: address}, nil
+}
+
+// webListenGiven is the web listener's address --web-listen gives: "" for
+// off, or when it was not given.
+func webListenGiven(req install.Request) string {
+	if req.WebListen == install.WebListenOff {
+		return ""
+	}
+	return req.WebListen
+}
+
+// checkWebListen refuses a web listener address whose port is the one the
+// koko server listens on for devices, or one another process listens on.
+func (in *Installer) checkWebListen(ctx context.Context, webListen string, port int) error {
+	if webListen == "" {
+		return nil
+	}
+	webPort := install.WebListenPort(webListen)
+	if webPort == port {
+		return install.Refuse(install.Usage, "--web-listen %s names port %d, where the koko server listens for devices: give the web listener another port, such as 127.0.0.1:7823", webListen, port)
+	}
+	return in.checkPort(ctx, webPort, "--web-listen <host:port>")
 }
 
 // checkRoot refuses a process that is not root, which could make neither
@@ -276,10 +307,61 @@ func (in *Installer) checkUpgrade(ctx context.Context, req install.Request, d *d
 		d.listenedOn = cmp.Or(d.listenedOn, set)
 	}
 	port := cmp.Or(set, req.Port, d.listenedOn, defaultPort)
-	if err := in.checkPort(ctx, port); err != nil {
+	if err := in.checkPort(ctx, port, "--port <port>"); err != nil {
 		return plan{}, err
 	}
-	return plan{port: port, deployed: d}, nil
+	// The web listener the installed unit names, unless --web-listen
+	// names another or turns it off.
+	webListen := webListenGiven(req)
+	if req.WebListen == "" {
+		if webListen, err = in.unitWebListen(); err != nil {
+			return plan{}, err
+		}
+	}
+	if err := in.checkWebListen(ctx, webListen, port); err != nil {
+		return plan{}, err
+	}
+	dropInWeb, err := in.dropInWebListen()
+	if err != nil {
+		return plan{}, err
+	}
+	return plan{port: port, webListen: webListen, dropInWebPort: install.WebListenPort(dropInWeb), deployed: d}, nil
+}
+
+// dropInWebListen returns the web listener's address the koko unit's
+// drop-ins set with KOKO_WEB_LISTEN, the last in the order systemd reads
+// them winning, or "" when none does: the unit then grants the right to
+// bind its port, as it does for a drop-in's KOKO_LISTEN.
+func (in *Installer) dropInWebListen() (string, error) {
+	files, err := filepath.Glob(in.path(dropInDir + "/*.conf"))
+	if err != nil {
+		return "", fmt.Errorf("find the koko unit's drop-ins in %s: %w", dropInDir, err)
+	}
+	addr := ""
+	for _, file := range files { // in lexical order, as systemd reads them
+		text, err := os.ReadFile(file)
+		if err != nil {
+			return "", fmt.Errorf("read the koko unit's drop-in %s/%s: %w", dropInDir, filepath.Base(file), err)
+		}
+		if set := webListenOf(string(text)); set != "" {
+			addr = set
+		}
+	}
+	return addr, nil
+}
+
+// unitWebListen returns the web listener's address the installed koko unit
+// sets, which install wrote, or "" when it sets none or there is no unit,
+// as after koko server uninstall.
+func (in *Installer) unitWebListen() (string, error) {
+	text, err := os.ReadFile(in.path(UnitPath))
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read the koko unit %s: %w", UnitPath, err)
+	}
+	return webListenOf(string(text)), nil
 }
 
 // dropInListen returns the port the koko unit's drop-ins in dropInDir set
@@ -357,10 +439,10 @@ func refuseInitFlags(req install.Request) error {
 		strings.Join(flags, " and "), strings.Join(next, ", and "))
 }
 
-// checkPort refuses a port another process listens on. The koko service's
-// own process may hold it, as an initialised koko server does: the restart
-// frees it.
-func (in *Installer) checkPort(ctx context.Context, port int) error {
+// checkPort refuses a port another process listens on, naming the flag
+// that gives another. The koko service's own process may hold it, as an
+// initialised koko server does: the restart frees it.
+func (in *Installer) checkPort(ctx context.Context, port int, flag string) error {
 	p, err := in.Machine.PortOwner(ctx, port)
 	switch {
 	case errors.Is(err, portowner.ErrNotFound):
@@ -375,7 +457,7 @@ func (in *Installer) checkPort(ctx context.Context, port int) error {
 	if p.PID != 0 && p.PID == pid {
 		return nil
 	}
-	return install.Refuse(install.PortTaken, "port %d is taken by %s: stop it, or run koko server install again with --port <port>", port, p)
+	return install.Refuse(install.PortTaken, "port %d is taken by %s: stop it, or run koko server install again with %s", port, p, flag)
 }
 
 // checkFilesystem refuses a data directory on a network filesystem, where
@@ -508,7 +590,7 @@ func (in *Installer) write(ctx context.Context, p plan) (*seal.RootKey, error) {
 	if err := in.binary(); err != nil {
 		return nil, err
 	}
-	unit := Unit(UnitSettings{Port: p.port})
+	unit := Unit(UnitSettings{Port: p.port, WebListen: p.webListen, DropInWebPort: p.dropInWebPort})
 	if err := in.writeFile(UnitPath, 0o644, "root", strings.NewReader(unit)); err != nil {
 		return nil, err
 	}

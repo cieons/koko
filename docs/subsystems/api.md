@@ -22,7 +22,13 @@ UI's TypeScript types are generated from them
   Connection, authenticated by its device's key as a Device Session, or
   joining with a Join Code's secret
   ([the Device Connection](device-connection.md)).
-- **Channels.** On either way in, an `api@koko` channel carries HTTP/1.1 to
+- **The web listener**, when `kokod run --web-listen` turns it on, is
+  plain HTTP/1.1 for the Owner's reverse proxy, at the Web URL, not SSH. It
+  hands no call to the API yet: every `/v1/` call on it is answered
+  `signin_required` (401) by the web front, after the Host and Origin
+  checks, whose `bad_origin` (403) refuses a `POST` from another page
+  ([the web listener](web-front.md#the-web-listener)).
+- **Channels.** On either SSH way in, an `api@koko` channel carries HTTP/1.1 to
   the API. A `web@koko` channel carries one browser connection of `koko web`
   to the web front, which asks for its cookie before it hands a call to the
   API ([`koko web` and the web front](web-front.md)). A `tunnel@koko`

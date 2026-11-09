@@ -77,6 +77,18 @@ export interface Server {
   root_key_id: string;
   /** DataDir is the data directory, which holds koko.db. */
   data_dir: string;
+  /**
+   * WebURL is the Web URL, the https:// origin the Owner's reverse proxy
+   * serves the web UI at, which every request on the web listener is
+   * checked against; null while it is not set.
+   */
+  web_url: string | null;
+  /**
+   * WebListen is the address the web listener listens on, plain HTTP for
+   * the reverse proxy alone; null while it is off, as it is unless kokod
+   * run is given --web-listen.
+   */
+  web_listen: string | null;
 }
 
 /** ServerShowRequest asks for the koko server's deployment. */
@@ -95,6 +107,16 @@ export interface ServerSetRequest {
    * carry.
    */
   address?: string;
+  /**
+   * WebURL, when given, is the new Web URL, an https:// origin (package
+   * weburl), checked on the web listener's next request.
+   */
+  web_url?: string;
+  /**
+   * Unset clears these settings: only "web_url", which turns the web
+   * listener's answers into a page naming koko server set web_url=.
+   */
+  unset?: string[];
 }
 
 /** ServerSetResponse is the koko server's deployment as server.set left it. */
@@ -129,11 +151,13 @@ export const ServerShow: Op<ServerShowRequest, ServerShowResponse> = {
 
 /**
  * ServerSet changes the deployment settings the request names: the
- * Server Address, for the Join Codes issued afterwards. It answers only
+ * Server Address, for the Join Codes issued afterwards, and the Web URL,
+ * for the web listener's next request. It answers only
  * the Local caller, over the Unix socket, and never a browser tab of
  * koko web there, so no device and no browser tab can move where
  * devices connect. A Server Address a Join Code cannot carry is refused
- * with CodeInvalidAddress.
+ * with CodeInvalidAddress, and a Web URL that is not an https:// origin
+ * with CodeInvalidWebURL.
  */
 export const ServerSet: Op<ServerSetRequest, ServerSetResponse> = {
   name: "server.set",
@@ -149,3 +173,9 @@ export const CodeAlreadyInitialised = "already_initialised";
 
 /** CodeInvalidAddress: a Server Address is not host or host:port. */
 export const CodeInvalidAddress = "invalid_address";
+
+/**
+ * CodeInvalidWebURL: a Web URL is not an https:// origin,
+ * https://<host>[:<port>] with no path.
+ */
+export const CodeInvalidWebURL = "invalid_web_url";

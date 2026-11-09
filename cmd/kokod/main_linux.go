@@ -28,9 +28,21 @@ func main() {
 }
 
 // serve runs the koko server in this process on this machine's mounts and
-// process uids.
+// process uids, telling it whether it runs in a container.
 func serve(ctx context.Context, config server.Config) error {
 	config.Filesystems = filesystem.System
 	config.ProcessUIDs = unix.Getresuid
+	config.InContainer = inContainer()
 	return server.Run(ctx, config)
+}
+
+// inContainer tells whether this process runs in a container, from the file
+// Docker (/.dockerenv) or Podman (/run/.containerenv) puts at its root.
+func inContainer() bool {
+	for _, marker := range []string{"/.dockerenv", "/run/.containerenv"} {
+		if _, err := os.Stat(marker); err == nil {
+			return true
+		}
+	}
+	return false
 }

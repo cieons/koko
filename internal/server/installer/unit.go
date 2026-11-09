@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"cmp"
 	_ "embed"
 	"fmt"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/cieons/koko/internal/shared/install"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -29,15 +31,30 @@ const rootKeyCredential = "root-key"
 type UnitSettings struct {
 	// Port is the TCP port the koko server listens on, on every address.
 	Port int
+	// WebListen is the web listener's address, host:port, or "" for off.
+	WebListen string
+	// DropInWebPort is the port of the KOKO_WEB_LISTEN a drop-in sets,
+	// which the koko server binds in place of WebListen's; 0 for none.
+	DropInWebPort int
 }
 
-// Unit renders the koko service's unit with s.
+// Unit renders the koko service's unit with s. It grants
+// CAP_NET_BIND_SERVICE when the koko server's port, or the web listener's
+// it binds, is below 1024.
 func Unit(s UnitSettings) string {
+	var low []string
+	for _, port := range []int{s.Port, cmp.Or(s.DropInWebPort, install.WebListenPort(s.WebListen))} {
+		if port != 0 && port < 1024 {
+			low = append(low, strconv.Itoa(port))
+		}
+	}
 	var b strings.Builder
 	err := unit.Execute(&b, map[string]any{
 		"Binary":      BinaryPath,
 		"DataDir":     DataDir,
 		"Port":        s.Port,
+		"WebListen":   s.WebListen,
+		"LowPorts":    lowPorts(low),
 		"Credential":  rootKeyCredential,
 		"RootKeyFile": RootKeyFile,
 		"User":        User,
@@ -75,6 +92,42 @@ func dropInPort(text string) (int, error) {
 		}
 	}
 	return listenPort(assigned)
+}
+
+// lowPorts says which of ports, those below 1024, need
+// CAP_NET_BIND_SERVICE, as the unit's comment does: "Port 443 is", "Ports
+// 443 and 80 are", or "" for none.
+func lowPorts(ports []string) string {
+	switch len(ports) {
+	case 0:
+		return ""
+	case 1:
+		return "Port " + ports[0] + " is"
+	}
+	return "Ports " + strings.Join(ports, " and ") + " are"
+}
+
+// webListenEnv is the variable the unit turns the web listener on with,
+// kokod run's --web-listen.
+const webListenEnv = "KOKO_WEB_LISTEN"
+
+// webListenOf returns the web listener's address that a unit's text sets in
+// its Environment= lines, the last KOKO_WEB_LISTEN winning, or "" when it
+// sets none.
+func webListenOf(text string) string {
+	addr := ""
+	for line := range strings.Lines(text) {
+		v, ok := strings.CutPrefix(strings.TrimSpace(line), "Environment=")
+		if !ok {
+			continue
+		}
+		for _, kv := range assignments(v) {
+			if a, ok := strings.CutPrefix(kv, webListenEnv+"="); ok {
+				addr = a
+			}
+		}
+	}
+	return addr
 }
 
 // listenPort returns the port of the last KOKO_LISTEN among assigned, 0 when

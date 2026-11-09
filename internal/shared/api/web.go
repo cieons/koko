@@ -35,8 +35,17 @@ var (
 	// CodeCookieRequired: a request on a web@koko channel came without a
 	// valid cookie of this koko web; open the address koko web prints.
 	CodeCookieRequired = Code{"cookie_required", http.StatusUnauthorized}
+	// CodeSignInRequired: a call on the web listener came without a valid
+	// Sign-in; the web UI goes to its sign-in page.
+	CodeSignInRequired = Code{"signin_required", http.StatusUnauthorized}
+	// CodeBadOrigin: a POST on the web listener came without an Origin
+	// header naming the Web URL, so from no page of this koko server's, and
+	// was refused before anything of it was read.
+	CodeBadOrigin = Code{"bad_origin", http.StatusForbidden}
 )
 
 var webCodes = []Code{
 	CodeCookieRequired,
+	CodeSignInRequired,
+	CodeBadOrigin,
 }
