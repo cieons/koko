@@ -1,5 +1,7 @@
 # The image's context is dist/, of which it takes only the Linux binaries,
 # never the image archive an earlier make image left there.
 *
+!kokod-linux-amd64
+!kokod-linux-arm64
 !koko-linux-amd64
 !koko-linux-arm64

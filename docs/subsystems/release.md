@@ -12,8 +12,9 @@ holds:
 
 | Asset | What it is |
 | --- | --- |
-| `koko-linux-amd64`, `koko-linux-arm64` | the koko server, its web UI and the CLI |
-| `koko-darwin-arm64` | the CLI for Apple Silicon macOS; it carries no koko server, so no web UI ([ADR 0024](../adr/0024-the-server-and-the-cli-are-separable.md)) |
+| `koko-linux-amd64`, `koko-linux-arm64` | the CLI, which still carries the koko server, its web UI and `koko server run` until the CLI drops them ([P1 spec: the koko server and the CLI as two binaries](https://github.com/cieons/koko/issues/101)) |
+| `koko-darwin-arm64` | the CLI for Apple Silicon macOS; it carries no koko server, so no web UI |
+| `kokod-linux-amd64`, `kokod-linux-arm64` | `kokod`, the koko server, with its web UI ([ADR 0040](../adr/0040-koko-is-the-cli-and-kokod-the-koko-server.md)) |
 | `install.sh` | [`release/install.sh`](../../release/install.sh) as it is at the tag |
 | `SHA256SUMS` | the SHA-256 of each asset above, one `<hex>  <name>` line each, as `sha256sum` writes it |
 
@@ -35,18 +36,20 @@ step, so building for the other architecture needs no emulation:
 | --- | --- |
 | Base | `gcr.io/distroless/static-debian12:nonroot`, pinned by digest; [Dependabot](../../.github/dependabot.yml) opens a pull request when the digest moves |
 | User | the base's default, the numeric `65532` (`nonroot` in its `/etc/passwd`, home `/home/nonroot`), from the start: the image never runs as root and holds no capability ([ADR 0039](../adr/0039-the-container-runs-as-uid-65532-from-the-start-and-koko-changes-no-owner.md)) |
-| Binary | `/usr/local/bin/koko`: the release's `koko-linux-<arch>`, copied from `dist/`, never rebuilt: the binary `SHA256SUMS` lists, whose version the release checks is the tag |
-| Entrypoint, command | `["koko"]`, `["server", "run"]` |
+| Binaries | `/usr/local/bin/kokod` and `/usr/local/bin/koko`: the release's `kokod-linux-<arch>` and `koko-linux-<arch>`, copied from `dist/`, never rebuilt: the binaries `SHA256SUMS` lists, whose version the release checks is the tag |
+| Entrypoint, command | `["kokod"]`, `["run"]`: `kokod run`, which takes `koko server run`'s flags and `KOKO_*` variables, so a Compose file that sets no entrypoint or command, as `release/compose.yaml` sets none, needs no change |
 | Environment | `KOKO_DATA_DIR=/koko/data`, `KOKO_ROOT_KEY_FILE=/koko/root.key` |
 | Directories | `/koko` (0700, uid and gid 65532), a `VOLUME`, so a container without a mount keeps its data in an anonymous volume, which outlives `docker rm`; `/run/koko` (0755, 65532), the socket's directory |
 | Port | `EXPOSE 7822` |
 | Labels | `org.opencontainers.image.source`, `.version` (the tag without its `v`, or `git describe` elsewhere), `.revision` (the commit), `.licenses` (`Apache-2.0`) |
 
-`koko server run` changes no file's owner. A named volume on `/koko` starts as a copy
+`kokod run` changes no file's owner. A named volume on `/koko` starts as a copy
 of the image's, uid 65532's already; a bind mount must be made 65532's on
 the Docker host first (`install -d -o 65532 -g 65532 -m 0700`), or start-up
-refuses it as a directory it cannot write. `koko server run` refuses to run
+refuses it as a directory it cannot write. `kokod run` refuses to run
 as root ([the Seal](seal.md#at-start-up)), so `--user 0` does not start.
+`docker exec koko koko …` runs the CLI over the container's socket as the
+Local caller.
 
 **Tags.** A release `vX.Y.Z` pushes the tag `X.Y.Z`, without the `v`, and
 moves `latest` to it, unless the version has a pre-release part
@@ -56,7 +59,7 @@ There are no floating `X.Y` or `X` tags.
 **`make image`** builds the index from the binaries `make dist` left in
 `dist/` (its context, of which
 [`Dockerfile.dockerignore`](../../release/Dockerfile.dockerignore) lets in
-only the two Linux binaries) into `dist/koko-image.tar`, an OCI layout
+only the four Linux binaries) into `dist/koko-image.tar`, an OCI layout
 archive. No `SHA256SUMS` lists it and no Release holds it. It needs Docker
 with buildx, through a builder named `koko-image` with the
 `docker-container` driver, which it makes once, since Docker's own driver
@@ -66,8 +69,8 @@ attestation is GitHub's. `make check` never runs it, and needs no Docker.
 
 **Checking it.** `gh attestation verify oci://ghcr.io/cieons/koko:X.Y.Z
 --repo cieons/koko` checks where the image was built. Each platform's
-`/usr/local/bin/koko` has the SHA-256 `SHA256SUMS` lists for its
-`koko-linux-<arch>`.
+`/usr/local/bin/kokod` and `/usr/local/bin/koko` have the SHA-256s
+`SHA256SUMS` lists for its `kokod-linux-<arch>` and `koko-linux-<arch>`.
 
 **One step only the user can do.** After the first release pushes the
 image, set the GHCR package `koko` to public and link it to the repository
@@ -78,10 +81,16 @@ signing in, as the release assets need the repository public.
 
 `make dist` builds the assets into `dist/`, which git ignores: the web UI
 first, as `make build` does, then the binaries of `RELEASE_BINARIES` in the
-[Makefile](../../Makefile), then `install.sh` and `SHA256SUMS`. Go stamps
-each binary's version from git ([`build.Read`](../../internal/shared/build/build.go)),
-so `koko version` says the tag in a checkout at the tag with nothing
-changed, and a pseudo-version (with `+dirty` for changes) anywhere else.
+[Makefile](../../Makefile), each `<program>-<os>-<arch>` from
+`cmd/<program>` (`koko` from [`cmd/koko`](../../cmd/koko), `kokod` from
+[`cmd/kokod`](../../cmd/kokod)), then `install.sh` and `SHA256SUMS`. Both
+programs come from one module and one commit, and Go stamps each binary's
+version from git ([`build.Read`](../../internal/shared/build/build.go)), so
+`koko version` and `kokod version` say the tag in a checkout at the tag
+with nothing changed, and a pseudo-version (with `+dirty` for changes)
+anywhere else. `make build` writes `bin/koko` and `bin/kokod`; `make cross`
+compiles every package for each target, `cmd/kokod`'s stub on macOS and
+Windows included, which refuses with `kokod runs on Linux only`.
 
 The [release workflow](../../.github/workflows/release.yml) runs on a pushed
 `v*` tag, in these jobs:
@@ -93,7 +102,8 @@ The [release workflow](../../.github/workflows/release.yml) runs on a pushed
    is built unless all three pass;
 2. **build**, with a read-only token and no credentials left in the
    checkout, since it runs koko's and npm's code: `make dist`, a check that
-   `dist/koko-linux-amd64 version` is the tag, `make image`, and two
+   `dist/koko-linux-amd64 version` and `dist/kokod-linux-amd64 version` are
+   the tag, `make image`, and two
    workflow artifacts: `dist/` without the image's archive, and the
    archive;
 3. **publish**, which alone may write and sign, and runs no code of koko's
@@ -304,12 +314,14 @@ both give the `install -d` line it runs, then, in order:
    with the port published as `17822:7822` and `KOKO_ADDRESS` set to
    `localhost:17822`, so that the published port differs from the
    container's: the koko server answers over its socket with that Server
-   Address; its real, effective, saved and filesystem uid and gid are 65532,
+   Address; the container's process is `kokod run`; its real, effective, saved and filesystem uid and gid are 65532,
    it is in no group but 65532 (which Docker lists as a supplementary
    group), and `CapEff` and `CapPrm` are 0 (`/proc/<pid>/status`);
    `state/` (0700), `root.key` (0600, one line) and `data/` (0700) are
    65532's, and so is `data/koko.db`; `docker logs koko` says `koko server
    initialised` and names `koko device add`, and never holds the Root Key;
+   and `docker exec koko koko version` and `docker exec koko kokod version`
+   name the same version and commit;
 2. without that line, Docker makes `state/` as root, and the start is
    refused, naming `/koko` and uid and gid 65532, with nothing written in
    it; run with `--user 0` there, the image is refused, naming the rule,
@@ -334,12 +346,13 @@ both give the `install -d` line it runs, then, in order:
    `unsupported_platform`, naming `ghcr.io/cieons/koko`, and writes
    nothing there;
 9. the archive's index holds `linux/amd64` and `linux/arm64` and nothing
-   else, and in each platform's layers `/usr/local/bin/koko` has the
-   SHA-256 `SHA256SUMS` lists for its `koko-linux-<arch>`.
+   else, and in each platform's layers `/usr/local/bin/kokod` and
+   `/usr/local/bin/koko` have the SHA-256s `SHA256SUMS` lists for its
+   `kokod-linux-<arch>` and `koko-linux-<arch>`.
 
 **One build.** The check runs only the image of the commit it checks.
-Upgrading across a migration step and going back belong to the binary,
-which is the same in the image as on systemd: [the real-systemd
+Upgrading across a migration step and going back belong to the binaries,
+which are the same in the image as on systemd: [the real-systemd
 check](#the-real-systemd-check) and the store's tests cover them.
 
 **How the image runs.** The deployment folder holds `release/compose.yaml`

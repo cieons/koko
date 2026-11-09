@@ -1,4 +1,4 @@
-package cli_test
+package kokod_test
 
 import (
 	"io/fs"
@@ -47,14 +47,14 @@ func contents(t *testing.T, dir string) map[string]string {
 
 // A restart with the Root Key the data was sealed under opens the koko
 // server's keys: it logs the host key initialisation made.
-func TestServerRunOpensTheSealedKeysWithTheirRootKey(t *testing.T) {
+func TestRunOpensTheSealedKeysWithTheirRootKey(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	dataDir, keyFile := filepath.Join(root, "data"), filepath.Join(root, "etc", "root.key")
 	newKeyFile(t, keyFile)
 	fingerprint := initialise(t, dataDir, keyFile)
 
-	r := serverRun(t, dataDir, keyFile)
+	r := kokodRun(t, dataDir, keyFile)
 	if r.Status != 0 {
 		t.Fatalf("exit status %d, stderr %q", r.Status, r.Stderr)
 	}
@@ -64,11 +64,11 @@ func TestServerRunOpensTheSealedKeysWithTheirRootKey(t *testing.T) {
 }
 
 // Before initialisation the start-up log says so, and names no host key.
-func TestServerRunBeforeInitialisation(t *testing.T) {
+func TestRunBeforeInitialisation(t *testing.T) {
 	t.Parallel()
 	keyFile := filepath.Join(t.TempDir(), "root.key")
 	newKeyFile(t, keyFile)
-	r := serverRun(t, t.TempDir(), keyFile)
+	r := kokodRun(t, t.TempDir(), keyFile)
 	if r.Status != 0 || !strings.Contains(r.Stderr, "initialised=false") || strings.Contains(r.Stderr, "host_key") {
 		t.Errorf("exit status %d, stderr %q", r.Status, r.Stderr)
 	}
@@ -78,7 +78,7 @@ func TestServerRunBeforeInitialisation(t *testing.T) {
 // is refused: the refusal names the path and the Root Key id the sealed data
 // needs, and nothing is written, in the data directory or beside the Root
 // Key file (P0 spec: Secrets, stories 43 and 44).
-func TestServerRunRefusesAnotherRootKeyOverSealedData(t *testing.T) {
+func TestRunRefusesAnotherRootKeyOverSealedData(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string
@@ -113,7 +113,7 @@ func TestServerRunRefusesAnotherRootKeyOverSealedData(t *testing.T) {
 			key, says := tc.replace(t, keyFile)
 			before := contents(t, root)
 
-			r := serverRun(t, dataDir, keyFile)
+			r := kokodRun(t, dataDir, keyFile)
 			refused(t, r, key, says)
 			if !strings.Contains(r.Stderr, "the sealed data needs "+id) {
 				t.Errorf("stderr %q does not name %s, the Root Key the sealed data needs", r.Stderr, id)

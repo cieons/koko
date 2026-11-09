@@ -351,9 +351,29 @@ func ServerServeWith(t testing.TB, opts ...Option) func(ctx context.Context, s c
 
 // settingsConfig returns what makes the server.Config of a start-up given
 // its settings, for ServerStartWith and ServerServeWith: the settings as
-// cmd/koko gives them, on the socket and mount table opts name, and a
-// loopback TCP port of the system's choosing whatever --listen says.
+// cmd/koko gives them, completed as startConfig completes a config.
 func settingsConfig(t testing.TB, opts []Option) func(cli.ServerSettings, io.Writer) server.Config {
+	t.Helper()
+	complete := startConfig(t, opts)
+	return func(s cli.ServerSettings, log io.Writer) server.Config {
+		return complete(server.Config{
+			DataDir:       s.DataDir,
+			RootKeyPath:   s.RootKeyPath,
+			RootKeySource: s.RootKeySource,
+			Owner:         s.Owner,
+			Address:       s.Address,
+			Listen:        s.Listen,
+			LogLevel:      s.LogLevel,
+			Log:           log,
+		})
+	}
+}
+
+// startConfig returns what completes the server.Config a start-up is given,
+// for a koko server a test starts through its command line: on the socket,
+// mount table and process uids opts name, and on a loopback TCP port of the
+// system's choosing whatever --listen says.
+func startConfig(t testing.TB, opts []Option) func(server.Config) server.Config {
 	t.Helper()
 	var o options
 	for _, opt := range opts {
@@ -361,20 +381,12 @@ func settingsConfig(t testing.TB, opts []Option) func(cli.ServerSettings, io.Wri
 	}
 	socket := cmp.Or(o.socket, filepath.Join(ShortTempDir(t), "koko.sock"))
 	filesystems, uids := o.filesystemsOrLocalDisk(), o.processUIDsOrNotRoot()
-	return func(s cli.ServerSettings, log io.Writer) server.Config {
-		return server.Config{
-			DataDir:       s.DataDir,
-			RootKeyPath:   s.RootKeyPath,
-			RootKeySource: s.RootKeySource,
-			Owner:         s.Owner,
-			Address:       s.Address,
-			Listen:        listenAddr,
-			LogLevel:      s.LogLevel,
-			Log:           log,
-			Filesystems:   filesystems,
-			ProcessUIDs:   uids,
-			SocketPath:    socket,
-		}
+	return func(c server.Config) server.Config {
+		c.Listen = listenAddr
+		c.Filesystems = filesystems
+		c.ProcessUIDs = uids
+		c.SocketPath = socket
+		return c
 	}
 }
 
@@ -635,7 +647,8 @@ func run(t testing.TB, r cli.Runner, env []string, stdin string, args ...string)
 // waitFor bounds how long a Process helper waits for a command.
 const waitFor = 10 * time.Second
 
-// Process is one koko command line running in process in the background.
+// Process is one koko or kokod command line running in process in the
+// background.
 type Process struct {
 	t      testing.TB
 	stdout *syncBuffer
@@ -651,17 +664,27 @@ type Process struct {
 // until it exits or Stop interrupts it; it is stopped when the test ends.
 func background(t testing.TB, r cli.Runner, env []string, args ...string) *Process {
 	t.Helper()
+	return backgroundRun(t, func(ctx context.Context, stdout, stderr io.Writer) int {
+		return r.Run(ctx, cli.Invocation{
+			Args:   args,
+			Stdin:  strings.NewReader(""),
+			Stdout: stdout,
+			Stderr: stderr,
+			Env:    env,
+		})
+	})
+}
+
+// backgroundRun starts run in process, writing to the Process's stdout and
+// stderr, and returns at once. It runs until it exits or Stop interrupts
+// it; it is stopped when the test ends.
+func backgroundRun(t testing.TB, run func(ctx context.Context, stdout, stderr io.Writer) int) *Process {
+	t.Helper()
 	ctx, interrupt := context.WithCancel(context.Background())
 	p := &Process{t: t, stdout: &syncBuffer{}, stderr: &syncBuffer{}, interrupt: interrupt, done: make(chan struct{})}
 	go func() {
 		defer close(p.done)
-		p.status = r.Run(ctx, cli.Invocation{
-			Args:   args,
-			Stdin:  strings.NewReader(""),
-			Stdout: p.stdout,
-			Stderr: p.stderr,
-			Env:    env,
-		})
+		p.status = run(ctx, p.stdout, p.stderr)
 	}()
 	t.Cleanup(func() { p.Stop() })
 	return p
@@ -709,7 +732,8 @@ func (p *Process) Wait() Result {
 	return Result{Stdout: p.stdout.String(), Stderr: p.stderr.String(), Status: p.status}
 }
 
-// Result is what one koko command line printed, and its exit status.
+// Result is what one koko or kokod command line printed, and its exit
+// status.
 type Result struct {
 	Stdout string
 	Stderr string

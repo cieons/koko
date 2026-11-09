@@ -186,7 +186,10 @@ status. A command reaches the koko server only on its first `in.Call`, so
   and the command, and nothing was sent; or, so far for `koko ssh setup`
   only, the koko server answered without a field the command needs, which
   names it), and `internal_error` for a failure
-  it did not expect.
+  it did not expect. `kokod` reports `invalid_usage`, `unsupported_platform`
+  and `port_taken` too, so those three live in the shared
+  [`install`](../../internal/shared/install/install.go) package, beside
+  `install.Refusal`, and the CLI reads them from there.
 - **A drop:** a call the connection drops is sent once more on a new
   connection, a write with the same `Idempotency-Key`, so it applies once
   ([the API client](api.md#the-api-client)); only when that one drops too

@@ -1,0 +1,12 @@
+kokod run [--data-dir <dir>] [--root-key-file <file>] [--owner <user>] [--address <host[:port]>] [--listen <addr>] [--log-level <level>] [--json]
+
+Run the koko server in the foreground, as its systemd unit and the image do
+
+Flags:
+  --data-dir <dir>         the data directory, which holds koko.db (default /var/lib/koko; or `KOKO_DATA_DIR`)
+  --root-key-file <file>   the Root Key's file, outside the data directory; a fresh koko server given --owner makes it when it is missing (default $CREDENTIALS_DIRECTORY/root-key; or `KOKO_ROOT_KEY_FILE`)
+  --owner <user>           the Owner's User name, with which a fresh koko server initialises itself at start; an initialised one does not use it (or `KOKO_OWNER`)
+  --address <host[:port]>  the Server Address devices connect to, with which a fresh koko server initialises itself at start; given with --owner, and not used once initialised (or `KOKO_ADDRESS`)
+  --listen <addr>          where devices reach the koko server over TCP, once it is initialised (default :7822; or `KOKO_LISTEN`)
+  --log-level <level>      the lowest level the log on stderr holds (one of debug, info, warn, error; default info; or `KOKO_LOG_LEVEL`)
+  --json                   Print a refusal as JSON

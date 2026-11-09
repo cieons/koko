@@ -1,4 +1,4 @@
-package cli_test
+package kokod_test
 
 import (
 	"errors"
@@ -9,16 +9,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/harness"
 )
 
-// serverRun runs `koko server run` with the koko server's real start-up on
-// dataDir and the Root Key file keyFile, as the unit would run it.
-func serverRun(t *testing.T, dataDir, keyFile string) harness.Result {
+// kokodRun runs `kokod run` with the koko server's real start-up on
+// dataDir and the Root Key file keyFile, as systemd and the image run it.
+func kokodRun(t *testing.T, dataDir, keyFile string) harness.Result {
 	t.Helper()
-	return harness.Run(t, cli.Runner{ServerRun: harness.ServerStart(t)}, nil,
-		"server", "run", "--data-dir", dataDir, "--root-key-file", keyFile)
+	return harness.RunKokod(t, harness.Kokod(t), nil,
+		"run", "--data-dir", dataDir, "--root-key-file", keyFile)
 }
 
 // newKeyFile writes a new Root Key file at path, making its directory, and
@@ -40,7 +39,7 @@ func newKeyFile(t *testing.T, path string) (id, key string) {
 	return id, key
 }
 
-// refused checks that `koko server run` refused to start, saying says on
+// refused checks that `kokod run` refused to start, saying says on
 // stderr, and that nothing it printed holds key.
 func refused(t *testing.T, r harness.Result, key, says string) {
 	t.Helper()
@@ -51,7 +50,7 @@ func refused(t *testing.T, r harness.Result, key, says string) {
 		t.Errorf("stderr %q does not say %q", r.Stderr, says)
 	}
 	if key != "" && strings.Contains(r.Stdout+r.Stderr, key) {
-		t.Error("koko server run printed the Root Key") // and this test does not print it either
+		t.Error("kokod run printed the Root Key") // and this test does not print it either
 	}
 }
 
@@ -75,11 +74,11 @@ func files(t *testing.T, dir string) []string {
 
 // The koko server starts with its Root Key, and its log names the id the
 // key's file names, never the key.
-func TestServerRunStartsWithItsRootKeyFile(t *testing.T) {
+func TestRunStartsWithItsRootKeyFile(t *testing.T) {
 	t.Parallel()
 	keyFile := filepath.Join(t.TempDir(), "root.key")
 	id, key := newKeyFile(t, keyFile)
-	r := serverRun(t, t.TempDir(), keyFile)
+	r := kokodRun(t, t.TempDir(), keyFile)
 	if r.Status != 0 || r.Stdout != "" {
 		t.Fatalf("exit status %d, stdout %q, stderr %q", r.Status, r.Stdout, r.Stderr)
 	}
@@ -93,7 +92,7 @@ func TestServerRunStartsWithItsRootKeyFile(t *testing.T) {
 
 // The Root Key's file stays outside the data directory, so that a copy of the
 // data directory never holds it (P0 spec: install and run, story 45).
-func TestServerRunRefusesARootKeyFileInsideTheDataDirectory(t *testing.T) {
+func TestRunRefusesARootKeyFileInsideTheDataDirectory(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string
@@ -148,7 +147,7 @@ func TestServerRunRefusesARootKeyFileInsideTheDataDirectory(t *testing.T) {
 				_, key = newKeyFile(t, keyFile)
 			}
 			before := files(t, root)
-			r := serverRun(t, dataDir, keyFile)
+			r := kokodRun(t, dataDir, keyFile)
 			refused(t, r, key, "the Root Key file "+keyFile+" is inside the data directory "+dataDir)
 			if after := files(t, root); !slices.Equal(after, before) {
 				t.Errorf("the refusal changed the files: before %v, after %v", before, after)
@@ -158,23 +157,23 @@ func TestServerRunRefusesARootKeyFileInsideTheDataDirectory(t *testing.T) {
 }
 
 // A Root Key file beside the data directory, named like it, is outside it.
-func TestServerRunTakesARootKeyFileBesideTheDataDirectory(t *testing.T) {
+func TestRunTakesARootKeyFileBesideTheDataDirectory(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	keyFile := filepath.Join(root, "data-root.key")
 	newKeyFile(t, keyFile)
-	if r := serverRun(t, filepath.Join(root, "data"), keyFile); r.Status != 0 {
+	if r := kokodRun(t, filepath.Join(root, "data"), keyFile); r.Status != 0 {
 		t.Fatalf("exit status %d, stderr %q", r.Status, r.Stderr)
 	}
 }
 
 // A missing Root Key file stops the start-up, and nothing writes a key in its
 // place.
-func TestServerRunRefusesAMissingRootKeyFile(t *testing.T) {
+func TestRunRefusesAMissingRootKeyFile(t *testing.T) {
 	t.Parallel()
 	keyDir := t.TempDir()
 	keyFile := filepath.Join(keyDir, "root.key")
-	r := serverRun(t, t.TempDir(), keyFile)
+	r := kokodRun(t, t.TempDir(), keyFile)
 	refused(t, r, "", "the Root Key file "+keyFile+" is missing")
 	if got := files(t, keyDir); !slices.Equal(got, []string{"."}) {
 		t.Errorf("the refusal wrote %v where the Root Key file belongs", got)
@@ -183,7 +182,7 @@ func TestServerRunRefusesAMissingRootKeyFile(t *testing.T) {
 
 // A Root Key file that does not parse stops the start-up as such: it is never
 // taken for a missing file, and nothing writes a key over it or beside it.
-func TestServerRunRefusesARootKeyFileThatDoesNotParse(t *testing.T) {
+func TestRunRefusesARootKeyFileThatDoesNotParse(t *testing.T) {
 	t.Parallel()
 	keyDir := t.TempDir()
 	keyFile := filepath.Join(keyDir, "root.key")
@@ -193,7 +192,7 @@ func TestServerRunRefusesARootKeyFileThatDoesNotParse(t *testing.T) {
 		t.Fatal(err)
 	}
 	dataDir := t.TempDir()
-	r := serverRun(t, dataDir, keyFile)
+	r := kokodRun(t, dataDir, keyFile)
 	refused(t, r, key, "the Root Key file "+keyFile+" does not parse")
 	if strings.Contains(r.Stderr, "missing") {
 		t.Errorf("stderr %q calls a file that does not parse missing", r.Stderr)
@@ -215,18 +214,18 @@ func TestServerRunRefusesARootKeyFileThatDoesNotParse(t *testing.T) {
 
 // A relative path is refused without being printed: it may be the key itself,
 // or part of it, pasted where its file's path belongs.
-func TestServerRunRefusesARelativeRootKeyFileWithoutPrintingIt(t *testing.T) {
+func TestRunRefusesARelativeRootKeyFileWithoutPrintingIt(t *testing.T) {
 	id, key := newKeyFile(t, filepath.Join(t.TempDir(), "root.key"))
 	for _, path := range []string{id + ":" + key, key, "root.key"} {
-		r := serverRun(t, t.TempDir(), path)
+		r := kokodRun(t, t.TempDir(), path)
 		refused(t, r, key, "is not absolute")
 		if strings.Contains(r.Stderr, path) {
-			t.Error("koko server run printed the relative path it was given")
+			t.Error("kokod run printed the relative path it was given")
 		}
 	}
 	// With a relative data directory too, the key given as a path would land
 	// inside it, and that refusal names the path; this one comes first.
 	t.Chdir(t.TempDir())
-	r := serverRun(t, ".", id+":"+key)
+	r := kokodRun(t, ".", id+":"+key)
 	refused(t, r, key, "is not absolute")
 }

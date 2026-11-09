@@ -30,14 +30,7 @@ type versionJSON struct {
 }
 
 func (v versionJSON) Human(w io.Writer) error {
-	rev := v.Revision
-	if len(rev) > 12 {
-		rev = rev[:12]
-	}
-	if rev == "" {
-		rev = "unknown revision"
-	}
-	_, err := fmt.Fprintf(w, "koko %s (%s, %s, %s)\n", v.Version, rev, v.Go, v.Platform)
+	_, err := fmt.Fprintf(w, "koko %s\n", build.Info(v))
 	return err
 }
 

@@ -1,9 +1,12 @@
 GO ?= go
 NPM ?= npm
-# A release publishes one binary for each of these, named koko-<os>-<arch>
-# (ADR 0026).
+# A release publishes the CLI, koko, for each of RELEASE_TARGETS, and the
+# koko server, kokod, for each of KOKOD_TARGETS, named <program>-<os>-<arch>
+# (ADR 0026, ADR 0040).
 RELEASE_TARGETS := linux/amd64 linux/arm64 darwin/arm64
-RELEASE_BINARIES := $(foreach t,$(RELEASE_TARGETS),koko-$(subst /,-,$(t)))
+KOKOD_TARGETS := linux/amd64 linux/arm64
+RELEASE_BINARIES := $(foreach t,$(RELEASE_TARGETS),koko-$(subst /,-,$(t))) \
+	$(foreach t,$(KOKOD_TARGETS),kokod-$(subst /,-,$(t)))
 # windows/amd64 is compiled only, never released: it keeps the CLI ready for
 # Windows (P1) by failing the build when code skips its per-OS interface.
 CROSS_TARGETS := $(RELEASE_TARGETS) windows/amd64
@@ -58,17 +61,18 @@ cross:
 
 build: webui
 	$(GO) build -o bin/koko ./cmd/koko
+	$(GO) build -o bin/kokod ./cmd/kokod
 
-## dist: build a release's assets into dist/: the binaries (the Linux ones
-## carry the koko server and its web UI), install.sh, and SHA256SUMS listing
-## them (docs/subsystems/release.md). Go stamps each binary's version from
-## git, so at a tag, with nothing changed, the version is the tag.
+## dist: build a release's assets into dist/: the binaries (kokod-linux-<arch>
+## carries the koko server and its web UI), install.sh, and SHA256SUMS
+## listing them (docs/subsystems/release.md). Go stamps each binary's version
+## from git, so at a tag, with nothing changed, the version is the tag.
 dist: webui
 	@mkdir -p dist
 	@for b in $(RELEASE_BINARIES); do \
-		p=$${b#koko-}; echo "build dist/$$b"; \
+		prog=$${b%%-*}; p=$${b#*-}; echo "build dist/$$b"; \
 		GOOS=$${p%-*} GOARCH=$${p#*-} CGO_ENABLED=0 \
-			$(GO) build -trimpath -ldflags='-s -w' -o dist/$$b ./cmd/koko || exit 1; \
+			$(GO) build -trimpath -ldflags='-s -w' -o dist/$$b ./cmd/$$prog || exit 1; \
 	done
 	cp release/install.sh dist/install.sh
 	cd dist && sha256sum $(RELEASE_BINARIES) install.sh >SHA256SUMS
@@ -90,8 +94,9 @@ image:
 		--build-arg REVISION=$(shell git rev-parse HEAD) \
 		--file release/Dockerfile --output type=oci,dest=dist/koko-image.tar dist
 
-## webui: build the web UI into internal/server/webui/site/app, which the koko
-## binary embeds; a build without it embeds the placeholder page (ADR 0023)
+## webui: build the web UI into internal/server/webui/site/app, which kokod,
+## and koko while it still carries the koko server, embed; a build without it
+## embeds the placeholder page (ADR 0023)
 webui: $(WEB_DEPS)
 	cd web && $(NPM) run build
 

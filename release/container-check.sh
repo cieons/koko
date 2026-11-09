@@ -14,8 +14,9 @@
 # First, the Compose file the install docs show is release/compose.yaml as
 # it is, and they give the install -d line this check runs. Then, in this order: the first start, through the Compose file, on
 # a state/ made by the docs' install -d line and a published port that
-# differs from the container's, runs as uid and gid 65532 with no
-# capability, writes state/ as the docs say, and logs no Root Key; a state/
+# differs from the container's, runs kokod run as uid and gid 65532 with no
+# capability, writes state/ as the docs say, and logs no Root Key; koko
+# version and kokod version in the container name the same build; a state/
 # Docker made as root, and --user 0, are refused, writing nothing, and a
 # named volume starts with no step on the host; docker exec koko koko device
 # add issues a Join Code, which no log holds, and a device joins with it;
@@ -24,9 +25,10 @@
 # then up, keeps the record on the same state/, and the device still works;
 # a copy of data/ without root.key is refused, writing no Root Key;
 # koko server install refuses in a plain container, naming the image; and
-# the image's index holds linux/amd64 and linux/arm64, each with the binary
-# SHA256SUMS lists. Upgrades and going back are the real-systemd check's
-# and the tests', since the image holds the same binary.
+# the image's index holds linux/amd64 and linux/arm64, each with the kokod
+# and the koko SHA256SUMS list. Upgrades and going back are the
+# real-systemd check's and the tests', since the image holds the same
+# binaries.
 #
 # The image runs as a tag of its own, koko-check:local, which an override
 # file beside the Compose file names, with the published port and the
@@ -234,6 +236,10 @@ compose koko up -d
 wait_serving koko
 show_is ".address == \"$address\"" "the Server Address is not $address"
 pid=$(docker inspect --format '{{.State.Pid}}' koko)
+# The image runs the koko server as kokod run, from its own entrypoint and
+# command, which the Compose file leaves as they are.
+cmdline=$(sudo cat "/proc/$pid/cmdline" | tr '\0' ' ')
+[ "$cmdline" = 'kokod run ' ] || fail "the container runs '$cmdline', not kokod run"
 # The redirect is this script's own file.
 # shellcheck disable=SC2024
 sudo cat "/proc/$pid/status" >"$work/status"
@@ -268,6 +274,15 @@ fingerprint=$(jq -r .host_key_fingerprint "$work/show")
 wait_log koko 'koko device add'
 grep -q 'koko server initialised' "$work/log" || fail "docker logs koko does not say koko server initialised"
 ! grep -qF -- "$key" "$work/log" || fail "docker logs koko holds the Root Key"
+
+step "docker exec koko koko version and kokod version name the same build"
+docker exec koko koko version --json >"$work/koko-version"
+docker exec koko kokod version --json >"$work/kokod-version"
+build=$(jq -r '"\(.version) \(.revision)"' "$work/koko-version")
+[ "$(jq -r '"\(.version) \(.revision)"' "$work/kokod-version")" = "$build" ] ||
+	fail "kokod version says $(cat "$work/kokod-version"), but koko version says $build"
+docker exec koko kokod version | grep -q '^kokod ' || fail "kokod version does not name kokod"
+echo "both are $build"
 
 step "a state/ Docker made as root is refused, naming it and uid 65532, and nothing is written"
 deployment rootmade
@@ -359,7 +374,7 @@ cat "$work/err" >&2
 jq -e '.error.code == "unsupported_platform" and (.error.message | contains("ghcr.io/cieons/koko"))' "$work/err" >/dev/null ||
 	fail "koko server install did not refuse with unsupported_platform, naming ghcr.io/cieons/koko"
 
-step "the image's index holds linux/amd64 and linux/arm64, each with the binary SHA256SUMS lists"
+step "the image's index holds linux/amd64 and linux/arm64, each with the two binaries SHA256SUMS lists"
 oci=$work/oci
 mkdir "$oci"
 tar -xf "$dist/koko-image.tar" -C "$oci"
@@ -374,17 +389,19 @@ platforms=$(jq -r '[.manifests[].platform | "\(.os)/\(.architecture)"] | sort | 
 [ "$platforms" = 'linux/amd64 linux/arm64' ] || fail "the image's index holds $platforms, not linux/amd64 and linux/arm64"
 for a in amd64 arm64; do
 	manifest=$(blob "$(jq -r --arg a "$a" '.manifests[] | select(.platform.architecture == $a) | .digest' "$index")")
-	want=$(awk -v name="koko-linux-$a" '$2 == name { print $1 }' "$dist/SHA256SUMS")
-	[ -n "$want" ] || fail "SHA256SUMS lists no koko-linux-$a"
-	got=
-	for layer in $(jq -r '.layers[].digest' "$manifest"); do
-		if tar -tzf "$(blob "$layer")" | grep -qx 'usr/local/bin/koko'; then
-			got=$(tar -xzOf "$(blob "$layer")" usr/local/bin/koko | sha256sum | cut -d' ' -f1)
-		fi
+	for program in kokod koko; do
+		want=$(awk -v name="$program-linux-$a" '$2 == name { print $1 }' "$dist/SHA256SUMS")
+		[ -n "$want" ] || fail "SHA256SUMS lists no $program-linux-$a"
+		got=
+		for layer in $(jq -r '.layers[].digest' "$manifest"); do
+			if tar -tzf "$(blob "$layer")" | grep -qx "usr/local/bin/$program"; then
+				got=$(tar -xzOf "$(blob "$layer")" "usr/local/bin/$program" | sha256sum | cut -d' ' -f1)
+			fi
+		done
+		[ -n "$got" ] || fail "the linux/$a image holds no /usr/local/bin/$program"
+		[ "$got" = "$want" ] || fail "the linux/$a image's /usr/local/bin/$program is $got, but SHA256SUMS lists $want"
+		echo "linux/$a: /usr/local/bin/$program is $program-linux-$a, $got"
 	done
-	[ -n "$got" ] || fail "the linux/$a image holds no /usr/local/bin/koko"
-	[ "$got" = "$want" ] || fail "the linux/$a image's /usr/local/bin/koko is $got, but SHA256SUMS lists $want"
-	echo "linux/$a: /usr/local/bin/koko is koko-linux-$a, $got"
 done
 
 step "every check passed"

@@ -11,13 +11,15 @@ import (
 	"strings"
 
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/install"
 )
 
 // The CLI's own error codes, beside the API's, which it passes through. Like
 // the API's, they are only ever added within a koko major version.
 const (
-	// codeInvalidUsage: the command line was refused before any call (exit 2).
-	codeInvalidUsage = "invalid_usage"
+	// codeInvalidUsage: the command line was refused before any call (exit
+	// 2). kokod reports it too, so it is install's.
+	codeInvalidUsage = install.CodeInvalidUsage
 	// codeNotJoined: this device has not joined a koko server, and none runs
 	// on this machine; or the koko server it joined holds no Device Session
 	// with its key.
@@ -33,11 +35,13 @@ const (
 	// expired, voided or never issued, which it does not say.
 	codeInvalidJoinCode = "invalid_join_code"
 	// codeUnsupportedPlatform: the command does not run on this OS, or on
-	// this machine, such as the koko server on a network filesystem.
-	codeUnsupportedPlatform = "unsupported_platform"
+	// this machine, such as the koko server on a network filesystem. kokod
+	// reports it too, so it is install's.
+	codeUnsupportedPlatform = install.CodeUnsupportedPlatform
 	// codePortTaken: another process holds the port the command listens on,
-	// or, for koko server run, something answers on its socket.
-	codePortTaken = "port_taken"
+	// or, for koko server run, something answers on its socket. kokod
+	// reports it too, so it is install's.
+	codePortTaken = install.CodePortTaken
 	// codeServerTooOld: the koko server does not serve the command's
 	// operation, so it is older than the CLI, and nothing was sent; or it
 	// answered without a field the command needs, as koko ssh setup needs

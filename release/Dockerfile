@@ -1,9 +1,10 @@
 # The koko server's image, ghcr.io/cieons/koko (docs/subsystems/release.md,
 # "The image"). make image builds it for linux/amd64 and linux/arm64 with
-# dist/ as its context, so it holds the release's own koko-linux-<arch>,
-# byte for byte, never rebuilt. It runs nothing (no RUN step), so building
-# for the other architecture needs no emulation. It runs as uid and gid
-# 65532 from the start, never as root, and needs no capability (ADR 0039).
+# dist/ as its context, so it holds the release's own kokod-linux-<arch>
+# and koko-linux-<arch>, byte for byte, never rebuilt. It runs nothing (no
+# RUN step), so building for the other architecture needs no emulation. It
+# runs as uid and gid 65532 from the start, never as root, and needs no
+# capability (ADR 0039).
 
 # An empty stage, whose root is copied to make the image's directories
 # with their owner and mode, since no RUN step may make them.
@@ -24,6 +25,9 @@ LABEL org.opencontainers.image.source=https://github.com/cieons/koko \
       org.opencontainers.image.revision=$REVISION \
       org.opencontainers.image.licenses=Apache-2.0
 
+# kokod is the koko server, which the image runs; koko is the CLI, which
+# docker exec runs as the Local caller over the container's socket.
+COPY --chmod=0755 kokod-linux-$TARGETARCH /usr/local/bin/kokod
 COPY --chmod=0755 koko-linux-$TARGETARCH /usr/local/bin/koko
 # /koko holds the data directory and the Root Key; /run/koko the Unix
 # socket, in a directory only uid 65532 can write. A named volume on /koko
@@ -39,5 +43,5 @@ ENV KOKO_DATA_DIR=/koko/data \
 VOLUME /koko
 EXPOSE 7822
 
-ENTRYPOINT ["koko"]
-CMD ["server", "run"]
+ENTRYPOINT ["kokod"]
+CMD ["run"]

@@ -1,4 +1,4 @@
-package cli_test
+package kokod_test
 
 import (
 	"errors"
@@ -11,18 +11,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/harness"
 )
 
-// serverRunWith runs `koko server run --json` on dataDir with a new Root Key
+// kokodRunWith runs `kokod run --json` on dataDir with a new Root Key
 // file, through the koko server's real start-up with opts.
-func serverRunWith(t *testing.T, dataDir string, opts ...harness.Option) harness.Result {
+func kokodRunWith(t *testing.T, dataDir string, opts ...harness.Option) harness.Result {
 	t.Helper()
 	keyFile := filepath.Join(t.TempDir(), "root.key")
 	newKeyFile(t, keyFile)
-	return harness.Run(t, cli.Runner{ServerRun: harness.ServerStartWith(t, opts...)}, nil,
-		"server", "run", "--json", "--data-dir", dataDir, "--root-key-file", keyFile)
+	return harness.RunKokod(t, harness.Kokod(t, opts...), nil,
+		"run", "--json", "--data-dir", dataDir, "--root-key-file", keyFile)
 }
 
 // staleSocket leaves a socket file at path that nobody answers on, as a koko
@@ -42,13 +41,13 @@ func staleSocket(t *testing.T, path string) {
 // A socket file nobody answers on, as a koko server killed without warning
 // leaves behind, is taken over, and the koko server serves on it (P1 spec:
 // the container image, story 21).
-func TestServerRunTakesOverAStaleSocket(t *testing.T) {
+func TestRunTakesOverAStaleSocket(t *testing.T) {
 	t.Parallel()
 	socket := filepath.Join(harness.ShortTempDir(t), "koko.sock")
 	staleSocket(t, socket)
-	r := serverRunWith(t, t.TempDir(), harness.SocketPath(socket))
+	r := kokodRunWith(t, t.TempDir(), harness.SocketPath(socket))
 	if r.Status != 0 || !strings.Contains(r.Stderr, "removed a stale socket") || !strings.Contains(r.Stderr, "socket="+socket) {
-		t.Fatalf("koko server run on a stale socket: exit status %d, stderr %q", r.Status, r.Stderr)
+		t.Fatalf("kokod run on a stale socket: exit status %d, stderr %q", r.Status, r.Stderr)
 	}
 	// The same start-up serves on it, as the koko server it starts would.
 	staleSocket(t, socket)
@@ -64,12 +63,12 @@ func TestServerRunTakesOverAStaleSocket(t *testing.T) {
 // A second start beside a running koko server, on the same socket path,
 // refuses naming the path, before it writes anything, and the running one
 // keeps serving.
-func TestServerRunRefusesToStartBesideARunningKokoServer(t *testing.T) {
+func TestRunRefusesToStartBesideARunningKokoServer(t *testing.T) {
 	t.Parallel()
 	socket := filepath.Join(harness.ShortTempDir(t), "koko.sock")
 	h := harness.Start(t, harness.SocketPath(socket))
 	dataDir := filepath.Join(t.TempDir(), "data")
-	msg := serverRunWith(t, dataDir, harness.SocketPath(socket)).WantError(t, 1, "port_taken")
+	msg := kokodRunWith(t, dataDir, harness.SocketPath(socket)).WantError(t, 1, "port_taken")
 	if !strings.Contains(msg, socket) || !strings.Contains(msg, "answers") {
 		t.Errorf("message %q does not say something answers on %s", msg, socket)
 	}
@@ -83,13 +82,13 @@ func TestServerRunRefusesToStartBesideARunningKokoServer(t *testing.T) {
 
 // A file at the socket's path that is not a socket is never taken for a
 // stale one: start-up refuses and leaves it as it was.
-func TestServerRunRefusesAFileThatIsNotASocketAtTheSocketPath(t *testing.T) {
+func TestRunRefusesAFileThatIsNotASocketAtTheSocketPath(t *testing.T) {
 	t.Parallel()
 	socket := filepath.Join(harness.ShortTempDir(t), "koko.sock")
 	if err := os.WriteFile(socket, []byte("not a socket\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	msg := serverRunWith(t, t.TempDir(), harness.SocketPath(socket)).WantError(t, 1, "internal_error")
+	msg := kokodRunWith(t, t.TempDir(), harness.SocketPath(socket)).WantError(t, 1, "internal_error")
 	if !strings.Contains(msg, socket) || !strings.Contains(msg, "not a socket") {
 		t.Errorf("message %q does not say %s is not a socket", msg, socket)
 	}
@@ -102,7 +101,7 @@ func TestServerRunRefusesAFileThatIsNotASocketAtTheSocketPath(t *testing.T) {
 // refused at start before anything is written, as the installer refuses it,
 // whether it exists or would be made there (P1 spec: the container image,
 // story 10). One on a local filesystem in the same table starts.
-func TestServerRunRefusesADataDirectoryOnANetworkFilesystem(t *testing.T) {
+func TestRunRefusesADataDirectoryOnANetworkFilesystem(t *testing.T) {
 	t.Parallel()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -123,7 +122,7 @@ func TestServerRunRefusesADataDirectoryOnANetworkFilesystem(t *testing.T) {
 	for _, dataDir := range []string{remote, filepath.Join(remote, "data")} {
 		t.Run(filepath.Base(dataDir), func(t *testing.T) {
 			before := files(t, root)
-			msg := serverRunWith(t, dataDir, harness.Mountinfo(mountinfo)).WantError(t, 1, "unsupported_platform")
+			msg := kokodRunWith(t, dataDir, harness.Mountinfo(mountinfo)).WantError(t, 1, "unsupported_platform")
 			for _, want := range []string{dataDir, "nfs4", "network filesystem"} {
 				if !strings.Contains(msg, want) {
 					t.Errorf("message %q does not name %q", msg, want)
@@ -134,7 +133,7 @@ func TestServerRunRefusesADataDirectoryOnANetworkFilesystem(t *testing.T) {
 			}
 		})
 	}
-	if r := serverRunWith(t, filepath.Join(local, "data"), harness.Mountinfo(mountinfo)); r.Status != 0 {
+	if r := kokodRunWith(t, filepath.Join(local, "data"), harness.Mountinfo(mountinfo)); r.Status != 0 {
 		t.Errorf("a data directory on ext4 was refused: exit status %d, stderr %q", r.Status, r.Stderr)
 	}
 }
@@ -142,7 +141,7 @@ func TestServerRunRefusesADataDirectoryOnANetworkFilesystem(t *testing.T) {
 // A data directory start-up cannot write, and the parent of a missing one,
 // are refused before anything is written, naming the directory and the uid
 // and gid the koko server runs as (P1 spec: the container image, story 9).
-func TestServerRunRefusesADataDirectoryItCannotWrite(t *testing.T) {
+func TestRunRefusesADataDirectoryItCannotWrite(t *testing.T) {
 	t.Parallel()
 	if os.Geteuid() == 0 {
 		t.Skip("root writes a read-only directory")
@@ -163,7 +162,7 @@ func TestServerRunRefusesADataDirectoryItCannotWrite(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			before := files(t, root)
-			msg := serverRunWith(t, tc.dataDir).WantError(t, 1, "internal_error")
+			msg := kokodRunWith(t, tc.dataDir).WantError(t, 1, "internal_error")
 			for _, want := range tc.names {
 				if !strings.Contains(msg, want) {
 					t.Errorf("message %q does not name %q", msg, want)
@@ -176,10 +175,10 @@ func TestServerRunRefusesADataDirectoryItCannotWrite(t *testing.T) {
 	}
 }
 
-// koko server run refuses to run as root, wherever it runs, when its real,
+// kokod run refuses to run as root, wherever it runs, when its real,
 // effective or saved uid is 0, before anything is written, naming the fix
 // (ADR 0039). Started as another user, it starts as before.
-func TestServerRunRefusesRoot(t *testing.T) {
+func TestRunRefusesRoot(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name                   string
@@ -195,7 +194,7 @@ func TestServerRunRefusesRoot(t *testing.T) {
 			root := t.TempDir()
 			socket := filepath.Join(harness.ShortTempDir(t), "koko.sock")
 			before := files(t, root)
-			msg := serverRunWith(t, filepath.Join(root, "data"), harness.SocketPath(socket), harness.ProcessUIDs(tc.real, tc.effective, tc.saved)).
+			msg := kokodRunWith(t, filepath.Join(root, "data"), harness.SocketPath(socket), harness.ProcessUIDs(tc.real, tc.effective, tc.saved)).
 				WantError(t, 2, "invalid_usage")
 			for _, want := range []string{"does not run as root", tc.ids, "a user who is not root", "uid 65532", "--user 0"} {
 				if !strings.Contains(msg, want) {
@@ -212,12 +211,12 @@ func TestServerRunRefusesRoot(t *testing.T) {
 	}
 	// Before every other check: root is told it is root even with a Root
 	// Key path that is not absolute.
-	msg := harness.Run(t, cli.Runner{ServerRun: harness.ServerStartWith(t, harness.ProcessUIDs(0, 0, 0))}, nil,
-		"server", "run", "--json", "--data-dir", t.TempDir(), "--root-key-file", "root.key").WantError(t, 2, "invalid_usage")
+	msg := harness.RunKokod(t, harness.Kokod(t, harness.ProcessUIDs(0, 0, 0)), nil,
+		"run", "--json", "--data-dir", t.TempDir(), "--root-key-file", "root.key").WantError(t, 2, "invalid_usage")
 	if !strings.Contains(msg, "does not run as root") {
 		t.Errorf("root with a relative Root Key path: message %q does not say it does not run as root", msg)
 	}
-	if r := serverRunWith(t, filepath.Join(t.TempDir(), "data"), harness.ProcessUIDs(65532, 65532, 65532)); r.Status != 0 {
+	if r := kokodRunWith(t, filepath.Join(t.TempDir(), "data"), harness.ProcessUIDs(65532, 65532, 65532)); r.Status != 0 {
 		t.Errorf("started as uid 65532: exit status %d, stderr %q", r.Status, r.Stderr)
 	}
 }

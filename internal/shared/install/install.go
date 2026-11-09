@@ -1,10 +1,11 @@
 // Package install is what `koko server install` and `koko server uninstall`
 // in the CLI and the installer in the koko server's code agree on: what
-// install is asked, what each reports, and why install, or the start-up of
-// `koko server run`, refuses. The CLI
-// hands both to the installer through cli.Runner, so neither imports the
-// other's group (ADR 0024); this package is the contract between them, as
-// wire is between the CLI and the koko server.
+// install is asked, what each reports, and why install, or the koko
+// server's start-up, refuses, with the error codes koko and kokod both
+// report a refusal with. The CLI hands both to the installer through
+// cli.Runner, so neither imports the other's group (ADR 0040); this package
+// is the contract between them, as wire is between the CLI and the koko
+// server.
 package install
 
 import (
@@ -78,8 +79,8 @@ type UninstallReport struct {
 }
 
 // Refusal is install, or the koko server's start-up, refusing before it
-// writes anything, for a reason the CLI reports with an error code of its
-// own.
+// writes anything, for a reason koko and kokod report with the error code
+// Code names.
 type Refusal struct {
 	Reason  Reason
 	Message string
@@ -87,6 +88,40 @@ type Refusal struct {
 
 func (r *Refusal) Error() string {
 	return r.Message
+}
+
+// The error codes of koko's own that kokod reports too, in the shape of
+// koko's --json errors ({"error": {"code", "message"}}, ADR 0016), so that
+// both programs name them from here. kokod's other codes are the API's
+// (package api): already_initialised and internal_error. Like the API's,
+// they are only ever added within a koko major version.
+const (
+	// CodeInvalidUsage: the command line was refused before anything ran
+	// (exit 2).
+	CodeInvalidUsage = "invalid_usage"
+	// CodeUnsupportedPlatform: the command does not run on this OS, or on
+	// this machine, such as the koko server on a network filesystem.
+	CodeUnsupportedPlatform = "unsupported_platform"
+	// CodePortTaken: another process holds the port the command listens
+	// on, or, at the koko server's start-up, something answers on its
+	// socket.
+	CodePortTaken = "port_taken"
+)
+
+// Code is the error code r is reported with: CodeInvalidUsage, which exits
+// 2, or another, which exits 1.
+func (r *Refusal) Code() string {
+	switch r.Reason {
+	case Usage:
+		return CodeInvalidUsage
+	case PortTaken:
+		return CodePortTaken
+	case Unsupported:
+		return CodeUnsupportedPlatform
+	case Initialised:
+		return api.CodeAlreadyInitialised.Name
+	}
+	return api.CodeInternal.Name
 }
 
 // Reason is why install refused.

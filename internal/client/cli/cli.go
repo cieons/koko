@@ -31,6 +31,7 @@ import (
 	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/install"
+	"github.com/cieons/koko/internal/shared/serverrun"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -94,25 +95,8 @@ type Runner struct {
 }
 
 // ServerSettings are the startup settings `koko server run` takes as flags or
-// KOKO_* variables.
-type ServerSettings struct {
-	DataDir string
-	// RootKeyPath is the Root Key's file, never the key itself.
-	RootKeyPath string
-	// RootKeySource is the file RootKeyPath is a copy of, when it is the
-	// credential systemd hands the koko unit: the Root Key's file as the
-	// Owner keeps it, which koko server show names. Empty when RootKeyPath
-	// is that file itself.
-	RootKeySource string
-	// Owner and Address are the Owner's User name and the Server Address
-	// that a fresh koko server initialises itself with at start; both
-	// empty, it waits for server.init over its socket.
-	Owner   string
-	Address string
-	// Listen is the TCP listen address, such as :7822.
-	Listen   string
-	LogLevel slog.Level
-}
+// KOKO_* variables, which kokod run takes too (package serverrun).
+type ServerSettings = serverrun.Settings
 
 // Invocation is one command line with its streams and environment.
 type Invocation struct {

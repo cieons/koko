@@ -4,13 +4,21 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/harness"
 )
+
+// koko server run keeps working beside kokod run, which takes the same flags
+// (package serverrun) and whose own tests cover every setting, refusal and
+// start-up check; these cover koko server run's own path.
 
 // fakeServer records what `koko server run` hands the koko server.
 type fakeServer struct {
@@ -32,66 +40,32 @@ const credentialsDirectory = "CREDENTIALS_DIRECTORY=/run/credentials/koko.servic
 
 func TestServerRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
 	t.Parallel()
-	// The Root Key's file is systemd's copy of the one the koko unit loads.
-	defaults := cli.ServerSettings{
-		DataDir:       "/var/lib/koko",
-		RootKeyPath:   "/run/credentials/koko.service/root-key",
-		RootKeySource: "/etc/koko/root.key",
-		Listen:        ":7822",
-		LogLevel:      slog.LevelInfo,
-	}
 	for _, tc := range []struct {
 		name string
 		env  []string
 		args []string
 		want cli.ServerSettings
 	}{
-		{"defaults", []string{credentialsDirectory}, nil, defaults},
 		{
-			"flags", nil,
-			[]string{"--data-dir", "/srv/koko", "--root-key-file", "/etc/koko/root.key", "--listen", "203.0.113.7:8443", "--log-level", "debug"},
-			cli.ServerSettings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", Listen: "203.0.113.7:8443", LogLevel: slog.LevelDebug},
-		},
-		{
-			"flags with =", nil,
-			[]string{"--data-dir=/srv/koko", "--root-key-file=/etc/koko/root.key", "--listen=[::1]:8443", "--log-level=warn"},
-			cli.ServerSettings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", Listen: "[::1]:8443", LogLevel: slog.LevelWarn},
-		},
-		{
-			"environment",
-			[]string{"KOKO_DATA_DIR=/env/koko", "KOKO_ROOT_KEY_FILE=/env/root.key", "KOKO_LISTEN=:8443", "KOKO_LOG_LEVEL=error"},
+			"defaults",
+			[]string{credentialsDirectory},
 			nil,
-			cli.ServerSettings{DataDir: "/env/koko", RootKeyPath: "/env/root.key", Listen: ":8443", LogLevel: slog.LevelError},
+			cli.ServerSettings{
+				DataDir:       "/var/lib/koko",
+				RootKeyPath:   "/run/credentials/koko.service/root-key",
+				RootKeySource: "/etc/koko/root.key",
+				Listen:        ":7822",
+				LogLevel:      slog.LevelInfo,
+			},
 		},
 		{
 			"flag over environment",
-			[]string{credentialsDirectory, "KOKO_DATA_DIR=/env/koko", "KOKO_ROOT_KEY_FILE=/env/root.key", "KOKO_LISTEN=:8443"},
-			[]string{"--data-dir", "/srv/koko", "--root-key-file", "/etc/koko/root.key", "--listen", ":9443"},
-			cli.ServerSettings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", Listen: ":9443", LogLevel: slog.LevelInfo},
-		},
-		{
-			"the Owner and the Server Address as flags",
-			[]string{credentialsDirectory},
-			[]string{"--owner", "alice", "--address", "koko.example.com:443"},
-			withInit(defaults, "alice", "koko.example.com:443"),
-		},
-		{
-			"the Owner and the Server Address in the environment",
-			[]string{credentialsDirectory, "KOKO_OWNER=alice", "KOKO_ADDRESS=[2001:db8::7]"},
-			nil,
-			withInit(defaults, "alice", "[2001:db8::7]"),
-		},
-		{
-			"the Owner and the Server Address, flag over environment",
-			[]string{credentialsDirectory, "KOKO_OWNER=bob", "KOKO_ADDRESS=env.example.com"},
-			[]string{"--owner", "alice", "--address", "koko.example.com"},
-			withInit(defaults, "alice", "koko.example.com"),
-		},
-		{
-			"empty variable is unset",
-			[]string{credentialsDirectory, "KOKO_DATA_DIR=", "KOKO_ROOT_KEY_FILE=", "KOKO_LISTEN="},
-			nil,
-			defaults,
+			[]string{"KOKO_DATA_DIR=/env/koko", "KOKO_ROOT_KEY_FILE=/env/root.key", "KOKO_LISTEN=:8443", "KOKO_OWNER=bob", "KOKO_ADDRESS=env.example.com"},
+			[]string{"--data-dir", "/srv/koko", "--listen", ":9443", "--log-level", "debug", "--owner", "alice"},
+			cli.ServerSettings{
+				DataDir: "/srv/koko", RootKeyPath: "/env/root.key", Listen: ":9443", LogLevel: slog.LevelDebug,
+				Owner: "alice", Address: "env.example.com",
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -110,13 +84,6 @@ func TestServerRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
 	}
 }
 
-// withInit is s with the Owner and the Server Address a fresh koko server
-// initialises itself with.
-func withInit(s cli.ServerSettings, owner, address string) cli.ServerSettings {
-	s.Owner, s.Address = owner, address
-	return s
-}
-
 func TestServerRunRefusesBadSettings(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -126,25 +93,7 @@ func TestServerRunRefusesBadSettings(t *testing.T) {
 		message string
 	}{
 		{"unknown level", nil, []string{"--log-level", "verbose"}, `--log-level must be one of debug, info, warn, error, not "verbose"`},
-		{"unknown level in the environment", []string{"KOKO_LOG_LEVEL=verbose"}, nil, `KOKO_LOG_LEVEL must be one of debug, info, warn, error, not "verbose"`},
-		{"empty data directory", nil, []string{"--data-dir="}, "--data-dir needs a value; it cannot be empty"},
-		{"data directory without a value", nil, []string{"--data-dir"}, "--data-dir needs a value"},
-		{"data directory followed by a flag", nil, []string{"--data-dir", "--json"}, "--data-dir needs a value"},
-		{"data directory twice", nil, []string{"--data-dir", "/a", "--data-dir", "/b"}, "--data-dir is given twice"},
-		{"empty Root Key file", nil, []string{"--root-key-file="}, "--root-key-file needs a value; it cannot be empty"},
-		{"listen address without a port", []string{credentialsDirectory}, []string{"--listen", "0.0.0.0"}, `--listen (KOKO_LISTEN) takes host:port or :port, not "0.0.0.0"`},
-		{"listen port out of range", []string{credentialsDirectory}, []string{"--listen", ":65536"}, `--listen (KOKO_LISTEN) takes host:port or :port, not ":65536"`},
-		{"listen port by name", []string{credentialsDirectory, "KOKO_LISTEN=:https"}, nil, `--listen (KOKO_LISTEN) takes host:port or :port, not ":https"`},
 		{"Owner without Server Address", []string{credentialsDirectory}, []string{"--owner", "alice"}, "--owner (KOKO_OWNER) needs --address (KOKO_ADDRESS)"},
-		{"Owner without Server Address in the environment", []string{credentialsDirectory, "KOKO_OWNER=alice"}, nil, "--owner (KOKO_OWNER) needs --address (KOKO_ADDRESS)"},
-		{"Server Address without Owner", []string{credentialsDirectory}, []string{"--address", "koko.example.com"}, "--address (KOKO_ADDRESS) needs --owner (KOKO_OWNER)"},
-		{"Server Address without Owner in the environment", []string{credentialsDirectory, "KOKO_ADDRESS=koko.example.com"}, nil, "--address (KOKO_ADDRESS) needs --owner (KOKO_OWNER)"},
-		{"Owner that is not a User name", []string{credentialsDirectory}, []string{"--owner", "Alice", "--address", "koko.example.com"}, "--owner (KOKO_OWNER) takes the Owner's User name"},
-		{"Server Address that is not one", []string{credentialsDirectory, "KOKO_OWNER=alice", "KOKO_ADDRESS=koko.example.com:0"}, nil, "--address (KOKO_ADDRESS) takes the Server Address"},
-		{
-			"no Root Key file outside systemd", nil, nil,
-			"give the Root Key's file with --root-key-file or KOKO_ROOT_KEY_FILE: its default, $CREDENTIALS_DIRECTORY/root-key, needs CREDENTIALS_DIRECTORY",
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := &fakeServer{}
@@ -177,4 +126,66 @@ func TestServerRunFailureExitsOne(t *testing.T) {
 	if r.Status != 1 || r.Stdout != "" || !strings.HasSuffix(r.Stderr, "koko: listen on /run/koko/koko.sock: permission denied\n") {
 		t.Errorf("status %d, stdout %q, stderr %q", r.Status, r.Stdout, r.Stderr)
 	}
+}
+
+// koko server run starts the koko server's real start-up with its Root Key,
+// and a start-up refusal keeps its code and exit status.
+func TestServerRunStartsTheKokoServer(t *testing.T) {
+	t.Parallel()
+	keyFile := harness.NewRootKeyFile(t)
+	r := harness.Run(t, cli.Runner{ServerRun: harness.ServerStart(t)}, nil,
+		"server", "run", "--data-dir", t.TempDir(), "--root-key-file", keyFile)
+	if r.Status != 0 || !strings.Contains(r.Stderr, `msg="koko server started"`) {
+		t.Fatalf("exit status %d, stderr %q", r.Status, r.Stderr)
+	}
+	r = harness.Run(t, cli.Runner{ServerRun: harness.ServerStartWith(t, harness.ProcessUIDs(0, 0, 0))}, nil,
+		"server", "run", "--json", "--data-dir", t.TempDir(), "--root-key-file", keyFile)
+	if msg := r.WantError(t, 2, "invalid_usage"); !strings.Contains(msg, "does not run as root") {
+		t.Errorf("as root: message %q does not say it does not run as root", msg)
+	}
+}
+
+// --owner and --address belong to koko server run, which stays in the
+// irreversible tier (ADR 0019): with them it makes a Root Key and
+// initialises the koko server.
+func TestServerRunWithItsInitialisationSettingsIsIrreversible(t *testing.T) {
+	t.Parallel()
+	for _, c := range cli.Tree() {
+		if c.Path() != "server run" {
+			continue
+		}
+		if c.Tier != cli.Irreversible {
+			t.Errorf("koko server run is in the %v tier, want irreversible", c.Tier)
+		}
+		var envs []string
+		for _, f := range c.Flags {
+			envs = append(envs, f.Env)
+		}
+		for _, env := range []string{"KOKO_OWNER", "KOKO_ADDRESS"} {
+			if !slices.Contains(envs, env) {
+				t.Errorf("koko server run takes no setting from %s", env)
+			}
+		}
+		return
+	}
+	t.Error("the command tree lacks koko server run")
+}
+
+// contents reads every file under dir, by path relative to it.
+func contents(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	files := map[string]string{}
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := os.ReadFile(path)
+		rel, _ := filepath.Rel(dir, path)
+		files[rel] = string(b)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
 }

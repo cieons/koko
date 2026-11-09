@@ -5,9 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
-	"net"
-	"path/filepath"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -17,75 +14,15 @@ import (
 	"github.com/cieons/koko/internal/shared/install"
 	"github.com/cieons/koko/internal/shared/name"
 	"github.com/cieons/koko/internal/shared/serveraddr"
+	"github.com/cieons/koko/internal/shared/serverrun"
 )
-
-// rootKeyCredential is the Root Key's credential in the koko unit,
-// LoadCredential=root-key:/etc/koko/root.key, which systemd hands the service
-// as a file of that name in $CREDENTIALS_DIRECTORY (P0 spec: install and run).
-const rootKeyCredential = "root-key"
-
-// rootKeySource is the file the koko unit's LoadCredential= hands the
-// service as rootKeyCredential, which install writes: the Root Key's file
-// as the Owner keeps it, which koko server show names.
-const rootKeySource = "/etc/koko/root.key"
-
-// defaultListenPort is the port koko server run listens on unless --listen
-// names another; the unit install writes names its own (P0 spec: install
-// and run, ADR 0036).
-const defaultListenPort = "7822"
-
-// defaultRootKeyFile is --root-key-file's default, as help shows it. Only this
-// value is expanded: a path given is taken as it is, even one holding '$'.
-const defaultRootKeyFile = "$CREDENTIALS_DIRECTORY/" + rootKeyCredential
 
 var serverCommands = []Command{
 	{
 		Noun:    "server",
 		Verb:    "run",
 		Summary: "Run the koko server in the foreground, as its systemd unit does",
-		Flags: []Flag{
-			{
-				Name:    "data-dir",
-				Value:   "dir",
-				Env:     "KOKO_DATA_DIR",
-				Default: "/var/lib/koko",
-				Summary: "the data directory, which holds koko.db",
-			},
-			{
-				Name:    "root-key-file",
-				Value:   "file",
-				Env:     "KOKO_ROOT_KEY_FILE",
-				Default: defaultRootKeyFile,
-				Summary: "the Root Key's file, outside the data directory; a fresh koko server given --owner makes it when it is missing",
-			},
-			{
-				Name:    "owner",
-				Value:   "user",
-				Env:     "KOKO_OWNER",
-				Summary: "the Owner's User name, with which a fresh koko server initialises itself at start; an initialised one does not use it",
-			},
-			{
-				Name:    "address",
-				Value:   "host[:port]",
-				Env:     "KOKO_ADDRESS",
-				Summary: "the Server Address devices connect to, with which a fresh koko server initialises itself at start; given with --owner, and not used once initialised",
-			},
-			{
-				Name:    "listen",
-				Value:   "addr",
-				Env:     "KOKO_LISTEN",
-				Default: ":" + defaultListenPort,
-				Summary: "where devices reach the koko server over TCP, once it is initialised",
-			},
-			{
-				Name:    "log-level",
-				Value:   "level",
-				Env:     "KOKO_LOG_LEVEL",
-				Default: "info",
-				Choices: []string{"debug", "info", "warn", "error"},
-				Summary: "the lowest level the log on stderr holds",
-			},
-		},
+		Flags:   serverRunFlags(),
 		// It runs the koko server and migrates its database (P0 spec:
 		// overview), and with --owner and --address makes a Root Key and
 		// initialises a fresh koko server (ADR 0038).
@@ -162,59 +99,21 @@ func serverRun(ctx context.Context, in *Input) error {
 	if in.runner.ServerRun == nil {
 		return noServer()
 	}
-	owner, address, err := ownerAndAddress(in)
+	settings, err := serverrun.Read(in.Flag, in.inv.getenv)
 	if err != nil {
-		return err
+		return refusalError(err)
 	}
-	var level slog.Level
-	if err := level.UnmarshalText([]byte(in.Flag("log-level"))); err != nil {
-		return fmt.Errorf("read the log level: %w", err)
-	}
-	rootKey, source := in.Flag("root-key-file"), ""
-	if rootKey == defaultRootKeyFile {
-		dir := in.inv.getenv("CREDENTIALS_DIRECTORY")
-		if dir == "" {
-			return usagef("give the Root Key's file with --root-key-file or KOKO_ROOT_KEY_FILE: its default, %s, needs CREDENTIALS_DIRECTORY, which systemd sets for the koko unit", defaultRootKeyFile)
-		}
-		rootKey, source = filepath.Join(dir, rootKeyCredential), rootKeySource
-	}
-	listen := in.Flag("listen")
-	if !isListenAddr(listen) {
-		return usagef("--listen (KOKO_LISTEN) takes host:port or :port, not %q", listen)
-	}
-	return refusalError(in.runner.ServerRun(ctx, ServerSettings{
-		DataDir:       in.Flag("data-dir"),
-		RootKeyPath:   rootKey,
-		RootKeySource: source,
-		Owner:         owner,
-		Address:       address,
-		Listen:        listen,
-		LogLevel:      level,
-	}, in.inv.Stderr))
+	return refusalError(in.runner.ServerRun(ctx, settings, in.inv.Stderr))
 }
 
-// ownerAndAddress reads server run's --owner and --address, which a
-// fresh koko server initialises itself with, refusing a name that is not a
-// User name, an address that is not a Server Address, and either one
-// without the other, before the koko server writes anything (P1 spec: the
-// container image).
-func ownerAndAddress(in *Input) (owner, address string, err error) {
-	owner, address = in.Flag("owner"), in.Flag("address")
-	switch {
-	case owner == "" && address == "":
-		return "", "", nil
-	case address == "":
-		return "", "", usagef("--owner (KOKO_OWNER) needs --address (KOKO_ADDRESS): a fresh koko server initialises itself with both, and devices connect to the Server Address")
-	case owner == "":
-		return "", "", usagef("--address (KOKO_ADDRESS) needs --owner (KOKO_OWNER): a fresh koko server initialises itself with both")
+// serverRunFlags are server run's flags, which kokod run takes too
+// (package serverrun).
+func serverRunFlags() []Flag {
+	flags := make([]Flag, 0, len(serverrun.Flags))
+	for _, f := range serverrun.Flags {
+		flags = append(flags, Flag{Name: f.Name, Value: f.Value, Env: f.Env, Default: f.Default, Choices: f.Choices, Summary: f.Summary})
 	}
-	if err := name.Check(owner); err != nil {
-		return "", "", usagef("--owner (KOKO_OWNER) takes the Owner's User name: %v", err)
-	}
-	if err := serveraddr.Check(address); err != nil {
-		return "", "", usagef("--address (KOKO_ADDRESS) takes the Server Address, host or host:port: %v", err)
-	}
-	return owner, address, nil
+	return flags
 }
 
 var serverMappings = []mapping{
@@ -360,34 +259,16 @@ func installRequest(in *Input) (install.Request, error) {
 }
 
 // refusalError gives the refusals of the installer and of the koko server's
-// start-up the CLI's codes and exit statuses.
+// start-up the codes and exit statuses kokod gives them too.
 func refusalError(err error) error {
 	r, ok := errors.AsType[*install.Refusal](err)
 	if !ok {
 		return err
 	}
-	switch r.Reason {
-	case install.Usage:
+	if r.Reason == install.Usage {
 		return &usageError{message: r.Message}
-	case install.PortTaken:
-		return &cliError{code: codePortTaken, message: r.Message}
-	case install.Unsupported:
-		return &cliError{code: codeUnsupportedPlatform, message: r.Message}
-	case install.Initialised:
-		return api.CodeAlreadyInitialised.Errorf("%s", r.Message)
 	}
-	return err
-}
-
-// isListenAddr tells whether addr is a TCP listen address: an optional host
-// and a port number, as :7822 or 203.0.113.7:7822.
-func isListenAddr(addr string) bool {
-	_, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return false
-	}
-	n, err := strconv.ParseUint(port, 10, 16)
-	return err == nil && strconv.FormatUint(n, 10) == port
+	return &cliError{code: r.Code(), message: r.Message}
 }
 
 // uninstalledJSON is what koko server uninstall prints: what it removed, and

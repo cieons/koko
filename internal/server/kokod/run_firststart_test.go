@@ -1,6 +1,6 @@
 //go:build unix
 
-package cli_test
+package kokod_test
 
 import (
 	"database/sql"
@@ -21,14 +21,14 @@ import (
 	"github.com/cieons/koko/internal/harness"
 )
 
-// firstStart runs `koko server run` in the background with the koko
+// firstStart runs `kokod run` in the background with the koko
 // server's real start-up on dataDir and the Root Key file keyFile, with
 // args such as --owner and --address, serving on socket until the test
 // stops it.
 func firstStart(t *testing.T, socket, dataDir, keyFile string, args ...string) *harness.Process {
 	t.Helper()
-	return harness.RunBackground(t, cli.Runner{ServerRun: harness.ServerServeWith(t, harness.SocketPath(socket))}, nil,
-		append([]string{"server", "run", "--data-dir", dataDir, "--root-key-file", keyFile}, args...)...)
+	return harness.RunKokodBackground(t, harness.KokodServing(t, harness.SocketPath(socket)), nil,
+		append([]string{"run", "--data-dir", dataDir, "--root-key-file", keyFile}, args...)...)
 }
 
 // local runs one koko command line as the Local caller on the koko server's
@@ -54,7 +54,7 @@ func waitServing(t *testing.T, p *harness.Process, socket string) serverOut {
 		}
 		if time.Now().After(deadline) {
 			got := p.Stop()
-			t.Fatalf("the koko server did not answer within 10 s: last %q; koko server run exited %d, stderr %q", r.Stderr, got.Status, got.Stderr)
+			t.Fatalf("the koko server did not answer within 10 s: last %q; kokod run exited %d, stderr %q", r.Stderr, got.Status, got.Stderr)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -86,7 +86,7 @@ var rootKeyLine = regexp.MustCompile(`^([a-z]+_[0-9a-z]+):[A-Za-z0-9_-]+=*\n$`)
 // The log names the host key, the listen address, the Root Key's path and
 // id and the koko device add line, and holds neither the Root Key nor a
 // Join Code (P1 spec: the container image, stories 3, 4, 13, 14, 15, 18).
-func TestServerRunInitialisesAFreshKokoServerAtItsFirstStart(t *testing.T) {
+func TestRunInitialisesAFreshKokoServerAtItsFirstStart(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	dataDir, keyFile := filepath.Join(root, "data"), filepath.Join(root, "keys", "root.key")
@@ -147,7 +147,7 @@ func TestServerRunInitialisesAFreshKokoServerAtItsFirstStart(t *testing.T) {
 
 	log := p.Stop()
 	if log.Status != 0 {
-		t.Errorf("koko server run exited %d", log.Status)
+		t.Errorf("kokod run exited %d", log.Status)
 	}
 	initialised := regexp.MustCompile(`msg="koko server initialised" host_key=` + regexp.QuoteMeta(ssh.FingerprintSHA256(key)) +
 		` listen=127\.0\.0\.1:\d+ root_key_file=` + regexp.QuoteMeta(keyFile) + ` root_key=` + id + "\n")
@@ -172,7 +172,7 @@ func TestServerRunInitialisesAFreshKokoServerAtItsFirstStart(t *testing.T) {
 // A caller dialling the socket while a fresh koko server initialises itself
 // at its first start is never answered not_initialised: the socket opens
 // only once initialisation has committed (P1 spec: the container image).
-func TestServerRunAnswersNothingBeforeItsFirstStartHasInitialised(t *testing.T) {
+func TestRunAnswersNothingBeforeItsFirstStartHasInitialised(t *testing.T) {
 	t.Parallel()
 	for range 3 {
 		root := t.TempDir()
@@ -186,7 +186,7 @@ func TestServerRunAnswersNothingBeforeItsFirstStartHasInitialised(t *testing.T) 
 // An existing Root Key file on a fresh data directory is reused, left byte
 // for byte; one that does not load is refused, left byte for byte, and
 // nothing is written beside it.
-func TestServerRunReusesTheRootKeyFileAFreshKokoServerFinds(t *testing.T) {
+func TestRunReusesTheRootKeyFileAFreshKokoServerFinds(t *testing.T) {
 	t.Parallel()
 	t.Run("one that loads", func(t *testing.T) {
 		t.Parallel()
@@ -194,7 +194,7 @@ func TestServerRunReusesTheRootKeyFileAFreshKokoServerFinds(t *testing.T) {
 		keyFile := filepath.Join(root, "root.key")
 		id, _ := newKeyFile(t, keyFile)
 		before, _ := os.ReadFile(keyFile)
-		r := serverRunInit(t, filepath.Join(root, "data"), keyFile, "alice", harness.Address)
+		r := kokodRunInit(t, filepath.Join(root, "data"), keyFile, "alice", harness.Address)
 		if r.Status != 0 || !strings.Contains(r.Stderr, `msg="koko server initialised"`) || !strings.Contains(r.Stderr, "root_key="+id) {
 			t.Fatalf("exit status %d, stderr %q", r.Status, strings.ReplaceAll(r.Stderr, string(before), "<root key>"))
 		}
@@ -211,7 +211,7 @@ func TestServerRunReusesTheRootKeyFileAFreshKokoServerFinds(t *testing.T) {
 		if err := os.WriteFile(keyFile, content, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		r := serverRunInit(t, filepath.Join(root, "data"), keyFile, "alice", harness.Address)
+		r := kokodRunInit(t, filepath.Join(root, "data"), keyFile, "alice", harness.Address)
 		refused(t, r, key, "the Root Key file "+keyFile+" does not parse")
 		if got, _ := os.ReadFile(keyFile); string(got) != string(content) {
 			t.Error("the refusal changed the Root Key file")
@@ -222,18 +222,18 @@ func TestServerRunReusesTheRootKeyFileAFreshKokoServerFinds(t *testing.T) {
 	})
 }
 
-// serverRunInit runs `koko server run` with --owner and --address through
+// kokodRunInit runs `kokod run` with --owner and --address through
 // the koko server's real start-up, which stops once it has started.
-func serverRunInit(t *testing.T, dataDir, keyFile, owner, address string) harness.Result {
+func kokodRunInit(t *testing.T, dataDir, keyFile, owner, address string) harness.Result {
 	t.Helper()
-	return harness.Run(t, cli.Runner{ServerRun: harness.ServerStart(t)}, nil,
-		"server", "run", "--data-dir", dataDir, "--root-key-file", keyFile, "--owner", owner, "--address", address)
+	return harness.RunKokod(t, harness.Kokod(t), nil,
+		"run", "--data-dir", dataDir, "--root-key-file", keyFile, "--owner", owner, "--address", address)
 }
 
 // An initialised data directory whose Root Key was removed is refused at
 // start, --owner or not, naming the id the sealed data needs, and no Root
 // Key is made over the sealed data (P1 spec: the container image, story 20).
-func TestServerRunNeverMakesARootKeyOverSealedData(t *testing.T) {
+func TestRunNeverMakesARootKeyOverSealedData(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	dataDir, keyFile := filepath.Join(root, "data"), filepath.Join(root, "etc", "root.key")
@@ -243,7 +243,7 @@ func TestServerRunNeverMakesARootKeyOverSealedData(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := contents(t, root)
-	r := serverRunInit(t, dataDir, keyFile, "alice", harness.Address)
+	r := kokodRunInit(t, dataDir, keyFile, "alice", harness.Address)
 	refused(t, r, "", "the Root Key file "+keyFile+" is missing; the sealed data needs "+id)
 	if c := changed(before, contents(t, root)); len(c) > 0 {
 		t.Errorf("the refusal changed %v", c)
@@ -254,7 +254,7 @@ func TestServerRunNeverMakesARootKeyOverSealedData(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(filepath.Dir(keyFile), 0o700) })
-	r = serverRunInit(t, dataDir, keyFile, "alice", harness.Address)
+	r = kokodRunInit(t, dataDir, keyFile, "alice", harness.Address)
 	refused(t, r, "", "the Root Key file "+keyFile+" is missing; the sealed data needs "+id)
 }
 
@@ -262,13 +262,13 @@ func TestServerRunNeverMakesARootKeyOverSealedData(t *testing.T) {
 // carry with its port, stops the first start with that refusal. The Root
 // Key it wrote stays, and the next start, with a good address, initialises
 // on it, so a fix costs one more start (P1 spec: the container image).
-func TestServerRunStopsOnARefusedInitialisationAndKeepsItsRootKey(t *testing.T) {
+func TestRunStopsOnARefusedInitialisationAndKeepsItsRootKey(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	dataDir, keyFile := filepath.Join(root, "data"), filepath.Join(root, "root.key")
 	label := strings.Repeat("a", 63)
 	long := label + "." + label + "." + label + "." + label[:61] // a 253-byte name, 258 bytes with its port
-	r := serverRunInit(t, dataDir, keyFile, "alice", long)
+	r := kokodRunInit(t, dataDir, keyFile, "alice", long)
 	written, err := os.ReadFile(keyFile)
 	if err != nil {
 		t.Fatalf("the refused initialisation left no Root Key: %v", err)
@@ -279,7 +279,7 @@ func TestServerRunStopsOnARefusedInitialisationAndKeepsItsRootKey(t *testing.T) 
 		t.Errorf("stderr %q does not say how long an address a Join Code carries", r.Stderr)
 	}
 
-	r = serverRunInit(t, dataDir, keyFile, "alice", harness.Address)
+	r = kokodRunInit(t, dataDir, keyFile, "alice", harness.Address)
 	if r.Status != 0 || !strings.Contains(r.Stderr, `msg="koko server initialised"`) {
 		t.Fatalf("the next start: exit status %d, stderr %q", r.Status, strings.ReplaceAll(r.Stderr, string(written), "<root key>"))
 	}
@@ -292,7 +292,7 @@ func TestServerRunStopsOnARefusedInitialisationAndKeepsItsRootKey(t *testing.T) 
 // either differs from the record it logs a warning naming koko server set
 // address=, starts, and keeps the record; equal values log nothing (P1
 // spec: the container image, story 16).
-func TestServerRunInitialisedAlreadyKeepsItsRecord(t *testing.T) {
+func TestRunInitialisedAlreadyKeepsItsRecord(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	dataDir, keyFile := filepath.Join(root, "data"), filepath.Join(root, "root.key")
@@ -312,7 +312,7 @@ func TestServerRunInitialisedAlreadyKeepsItsRecord(t *testing.T) {
 		}},
 		{"the same", harness.Owner, harness.Address, nil},
 	} {
-		r := serverRunInit(t, dataDir, keyFile, tc.owner, tc.address)
+		r := kokodRunInit(t, dataDir, keyFile, tc.owner, tc.address)
 		if r.Status != 0 || !strings.Contains(r.Stderr, "initialised=true") {
 			t.Fatalf("%s: exit status %d, stderr %q", tc.name, r.Status, r.Stderr)
 		}
@@ -342,10 +342,10 @@ func TestServerRunInitialisedAlreadyKeepsItsRecord(t *testing.T) {
 // Without --owner, a missing Root Key is refused as before, and the refusal
 // says that a fresh koko server makes its own when started with KOKO_OWNER
 // and KOKO_ADDRESS.
-func TestServerRunWithoutOwnerNamesTheSettingsThatMakeARootKey(t *testing.T) {
+func TestRunWithoutOwnerNamesTheSettingsThatMakeARootKey(t *testing.T) {
 	t.Parallel()
 	keyFile := filepath.Join(t.TempDir(), "root.key")
-	r := serverRun(t, t.TempDir(), keyFile)
+	r := kokodRun(t, t.TempDir(), keyFile)
 	refused(t, r, "", "the Root Key file "+keyFile+" is missing")
 	if !strings.Contains(r.Stderr, "KOKO_OWNER") || !strings.Contains(r.Stderr, "KOKO_ADDRESS") {
 		t.Errorf("stderr %q does not name KOKO_OWNER and KOKO_ADDRESS", r.Stderr)
@@ -355,7 +355,7 @@ func TestServerRunWithoutOwnerNamesTheSettingsThatMakeARootKey(t *testing.T) {
 // A directory start-up cannot write, where it must make the Root Key, is
 // refused before anything is written, naming it and the uid and gid the
 // koko server runs as (P1 spec: the container image, story 9).
-func TestServerRunRefusesARootKeyDirectoryItCannotWrite(t *testing.T) {
+func TestRunRefusesARootKeyDirectoryItCannotWrite(t *testing.T) {
 	t.Parallel()
 	if os.Geteuid() == 0 {
 		t.Skip("root writes a read-only directory")
@@ -369,7 +369,7 @@ func TestServerRunRefusesARootKeyDirectoryItCannotWrite(t *testing.T) {
 	ids := fmt.Sprintf("uid %d and gid %d", os.Geteuid(), os.Getegid())
 	for _, keyFile := range []string{filepath.Join(readOnly, "root.key"), filepath.Join(readOnly, "keys", "root.key")} {
 		before := files(t, root)
-		r := harness.Run(t, cli.Runner{ServerRun: harness.ServerStart(t)}, nil, "server", "run", "--json",
+		r := harness.RunKokod(t, harness.Kokod(t), nil, "run", "--json",
 			"--data-dir", filepath.Join(root, "data"), "--root-key-file", keyFile, "--owner", "alice", "--address", harness.Address)
 		msg := r.WantError(t, 1, "internal_error")
 		for _, want := range []string{readOnly + ", where it would make the Root Key file " + keyFile, ids} {
@@ -381,30 +381,4 @@ func TestServerRunRefusesARootKeyDirectoryItCannotWrite(t *testing.T) {
 			t.Errorf("the refused start wrote files: %v, before %v", after, before)
 		}
 	}
-}
-
-// --owner and --address belong to koko server run, which stays in the
-// irreversible tier (ADR 0019): with them it makes a Root Key and
-// initialises the koko server.
-func TestServerRunWithItsInitialisationSettingsIsIrreversible(t *testing.T) {
-	t.Parallel()
-	for _, c := range cli.Tree() {
-		if c.Path() != "server run" {
-			continue
-		}
-		if c.Tier != cli.Irreversible {
-			t.Errorf("koko server run is in the %v tier, want irreversible", c.Tier)
-		}
-		var envs []string
-		for _, f := range c.Flags {
-			envs = append(envs, f.Env)
-		}
-		for _, env := range []string{"KOKO_OWNER", "KOKO_ADDRESS"} {
-			if !slices.Contains(envs, env) {
-				t.Errorf("koko server run takes no setting from %s", env)
-			}
-		}
-		return
-	}
-	t.Error("the command tree lacks koko server run")
 }

@@ -42,9 +42,12 @@ jobs:
           node-version-file: web/package.json
       - run: make dist
       # Go stamps the version from the tag, but only when the checkout is at
-      # the tag with nothing changed; koko version must say the tag.
+      # the tag with nothing changed; koko version and kokod version must
+      # each say the tag.
       - name: The binaries are ${{ github.ref_name }}
-        run: test "$(dist/koko-linux-amd64 version --json | jq -r .version)" = "$GITHUB_REF_NAME"
+        run: |
+          test "$(dist/koko-linux-amd64 version --json | jq -r .version)" = "$GITHUB_REF_NAME"
+          test "$(dist/kokod-linux-amd64 version --json | jq -r .version)" = "$GITHUB_REF_NAME"
       # The image holds the binaries make dist built, copied.
       - run: make image
       # The image goes to the registry, never to the Release.

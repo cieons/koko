@@ -1,8 +1,9 @@
 // Package build reports which build of koko this binary is, for `koko
-// version` and for the koko server's own report.
+// version`, `kokod version` and the koko server's own report.
 package build
 
 import (
+	"fmt"
 	"runtime"
 	"runtime/debug"
 )
@@ -35,4 +36,19 @@ func Read() Info {
 		}
 	}
 	return info
+}
+
+// String is the build as `koko version` and `kokod version` print it after
+// the program's name: the version, then the commit's first 12 characters,
+// the Go release and the platform, such as
+// v0.3.0 (0123456789ab, go1.27.3, linux/amd64).
+func (i Info) String() string {
+	rev := i.Revision
+	if len(rev) > 12 {
+		rev = rev[:12]
+	}
+	if rev == "" {
+		rev = "unknown revision"
+	}
+	return fmt.Sprintf("%s (%s, %s, %s)", i.Version, rev, i.Go, i.Platform)
 }
