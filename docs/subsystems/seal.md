@@ -67,11 +67,11 @@ would let one sealed value open as another's.
 ## At start-up
 
 [`server.Start`](../../internal/server/server.go) takes the Root Key's path
-from `koko server run --root-key-file` ([the CLI](cli.md)). Before anything
+from `kokod run --root-key-file` ([the CLI](cli.md)). Before anything
 else, it refuses to run as root, wherever it runs
 ([ADR 0039](../adr/0039-the-container-runs-as-uid-65532-from-the-start-and-koko-changes-no-owner.md)): when the
 process's real, effective or saved uid is 0, which it reads through
-`Config.ProcessUIDs` (`unix.Getresuid` in `cmd/koko`), it refuses with exit
+`Config.ProcessUIDs` (`unix.Getresuid` in `cmd/kokod`), it refuses with exit
 2 (`invalid_usage`), naming the three uids and the fix: start it as a user
 who is not root, such as the `koko` user its systemd unit runs as, or in a
 container as the image's uid 65532, without `--user 0` or `user: root`
@@ -87,7 +87,7 @@ nothing changes for a koko server started as any other user. Then it:
    ([the installer](installer.md#the-steps)), where SQLite's WAL does not
    work: `unsupported_platform`
    ([`checkDataDir`](../../internal/server/startup.go)). It finds the
-   filesystem through `Config.Filesystems`, which `cmd/koko` sets to
+   filesystem through `Config.Filesystems`, which `cmd/kokod` sets to
    `/proc/self/mountinfo` (`filesystem.System`); inside a container, that
    shows a bind mount's own filesystem;
 4. refuses a data directory it cannot write, naming it and the uid and gid
@@ -148,15 +148,15 @@ no migration due, a refusal leaves the data directory as it was.
 a new key loads with its id; every way a file fails to load, none quoting it;
 values of 0 bytes to 64 KiB round-trip; each kind of failed open; `SealedBy`;
 and that printing or logging a key shows only its id.
-[`server_startup_test.go`](../../internal/client/cli/server_startup_test.go)
-runs `koko server run` against the real start-up (`harness.ServerStart`): it
+[`run_startup_test.go`](../../internal/server/kokod/run_startup_test.go)
+runs `kokod run` against the real start-up (`harness.Kokod`): it
 starts and logs the id its file names, never the key; and it refuses a
 relative path without printing it, a file inside the data directory (through
 `..` and symlinks too) leaving every file as it was, a missing file writing
 nothing in its place, and a file that does not parse leaving it unchanged.
-[`server_checks_test.go`](../../internal/client/cli/server_checks_test.go)
+[`run_checks_test.go`](../../internal/server/kokod/run_checks_test.go)
 covers the refusal of root and steps 3 to 6 through the same start-up
-(`harness.ServerStartWith`): a real, effective or saved uid of 0, faked
+(`harness.Kokod` with options): a real, effective or saved uid of 0, faked
 with `harness.ProcessUIDs`, is refused writing nothing, before even a
 relative Root Key path, and uid 65532 starts; a data directory on NFS in a
 faked mount table (`harness.Mountinfo`), existing or not, and a read-only data directory or parent of a missing one, are

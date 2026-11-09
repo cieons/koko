@@ -21,7 +21,7 @@ var unitTemplate string
 var unit = template.Must(template.New("koko.service").Option("missingkey=error").Parse(unitTemplate))
 
 // rootKeyCredential is the name systemd gives the Root Key's file in the
-// service's $CREDENTIALS_DIRECTORY, where `koko server run` reads it by
+// service's $CREDENTIALS_DIRECTORY, where `kokod run` reads it by
 // default.
 const rootKeyCredential = "root-key"
 
@@ -53,7 +53,7 @@ func Unit(s UnitSettings) string {
 }
 
 // listenEnv is the variable the unit sets the koko server's listen address
-// with, koko server run's --listen.
+// with, kokod run's --listen.
 const listenEnv = "KOKO_LISTEN"
 
 // envPort reads the port of the koko server's listen address from env, the

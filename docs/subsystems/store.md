@@ -43,7 +43,7 @@ so an upgrade needs no separate step. By `user_version` against the binary's
 schema version:
 
 - **Newer:** `Open` refuses, naming both schema versions, and changes nothing.
-  There are no down-migrations; `koko server run` exits 1 with the message.
+  There are no down-migrations; `kokod run` exits 1 with the message.
   When the data directory holds a snapshot this binary can open, the message
   names it as the one to put in place of `koko.db` to go back.
 - **Equal:** nothing to do.

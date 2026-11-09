@@ -19,8 +19,8 @@ func TestCommandLineRefusals(t *testing.T) {
 	}{
 		{"flag before the path", []string{"--json", "space", "ls"}, "write koko space ls --json"},
 		{"flag inside the path", []string{"space", "--json", "add", "ops"}, "write koko space add ops --json"},
-		{"value flag before the path", []string{"--json", "--data-dir", "/srv/k", "server", "run"}, "write koko server run --json --data-dir /srv/k"},
-		{"value that needs quoting", []string{"--data-dir=/srv/my k", "server", "run", "--json"}, "write koko server run --json '--data-dir=/srv/my k'"},
+		{"value flag before the path", []string{"--json", "--kokod", "/srv/k", "server", "install"}, "write koko server install --json --kokod /srv/k"},
+		{"value that needs quoting", []string{"--kokod=/srv/my k", "server", "install", "--json"}, "write koko server install --json '--kokod=/srv/my k'"},
 		{"no command", []string{"--json"}, "give a command"},
 		{"unknown noun", []string{"spaces", "ls", "--json"}, "koko spaces is not a command"},
 		{"unknown verb", []string{"space", "frob", "--json"}, "koko space frob is not a command; koko space takes add, ls"},

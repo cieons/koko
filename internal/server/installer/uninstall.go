@@ -11,12 +11,18 @@ import (
 	"github.com/cieons/koko/internal/shared/install"
 )
 
-// Uninstall stops the koko service and removes its unit, then its binary,
-// and keeps the data directory, the Root Key's file and the koko user: there
-// is no purge, since P0 has no backup (P0 spec: install and run). It
-// reports the port the koko service listened on, for install to take again.
-// What is not there is not removed, so running it again removes nothing.
+// Uninstall stops the koko service and removes its unit, then kokod, and
+// keeps the data directory, the Root Key's file and the koko user: there is
+// no purge, since P0 has no backup (P0 spec: install and run). It never
+// removes /usr/local/bin/koko, the CLI, which install.sh put there: on a
+// machine as v0.1.0 or v0.2.0 left it, whose unit ran that file, it removes
+// only the unit. It reports the port the koko service listened on, for
+// install to take again. What is not there is not removed, so running it
+// again removes nothing.
 func (in *Installer) Uninstall(ctx context.Context) (install.UninstallReport, error) {
+	if err := in.checkRoot("uninstall"); err != nil {
+		return install.UninstallReport{}, err
+	}
 	report := install.UninstallReport{Removed: []string{}, DataDir: DataDir, RootKeyFile: RootKeyFile, SystemUser: User}
 	unit, err := in.exists(UnitPath)
 	if err != nil {

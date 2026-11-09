@@ -14,14 +14,20 @@ import (
 	"github.com/cieons/koko/internal/server"
 	"github.com/cieons/koko/internal/server/kokod"
 	"github.com/cieons/koko/internal/shared/build"
-	"github.com/cieons/koko/internal/shared/serverrun"
 )
+
+// settings are what kokod run hands the koko server in its config from its
+// command line.
+type settings struct {
+	DataDir, RootKeyPath, RootKeySource, Owner, Address, Listen string
+	LogLevel                                                    slog.Level
+}
 
 // fakeServer records the settings kokod run hands the koko server in its
 // config.
 type fakeServer struct {
 	calls    int
-	settings serverrun.Settings
+	settings settings
 	err      error
 }
 
@@ -29,7 +35,7 @@ func (f *fakeServer) program() kokod.Program {
 	return kokod.Program{Serve: func(_ context.Context, c server.Config) error {
 		f.calls++
 		_, _ = io.WriteString(c.Log, "level=INFO msg=started\n")
-		f.settings = serverrun.Settings{
+		f.settings = settings{
 			DataDir:       c.DataDir,
 			RootKeyPath:   c.RootKeyPath,
 			RootKeySource: c.RootKeySource,
@@ -49,7 +55,7 @@ const credentialsDirectory = "CREDENTIALS_DIRECTORY=/run/credentials/koko.servic
 func TestRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
 	t.Parallel()
 	// The Root Key's file is systemd's copy of the one the koko unit loads.
-	defaults := serverrun.Settings{
+	defaults := settings{
 		DataDir:       "/var/lib/koko",
 		RootKeyPath:   "/run/credentials/koko.service/root-key",
 		RootKeySource: "/etc/koko/root.key",
@@ -60,30 +66,30 @@ func TestRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
 		name string
 		env  []string
 		args []string
-		want serverrun.Settings
+		want settings
 	}{
 		{"defaults", []string{credentialsDirectory}, nil, defaults},
 		{
 			"flags", nil,
 			[]string{"--data-dir", "/srv/koko", "--root-key-file", "/etc/koko/root.key", "--listen", "203.0.113.7:8443", "--log-level", "debug"},
-			serverrun.Settings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", Listen: "203.0.113.7:8443", LogLevel: slog.LevelDebug},
+			settings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", Listen: "203.0.113.7:8443", LogLevel: slog.LevelDebug},
 		},
 		{
 			"flags with =", nil,
 			[]string{"--data-dir=/srv/koko", "--root-key-file=/etc/koko/root.key", "--listen=[::1]:8443", "--log-level=warn"},
-			serverrun.Settings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", Listen: "[::1]:8443", LogLevel: slog.LevelWarn},
+			settings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", Listen: "[::1]:8443", LogLevel: slog.LevelWarn},
 		},
 		{
 			"environment",
 			[]string{"KOKO_DATA_DIR=/env/koko", "KOKO_ROOT_KEY_FILE=/env/root.key", "KOKO_LISTEN=:8443", "KOKO_LOG_LEVEL=error"},
 			nil,
-			serverrun.Settings{DataDir: "/env/koko", RootKeyPath: "/env/root.key", Listen: ":8443", LogLevel: slog.LevelError},
+			settings{DataDir: "/env/koko", RootKeyPath: "/env/root.key", Listen: ":8443", LogLevel: slog.LevelError},
 		},
 		{
 			"flag over environment",
 			[]string{credentialsDirectory, "KOKO_DATA_DIR=/env/koko", "KOKO_ROOT_KEY_FILE=/env/root.key", "KOKO_LISTEN=:8443"},
 			[]string{"--data-dir", "/srv/koko", "--root-key-file", "/etc/koko/root.key", "--listen", ":9443"},
-			serverrun.Settings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", Listen: ":9443", LogLevel: slog.LevelInfo},
+			settings{DataDir: "/srv/koko", RootKeyPath: "/etc/koko/root.key", Listen: ":9443", LogLevel: slog.LevelInfo},
 		},
 		{
 			"the Owner and the Server Address as flags",
@@ -128,7 +134,7 @@ func TestRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
 
 // withInit is s with the Owner and the Server Address a fresh koko server
 // initialises itself with.
-func withInit(s serverrun.Settings, owner, address string) serverrun.Settings {
+func withInit(s settings, owner, address string) settings {
 	s.Owner, s.Address = owner, address
 	return s
 }
@@ -206,9 +212,9 @@ func TestKokodRefusesACommandLineItDoesNotTake(t *testing.T) {
 		args    []string
 		message string
 	}{
-		{"no command", nil, "give a command: kokod run, kokod version or kokod help; kokod help lists them"},
-		{"unknown command", []string{"install", "--json"}, "kokod install is not a command; kokod takes kokod run, kokod version or kokod help"},
-		{"flags first", []string{"--json", "run"}, "give a command before its flags: kokod run, kokod version or kokod help"},
+		{"no command", nil, "give a command: kokod run, kokod install, kokod uninstall, kokod version or kokod help; kokod help lists them"},
+		{"unknown command", []string{"serve", "--json"}, "kokod serve is not a command; kokod takes kokod run, kokod install, kokod uninstall, kokod version or kokod help"},
+		{"flags first", []string{"--json", "run"}, "give a command before its flags: kokod run, kokod install, kokod uninstall, kokod version or kokod help"},
 		{"help for an unknown command", []string{"help", "serve", "--json"}, "kokod serve is not a command"},
 		{"version with a flag it does not take", []string{"version", "--data-dir", "/srv/koko", "--json"}, "unknown flag --data-dir for kokod version"},
 	} {
@@ -231,10 +237,10 @@ func TestKokodRefusesACommandLineItDoesNotTake(t *testing.T) {
 	}
 }
 
-// kokod help and kokod --help list the commands and say that koko server
-// install and uninstall do the machine's part; kokod run --help, and kokod
-// help run, list the flags and variables koko server run takes, each line
-// as koko's help writes it.
+// kokod help and kokod --help list the commands and say that kokod install
+// and uninstall are the machine's part of koko server install and
+// uninstall; kokod run --help, and kokod help run, list its flags and
+// variables.
 func TestKokodHelp(t *testing.T) {
 	t.Parallel()
 	p := (&fakeServer{}).program()
@@ -251,18 +257,6 @@ func TestKokodHelp(t *testing.T) {
 	if again := harness.RunKokod(t, p, nil, "help", "run"); again != run {
 		t.Errorf("kokod help run = %+v, want what kokod run --help prints", again)
 	}
-	koko := harness.Run(t, cli.Runner{}, nil, "help", "server", "run")
-	koko.WantSuccess(t)
-	_, flags, _ := strings.Cut(koko.Stdout, "\nFlags:\n")
-	for line := range strings.Lines(flags) {
-		if strings.HasPrefix(strings.TrimSpace(line), "--json") {
-			continue
-		}
-		if !strings.Contains(run.Stdout, line) {
-			t.Errorf("kokod run --help lacks koko server run's flag line %q", line)
-		}
-	}
-
 	version := harness.RunKokod(t, p, nil, "version", "--help")
 	version.WantSuccess(t)
 	if !strings.HasPrefix(version.Stdout, "kokod version [--json]\n") {

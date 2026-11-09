@@ -182,7 +182,7 @@ func aDeviceMuxThatExitsAtOnceSendsTheCommandDirect(t *testing.T) {
 	}
 }
 
-// KOKO_LOG_LEVEL takes what koko server run's --log-level takes; any other
+// KOKO_LOG_LEVEL takes what kokod run's --log-level takes; any other
 // value refuses the command line, as there.
 func TestAnUnknownLogLevelIsRefused(t *testing.T) {
 	t.Parallel()

@@ -39,8 +39,9 @@ const (
 	// reports it too, so it is install's.
 	codeUnsupportedPlatform = install.CodeUnsupportedPlatform
 	// codePortTaken: another process holds the port the command listens on,
-	// or, for koko server run, something answers on its socket. kokod
-	// reports it too, so it is install's.
+	// such as koko server install's. kokod reports it too, also when
+	// something answers on the socket kokod run would listen on, so it is
+	// install's.
 	codePortTaken = install.CodePortTaken
 	// codeServerTooOld: the koko server does not serve the command's
 	// operation, so it is older than the CLI, and nothing was sent; or it

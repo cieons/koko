@@ -1,4 +1,4 @@
-// Package server is the koko server process: what `koko server run`
+// Package server is the koko server process: what `kokod run`
 // dispatches into. It opens the store, loads the Root Key and opens the
 // koko server's own keys with it, registers every area's operations and
 // serves them, and the web front, on the Unix socket and, once the koko

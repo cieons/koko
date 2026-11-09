@@ -20,6 +20,9 @@ import (
 	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/server"
 	"github.com/cieons/koko/internal/server/installer"
+	"github.com/cieons/koko/internal/server/kokod"
+	"github.com/cieons/koko/internal/shared/build"
+	"github.com/cieons/koko/internal/shared/install"
 	"github.com/cieons/koko/internal/shared/portowner"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
@@ -44,16 +47,23 @@ const servicePID = 4242
 // them.
 const dropInDir = installer.UnitPath + ".d"
 
-// Machine is a fake machine for `koko server install`, the system seam of
-// P0 spec: install and run: a temporary directory that stands for its root,
-// and fakes of everything else install asks of it, which record each call.
+// Machine is a fake machine for `koko server install` and `uninstall`, the
+// system seam of P0 spec: install and run: a temporary directory that stands
+// for its root, and fakes of everything else koko and kokod install ask of
+// it, which record each call. It is the cli.Kokod koko runs on: it states
+// the build of each kokod file it makes, by the file's bytes, so that a copy
+// keeps its build, and runs a kokod file as kokod's command line in process.
 // Its systemctl runs the koko unit as systemd would, with the unit's own
-// settings and the paths under the root: `koko server run` in process, as
-// an in-process koko server. Everything it starts stops when the test ends.
+// settings and the paths under the root: `kokod run` in process, as an
+// in-process koko server. Everything it starts stops when the test ends.
 //
 // A test sets what the machine answers before install runs; the zero values
 // of the fields NewMachine sets mean a machine without them.
 type Machine struct {
+	// OSArch is the machine's platform, as GOOS/GOARCH.
+	OSArch string
+	// NotRoot makes koko run as a user who is not root.
+	NotRoot bool
 	// Systemd is systemd's version.
 	Systemd int
 	// Source is the default route's source IP; the zero Addr means the
@@ -77,12 +87,18 @@ type Machine struct {
 	// then waits NoSocketWait for it.
 	NoSocket bool
 
-	t      testing.TB
-	root   string
-	home   string
-	binary string
-	// releases counts the binaries NewRelease made.
+	t    testing.TB
+	root string
+	home string
+	// kokod is the kokod file koko server install is given with --kokod,
+	// outside the root.
+	kokod string
+	// builds are the builds of the files the machine made, by their bytes.
+	builds map[string]build.Info
+	// releases counts the kokod files NewRelease made.
 	releases int
+	// ran are the kokod command lines run on the machine, in order.
+	ran []string
 
 	mu      sync.Mutex
 	calls   []Call
@@ -121,7 +137,10 @@ type unitFile struct {
 	stateDirs   []string
 }
 
-var _ installer.Machine = (*Machine)(nil)
+var (
+	_ installer.Machine = (*Machine)(nil)
+	_ cli.Kokod         = (*Machine)(nil)
+)
 
 // skeleton is what a fresh machine's root holds: the system directories
 // install writes into, and /run/systemd/system, which tells that systemd
@@ -129,15 +148,13 @@ var _ installer.Machine = (*Machine)(nil)
 var skeleton = []string{"/etc/systemd/system", "/usr/local/bin", "/var/lib", "/run/systemd/system"}
 
 // NewMachine makes a fresh fake machine: a root holding only the system
-// directories, systemd 252, an ext4 filesystem, SourceIP on the default
-// route and no port taken, with a koko binary to install outside its root.
+// directories, linux/amd64 with koko running as root, systemd 252, an ext4
+// filesystem, SourceIP on the default route and no port taken, with a kokod
+// file of this koko's build outside its root, for --kokod.
 func NewMachine(t testing.TB) *Machine {
 	t.Helper()
-	binary := filepath.Join(t.TempDir(), "koko")
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\n# the koko binary of "+t.Name()+"\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	m := &Machine{
+		OSArch:    "linux/amd64",
 		Systemd:   252,
 		Source:    netip.MustParseAddr(SourceIP),
 		FSType:    "ext4",
@@ -146,8 +163,9 @@ func NewMachine(t testing.TB) *Machine {
 		// The socket under the root must fit macOS's 104 bytes.
 		root:   ShortTempDir(t),
 		home:   t.TempDir(),
-		binary: binary,
+		builds: map[string]build.Info{},
 	}
+	m.kokod = m.NewKokod(KokodBuild())
 	for _, dir := range skeleton {
 		if err := os.MkdirAll(m.Path(dir), 0o755); err != nil {
 			t.Fatal(err)
@@ -157,17 +175,52 @@ func NewMachine(t testing.TB) *Machine {
 	return m
 }
 
+// KokodBuild is the build of a kokod of this koko's build: the test
+// binary's, which koko server install compares a kokod's build with, naming
+// kokod's main package, for linux/amd64, a fresh machine's platform.
+func KokodBuild() build.Info {
+	b := build.Read()
+	b.Path, b.Platform = install.KokodPackage, "linux/amd64"
+	return b
+}
+
 // Koko runs one koko command line in process, as root on this machine under
 // a temporary HOME, with empty stdin: `koko server install` and `uninstall`
 // act on it, and every other command reaches the koko service's socket under
 // its root.
 func (m *Machine) Koko(args ...string) Result {
 	m.t.Helper()
-	inst := &installer.Installer{Machine: m, Binary: m.binary}
-	if m.NoSocket {
-		inst.Timings = timing.Timings{InstallSocketWait: NoSocketWait}
+	return Run(m.t, cli.Runner{Kokod: m, SocketPath: m.SocketPath()}, []string{"HOME=" + m.home}, args...)
+}
+
+// Kokod is the kokod file to give koko server install with --kokod, outside
+// the machine's root: one of this koko's build.
+func (m *Machine) Kokod() string {
+	return m.kokod
+}
+
+// NewKokod makes a file outside the machine's root that the machine states
+// is of the build b, and returns its path: a kokod of another build, or,
+// with another b.Path, another program.
+func (m *Machine) NewKokod(b build.Info) string {
+	m.t.Helper()
+	m.mu.Lock()
+	n := len(m.builds) + 1
+	m.mu.Unlock()
+	return m.newFile(b, fmt.Sprintf("#!/bin/sh\n# %s %s of %s, file %d\n", b.Path, b.Version, m.t.Name(), n))
+}
+
+// newFile writes text to a new file outside the root, stated as the build
+// b, and returns its path.
+func (m *Machine) newFile(b build.Info, text string) string {
+	path := filepath.Join(m.t.TempDir(), filepath.Base(b.Path))
+	if err := os.WriteFile(path, []byte(text), 0o755); err != nil {
+		m.t.Fatal(err)
 	}
-	return Run(m.t, cli.Runner{ServerInstall: inst.Install, ServerUninstall: inst.Uninstall, SocketPath: m.SocketPath()}, []string{"HOME=" + m.home}, args...)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.builds[text] = b
+	return path
 }
 
 // Path is the real path of path on the machine, under its root.
@@ -180,28 +233,67 @@ func (m *Machine) SocketPath() string {
 	return m.Path(wire.SocketPath)
 }
 
-// Binary returns the bytes of the koko binary that install installs.
-func (m *Machine) Binary() []byte {
-	m.t.Helper()
-	b, err := os.ReadFile(m.binary)
-	if err != nil {
-		m.t.Fatal(err)
-	}
-	return b
-}
-
-// NewRelease makes the koko binary that install installs from now on a new
-// one, as a newer release's is, and returns its bytes.
+// NewRelease makes the kokod file Kokod names from now on a new one, of
+// this koko's build too, as a newer release's kokod beside its koko is, and
+// returns its bytes.
 func (m *Machine) NewRelease() []byte {
 	m.t.Helper()
 	m.releases++
-	binary := filepath.Join(m.t.TempDir(), "koko")
-	text := fmt.Appendf(nil, "#!/bin/sh\n# the koko binary of %s, release %d\n", m.t.Name(), m.releases+1)
-	if err := os.WriteFile(binary, text, 0o755); err != nil {
-		m.t.Fatal(err)
+	text := fmt.Sprintf("#!/bin/sh\n# kokod of %s, release %d\n", m.t.Name(), m.releases+1)
+	m.kokod = m.newFile(KokodBuild(), text)
+	return []byte(text)
+}
+
+// Ran returns the kokod command lines run on the machine so far, in order.
+func (m *Machine) Ran() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.ran)
+}
+
+// Platform is the machine's OSArch.
+func (m *Machine) Platform() string {
+	return m.OSArch
+}
+
+// RunsAsRoot tells whether koko, and the kokod it runs, run as root on the
+// machine: unless NotRoot.
+func (m *Machine) RunsAsRoot() bool {
+	return !m.NotRoot
+}
+
+// Build is the build the machine states for the file at the real path file,
+// by its bytes; a file it did not make, such as one written by hand, is no
+// Go binary.
+func (m *Machine) Build(file string) (build.Info, error) {
+	text, err := os.ReadFile(file)
+	if err != nil {
+		return build.Info{}, err
 	}
-	m.binary = binary
-	return text
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	b, ok := m.builds[string(text)]
+	if !ok {
+		return build.Info{}, errors.New("unrecognized file format")
+	}
+	return b, nil
+}
+
+// Run runs the kokod file at the real path file as kokod's command line in
+// process, on this machine, as root: kokod install puts that file at
+// /usr/local/bin/kokod. It runs only a kokod the machine made.
+func (m *Machine) Run(ctx context.Context, file string, args []string, stdout, stderr io.Writer) (int, error) {
+	if b, err := m.Build(file); err != nil || b.Path != install.KokodPackage {
+		return 0, fmt.Errorf("the fake machine runs only the kokod files it made, not %s", file)
+	}
+	m.mu.Lock()
+	m.ran = append(m.ran, strings.Join(args, " "))
+	m.mu.Unlock()
+	p := kokod.Program{Machine: m, Binary: func() (string, error) { return file, nil }}
+	if m.NoSocket {
+		p.Timings = timing.Timings{InstallSocketWait: NoSocketWait}
+	}
+	return p.Run(ctx, kokod.Invocation{Args: args, Stdout: stdout, Stderr: stderr}), nil
 }
 
 // Calls returns what install asked of the machine so far, in order.
@@ -598,11 +690,16 @@ func (m *Machine) startService() error {
 			return err
 		}
 	}
+	// kokod run, or a koko from before kokod (v0.1.0, v0.2.0), whose
+	// koko server run took the same flags.
+	if args := u.execStart[1:]; !slices.Equal(args, []string{"run"}) && !slices.Equal(args, []string{"server", "run"}) {
+		return fmt.Errorf("the fake systemd runs kokod run or koko server run, not %q", u.execStart)
+	}
 	// The unit's own settings, then what systemd adds. The koko server
 	// listens on a loopback port of the test's choosing, never the unit's.
 	env := append(slices.Clone(u.env), "CREDENTIALS_DIRECTORY="+creds, "KOKO_LISTEN=127.0.0.1:0")
 	noSocket, delay, listenDelay := m.NoSocket, m.StartDelay, m.ListenDelay
-	serve := func(ctx context.Context, s cli.ServerSettings, log io.Writer) error {
+	serve := func(ctx context.Context, c server.Config) error {
 		if noSocket {
 			<-ctx.Done()
 			return nil
@@ -620,19 +717,12 @@ func (m *Machine) startService() error {
 				return nil
 			}
 		}
-		return server.Run(ctx, server.Config{
-			DataDir:       m.Path(s.DataDir),
-			RootKeyPath:   s.RootKeyPath,
-			RootKeySource: s.RootKeySource,
-			Listen:        s.Listen,
-			LogLevel:      s.LogLevel,
-			Log:           log,
-			Filesystems:   LocalDisk{},
-			ProcessUIDs:   NotRoot,
-			SocketPath:    m.SocketPath(),
-		})
+		c.DataDir = m.Path(c.DataDir)
+		c.Filesystems, c.ProcessUIDs, c.SocketPath = LocalDisk{}, NotRoot, m.SocketPath()
+		return server.Run(ctx, c)
 	}
-	m.service = background(m.t, cli.Runner{ServerRun: serve}, env, u.execStart[1:]...)
+	p := kokod.Program{Serve: serve}
+	m.service = RunKokodBackground(m.t, p, env, "run")
 	m.running = u
 	m.runs = append(m.runs, m.service)
 	return nil

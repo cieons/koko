@@ -176,12 +176,12 @@ status. A command reaches the koko server only on its first `in.Call`, so
   (`koko join` on a joined device, naming `koko device revoke` and `koko
   leave`; `koko ssh setup` on one, naming `koko join`),
   `invalid_join_code` (the koko server refused the Join Code, used, expired
-  or never issued alike), `unsupported_platform` (`koko server run`,
-  `install` or `uninstall` outside Linux, or a machine install cannot use,
-  or a data directory on a network filesystem, which `koko server run`
-  refuses too), `port_taken` (another process holds the port `koko web` or
-  `koko server install` listens on, or something, such as a koko server, answers on the socket
-  `koko server run` would listen on), `server_too_old` (the koko server's report does not
+  or never issued alike), `unsupported_platform` (`koko server install` or
+  `uninstall` outside Linux, on an architecture with no `kokod`, not as
+  root, or where systemd does not run the machine, before any `kokod` is
+  read; or a machine `kokod install` cannot use, such as a data directory
+  on a network filesystem), `port_taken` (another process holds the port
+  `koko web` or `koko server install` listens on), `server_too_old` (the koko server's report does not
   list the command's operation; the message names the koko server's version
   and the command, and nothing was sent; or, so far for `koko ssh setup`
   only, the koko server answered without a field the command needs, which
@@ -189,7 +189,9 @@ status. A command reaches the koko server only on its first `in.Call`, so
   it did not expect. `kokod` reports `invalid_usage`, `unsupported_platform`
   and `port_taken` too, so those three live in the shared
   [`install`](../../internal/shared/install/install.go) package, beside
-  `install.Refusal`, and the CLI reads them from there.
+  `install.Refusal`, and the CLI reads them from there. A refusal `kokod
+  install` or `uninstall` prints becomes `koko server install`'s or
+  `uninstall`'s, code, message and exit status unchanged.
 - **A drop:** a call the connection drops is sent once more on a new
   connection, a write with the same `Idempotency-Key`, so it applies once
   ([the API client](api.md#the-api-client)); only when that one drops too
@@ -202,7 +204,7 @@ status. A command reaches the koko server only on its first `in.Call`, so
   [the Device Mux](device-mux.md#which-way-a-command-goes)).
 - **The command's own log** goes to stderr in slog's text format at the
   level `KOKO_LOG_LEVEL` names (`debug`, `info`, `warn` or `error`, as
-  `koko server run --log-level` takes; info when unset, and any other value
+  `kokod run --log-level` takes; info when unset, and any other value
   refuses the command line with `invalid_usage`); only debug lines exist so
   far, such as the direct path's one. `koko device-mux`, the
   Device Mux's entry point, is no command of the tree
@@ -360,9 +362,8 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
 | `koko status` | read | none: the koko server's version comes from its report | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_error", "device_mux", "revocation", "include_warning"}`, below |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
-| `koko server run [--data-dir <dir>] [--root-key-file <file>] [--owner <user> --address <host[:port]>] [--listen <addr>] [--log-level <level>]` | irreversible | none | nothing on success |
-| `koko server install [--owner <user>] [--address <host[:port]>] [--port <port>]` | irreversible | `server.init` | `{"upgraded", "address", "host_key_fingerprint", "root_key_file", "root_key_id", "listen_port", "join_code"}`, the Join Code as `device add` prints it; an upgrade has no `join_code`, and may have `devices_must_connect` ([the installer](installer.md#what-it-prints)) |
-| `koko server uninstall` | irreversible | none | `{"removed", "data_dir", "root_key_file", "system_user", "listen_port"}` ([the installer](installer.md#uninstall)) |
+| `koko server install [--owner <user>] [--address <host[:port]>] [--port <port>] [--kokod <file>]` | irreversible | `server.init`, after it runs `kokod install` | `{"upgraded", "address", "host_key_fingerprint", "root_key_file", "root_key_id", "listen_port", "join_code"}`, the Join Code as `device add` prints it; an upgrade has no `join_code`, and may have `devices_must_connect` ([the installer](installer.md#what-it-prints)) |
+| `koko server uninstall [--kokod <file>]` | irreversible | none: it runs `kokod uninstall` | `{"removed", "data_dir", "root_key_file", "system_user", "listen_port"}` ([the installer](installer.md#uninstall)) |
 | `koko server show` | read | `server.show` | `{"address", "listen_port", "host_key_fingerprint", "version", "root_key_file", "root_key_id", "data_dir"}` ([the deployment afterwards](initialisation.md#the-deployment-afterwards)) |
 | `koko server set address=<host[:port]>` (Owner, over the Unix socket only) | reversible | `server.set` | the settings as `server show` prints them, as the change left them |
 | `koko host add <host> address=<address> account=<account> [port=<port>] [space=<space>] [<key>=<value>...] [--note-file <file\|->]` | reversible | `host.add` | the Host: `{"id", "name", "space", "address", "port", "account", "state", "host_key", "attributes": {...}, "note", "created_at", "updated_at"}` ([the record](record.md)) |
@@ -389,31 +390,26 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
 | `koko help [<command>...]` | read | none | an array of the commands shown, each as `koko skill` describes one |
 | `koko completion <shell>` | read | none | `{"shell", "script"}`; without `--json`, the script alone |
 
-`koko server run` takes `--data-dir` (`KOKO_DATA_DIR`, default
-`/var/lib/koko`), `--root-key-file` (`KOKO_ROOT_KEY_FILE`, default
-`$CREDENTIALS_DIRECTORY/root-key`, the file systemd's
-`LoadCredential=root-key` hands the unit), `--listen` (`KOKO_LISTEN`, default
-`:7822`: an optional host and a port number, where devices reach the koko
-server once it is initialised) and `--log-level` (`KOKO_LOG_LEVEL`:
-`debug`, `info`, `warn` or `error`; default `info`). `--owner` (`KOKO_OWNER`)
-and `--address` (`KOKO_ADDRESS`), which have no default, go together: with
-them a fresh koko server makes its Root Key when the file is missing and
-initialises itself at start, and an initialised one does not use them
-([initialisation at first start](initialisation.md#at-first-start)). The
-CLI refuses one without the other, an `--owner` that is not a User name and
-an `--address` that is not a Server Address with exit 2, before the koko
-server writes anything. With them, `koko server run` stays in the
-irreversible tier it is in already (ADR 0019). Left to its default
-without `CREDENTIALS_DIRECTORY` set, the Root Key file is refused with exit 2;
-left to it under systemd, the file is a copy of `/etc/koko/root.key`, the
-file the unit's `LoadCredential=` names, which `koko server show` names as
-the Root Key's file.
-The flag takes the file's absolute path, never the key, and the koko server
-refuses to start without a usable Root Key ([the Seal](seal.md#at-start-up)).
-`koko server run` refuses to run as root, with exit 2, naming the fix
-([the Seal](seal.md#at-start-up)). The koko
-server logs to stderr in slog's text format (`time=... level=INFO msg=...
-key=value`), one line per event, for journald to keep.
+`koko server run` is no command since the koko server became its own
+program ([ADR 0040](../adr/0040-koko-is-the-cli-and-kokod-the-koko-server.md)):
+it is refused with exit 2, `the koko server is kokod now: run kokod run,
+with the same flags`, whatever flags follow, as is `koko help server run`
+([`gone`](../../internal/client/cli/parse.go)). `koko help server` lists
+the server commands and says that the koko server's process is `kokod run`,
+and `koko skill` says it in one line. `kokod run` takes the flags and
+`KOKO_*` variables `koko server run` took, with the same checks and exit
+statuses ([`settings.go`](../../internal/server/kokod/settings.go)):
+`--data-dir` (`KOKO_DATA_DIR`, default `/var/lib/koko`), `--root-key-file`
+(`KOKO_ROOT_KEY_FILE`, default `$CREDENTIALS_DIRECTORY/root-key`, the file
+systemd's `LoadCredential=root-key` hands the unit), `--listen`
+(`KOKO_LISTEN`, default `:7822`), `--log-level` (`KOKO_LOG_LEVEL`), and
+`--owner` (`KOKO_OWNER`) with `--address` (`KOKO_ADDRESS`), with which a
+fresh koko server initialises itself at start
+([initialisation at first start](initialisation.md#at-first-start)). It
+refuses to run as root, with exit 2, naming the fix
+([the Seal](seal.md#at-start-up)). The koko server logs to stderr in slog's
+text format (`time=... level=INFO msg=... key=value`), one line per event,
+for journald to keep.
 
 `koko status` ([`status`](../../internal/client/cli/status.go)) reaches the
 koko server as any command does, which may run the revocation cleanup,

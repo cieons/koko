@@ -1,7 +1,7 @@
-# The koko server. koko server install writes this file from the template in
-# the koko binary, and writes it again at every run, so that it always
-# matches the binary. Change a setting with a drop-in (systemctl edit koko),
-# whose Environment= lines override the KOKO_* ones below.
+# The koko server. kokod install, which koko server install runs, writes this
+# file from the template in kokod, and writes it again at every run, so that
+# it always matches kokod. Change a setting with a drop-in (systemctl edit
+# koko), whose Environment= lines override the KOKO_* ones below.
 [Unit]
 Description=koko server
 Documentation=https://github.com/cieons/koko
@@ -10,11 +10,11 @@ After=network-online.target
 
 [Service]
 Type=exec
-ExecStart={{.Binary}} server run
+ExecStart={{.Binary}} run
 Environment=KOKO_DATA_DIR={{.DataDir}}
 Environment=KOKO_LISTEN=:{{.Port}}
 Environment=KOKO_LOG_LEVEL=info
-# The Root Key's file is koko server run's default,
+# The Root Key's file is kokod run's default,
 # $CREDENTIALS_DIRECTORY/{{.Credential}}, which LoadCredential= makes.
 LoadCredential={{.Credential}}:{{.RootKeyFile}}
 User={{.User}}

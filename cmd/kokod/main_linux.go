@@ -10,12 +10,13 @@ import (
 
 	"github.com/cieons/koko/internal/server"
 	"github.com/cieons/koko/internal/server/filesystem"
+	"github.com/cieons/koko/internal/server/installer"
 	"github.com/cieons/koko/internal/server/kokod"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	p := kokod.Program{Serve: serve}
+	p := kokod.Program{Serve: serve, Machine: installer.System{}, Binary: os.Executable}
 	status := p.Run(ctx, kokod.Invocation{
 		Args:   os.Args[1:],
 		Stdout: os.Stdout,

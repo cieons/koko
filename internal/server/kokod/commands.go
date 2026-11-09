@@ -8,8 +8,9 @@ import (
 	"text/tabwriter"
 
 	"github.com/cieons/koko/internal/server"
+	"github.com/cieons/koko/internal/server/installer"
 	"github.com/cieons/koko/internal/shared/build"
-	"github.com/cieons/koko/internal/shared/serverrun"
+	"github.com/cieons/koko/internal/shared/install"
 )
 
 // command is one of kokod's commands.
@@ -18,21 +19,38 @@ type command struct {
 	summary string
 	// flags are the command's flags besides --json, which every command
 	// takes; json says what --json prints.
-	flags []serverrun.Flag
+	flags []flag
 	json  string
 	run   func(ctx context.Context, p *Program, inv *Invocation, line *parsed) error
 }
 
 // commands are kokod's commands besides help, in the order help lists them.
-// The installer's machine steps are koko server install's and koko server
-// uninstall's.
+// install and uninstall are the machine's part of koko server install and
+// koko server uninstall, which run them.
 var commands = []*command{
 	{
 		name:    "run",
 		summary: "Run the koko server in the foreground, as its systemd unit and the image do",
-		flags:   serverrun.Flags,
+		flags:   runFlags,
 		json:    "Print a refusal as JSON",
 		run:     run,
+	},
+	{
+		name:    "install",
+		summary: "Install and start the koko server here, as root, or upgrade it, and print what initialising it needs",
+		flags: []flag{
+			{Name: "owner", Value: "user", Summary: "the Owner's User name, which a koko server not initialised yet needs"},
+			{Name: "address", Value: "host[:port]", Summary: "the Server Address devices connect to; without it, this machine's public IP"},
+			{Name: "port", Value: "port", Summary: "the TCP port the koko server listens on: 7822 on a fresh install, and on an upgrade the port it listens on now"},
+		},
+		json: "Print a refusal as JSON; the report is JSON always",
+		run:  installCmd,
+	},
+	{
+		name:    "uninstall",
+		summary: "Stop the koko server here and remove its unit and kokod, as root; its data, Root Key and system user stay",
+		json:    "Print a refusal as JSON; the report is JSON always",
+		run:     uninstallCmd,
 	},
 	{
 		name:    "version",
@@ -45,7 +63,7 @@ var commands = []*command{
 // run is kokod run: it runs the koko server in the foreground until ctx
 // ends, logging on stderr.
 func run(ctx context.Context, p *Program, inv *Invocation, line *parsed) error {
-	s, err := serverrun.Read(line.value, inv.getenv)
+	s, err := readSettings(line.value, inv.getenv)
 	if err != nil {
 		return err
 	}
@@ -59,6 +77,47 @@ func run(ctx context.Context, p *Program, inv *Invocation, line *parsed) error {
 		LogLevel:      s.LogLevel,
 		Log:           inv.Stderr,
 	})
+}
+
+// installCmd is kokod install: the installer's steps up to the koko server's
+// socket, then its report as JSON, which says what initialising a fresh
+// koko server needs.
+func installCmd(ctx context.Context, p *Program, inv *Invocation, line *parsed) error {
+	req, err := install.ParseRequest(line.value("owner"), line.value("address"), line.value("port"))
+	if err != nil {
+		return err
+	}
+	binary, err := p.Binary()
+	if err != nil {
+		return fmt.Errorf("find this kokod's own file, which install puts at %s: %w", installer.BinaryPath, err)
+	}
+	in := &installer.Installer{Machine: p.Machine, Binary: binary, Timings: p.Timings}
+	report, err := in.Install(ctx, req)
+	if err != nil {
+		return err
+	}
+	return writeJSON(inv.Stdout, report)
+}
+
+// uninstallCmd is kokod uninstall: the installer's uninstall, then its
+// report as JSON.
+func uninstallCmd(ctx context.Context, p *Program, inv *Invocation, _ *parsed) error {
+	in := &installer.Installer{Machine: p.Machine}
+	report, err := in.Uninstall(ctx)
+	if err != nil {
+		return err
+	}
+	return writeJSON(inv.Stdout, report)
+}
+
+// writeJSON writes v to w as JSON, as koko's --json does.
+func writeJSON(w io.Writer, v any) error {
+	var out strings.Builder
+	if err := encodeJSON(&out, v); err != nil {
+		return fmt.Errorf("encode the report: %w", err)
+	}
+	_, err := io.WriteString(w, out.String())
+	return err
 }
 
 // versionJSON is what kokod version --json prints, as koko version --json
@@ -80,7 +139,7 @@ func version(_ context.Context, _ *Program, inv *Invocation, line *parsed) error
 	b := build.Read()
 	var out strings.Builder
 	if line.json {
-		if err := encodeJSON(&out, versionJSON(b)); err != nil {
+		if err := encodeJSON(&out, versionJSON{Version: b.Version, Revision: b.Revision, Go: b.Go, Platform: b.Platform}); err != nil {
 			return fmt.Errorf("encode the build: %w", err)
 		}
 	} else {
@@ -100,8 +159,9 @@ func writeHelp(w io.Writer) {
 		_, _ = fmt.Fprintf(tw, "  kokod %s\t%s\n", c.name, c.summary)
 	}
 	_, _ = fmt.Fprintf(tw, "  kokod help [<command>]\tPrint this help, or a command's, as <command> --help does\n")
-	_, _ = fmt.Fprintln(tw, "\nTo install, upgrade or uninstall the koko server on this machine, run\n"+
-		"koko server install or koko server uninstall as root; they do the machine's part.")
+	_, _ = fmt.Fprintln(tw, "\nkokod install and kokod uninstall are the machine's part of koko server install\n"+
+		"and koko server uninstall, which run them: to install, upgrade or uninstall the\n"+
+		"koko server on this machine, run those as root.")
 	_ = tw.Flush()
 }
 
@@ -123,7 +183,7 @@ func (c *command) writeHelp(w io.Writer) {
 
 // details is what help adds after a flag's summary: its choices, its
 // default and its variable, as koko's help writes them.
-func details(f serverrun.Flag) string {
+func details(f flag) string {
 	var d []string
 	if f.Choices != nil {
 		d = append(d, "one of "+strings.Join(f.Choices, ", "))

@@ -2,10 +2,12 @@ package cli_test
 
 import (
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -13,8 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/server/kokod"
+	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/joincode"
 	"github.com/cieons/koko/internal/shared/portowner"
 )
@@ -31,9 +34,18 @@ type installed struct {
 	DevicesMustConnect string      `json:"devices_must_connect"`
 }
 
-// install runs koko server install --json on m with args, wants it to
+// install runs koko server install --json on m with args and m's kokod
+// given with --kokod, as on a machine with no kokod yet, wants it to
 // succeed, and returns what it printed.
 func install(t *testing.T, m *harness.Machine, args ...string) installed {
+	t.Helper()
+	return installAgain(t, m, append([]string{"--kokod", m.Kokod()}, args...)...)
+}
+
+// installAgain runs koko server install --json on m with args alone, as on
+// a machine where install ran before: without --kokod, it runs the kokod
+// installed. It wants it to succeed, and returns what it printed.
+func installAgain(t *testing.T, m *harness.Machine, args ...string) installed {
 	t.Helper()
 	r := m.Koko(append([]string{"server", "install", "--json"}, args...)...)
 	r.WantSuccess(t)
@@ -96,14 +108,15 @@ func wantNoRootKey(t *testing.T, r harness.Result, file []byte) {
 	}
 }
 
-// On a fresh machine, install creates the koko user and the directories,
-// writes the Root Key, the binary and the unit, starts the service and
-// initialises the koko server over its socket, then prints what the Owner
-// needs next.
+// On a fresh machine, install runs the kokod given, which creates the koko
+// user and the directories, writes the Root Key, itself and the unit, and
+// starts the service; koko then initialises the koko server over its socket
+// and prints what the Owner needs next. It never writes /usr/local/bin/koko,
+// which install.sh puts there.
 func TestServerInstallOnAFreshMachine(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
-	r := m.Koko("server", "install", "--owner", "alice", "--json")
+	r := m.Koko("server", "install", "--owner", "alice", "--kokod", m.Kokod(), "--json")
 	r.WantSuccess(t)
 	harness.Golden(t, "server-install.json", r.Stdout)
 	var out installed
@@ -116,7 +129,7 @@ func TestServerInstallOnAFreshMachine(t *testing.T) {
 		mode  fs.FileMode
 		owner string
 	}{
-		"/usr/local/bin/koko":              {0o755, "root"},
+		"/usr/local/bin/kokod":             {0o755, "root"},
 		"/etc/systemd/system/koko.service": {0o644, "root"},
 		"/etc/koko":                        {fs.ModeDir | 0o700, "root"},
 		"/etc/koko/root.key":               {0o600, "root"},
@@ -130,9 +143,14 @@ func TestServerInstallOnAFreshMachine(t *testing.T) {
 	if users := m.Users(); !slices.Equal(users, []string{"koko"}) {
 		t.Errorf("install created the users %v, want koko", users)
 	}
-	binary, err := os.ReadFile(m.Path("/usr/local/bin/koko"))
-	if err != nil || string(binary) != string(m.Binary()) {
-		t.Errorf("/usr/local/bin/koko holds %q (%v), want the binary that ran install", binary, err)
+	if binary, want := readFile(t, m, "/usr/local/bin/kokod"), fileText(t, m.Kokod()); binary != want {
+		t.Errorf("/usr/local/bin/kokod holds %q, want the kokod that ran install, %q", binary, want)
+	}
+	if _, err := os.Stat(m.Path("/usr/local/bin/koko")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("install wrote /usr/local/bin/koko (%v)", err)
+	}
+	if ran := m.Ran(); !slices.Equal(ran, []string{"install --owner alice --json"}) {
+		t.Errorf("koko ran kokod %q, want install --owner alice --json once", ran)
 	}
 	unit, err := os.ReadFile(m.Path("/etc/systemd/system/koko.service"))
 	if err != nil {
@@ -170,7 +188,7 @@ func TestServerInstallOnAFreshMachine(t *testing.T) {
 }
 
 // Install checks the machine before it writes anything, writes the Root Key,
-// the binary and the unit before it starts the service, and waits for the
+// kokod and the unit before it starts the service, and waits for the
 // service's socket, which opens late here, before it initialises.
 func TestServerInstallChecksFirstAndWaitsForTheSocket(t *testing.T) {
 	t.Parallel()
@@ -202,7 +220,7 @@ func TestServerInstallChecksFirstAndWaitsForTheSocket(t *testing.T) {
 		t.Errorf("install ended with %v, want %v", got, want)
 	}
 	start := calls[len(calls)-1]
-	for _, file := range []string{"/etc/koko/root.key", "/usr/local/bin/koko", "/etc/systemd/system/koko.service", "/var/lib/koko"} {
+	for _, file := range []string{"/etc/koko/root.key", "/usr/local/bin/kokod", "/etc/systemd/system/koko.service", "/var/lib/koko"} {
 		if !slices.Contains(start.Files, file) {
 			t.Errorf("install started the service before writing %s", file)
 		}
@@ -226,7 +244,7 @@ func TestServerInstallWaitsUntilTheSocketAccepts(t *testing.T) {
 func TestServerInstallForPeople(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
-	r := m.Koko("server", "install", "--owner", "alice")
+	r := m.Koko("server", "install", "--owner", "alice", "--kokod", m.Kokod())
 	r.WantSuccess(t)
 	key, err := os.ReadFile(m.Path("/etc/koko/root.key"))
 	if err != nil {
@@ -382,7 +400,7 @@ func TestServerInstallRefusals(t *testing.T) {
 			} else if len(args) > 0 {
 				args = append([]string{"--owner", "alice"}, args...)
 			}
-			r := m.Koko(append([]string{"server", "install", "--json"}, args...)...)
+			r := m.Koko(append([]string{"server", "install", "--json", "--kokod", m.Kokod()}, args...)...)
 			msg := r.WantError(t, tc.status, tc.code)
 			for _, want := range append(tc.says, "nothing was written") {
 				if !strings.Contains(msg, want) {
@@ -406,7 +424,7 @@ func TestServerInstallRefusesAPrivateSourceIP(t *testing.T) {
 			m := harness.NewMachine(t)
 			fresh := m.Files()
 			m.Source = netip.MustParseAddr(ip)
-			r := m.Koko("server", "install", "--owner", "alice", "--json")
+			r := m.Koko("server", "install", "--owner", "alice", "--kokod", m.Kokod(), "--json")
 			msg := r.WantError(t, 2, "invalid_usage")
 			if !strings.Contains(msg, ip) || !strings.Contains(msg, "--address") {
 				t.Errorf("message %q does not name %s and --address", msg, ip)
@@ -421,8 +439,9 @@ func TestServerInstallRefusesAPrivateSourceIP(t *testing.T) {
 // On a machine whose init is not systemd, as in a container, systemctl may
 // still be there to tell its version: install tells that systemd is not
 // running as sd_booted does, by /run/systemd/system, and refuses before it
-// asks the machine anything or writes anything. It names the image, which
-// runs the koko server in a container without systemd.
+// runs kokod, which would refuse the same, and before it asks the machine
+// anything or writes anything. It names the image, which runs the koko
+// server in a container without systemd.
 func TestServerInstallRefusesWithoutSystemdRunning(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
@@ -430,10 +449,11 @@ func TestServerInstallRefusesWithoutSystemdRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	fresh := m.Files()
-	r := m.Koko("server", "install", "--owner", "alice", "--json")
+	r := m.Koko("server", "install", "--owner", "alice", "--kokod", m.Kokod(), "--json")
 	r.WantError(t, 1, "unsupported_platform")
 	harness.Golden(t, "server-install-no-systemd.json", r.Stderr)
-	r = m.Koko("server", "install", "--owner", "alice")
+	refusal := r.Stderr
+	r = m.Koko("server", "install", "--owner", "alice", "--kokod", m.Kokod())
 	if r.Status != 1 || r.Stdout != "" {
 		t.Errorf("status %d, stdout %q; want 1 and nothing", r.Status, r.Stdout)
 	}
@@ -443,6 +463,14 @@ func TestServerInstallRefusesWithoutSystemdRunning(t *testing.T) {
 	}
 	if calls := m.Calls(); len(calls) != 0 {
 		t.Errorf("install asked the machine %v", callNames(calls))
+	}
+	if ran := m.Ran(); len(ran) != 0 {
+		t.Errorf("install ran kokod %q", ran)
+	}
+	// kokod install, run by hand, refuses the same.
+	p := kokod.Program{Machine: m, Binary: func() (string, error) { return m.Kokod(), nil }}
+	if by := harness.RunKokod(t, p, nil, "install", "--owner", "alice", "--json"); by.Status != 1 || by.Stdout != "" || by.Stderr != refusal {
+		t.Errorf("kokod install exited %d, printing %q and %q; want 1 and the refusal koko printed, %q", by.Status, by.Stdout, by.Stderr, refusal)
 	}
 }
 
@@ -463,7 +491,7 @@ func TestServerInstallRefusesBadFlags(t *testing.T) {
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			m := harness.NewMachine(t)
-			args := []string{"server", "install", "--json"}
+			args := []string{"server", "install", "--json", "--kokod", m.Kokod()}
 			if !slices.Contains(tc.args, "--owner") {
 				args = append(args, "--owner", "alice")
 			}
@@ -471,20 +499,21 @@ func TestServerInstallRefusesBadFlags(t *testing.T) {
 			if !strings.Contains(msg, tc.says) {
 				t.Errorf("message %q does not say %q", msg, tc.says)
 			}
-			if calls := m.Calls(); len(calls) != 0 {
-				t.Errorf("install asked the machine %v", calls)
+			if calls, ran := m.Calls(), m.Ran(); len(calls) != 0 || len(ran) != 0 {
+				t.Errorf("install asked the machine %v and ran kokod %q", calls, ran)
 			}
 		})
 	}
 }
 
 // Until initialisation has succeeded, running install again finishes the
-// job: here, after a run refused for its address.
+// job: here, after a run refused for its address, which wrote nothing, so
+// kokod is given again.
 func TestServerInstallAgainAfterARefusedAddress(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
 	m.Source = netip.MustParseAddr("10.0.0.5")
-	m.Koko("server", "install", "--owner", "alice", "--json").WantError(t, 2, "invalid_usage")
+	m.Koko("server", "install", "--owner", "alice", "--kokod", m.Kokod(), "--json").WantError(t, 2, "invalid_usage")
 
 	out := install(t, m, "--owner", "alice", "--address", "koko.example.com")
 	if out.Address != "koko.example.com" {
@@ -494,14 +523,15 @@ func TestServerInstallAgainAfterARefusedAddress(t *testing.T) {
 }
 
 // A run whose service never opens its socket gives up, naming where to look,
-// and the next run reuses the Root Key the first wrote, as nothing is
-// sealed under it yet, and finishes the job, waiting for a service that
-// takes longer to open its socket than the first run waited.
+// and the next run, without --kokod, runs the kokod the first installed and
+// reuses the Root Key it wrote, as nothing is sealed under it yet, and
+// finishes the job, waiting for a service that takes longer to open its
+// socket than the first run waited.
 func TestServerInstallAgainAfterTheServiceDidNotStart(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
 	m.NoSocket = true
-	r := m.Koko("server", "install", "--owner", "alice", "--json")
+	r := m.Koko("server", "install", "--owner", "alice", "--kokod", m.Kokod(), "--json")
 	msg := r.WantError(t, 1, "internal_error")
 	if !strings.Contains(msg, "/run/koko/koko.sock") || !strings.Contains(msg, "journalctl -u koko") {
 		t.Errorf("message %q does not name the socket and journalctl -u koko", msg)
@@ -512,7 +542,7 @@ func TestServerInstallAgainAfterTheServiceDidNotStart(t *testing.T) {
 	}
 
 	m.NoSocket, m.StartDelay = false, 2*harness.NoSocketWait
-	out := install(t, m, "--owner", "alice")
+	out := installAgain(t, m, "--owner", "alice")
 	wantInitialised(t, m, "alice")
 	if again, err := os.ReadFile(m.Path("/etc/koko/root.key")); err != nil || string(again) != string(key) {
 		t.Error("the second run wrote another Root Key")
@@ -557,7 +587,7 @@ func TestServerInstallKeepsARootKeyFileThere(t *testing.T) {
 	t.Run("a file that does not parse", func(t *testing.T) {
 		m := harness.NewMachine(t)
 		keep(t, m, []byte("not a Root Key\n"), 0o600)
-		r := m.Koko("server", "install", "--owner", "alice", "--json")
+		r := m.Koko("server", "install", "--owner", "alice", "--kokod", m.Kokod(), "--json")
 		msg := r.WantError(t, 1, "internal_error")
 		if !strings.Contains(msg, "does not parse") {
 			t.Errorf("message %q does not say the Root Key file does not parse", msg)
@@ -571,13 +601,208 @@ func TestServerInstallKeepsARootKeyFileThere(t *testing.T) {
 	})
 }
 
-// A build without the koko server (every OS but Linux) refuses to install it,
-// as it refuses to run it.
-func TestServerInstallWhereTheBuildHasNoServer(t *testing.T) {
-	t.Parallel()
-	r := harness.Run(t, cli.Runner{}, nil, "server", "install", "--owner", "alice", "--json")
-	msg := r.WantError(t, 1, "unsupported_platform")
-	if !strings.Contains(msg, "Linux only") {
-		t.Errorf("message %q does not say the koko server runs on Linux only", msg)
+// fileText returns the content of the file at the real path path.
+func fileText(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
 	}
+	return string(b)
+}
+
+// wantNothingDone fails the test if koko ran kokod or asked the machine
+// anything, or if the files under its root are not fresh.
+func wantNothingDone(t *testing.T, m *harness.Machine, fresh []string) {
+	t.Helper()
+	if ran := m.Ran(); len(ran) != 0 {
+		t.Errorf("koko ran kokod %q", ran)
+	}
+	if calls := m.Calls(); len(calls) != 0 {
+		t.Errorf("koko asked the machine %v", callNames(calls))
+	}
+	if files := m.Files(); !slices.Equal(files, fresh) {
+		t.Errorf("the refusal wrote: %v", files)
+	}
+}
+
+// A machine that cannot run the koko server is refused before koko reads or
+// runs any kokod: not Linux, naming the image, an architecture no kokod is
+// built for, and koko not running as root, naming the command to run as
+// root. Uninstall refuses the same.
+func TestServerInstallRefusesAMachineBeforeItReadsKokod(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		setup func(m *harness.Machine)
+		says  []string
+	}{
+		{"macOS", func(m *harness.Machine) { m.OSArch = "darwin/arm64" }, []string{"darwin/arm64", "ghcr.io/cieons/koko", "#in-a-container"}},
+		{"an architecture with no kokod", func(m *harness.Machine) { m.OSArch = "linux/riscv64" }, []string{"no kokod for linux/riscv64", "linux/amd64 and linux/arm64"}},
+		{"not root", func(m *harness.Machine) { m.NotRoot = true }, []string{"runs as root: run sudo koko server %s"}},
+	} {
+		for _, verb := range []string{"install", "uninstall"} {
+			t.Run(tc.name+", "+verb, func(t *testing.T) {
+				m := harness.NewMachine(t)
+				fresh := m.Files()
+				tc.setup(m)
+				r := m.Koko("server", verb, "--kokod", m.Kokod(), "--json")
+				msg := r.WantError(t, 1, "unsupported_platform")
+				for _, want := range append(tc.says, "nothing was written") {
+					if want = strings.ReplaceAll(want, "%s", verb); !strings.Contains(msg, want) {
+						t.Errorf("message %q does not say %q", msg, want)
+					}
+				}
+				wantNothingDone(t, m, fresh)
+			})
+		}
+	}
+}
+
+// noGoBinary writes a file that is no Go binary and returns its path.
+func noGoBinary(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "kokod")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// koko runs only kokod of its own build, for the machine's platform: a
+// --kokod of another build or platform, another program, a file that is no
+// Go binary or none at all is refused with exit 2 before anything runs,
+// naming the build of each for another build.
+func TestServerInstallRunsOnlyTheKokodOfItsBuild(t *testing.T) {
+	t.Parallel()
+	other := harness.KokodBuild()
+	other.Version, other.Revision = "v0.2.9", "0123456789abcdef"
+	koko := harness.KokodBuild()
+	koko.Path = "github.com/cieons/koko/cmd/koko"
+	arm := harness.KokodBuild()
+	arm.Platform = "linux/arm64"
+	for _, tc := range []struct {
+		name  string
+		kokod func(t *testing.T, m *harness.Machine) string
+		says  []string
+	}{
+		{
+			"another build", func(_ *testing.T, m *harness.Machine) string { return m.NewKokod(other) },
+			[]string{"kokod " + other.String(), "this koko is " + build.Read().String(), "its own build"},
+		},
+		{
+			"another platform", func(_ *testing.T, m *harness.Machine) string { return m.NewKokod(arm) },
+			[]string{"kokod for linux/arm64, and this machine is linux/amd64"},
+		},
+		{
+			"koko", func(_ *testing.T, m *harness.Machine) string { return m.NewKokod(koko) },
+			[]string{"github.com/cieons/koko/cmd/koko, not kokod"},
+		},
+		{
+			"no Go binary", func(t *testing.T, _ *harness.Machine) string { return noGoBinary(t) },
+			[]string{"which is not kokod"},
+		},
+		{
+			"no file", func(t *testing.T, _ *harness.Machine) string { return filepath.Join(t.TempDir(), "kokod") },
+			[]string{"which is not there"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := harness.NewMachine(t)
+			fresh := m.Files()
+			file := tc.kokod(t, m)
+			msg := m.Koko("server", "install", "--owner", "alice", "--kokod", file, "--json").WantError(t, 2, "invalid_usage")
+			for _, want := range append(tc.says, "--kokod names", "nothing was written") {
+				if !strings.Contains(msg, want) {
+					t.Errorf("message %q does not say %q", msg, want)
+				}
+			}
+			wantNothingDone(t, m, fresh)
+		})
+	}
+}
+
+// Without --kokod, install runs the kokod installed only when it is of
+// koko's build; with none, another build's or a file that is no kokod, it is
+// refused with exit 2, naming what is there and --kokod, before anything
+// runs, and the installed file is left as it is.
+func TestServerInstallWithoutKokod(t *testing.T) {
+	t.Parallel()
+	other := harness.KokodBuild()
+	other.Version = "v0.2.9"
+	for _, tc := range []struct {
+		name      string
+		installed func(t *testing.T, m *harness.Machine) string
+		says      string
+	}{
+		{"none installed", func(*testing.T, *harness.Machine) string { return "" }, "there is none at /usr/local/bin/kokod"},
+		{
+			"another build installed", func(_ *testing.T, m *harness.Machine) string { return m.NewKokod(other) },
+			"the one at /usr/local/bin/kokod is " + other.String(),
+		},
+		{
+			"no kokod installed", func(t *testing.T, _ *harness.Machine) string { return noGoBinary(t) },
+			"the file at /usr/local/bin/kokod is no kokod",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := harness.NewMachine(t)
+			if file := tc.installed(t, m); file != "" {
+				if err := os.WriteFile(m.Path("/usr/local/bin/kokod"), []byte(fileText(t, file)), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			fresh := m.Files()
+			msg := m.Koko("server", "install", "--owner", "alice", "--json").WantError(t, 2, "invalid_usage")
+			for _, want := range []string{"the kokod of this koko's build, " + build.Read().String(), tc.says, "--kokod bin/kokod", "nothing was written"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("message %q does not say %q", msg, want)
+				}
+			}
+			wantNothingDone(t, m, fresh)
+		})
+	}
+}
+
+// kokod install run by hand installs and starts a koko server it cannot
+// initialise, having no client, and names what is left: koko server
+// install with the same flags, which runs the kokod installed and
+// initialises it.
+func TestServerInstallAfterKokodInstallByHand(t *testing.T) {
+	t.Parallel()
+	m := harness.NewMachine(t)
+	p := kokod.Program{Machine: m, Binary: func() (string, error) { return m.Kokod(), nil }}
+	r := harness.RunKokod(t, p, nil, "install", "--owner", "alice", "--port", "8443")
+	r.WantSuccess(t)
+	type initialiseOut struct {
+		Owner   string `json:"owner"`
+		Address string `json:"address"`
+		Next    string `json:"next"`
+	}
+	var report struct {
+		Initialise         *initialiseOut `json:"initialise"`
+		Address            string         `json:"address"`
+		HostKeyFingerprint string         `json:"host_key_fingerprint"`
+		RootKeyFile        string         `json:"root_key_file"`
+		RootKeyID          string         `json:"root_key_id"`
+		Port               int            `json:"port"`
+	}
+	if err := json.Unmarshal([]byte(r.Stdout), &report, json.RejectUnknownMembers(true)); err != nil {
+		t.Fatalf("kokod install printed %q: %v", r.Stdout, err)
+	}
+	if want := (initialiseOut{Owner: "alice", Address: harness.SourceIP, Next: "sudo koko server install --owner alice --port 8443"}); report.Initialise == nil || *report.Initialise != want {
+		t.Errorf("kokod install printed %s, want it to name %+v", r.Stdout, want)
+	}
+	if report.Port != 8443 || report.HostKeyFingerprint != "" || report.Address != "" || report.RootKeyFile != "/etc/koko/root.key" || report.RootKeyID == "" {
+		t.Errorf("kokod install printed %+v", report)
+	}
+	if r := m.Koko("space", "ls", "--json"); r.Status == 0 {
+		t.Errorf("the koko server is initialised after kokod install alone: %s", r.Stdout)
+	}
+
+	out := installAgain(t, m, strings.Fields(report.Initialise.Next)[4:]...)
+	if out.Upgraded || out.JoinCode.Code == "" || out.ListenPort != 8443 {
+		t.Errorf("koko server install then printed %+v, want the koko server initialised on 8443", out)
+	}
+	wantInitialised(t, m, "alice")
 }

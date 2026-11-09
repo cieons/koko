@@ -364,7 +364,9 @@ func (s skillJSON) Human(w io.Writer) error {
 	p("- A list prints a bare JSON array of every item, a write the record it made or changed, and every\n")
 	p("  record carries an `id`. Within a major version fields are only added: ignore those you do not know.\n")
 	p("- A command the koko server lacks fails with `%s`, naming the koko server's version and\n", codeServerTooOld)
-	p("  the command; nothing was sent.\n\n")
+	p("  the command; nothing was sent.\n")
+	p("- systemd and the image run the koko server as `kokod run`, a program of its own beside koko,\n")
+	p("  which an agent does not run itself; `koko server install` and `uninstall` put it on a machine.\n\n")
 
 	p("## Commands by risk tier\n\n")
 	p("Each command shows how it is written, what it does, its flags and the shape of its `--json`, written\n")

@@ -1,9 +1,8 @@
-// Package serverrun is the koko server's start-up settings as a command
-// line: the flags of `kokod run`, each with its KOKO_* variable, and the
-// checks that turn their values into Settings. `koko server run` takes the
-// same flags until it leaves the CLI (ADR 0040), so both programs read them
-// from here and neither copies them.
-package serverrun
+package kokod
+
+// The koko server's start-up settings as a command line: the flags of kokod
+// run, each with its KOKO_* variable, and the checks that turn their values
+// into settings.
 
 import (
 	"fmt"
@@ -12,7 +11,6 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/cieons/koko/internal/shared/install"
 	"github.com/cieons/koko/internal/shared/name"
 	"github.com/cieons/koko/internal/shared/serveraddr"
 )
@@ -36,8 +34,8 @@ const defaultListenPort = "7822"
 // value is expanded: a path given is taken as it is, even one holding '$'.
 const defaultRootKeyFile = "$CREDENTIALS_DIRECTORY/" + rootKeyCredential
 
-// Flag is one start-up flag, as help shows it.
-type Flag struct {
+// flag is one of a command's flags, as help shows it.
+type flag struct {
 	// Name is the flag without its dashes, such as "data-dir".
 	Name string
 	// Value names the value in help, such as "dir".
@@ -53,9 +51,10 @@ type Flag struct {
 	Summary string
 }
 
-// Flags are the start-up flags, in the order help lists them. Each takes a
-// value, never an empty one, and is given at most once.
-var Flags = []Flag{
+// runFlags are kokod run's flags, the start-up settings, in the order help
+// lists them. Each takes a value, never an empty one, and is given at most
+// once.
+var runFlags = []flag{
 	{
 		Name:    "data-dir",
 		Value:   "dir",
@@ -99,8 +98,8 @@ var Flags = []Flag{
 	},
 }
 
-// Settings are what the koko server starts with, from Flags.
-type Settings struct {
+// settings are what the koko server starts with, from runFlags.
+type settings struct {
 	DataDir string
 	// RootKeyPath is the Root Key's file, never the key itself.
 	RootKeyPath string
@@ -119,33 +118,33 @@ type Settings struct {
 	LogLevel slog.Level
 }
 
-// Read makes the Settings of the flags' values, refusing with an
+// readSettings makes the settings of runFlags' values, refusing with an
 // install.Refusal for install.Usage a value that could never work, before
 // the koko server writes anything. value returns a flag's value, from the
 // command line, its variable or its default, already checked against its
 // Choices and never empty when given; getenv reads CREDENTIALS_DIRECTORY.
-func Read(value func(name string) string, getenv func(key string) string) (Settings, error) {
+func readSettings(value func(name string) string, getenv func(key string) string) (settings, error) {
 	owner, address, err := ownerAndAddress(value("owner"), value("address"))
 	if err != nil {
-		return Settings{}, err
+		return settings{}, err
 	}
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(value("log-level"))); err != nil {
-		return Settings{}, fmt.Errorf("read the log level: %w", err)
+		return settings{}, fmt.Errorf("read the log level: %w", err)
 	}
 	rootKey, source := value("root-key-file"), ""
 	if rootKey == defaultRootKeyFile {
 		dir := getenv("CREDENTIALS_DIRECTORY")
 		if dir == "" {
-			return Settings{}, usagef("give the Root Key's file with --root-key-file or KOKO_ROOT_KEY_FILE: its default, %s, needs CREDENTIALS_DIRECTORY, which systemd sets for the koko unit", defaultRootKeyFile)
+			return settings{}, usagef("give the Root Key's file with --root-key-file or KOKO_ROOT_KEY_FILE: its default, %s, needs CREDENTIALS_DIRECTORY, which systemd sets for the koko unit", defaultRootKeyFile)
 		}
 		rootKey, source = filepath.Join(dir, rootKeyCredential), rootKeySource
 	}
 	listen := value("listen")
 	if !isListenAddr(listen) {
-		return Settings{}, usagef("--listen (KOKO_LISTEN) takes host:port or :port, not %q", listen)
+		return settings{}, usagef("--listen (KOKO_LISTEN) takes host:port or :port, not %q", listen)
 	}
-	return Settings{
+	return settings{
 		DataDir:       value("data-dir"),
 		RootKeyPath:   rootKey,
 		RootKeySource: source,
@@ -187,9 +186,4 @@ func isListenAddr(addr string) bool {
 	}
 	n, err := strconv.ParseUint(port, 10, 16)
 	return err == nil && strconv.FormatUint(n, 10) == port
-}
-
-// usagef is a refusal of the command line, which exits 2.
-func usagef(format string, args ...any) error {
-	return &install.Refusal{Reason: install.Usage, Message: fmt.Sprintf(format, args...)}
 }

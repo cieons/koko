@@ -35,18 +35,20 @@ func callNames(calls []harness.Call) []string {
 }
 
 // upgrade runs koko server install --json on m, initialised already, with
-// args, wants it to succeed, and returns what it printed.
+// args, and without --kokod among them the kokod installed; it wants it to
+// succeed, and returns what it printed.
 func upgrade(t *testing.T, m *harness.Machine, args ...string) installed {
 	t.Helper()
-	out := install(t, m, args...)
+	out := installAgain(t, m, args...)
 	if !out.Upgraded || out.JoinCode != (joinCodeOut{}) {
 		t.Errorf("install on an initialised koko server printed %+v, want an upgrade and no Join Code", out)
 	}
 	return out
 }
 
-// On an initialised koko server, install is the upgrade: it replaces the
-// binary, writes the unit again from the template and restarts the service,
+// On an initialised koko server, install is the upgrade: it replaces kokod
+// with the one given, writes the unit again from the template and restarts
+// the service,
 // which runs on the record as it was, with the same Owner, Server Address,
 // host key and Root Key. It prints no Join Code.
 func TestServerInstallUpgradesAnInitialisedServer(t *testing.T) {
@@ -61,7 +63,7 @@ func TestServerInstallUpgradesAnInitialisedServer(t *testing.T) {
 	}
 	calls := len(m.Calls())
 
-	r := m.Koko("server", "install", "--json")
+	r := m.Koko("server", "install", "--json", "--kokod", m.Kokod())
 	r.WantSuccess(t)
 	harness.Golden(t, "server-install-upgrade.json", r.Stdout)
 	var out installed
@@ -76,8 +78,8 @@ func TestServerInstallUpgradesAnInitialisedServer(t *testing.T) {
 		t.Errorf("the upgrade printed %+v, want the Server Address, host key and Root Key of %+v on port 7822", out, before)
 	}
 
-	if got := readFile(t, m, "/usr/local/bin/koko"); got != string(release) {
-		t.Errorf("/usr/local/bin/koko holds %q, want the new release", got)
+	if got := readFile(t, m, "/usr/local/bin/kokod"); got != string(release) {
+		t.Errorf("/usr/local/bin/kokod holds %q, want the new release", got)
 	}
 	if got := readFile(t, m, "/etc/systemd/system/koko.service"); got != unit {
 		t.Errorf("the upgrade left the unit as\n%s\nwant it written again from the template", got)
@@ -130,7 +132,7 @@ func TestServerInstallUpgradeRefusesOwnerAndAddress(t *testing.T) {
 // run anything, or stopped the service.
 func watch(t *testing.T, m *harness.Machine) (untouched func()) {
 	t.Helper()
-	paths := []string{"/usr/local/bin/koko", "/etc/systemd/system/koko.service", "/etc/koko/root.key"}
+	paths := []string{"/usr/local/bin/kokod", "/etc/systemd/system/koko.service", "/etc/koko/root.key"}
 	before := map[string]string{}
 	for _, path := range paths {
 		if b, err := os.ReadFile(m.Path(path)); err == nil {
@@ -310,7 +312,7 @@ func TestServerInstallUpgradeNeedsTheRootKey(t *testing.T) {
 			m.NewRelease()
 			says := tc.replace(t, m.Path("/etc/koko/root.key"))
 			untouched := watch(t, m)
-			msg := m.Koko("server", "install", "--json").WantError(t, 1, "internal_error")
+			msg := m.Koko("server", "install", "--json", "--kokod", m.Kokod()).WantError(t, 1, "internal_error")
 			for _, want := range []string{says, "the sealed data in /var/lib/koko needs " + before.RootKeyID, "nothing was written"} {
 				if !strings.Contains(msg, want) {
 					t.Errorf("message %q does not say %q", msg, want)
@@ -331,7 +333,7 @@ func TestServerInstallUpgradeAndTheUnit(t *testing.T) {
 		m := harness.NewMachine(t)
 		install(t, m, "--owner", "alice", "--port", "8443")
 		m.Koko("server", "uninstall", "--json").WantSuccess(t)
-		out := upgrade(t, m)
+		out := upgrade(t, m, "--kokod", m.Kokod())
 		if out.ListenPort != 7822 || out.DevicesMustConnect != harness.SourceIP+":7822" {
 			t.Errorf("the upgrade printed %+v, want port 7822 and devices_must_connect %s:7822", out, harness.SourceIP)
 		}
@@ -386,7 +388,7 @@ func TestServerInstallUpgradeWithADropInPort(t *testing.T) {
 	refused := func(t *testing.T) {
 		t.Helper()
 		untouched := watch(t, m)
-		msg := m.Koko("server", "install", "--port", "9443", "--json").WantError(t, 2, "invalid_usage")
+		msg := m.Koko("server", "install", "--port", "9443", "--kokod", m.Kokod(), "--json").WantError(t, 2, "invalid_usage")
 		for _, want := range []string{"/etc/systemd/system/koko.service.d/port.conf", "8443", "systemctl edit koko", "nothing was written"} {
 			if !strings.Contains(msg, want) {
 				t.Errorf("message %q does not say %q", msg, want)
@@ -398,7 +400,7 @@ func TestServerInstallUpgradeWithADropInPort(t *testing.T) {
 
 	m.Koko("server", "uninstall", "--json").WantSuccess(t)
 	refused(t)
-	out = upgrade(t, m)
+	out = upgrade(t, m, "--kokod", m.Kokod())
 	if out.ListenPort != 8443 || out.DevicesMustConnect != "" {
 		t.Errorf("install after uninstall printed %+v, want the drop-in's port 8443 and no devices_must_connect", out)
 	}
@@ -457,7 +459,7 @@ func TestServerInstallRestoresACopy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := upgrade(t, m)
+	out := upgrade(t, m, "--kokod", m.Kokod())
 	if out.HostKeyFingerprint != before.HostKeyFingerprint || out.RootKeyID != before.RootKeyID || out.Address != before.Address {
 		t.Errorf("install on the copy printed %+v, want the host key, Root Key and Server Address of %+v", out, before)
 	}
@@ -500,4 +502,72 @@ func TestServerInstallRefusesDataNewerThanItsSchema(t *testing.T) {
 		}
 	}
 	untouched()
+}
+
+// asOldRelease makes m, with a koko server installed and initialised, a
+// machine as v0.1.0 or v0.2.0 left it: no kokod, and their koko, the koko
+// server and the CLI in one, at /usr/local/bin/koko, which the unit runs as
+// koko server run. It returns that koko's bytes.
+func asOldRelease(t *testing.T, m *harness.Machine) string {
+	t.Helper()
+	unit := readFile(t, m, "/etc/systemd/system/koko.service")
+	old := strings.Replace(unit, "\nExecStart=/usr/local/bin/kokod run\n", "\nExecStart=/usr/local/bin/koko server run\n", 1)
+	if old == unit {
+		t.Fatalf("the unit runs no /usr/local/bin/kokod run:\n%s", unit)
+	}
+	koko := "#!/bin/sh\n# koko v0.2.0, the koko server and the CLI\n"
+	if err := os.WriteFile(m.Path("/etc/systemd/system/koko.service"), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(m.Path("/usr/local/bin/koko"), []byte(koko), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(m.Path("/usr/local/bin/kokod")); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"daemon-reload"}, {"restart", "koko.service"}} {
+		if err := m.Systemctl(context.Background(), args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m.WaitLog("koko server started", 2)
+	return koko
+}
+
+// A machine as v0.1.0 or v0.2.0 left it, whose unit runs /usr/local/bin/koko
+// server run, upgrades like any other: install puts kokod beside that koko,
+// which is the CLI now and which it leaves as it is, rewrites the unit to
+// run kokod run, and keeps the port and the drop-ins.
+func TestServerInstallUpgradesAMachineAsAnOldReleaseLeftIt(t *testing.T) {
+	t.Parallel()
+	m := harness.NewMachine(t)
+	before := install(t, m, "--owner", "alice", "--port", "8443")
+	dropIn := "[Service]\nEnvironment=KOKO_LOG_LEVEL=debug\n"
+	if err := os.MkdirAll(m.Path("/etc/systemd/system/koko.service.d"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(m.Path("/etc/systemd/system/koko.service.d/log.conf"), []byte(dropIn), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	koko := asOldRelease(t, m)
+
+	out := upgrade(t, m, "--kokod", m.Kokod())
+	if out.ListenPort != 8443 || out.DevicesMustConnect != "" || out.HostKeyFingerprint != before.HostKeyFingerprint {
+		t.Errorf("the upgrade printed %+v, want port 8443 and the host key of %+v", out, before)
+	}
+	unit := readFile(t, m, "/etc/systemd/system/koko.service")
+	if !strings.Contains(unit, "\nExecStart=/usr/local/bin/kokod run\n") || !strings.Contains(unit, "\nEnvironment=KOKO_LISTEN=:8443\n") {
+		t.Errorf("the upgrade wrote the unit\n%s\nwhich does not run kokod run on 8443", unit)
+	}
+	if got := readFile(t, m, "/usr/local/bin/kokod"); got != fileText(t, m.Kokod()) {
+		t.Errorf("/usr/local/bin/kokod holds %q, want the kokod given", got)
+	}
+	if got := readFile(t, m, "/usr/local/bin/koko"); got != koko {
+		t.Errorf("the upgrade changed /usr/local/bin/koko to %q", got)
+	}
+	if got := readFile(t, m, "/etc/systemd/system/koko.service.d/log.conf"); got != dropIn {
+		t.Errorf("the upgrade changed the drop-in to %q", got)
+	}
+	m.WaitLog("koko server started", 3)
+	wantInitialised(t, m, "alice")
 }

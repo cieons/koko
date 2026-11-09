@@ -10,8 +10,8 @@ import (
 	"github.com/cieons/koko/internal/server/kokod"
 )
 
-// Kokod returns a kokod.Program for S1 tests of kokod run, as ServerStart
-// is for koko server run: the koko server's real start-up, given the config
+// Kokod returns a kokod.Program for S1 tests of kokod run: the koko
+// server's real start-up, given the config
 // kokod run makes of its command line, on a temporary socket, on LocalDisk
 // and as NotRoot unless SocketPath, Mountinfo or ProcessUIDs say otherwise,
 // and, whatever --listen says, on a loopback TCP port of the system's

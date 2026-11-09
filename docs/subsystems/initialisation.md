@@ -49,18 +49,19 @@ runs steps 1 to 5, initialisation's steps, which a first start shares
    `invalid_address`.
 
 No command of its own calls it: [`koko server install`](installer.md)
-does, once the koko service it started has opened its socket, and so does the
-S1 harness.
+does, once `kokod install` has started the koko service and it has opened
+its socket, so that `kokod` needs no API client; so does the S1 harness.
 
 ## At first start
 
 A koko server can also initialise itself when it starts, given the Owner's
-name and the Server Address: `koko server run --owner <user> --address
+name and the Server Address: `kokod run --owner <user> --address
 <host[:port]>`, or `KOKO_OWNER` and `KOKO_ADDRESS`
 ([ADR 0038](../adr/0038-a-container-initialises-at-its-first-start-and-gives-its-first-join-code-to-docker-exec.md)).
 The container image's docs use them; the systemd unit sets neither, and
-install still initialises over the socket. [The CLI](cli.md#the-commands-so-far)
-checks the two before the koko server runs.
+install still initialises over the socket. `kokod run`
+([the CLI](cli.md#the-commands-so-far)) checks the two before the koko
+server runs.
 
 [`server.Start`](../../internal/server/server.go), in the order of
 [the Seal's start-up](seal.md#at-start-up):
@@ -159,13 +160,13 @@ loaded and runs with. Each returns `{"server": {...}}`
 | `host_key` | that host key itself, as in `authorized_keys` without a comment, which [`koko ssh setup`](device-connection.md#on-the-koko-servers-own-machine) writes into koko's known_hosts; `koko server show` prints only its fingerprint |
 | `version` | the koko server's version, as `koko version` names its own |
 | `root_key_file`, `root_key_id` | the Root Key's file as the Owner keeps it, and the id it names; never the key |
-| `data_dir` | the data directory, as `koko server run` was given it |
+| `data_dir` | the data directory, as `kokod run` was given it |
 
 - **`server.show`** ([`koko server show`](cli.md#the-commands-so-far), read
   tier) answers every caller, a Member's Device Session included: the
   overview spec marks it for no one, and nothing in it is secret. Its
   `root_key_file` is the file the Root Key was loaded from, except under
-  systemd, where `koko server run` reads the copy `LoadCredential=` hands it
+  systemd, where `kokod run` reads the copy `LoadCredential=` hands it
   in `$CREDENTIALS_DIRECTORY`: then it is `/etc/koko/root.key`, the file the
   koko unit loads that credential from, which install wrote and printed
   (`server.Config.RootKeySource`). A drop-in that loads the credential from
@@ -195,9 +196,9 @@ call.
 
 ## Verifying
 
-- [`server_firststart_test.go`](../../internal/client/cli/server_firststart_test.go),
-  through `koko server run` serving in the background
-  (`harness.ServerServeWith`): a first start writes the Root Key and comes
+- [`run_firststart_test.go`](../../internal/server/kokod/run_firststart_test.go),
+  through `kokod run` serving in the background
+  (`harness.KokodServing`): a first start writes the Root Key and comes
   up initialised with no Join Code, `koko server show` naming the address,
   the Root Key's file and id and the data directory; `koko device add` over
   the socket issues the first Join Code, and a device joins with it,
@@ -211,7 +212,7 @@ call.
   server given another Owner or address warns and keeps its record, and
   given the same logs nothing; a missing Root Key without `--owner` names
   `KOKO_OWNER` and `KOKO_ADDRESS`; and the command's tier.
-- [`server_test.go`](../../internal/client/cli/server_test.go): `--owner`
+- [`kokod_test.go`](../../internal/server/kokod/kokod_test.go): `--owner`
   and `--address` from flags and the environment, and the refusals of one
   without the other and of a bad name or address, before the koko server
   runs.
@@ -231,8 +232,8 @@ call.
   second one, the Owner's name and the Server Address checked, the first Join
   Code and what it names, and no private key or Root Key in the raw bytes of
   `koko.db` and its `-wal`, while running and once stopped.
-- [`server_rootkey_test.go`](../../internal/client/cli/server_rootkey_test.go),
-  through `koko server run`: a restart with the same Root Key logs the host key
+- [`run_rootkey_test.go`](../../internal/server/kokod/run_rootkey_test.go),
+  through `kokod run`: a restart with the same Root Key logs the host key
   initialisation made; another Root Key, a missing file and one that does not
   parse are refused, naming the id needed, and leave every file as it was.
 - [`init_caller_test.go`](../../internal/server/init_caller_test.go):

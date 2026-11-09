@@ -1,9 +1,7 @@
-// Command koko is the koko CLI and, in Linux builds, the koko server.
-//
-// It is one of the two places (with the test harness) that import both the
-// server and the client package groups: it hands `koko server run` the koko
-// server, and `koko server install` and `uninstall` its installer, through
-// cli.Runner, so no client package imports a server package.
+// Command koko is the koko CLI, on every OS koko builds for (ADR 0040). It
+// imports no server package: `koko server install` and `uninstall` run the
+// koko server's own program, kokod, which this command gives them the way to
+// read and run (machine).
 package main
 
 import (
@@ -26,12 +24,10 @@ var socketPath string
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	r := cli.Runner{
-		ServerRun:       serverRun,
-		ServerInstall:   serverInstall,
-		ServerUninstall: serverUninstall,
-		StartDeviceMux:  devicemux.Spawn,
-		Signals:         notify,
-		SocketPath:      socketPath,
+		Kokod:          machine{},
+		StartDeviceMux: devicemux.Spawn,
+		Signals:        notify,
+		SocketPath:     socketPath,
 	}
 	status := r.Run(ctx, cli.Invocation{
 		Args:   os.Args[1:],

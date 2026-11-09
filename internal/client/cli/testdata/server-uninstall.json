@@ -1,7 +1,7 @@
 {
   "removed": [
     "/etc/systemd/system/koko.service",
-    "/usr/local/bin/koko"
+    "/usr/local/bin/kokod"
   ],
   "data_dir": "/var/lib/koko",
   "root_key_file": "/etc/koko/root.key",

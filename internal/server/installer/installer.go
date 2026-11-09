@@ -1,10 +1,12 @@
-// Package installer is `koko server install` and `koko server uninstall`: on
-// a Linux machine with systemd, as root, install creates the koko user and
-// the directories, writes the Root Key, the binary and the systemd unit,
-// starts the service and initialises the koko server over its Unix socket;
-// on a koko server initialised already, it is the upgrade. Uninstall stops
-// the service and removes the unit and the binary, and keeps the data (P0
-// spec: install and run, ADR 0020).
+// Package installer is `kokod install` and `kokod uninstall`, the machine's
+// part of `koko server install` and `koko server uninstall` (ADR 0041): on a
+// Linux machine with systemd, as root, install creates the koko user and the
+// directories, writes the Root Key, kokod and the systemd unit, starts the
+// service and waits for its Unix socket, and reports what initialising it
+// needs, which koko server install then does over the socket; on a koko
+// server initialised already, it is the upgrade. Uninstall stops the service
+// and removes the unit and kokod, and keeps the data (P0 spec: install and
+// run, ADR 0020).
 //
 // It reaches the machine only through a Machine: a root directory prefixed to
 // every path it reads or writes, and the few things only the machine can
@@ -32,7 +34,6 @@ import (
 	"github.com/cieons/koko/internal/server/filesystem"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/store"
-	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/install"
 	"github.com/cieons/koko/internal/shared/portowner"
 	"github.com/cieons/koko/internal/shared/serveraddr"
@@ -43,8 +44,8 @@ import (
 // The koko server's fixed paths on its machine (P0 spec: install and run),
 // as the machine names them, before the Machine's root is prefixed.
 const (
-	// BinaryPath is where the koko binary runs from.
-	BinaryPath = "/usr/local/bin/koko"
+	// BinaryPath is where kokod runs from.
+	BinaryPath = install.KokodPath
 	// UnitPath is the koko service's systemd unit.
 	UnitPath = "/etc/systemd/system/" + UnitName
 	// dropInDir holds the unit's drop-ins, where systemctl edit koko writes
@@ -70,12 +71,6 @@ const (
 	// minSystemd is the oldest systemd whose LoadCredential= the unit can
 	// use.
 	minSystemd = 247
-	// systemdRunDir is there only while systemd runs the machine.
-	systemdRunDir = "/run/systemd/system"
-	// containerImage runs the koko server in a container that systemd does
-	// not run, as containerDocs shows.
-	containerImage = "ghcr.io/cieons/koko"
-	containerDocs  = "https://github.com/cieons/koko/blob/main/docs/install.md#in-a-container"
 )
 
 // Machine is everything install reaches on the machine beyond its files.
@@ -83,6 +78,9 @@ type Machine interface {
 	// Root is prefixed to every path install reads or writes: "/" on a
 	// real machine.
 	Root() string
+	// RunsAsRoot tells whether this process runs as root, which install
+	// and uninstall need.
+	RunsAsRoot() bool
 	// SystemdVersion returns systemd's version, such as 252.
 	SystemdVersion(ctx context.Context) (int, error)
 	// FilesystemType returns the type of the filesystem holding path, which
@@ -112,21 +110,22 @@ type Machine interface {
 // Installer installs the koko server on a machine.
 type Installer struct {
 	Machine Machine
-	// Binary is the koko binary to install: the one running.
+	// Binary is the kokod file to install: the one running.
 	Binary string
 	// Timings is the timing-constants hook, for tests only: its zero value
 	// is the product's timings.
 	Timings timing.Timings
 }
 
-// Install installs, starts and initialises the koko server, calling
-// initialise once its Unix socket is there, and reports what the Owner needs
-// next. On a koko server initialised already it is the upgrade instead: it
-// writes the binary and the unit again and restarts the service, which keeps
-// its record, and initialises nothing. Every check comes before the first
-// write, so a refusal leaves the machine as it was. Until initialisation has
-// succeeded, running it again is safe and finishes the job.
-func (in *Installer) Install(ctx context.Context, req install.Request, initialise install.Initialise) (install.Report, error) {
+// Install installs and starts the koko server, waits for its Unix socket,
+// and reports what the Owner needs next: on a fresh koko server, what
+// initialising it over the socket needs, which koko server install does. On
+// a koko server initialised already it is the upgrade instead: it writes
+// kokod and the unit again and restarts the service, which keeps its
+// record. Every check comes before the first write, so a refusal leaves the
+// machine as it was. Until initialisation has succeeded, running it again is
+// safe and finishes the job.
+func (in *Installer) Install(ctx context.Context, req install.Request) (install.Report, error) {
 	p, err := in.check(ctx, req)
 	if err != nil {
 		return install.Report{}, err
@@ -139,20 +138,17 @@ func (in *Installer) Install(ctx context.Context, req install.Request, initialis
 		return install.Report{}, err
 	}
 	report := install.Report{RootKeyFile: RootKeyFile, RootKeyID: key.ID(), Port: p.port}
-	if d := p.deployed; d != nil {
-		report.Upgraded, report.Address, report.HostKeyFingerprint = true, d.address, d.fingerprint
-		// A Server Address without a port of its own follows the listen
-		// port, which devices that joined before cannot know of.
-		if moved := serveraddr.WithPort(d.address, p.port); moved != d.address && p.port != d.listenedOn {
-			report.DevicesMustConnect = moved
-		}
+	d := p.deployed
+	if d == nil {
+		report.Initialise = install.NewInitialise(req, p.address)
 		return report, nil
 	}
-	resp, err := initialise(ctx, api.ServerInitRequest{Owner: req.Owner, Address: p.address})
-	if err != nil {
-		return install.Report{}, fmt.Errorf("initialise the koko server: %w", err)
+	report.Address, report.HostKeyFingerprint = d.address, d.fingerprint
+	// A Server Address without a port of its own follows the listen port,
+	// which devices that joined before cannot know of.
+	if moved := serveraddr.WithPort(d.address, p.port); moved != d.address && p.port != d.listenedOn {
+		report.DevicesMustConnect = moved
 	}
-	report.Address, report.HostKeyFingerprint, report.JoinCode = resp.Address, resp.HostKeyFingerprint, resp.JoinCode
 	return report, nil
 }
 
@@ -160,8 +156,8 @@ func (in *Installer) Install(ctx context.Context, req install.Request, initialis
 type plan struct {
 	// port is the TCP port the koko server is to listen on.
 	port int
-	// address is the Server Address to initialise a fresh koko server
-	// with.
+	// address is the Server Address a fresh koko server is to be
+	// initialised with.
 	address string
 	// deployed is the koko server initialised already, which install
 	// upgrades; nil for a fresh one.
@@ -190,20 +186,22 @@ func (in *Installer) path(p string) string {
 // koko server, a port another process holds, and on a fresh koko server a
 // Server Address devices could not reach. It returns what install is to do.
 func (in *Installer) check(ctx context.Context, req install.Request) (plan, error) {
+	if err := in.checkRoot("install"); err != nil {
+		return plan{}, err
+	}
 	// systemd runs the machine when it has made this directory, as
 	// sd_booted(3) tells; in a container whose init is something else,
 	// systemctl may still be there, and would fail only at daemon-reload,
 	// after the writes. The image runs the koko server there instead.
-	if info, err := os.Stat(in.path(systemdRunDir)); err != nil || !info.IsDir() {
-		return plan{}, refuse(install.Unsupported, "the koko server runs only on Linux with systemd, and systemd is not running this machine (there is no %s): to run it in a container, use the image %s (%s)",
-			systemdRunDir, containerImage, containerDocs)
+	if info, err := os.Stat(in.path(install.SystemdRunDir)); err != nil || !info.IsDir() {
+		return plan{}, install.NoSystemd()
 	}
 	version, err := in.Machine.SystemdVersion(ctx)
 	if err != nil {
 		return plan{}, fmt.Errorf("find systemd's version, which must be %d or later: %w", minSystemd, err)
 	}
 	if version < minSystemd {
-		return plan{}, refuse(install.Unsupported, "systemd %d is too old: the koko server needs systemd %d or later, for LoadCredential= (Debian 11, Ubuntu 22.04, RHEL 9 or later)",
+		return plan{}, install.Refuse(install.Unsupported, "systemd %d is too old: the koko server needs systemd %d or later, for LoadCredential= (Debian 11, Ubuntu 22.04, RHEL 9 or later)",
 			version, minSystemd)
 	}
 	if err := in.checkFilesystem(); err != nil {
@@ -217,7 +215,7 @@ func (in *Installer) check(ctx context.Context, req install.Request) (plan, erro
 		return in.checkUpgrade(ctx, req, d)
 	}
 	if req.Owner == "" {
-		return plan{}, refuse(install.Usage, "the koko server here is not initialised yet: name its Owner with --owner <user>")
+		return plan{}, install.Refuse(install.Usage, "the koko server here is not initialised yet: name its Owner with --owner <user>")
 	}
 	port := cmp.Or(req.Port, defaultPort)
 	if err := in.checkPort(ctx, port); err != nil {
@@ -233,6 +231,16 @@ func (in *Installer) check(ctx context.Context, req install.Request) (plan, erro
 		return plan{}, err
 	}
 	return plan{port: port, address: address}, nil
+}
+
+// checkRoot refuses a process that is not root, which could make neither
+// the koko user nor the koko server's files; verb is install's or
+// uninstall's.
+func (in *Installer) checkRoot(verb string) error {
+	if in.Machine.RunsAsRoot() {
+		return nil
+	}
+	return install.Refuse(install.Unsupported, "kokod %s changes the machine's services, files and users, so it runs as root: run sudo koko server %s", verb, verb)
 }
 
 // checkUpgrade checks the upgrade of d, a koko server initialised already:
@@ -262,7 +270,7 @@ func (in *Installer) checkUpgrade(ctx context.Context, req install.Request, d *d
 	}
 	if set != 0 {
 		if req.Port != 0 && req.Port != set {
-			return plan{}, refuse(install.Usage, "the drop-in %s sets KOKO_LISTEN for the koko service, so it would listen on port %d whatever --port says: change the port there (systemctl edit koko), or take KOKO_LISTEN out of it and run koko server install again with --port %d",
+			return plan{}, install.Refuse(install.Usage, "the drop-in %s sets KOKO_LISTEN for the koko service, so it would listen on port %d whatever --port says: change the port there (systemctl edit koko), or take KOKO_LISTEN out of it and run koko server install again with --port %d",
 				dropIn, set, req.Port)
 		}
 		d.listenedOn = cmp.Or(d.listenedOn, set)
@@ -345,7 +353,7 @@ func refuseInitFlags(req install.Request) error {
 	if len(flags) == 0 {
 		return nil
 	}
-	return refuse(install.Initialised, "the koko server here is initialised already, so install upgrades it, and an upgrade takes neither --owner nor --address: run koko server install again without %s; %s",
+	return install.Refuse(install.Initialised, "the koko server here is initialised already, so install upgrades it, and an upgrade takes neither --owner nor --address: run koko server install again without %s; %s",
 		strings.Join(flags, " and "), strings.Join(next, ", and "))
 }
 
@@ -367,7 +375,7 @@ func (in *Installer) checkPort(ctx context.Context, port int) error {
 	if p.PID != 0 && p.PID == pid {
 		return nil
 	}
-	return refuse(install.PortTaken, "port %d is taken by %s: stop it, or run koko server install again with --port <port>", port, p)
+	return install.Refuse(install.PortTaken, "port %d is taken by %s: stop it, or run koko server install again with --port <port>", port, p)
 }
 
 // checkFilesystem refuses a data directory on a network filesystem, where
@@ -383,7 +391,7 @@ func (in *Installer) checkFilesystem() error {
 		return fmt.Errorf("find the filesystem of %s: %w", DataDir, err)
 	}
 	if filesystem.Network(fsType) {
-		return refuse(install.Unsupported, "the data directory %s would be on %s, a network filesystem, where SQLite's WAL does not work: put %s on a local filesystem",
+		return install.Refuse(install.Unsupported, "the data directory %s would be on %s, a network filesystem, where SQLite's WAL does not work: put %s on a local filesystem",
 			DataDir, fsType, DataDir)
 	}
 	return nil
@@ -466,10 +474,10 @@ func (in *Installer) address(ctx context.Context, given string) (string, error) 
 	ip, err := in.Machine.SourceIP(ctx)
 	ip = ip.Unmap()
 	if err != nil {
-		return "", refuse(install.Usage, "cannot find this machine's IP on its default route (%v): give the Server Address with --address <host[:port]>", err)
+		return "", install.Refuse(install.Usage, "cannot find this machine's IP on its default route (%v): give the Server Address with --address <host[:port]>", err)
 	}
 	if !isPublic(ip) {
-		return "", refuse(install.Usage, "this machine's IP on its default route, %s, is not public, so devices elsewhere cannot reach it: give the Server Address with --address <host[:port]>, such as a DNS name for this machine",
+		return "", install.Refuse(install.Usage, "this machine's IP on its default route, %s, is not public, so devices elsewhere cannot reach it: give the Server Address with --address <host[:port]>, such as a DNS name for this machine",
 			ip)
 	}
 	if ip.Is6() {
@@ -479,7 +487,7 @@ func (in *Installer) address(ctx context.Context, given string) (string, error) 
 }
 
 // write creates the koko user and the directories, then writes the Root Key
-// if it is missing on a fresh koko server, the binary and the unit, each
+// if it is missing on a fresh koko server, kokod and the unit, each
 // with its owner and mode, and returns the Root Key.
 func (in *Installer) write(ctx context.Context, p plan) (*seal.RootKey, error) {
 	if err := in.Machine.AddUser(ctx, User); err != nil {
@@ -495,8 +503,8 @@ func (in *Installer) write(ctx context.Context, p plan) (*seal.RootKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The unit runs the binary at its fixed path, so it is in place before
-	// the service starts.
+	// The unit runs kokod at its fixed path, so it is in place before the
+	// service starts.
 	if err := in.binary(); err != nil {
 		return nil, err
 	}
@@ -550,17 +558,17 @@ func (in *Installer) rootKey(sealed bool) (*seal.RootKey, error) {
 	return seal.Load(path)
 }
 
-// binary puts the running koko binary at its fixed path, unless it runs
-// from there already.
+// binary puts the running kokod at its fixed path, unless it runs from
+// there already, as when koko server install runs the kokod installed.
 func (in *Installer) binary() error {
 	src, err := os.Open(in.Binary)
 	if err != nil {
-		return fmt.Errorf("read the koko binary %s: %w", in.Binary, err)
+		return fmt.Errorf("read the kokod file %s: %w", in.Binary, err)
 	}
 	defer func() { _ = src.Close() }()
 	srcInfo, err := src.Stat()
 	if err != nil {
-		return fmt.Errorf("read the koko binary %s: %w", in.Binary, err)
+		return fmt.Errorf("read the kokod file %s: %w", in.Binary, err)
 	}
 	if dstInfo, err := os.Stat(in.path(BinaryPath)); err == nil && os.SameFile(srcInfo, dstInfo) {
 		return in.own(BinaryPath, 0o755, "root")
@@ -655,7 +663,7 @@ func syncDir(dir string) error {
 
 // start makes systemd load the unit, enables the service and restarts it, so
 // that a koko service an earlier run left running takes the new unit and
-// binary, then waits for its Unix socket.
+// kokod, then waits for its Unix socket.
 func (in *Installer) start(ctx context.Context) error {
 	for _, args := range [][]string{{"daemon-reload"}, {"enable", UnitName}, {"restart", UnitName}} {
 		if err := in.systemctl(ctx, args...); err != nil {
@@ -700,10 +708,4 @@ func (in *Installer) waitForSocket(ctx context.Context) error {
 		case <-time.After(socketPoll):
 		}
 	}
-}
-
-// refuse makes a Refusal with a formatted message, saying that nothing was
-// written, which holds for every refusal.
-func refuse(reason install.Reason, format string, args ...any) error {
-	return &install.Refusal{Reason: reason, Message: fmt.Sprintf(format, args...) + "; nothing was written"}
 }

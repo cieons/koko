@@ -2,8 +2,11 @@ kokod is the koko server, on Linux; koko is the CLI that people and agents run.
 
 Commands:
   kokod run               Run the koko server in the foreground, as its systemd unit and the image do
+  kokod install           Install and start the koko server here, as root, or upgrade it, and print what initialising it needs
+  kokod uninstall         Stop the koko server here and remove its unit and kokod, as root; its data, Root Key and system user stay
   kokod version           Print this kokod's build
   kokod help [<command>]  Print this help, or a command's, as <command> --help does
 
-To install, upgrade or uninstall the koko server on this machine, run
-koko server install or koko server uninstall as root; they do the machine's part.
+kokod install and kokod uninstall are the machine's part of koko server install
+and koko server uninstall, which run them: to install, upgrade or uninstall the
+koko server on this machine, run those as root.

@@ -64,9 +64,29 @@ func (l helpList) Human(w io.Writer) error {
 		_, _ = fmt.Fprintf(tw, "  %s\t%s\n", strings.Join(args, " "), c.Summary)
 	}
 	_, _ = fmt.Fprintln(tw)
+	if note := l.note(); note != "" {
+		_, _ = fmt.Fprintf(tw, "%s\n\n", note)
+	}
 	_, _ = fmt.Fprintf(tw, "Every command %stakes --json. Run koko help <command> for its flags,\n", butNoJSON(l, ""))
 	_, _ = fmt.Fprintln(tw, "and koko skill for the reference for agents.")
 	return tw.Flush()
+}
+
+// nounNotes are what koko help says beside the commands of a noun, when it
+// lists them alone.
+var nounNotes = map[string]string{
+	"server": serverNote,
+}
+
+// note is the note of the noun every command of l is of, or "".
+func (l helpList) note() string {
+	noun, _, _ := strings.Cut(l[0].Command, " ")
+	for _, c := range l {
+		if n, _, _ := strings.Cut(c.Command, " "); n != noun || !strings.Contains(c.Command, " ") {
+			return ""
+		}
+	}
+	return nounNotes[noun]
 }
 
 // butNoJSON names the commands of cs that take no --json, each between

@@ -271,9 +271,20 @@ func noHelpFlag(path []string) error {
 	return usagef("there is no --help flag: run %s", shellJoin(append([]string{"koko", "help"}, path...)))
 }
 
+// gone are the commands that left koko, each with the refusal that says
+// where it went.
+var gone = map[string]string{
+	"server run": "the koko server is kokod now: run kokod run, with the same flags",
+}
+
 // unknownCommand says why argv names no command, and what the koko it began
 // with could continue with.
 func unknownCommand(tree []Command, path, rest []string) error {
+	if len(rest) > 0 {
+		if refusal, ok := gone[strings.Join(append(slices.Clone(path), rest[0]), " ")]; ok {
+			return usagef("%s", refusal)
+		}
+	}
 	var next []string
 	for i := range tree {
 		w := tree[i].words()

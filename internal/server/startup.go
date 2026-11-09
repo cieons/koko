@@ -30,7 +30,7 @@ func refuseRoot(uids func() (real, effective, saved int)) error {
 		return nil
 	}
 	return &install.Refusal{Reason: install.Usage, Message: fmt.Sprintf(
-		"koko server run does not run as root, and its real, effective and saved uid are %d, %d and %d: start it as a user who is not root, such as the koko user its systemd unit runs as, or, in a container, as the image's uid 65532, without --user 0 or user: root",
+		"kokod run does not run as root, and its real, effective and saved uid are %d, %d and %d: start it as a user who is not root, such as the koko user its systemd unit runs as, or, in a container, as the image's uid 65532, without --user 0 or user: root",
 		r, e, s)}
 }
 

@@ -21,6 +21,9 @@
 # systemctl show quotes. koko server install refusing a container that
 # systemd does not run is the container check's (release/container-check.sh).
 #
+# The newer build's koko server install is given the newer kokod with
+# --kokod, as on a machine offline, since it downloads none yet (#104).
+#
 # install.sh downloads from GitHub, and runs here unchanged: a fake curl
 # first on its PATH serves a fake GitHub from a directory, where release
 # v0.0.1 is the older build, v0.0.2 the newer one, and v0.0.3 the newer one
@@ -56,8 +59,9 @@ aarch64) arch=arm64 ;;
 *) fail "koko builds for amd64 and arm64, and this machine is $(uname -m)" ;;
 esac
 asset=koko-linux-$arch
+kokod=$newer/kokod-linux-$arch
 
-for path in /etc/koko /var/lib/koko /etc/systemd/system/koko.service /usr/local/bin/koko; do
+for path in /etc/koko /var/lib/koko /etc/systemd/system/koko.service /usr/local/bin/koko /usr/local/bin/kokod; do
 	[ ! -e "$path" ] || fail "$path is there: run this only on a machine koko was never installed on"
 done
 ! id koko >/dev/null 2>&1 || fail "the koko user is there: run this only on a machine koko was never installed on"
@@ -226,12 +230,16 @@ esac
 step "install.sh upgrades to the newer build: the service restarts and leaves the snapshot"
 echo v0.0.2 >"$github/latest"
 before=$pid
-install_ok "$newer" sh -s -- --json
+install_ok "$newer" sh -s -- --json --kokod "$kokod"
 jq . "$work/out"
 jq -e --argjson port "$port" '.upgraded and .listen_port == $port' "$work/out" >/dev/null ||
 	fail "install.sh did not upgrade on port $port"
 cmp -s /usr/local/bin/koko "$newer/$asset" || fail "/usr/local/bin/koko is not the newer build"
+cmp -s /usr/local/bin/kokod "$kokod" || fail "/usr/local/bin/kokod is not the newer build"
+grep -qx 'ExecStart=/usr/local/bin/kokod run' /etc/systemd/system/koko.service ||
+	fail "the unit does not run /usr/local/bin/kokod run: $(grep ExecStart= /etc/systemd/system/koko.service)"
 check_running
+[ "$(ps -o comm= -p "$pid")" = kokod ] || fail "the koko service's process is $(ps -o comm= -p "$pid"), not kokod"
 [ "$pid" != "$before" ] || fail "the koko service did not restart"
 # A port of 1024 or above needs no capability, so the newer unit leaves the
 # koko server none, not even one it could gain.
@@ -244,15 +252,16 @@ sudo sh -c 'ls -l /var/lib/koko/koko.db.before-*' || fail "the upgrade left no s
 step "the device still works"
 device_calls
 
-step "koko server uninstall keeps the data directory, the Root Key and the koko user"
+step "koko server uninstall keeps koko, the data directory, the Root Key and the koko user"
 # The redirect is this script's own file.
 # shellcheck disable=SC2024
 sudo /usr/local/bin/koko server uninstall --json >"$work/out"
 jq . "$work/out"
 ! systemctl is-active --quiet koko.service || fail "the koko service is still active"
-for path in /etc/systemd/system/koko.service /usr/local/bin/koko; do
+for path in /etc/systemd/system/koko.service /usr/local/bin/kokod; do
 	[ ! -e "$path" ] || fail "uninstall left $path"
 done
+cmp -s /usr/local/bin/koko "$newer/$asset" || fail "uninstall changed /usr/local/bin/koko"
 listening=$(sudo ss -Hltn "sport = :$port")
 [ -z "$listening" ] || fail "something still listens on $port: $listening"
 sudo test -f /var/lib/koko/koko.db || fail "uninstall removed /var/lib/koko/koko.db"
@@ -266,7 +275,7 @@ step "install.sh without --owner runs the data directory root put back, with its
 # drop-in would not.
 sudo rm -f /etc/systemd/system/koko.service.d/listen.conf
 sudo chown -R root:root /var/lib/koko
-install_ok "$newer" sh -s -- --json
+install_ok "$newer" sh -s -- --json --kokod "$kokod"
 jq . "$work/out"
 jq -e --argjson port "$port" '.upgraded and .listen_port == $port and .devices_must_connect == "localhost:\($port)"' "$work/out" >/dev/null ||
 	fail "install.sh did not take the default port $port"

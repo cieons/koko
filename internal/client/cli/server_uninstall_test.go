@@ -22,14 +22,18 @@ type uninstalled struct {
 	ListenPort  int      `json:"listen_port"`
 }
 
-// Uninstall stops the koko service, then removes its unit and its binary.
-// It keeps the data directory, the Root Key and the koko user, and prints
-// their paths, with the port the koko server listened on; there is no
-// purge.
+// Uninstall runs the kokod installed, which stops the koko service, then
+// removes its unit and itself. It keeps the data directory, the Root Key,
+// the koko user and koko, the CLI, and prints their paths, with the port
+// the koko server listened on; there is no purge.
 func TestServerUninstall(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
 	install(t, m, "--owner", "alice")
+	koko := "#!/bin/sh\n# koko, the CLI, as install.sh put it\n"
+	if err := os.WriteFile(m.Path("/usr/local/bin/koko"), []byte(koko), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	key := readFile(t, m, "/etc/koko/root.key")
 	calls := len(m.Calls())
 
@@ -40,7 +44,7 @@ func TestServerUninstall(t *testing.T) {
 	if err := json.Unmarshal([]byte(r.Stdout), &out); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(out.Removed, []string{"/etc/systemd/system/koko.service", "/usr/local/bin/koko"}) ||
+	if !slices.Equal(out.Removed, []string{"/etc/systemd/system/koko.service", "/usr/local/bin/kokod"}) ||
 		out.DataDir != "/var/lib/koko" || out.RootKeyFile != "/etc/koko/root.key" || out.SystemUser != "koko" || out.ListenPort != 7822 {
 		t.Errorf("uninstall printed %+v", out)
 	}
@@ -48,10 +52,16 @@ func TestServerUninstall(t *testing.T) {
 	if m.Running() || m.Enabled() {
 		t.Errorf("the koko service runs %v and is enabled %v, want neither", m.Running(), m.Enabled())
 	}
-	for _, path := range []string{"/etc/systemd/system/koko.service", "/usr/local/bin/koko"} {
+	for _, path := range []string{"/etc/systemd/system/koko.service", "/usr/local/bin/kokod"} {
 		if _, err := os.Stat(m.Path(path)); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("uninstall left %s: %v", path, err)
 		}
+	}
+	if got := readFile(t, m, "/usr/local/bin/koko"); got != koko {
+		t.Errorf("uninstall changed /usr/local/bin/koko to %q", got)
+	}
+	if ran := m.Ran(); ran[len(ran)-1] != "uninstall --json" {
+		t.Errorf("koko ran kokod %q, want uninstall --json last", ran)
 	}
 	// The record stays; the stopping koko server checkpoints its WAL into
 	// koko.db, so its bytes may change. Install runs it again on it
@@ -83,7 +93,7 @@ func TestServerUninstall(t *testing.T) {
 }
 
 // For people, uninstall says what it removed and where what it kept is, and
-// how to install koko again on it, on the port it listened on.
+// how to run the koko server again on it, on the port it listened on.
 func TestServerUninstallForPeople(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
@@ -93,11 +103,11 @@ func TestServerUninstallForPeople(t *testing.T) {
 	for _, want := range []string{
 		"The koko server is uninstalled",
 		"/etc/systemd/system/koko.service\n",
-		"/usr/local/bin/koko\n",
+		"/usr/local/bin/kokod\n",
 		"Data directory:  /var/lib/koko\n",
 		"Root Key:        /etc/koko/root.key\n",
 		"System user:     koko\n",
-		"install koko again without --owner, with --port 8443",
+		"run sudo koko server install without --owner, with --port 8443",
 	} {
 		if !strings.Contains(r.Stdout, want) {
 			t.Errorf("uninstall printed\n%s\nwhich does not say %q", r.Stdout, want)
@@ -105,9 +115,10 @@ func TestServerUninstallForPeople(t *testing.T) {
 	}
 }
 
-// Uninstalling again removes nothing and asks systemd nothing, and install
-// then runs the koko server again on the data uninstall kept: it is the
-// upgrade of the koko server initialised there.
+// Uninstalling again, given kokod since the first removed it, removes
+// nothing and asks systemd nothing, and install then runs the koko server
+// again on the data uninstall kept: it is the upgrade of the koko server
+// initialised there.
 func TestServerUninstallAgainThenInstall(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
@@ -115,7 +126,7 @@ func TestServerUninstallAgainThenInstall(t *testing.T) {
 	m.Koko("server", "uninstall", "--json").WantSuccess(t)
 	calls := len(m.Calls())
 
-	r := m.Koko("server", "uninstall", "--json")
+	r := m.Koko("server", "uninstall", "--kokod", m.Kokod(), "--json")
 	r.WantSuccess(t)
 	var out uninstalled
 	if err := json.Unmarshal([]byte(r.Stdout), &out); err != nil {
@@ -127,25 +138,35 @@ func TestServerUninstallAgainThenInstall(t *testing.T) {
 	if again := m.Calls()[calls:]; len(again) != 0 {
 		t.Errorf("uninstalling again asked the machine %v", again)
 	}
-	if r := m.Koko("server", "uninstall"); !strings.Contains(r.Stdout, "nothing to remove") {
+	if r := m.Koko("server", "uninstall", "--kokod", m.Kokod()); !strings.Contains(r.Stdout, "nothing to remove") {
 		t.Errorf("uninstalling again printed\n%s\nwhich does not say there was nothing to remove", r.Stdout)
 	}
 
-	back := upgrade(t, m)
+	back := upgrade(t, m, "--kokod", m.Kokod())
 	if back.HostKeyFingerprint != before.HostKeyFingerprint || back.RootKeyID != before.RootKeyID {
 		t.Errorf("install after uninstall printed %+v, want the host key and Root Key of %+v", back, before)
 	}
 	wantInitialised(t, m, "alice")
 }
 
-// A build without the koko server (every OS but Linux) refuses to uninstall
-// it, as it refuses to install it.
-func TestServerUninstallWhereTheBuildHasNoServer(t *testing.T) {
+// On a machine as v0.1.0 or v0.2.0 left it, /usr/local/bin/koko is the CLI
+// now, which uninstall keeps: it removes only the unit.
+func TestServerUninstallOnAMachineAsAnOldReleaseLeftIt(t *testing.T) {
 	t.Parallel()
-	r := harness.Run(t, cli.Runner{}, nil, "server", "uninstall", "--json")
-	msg := r.WantError(t, 1, "unsupported_platform")
-	if !strings.Contains(msg, "Linux only") {
-		t.Errorf("message %q does not say the koko server runs on Linux only", msg)
+	m := harness.NewMachine(t)
+	install(t, m, "--owner", "alice")
+	koko := asOldRelease(t, m)
+	r := m.Koko("server", "uninstall", "--kokod", m.Kokod(), "--json")
+	r.WantSuccess(t)
+	var out uninstalled
+	if err := json.Unmarshal([]byte(r.Stdout), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(out.Removed, []string{"/etc/systemd/system/koko.service"}) {
+		t.Errorf("uninstall removed %v, want the unit alone", out.Removed)
+	}
+	if got := readFile(t, m, "/usr/local/bin/koko"); got != koko || m.Running() {
+		t.Errorf("uninstall left /usr/local/bin/koko as %q and the service running %v; want it kept and the service stopped", got, m.Running())
 	}
 }
 

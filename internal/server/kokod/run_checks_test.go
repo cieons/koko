@@ -196,7 +196,7 @@ func TestRunRefusesRoot(t *testing.T) {
 			before := files(t, root)
 			msg := kokodRunWith(t, filepath.Join(root, "data"), harness.SocketPath(socket), harness.ProcessUIDs(tc.real, tc.effective, tc.saved)).
 				WantError(t, 2, "invalid_usage")
-			for _, want := range []string{"does not run as root", tc.ids, "a user who is not root", "uid 65532", "--user 0"} {
+			for _, want := range []string{"kokod run does not run as root", tc.ids, "a user who is not root", "uid 65532", "--user 0"} {
 				if !strings.Contains(msg, want) {
 					t.Errorf("message %q does not say %q", msg, want)
 				}

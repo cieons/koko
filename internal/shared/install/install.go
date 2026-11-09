@@ -1,20 +1,61 @@
 // Package install is what `koko server install` and `koko server uninstall`
-// in the CLI and the installer in the koko server's code agree on: what
-// install is asked, what each reports, and why install, or the koko
-// server's start-up, refuses, with the error codes koko and kokod both
-// report a refusal with. The CLI hands both to the installer through
-// cli.Runner, so neither imports the other's group (ADR 0040); this package
-// is the contract between them, as wire is between the CLI and the koko
-// server.
+// in the CLI and `kokod install` and `kokod uninstall` in the koko server
+// agree on (ADR 0041): what install is asked, what each reports, as the JSON
+// kokod prints for koko to read, the koko server's paths and platforms both
+// check, and why install, or the koko server's start-up, refuses, with the
+// error codes koko and kokod both report a refusal with. koko runs only a
+// kokod of its own build, so this contract has no compatibility rules
+// between versions: it is the one both are built from.
 package install
 
 import (
-	"context"
+	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/name"
+	"github.com/cieons/koko/internal/shared/serveraddr"
 )
 
-// Request is what `koko server install` is asked, from its flags.
+// The koko server's program on its machine, as koko looks for it and kokod
+// install puts it there.
+const (
+	// KokodPath is where kokod install puts kokod, which the unit runs, and
+	// where koko server install looks for the kokod of its own build.
+	KokodPath = "/usr/local/bin/kokod"
+	// KokodPackage is kokod's main package, which a kokod file's Go build
+	// information names, so that koko tells kokod from another program,
+	// such as koko itself, before it runs it.
+	KokodPackage = "github.com/cieons/koko/cmd/kokod"
+)
+
+// KokodPlatforms are the platforms a release has a kokod for, as GOOS/GOARCH
+// name them: the koko server runs on Linux only (ADR 0040).
+var KokodPlatforms = []string{"linux/amd64", "linux/arm64"}
+
+// The image runs the koko server where systemd does not, as on macOS or in
+// a container, as ContainerDocs shows.
+const (
+	ContainerImage = "ghcr.io/cieons/koko"
+	ContainerDocs  = "https://github.com/cieons/koko/blob/main/docs/install.md#in-a-container"
+)
+
+// SystemdRunDir is there only while systemd runs the machine, as
+// sd_booted(3) tells.
+const SystemdRunDir = "/run/systemd/system"
+
+// NoSystemd is the refusal of a machine that systemd does not run, as in a
+// container whose init is something else, where systemctl may still be
+// there and would fail only after the writes. Both koko server install,
+// before it gets kokod, and kokod install refuse with it.
+func NoSystemd() *Refusal {
+	return Refuse(Unsupported, "the koko server runs only on Linux with systemd, and systemd is not running this machine (there is no %s): to run it in a container, use the image %s (%s)",
+		SystemdRunDir, ContainerImage, ContainerDocs)
+}
+
+// Request is what `koko server install` is asked, from its flags, and what
+// it asks `kokod install`.
 type Request struct {
 	// Owner is the Owner's User name, for a koko server not initialised
 	// yet; empty when --owner was not given.
@@ -28,54 +69,122 @@ type Request struct {
 	Port int
 }
 
-// Initialise calls server.init over the koko server's Unix socket. The CLI
-// gives it to the installer, which owns no API client.
-type Initialise func(ctx context.Context, req api.ServerInitRequest) (api.ServerInitResponse, error)
+// ParseRequest reads install's flags, each "" when not given, refusing with
+// Usage a value that could never work, before anything asks the machine. A
+// port not given is 0.
+func ParseRequest(owner, address, port string) (Request, error) {
+	req := Request{Owner: owner, Address: address}
+	if port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return Request{}, usagef("--port takes a TCP port from 1 to 65535, not %q", port)
+		}
+		req.Port = n
+	}
+	if owner != "" {
+		if err := name.Check(owner); err != nil {
+			return Request{}, usagef("--owner takes the Owner's User name: %v", err)
+		}
+	}
+	if address != "" {
+		if err := serveraddr.Check(address); err != nil {
+			return Request{}, usagef("--address takes the Server Address, host or host:port: %v", err)
+		}
+	}
+	return req, nil
+}
 
-// Report is what install did, for the CLI to print.
+// usagef is a refusal of a flag's value, which exits 2.
+func usagef(format string, args ...any) *Refusal {
+	return &Refusal{Reason: Usage, Message: fmt.Sprintf(format, args...)}
+}
+
+// Flags are r as install's flags, those given only, in the order help lists
+// them: what koko server install hands kokod install, and what a person
+// gives koko server install again.
+func (r Request) Flags() []string {
+	var flags []string
+	if r.Owner != "" {
+		flags = append(flags, "--owner", r.Owner)
+	}
+	if r.Address != "" {
+		flags = append(flags, "--address", r.Address)
+	}
+	if r.Port != 0 {
+		flags = append(flags, "--port", strconv.Itoa(r.Port))
+	}
+	return flags
+}
+
+// Report is what kokod install did, as it prints it for koko server install,
+// which initialises a fresh koko server and prints the outcome.
 type Report struct {
-	// Upgraded tells whether install found the koko server initialised
-	// already and upgraded it, which issues no Join Code, rather than
-	// initialising it.
-	Upgraded bool
-	// Address is the Server Address, as stored: without a port, its port
-	// is Port.
-	Address string
-	// HostKeyFingerprint is the SHA-256 fingerprint of the koko server's
-	// host key, as OpenSSH prints it.
-	HostKeyFingerprint string
-	// JoinCode is the Owner's first Join Code, which initialisation issued;
-	// zero on an upgrade.
-	JoinCode api.JoinCode
+	// Initialise is what a koko server not initialised yet is to be
+	// initialised with, over its Unix socket, once it runs; nil on an
+	// upgrade, of a koko server initialised already.
+	Initialise *Initialise `json:"initialise,omitempty"`
+	// Address is an upgraded koko server's Server Address, as stored:
+	// without a port, its port is Port. Empty before initialisation.
+	Address string `json:"address,omitempty"`
+	// HostKeyFingerprint is an upgraded koko server's host key, as OpenSSH
+	// prints its SHA-256 fingerprint. Empty before initialisation, which
+	// makes the host key.
+	HostKeyFingerprint string `json:"host_key_fingerprint,omitempty"`
 	// RootKeyFile is the Root Key's file, never the key.
-	RootKeyFile string
+	RootKeyFile string `json:"root_key_file"`
 	// RootKeyID is the id the Root Key's file names.
-	RootKeyID string
+	RootKeyID string `json:"root_key_id"`
 	// Port is the port the koko server listens on, which the Owner opens
 	// in the provider's firewall.
-	Port int
+	Port int `json:"port"`
 	// DevicesMustConnect is set by an upgrade that leaves the koko server
 	// listening on another port than its unit named before, or on a port
 	// it cannot know was the same, when the Server Address names no port of
 	// its own: it is the Server Address with the new port, which devices
 	// joined before must take by hand (koko connect). Empty otherwise.
-	DevicesMustConnect string
+	DevicesMustConnect string `json:"devices_must_connect,omitempty"`
 }
 
-// UninstallReport is what uninstall did, for the CLI to print.
+// Initialise is what initialises a fresh koko server: server.init's Owner
+// and Server Address, which koko server install calls it with.
+type Initialise struct {
+	// Owner is the Owner's User name, --owner's.
+	Owner string `json:"owner"`
+	// Address is the Server Address: --address's, or else the machine's
+	// public IP, which kokod install found.
+	Address string `json:"address"`
+	// Next is the command that initialises it, for a person who ran kokod
+	// install by hand: sudo koko server install with the same flags, which
+	// finds the koko server installed, runs the kokod installed and
+	// initialises it.
+	Next string `json:"next"`
+}
+
+// NewInitialise is what initialises the fresh koko server kokod install
+// installed for req, at the Server Address address.
+func NewInitialise(req Request, address string) *Initialise {
+	return &Initialise{
+		Owner:   req.Owner,
+		Address: address,
+		Next:    strings.Join(append([]string{"sudo", "koko", "server", "install"}, req.Flags()...), " "),
+	}
+}
+
+// UninstallReport is what kokod uninstall did, as it prints it for koko
+// server uninstall.
 type UninstallReport struct {
-	// Removed are the files uninstall removed, the unit and the binary,
-	// each only when it was there.
-	Removed []string
+	// Removed are the files uninstall removed, the unit and kokod, each
+	// only when it was there.
+	Removed []string `json:"removed"`
 	// DataDir, RootKeyFile and SystemUser are what uninstall keeps: the
 	// data directory, the Root Key's file and the system user the koko
 	// service ran as.
-	DataDir     string
-	RootKeyFile string
-	SystemUser  string
+	DataDir     string `json:"data_dir"`
+	RootKeyFile string `json:"root_key_file"`
+	SystemUser  string `json:"system_user"`
 	// ListenPort is the port the koko service listened on, which install
 	// takes again with --port, or 0 when that is unknown.
-	ListenPort int
+	ListenPort int `json:"listen_port,omitzero"`
 }
 
 // Refusal is install, or the koko server's start-up, refusing before it
@@ -88,6 +197,12 @@ type Refusal struct {
 
 func (r *Refusal) Error() string {
 	return r.Message
+}
+
+// Refuse makes a Refusal with a formatted message, saying that nothing was
+// written, which holds for every refusal of install's.
+func Refuse(reason Reason, format string, args ...any) *Refusal {
+	return &Refusal{Reason: reason, Message: fmt.Sprintf(format, args...) + "; nothing was written"}
 }
 
 // The error codes of koko's own that kokod reports too, in the shape of

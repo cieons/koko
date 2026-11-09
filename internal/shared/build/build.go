@@ -1,11 +1,13 @@
-// Package build reports which build of koko this binary is, for `koko
-// version`, `kokod version` and the koko server's own report.
+// Package build reports which build of koko a binary is: this one, for `koko
+// version`, `kokod version` and the koko server's own report, and a kokod
+// file's, which koko server install reads before it runs it.
 package build
 
 import (
 	"fmt"
 	"runtime"
 	"runtime/debug"
+	"slices"
 )
 
 // Info identifies a build.
@@ -20,6 +22,9 @@ type Info struct {
 	Go string
 	// Platform is GOOS/GOARCH, such as linux/amd64.
 	Platform string
+	// Path is the main package's import path, such as
+	// github.com/cieons/koko/cmd/kokod, which tells the programs apart.
+	Path string
 }
 
 // Read returns this binary's build.
@@ -29,13 +34,35 @@ func Read() Info {
 	if !ok {
 		return info
 	}
-	info.Version = bi.Main.Version
-	for _, s := range bi.Settings {
-		if s.Key == "vcs.revision" {
-			info.Revision = s.Value
-		}
-	}
+	info.Version, info.Revision, info.Path = bi.Main.Version, setting(bi, "vcs.revision"), bi.Path
 	return info
+}
+
+// Of returns the build that a binary's Go build information bi names, as
+// debug/buildinfo reads it from a file without running it.
+func Of(bi *debug.BuildInfo) Info {
+	return Info{
+		Version:  bi.Main.Version,
+		Revision: setting(bi, "vcs.revision"),
+		Go:       bi.GoVersion,
+		Platform: setting(bi, "GOOS") + "/" + setting(bi, "GOARCH"),
+		Path:     bi.Path,
+	}
+}
+
+// setting returns the value of bi's build setting key, or "".
+func setting(bi *debug.BuildInfo, key string) string {
+	i := slices.IndexFunc(bi.Settings, func(s debug.BuildSetting) bool { return s.Key == key })
+	if i < 0 {
+		return ""
+	}
+	return bi.Settings[i].Value
+}
+
+// Same tells whether i and o are one build: the same module version, which
+// says +dirty for a build from changed files, and the same commit.
+func (i Info) Same(o Info) bool {
+	return i.Version == o.Version && i.Revision == o.Revision
 }
 
 // String is the build as `koko version` and `kokod version` print it after

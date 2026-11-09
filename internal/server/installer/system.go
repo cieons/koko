@@ -27,6 +27,11 @@ func (System) Root() string {
 	return "/"
 }
 
+// RunsAsRoot tells whether the effective uid is 0.
+func (System) RunsAsRoot() bool {
+	return os.Geteuid() == 0
+}
+
 // SystemdVersion reads the version systemctl --version prints first.
 func (System) SystemdVersion(ctx context.Context) (int, error) {
 	out, err := exec.CommandContext(ctx, "systemctl", "--version").Output()

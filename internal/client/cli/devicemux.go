@@ -152,13 +152,13 @@ func (r *Runner) runDeviceMux(ctx context.Context, inv *Invocation) int {
 	return exitOK
 }
 
-// logLevels are the values KOKO_LOG_LEVEL takes, as koko server run's
+// logLevels are the values KOKO_LOG_LEVEL takes, as kokod run's
 // --log-level does.
 var logLevels = map[string]slog.Level{"debug": slog.LevelDebug, "info": slog.LevelInfo, "warn": slog.LevelWarn, "error": slog.LevelError}
 
 // logger returns a log on the invocation's stderr, in slog's text format,
 // at the level KOKO_LOG_LEVEL names, info when it is unset. A value it does
-// not know refuses the command line, as koko server run refuses it.
+// not know refuses the command line, as kokod run refuses it.
 func logger(inv *Invocation) (*slog.Logger, error) {
 	name := cmp.Or(inv.getenv("KOKO_LOG_LEVEL"), "info")
 	level, ok := logLevels[name]

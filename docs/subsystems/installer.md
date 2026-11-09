@@ -2,33 +2,91 @@
 
 `koko server install`, which installs, starts and initialises the koko server
 on a fresh Linux machine with systemd, as root, and upgrades one initialised
-already; and `koko server uninstall`, which removes it and keeps its data; in
-[`internal/server/installer`](../../internal/server/installer). Why the koko
-server installs itself is
-[ADR 0020](../adr/0020-the-koko-server-installs-itself-and-has-no-configuration-file.md);
+already; and `koko server uninstall`, which removes it and keeps its data.
+Each is two halves: the CLI's command, in
+[`server.go`](../../internal/client/cli/server.go) and
+[`kokod.go`](../../internal/client/cli/kokod.go), which gets the `kokod` of
+its own build and runs it, and `kokod install` or `kokod uninstall`, the
+machine's part, in [`internal/server/installer`](../../internal/server/installer).
+Why the koko server installs itself is
+[ADR 0020](../adr/0020-the-koko-server-installs-itself-and-has-no-configuration-file.md),
+and why the CLI installs the `kokod` of its own version is
+[ADR 0041](../adr/0041-koko-installs-the-koko-server-of-its-own-version.md);
 the order, the paths and the unit's settings are P0 spec: install and run.
 
-## The command and the installer
+## The two halves
 
-`koko server install [--owner <user>] [--address <host[:port]>] [--port <port>]`
+`koko server install [--owner <user>] [--address <host[:port]>] [--port <port>] [--kokod <file>]`
 is in the irreversible tier: it changes the machine and prints a credential,
-the first Join Code. It never prompts. The CLI
-([`server.go`](../../internal/client/cli/server.go)) refuses a
-`--port` outside 1 to 65535, an `--owner` that is not a User name and an
-`--address` that is not a Server Address with exit 2, before anything else.
-`--port` has no fixed default: a port not given reaches the installer as 0,
-which is 7822 on a fresh machine and the port the koko server listens on now
-on [an upgrade](#the-upgrade). The CLI then hands the rest to the installer
-through `cli.Runner.ServerInstall`, which `cmd/koko` sets in Linux builds only
-([code layout](code-layout.md#the-package-groups)); a build without it refuses
-with `unsupported_platform`, as `koko server run` does. The two sides agree on
-the shared [`install`](../../internal/shared/install/install.go) types: the
-request, the report, the function that calls `server.init` over the socket
-(the installer owns no API client), and `install.Refusal`, whose reason the
-CLI turns into its code, as it does for the refusals of `koko server run`'s
-start-up ([the Seal](seal.md#at-start-up)). `koko server uninstall`, also irreversible, takes no
-flag but `--json` and dispatches the same way, through
-`cli.Runner.ServerUninstall` ([uninstall](#uninstall)).
+the first Join Code. It never prompts. In this order, each refusal before
+any write:
+
+1. **Its flags.** A `--port` outside 1 to 65535, an `--owner` that is not a
+   User name and an `--address` that is not a Server Address are refused
+   with exit 2 ([`install.ParseRequest`](../../internal/shared/install/install.go),
+   which `kokod install` checks with too), and so is a `--kokod` that names
+   no file. `--port` has no fixed default: a port not given is 0, which is
+   7822 on a fresh machine and the port the koko server listens on now on
+   [an upgrade](#the-upgrade).
+2. **The machine, before any `kokod` is read**, each `unsupported_platform`:
+   not Linux, such as macOS, naming the image `ghcr.io/cieons/koko` and the
+   install docs' "In a container"; an architecture no `kokod` is built for
+   (`install.KokodPlatforms`: `linux/amd64` and `linux/arm64`); koko not
+   running as root, naming the command line again after `sudo`; and no
+   `/run/systemd/system`, with the refusal `kokod install` makes too
+   (`install.NoSystemd`), so that a container gets it at once.
+3. **Getting `kokod`:** the file `--kokod` names, or else
+   `/usr/local/bin/kokod` when its build is this `koko`'s. Otherwise it is
+   refused with exit 2, naming the build, what is at `/usr/local/bin/kokod`
+   (nothing, another build, or a file that is no `kokod`) and `--kokod`, with
+   `--kokod bin/kokod` for a development build; the download of a release's
+   `kokod-linux-<arch>` comes with #104.
+4. **The build.** koko reads the file's Go build information without
+   running it: a file that is not a Go binary, another program (its main
+   package is not `github.com/cieons/koko/cmd/kokod`), a `kokod` of
+   another build (its module version, `+dirty` included, or its commit
+   differ), naming both builds, or one built for another platform than the
+   machine's, naming both, is refused with exit 2, and nothing runs.
+5. **`kokod install --json`**, with `--owner`, `--address` and `--port` as
+   given, stdin empty, through `cli.Runner.Kokod`
+   ([code layout](code-layout.md#the-package-groups)): a child process in
+   `cmd/koko`, `kokod`'s command line in process in tests. It does
+   [the steps](#the-steps) 1 to 6 and prints the shared
+   [`install.Report`](../../internal/shared/install/install.go) as JSON on
+   stdout. Its refusal, the error object it prints on stderr, becomes
+   `koko server install`'s, code, message and exit status unchanged;
+   anything else on its stderr is passed through.
+6. **Initialisation** over the socket ([`server.init`](initialisation.md)),
+   when the report has `initialise`: with the Owner and the Server Address
+   it names, `--address`'s or the public IP `kokod install` found. The
+   CLI's own API client makes the call, so `kokod` carries no client code.
+7. **The printout**, as [below](#what-it-prints).
+
+`kokod install` run by hand on a fresh machine installs and starts a koko
+server it cannot initialise, and its report's `initialise.next` names what
+is left: `koko server install` with the same flags, which runs the `kokod`
+installed and initialises it:
+
+```json
+{
+  "initialise": {"owner": "alice", "address": "203.0.113.7", "next": "sudo koko server install --owner alice"},
+  "root_key_file": "/etc/koko/root.key",
+  "root_key_id": "rootkey_3f9k2m7q",
+  "port": 7822
+}
+```
+
+An upgrade's report has no `initialise`, and has the stored `address`, the
+`host_key_fingerprint` and, when they must, `devices_must_connect`. `koko`
+runs only a `kokod` of its own build, so this JSON has no compatibility
+rules. `koko server install` does not install `koko` itself: `install.sh`
+does ([the release](release.md#installsh)).
+
+`koko server uninstall [--kokod <file>]`, also irreversible, checks the
+machine and gets `kokod` as install does (steps 2 to 4), then runs `kokod
+uninstall --json` and prints its
+[`install.UninstallReport`](../../internal/shared/install/install.go)
+([uninstall](#uninstall)).
 
 ## The machine interface
 
@@ -40,6 +98,7 @@ the real one, rooted at `/`:
 
 | Method | On the machine |
 | --- | --- |
+| `RunsAsRoot` | the effective uid is 0 |
 | `SystemdVersion` | the first line of `systemctl --version` |
 | `FilesystemType` | the latest mount on the longest mount point holding the path, in `/proc/self/mountinfo` ([`filesystem.System`](../../internal/server/filesystem/filesystem.go), which start-up reads too) |
 | `PortOwner` | [`portowner.Lookup`](web-front.md#the-port-owner-lookup), which as root names any user's process |
@@ -51,11 +110,15 @@ the real one, rooted at `/`:
 
 ## The steps
 
-In this order ([`Installer.Install`](../../internal/server/installer/installer.go)):
+`kokod install` does these, in this order
+([`Installer.Install`](../../internal/server/installer/installer.go)):
 
 1. **Every check, before any write.** Each refusal below says "nothing was
-   written"; all but the schema's are an `install.Refusal`, whose reason the
-   CLI turns into its code:
+   written"; all but the schema's are an `install.Refusal`, whose reason
+   `kokod` and the CLI turn into its code:
+   - a process that is not root (`Machine.RunsAsRoot`), as when `kokod
+     install` is run by hand without `sudo`: `unsupported_platform`, naming
+     `sudo koko server install`; `kokod uninstall` refuses it too;
    - systemd not running the machine, as `sd_booted(3)` tells it: no
      `/run/systemd/system` directory under the root, as in a container
      whose init is something else, where `systemctl` may still be there and
@@ -71,8 +134,8 @@ In this order ([`Installer.Install`](../../internal/server/installer/installer.g
      ([the Seal](seal.md#at-start-up))), where SQLite's WAL does not work:
      `unsupported_platform`. Before `/var/lib/koko` exists, the filesystem it
      will be made on is checked (`filesystem.Nearest`);
-   - a `koko.db` at a schema this koko predates, which the koko server would
-     refuse to start on, as when an older koko is installed to go back
+   - a `koko.db` at a schema this `kokod` predates, which the koko server
+     would refuse to start on, as when an older one is installed to go back
      before the snapshot is put back: `internal_error`, naming both schema
      versions and the snapshot to put in place
      ([`store.CheckVersion`](store.md));
@@ -105,27 +168,31 @@ In this order ([`Installer.Install`](../../internal/server/installer/installer.g
    make systemd leave what is in it as the copy left it.
 3. **The Root Key**, `/etc/koko/root.key` (0600, root): reused when it is
    there, else written new (`seal.NewRootKey`).
-4. **The binary**, `/usr/local/bin/koko` (0755, root), copied from the
-   running one unless it runs from there, and **the unit**,
+4. **`kokod`**, `/usr/local/bin/kokod` (0755, root), copied from the
+   running one unless it runs from there, as when `koko server install`
+   runs the `kokod` installed, and **the unit**,
    `/etc/systemd/system/koko.service` (0644, root). Every file is written
    through a temporary file beside it, given its mode and owner and synced,
    then renamed into place, so none is seen half-written and a running binary
    is replaced, never changed.
 5. **`systemctl daemon-reload`, `enable koko.service`, `restart
    koko.service`.** Restart, not start, so that a koko service an earlier run
-   left running takes the new unit and binary.
+   left running takes the new unit and `kokod`.
 6. **The socket.** Install waits until the koko server accepts a connection
    on `/run/koko/koko.sock`, for up to `timing.InstallSocketWait` (30 s). It
    connects rather than looks for the file, which is there a moment before
    the koko server listens on it. A koko server that
    refuses to start never opens it, so the failure names
    `systemctl status koko` and `journalctl -u koko`, where its refusal is.
-7. **Initialisation** over the socket ([`server.init`](initialisation.md)),
-   with the Owner and the Server Address.
+7. **The report**, which on a fresh koko server says what initialising it
+   needs: `koko server install` initialises it
+   ([the two halves](#the-two-halves)).
 
 Until initialisation has succeeded, running install again is safe and
-finishes the job: every step is done again or found done, and nothing is
-sealed under the Root Key yet, so it is reused.
+finishes the job: every step is done again or found done, nothing is
+sealed under the Root Key yet, so it is reused, and the `kokod` the first
+run installed is run again without `--kokod`. A run refused before any
+write installed no `kokod`, so the next is given one again.
 
 ## What is there already
 
@@ -142,13 +209,17 @@ On an initialised koko server install is the upgrade.
 ## The upgrade
 
 Re-running install on an initialised koko server, as a newer release's
-`install.sh` does, replaces the binary, writes the unit again from the
+`install.sh` does, replaces `kokod`, writes the unit again from the
 template, and runs `daemon-reload`, `enable` and `restart`, then waits for the
 socket, as a fresh install does ([the steps](#the-steps) 2 to 6). It
 initialises nothing and issues no Join Code: the restarted koko server keeps
 its record, its Owner, its Server Address and its keys, and migrates its
-schema at start ([the store](store.md)). Its own checks, after the machine's
-and before any write, each leaving the running koko server as it was:
+schema at start ([the store](store.md)). A machine as v0.1.0 or v0.2.0 left
+it, whose unit ran `/usr/local/bin/koko server run`, upgrades the same way:
+the unit is written again to run `/usr/local/bin/kokod run`, its port and
+drop-ins kept, and `/usr/local/bin/koko`, the CLI now, is left as it is.
+Its own checks, after the machine's and before any write, each leaving the
+running koko server as it was:
 
 - **`--owner` and `--address`** are refused with `already_initialised`
   (exit 1): only initialisation takes them. The message names the way on,
@@ -186,9 +257,10 @@ connect, and nothing is said.
 ## The unit
 
 [`koko.service.tmpl`](../../internal/server/installer/koko.service.tmpl) is
-embedded in the binary and rendered at every run
+embedded in `kokod` and rendered at every run
 ([`installer.Unit`](../../internal/server/installer/unit.go)), so the unit
-always matches the binary; the
+always matches `kokod`, which its `ExecStart=/usr/local/bin/kokod run`
+runs; the
 [golden file](../../internal/client/cli/testdata/server-install-koko.service)
 pins its text, with every setting the spec lists. Three choices are the
 installer's own:
@@ -196,8 +268,8 @@ installer's own:
 - **The startup settings are `Environment=KOKO_*` lines, not flags**, so that
   a drop-in's own `Environment=` line overrides one and outlasts the next
   install, which rewrites the unit; a flag in `ExecStart=` would beat it.
-  `KOKO_LISTEN` carries `--port`, for `koko server run`'s listen address.
-- **The Root Key's path is not written**: `koko server run`'s default,
+  `KOKO_LISTEN` carries `--port`, for `kokod run`'s listen address.
+- **The Root Key's path is not written**: `kokod run`'s default,
   `$CREDENTIALS_DIRECTORY/root-key`, is the file `LoadCredential=` makes,
   which is where systemd hands the key to the service and nowhere else.
 - **`CAP_NET_BIND_SERVICE` only for a port below 1024**: the unit's
@@ -257,21 +329,25 @@ when devices must take the new address.
 [`Installer.Uninstall`](../../internal/server/installer/uninstall.go), when
 the unit is there, reads the port the koko service listens on from systemd,
 runs `systemctl stop` and `disable koko.service` while systemd still knows
-the unit, removes the unit and runs `daemon-reload`; it then removes the
-binary. It keeps `/var/lib/koko`, `/etc/koko/root.key` and the `koko` user,
-and prints their paths, with the port, which a later install no longer
-knows: the hint for people says to install koko again without `--owner`
-and with that `--port`. There is no purge: P0 has no backup, and one command
+the unit, removes the unit and runs `daemon-reload`; it then removes
+`/usr/local/bin/kokod`. It never removes `/usr/local/bin/koko`, the CLI,
+which `install.sh` put there, so on a machine as v0.1.0 or v0.2.0 left it,
+whose unit ran that file, it removes only the unit. It keeps
+`/var/lib/koko`, `/etc/koko/root.key` and the `koko` user, and prints their
+paths, with the port, which a later install no longer knows: the hint for
+people says to run `sudo koko server install` without `--owner` and with
+that `--port`. There is no purge: P0 has no backup, and one command
 would erase the record, the Secrets and the koko key. Drop-ins are the
 Owner's and stay. What is not there is not removed, so running it again
-removes nothing and asks systemd nothing. Install without `--owner` then
-runs the koko server again on the data it kept, as
+removes nothing and asks systemd nothing; it removed `kokod`, so a run
+after it is given one with `--kokod`, as install after it is. Install
+without `--owner` then runs the koko server again on the data it kept, as
 [the upgrade](#the-upgrade). With `--json` (`listen_port` left out when
 systemd did not tell it):
 
 ```json
 {
-  "removed": ["/etc/systemd/system/koko.service", "/usr/local/bin/koko"],
+  "removed": ["/etc/systemd/system/koko.service", "/usr/local/bin/kokod"],
   "data_dir": "/var/lib/koko",
   "root_key_file": "/etc/koko/root.key",
   "system_user": "koko",
@@ -286,16 +362,23 @@ runs `koko server install` through the CLI on
 [`harness.NewMachine`](../../internal/harness/machine.go), a fake machine: a
 temporary root holding only the system directories (`/run/systemd/system`
 among them, as systemd runs the machine), and fakes that answer
-what the test sets (systemd's version, the filesystem type, the processes on
-ports, the source IP) and record every call with the files under the root at
-that moment. Its `systemctl` acts as systemd does with the unit: it runs only
+what the test sets (the platform, whether koko runs as root, systemd's
+version, the filesystem type, the processes on ports, the source IP) and
+record every call with the files under the root at that moment. It is the
+`cli.Runner.Kokod` koko runs on: it states the build of each `kokod` file
+it makes (`m.Kokod()`, of the test binary's build, `m.NewRelease()`, a new
+file of the same build, and `m.NewKokod(build)`, of any build or program),
+by the file's bytes so that the copy at `/usr/local/bin/kokod` keeps it, and
+runs one as `kokod`'s command line in process on the machine, noting each
+command line (`m.Ran()`). Its `systemctl` acts as systemd does with the unit: it runs only
 the unit loaded, with its drop-ins, at the last `daemon-reload`, refuses a
 binary that does not run or a credential's missing file, makes the runtime
 directory, gives the state directory and all in it to the unit's `User=`
 unless the directory is that user's already (as `StateDirectory=` does),
 shows the `MainPID` and the quoted `Environment` systemd would, and runs
-the unit's `ExecStart` with its `Environment=` lines and
-`CREDENTIALS_DIRECTORY` through `koko server run` as an in-process koko
+the unit's `ExecStart` (`kokod run`, or a v0.2.0 unit's `koko server run`,
+which took the same flags) with its `Environment=` lines and
+`CREDENTIALS_DIRECTORY` through `kokod run` as an in-process koko
 server under the root,
 listening on a loopback port, which its Join Codes therefore name in place
 of the unit's port. So initialisation and the printout run for real. The tests cover a fresh install (files, modes, owners, the unit's
@@ -305,16 +388,21 @@ late socket waited for), a socket file there before the koko server accepts
 on it (`ListenDelay`), the printout for people, `--port` (and
 `CAP_NET_BIND_SERVICE` only for one below 1024), `--address`,
 every refusal writing nothing, systemd not running (with goldens for the
-text and `--json`, naming the image), private source IPs, bad
-flags, running again after a refused address and after a service that never
-opened its socket, and a Root Key file there already. Only a service that
+text and `--json`, naming the image, and `kokod install` refusing the same),
+macOS, an architecture with no `kokod` and not root refused before any
+`kokod` is read or run, a `--kokod` of another build, another program, no
+Go binary or no file refused before it runs, no `kokod` of koko's build
+without `--kokod`, `kokod install` by hand then `koko server install`,
+private source IPs, bad flags, running again after a refused address and,
+reusing the `kokod` installed, after a service that never opened its
+socket, and a Root Key file there already. Only a service that
 never opens its socket (`NoSocket`) has install wait less than the product's
 30 s, `harness.NoSocketWait`: no wait would see that socket, so a short one
 fails no slower machine, and every socket that does open is waited for as
 on a real machine. `WaitLog` waits for a line the koko server logs after
 its socket accepts, such as its start.
 [`server_upgrade_test.go`](../../internal/client/cli/server_upgrade_test.go)
-tests the upgrade on an initialised koko server: the new release's binary,
+tests the upgrade on an initialised koko server: the new release's `kokod`,
 the unit written again, the restart, the record kept, the `--json` goldens;
 `--owner` and `--address` refused; the port kept without `--port`, moved with
 it, and the warning only under a Server Address without a port of its own;
@@ -323,14 +411,18 @@ one included; a missing, another or a damaged Root Key refused; a port set
 with a drop-in kept, and a `--port` it would override refused, before and
 after uninstall; no unit after
 uninstall, and a unit changed by hand; the P0 restore of a copy onto a fresh
-machine; and data at a newer schema refused.
+machine; data at a newer schema refused; and a machine as v0.2.0 left it,
+whose unit is written again to run `kokod run`, its port and drop-in kept
+and `/usr/local/bin/koko` untouched.
 [`server_uninstall_test.go`](../../internal/client/cli/server_uninstall_test.go)
 tests uninstall: the service stopped while its unit is there, the unit and
-the binary gone, what it keeps, the port, the golden, running it again,
-install after it, and the build without the koko server. The fake machine's
-`PortOwner` names the koko service on the port its loaded unit's
-`KOKO_LISTEN` names while it runs, and `NewRelease` gives install a newer
-binary.
+`kokod` gone, `/usr/local/bin/koko` kept, what it keeps, the port, the
+golden, running it again, install after it, and on a machine as v0.2.0 left
+it the unit alone removed. The fake machine's `PortOwner` names the koko
+service on the port its loaded unit's `KOKO_LISTEN` names while it runs.
+[`install_test.go`](../../internal/server/kokod/install_test.go) tests that
+`kokod install` and `uninstall` print the shared reports as JSON, and that
+their refusals have koko's error shape and exit statuses.
 [`checks_test.go`](../../internal/server/installer/checks_test.go),
 [`system_test.go`](../../internal/server/installer/system_test.go) and
 [`unit_test.go`](../../internal/server/installer/unit_test.go) test the

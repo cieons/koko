@@ -30,32 +30,17 @@ import (
 	"github.com/cieons/koko/internal/client/devicemux"
 	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/shared/api"
-	"github.com/cieons/koko/internal/shared/install"
-	"github.com/cieons/koko/internal/shared/serverrun"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
 // Runner runs koko command lines.
 type Runner struct {
-	// ServerRun runs the koko server in this process until ctx ends, for
-	// `koko server run`. cmd/koko sets it in the builds that carry the koko
-	// server (Linux), so that no client package imports a server package;
-	// where it is nil, `koko server run` refuses.
-	ServerRun func(ctx context.Context, s ServerSettings, log io.Writer) error
-
-	// ServerInstall installs, starts and initialises the koko server on this
-	// machine, for `koko server install`, calling initialise once the koko
-	// server's Unix socket is there. cmd/koko sets it in the builds that
-	// carry the koko server (Linux); where it is nil, `koko server install`
-	// refuses.
-	ServerInstall func(ctx context.Context, req install.Request, initialise install.Initialise) (install.Report, error)
-
-	// ServerUninstall stops the koko service on this machine and removes its
-	// unit and binary, for `koko server uninstall`. cmd/koko sets it in the
-	// builds that carry the koko server (Linux); where it is nil, `koko
-	// server uninstall` refuses.
-	ServerUninstall func(ctx context.Context) (install.UninstallReport, error)
+	// Kokod is the machine koko server install and uninstall put the koko
+	// server on, and how they read and run its kokod files. cmd/koko sets
+	// it to this machine; the S1 harness to its fake machine. Where it is
+	// nil, they refuse before anything runs.
+	Kokod Kokod
 
 	// StartDeviceMux starts this build's Device Mux in the background, with
 	// the environment env, for a command on a joined device that finds none
@@ -93,10 +78,6 @@ type Runner struct {
 	// counts from. No flag or environment variable sets it.
 	Clock func() time.Time
 }
-
-// ServerSettings are the startup settings `koko server run` takes as flags or
-// KOKO_* variables, which kokod run takes too (package serverrun).
-type ServerSettings = serverrun.Settings
 
 // Invocation is one command line with its streams and environment.
 type Invocation struct {

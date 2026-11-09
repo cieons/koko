@@ -6,33 +6,18 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"runtime"
-	"strconv"
 	"strings"
 
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/install"
-	"github.com/cieons/koko/internal/shared/name"
 	"github.com/cieons/koko/internal/shared/serveraddr"
-	"github.com/cieons/koko/internal/shared/serverrun"
 )
 
 var serverCommands = []Command{
 	{
 		Noun:    "server",
-		Verb:    "run",
-		Summary: "Run the koko server in the foreground, as its systemd unit does",
-		Flags:   serverRunFlags(),
-		// It runs the koko server and migrates its database (P0 spec:
-		// overview), and with --owner and --address makes a Root Key and
-		// initialises a fresh koko server (ADR 0038).
-		Tier: Irreversible,
-		Run:  quietAction(serverRun),
-	},
-	{
-		Noun:    "server",
 		Verb:    "install",
-		Summary: "Install, start and initialise the koko server on this Linux machine, as root, or upgrade the one here",
+		Summary: "Install, start and initialise the koko server, kokod, on this Linux machine, as root, or upgrade the one here",
 		Flags: []Flag{
 			{
 				Name:    "owner",
@@ -49,6 +34,7 @@ var serverCommands = []Command{
 				Value:   "port",
 				Summary: "the TCP port the koko server listens on: 7822 on a fresh install, and on an upgrade the port it listens on now; install never moves to another by itself",
 			},
+			kokodFlag,
 		},
 		// It prints a credential, the first Join Code (P0 spec: install and
 		// run), and changes the machine.
@@ -59,7 +45,8 @@ var serverCommands = []Command{
 	{
 		Noun:    "server",
 		Verb:    "uninstall",
-		Summary: "Stop the koko server on this Linux machine and remove its unit and binary, as root; its data, Root Key and system user stay",
+		Summary: "Stop the koko server on this Linux machine and remove its unit and kokod, as root; its data, Root Key, system user and koko stay",
+		Flags:   []Flag{kokodFlag},
 		// It stops the koko server and removes it from the machine (P0
 		// spec: install and run).
 		Tier: Irreversible,
@@ -87,34 +74,9 @@ var serverCommands = []Command{
 	},
 }
 
-// noServer is the refusal of a command that runs the koko server's own code
-// in a build that does not carry it: the koko server runs on Linux only
-// (ADR 0024).
-func noServer() error {
-	return &cliError{code: codeUnsupportedPlatform, message: fmt.Sprintf(
-		"the koko server runs on Linux only; this koko is built for %s/%s", runtime.GOOS, runtime.GOARCH)}
-}
-
-func serverRun(ctx context.Context, in *Input) error {
-	if in.runner.ServerRun == nil {
-		return noServer()
-	}
-	settings, err := serverrun.Read(in.Flag, in.inv.getenv)
-	if err != nil {
-		return refusalError(err)
-	}
-	return refusalError(in.runner.ServerRun(ctx, settings, in.inv.Stderr))
-}
-
-// serverRunFlags are server run's flags, which kokod run takes too
-// (package serverrun).
-func serverRunFlags() []Flag {
-	flags := make([]Flag, 0, len(serverrun.Flags))
-	for _, f := range serverrun.Flags {
-		flags = append(flags, Flag{Name: f.Name, Value: f.Value, Env: f.Env, Default: f.Default, Choices: f.Choices, Summary: f.Summary})
-	}
-	return flags
-}
+// serverNote is what koko help server says beside the commands: the koko
+// server's own process is another program.
+const serverNote = "The koko server's process is kokod run, which systemd and the image run; koko server install installs it."
 
 var serverMappings = []mapping{
 	{api: reflect.TypeFor[api.ServerInitResponse](), cli: reflect.TypeFor[installedJSON]()},
@@ -198,26 +160,25 @@ koko connect %s
 	return err
 }
 
-// serverInstall is koko server install: it checks its flags, then hands the
-// machine's part to the installer in the koko server's code, giving it the
-// one API call it makes, server.init over the Unix socket.
+// serverInstall is koko server install: it checks its flags and the
+// machine, gets the kokod of its own build, which does the machine's part
+// (kokod install), then initialises a fresh koko server over its Unix
+// socket and prints what the Owner needs next.
 func serverInstall(ctx context.Context, in *Input) (installedJSON, error) {
-	if in.runner.ServerInstall == nil {
-		return installedJSON{}, noServer()
-	}
-	req, err := installRequest(in)
-	if err != nil {
-		return installedJSON{}, err
-	}
-	initialise := func(ctx context.Context, r api.ServerInitRequest) (api.ServerInitResponse, error) {
-		return in.Call(ctx, api.ServerInit, r)
-	}
-	report, err := in.runner.ServerInstall(ctx, req, initialise)
+	req, err := install.ParseRequest(in.Flag("owner"), in.Flag("address"), in.Flag("port"))
 	if err != nil {
 		return installedJSON{}, refusalError(err)
 	}
+	kokod, err := kokodToRun(in)
+	if err != nil {
+		return installedJSON{}, err
+	}
+	var report install.Report
+	if err := runKokod(ctx, in, kokod, append([]string{"install"}, req.Flags()...), &report); err != nil {
+		return installedJSON{}, err
+	}
 	out := installedJSON{
-		Upgraded:           report.Upgraded,
+		Upgraded:           report.Initialise == nil,
 		Address:            report.Address,
 		HostKeyFingerprint: report.HostKeyFingerprint,
 		RootKeyFile:        report.RootKeyFile,
@@ -225,41 +186,18 @@ func serverInstall(ctx context.Context, in *Input) (installedJSON, error) {
 		ListenPort:         report.Port,
 		DevicesMustConnect: report.DevicesMustConnect,
 	}
-	if !report.Upgraded {
-		out.JoinCode = joinCodeFromAPI(report.JoinCode)
+	if fresh := report.Initialise; fresh != nil {
+		resp, err := in.Call(ctx, api.ServerInit, api.ServerInitRequest{Owner: fresh.Owner, Address: fresh.Address})
+		if err != nil {
+			return installedJSON{}, fmt.Errorf("initialise the koko server: %w", err)
+		}
+		out.Address, out.HostKeyFingerprint, out.JoinCode = resp.Address, resp.HostKeyFingerprint, joinCodeFromAPI(resp.JoinCode)
 	}
 	return out, nil
 }
 
-// installRequest reads install's flags, refusing a value that could never
-// work before the installer touches the machine. A port not given is 0,
-// which the installer reads as 7822 on a fresh machine and as the port the
-// koko server listens on now on an upgrade.
-func installRequest(in *Input) (install.Request, error) {
-	port := 0
-	if p := in.Flag("port"); p != "" {
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 1 || n > 65535 {
-			return install.Request{}, usagef("--port takes a TCP port from 1 to 65535, not %q", p)
-		}
-		port = n
-	}
-	owner, address := in.Flag("owner"), in.Flag("address")
-	if owner != "" {
-		if err := name.Check(owner); err != nil {
-			return install.Request{}, usagef("--owner takes the Owner's User name: %v", err)
-		}
-	}
-	if address != "" {
-		if err := serveraddr.Check(address); err != nil {
-			return install.Request{}, usagef("--address takes the Server Address, host or host:port: %v", err)
-		}
-	}
-	return install.Request{Owner: owner, Address: address, Port: port}, nil
-}
-
-// refusalError gives the refusals of the installer and of the koko server's
-// start-up the codes and exit statuses kokod gives them too.
+// refusalError gives install's refusals the codes and exit statuses kokod
+// gives them too.
 func refusalError(err error) error {
 	r, ok := errors.AsType[*install.Refusal](err)
 	if !ok {
@@ -274,8 +212,8 @@ func refusalError(err error) error {
 // uninstalledJSON is what koko server uninstall prints: what it removed, and
 // where what it kept is.
 type uninstalledJSON struct {
-	// Removed are the files uninstall removed, the unit and the binary;
-	// empty when neither was there.
+	// Removed are the files uninstall removed, the unit and kokod; empty
+	// when neither was there.
 	Removed []string `json:"removed"`
 	// DataDir is the data directory, kept with the record in it.
 	DataDir string `json:"data_dir"`
@@ -289,7 +227,7 @@ type uninstalledJSON struct {
 }
 
 // Human writes what uninstall removed, where what it kept is, and how to
-// install koko again on it.
+// run the koko server again on it.
 func (r uninstalledJSON) Human(w io.Writer) error {
 	var b strings.Builder
 	if len(r.Removed) == 0 {
@@ -306,7 +244,7 @@ Data directory:  %s
 Root Key:        %s
 System user:     %s
 `, r.DataDir, r.RootKeyFile, r.SystemUser)
-	again := "To run the koko server again on them, install koko again without --owner"
+	again := "To run the koko server again on them, run sudo koko server install without --owner"
 	if r.ListenPort != 0 {
 		again += fmt.Sprintf(", with --port %d", r.ListenPort)
 	}
@@ -315,14 +253,15 @@ System user:     %s
 	return err
 }
 
-// serverUninstall is koko server uninstall: it hands the machine's part to
-// the installer in the koko server's code.
+// serverUninstall is koko server uninstall: it gets the kokod of its own
+// build, as install does, which does the machine's part (kokod uninstall).
 func serverUninstall(ctx context.Context, in *Input) (uninstalledJSON, error) {
-	if in.runner.ServerUninstall == nil {
-		return uninstalledJSON{}, noServer()
-	}
-	report, err := in.runner.ServerUninstall(ctx)
+	kokod, err := kokodToRun(in)
 	if err != nil {
+		return uninstalledJSON{}, err
+	}
+	var report install.UninstallReport
+	if err := runKokod(ctx, in, kokod, []string{"uninstall"}, &report); err != nil {
 		return uninstalledJSON{}, err
 	}
 	return uninstalledJSON{

@@ -22,8 +22,10 @@ import (
 	"strings"
 
 	"github.com/cieons/koko/internal/server"
+	"github.com/cieons/koko/internal/server/installer"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/install"
+	"github.com/cieons/koko/internal/shared/timing"
 )
 
 // Program runs kokod command lines.
@@ -33,6 +35,20 @@ type Program struct {
 	// server.Run on this machine's mounts and process uids; the harness
 	// (harness.Kokod) starts a koko server in the test process.
 	Serve func(ctx context.Context, config server.Config) error
+
+	// Machine is the machine kokod install and kokod uninstall act on:
+	// installer.System in cmd/kokod; the harness's fake machine
+	// (harness.NewMachine) in tests.
+	Machine installer.Machine
+
+	// Binary returns this kokod's own file, which kokod install puts at
+	// /usr/local/bin/kokod: os.Executable in cmd/kokod.
+	Binary func() (string, error)
+
+	// Timings is the timing-constants hook, for tests only: its zero value
+	// is the product's timings, which kokod install waits for the koko
+	// server's socket by.
+	Timings timing.Timings
 }
 
 // Invocation is one command line with its streams and environment.

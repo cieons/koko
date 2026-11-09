@@ -12,7 +12,7 @@ holds:
 
 | Asset | What it is |
 | --- | --- |
-| `koko-linux-amd64`, `koko-linux-arm64` | the CLI, which still carries the koko server, its web UI and `koko server run` until the CLI drops them ([P1 spec: the koko server and the CLI as two binaries](https://github.com/cieons/koko/issues/101)) |
+| `koko-linux-amd64`, `koko-linux-arm64` | the CLI only, without the koko server or its web UI; in v0.1.0 and v0.2.0, the koko server and the CLI in one ([ADR 0041](../adr/0041-koko-installs-the-koko-server-of-its-own-version.md)) |
 | `koko-darwin-arm64` | the CLI for Apple Silicon macOS; it carries no koko server, so no web UI |
 | `kokod-linux-amd64`, `kokod-linux-arm64` | `kokod`, the koko server, with its web UI ([ADR 0040](../adr/0040-koko-is-the-cli-and-kokod-the-koko-server.md)) |
 | `install.sh` | [`release/install.sh`](../../release/install.sh) as it is at the tag |
@@ -37,7 +37,7 @@ step, so building for the other architecture needs no emulation:
 | Base | `gcr.io/distroless/static-debian12:nonroot`, pinned by digest; [Dependabot](../../.github/dependabot.yml) opens a pull request when the digest moves |
 | User | the base's default, the numeric `65532` (`nonroot` in its `/etc/passwd`, home `/home/nonroot`), from the start: the image never runs as root and holds no capability ([ADR 0039](../adr/0039-the-container-runs-as-uid-65532-from-the-start-and-koko-changes-no-owner.md)) |
 | Binaries | `/usr/local/bin/kokod` and `/usr/local/bin/koko`: the release's `kokod-linux-<arch>` and `koko-linux-<arch>`, copied from `dist/`, never rebuilt: the binaries `SHA256SUMS` lists, whose version the release checks is the tag |
-| Entrypoint, command | `["kokod"]`, `["run"]`: `kokod run`, which takes `koko server run`'s flags and `KOKO_*` variables, so a Compose file that sets no entrypoint or command, as `release/compose.yaml` sets none, needs no change |
+| Entrypoint, command | `["kokod"]`, `["run"]`: `kokod run`, which takes the flags and `KOKO_*` variables `koko server run` took before it, so a Compose file that sets no entrypoint or command, as `release/compose.yaml` sets none, needs no change |
 | Environment | `KOKO_DATA_DIR=/koko/data`, `KOKO_ROOT_KEY_FILE=/koko/root.key` |
 | Directories | `/koko` (0700, uid and gid 65532), a `VOLUME`, so a container without a mount keeps its data in an anonymous volume, which outlives `docker rm`; `/run/koko` (0755, 65532), the socket's directory |
 | Port | `EXPOSE 7822` |
@@ -256,17 +256,21 @@ migration step is a file added to `internal/server/store/migrations/`,
 3. a device joins with the printed Join Code and lists the Users;
 4. with a drop-in setting `KOKO_LISTEN=[::]:7822`, `systemctl show` quotes
    that entry as the installer reads it;
-5. install.sh of the newer build, without `--owner` or `--port`, upgrades:
-   the binary is the newer one, the service runs again under a new process
-   on the port it kept, with no capability held or to be gained (`CapEff`
+5. install.sh of the newer build, without `--owner` or `--port`, and with
+   `--kokod` naming the newer `kokod-linux-<arch>`, since `koko server
+   install` downloads none yet (#104), upgrades: `/usr/local/bin/koko` and
+   `/usr/local/bin/kokod` are the newer builds, the unit runs
+   `/usr/local/bin/kokod run`, the service runs `kokod` again under a new
+   process on the port it kept, with no capability held or to be gained (`CapEff`
    and `CapBnd` in `/proc/<pid>/status`), a `koko.db.before-<n>` snapshot
    is there, and the device still works;
-6. `koko server uninstall` leaves nothing running or listening, removes the
-   unit and the binary, and keeps `koko.db`, the Root Key and the `koko`
-   user;
+6. `koko server uninstall`, running the `kokod` installed, leaves nothing
+   running or listening, removes the unit and `kokod`, and keeps
+   `/usr/local/bin/koko`, `koko.db`, the Root Key and the `koko` user;
 7. with the drop-in removed, and after `chown -R root:root /var/lib/koko`,
    as a copy put back by root would be, install.sh without `--owner` or
-   `--port` starts the koko server again on the newer build's default port,
+   `--port`, given `--kokod` again since uninstall removed it, starts the
+   koko server again on the newer build's default port,
    7822, saying devices must connect to `localhost:7822`, as it does for a
    port it cannot know was the same; systemd gives every file back to
    `koko`, and the device still works.

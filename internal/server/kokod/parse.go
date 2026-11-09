@@ -3,8 +3,6 @@ package kokod
 import (
 	"slices"
 	"strings"
-
-	"github.com/cieons/koko/internal/shared/serverrun"
 )
 
 // parsed is one command line as parsed: the command it names, with its
@@ -20,7 +18,7 @@ type parsed struct {
 	values map[string]string
 }
 
-// value returns the flag name's value, as serverrun.Read reads it.
+// value returns the flag name's value, as readSettings reads it.
 func (p *parsed) value(name string) string {
 	return p.values[name]
 }
@@ -83,7 +81,7 @@ func (c *command) parse(rest []string, getenv func(string) string) (*parsed, err
 			p.json = true
 			continue
 		}
-		f := c.flag(name)
+		f := c.lookup(name)
 		switch {
 		case f == nil && name == "help" && !hasValue:
 			return &parsed{cmd: c, help: true}, nil
@@ -121,9 +119,9 @@ func (c *command) parse(rest []string, getenv func(string) string) (*parsed, err
 	return p, nil
 }
 
-// flag returns the command's flag name, or nil.
-func (c *command) flag(name string) *serverrun.Flag {
-	i := slices.IndexFunc(c.flags, func(f serverrun.Flag) bool { return f.Name == name })
+// lookup returns the command's flag name, or nil.
+func (c *command) lookup(name string) *flag {
+	i := slices.IndexFunc(c.flags, func(f flag) bool { return f.Name == name })
 	if i < 0 {
 		return nil
 	}
@@ -132,7 +130,7 @@ func (c *command) flag(name string) *serverrun.Flag {
 
 // checkChoice refuses a value outside f's choices, when it has any; source
 // names where the value was given.
-func checkChoice(f *serverrun.Flag, value, source string) error {
+func checkChoice(f *flag, value, source string) error {
 	if len(f.Choices) > 0 && !slices.Contains(f.Choices, value) {
 		return usagef("%s must be one of %s, not %q", source, strings.Join(f.Choices, ", "), value)
 	}

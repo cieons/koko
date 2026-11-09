@@ -30,11 +30,11 @@ type versionJSON struct {
 }
 
 func (v versionJSON) Human(w io.Writer) error {
-	_, err := fmt.Fprintf(w, "koko %s\n", build.Info(v))
+	_, err := fmt.Fprintf(w, "koko %s\n", build.Info{Version: v.Version, Revision: v.Revision, Go: v.Go, Platform: v.Platform})
 	return err
 }
 
 func version(context.Context, *Input) (versionJSON, error) {
 	b := build.Read()
-	return versionJSON(b), nil
+	return versionJSON{Version: b.Version, Revision: b.Revision, Go: b.Go, Platform: b.Platform}, nil
 }

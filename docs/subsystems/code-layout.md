@@ -2,57 +2,70 @@
 
 How koko's Go packages are grouped, where each area adds its parts, and the
 rules that keep agents working side by side off each other's files. Why the
-server and the CLI are kept apart is in
-[ADR 0024](../adr/0024-the-server-and-the-cli-are-separable.md).
+server and the CLI are two programs is in
+[ADR 0040](../adr/0040-koko-is-the-cli-and-kokod-the-koko-server.md), which
+carries over ADR 0024's groups.
 
 ## The package groups
 
 Every package under `internal/` sits in one of three groups, chosen by its
-directory. [`internal/groups_test.go`](../../internal/groups_test.go) fails,
-for Linux, macOS and Windows alike, when a package is in no group or depends
-(directly or not) on a group it may not use.
+directory, and each program under `cmd/` has a row of its own.
+[`internal/groups_test.go`](../../internal/groups_test.go) fails, for Linux,
+macOS and Windows alike, when a package is in no group, when a program has
+no row, or when either depends (directly or not) on a group it may not use.
 
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
-| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the version and operations report, the channel adapter, how a join carries its secret and what a Tunnel's two ends agree on (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the liveness watch of an SSH connection, which both ends of a Device Connection run (`liveness`), the SSH connection every channel koko opens goes through, whose opens fail once it has ended (`sshconn`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and the installer, and `koko server run` or `kokod run` and the start-up, agree on, with the error codes koko and kokod both report (`install`), the start-up's flags, their `KOKO_*` variables and the settings they make, which `koko server run` and `kokod run` both take (`serverrun`), the record's value rules: a Host's fields, a Service's ports, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`) | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), the mount table and the network-filesystem check, which the installer and start-up share (`filesystem`), one package per area (`space`, `user`, `device`, `host`, `service`, `attr`, `secret`, `web`: the web front), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`), the Gateway (`gateway`), `kokod`'s command line (`kokod`) | client |
+| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the wire constants, the version and operations report, the channel adapter, how a join carries its secret and what a Tunnel's two ends agree on (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the liveness watch of an SSH connection, which both ends of a Device Connection run (`liveness`), the SSH connection every channel koko opens goes through, whose opens fail once it has ended (`sshconn`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and `kokod install`, and `kokod run` and the start-up, agree on: the request, the reports as the JSON `kokod` prints, the koko server's paths and platforms, and the error codes koko and kokod both report (`install`), the record's value rules: a Host's fields, a Service's ports, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`) | server, client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), the mount table and the network-filesystem check, which the installer and start-up share (`filesystem`), one package per area (`space`, `user`, `device`, `host`, `service`, `attr`, `secret`, `web`: the web front), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`), the Gateway (`gateway`), `kokod`'s command line, with `kokod run`'s flags and the settings they make (`kokod`) | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join, koko's ssh_config and known_hosts, and the Include line (`devicefiles`), the Device Mux and the client of its local protocol (`devicemux`), the device end of a Tunnel (`tunnel`) | server |
 
 A package that holds only tests is in no group, since only non-test
 dependencies count: so far the real-OpenSSH test's
 [`internal/client/openssh`](#the-real-openssh-test).
 
-Only [`cmd/koko`](../../cmd/koko) and the S1 harness
-([`internal/harness`](../../internal/harness)) import both the server and the
-client groups, and no product code imports the harness. Test files may import
-the harness from any package; only non-test dependencies count.
+| Program | May not depend on |
+| --- | --- |
+| [`cmd/koko`](../../cmd/koko), the CLI | server, the harness |
+| [`cmd/kokod`](../../cmd/kokod), the koko server | client, the harness |
+| any other `cmd/...` | is refused: a new program needs its row in `mayNotUse` |
+
+Only the S1 harness ([`internal/harness`](../../internal/harness)) imports
+both the server and the client groups, and no product code imports it. Test
+files may import the harness from any package; only non-test dependencies
+count.
 
 koko is two programs from one module ([ADR 0040](../adr/0040-koko-is-the-cli-and-kokod-the-koko-server.md)):
-[`cmd/koko`](../../cmd/koko), the CLI, and [`cmd/kokod`](../../cmd/kokod),
-the koko server, which systemd and the image run as `kokod run`.
-`cmd/kokod` imports only the server and shared groups: on Linux it runs
+`koko`, the CLI, and `kokod`, the koko server, which systemd and the image
+run as `kokod run`. `cmd/kokod` imports only the server and shared groups:
+on Linux it runs
 [`internal/server/kokod`](../../internal/server/kokod/kokod.go), `kokod`'s
-own small command line (`run`, `version`, `help`), which takes arguments,
-an environment and stdio and gives an exit status, with refusals in the
-shape and exit statuses of koko's `--json` errors. It may not use the
-CLI's parser, so it has its own; the flags of `kokod run` are the shared
-[`serverrun`](../../internal/shared/serverrun/serverrun.go) table, which
-`koko server run` takes too until it leaves the CLI. On other OSes
-`cmd/kokod` builds a stub that refuses, so `make cross` and the per-OS lint
-cover it. `kokod.Program.Serve` is the seam that runs the koko server:
-`cmd/kokod` sets it to `server.Run` on the machine's mounts and process
-uids, and the harness's `Kokod` and `KokodServing` to a koko server in the
-test process, which `harness.RunKokod` drives.
+own small command line (`run`, `install`, `uninstall`, `version`, `help`),
+which takes arguments, an environment and stdio and gives an exit status,
+with refusals in the shape and exit statuses of koko's `--json` errors. It
+may not use the CLI's parser, so it has its own, and holds `kokod run`'s
+flag table ([`settings.go`](../../internal/server/kokod/settings.go)). On
+other OSes `cmd/kokod` builds a stub that refuses, so `make cross` and the
+per-OS lint cover it. `kokod.Program` has the seams: `Serve` runs the koko
+server (`server.Run` on the machine's mounts and process uids in
+`cmd/kokod`; a koko server in the test process from the harness's `Kokod`
+and `KokodServing`, which `harness.RunKokod` drives), and `Machine` and
+`Binary` are the machine `kokod install` and `uninstall` act on and the
+file install copies (`installer.System` and `os.Executable` in
+`cmd/kokod`; the fake machine in tests).
 
-`koko server run` dispatches into server code through
-[`cli.Runner.ServerRun`](../../internal/client/cli/cli.go), which `cmd/koko`
-sets in Linux builds only ([`server_linux.go`](../../cmd/koko/server_linux.go)).
-`koko server install` and `koko server uninstall` dispatch the same way,
-through `cli.Runner.ServerInstall` and `cli.Runner.ServerUninstall`, whose
-requests, reports and refusals are the shared
-[`install`](../../internal/shared/install/install.go) types; the refusals
-of the start-up of `koko server run` and `kokod run` are `install.Refusal`s
-too, each with the code `Refusal.Code` names. Every other
+`cmd/koko` imports no server package, so it embeds neither the koko server
+nor the web UI. `koko server install` and `koko server uninstall` reach the
+koko server's code only by running a `kokod` file of their own build
+([the installer](installer.md#the-two-halves)), through
+[`cli.Runner.Kokod`](../../internal/client/cli/kokod.go): the machine, and
+how to read a file's build and run it. `cmd/koko` sets it to this machine
+([`machine.go`](../../cmd/koko/machine.go): `debug/buildinfo` and
+`os/exec`), and the harness to its fake machine, which runs `kokod`'s
+command line in process. The two agree on the shared
+[`install`](../../internal/shared/install/install.go) types: the request,
+the reports as the JSON `kokod` prints, and `install.Refusal`, whose code
+`Refusal.Code` names, which the start-up's refusals use too. Every other
 command is a client command that reaches the koko server over the socket.
 
 ## Where an area adds its parts
@@ -184,8 +197,7 @@ its own only when an agent would act on it differently.
     compiles and returns a "not supported on Windows" error. `make cross`
     compiles `windows/amd64` (compile only; a Windows CLI is P1). The server group runs
     on Linux only (and on macOS in tests), so it needs no per-OS files;
-    `cmd/koko`'s `server_linux.go` and `server_other.go`, and `cmd/kokod`'s
-    `main_linux.go` and `main_other.go`, are the pattern.
+    `cmd/kokod`'s `main_linux.go` and `main_other.go` are the pattern.
 
 ## Test-only hooks
 
@@ -200,7 +212,7 @@ variables keep parallel tests apart.
 | --- | --- | --- |
 | The socket path | `server.Config.SocketPath`, `cli.Runner.SocketPath` (the harness's `harness.SocketPath(path)`); `cmd/koko` sets the latter from `main.socketPath`, which only [the real-OpenSSH test](#the-real-openssh-test)'s build sets, with `-ldflags -X`, and every other build leaves empty | #27 |
 | The fake terminal | `cli.Runner.Terminal` | #28 |
-| The P0 timing constants | `hostconn.Connector.Timings`, `installer.Installer.Timings`, `server.Config.Timings` (the harness's `harness.Timings(timings)`), `cli.Runner.Timings` and `devicemux.Config.Timings` (the harness's `harness.NewMuxDevice(t, timings)` and `d.UseTimings(timings)`), each a [`timing.Timings`](../../internal/shared/timing/timing.go), where a ticket that uses a new timing adds its constant and field; it also carries the wake and route-change signals the Device Mux probes on (`Timings.Wake`, `Timings.RouteChange`) | #32 |
+| The P0 timing constants | `hostconn.Connector.Timings`, `installer.Installer.Timings`, `kokod.Program.Timings`, `server.Config.Timings` (the harness's `harness.Timings(timings)`), `cli.Runner.Timings` and `devicemux.Config.Timings` (the harness's `harness.NewMuxDevice(t, timings)` and `d.UseTimings(timings)`), each a [`timing.Timings`](../../internal/shared/timing/timing.go), where a ticket that uses a new timing adds its constant and field; it also carries the wake and route-change signals the Device Mux probes on (`Timings.Wake`, `Timings.RouteChange`) | #32 |
 | The clock | `server.Config.Clock`, which every operation reads once per call through `op.Now`, and `cli.Runner.Clock`, which a relative date counts from; the harness's `h.Now()`, `h.Advance(d)` and `h.SetNow(t)` | #36, the CLI's side #51 |
 
 ## The S1 harness
@@ -248,30 +260,28 @@ compares output with `testdata/<name>` after replacing each record id with a
 numbered placeholder (`"space_<1>"`), each Join Code with `koko_<code>`,
 each SHA-256 fingerprint with `SHA256:<fingerprint>` and each time with
 `<time>`; `go test -update` rewrites the files.
-[`harness.ServerStart`](../../internal/harness/harness.go) is a
-`cli.Runner.ServerRun` for S1 tests of `koko server run`: the real start-up on
-a temporary socket and, whatever `--listen` says, a loopback port, stopped at
-once if it starts; `harness.ServerStartWith(t, opts...)` is the same with
-`harness.SocketPath(path)`, to start beside a koko server or a stale socket
-file, and `harness.Mountinfo(path)`, a file in `/proc/self/mountinfo`'s
-format, such as one that puts the data directory on NFS. Every koko server
+[`harness.Kokod(t, opts...)`](../../internal/harness/kokod.go) is a
+`kokod.Program` for S1 tests of `kokod run`: the real start-up on a
+temporary socket and, whatever `--listen` says, a loopback port, stopped at
+once if it starts; `harness.KokodServing` keeps serving until the command is
+stopped. Their options are `harness.SocketPath(path)`, to start beside a
+koko server or a stale socket file, and `harness.Mountinfo(path)`, a file in
+`/proc/self/mountinfo`'s format, such as one that puts the data directory on
+NFS. Every koko server
 the harness starts reads its mounts from that file, or else from
 `harness.LocalDisk`, on which every path is on ext4, so no test reads the
 real `/proc`. Each also reads the process's real, effective and saved uid
 from `harness.ProcessUIDs(real, effective, saved)`, such as 0 to be
 refused as root, or else from `harness.NotRoot`, uid 1000, so a test runs
 alike as root.
-[`harness.Kokod(t, opts...)`](../../internal/harness/kokod.go), its
-successor for `kokod run`, takes the same options and returns a
-`kokod.Program` whose start-up stops at once if it starts;
-`harness.KokodServing` keeps serving until the command is stopped.
 `harness.RunKokod` and `harness.RunKokodBackground` run a `kokod` command
-line in process with one, as `harness.Run` and `harness.RunBackground` run
-a `koko` one. The start-up tests are `kokod run`'s, in
-`internal/server/kokod`; `koko server run` keeps a short test of its own
-until it leaves the CLI.
+line in process with one, as `harness.Run` runs a `koko` one. The start-up
+tests are `kokod run`'s, in `internal/server/kokod`.
 [`harness.NewMachine`](../../internal/harness/machine.go) is the fake machine
-of `koko server install`'s system seam ([the installer](installer.md#verifying)).
+of `koko server install`'s system seam ([the installer](installer.md#verifying)):
+the `cli.Runner.Kokod` its `m.Koko(args...)` runs on, whose kokod files
+(`m.Kokod()`, `m.NewRelease()`, `m.NewKokod(build)`) it states the build of
+and runs as `kokod`'s command line in process.
 
 Devices: `harness.NewDevice(t)` is a device that has not joined, with a HOME
 of its own and nothing at its socket path, so it reaches a koko server only
