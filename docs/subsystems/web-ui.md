@@ -169,8 +169,10 @@ matches nothing; and a `ResizeObserver` and an
 `IntersectionObserver` that observe nothing, since jsdom lays nothing out.
 A test of a capability's pages runs the whole app, inside the same
 [providers](web-shell.md#providers) as `main.tsx`'s, through
-[`test/pages.tsx`](../../web/src/test/pages.tsx): `renderAt(path)` renders it
-at a path, `actAs(api, user, deviceSession?)` makes `user.current` answer
+[`test/pages.tsx`](../../web/src/test/pages.tsx). Before a test file's
+tests, it loads every page's chunk (`loadPage`), since a cold import on a
+busy runner can take longer than a test's wait for what the page shows
+(#119). `renderAt(path)` renders the app at a path, `actAs(api, user, deviceSession?)` makes `user.current` answer
 that User, on a Device Session of their laptop unless another is given,
 `tableRows(name)` reads the cells of the table that name labels,
 `alerts()`, `findAlert()` and `statuses()` read the alerts and statuses

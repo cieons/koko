@@ -102,7 +102,9 @@ re-skin"):
   spinner shows while the chunk loads, and a chunk that does not load, as
   after the koko server was upgraded under an open tab, shows an error
   `Banner` saying to reload the browser page, in place of the page; any
-  other error a page throws goes on past it.
+  other error a page throws goes on past it. `loadPage(page)` loads a lazy
+  page's chunk ahead of time, once, so its first render does not wait on
+  it; the page tests load every page so before they run.
 - **Page state lives in the URL's query** (`useSearchParams`, and
   `useQueryFlag` for a yes-or-no state kept as `name=1`), so a bookmark
   is a saved view and Back returns to the earlier state. The router uses the
@@ -439,5 +441,6 @@ and [the Spaces, People and Devices pages](people-pages.md).
   dialog sending only when ready, from its button or Enter, its refusal,
   and Cancel sending nothing.
 - [`lazyPage.test.tsx`](../../web/src/shell/lazyPage.test.tsx): a lazy
-  page's spinner, then the page; a chunk that does not load saying so in
-  the frame; another error not taken for one.
+  page's spinner, then the page; a page `loadPage` loaded rendering
+  without waiting on its chunk, which loads once; a chunk that does not load saying
+  so in the frame; another error not taken for one.

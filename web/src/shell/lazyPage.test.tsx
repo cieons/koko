@@ -1,10 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { expect, onTestFinished, test, vi } from "vitest";
 
 import { UserCurrent } from "../api/user";
 import { fakeApi } from "../test/fakeApi";
 import { findAlert } from "../test/pages";
-import { lazyPage } from "./lazyPage";
+import { lazyPage, loadPage } from "./lazyPage";
 import type { PageProps } from "./router";
 import { Shell } from "./Shell";
 
@@ -32,6 +32,27 @@ test("a lazy page shows a spinner while its chunk loads, then the page", async (
 
   expect(await screen.findByRole("heading", { name: "Loaded" })).toBeDefined();
   expect(load).toHaveBeenCalledTimes(1);
+});
+
+test("a lazy page loadPage loaded renders without waiting on its chunk, which loads once", async () => {
+  let loaded: (page: (props: PageProps) => React.ReactNode) => void = () => {};
+  const load = vi.fn(() => new Promise<(props: PageProps) => React.ReactNode>((resolve) => (loaded = resolve)));
+  const page = lazyPage(load);
+
+  const loading = loadPage(page);
+  loaded(() => <h1>Loaded</h1>);
+  await loading;
+  await act(async () => renderPage(page));
+
+  // No wait: the page is there once the render's own work is done.
+  expect(screen.getByRole("heading", { name: "Loaded" })).toBeDefined();
+  expect(screen.queryByRole("progressbar", { name: "Loading" })).toBeNull();
+  await loadPage(page);
+  expect(load).toHaveBeenCalledTimes(1);
+});
+
+test("loadPage does nothing for a page that is not lazy", async () => {
+  await expect(loadPage(() => <h1>Eager</h1>)).resolves.toBeUndefined();
 });
 
 test("a lazy page whose chunk does not load says so in place of the page", async () => {

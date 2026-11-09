@@ -53,34 +53,6 @@ longer, and `main` went red at 68c9ad8, which touched nothing near the test.
 **Seen:** 1 (2026-11-06)
 **Evidence:** 3cae7b1 (#38); check run 42081318152 on 68c9ad8; #77
 
-### Wait for the event itself, not for one that comes just before it
-
-**Why:** `koko server install` took the socket's file for the koko server
-listening, but `net.Listen` binds the file before it listens. A loaded
-machine stretches the moment between, and `server.init` dialled into it and
-got `connection refused`: 4 of 240 runs of the install test under load. The
-upgrade test, in turn, read the koko server's start from its log once
-install returned, though the koko server logs it just after its socket
-accepts: 3 failures under load. The Devices page's countdown test, in
-turn, moved its faked clock on once the Join Code line showed, though
-React starts the countdown's interval in an effect it may run just after:
-CI on `main` went red at 4b0d50b, which touched nothing under `web/`.
-The test of killing the Device Mux with `KOKO_DIRECT=1`, in turn, armed
-its cut once the Device Mux had stopped, to fall on the Tunnel's own
-Device Connection, though the koko server's answer to the Device Mux's last
-probe could still be on its way and spend the cut on the dead connection:
-nothing Resumed in about 1 in 30 runs under load, and CI's macOS job on
-`main` went red at d5e0d77, which only met the race the test had from 1e3a865.
-The test of Ctrl-C ending `koko exec`, in turn, interrupted it once the
-Gateway logged the SSH Session's start, though `koko exec` opens its
-command's channel just after: 1 in 3 full `make check` runs got "the SSH
-Session failed" instead of "interrupted".
-**Seen:** 2 (2026-11-06, 2026-11-08)
-**Evidence:** 3cae7b1 (#38); 4232f09 (#43); #77; ecff11b (#49); #78;
-c152887 (#54); check runs 42166495220 and 42167225724; 4f5156b (#60);
-#79; check run 42436925411; 1e3a865 (#70); check run 42461764144; #87;
-#90
-
 ### A channel closes only once every request on it has its answer
 
 **Why:** an SSH answer sent after its channel closed is dropped, and the
@@ -190,4 +162,4 @@ from can be another one still.
 
 ## Moved to the code standards
 
-_None yet._
+- Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09; #38, #43, #49, #54, #60, #70, #90, #119).

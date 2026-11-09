@@ -24,6 +24,7 @@ moves here.
 | Tests stay off the network. | A remote host is an in-process `golang.org/x/crypto/ssh` server; an HTTP peer is `httptest`. |
 | Tests check behaviour at the highest seam. | Prefer the API service layer, and the CLI driven against an in-process server. A refactor that keeps behaviour keeps the tests green. |
 | Whatever a test starts ends with it. | Servers, goroutines and processes a test starts are stopped through `t.Cleanup` before it returns. |
+| A test waits for the event itself, not for one that comes just before it. | Name what the test waits for before it acts or asserts: the outcome itself, such as a socket that accepts rather than its file, a countdown's interval running rather than its line shown, or a page rendered rather than a fixed second for its chunk to load. A loaded runner stretches the gap between the two, as it did in merged work on three separate days ([LESSONS.md](../LESSONS.md#moved-to-the-code-standards)). |
 | A red test on `main` is a bug now. | Fix it at its cause, or open an issue naming the cause. "Fails the same on main" is not a baseline. |
 
 ## Acceptance checks

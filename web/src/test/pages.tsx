@@ -1,12 +1,25 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { beforeAll } from "vitest";
 
 import type { DeviceSession } from "../api/device";
 import { type User, UserCurrent } from "../api/user";
 import { App } from "../App";
+import { routes } from "../routes";
+import { loadPage } from "../shell/lazyPage";
 import type { FakeApi } from "./fakeApi";
 
 // Helpers for the tests of the web UI's pages, which run the whole app, its
 // shell and every page, against the fake API.
+
+// Each page is a chunk of its own (lazyPage), and the first import of one
+// in a test file can take longer on a busy runner than a test's wait for
+// what the page shows. Every test file that renders pages through these
+// helpers loads all of them first, so a test waits for the page itself,
+// never for its module to load. The hook's limit is a ceiling for a slow
+// runner, not a wait: it ends as soon as the pages have loaded.
+beforeAll(async () => {
+  await Promise.all(routes.map((route) => loadPage(route.page)));
+}, 60_000);
 
 /** renderAt renders the web UI, with all its pages, at path. */
 export function renderAt(path: string) {

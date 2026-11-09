@@ -5,23 +5,28 @@ import { Component, type ComponentType, lazy, type ReactNode, Suspense } from "r
 import { useT } from "./i18n";
 import type { PageProps } from "./router";
 
+/** loaders holds, for each lazy page, the function that loads its chunk, once. */
+const loaders = new WeakMap<ComponentType<PageProps>, () => Promise<unknown>>();
+
 /**
  * lazyPage is a page whose code loads, as a chunk of its own, the first
  * time the web UI shows it, so the first load carries only the shell and
  * the page the browser opens (the size budget, docs/subsystems/web-ui.md).
  * While the chunk loads the page shows a spinner; a chunk that does not
  * load, as after the koko server was upgraded under an open tab, says so in
- * place instead of leaving the frame empty.
+ * place instead of leaving the frame empty. loadPage loads it ahead of time.
  */
 export function lazyPage(load: () => Promise<ComponentType<PageProps>>): ComponentType<PageProps> {
+  let loading: Promise<ComponentType<PageProps>> | undefined;
+  const loadOnce = () => (loading ??= load());
   const Page = lazy(async () => {
     try {
-      return { default: await load() };
+      return { default: await loadOnce() };
     } catch (cause) {
       throw new ChunkNotLoaded(cause);
     }
   });
-  return function LazyPage(props: PageProps) {
+  function LazyPage(props: PageProps) {
     return (
       <LoadFailure>
         <Suspense fallback={<Loading />}>
@@ -29,7 +34,18 @@ export function lazyPage(load: () => Promise<ComponentType<PageProps>>): Compone
         </Suspense>
       </LoadFailure>
     );
-  };
+  }
+  loaders.set(LazyPage, loadOnce);
+  return LazyPage;
+}
+
+/**
+ * loadPage loads a lazyPage's chunk ahead of time, once, so the page's
+ * first render does not wait on its chunk; for any other page it does
+ * nothing. Page tests load every page this way before they run (test/pages.tsx).
+ */
+export async function loadPage(page: ComponentType<PageProps>): Promise<void> {
+  await loaders.get(page)?.();
 }
 
 function Loading() {

@@ -1,11 +1,11 @@
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { AttrList } from "./api/attr";
 import { HostList } from "./api/host";
 import { UserCurrent } from "./api/user";
-import { App } from "./App";
 import { fakeApi } from "./test/fakeApi";
+import { renderAt } from "./test/pages";
 
 test("the web UI opens on the Hosts page, which lists the Hosts the API answers with", async () => {
   const api = fakeApi();
@@ -30,7 +30,7 @@ test("the web UI opens on the Hosts page, which lists the Hosts the API answers 
     })),
   }));
 
-  render(<App />);
+  renderAt("/");
 
   const table = await screen.findByRole("table", { name: "Hosts" });
   expect(within(table).getAllByRole("link").map((a) => a.textContent)).toEqual(["db1", "web1"]);
