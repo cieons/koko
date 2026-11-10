@@ -1,5 +1,6 @@
 import { DeviceAdd, DeviceList, DeviceRevoke, type DeviceSession } from "../../api/device";
-import { SignInList } from "../../api/signin";
+import { ServerShow } from "../../api/server";
+import { PasswordLinkIssue, PasswordRemove, SignInList } from "../../api/signin";
 import {
   SpaceAdd,
   type SpaceDetail,
@@ -58,6 +59,8 @@ export interface World {
   users: User[];
   spaces: SpaceDetail[];
   devices: DeviceSession[];
+  /** webURL is the Web URL, or null while it is not set. */
+  webURL: string | null;
 }
 
 /**
@@ -82,7 +85,13 @@ export function world(): World {
       device("bob", "phone"),
       device("bob", "old", { revoked_at: "2026-11-04T09:00:00Z" }),
     ],
+    webURL: "https://koko.example.com",
   };
+}
+
+/** passwordLink is the Password Link the fake issues for user. */
+export function passwordLink(user: string): string {
+  return `https://koko.example.com/password#LINKSECRETFOR${user.toUpperCase()}`;
 }
 
 /** joinCode is the Join Code the fake issues. */
@@ -141,14 +150,47 @@ export function serve(api: FakeApi, w: World, caller: User = alice): void {
     const s = find(name);
     return replace({ ...s, members: s.members.filter((m) => !users.includes(m.name)) });
   });
-  api.on(UserInvite, ({ name }) => {
+  api.on(UserInvite, ({ name, web }) => {
+    if (web === true && w.webURL === null) {
+      throw refusal("web_url_unset", 409);
+    }
     const user: User = { id: `user_${name}`, name, role: "member", created_at: "2026-11-08T09:00:00Z" };
     w.users = [...w.users, user];
     w.spaces = [...w.spaces, space(name, { personal: true })];
-    return {
-      user,
-      join_code: { id: "code_1", code: joinCode, user: name, device: "device-1", expires_at: "2026-11-08T09:15:00Z" },
-    };
+    return web === true
+      ? { user, password_link: { id: "link_1", user: name, link: passwordLink(name), expires_at: "2026-11-09T09:00:00Z" } }
+      : {
+          user,
+          join_code: { id: "code_1", code: joinCode, user: name, device: "device-1", expires_at: "2026-11-08T09:15:00Z" },
+        };
+  });
+  api.on(ServerShow, () => ({
+    server: {
+      address: "koko.example.com",
+      listen_port: 7822,
+      host_key_fingerprint: "SHA256:fingerprint",
+      host_key: "ssh-ed25519 AAAA",
+      version: "v0.3.0",
+      root_key_file: "/etc/koko/root.key",
+      root_key_id: "rootkey_1",
+      data_dir: "/var/lib/koko",
+      web_url: w.webURL,
+      web_listen: w.webURL === null ? null : "127.0.0.1:7823",
+    },
+  }));
+  api.on(PasswordLinkIssue, ({ user: name }) => {
+    if (w.webURL === null) {
+      throw refusal("web_url_unset", 409);
+    }
+    return { password_link: { id: "link_2", user: name, link: passwordLink(name), expires_at: "2026-11-09T09:00:00Z" } };
+  });
+  api.on(PasswordRemove, ({ user: name }) => {
+    const user = w.users.find((u) => u.name === name);
+    if (user?.password_set_at === undefined) {
+      throw refusal("no_password", 409);
+    }
+    w.users = w.users.map((u) => (u.name === name ? { ...u, password_set_at: undefined } : u));
+    return { user: name };
   });
   api.on(UserRemove, ({ name }) => {
     const user = w.users.find((u) => u.name === name);

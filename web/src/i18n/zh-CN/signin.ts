@@ -1,7 +1,8 @@
 import type en from "../en/signin";
 
 // The signin area's messages: Sign in, Set a Password, the Password and
-// Browser Sign-ins on Account, Sign out, and its API error codes.
+// Browser Sign-ins on Account and in a person's panel, Password Links,
+// Sign out, and its API error codes.
 export default {
   "signin.title": "登录",
   "signin.lead": "请使用本 koko 服务器上用户的用户名与密码。",
@@ -56,7 +57,25 @@ export default {
   "signin.revoke.title": "吊销来自 {client} 的登录会话",
   "signin.revoke.consequence": "该浏览器将立即退出登录，须凭密码重新登录。",
   "signin.revoke.consequenceHere": "这是当前浏览器的登录会话。吊销后，当前浏览器将退出登录。",
+  "signin.revoke.consequenceOther": "{name} 将立即在该浏览器中退出登录，须凭其密码重新登录。",
   "signin.revokedDone": "来自 {client} 的登录会话已吊销。",
+  "signin.person.setOn": "密码设置于 {date}。",
+  "signin.person.none": "{name} 未设置密码，无法通过浏览器登录。",
+  "signin.link.issue": "签发密码链接",
+  "signin.link.title": "{name} 的密码链接",
+  "signin.link.lead": "{name} 可凭此链接在浏览器中设置密码，仅可使用一次。此前未使用的链接随即失效。",
+  "signin.link.ready": "密码链接已签发",
+  "signin.link.label": "密码链接",
+  "signin.link.intro": "请将其发送给 {name}。在浏览器中打开后，可凭其设置密码，仅可使用一次。",
+  "signin.link.expired": "此密码链接已过期。请通过“签发密码链接”重新签发。",
+  "signin.link.forgotten": "此密码链接已不再显示。请通过“签发密码链接”重新签发。",
+  "signin.remove": "移除密码",
+  "signin.remove.title": "移除 {name} 的密码",
+  "signin.remove.consequence": "{name} 的登录会话随即结束，未使用的密码链接同时失效。该用户及其设备予以保留。",
+  "signin.remove.consequenceHere":
+    "{name} 的登录会话随即结束，其中包括当前浏览器的登录会话，当前浏览器将退出登录；未使用的密码链接同时失效。该用户及其设备予以保留。",
+  "signin.remove.done": "已移除 {name} 的密码。",
+  "signin.webURLUnset": "密码链接须包含 Web 地址，但尚未设置。请在 koko 服务器本机上执行 koko server set web_url= 进行设置。",
   "error.web_url_unset": "签发密码链接需要 Web URL，但尚未设置。所有者可在 koko 服务器所在机器上执行 koko server set web_url= 进行设置。",
   "error.invalid_password": "密码长度须为 15 至 128 个字符，且不得与用户名相同。字符种类不限。",
   "error.wrong_password": "用户名或密码不正确。",

@@ -10,8 +10,8 @@ the CLI also has. How they look is [the web UI's
 design](../web-design.md#access-access); what the operations do is in [the
 access check and Spaces](access.md), [Users](users.md), [Join
 Codes](join-codes.md) and [revoking](device-connection.md#revoking).
-One's own Password and Browser Sign-ins are on Account
-([Sign-ins](signin.md#the-web-uis-pages)).
+One's own Password and Browser Sign-ins are on Account, and, for the
+Owner, anyone's in their panel ([Sign-ins](signin.md#the-web-uis-pages)).
 
 ## The pages
 
@@ -61,8 +61,10 @@ no Members.
 **A person's panel** shows the User's role and the date they were added
 (or Removed); the shared Spaces as switches of their membership, or for the
 Owner that the Owner sees every Space; their Personal Space's counts with a
-link to its Hosts; their devices; and Remove User. It finds the User in
-`user.list` with `all`, so a Removed User's panel opens too, and says so.
+link to its Hosts; their devices; their Password, with Issue Password Link
+and Remove Password; their Browser Sign-ins; and Remove User. It finds the
+User in `user.list` with `all`, so a Removed User's panel opens too, and
+says so.
 
 **Account** shows the User's name and role and how this browser got in
 (through `koko web` on a device, a Sign-in, or the Local caller), with
@@ -96,7 +98,10 @@ and replacing the history entry ([`movedTo`](../../web/src/shell/router.tsx)).
 | Remove a Space (`space.remove`), then the panel closes | the Owner, on a shared Space | yes |
 | Make a User a Member (`space.member.add`): a cell, a switch, or Add a Member, chosen in a searchable choice among the Users who are neither the Owner, a Removed User nor a Member already (`user.list`) | the Owner, on a shared Space | no |
 | Take a Member out (`space.member.remove`): a cell, a switch, or Take out | the Owner, on a shared Space | no |
-| Invite a User (`user.invite`, then `space.member.add` once per Space chosen) | the Owner | no |
+| Invite a User (`user.invite`, with `web` for In a browser and `valid_for` unless 15 minutes, then `space.member.add` once per Space chosen) | the Owner | no |
+| Issue a Password Link (`password.link`, with `valid_for` unless 15 minutes), in a person's panel; disabled, saying why, while the Web URL is unset (`server.show`) | the Owner, for a User not Removed | no |
+| Remove a Password (`password.remove`), in a person's panel | the Owner, for a User with one | yes |
+| Revoke a live Sign-in (`signin.revoke`), on Account and in a person's panel | anyone for their own; the Owner for anyone's | yes |
 | Remove a User (`user.remove`), then say from its `outcome` whether they were deleted or Removed, and close the panel | the Owner, on any User but the Owner who is not Removed | yes |
 | Add a device (`device.add`), with an optional name: on Account for oneself, with no `user`; in a person's panel for that User, named | anyone for themselves; the Owner for any User who is not Removed | no |
 | Revoke a live Device Session (`device.revoke`, naming its User) | anyone for their own; the Owner for anyone's | yes; for the Owner's own last live one, only once its name is typed, and the call carries `last` |
@@ -122,31 +127,40 @@ row goes once the list is read again, the focus moves to the list's heading,
 whether it fell to the page's body or the panel caught it
 ([`useFocusFallback`](../../web/src/ui/focus.ts)).
 
-## A Join Code on screen
+## A Join Code or Password Link on screen
 
-Invite and Add device issue in two steps
+Invite, Add device and Issue Password Link issue in two steps
 ([`IssueDialog`](../../web/src/pages/device/IssueDialog.tsx)): the first
-takes the new User's name and the shared Spaces to make them a Member of,
-or the device's optional name; issuing never asks. The second shows the
-Join Code once ([`JoinCodeLine`](../../web/src/pages/device/IssueDialog.tsx)),
-in the shell's [line shown once](web-shell.md#shown-once): the `koko join
-koko_...` line, Copy, and the time left of its 15 minutes, counted on the
-browser's clock from when the line showed. Valid for, and Invite's choice
-of a Password Link, come with #116. The focus moves to Done, since the
-button that issued goes with the first step.
+takes the new User's name, how they will use koko and the shared Spaces to
+make them a Member of, or the device's optional name, and each takes
+**Valid for** ([`ValidForChoice`](../../web/src/pages/device/IssueDialog.tsx)):
+15 minutes, 1 hour, 1 day or 7 days, as segments, starting at the koko
+server's own 15 minutes (#108, ADR 0044), which a request leaves out;
+another carries `valid_for` in seconds. Issuing never asks. The second shows the
+Join Code ([`JoinCodeLine`](../../web/src/pages/device/IssueDialog.tsx)) or
+the Password Link ([`PasswordLinkLine`](../../web/src/pages/device/IssueDialog.tsx))
+once, in the shell's [line shown once](web-shell.md#shown-once): the
+`koko join koko_...` line or the link, Copy, and the time left of the
+validity chosen, counted on the browser's clock from when the line
+showed, counting the validity the line was issued for. The focus moves to
+Done, since the button that issued goes with the first step.
 
-Invite calls `user.invite`, then `space.member.add` once per Space chosen.
-A membership call that fails leaves the Invite made, so the second step
-still shows the Join Code, which cannot be shown again, and names each Space
-the User was not added to, with why, and that the memberships can be added
-in the User's panel.
+Invite's **How they will use koko** is two radio cards: In a terminal, a
+Join Code, and In a browser, a Password Link (`web`), disabled with the
+reason while `server.show` answers no Web URL
+([`useWebURL`](../../web/src/pages/signin/webURL.ts)).
+It calls `user.invite`, then `space.member.add` once per Space chosen. A
+membership call that fails leaves the Invite made, so the second step
+still shows the code or link, which cannot be shown again, and names each
+Space the User was not added to, with why, and that the memberships can be
+added in the User's panel.
 
-The code lives only in the dialog's `useShownOnce`: never in the URL or the
-browser's storage. Closing the dialog or leaving the page within the web UI
-loses it; the browser leaving the page (`pagehide`) forgets it, and the
-second step then says it is no longer shown; once its time ran out, the
-second step says it expired. Either way it says to issue a new one with Add
-device.
+The code or link lives only in the dialog's `useShownOnce`: never in the
+URL or the browser's storage. Closing the dialog or leaving the page
+within the web UI loses it; the browser leaving the page (`pagehide`)
+forgets it, and the second step then says it is no longer shown; once its
+time ran out, the second step says it expired. Either way it says how to
+issue a new one: Add device, or Issue Password Link.
 
 ## Verifying
 

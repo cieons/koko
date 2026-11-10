@@ -1,5 +1,6 @@
 // The signin area's messages: Sign in, Set a Password, the Password and
-// Browser Sign-ins on Account, Sign out, and its API error codes.
+// Browser Sign-ins on Account and in a person's panel, Password Links,
+// Sign out, and its API error codes.
 export default {
   "signin.title": "Sign in",
   "signin.lead": "With the User name and Password of a User of this koko server.",
@@ -55,7 +56,27 @@ export default {
   "signin.revoke.title": "Revoke the Sign-in from {client}",
   "signin.revoke.consequence": "That browser is signed out at once and must sign in again with the Password.",
   "signin.revoke.consequenceHere": "This is the Sign-in of this browser. Once it is revoked, this browser is signed out.",
+  "signin.revoke.consequenceOther": "{name} is signed out of that browser at once and must sign in again with their Password.",
   "signin.revokedDone": "The Sign-in from {client} is revoked.",
+  "signin.person.setOn": "A Password was set on {date}.",
+  "signin.person.none": "{name} has no Password and cannot sign in from a browser.",
+  "signin.link.issue": "Issue Password Link",
+  "signin.link.title": "Password Link for {name}",
+  "signin.link.lead": "The link lets {name} set a Password in a browser, once. An earlier link that was not used stops working.",
+  "signin.link.ready": "The Password Link is ready",
+  "signin.link.label": "Password Link",
+  "signin.link.intro": "Send it to {name}. Opened in a browser, it lets them set a Password, once.",
+  "signin.link.expired": "This Password Link has expired. Issue a new one with Issue Password Link.",
+  "signin.link.forgotten": "This Password Link is no longer shown. Issue a new one with Issue Password Link.",
+  "signin.remove": "Remove Password",
+  "signin.remove.title": "Remove the Password of {name}",
+  "signin.remove.consequence":
+    "The Sign-ins of {name} end, and an unused Password Link stops working. {name} and their devices stay.",
+  "signin.remove.consequenceHere":
+    "The Sign-ins of {name} end, this browser's among them, so this browser is signed out; an unused Password Link stops working. {name} and their devices stay.",
+  "signin.remove.done": "The Password of {name} is removed.",
+  "signin.webURLUnset":
+    "A Password Link names the Web URL, which is not set. Set it with koko server set web_url= on the koko server's machine.",
   "error.web_url_unset":
     "A Password Link requires the Web URL, which is not set. The Owner sets it with koko server set web_url= on the koko server's machine.",
   "error.invalid_password":

@@ -469,7 +469,7 @@ query) and **a Space's panel** (`/access/spaces/<name>`, which
 | Remove a Space, asking first | `space.remove` | the Owner, on a shared Space |
 | Make a User a Member: a cell, or Add a Member chosen among the Users who are not one | `space.member.add` (and `user.list`) | the Owner, on a shared Space |
 | Take a Member out: a cell, or Take out | `space.member.remove` | the Owner, on a shared Space |
-| Invite a User, to the Spaces chosen, their Join Code shown once, with Copy and its countdown | `user.invite`, then `space.member.add` | the Owner |
+| Invite a User, to the Spaces chosen, in a terminal or in a browser, valid for the time chosen, their Join Code or Password Link shown once, with Copy and its countdown | `user.invite` (and `server.show` for the Web URL), then `space.member.add` | the Owner |
 
 **A person's panel** (`/access/people/<name>`, the Owner alone):
 
@@ -477,8 +477,12 @@ query) and **a Space's panel** (`/access/spaces/<name>`, which
 | --- | --- | --- |
 | See a User's role, Spaces, Personal Space and devices, the Revoked ones when asked for | `user.list`, `space.show`, `device.list` | the Owner |
 | Make them a Member of a shared Space, or take them out, by its switch | `space.member.add`, `space.member.remove` | the Owner |
-| Add a device for them, with an optional name, its Join Code shown once | `device.add` | the Owner, for a User not Removed |
+| Add a device for them, with an optional name, valid for the time chosen, its Join Code shown once | `device.add` | the Owner, for a User not Removed |
 | Revoke a live Device Session of theirs, asking first; the Owner's own last only once its name is typed, with `last` | `device.revoke` | the Owner |
+| See when their Password was set, or that they have none | `user.list` | the Owner |
+| Issue a Password Link for them, valid for the time chosen, shown once with Copy and its countdown; disabled, saying why, without a Web URL | `password.link` (and `server.show`) | the Owner, for a User not Removed |
+| Remove their Password, asking first | `password.remove` | the Owner, for a User with one |
+| List their Browser Sign-ins, the ended ones when asked for, and revoke a live one, asking first | `signin.list`, `signin.revoke` | the Owner |
 | Remove the User, asking first, then say whether they were deleted or Removed | `user.remove` | the Owner, on any User but the Owner who is not Removed |
 
 **Account** (`/account`, which `/devices` goes to; `all=1` in the query):
@@ -488,7 +492,7 @@ query) and **a Space's panel** (`/access/spaces/<name>`, which
 | See who the web UI acts as and how this browser got in | `user.current` | anyone |
 | Choose the language and Light, Dark or System, as the top bar does | none | anyone |
 | List one's own Device Sessions, the Revoked ones when asked for, this one marked | `device.list` | anyone |
-| Add a device, with an optional name, its Join Code shown once, with Copy and its countdown | `device.add` | anyone for themselves |
+| Add a device, with an optional name, valid for the time chosen, its Join Code shown once, with Copy and its countdown | `device.add` | anyone for themselves |
 | Revoke a live Device Session, asking first; the Owner's own last only once its name is typed, with `last` | `device.revoke` | anyone for their own |
 | See what one's Personal Space holds | `space.show` | anyone |
 | Change one's Password: the current one and the new one twice, which keeps this Sign-in and ends the others | `/auth/password` | a browser signed in with a Password |

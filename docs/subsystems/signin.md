@@ -215,6 +215,20 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-set-a-passw
   struck through, with when and why. Revoke asks first and says what
   follows; revoking this browser's own goes to Sign in. A refused revoke
   reads the list again.
+- **A person's panel**, the Owner's alone
+  ([`PersonPassword`](../../web/src/pages/signin/PersonPassword.tsx)):
+  when the User's Password was set (`user.list`'s `password_set_at`), or
+  that they have none; **Issue Password Link** (`password.link`), valid
+  for the time chosen and shown once, disabled, saying why, while
+  `server.show` answers no Web URL ([`useWebURL`](../../web/src/pages/signin/webURL.ts)),
+  its lead saying that an earlier unused link, an Invite's included, stops
+  working; and **Remove Password** (`password.remove`), asking first, and
+  saying, for the Owner's own from a browser signed in with it, that this
+  browser is signed out too; after it the panel and Access show none, the
+  Sign-ins are read again, and the section's heading takes the focus. Their
+  Browser Sign-ins follow, as on Account, Revoke saying that User is
+  signed out of that browser. Invite's In a browser issues a Password
+  Link the same way ([the Access and Account pages](access-pages.md#a-join-code-or-password-link-on-screen)).
 - **Sign out**, by Account's title and in the account panel for a browser
   signed in with a Password, posts to `/auth/signout` and goes to Sign in,
   replacing the history entry ([`useSignOut`](../../web/src/shell/signOut.ts)).
@@ -304,3 +318,13 @@ or an `/auth/` body.
   own going to Sign in; a refused revoke reading the list again; the ended
   Sign-ins with why; none; Sign out on Account and in the account panel,
   its failure in the panel.
+- [`person.test.tsx`](../../web/src/pages/signin/person.test.tsx): a
+  person's panel with its Password, Issue Password Link and Remove
+  Password, and their Sign-ins; a User without a Password; Issue Password
+  Link for 7 days, shown once with Copy and its time left, gone once
+  closed, and for 15 minutes with `valid_for` left out; no Web URL;
+  Remove Password asking first, then none in the panel and on Access with
+  the focus on the heading, the Owner's own from a browser signed in with
+  it, and refused; another User's Sign-in revoked; Invite in a browser for
+  7 days, and in a terminal for 1 day; no Web URL for Invite; Add device
+  for 1 hour.

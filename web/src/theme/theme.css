@@ -175,7 +175,8 @@
 @layer components {
   /* HeroUI's parts, adjusted to Obsidian. */
   .description,
-  .field-error {
+  .field-error,
+  .radio [slot="description"] {
     font-size: 0.8125rem;
     line-height: 1.45;
   }

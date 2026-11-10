@@ -1,7 +1,8 @@
-import { Checkbox, CheckboxGroup, Description, Label } from "@heroui/react";
-import { useState } from "react";
+import { Checkbox, CheckboxGroup, Description, Label, Radio, RadioGroup } from "@heroui/react";
+import { type ReactNode, useState } from "react";
 
 import type { JoinCode } from "../../api/device";
+import type { PasswordLink } from "../../api/signin";
 import { type Space, SpaceMemberAdd } from "../../api/space";
 import { UserInvite } from "../../api/user";
 import { call } from "../../client";
@@ -10,22 +11,45 @@ import { errorMessage, useLanguage, useT } from "../../shell/i18n";
 import { useShownOnce } from "../../shell/shownOnce";
 import { Field } from "../../ui/fields";
 import { AlertLine } from "../../ui/states";
-import { IssueDialog, JoinCodeLine } from "../device/IssueDialog";
+import {
+  defaultValidFor,
+  IssueDialog,
+  JoinCodeLine,
+  PasswordLinkLine,
+  type ValidFor,
+  ValidForChoice,
+  validForRequest,
+} from "../device/IssueDialog";
+import { useWebURL } from "../signin/webURL";
 
-/** Invited is who Invite invited, and the Spaces it did not make them a Member of, with why. */
+/** Method is how the invited person will use koko: a Join Code for the CLI, or a Password Link for a browser. */
+type Method = "terminal" | "browser";
+
+/** Issued is what an Invite issued, shown once: a Join Code or a Password Link. */
+type Issued = { joinCode: JoinCode } | { link: PasswordLink };
+
+/**
+ * Invited is who Invite invited, as it was sent, and the Spaces it did not
+ * make them a Member of, with why.
+ */
 interface Invited {
   user: string;
+  method: Method;
+  validFor: ValidFor;
   notAdded: string[];
   reason?: unknown;
 }
 
 /**
  * Invite invites a User in two steps (docs/web-design.md, "Invite"): their
- * name and the shared Spaces to make them a Member of; then their Join Code,
- * shown once. It calls user.invite, then space.member.add once per Space
- * chosen. A membership call that fails leaves the Invite made, so the
- * second step still shows the Join Code, which cannot be shown again, and
- * names each Space they were not added to. It never asks first.
+ * name; how they will use koko, in a terminal (a Join Code) or in a
+ * browser (a Password Link, which needs the Web URL, from server.show, and
+ * is disabled with the reason while it is unset); Valid for; and the shared
+ * Spaces to make them a Member of; then the code or link, shown once. It
+ * calls user.invite, then space.member.add once per Space chosen. A
+ * membership call that fails leaves the Invite made, so the second step
+ * still shows the code or link, which cannot be shown again, and names each
+ * Space they were not added to. It never asks first.
  */
 export function Invite({
   shared,
@@ -39,16 +63,27 @@ export function Invite({
   const t = useT();
   const language = useLanguage();
   const [name, setName] = useState("");
+  const [method, setMethod] = useState<Method>("terminal");
+  const [validFor, setValidFor] = useState<ValidFor>(defaultValidFor);
   const [spaces, setSpaces] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
   const [invited, setInvited] = useState<Invited>();
-  // The Join Code alone is shown once; once the browser forgets it, the second step says so.
-  const [joinCode, setJoinCode] = useShownOnce<JoinCode>();
+  // The code or link alone is shown once; once the browser forgets it, the second step says so.
+  const [issued, setIssued] = useShownOnce<Issued>();
   const invite = useWrite(UserInvite);
+  const webURL = useWebURL();
 
   const submit = async () => {
-    const answer = await invite.submit({ name });
-    if (answer?.join_code === undefined) {
+    const sent = { method, validFor };
+    const answer = await invite.submit({
+      name,
+      ...validForRequest(validFor),
+      ...(method === "browser" ? { web: true } : {}),
+    });
+    const shown: Issued | undefined = answer?.join_code
+      ? { joinCode: answer.join_code }
+      : answer?.password_link && { link: answer.password_link };
+    if (answer === undefined || shown === undefined) {
       return;
     }
     setAdding(true);
@@ -63,8 +98,8 @@ export function Invite({
       }
     }
     setAdding(false);
-    setJoinCode(answer.join_code);
-    setInvited({ user: answer.user.name, notAdded, reason });
+    setIssued(shown);
+    setInvited({ user: answer.user.name, ...sent, notAdded, reason });
     onInvited();
   };
 
@@ -88,17 +123,31 @@ export function Invite({
                 })}
               </AlertLine>
             )}
-            {joinCode ? (
-              <JoinCodeLine joinCode={joinCode} expired={t("user.invite.expired", { name: invited.user })} />
+            {issued === undefined ? (
+              <p>
+                {t(invited.method === "browser" ? "user.invite.linkForgotten" : "user.invite.forgotten", {
+                  name: invited.user,
+                })}
+              </p>
+            ) : "joinCode" in issued ? (
+              <JoinCodeLine
+                joinCode={issued.joinCode}
+                validFor={invited.validFor}
+                expired={t("user.invite.expired", { name: invited.user })}
+              />
             ) : (
-              <p>{t("user.invite.forgotten", { name: invited.user })}</p>
+              <PasswordLinkLine
+                link={issued.link}
+                validFor={invited.validFor}
+                expired={t("user.invite.linkExpired", { name: invited.user })}
+              />
             )}
           </>
         )
       }
       onSubmit={() => void submit()}
       onClose={() => {
-        setJoinCode(undefined);
+        setIssued(undefined);
         onClose();
       }}
     >
@@ -111,6 +160,19 @@ export function Invite({
         autoFocus
         validate={(v) => (v === "" ? t("user.invite.nameRequired") : undefined)}
       />
+      <RadioGroup value={method} onChange={(m) => setMethod(m as Method)}>
+        <Label>{t("user.invite.method")}</Label>
+        <div className="mt-1 grid gap-3 sm:grid-cols-2">
+          <MethodCard value="terminal" label={t("user.invite.terminal")} hint={t("user.invite.terminalHint")} />
+          <MethodCard
+            value="browser"
+            label={t("user.invite.browser")}
+            isDisabled={!webURL.set}
+            hint={webURL.reason?.(t) ?? t("user.invite.browserHint")}
+          />
+        </div>
+      </RadioGroup>
+      <ValidForChoice value={validFor} onChange={setValidFor} />
       {shared.length > 0 && (
         <CheckboxGroup value={spaces} onChange={setSpaces}>
           <Label>{t("user.invite.spaces")}</Label>
@@ -130,5 +192,34 @@ export function Invite({
         </CheckboxGroup>
       )}
     </IssueDialog>
+  );
+}
+
+/** MethodCard is one way an invited person will use koko, as a radio card with what it issues under it. */
+function MethodCard({
+  value,
+  label,
+  hint,
+  isDisabled = false,
+}: {
+  value: Method;
+  label: string;
+  hint: ReactNode;
+  isDisabled?: boolean;
+}) {
+  return (
+    <Radio
+      value={value}
+      isDisabled={isDisabled}
+      className="rounded-2xl border border-border p-4 data-[selected=true]:border-accent data-[selected=true]:bg-accent-soft"
+    >
+      <Radio.Content>
+        <Radio.Control>
+          <Radio.Indicator />
+        </Radio.Control>
+        {label}
+      </Radio.Content>
+      <Description>{hint}</Description>
+    </Radio>
   );
 }

@@ -2,19 +2,51 @@ import { Button, Modal } from "@heroui/react";
 import { type ReactNode, useEffect, useRef } from "react";
 
 import type { JoinCode } from "../../api/device";
+import type { PasswordLink } from "../../api/signin";
 import { useT } from "../../shell/i18n";
+import { Segments } from "../../ui/fields";
 import { Form } from "../../ui/Form";
 import { ShownOnceLine } from "../../ui/ShownOnceLine";
 import { Refusal } from "../../ui/states";
 
 /**
- * joinCodeValidFor is how long a Join Code the web UI issues stays valid, in
- * seconds: the koko server's 15 minutes, since the web UI asks for no other
- * (Valid for comes with #116).
+ * validFors are the choices of Valid for, in seconds: 15 minutes, 1 hour, 1
+ * day and 7 days, within the koko server's 60 to 604,800 (api.Validity).
  */
-export const joinCodeValidFor = 15 * 60;
+export const validFors = [900, 3600, 86_400, 604_800] as const;
 
-/** IssueDialogProps are what a dialog that issues a Join Code asks and shows. */
+/** ValidFor is one of the choices of Valid for, in seconds. */
+export type ValidFor = (typeof validFors)[number];
+
+/**
+ * defaultValidFor is the koko server's own validity, 15 minutes (#108, ADR
+ * 0044), which every Valid for starts at and a request leaves out.
+ */
+export const defaultValidFor: ValidFor = 900;
+
+/**
+ * validForRequest is the valid_for of a request that issues a Join Code or
+ * Password Link: left out for the koko server's own 15 minutes, so such a
+ * request is the one the web UI sent before it offered a choice.
+ */
+export function validForRequest(validFor: ValidFor): { valid_for?: number } {
+  return validFor === defaultValidFor ? {} : { valid_for: validFor };
+}
+
+/** ValidForChoice is Valid for, a choice among its four, all in view (docs/web-design.md, "Invite"). */
+export function ValidForChoice({ value, onChange }: { value: ValidFor; onChange: (value: ValidFor) => void }) {
+  const t = useT();
+  return (
+    <Segments
+      label={t("device.validFor")}
+      value={String(value)}
+      onChange={(id) => onChange(Number(id) as ValidFor)}
+      options={validFors.map((v) => ({ id: String(v), label: t(`device.validFor.${v}`) }))}
+    />
+  );
+}
+
+/** IssueDialogProps are what a dialog that issues a Join Code or a Password Link asks and shows. */
 export interface IssueDialogProps {
   /** title names the first step, such as "Invite" or "Add device". */
   title: string;
@@ -38,8 +70,8 @@ export interface IssueDialogProps {
 }
 
 /**
- * IssueDialog issues a Join Code in two steps (docs/web-design.md,
- * "Invite"): the first takes what it is for and issues it, never asking
+ * IssueDialog issues a Join Code or a Password Link in two steps
+ * (docs/web-design.md, "Invite"): the first takes what it is for and issues it, never asking
  * first; the second shows what was issued, once, with Done, which takes the
  * focus, since the button that issued goes with the first step. The page
  * keeps what was issued in useShownOnce and forgets it as the dialog closes.
@@ -103,17 +135,51 @@ export function IssueDialog(props: IssueDialogProps) {
 
 /**
  * JoinCodeLine shows a Join Code just issued, once: the koko join line to
- * run on the new device, its time left and Copy (ShownOnceLine); expired
- * says what to do once its time has run out.
+ * run on the new device, its time left of validFor and Copy
+ * (ShownOnceLine); expired says what to do once its time has run out.
  */
-export function JoinCodeLine({ joinCode, expired }: { joinCode: JoinCode; expired: string }) {
+export function JoinCodeLine({
+  joinCode,
+  validFor,
+  expired,
+}: {
+  joinCode: JoinCode;
+  validFor: ValidFor;
+  expired: string;
+}) {
   const t = useT();
   return (
     <ShownOnceLine
       label={t("device.joinCode.label")}
       intro={t("device.joinCode.intro", { device: joinCode.device, user: joinCode.user })}
       line={`koko join ${joinCode.code}`}
-      validFor={joinCodeValidFor}
+      validFor={validFor}
+      expired={expired}
+    />
+  );
+}
+
+/**
+ * PasswordLinkLine shows a Password Link just issued, once: the link to send
+ * to its User, its time left of validFor and Copy (ShownOnceLine); expired
+ * says what to do once its time has run out.
+ */
+export function PasswordLinkLine({
+  link,
+  validFor,
+  expired,
+}: {
+  link: PasswordLink;
+  validFor: ValidFor;
+  expired: string;
+}) {
+  const t = useT();
+  return (
+    <ShownOnceLine
+      label={t("signin.link.label")}
+      intro={t("signin.link.intro", { name: link.user })}
+      line={link.link}
+      validFor={validFor}
       expired={expired}
     />
   );

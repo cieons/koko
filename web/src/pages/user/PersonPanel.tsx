@@ -12,6 +12,8 @@ import { notify } from "../../ui/notify";
 import { SidePanel } from "../../ui/SidePanel";
 import { AlertLine, Loaded, Refusal } from "../../ui/states";
 import { Devices } from "../device/Devices";
+import { PersonPassword } from "../signin/PersonPassword";
+import { SignIns } from "../signin/SignIns";
 import type { Membership } from "../space/membership";
 import { spaceHostsPath } from "../space/path";
 
@@ -32,8 +34,10 @@ export interface PersonPanelProps {
  * (docs/web-design.md, "Access"): their role and the date they were added;
  * the shared Spaces as switches of their membership, and their Personal
  * Space's counts; their devices (Devices), with Add device for them and
- * Revoke; and Remove User, which asks first and then says whether the User
- * was deleted or Removed. A Removed User's panel says so and offers nothing.
+ * Revoke; their Password, with Issue Password Link and Remove Password, and
+ * their Browser Sign-ins with Revoke; and Remove User, which asks first and
+ * then says whether the User was deleted or Removed. A Removed User's panel
+ * says so and offers nothing.
  * It finds the User in user.list with the Removed ones, so a bookmark of a
  * Removed User's panel opens too.
  */
@@ -60,6 +64,10 @@ export function PersonPanel({ name, shared, membership, onChanged, onClose }: Pe
               user={user}
               shared={shared}
               membership={membership}
+              onPassword={() => {
+                users.reload();
+                onChanged();
+              }}
               onRemoved={() => {
                 onChanged();
                 onClose();
@@ -77,17 +85,22 @@ function Person({
   user,
   shared,
   membership,
+  onPassword,
   onRemoved,
 }: {
   user: User;
   shared: readonly Space[] | undefined;
   membership: Membership;
+  /** onPassword hears the User's Password removed, so the panel and Access show it. */
+  onPassword: () => void;
   onRemoved: () => void;
 }) {
   const t = useT();
   const owner = user.role === "owner";
   const [all, setAll] = useState(false);
   const [removing, setRemoving] = useState(false);
+  // Removing the Password ends the User's Sign-ins, which are read again then.
+  const [passwordChanges, setPasswordChanges] = useState(0);
   return (
     <>
       <section className="flex flex-col gap-3">
@@ -121,6 +134,14 @@ function Person({
         <PersonalSpace name={user.name} />
       </section>
       <Devices user={user.name} owner={owner} all={all} onAll={setAll} level={3} />
+      <PersonPassword
+        user={user}
+        onChanged={() => {
+          setPasswordChanges((n) => n + 1);
+          onPassword();
+        }}
+      />
+      <SignIns user={user.name} level={3} changes={passwordChanges} />
       {!owner && (
         <section className="mt-2 flex flex-col items-start gap-3 border-t border-line pt-6">
           <p className="t-label max-w-[52ch]">{t("user.remove.lead")}</p>

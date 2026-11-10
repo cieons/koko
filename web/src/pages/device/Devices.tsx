@@ -13,7 +13,14 @@ import { Field } from "../../ui/fields";
 import { useFocusFallback } from "../../ui/focus";
 import { notify } from "../../ui/notify";
 import { Loaded } from "../../ui/states";
-import { IssueDialog, JoinCodeLine } from "./IssueDialog";
+import {
+  defaultValidFor,
+  IssueDialog,
+  JoinCodeLine,
+  type ValidFor,
+  ValidForChoice,
+  validForRequest,
+} from "./IssueDialog";
 
 /** DevicesProps are whose devices a list shows, and where. */
 export interface DevicesProps {
@@ -203,16 +210,18 @@ function RevokeDevice({
 
 /**
  * AddDevice issues a Join Code for a new device of user, with an optional
- * name, and shows it once; it never asks first. The caller's own device is
- * asked for with no user, as device add does without --user; another
- * User's, the Owner's alone, names them.
+ * name, valid for the time chosen, and shows it once; it never asks first.
+ * The caller's own device is asked for with no user, as device add does
+ * without --user; another User's, the Owner's alone, names them.
  */
 function AddDevice({ user, onAdded, onClose }: { user: string; onAdded: () => void; onClose: () => void }) {
   const t = useT();
   const caller = useCaller();
   const own = user === caller.user.name;
   const [device, setDevice] = useState("");
-  const [issued, setIssued] = useShownOnce<JoinCode>();
+  const [validFor, setValidFor] = useState<ValidFor>(defaultValidFor);
+  // The code shown once, with the validity it was issued for.
+  const [issued, setIssued] = useShownOnce<{ joinCode: JoinCode; validFor: ValidFor }>();
   // done keeps the second step once the code is issued, so a code the browser forgot is not offered again.
   const [done, setDone] = useState(false);
   const add = useWrite(DeviceAdd);
@@ -226,17 +235,21 @@ function AddDevice({ user, onAdded, onClose }: { user: string; onAdded: () => vo
       doneTitle={t("device.joinCode.title")}
       issued={
         !done ? undefined : issued ? (
-          <JoinCodeLine joinCode={issued} expired={t("device.joinCode.expired")} />
+          <JoinCodeLine
+            joinCode={issued.joinCode}
+            validFor={issued.validFor}
+            expired={t("device.joinCode.expired")}
+          />
         ) : (
           <p>{t("device.joinCode.forgotten")}</p>
         )
       }
       onSubmit={() =>
         void add
-          .submit({ ...(device === "" ? {} : { device }), ...(own ? {} : { user }) })
+          .submit({ ...(device === "" ? {} : { device }), ...(own ? {} : { user }), ...validForRequest(validFor) })
           .then((added) => {
             if (added) {
-              setIssued(added.join_code);
+              setIssued({ joinCode: added.join_code, validFor });
               setDone(true);
               onAdded();
             }
@@ -255,6 +268,7 @@ function AddDevice({ user, onAdded, onClose }: { user: string; onAdded: () => vo
         code
         autoFocus
       />
+      <ValidForChoice value={validFor} onChange={setValidFor} />
     </IssueDialog>
   );
 }

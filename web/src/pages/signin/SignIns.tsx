@@ -33,7 +33,7 @@ export interface SignInsProps {
  * ended ones when asked for, this browser's marked "This browser"; and
  * revokes a live one once the caller confirms (signin.revoke). Revoking
  * this browser's own signs it out, to Sign in. Account shows the caller's
- * own.
+ * own; a person's panel, the Owner's alone, shows that person's.
  */
 export function SignIns({ user, level, changes = 0, className = "" }: SignInsProps) {
   const t = useT();
@@ -148,10 +148,17 @@ function endReason(t: Translate, reason: string | undefined): string {
 
 /**
  * revokeConsequence states what revoking signin does: this browser's own
- * signs it out; another signs that browser out.
+ * signs it out; another of the caller's signs that browser out; another
+ * User's, the Owner's to revoke, signs that User out of that browser.
  */
 function revokeConsequence(t: Translate, signin: SignIn, caller: Caller): string {
-  return t(signin.id === caller.signin?.id ? "signin.revoke.consequenceHere" : "signin.revoke.consequence");
+  if (signin.id === caller.signin?.id) {
+    return t("signin.revoke.consequenceHere");
+  }
+  if (signin.user !== caller.user.name) {
+    return t("signin.revoke.consequenceOther", { name: signin.user });
+  }
+  return t("signin.revoke.consequence");
 }
 
 /**
