@@ -1,7 +1,37 @@
 import type en from "../en/signin";
 
-// The signin area's messages: its API error codes.
+// The signin area's messages: Sign in, Set a Password, and its API error
+// codes.
 export default {
+  "signin.title": "登录",
+  "signin.lead": "请使用本 koko 服务器上用户的用户名与密码。",
+  "signin.name": "用户名",
+  "signin.password": "密码",
+  "signin.nameRequired": "请输入用户名。",
+  "signin.passwordRequired": "请输入密码。",
+  "signin.submit": "登录",
+  "signin.lost": "密码遗失时，由所有者签发新的密码链接进行重置。",
+  "signin.tooMany.one": "失败次数过多，请于 {count} 分钟后再次登录。",
+  "signin.tooMany.other": "失败次数过多，请于 {count} 分钟后再次登录。",
+  "signin.set.title": "设置密码",
+  "signin.set.lead": "用户：{name}，即登录时使用的用户名。该密码仅用于登录 Web 界面，不会传至任何主机。",
+  "signin.set.submit": "设置密码并登录",
+  "signin.password.new": "新密码",
+  "signin.password.again": "再次输入新密码",
+  "signin.password.rule": "15 至 128 个字符，字符种类不限。较长的短语比符号组合更便于记忆。",
+  "signin.password.count.one": "已输入 {count} 个字符，至少需 15 个。",
+  "signin.password.count.other": "已输入 {count} 个字符，至少需 15 个。",
+  "signin.password.long": "长度符合要求。",
+  "signin.password.over": "已输入 {count} 个字符，超出 128 个的上限。",
+  "signin.password.tooShort": "密码至少须为 15 个字符。",
+  "signin.password.tooLong": "密码不得超过 128 个字符。",
+  "signin.password.notName": "密码不得与用户名相同。",
+  "signin.password.mismatch": "两次输入的密码不一致。",
+  "signin.linkUsed.title": "此密码链接已被使用",
+  "signin.linkUsed.lead": "密码链接仅可使用一次。如不知晓密码，可请所有者签发新的链接。",
+  "signin.linkInvalid.title": "此密码链接已失效",
+  "signin.linkInvalid.lead": "链接已过期，或已被新的链接取代。可请所有者签发新的密码链接。",
+  "signin.toSignIn": "前往登录",
   "error.web_url_unset": "签发密码链接需要 Web URL，但尚未设置。所有者可在 koko 服务器所在机器上执行 koko server set web_url= 进行设置。",
   "error.invalid_password": "密码长度须为 15 至 128 个字符，且不得与用户名相同。字符种类不限。",
   "error.wrong_password": "用户名或密码不正确。",

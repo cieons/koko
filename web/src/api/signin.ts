@@ -1,6 +1,7 @@
 // Code generated from internal/shared/api/signin.go by make generate; DO NOT EDIT.
 
 import type { Op } from "./api";
+import type { User } from "./user";
 
 /**
  * PasswordLink is a Password Link just issued, as the API returns it once:
@@ -202,3 +203,94 @@ export const CodeUnknownSignIn = "unknown_signin";
 
 /** CodeNoPassword: the User has no Password to remove. */
 export const CodeNoPassword = "no_password";
+
+/**
+ * AuthEndpoint is one of the web front's own endpoints under /auth/: a POST
+ * of a Req's JSON, answered by a Resp's, or by the error object. The web
+ * UI's generated types carry each one with its types, as they carry an Op.
+ */
+export interface AuthEndpoint<Req, Resp> {
+  /** The endpoint is a POST to this path, such as /auth/signin. */
+  readonly path: string;
+  /** Never set: it carries the request and response types to a client. */
+  readonly types?: { request: Req; response: Resp };
+}
+
+/**
+ * AuthSignIn signs in with a User name and Password, setting the
+ * Sign-in cookie. A wrong name or Password is refused with
+ * CodeWrongPassword, and an address or name past its limit with
+ * CodeTooManyAttempts.
+ */
+export const AuthSignIn: AuthEndpoint<AuthSignInRequest, AuthSignInResponse> = {
+  path: "/auth/signin",
+};
+
+/**
+ * AuthLink answers whom an unspent Password Link is for, spending
+ * nothing. A link used already is refused with CodeLinkUsed, and one
+ * that expired, was voided or was never issued with CodeLinkInvalid.
+ */
+export const AuthLink: AuthEndpoint<AuthLinkRequest, AuthLinkResponse> = {
+  path: "/auth/link",
+};
+
+/**
+ * AuthPassword sets the User's Password: through a Password Link,
+ * spending it and signing this browser in, or by the current Password,
+ * keeping this Sign-in and ending the User's others. A Password that
+ * breaks the rule is refused with CodeInvalidPassword, and a wrong
+ * current one with CodeWrongPassword.
+ */
+export const AuthPassword: AuthEndpoint<AuthPasswordRequest, AuthSignInResponse> = {
+  path: "/auth/password",
+};
+
+/** AuthSignOut ends this browser's Sign-in and clears its cookie. */
+export const AuthSignOut: AuthEndpoint<AuthSignOutRequest, AuthSignOutResponse> = {
+  path: "/auth/signout",
+};
+
+/** AuthSignInRequest signs in as the User Name names. */
+export interface AuthSignInRequest {
+  name: string;
+  password: string;
+}
+
+/** AuthSignInResponse is the User a browser is signed in as. */
+export interface AuthSignInResponse {
+  user: User;
+}
+
+/**
+ * AuthLinkRequest names a Password Link by its secret, the part of the
+ * link after #.
+ */
+export interface AuthLinkRequest {
+  link: string;
+}
+
+/** AuthLinkResponse is whom an unspent Password Link is for. */
+export interface AuthLinkResponse {
+  /** User is the name the User signs in with. */
+  user: string;
+  expires_at: string;
+}
+
+/**
+ * AuthPasswordRequest sets the User's Password: through a Password Link,
+ * given Link, which signs this browser in; or, given Current with the
+ * Sign-in cookie, by the current Password, which keeps this Sign-in and
+ * ends the User's others.
+ */
+export interface AuthPasswordRequest {
+  link?: string;
+  current?: string;
+  password: string;
+}
+
+/** AuthSignOutRequest signs out the request's Sign-in. */
+export type AuthSignOutRequest = Record<string, never>;
+
+/** AuthSignOutResponse answers a sign-out. */
+export type AuthSignOutResponse = Record<string, never>;

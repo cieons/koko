@@ -2,11 +2,8 @@ import { Button, Skeleton } from "@heroui/react";
 import { CircleAlert } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 
-import { CodeSignInRequired } from "../api/web";
-import { ApiError } from "../client";
 import type { Read } from "../shell/data";
 import { errorMessage, useT } from "../shell/i18n";
-import { navigate, signInPage, signInPath, useLocation } from "../shell/router";
 import { Sheet } from "./Page";
 
 // The states every screen has (docs/web-design.md, "States every screen
@@ -45,23 +42,11 @@ export function Loading() {
 
 /**
  * LoadFailed says in its panel why a read failed, in the koko server's
- * message, with Try again. A read refused signin_required, from a browser
- * not signed in on the web listener, goes to Sign in instead, which comes
- * back to this page after.
+ * message, with Try again. A read refused signin_required never stays to
+ * show it: the shell takes the browser to Sign in as the answer comes.
  */
 export function LoadFailed({ error, retry }: { error: unknown; retry: () => void }) {
   const t = useT();
-  const { pathname, search } = useLocation();
-  // Sign in is the one page that never goes to itself.
-  const signin = error instanceof ApiError && error.code === CodeSignInRequired && pathname !== signInPage;
-  useEffect(() => {
-    if (signin) {
-      navigate(signInPath(pathname + search), { replace: true });
-    }
-  }, [signin, pathname, search]);
-  if (signin) {
-    return null;
-  }
   return (
     <div className="flex flex-col items-start gap-3 px-6 py-5">
       <Refusal error={error} />

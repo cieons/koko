@@ -1,5 +1,35 @@
-// The signin area's messages: its API error codes.
+// The signin area's messages: Sign in, Set a Password, and its API error
+// codes.
 export default {
+  "signin.title": "Sign in",
+  "signin.lead": "With the User name and Password of a User of this koko server.",
+  "signin.name": "User name",
+  "signin.password": "Password",
+  "signin.nameRequired": "Enter the User name.",
+  "signin.passwordRequired": "Enter the Password.",
+  "signin.submit": "Sign in",
+  "signin.lost": "A lost Password is reset by the Owner, who issues a new Password Link.",
+  "signin.tooMany.one": "Too many failed attempts. Signing in is possible again in {count} minute.",
+  "signin.tooMany.other": "Too many failed attempts. Signing in is possible again in {count} minutes.",
+  "signin.set.title": "Set a Password",
+  "signin.set.lead": "For {name}, the User name to sign in with. The Password signs in to the Web UI and never reaches a Host.",
+  "signin.set.submit": "Set Password and sign in",
+  "signin.password.new": "New Password",
+  "signin.password.again": "New Password, again",
+  "signin.password.rule": "15 to 128 characters, any characters allowed. A long phrase is easier to remember than symbols.",
+  "signin.password.count.one": "{count} of at least 15 characters.",
+  "signin.password.count.other": "{count} of at least 15 characters.",
+  "signin.password.long": "Long enough.",
+  "signin.password.over": "{count} characters, more than the 128 allowed.",
+  "signin.password.tooShort": "The Password must be at least 15 characters long.",
+  "signin.password.tooLong": "The Password must be at most 128 characters long.",
+  "signin.password.notName": "The Password must not be the User name.",
+  "signin.password.mismatch": "The two Passwords differ.",
+  "signin.linkUsed.title": "This Password Link was used already",
+  "signin.linkUsed.lead": "A Password Link works once. If the Password is not known, the Owner can issue a new link.",
+  "signin.linkInvalid.title": "This Password Link no longer works",
+  "signin.linkInvalid.lead": "It has expired, or a newer link replaced it. The Owner can issue a new Password Link.",
+  "signin.toSignIn": "Go to Sign in",
   "error.web_url_unset":
     "A Password Link requires the Web URL, which is not set. The Owner sets it with koko server set web_url= on the koko server's machine.",
   "error.invalid_password":

@@ -57,6 +57,7 @@ export default {
   "shell.notice.revoked.description": "此页面已无法执行任何操作。如需在此设备上继续使用 koko，请使用新的加入码重新加入。",
   "shell.error.dropped": "与 koko web 的连接已中断。",
   "shell.error.unexpected": "发生意外错误。",
+  "shell.error.unreachable": "无法连接 koko 服务器，请检查网络连接后重试。",
   "shell.retry": "重试",
   "shell.cancel": "取消",
   "shell.close": "关闭",

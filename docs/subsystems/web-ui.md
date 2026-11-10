@@ -130,9 +130,13 @@ was 237 KB gzipped and the build 0.78 MB on disk.
   (`SpaceAdd`, with its name, path and whether it writes), each registered
   error code as a string constant under its Go name
   (`export const CodeUnknownSpace = "unknown_space";`), and `Op` itself in
-  `api.ts`. A type from another file is imported. An operation or a
-  registered error code that no `var` of package api declares as an `Op` or
-  `Code` literal is refused.
+  `api.ts`. The web front's own `/auth/` endpoints, which are no operations,
+  come as `AuthEndpoint` values in `signin.ts` (`AuthSignIn`, with its path
+  and its request and response types), from the `api.AuthEndpoint`
+  literals `api.AuthEndpoints` lists. A type from another file is imported.
+  An operation, a registered error code or an `/auth/` endpoint that no
+  `var` of package api declares as an `Op`, `Code` or `AuthEndpoint`
+  literal is refused.
 - The generator is test code,
   [`tsgen_test.go`](../../internal/shared/api/tsgen_test.go), so none of it
   ships. The files are committed, and
@@ -156,11 +160,13 @@ was 237 KB gzipped and the build 0.78 MB on disk.
 Vitest and React Testing Library run the pages in jsdom; `make test` runs
 them after the Go tests, under the same temporary HOME. A page test gets
 [`fakeApi()`](../../web/src/test/fakeApi.ts), which stands in for `fetch` until
-the test ends. `api.on(SpaceList, handler)` answers an operation, typed by
-the generated types, and `api.calls` records each request (method, path,
-parsed body and headers); `api.requests(SpaceAdd)` is the bodies of one
-operation's calls. A handler may answer later, with a promise, and
-refuses a call by throwing `refusal(code, status)`; an operation without a
+the test ends. `api.on(SpaceList, handler)` answers an operation, and
+`api.on(AuthSignIn, handler)` an `/auth/` endpoint, typed by the generated
+types, and `api.calls` records each request (method, path, parsed body and
+headers); `api.requests(SpaceAdd)` is the bodies of one operation's calls.
+A handler may answer later, with a promise, and refuses a call by
+throwing `refusal(code, status)`, or `refusal(code, status, retryAfter)`
+for one whose answer carries `Retry-After`; an operation without a
 handler answers
 `unknown_operation`, as the koko server does. `api.drop(n)` fails the next `n`
 requests as a dropped connection does, and `api.drop()` every one, as when

@@ -1,7 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { expect, onTestFinished, test, vi } from "vitest";
 
-import { CodeSignInRequired } from "../api/web";
 import { ApiError } from "../client";
 import { Providers } from "../shell/providers";
 import { expectAccessible } from "../test/axe";
@@ -41,22 +40,6 @@ test("LoadFailed shows the koko server's message, and Try again loads again", as
   fireEvent.click(screen.getByRole("button", { name: "Try again" }));
 
   expect(retry).toHaveBeenCalledOnce();
-});
-
-test("a read refused signin_required goes to Sign in, which comes back to this page", async () => {
-  window.history.replaceState(null, "", "/hosts?q=web");
-  renderIn(<LoadFailed error={new ApiError(CodeSignInRequired, "sign in")} retry={() => {}} />);
-
-  await vi.waitFor(() => expect(window.location.pathname).toBe("/signin"));
-  expect(new URLSearchParams(window.location.search).get("next")).toBe("/hosts?q=web");
-});
-
-test("on Sign in itself, a read refused signin_required stays and says so", () => {
-  window.history.replaceState(null, "", "/signin");
-  renderIn(<LoadFailed error={new ApiError(CodeSignInRequired, "sign in")} retry={() => {}} />);
-
-  expect(window.location.pathname).toBe("/signin");
-  expect(alerts()).toEqual(["Sign in to continue."]);
 });
 
 test("Loaded shows the answer once there is one, the failure without one, and both after a failed reload", () => {

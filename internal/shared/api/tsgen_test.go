@@ -43,16 +43,27 @@ func generateTypeScript(dir string) (map[string]string, error) {
 	for _, c := range api.Codes() {
 		codes[c.Name] = true
 	}
+	// endpoints are the /auth/ endpoints, by their request type's name, which
+	// is each one's own.
+	endpoints := map[string]api.AuthEndpointInfo{}
+	for _, e := range api.AuthEndpoints() {
+		endpoints[e.Request.Name()] = e
+	}
 	structs := map[string]reflect.Type{}
 	for _, o := range ops {
 		collectStructs(o.Request, structs)
 		collectStructs(o.Response, structs)
+	}
+	for _, e := range endpoints {
+		collectStructs(e.Request, structs)
+		collectStructs(e.Response, structs)
 	}
 	collectStructs(reflect.TypeFor[api.ErrorResponse](), structs)
 
 	out := map[string]string{}
 	found := map[string]bool{}
 	foundCodes := map[string]bool{}
+	foundEndpoints := map[string]bool{}
 	for _, f := range src.files {
 		w := &tsWriter{module: f.module, src: src, imports: map[string]map[string]bool{}}
 		for _, d := range f.decls {
@@ -63,6 +74,11 @@ func generateTypeScript(dir string) (map[string]string, error) {
 					found[d.opName] = true
 					err = w.op(d, o)
 				}
+			case declEndpoint:
+				if e, ok := endpoints[d.request]; ok {
+					foundEndpoints[d.request] = true
+					err = w.endpoint(d, e)
+				}
 			case declCode:
 				if codes[d.code] {
 					foundCodes[d.code] = true
@@ -71,6 +87,8 @@ func generateTypeScript(dir string) (map[string]string, error) {
 			case declType:
 				if d.name == "Op" {
 					w.opInterface(d)
+				} else if d.name == "AuthEndpoint" {
+					w.endpointInterface(d)
 				} else if t, ok := structs[d.name]; ok {
 					err = w.typeDecl(d, t)
 				}
@@ -90,6 +108,7 @@ func generateTypeScript(dir string) (map[string]string, error) {
 	}{
 		{"operation", "an Op", slices.Sorted(maps.Keys(ops)), found},
 		{"error code", "a Code", slices.Sorted(maps.Keys(codes)), foundCodes},
+		{"/auth/ endpoint of request", "an AuthEndpoint", slices.Sorted(maps.Keys(endpoints)), foundEndpoints},
 	} {
 		for _, name := range registered.names {
 			if !registered.found[name] {
@@ -127,6 +146,7 @@ const (
 	declType declKind = iota
 	declOp
 	declCode
+	declEndpoint
 )
 
 // goDecl is one declaration of package api the generator may write.
@@ -135,6 +155,7 @@ type goDecl struct {
 	name      string            // the Go name: Space, SpaceAdd, CodeUnknownSpace
 	opName    string            // an operation's name, such as space.add
 	code      string            // an error code's name, such as unknown_space
+	request   string            // an /auth/ endpoint's request type, such as AuthSignInRequest
 	doc       string            // the doc comment's text
 	fieldDocs map[string]string // a struct's field docs, by Go field name
 }
@@ -188,6 +209,8 @@ func parseSource(dir string) (*source, error) {
 						}
 						if op := opLiteral(s.Values[i]); op != "" {
 							gf.decls = append(gf.decls, goDecl{kind: declOp, name: n.Name, opName: op, doc: specDoc(gd, s.Doc)})
+						} else if req := endpointLiteral(s.Values[i]); req != "" {
+							gf.decls = append(gf.decls, goDecl{kind: declEndpoint, name: n.Name, request: req, doc: specDoc(gd, s.Doc)})
 						} else if code := codeLiteral(s.Values[i]); code != "" {
 							gf.decls = append(gf.decls, goDecl{kind: declCode, name: n.Name, code: code, doc: specDoc(gd, s.Doc)})
 						}
@@ -238,6 +261,27 @@ func opLiteral(e ast.Expr) string {
 		return ""
 	}
 	return literalName(lit)
+}
+
+// endpointLiteral returns the request type's name of an
+// AuthEndpoint[Req, Resp]{...} literal, or "" when e is not one.
+func endpointLiteral(e ast.Expr) string {
+	lit, ok := e.(*ast.CompositeLit)
+	if !ok {
+		return ""
+	}
+	typ, ok := lit.Type.(*ast.IndexListExpr)
+	if !ok || len(typ.Indices) != 2 {
+		return ""
+	}
+	if id, ok := typ.X.(*ast.Ident); !ok || id.Name != "AuthEndpoint" {
+		return ""
+	}
+	req, ok := typ.Indices[0].(*ast.Ident)
+	if !ok {
+		return ""
+	}
+	return req.Name
 }
 
 // codeLiteral returns the Name of a Code{...} literal, such as
@@ -496,6 +540,24 @@ func (w *tsWriter) op(d goDecl, o api.OpInfo) error {
 	return nil
 }
 
+// endpoint writes an /auth/ endpoint as an AuthEndpoint value, which the
+// web UI posts to as it calls an Op.
+func (w *tsWriter) endpoint(d goDecl, e api.AuthEndpointInfo) error {
+	req, err := w.ref(e.Request)
+	if err != nil {
+		return fmt.Errorf("request: %w", err)
+	}
+	resp, err := w.ref(e.Response)
+	if err != nil {
+		return fmt.Errorf("response: %w", err)
+	}
+	w.use(w.src.typeModule["AuthEndpoint"], "AuthEndpoint")
+	w.blank()
+	jsdoc(&w.body, "", d.doc)
+	fmt.Fprintf(&w.body, "export const %s: AuthEndpoint<%s, %s> = {\n  path: %q,\n};\n", d.name, req, resp, e.Path)
+	return nil
+}
+
 // code writes an error code as a string constant under its Go name, which
 // the web UI compares an ApiError's code with.
 func (w *tsWriter) code(d goDecl) {
@@ -515,6 +577,20 @@ func (w *tsWriter) opInterface(d goDecl) {
   readonly path: string;
   /** A write may change the record; a read never does. */
   readonly write: boolean;
+  /** Never set: it carries the request and response types to a client. */
+  readonly types?: { request: Req; response: Resp };
+}
+`)
+}
+
+// endpointInterface writes the TypeScript twin of AuthEndpoint, which a
+// client posts to.
+func (w *tsWriter) endpointInterface(d goDecl) {
+	w.blank()
+	jsdoc(&w.body, "", d.doc)
+	w.body.WriteString(`export interface AuthEndpoint<Req, Resp> {
+  /** The endpoint is a POST to this path, such as /auth/signin. */
+  readonly path: string;
   /** Never set: it carries the request and response types to a client. */
   readonly types?: { request: Req; response: Resp };
 }

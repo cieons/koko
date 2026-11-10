@@ -1,6 +1,9 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
+	"reflect"
+)
 
 // The rule a Password follows (NIST SP 800-63B-4, for a password that is the
 // only factor): MinPasswordLength to MaxPasswordLength Unicode code points
@@ -203,6 +206,56 @@ const (
 	// MaxAuthBody is the largest body an /auth/ endpoint reads.
 	MaxAuthBody = 4 << 10
 )
+
+// AuthEndpoint is one of the web front's own endpoints under /auth/: a POST
+// of a Req's JSON, answered by a Resp's, or by the error object. The web
+// UI's generated types carry each one with its types, as they carry an Op.
+type AuthEndpoint[Req, Resp any] struct {
+	// Path is the endpoint's URL path, such as AuthSignInPath.
+	Path string
+}
+
+// Info describes the endpoint without its types' parameters.
+func (e AuthEndpoint[Req, Resp]) Info() AuthEndpointInfo {
+	return AuthEndpointInfo{
+		Path:     e.Path,
+		Request:  reflect.TypeFor[Req](),
+		Response: reflect.TypeFor[Resp](),
+	}
+}
+
+// AuthEndpointInfo describes one /auth/ endpoint.
+type AuthEndpointInfo struct {
+	Path     string
+	Request  reflect.Type
+	Response reflect.Type
+}
+
+// The /auth/ endpoints, with their request and response types.
+var (
+	// AuthSignIn signs in with a User name and Password, setting the
+	// Sign-in cookie. A wrong name or Password is refused with
+	// CodeWrongPassword, and an address or name past its limit with
+	// CodeTooManyAttempts.
+	AuthSignIn = AuthEndpoint[AuthSignInRequest, AuthSignInResponse]{Path: AuthSignInPath}
+	// AuthLink answers whom an unspent Password Link is for, spending
+	// nothing. A link used already is refused with CodeLinkUsed, and one
+	// that expired, was voided or was never issued with CodeLinkInvalid.
+	AuthLink = AuthEndpoint[AuthLinkRequest, AuthLinkResponse]{Path: AuthLinkPath}
+	// AuthPassword sets the User's Password: through a Password Link,
+	// spending it and signing this browser in, or by the current Password,
+	// keeping this Sign-in and ending the User's others. A Password that
+	// breaks the rule is refused with CodeInvalidPassword, and a wrong
+	// current one with CodeWrongPassword.
+	AuthPassword = AuthEndpoint[AuthPasswordRequest, AuthSignInResponse]{Path: AuthPasswordPath}
+	// AuthSignOut ends this browser's Sign-in and clears its cookie.
+	AuthSignOut = AuthEndpoint[AuthSignOutRequest, AuthSignOutResponse]{Path: AuthSignOutPath}
+)
+
+// AuthEndpoints returns every /auth/ endpoint.
+func AuthEndpoints() []AuthEndpointInfo {
+	return []AuthEndpointInfo{AuthSignIn.Info(), AuthLink.Info(), AuthPassword.Info(), AuthSignOut.Info()}
+}
 
 // AuthSignInRequest signs in as the User Name names.
 type AuthSignInRequest struct {

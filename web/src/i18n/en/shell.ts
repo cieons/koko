@@ -35,6 +35,7 @@ export default {
     "This page can no longer act. To use koko from this device again, join it with a new Join Code.",
   "shell.error.dropped": "The connection to koko web was lost.",
   "shell.error.unexpected": "An unexpected error occurred.",
+  "shell.error.unreachable": "The koko server could not be reached. Check the connection and try again.",
   "shell.retry": "Try again",
   "shell.cancel": "Cancel",
   "shell.close": "Close",

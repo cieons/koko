@@ -1,6 +1,6 @@
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 
-import { ApiError, DroppedError } from "../client";
+import { ApiError, DroppedError, UnreachableError } from "../client";
 import { catalogues, type Language, languages, type MessageKey } from "../i18n/catalogues";
 
 // Language: the web UI follows the browser's preferred languages until the
@@ -123,6 +123,9 @@ export function errorMessage(t: Translate, error: unknown): string {
   }
   if (error instanceof DroppedError) {
     return t("shell.error.dropped");
+  }
+  if (error instanceof UnreachableError) {
+    return t("shell.error.unreachable");
   }
   return t("shell.error.unexpected");
 }

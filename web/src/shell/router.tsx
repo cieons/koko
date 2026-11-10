@@ -33,6 +33,12 @@ export interface Route {
   icon?: LucideIcon;
   /** ownerOnly hides the page, and its link, from a Member. */
   ownerOnly?: boolean;
+  /**
+   * outside renders the page outside the frame, with no top bar and no
+   * user.current, as Sign in and Set a Password are, which a browser opens
+   * before it is signed in.
+   */
+  outside?: boolean;
 }
 
 /** Location is where the browser is, and which visit of it this is. */
@@ -192,8 +198,11 @@ export function movedTo(to: (params: Readonly<Record<string, string>>) => string
 /** accountPage is the path of Account, which the account panel links. */
 export const accountPage = "/account";
 
-/** signInPage is the path of Sign in, outside the frame (#116). */
+/** signInPage is the path of Sign in, outside the frame. */
 export const signInPage = "/signin";
+
+/** passwordPage is the path of Set a Password, outside the frame, which a Password Link opens. */
+export const passwordPage = "/password";
 
 /** signInPath is Sign in's path, which comes back to next, the page it was sent from, once signed in. */
 export function signInPath(next: string): string {

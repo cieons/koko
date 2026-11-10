@@ -2,6 +2,14 @@ import { vi } from "vitest";
 
 import type { Op } from "../api/api";
 import type { ErrorResponse } from "../api/errors";
+import type { AuthEndpoint } from "../api/signin";
+
+/**
+ * OpOrEndpoint is what the fake answers: an API operation, or one of the
+ * web front's /auth/ endpoints, each typed by its generated request and
+ * response types.
+ */
+export type OpOrEndpoint<Req, Resp> = Op<Req, Resp> | AuthEndpoint<Req, Resp>;
 
 /** FakeCall is one request the fake API received. */
 export interface FakeCall {
@@ -20,17 +28,23 @@ export interface FakeCall {
 class Refusal extends Error {
   readonly code: string;
   readonly status: number;
+  readonly retryAfter?: number;
 
-  constructor(code: string, status: number) {
+  constructor(code: string, status: number, retryAfter?: number) {
     super(`the fake API refused with ${code}`);
     this.code = code;
     this.status = status;
+    this.retryAfter = retryAfter;
   }
 }
 
-/** refusal makes the Refusal a handler throws to refuse with code. */
-export function refusal(code: string, status = 400): Refusal {
-  return new Refusal(code, status);
+/**
+ * refusal makes the Refusal a handler throws to refuse with code; with
+ * retryAfter, in seconds, it carries a Retry-After header, as
+ * too_many_attempts does.
+ */
+export function refusal(code: string, status = 400, retryAfter?: number): Refusal {
+  return new Refusal(code, status, retryAfter);
 }
 
 /**
@@ -49,12 +63,12 @@ export class FakeApi {
    * promise it returns settles; a handler that throws a refusal refuses the
    * call.
    */
-  on<Req, Resp>(op: Op<Req, Resp>, handler: (request: Req) => Resp | Promise<Resp>): void {
+  on<Req, Resp>(op: OpOrEndpoint<Req, Resp>, handler: (request: Req) => Resp | Promise<Resp>): void {
     this.#handlers.set(op.path, (request) => handler(request as Req));
   }
 
   /** requests are the parsed bodies of every call of op, in the order they came. */
-  requests<Req, Resp>(op: Op<Req, Resp>): unknown[] {
+  requests<Req, Resp>(op: OpOrEndpoint<Req, Resp>): unknown[] {
     return this.calls.filter((c) => c.path === op.path).map((c) => c.request);
   }
 
@@ -93,9 +107,10 @@ export class FakeApi {
   };
 }
 
-function refuse({ code, status }: Refusal, message: string): Response {
+function refuse({ code, status, retryAfter }: Refusal, message: string): Response {
   const answer: ErrorResponse = { error: { code, message } };
-  return Response.json(answer, { status });
+  const headers = retryAfter === undefined ? undefined : { "Retry-After": String(retryAfter) };
+  return Response.json(answer, { status, headers });
 }
 
 /** fakeApi puts a new FakeApi in place of fetch until the test ends. */

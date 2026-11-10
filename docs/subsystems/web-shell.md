@@ -100,7 +100,8 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   path (a `:name` segment matches any one segment, decoded, and reaches the
   page as `params.name`), the page component, the message the top bar
   links it under as a place (`nav`) and its Lucide icon in the phone's bar
-  (`icon`), and whether only the Owner sees it (`ownerOnly`). The top bar
+  (`icon`), whether only the Owner sees it (`ownerOnly`), and whether it
+  sits outside the frame (`outside`). The top bar
   links the places in the order of `routes` in
   [`web/src/routes.ts`](../../web/src/routes.ts), and `/` goes, keeping its
   query, to the first place the caller may see. A path no route
@@ -119,6 +120,10 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   is a saved view and Back returns to the earlier state. The router uses the
   browser's history alone; the web front serves `index.html` for every path
   outside `/v1/`.
+- **Outside the frame.** Sign in and Set a Password
+  ([Sign-ins](signin.md#the-web-uis-pages)), which a browser opens before it
+  is signed in on the web listener, are `outside` routes: the shell renders
+  them on their own, with no top bar and without asking `user.current`.
 - **A moved page.** A path a released koko served that has moved is a
   route whose page is `movedTo(to)`: it goes to the path `to` gives for its
   params, keeping its query and replacing the history entry.
@@ -197,6 +202,16 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   or during the answer) is sent once more; a second drop throws a
   `DroppedError`. `koko web`'s browser connections reopen after a Device
   Connection drop, since only Tunnels Resume (ADR 0021).
+- **The `/auth/` endpoints** are not API operations: Sign in and Set a
+  Password post to them with
+  [`post`](../../web/src/client.ts), typed by their generated
+  `AuthEndpoint` values (`AuthSignIn`, [the web UI build](web-ui.md#generated-types)),
+  once, with no retry and no `Idempotency-Key`, since a Password Link sent
+  again after it was spent would be refused as used. A refusal is an
+  `ApiError` as a call's is, with the `Retry-After` header in seconds
+  (`retryAfter`) when it has one, as `too_many_attempts` does; a
+  connection that fails throws an `UnreachableError`, which says the koko
+  server could not be reached.
 - **`Idempotency-Key`.** Every write carries one, 128 random bits as 32
   lowercase hex characters ([the API](api.md#idempotency-key)), and its retry carries the
   same, so the koko server applies it once.
@@ -290,9 +305,12 @@ the focus back to what opened it; every icon button has a name.
   its list, announced as loading (`Loading`). A button whose call runs is
   pending and takes no second press.
 - **Failed to load**: the panel shows the koko server's message and Try
-  again (`LoadFailed`). A read refused `signin_required` goes to
-  `/signin?next=<this page>` instead, replacing the history entry; Sign in
-  itself never goes to itself. `Loaded` shows a read's answer once it has
+  again (`LoadFailed`). Any call within the frame answered
+  `signin_required`, a read or a write, as when the Sign-in ended in
+  another tab, takes the browser to `/signin?next=<this page>` instead as
+  the answer comes, replacing the history entry; a second such answer finds
+  it on Sign in and leaves it there (`useSignInWhenRequired` in
+  [`Shell.tsx`](../../web/src/shell/Shell.tsx)). `Loaded` shows a read's answer once it has
   one, Loading until then, and the failure, above the last answer when a
   reload failed.
 - **Empty**: one panel with a line saying what is missing, a sentence
@@ -363,7 +381,7 @@ not exist. The page's references hold the rules each action follows:
 [the record's pages](record-pages.md), [Secrets](secrets.md#the-web-uis-secrets-page)
 and [the Access and Account pages](access-pages.md). The move to
 HeroUI (#121) took the pages out; each came back with its ticket (#122 to
-#125), holding these actions, and Sign-ins come back with #116.
+#125), holding these actions, and Sign-ins came back with #116.
 
 **The frame**, on every page:
 
@@ -473,6 +491,16 @@ query) and **a Space's panel** (`/access/spaces/<name>`, which
 For the Owner, `/devices` listed everyone's Device Sessions; that view is
 now each person's panel under Access.
 
+**Sign in** (`/signin`, outside the frame; `next` in the query) and **Set a
+Password** (`/password#<secret>`, outside the frame), the web listener's
+alone ([Sign-ins](signin.md#the-web-uis-pages)):
+
+| Action | Call | Who |
+| --- | --- | --- |
+| Sign in with a User name and Password, then go to `next` on this origin | `/auth/signin` | anyone with a Password |
+| See whom a Password Link is for | `/auth/link` | anyone holding the link |
+| Set the Password through the link, which signs this browser in | `/auth/password` | anyone holding the link |
+
 ## Verifying
 
 - [`Shell.test.tsx`](../../web/src/shell/Shell.test.tsx), Vitest and React
@@ -513,8 +541,7 @@ now each person's panel under Access.
   waiting on its chunk, which loads once; a chunk that does not load saying
   so in the frame, and axe on it; another error not taken for one.
 - [`states.test.tsx`](../../web/src/ui/states.test.tsx): Loading after 300
-  ms and axe; LoadFailed with Try again; `signin_required` going to Sign
-  in with `next`, and not from Sign in; `Loaded`'s three cases; the empty
+  ms and axe; LoadFailed with Try again; `Loaded`'s three cases; the empty
   state, no match and a refusal, each with axe.
 - [`dialogs.test.tsx`](../../web/src/ui/dialogs.test.tsx): a short form
   validating on submit (the error under its field, the focus on it,

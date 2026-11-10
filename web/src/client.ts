@@ -1,14 +1,21 @@
 import type { Op } from "./api/api";
 import type { ErrorResponse } from "./api/errors";
+import type { AuthEndpoint } from "./api/signin";
 
 /** ApiError is a call the koko server refused, with its stable error code. */
 export class ApiError extends Error {
   readonly code: string;
+  /**
+   * retryAfter is the refusal's Retry-After header in seconds, when it has
+   * one, as too_many_attempts does: how long to wait before trying again.
+   */
+  readonly retryAfter?: number;
 
-  constructor(code: string, message: string) {
+  constructor(code: string, message: string, retryAfter?: number) {
     super(message);
     this.name = "ApiError";
     this.code = code;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -21,6 +28,17 @@ export class DroppedError extends Error {
   constructor(operation: string, cause: unknown) {
     super(`the connection to koko web dropped twice during ${operation}`, { cause });
     this.name = "DroppedError";
+  }
+}
+
+/**
+ * UnreachableError is an /auth/ call (post) whose connection failed: the
+ * koko server could not be reached, and it may or may not have acted.
+ */
+export class UnreachableError extends Error {
+  constructor(path: string, cause: unknown) {
+    super(`the koko server could not be reached for ${path}`, { cause });
+    this.name = "UnreachableError";
   }
 }
 
@@ -108,14 +126,44 @@ async function send<Req, Resp>(op: Op<Req, Resp>, request: Req, options: CallOpt
       throw retryError instanceof TypeError ? new DroppedError(op.name, retryError) : retryError;
     }
   }
-  // An answer that is not JSON is unknown: it fails the call, never reads
-  // as an empty response.
-  const body: unknown = JSON.parse(answer.body);
-  if (!answer.response.ok) {
-    const { error } = body as ErrorResponse;
-    throw new ApiError(error.code, error.message);
+  return answered<Resp>(answer);
+}
+
+/**
+ * answered is the response an answer holds, or the ApiError of a refusal.
+ * An answer that is not JSON is unknown: it fails the call, never reads as
+ * an empty response.
+ */
+function answered<Resp>({ response, body }: { response: Response; body: string }): Resp {
+  const parsed: unknown = JSON.parse(body);
+  if (!response.ok) {
+    const { error } = parsed as ErrorResponse;
+    const retryAfter = Number.parseInt(response.headers.get("Retry-After") ?? "", 10);
+    throw new ApiError(error.code, error.message, Number.isNaN(retryAfter) ? undefined : retryAfter);
   }
-  return body as Resp;
+  return parsed as Resp;
+}
+
+/**
+ * post calls one of the web front's /auth/ endpoints on the web listener:
+ * a JSON POST of request to its path. It returns the response, or throws
+ * an ApiError when the koko server refuses, as call does. It is sent once:
+ * an /auth/ call is no API write with an Idempotency-Key, and a Password
+ * Link sent again after it was spent would be refused as used. A failed
+ * connection throws an UnreachableError.
+ */
+export async function post<Req, Resp>(endpoint: AuthEndpoint<Req, Resp>, request: NoInfer<Req>): Promise<Resp> {
+  let answer: { response: Response; body: string };
+  try {
+    answer = await attempt(endpoint.path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+  } catch (error) {
+    throw error instanceof TypeError ? new UnreachableError(endpoint.path, error) : error;
+  }
+  return answered<Resp>(answer);
 }
 
 /**

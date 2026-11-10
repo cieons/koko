@@ -4,6 +4,8 @@ import { type MouseEvent, type RefObject, useEffect, useRef } from "react";
 import { Link } from "react-aria-components";
 
 import { UserCurrent } from "../api/user";
+import { CodeSignInRequired } from "../api/web";
+import { ApiError, observeCalls } from "../client";
 import type { MessageKey } from "../i18n/catalogues";
 import { Page as PageHead } from "../ui/Page";
 import { usePhone } from "../ui/phone";
@@ -13,7 +15,7 @@ import { useRead } from "./data";
 import { useT } from "./i18n";
 import { type Notice, useNotice } from "./notice";
 import { Providers } from "./providers";
-import { matchRoute, navigate, type Route, useLocation } from "./router";
+import { matchRoute, navigate, type Route, signInPage, signInPath, useLocation } from "./router";
 import { AccountPanel, LanguageChoice, ModeChoice } from "./TopBar";
 
 /**
@@ -29,13 +31,49 @@ import { AccountPanel, LanguageChoice, ModeChoice } from "./TopBar";
 export function Shell({ routes }: { routes: readonly Route[] }) {
   return (
     <Providers>
-      <Frame routes={routes} />
+      <Root routes={routes} />
     </Providers>
   );
 }
 
-function Frame({ routes }: { routes: readonly Route[] }) {
+/**
+ * Root renders a page outside the frame, as Sign in, on its own, and every
+ * other page in the Frame.
+ */
+function Root({ routes }: { routes: readonly Route[] }) {
+  const { pathname } = useLocation();
+  const match = matchRoute(routes, pathname);
+  if (match?.route.outside) {
+    const { page: Outside } = match.route;
+    return <Outside params={match.params} />;
+  }
+  return <Frame routes={routes} />;
+}
+
+/**
+ * useSignInWhenRequired takes the browser to Sign in, replacing the history
+ * entry, when any call is answered signin_required, a read or a write, as
+ * on the web listener once a Sign-in has ended; Sign in then comes back to
+ * this page. A second such answer, which may come before the frame is gone,
+ * finds the browser on Sign in already and leaves it there.
+ */
+function useSignInWhenRequired(): void {
+  useEffect(
+    () =>
+      observeCalls(({ error }) => {
+        const { pathname, search } = window.location;
+        if (error instanceof ApiError && error.code === CodeSignInRequired && pathname !== signInPage) {
+          navigate(signInPath(pathname + search), { replace: true });
+        }
+      }),
+    [],
+  );
+}
+
+function Frame({ routes: all }: { routes: readonly Route[] }) {
   const t = useT();
+  const routes = all.filter((r) => !r.outside);
+  useSignInWhenRequired();
   const phone = usePhone();
   const userCurrent = useRead(UserCurrent, {});
   const caller = userCurrent.data && callerOf(userCurrent.data);

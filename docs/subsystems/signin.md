@@ -107,7 +107,10 @@ since they come before or apart from an authenticated call. Each takes and
 answers JSON, at most 4 KiB (`api.MaxAuthBody`), after the Origin check;
 every answer carries the listener's headers and `Cache-Control: no-store`,
 and a refusal is the API's error object. Their types are in
-[`api/signin.go`](../../internal/shared/api/signin.go).
+[`api/signin.go`](../../internal/shared/api/signin.go), with an
+`api.AuthEndpoint` value for each (`AuthSignIn`, `AuthLink`,
+`AuthPassword`, `AuthSignOut`), which the web UI's generated types carry
+([the web UI build](web-ui.md#generated-types)).
 
 | Endpoint | Takes | Does |
 | --- | --- | --- |
@@ -164,6 +167,39 @@ may, but:
 "started_at", "expires_at"}`, in place of `device_session`. Log lines that
 name who acted (`issued_by`, `revoked_by`, `removed_by`, `ended_by`,
 `enrolled_by`) give a Sign-in's id ([`Identity.By`](../../internal/server/access/access.go)).
+
+## The web UI's pages
+
+How each looks is [the web UI's design](../web-design.md#sign-in-and-set-a-password-signin-password).
+
+- **Sign in** ([`SignInPage`](../../web/src/pages/signin/SignInPage.tsx),
+  `/signin`), outside the frame: the User name and Password (`autocomplete`
+  `username` and `current-password`), posted to `/auth/signin`, then the
+  page `next` names, followed only when it is a path of this origin, else
+  `/`, replacing the history entry. A refusal shows above the fields:
+  `wrong_password`, or `too_many_attempts` with the minutes its
+  `Retry-After` leaves. One line says the Owner resets a lost Password.
+  The shell sends a browser here, with `next`, when any call is answered
+  `signin_required` ([the web UI shell](web-shell.md#the-states-every-screen-has));
+  `koko web` never answers so, so it never sends a browser there. A `next`
+  naming Sign in or Set a Password is not followed either.
+- **Set a Password** ([`PasswordPage`](../../web/src/pages/signin/PasswordPage.tsx),
+  `/password`), outside the frame, which a Password Link opens: its route
+  ([`takingLinkSecret`](../../web/src/pages/signin/linkSecret.tsx)), part of
+  the first load, takes the secret from the fragment and replaces the URL
+  without it at once, before the page's chunk loads, and again when
+  another link is opened on the page; the page then, afresh for each link,
+  asks `/auth/link` whom the link is for, and shows "For <name>." with the
+  new Password twice (`new-password`), a count toward 15 characters under
+  the first ([`PasswordFields`](../../web/src/pages/signin/PasswordFields.tsx)),
+  counted as the koko server counts them, in code points after NFC. The
+  form checks the rule and that the two agree when submitted, then posts
+  the link and the Password to `/auth/password`, which signs this browser
+  in, and goes to `/`. `link_used` and `link_invalid`, from either call,
+  and a URL with no fragment, replace the form with what happened and Go
+  to Sign in.
+- Both show koko's wordmark, one panel and the two languages as buttons
+  ([`Door`](../../web/src/pages/signin/Door.tsx)).
 
 ## Users
 
@@ -228,3 +264,15 @@ or an `/auth/` body.
   password link`, `password rm`, `signin ls`, `signin revoke` and `user
   invite --web` with their goldens, a Member's own Sign-ins, `--valid` on
   both and a link of 7 days.
+- [`signin.test.tsx`](../../web/src/pages/signin/signin.test.tsx), Vitest
+  against the [fake API](web-ui.md#testing-pages)'s `/auth/` endpoints, axe
+  on each state: Sign in outside the frame with its `autocomplete`, its
+  fields checked on submit, signing in and following `next`, `next` of
+  another origin or outside the frame never followed, `wrong_password` and
+  `too_many_attempts` with its minutes, the language buttons; a read and a
+  write answered `signin_required` going to Sign in with `next`; Set a
+  Password taking the secret out of the URL, a second link read afresh,
+  naming the User, its count in code points after NFC and past 128, the rule and the second field checked on submit, setting the
+  Password and signing in, `invalid_password` in place, `link_used` and
+  `link_invalid` from either call, no fragment, and a failed read with Try
+  again.
