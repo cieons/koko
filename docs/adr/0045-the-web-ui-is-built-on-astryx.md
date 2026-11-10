@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0046
+---
+
 # The web UI is built on Astryx
 
 The web UI is built on Astryx, Meta's open source design system (MIT; React

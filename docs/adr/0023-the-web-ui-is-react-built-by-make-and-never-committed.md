@@ -1,5 +1,5 @@
 ---
-status: its styling, refined by ADR-0045
+status: its styling, refined by ADR-0046
 ---
 
 # The web UI is React and TypeScript, built by make and never committed
