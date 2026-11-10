@@ -538,6 +538,15 @@ The frame, a title, one sentence and a link to Hosts.
   focus to what opened it. Every icon button has a name. A row that is a
   link is one Tab stop.
 - No horizontal scroll at 320px.
-- Not yet verified on the preview, and owed by the build: a screen reader
-  pass, 200% text size, forced colours, an iOS Safari device, and axe over
-  the whole page with 300 Hosts.
+- A focused control is never left under the sticky top bar, the phone's
+  bar or Access's sticky column; the root and that table carry scroll
+  padding for it.
+- In forced colours (such as Windows' contrast themes) the focus ring is
+  an outline, and the chosen place, tab, segment, checked box, switch and
+  radio and the edges of panels and overlays are drawn in the system's
+  colours ([the web UI build](subsystems/web-ui.md#heroui-and-tailwind)).
+- Checked on the build (#126): 200% text size (no loss of content; on a
+  phone some fields keep their width, #130), forced colours, every modal
+  overlay on iOS Safari 26.3 in the iOS Simulator, and axe over the whole
+  Hosts list with 300 Hosts. A screen reader pass has not been run, by the
+  Owner's choice.
