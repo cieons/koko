@@ -436,6 +436,14 @@ func TestServerInstallRefusals(t *testing.T) {
 			[]string{"systemd 246", "247"},
 		},
 		{
+			"systemd's version unread",
+			func(m *harness.Machine) {
+				m.SystemdErr = errors.New(`systemctl --version printed "", not systemd and its version`)
+			},
+			nil, 1, "internal_error",
+			[]string{"find systemd's version", "247 or later", "systemctl --version"},
+		},
+		{
 			"a network filesystem",
 			func(m *harness.Machine) { m.FSType = "nfs4" },
 			nil, 1, "unsupported_platform",

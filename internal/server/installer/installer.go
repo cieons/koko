@@ -128,7 +128,7 @@ type Installer struct {
 func (in *Installer) Install(ctx context.Context, req install.Request) (install.Report, error) {
 	p, err := in.check(ctx, req)
 	if err != nil {
-		return install.Report{}, err
+		return install.Report{}, unwritten(err)
 	}
 	key, err := in.write(ctx, p)
 	if err != nil {
@@ -185,6 +185,15 @@ type deployed struct {
 // path is the real path of a path on the machine.
 func (in *Installer) path(p string) string {
 	return filepath.Join(in.Machine.Root(), p)
+}
+
+// unwritten adds to err, which check returned before install's first write,
+// that nothing was written; a Refusal says so already.
+func unwritten(err error) error {
+	if _, ok := errors.AsType[*install.Refusal](err); ok {
+		return err
+	}
+	return fmt.Errorf("%w; nothing was written", err)
 }
 
 // check refuses, before anything is written, a machine that cannot run the
@@ -381,7 +390,7 @@ func (in *Installer) dropInListen() (port int, dropIn string, err error) {
 		}
 		set, err := dropInPort(string(text))
 		if err != nil {
-			return 0, "", fmt.Errorf("the drop-in %s sets the koko service to %w; nothing was written", name, err)
+			return 0, "", fmt.Errorf("the drop-in %s sets the koko service to %w", name, err)
 		}
 		if set != 0 {
 			port, dropIn = set, name
@@ -400,7 +409,7 @@ func (in *Installer) servicePort(ctx context.Context) (int, error) {
 	}
 	port, err := envPort(env)
 	if err != nil {
-		return 0, fmt.Errorf("systemd has the koko service %w; nothing was written", err)
+		return 0, fmt.Errorf("systemd has the koko service %w", err)
 	}
 	return port, nil
 }
@@ -511,7 +520,7 @@ func (in *Installer) findDeployed(ctx context.Context) (*deployed, error) {
 		return nil, fmt.Errorf("find whether the koko server in %s is initialised: %w", DataDir, err)
 	}
 	if tooNew != nil {
-		return nil, fmt.Errorf("%s/%s: %w; nothing was written", DataDir, store.FileName, tooNew)
+		return nil, fmt.Errorf("%s/%s: %w", DataDir, store.FileName, tooNew)
 	}
 	return d, nil
 }
@@ -525,12 +534,12 @@ func (in *Installer) openKeys(ctx context.Context, sealedBy string) (string, err
 	key, err := seal.Load(in.path(RootKeyFile))
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return "", fmt.Errorf("the Root Key file %s is missing, and the sealed data in %s needs %s: put back the copy of the Root Key file that names %s, then run koko server install again; nothing was written",
+		return "", fmt.Errorf("the Root Key file %s is missing, and the sealed data in %s needs %s: put back the copy of the Root Key file that names %s, then run koko server install again",
 			RootKeyFile, DataDir, sealedBy, sealedBy)
 	case err != nil:
-		return "", fmt.Errorf("%w; the sealed data in %s needs %s; nothing was written", err, DataDir, sealedBy)
+		return "", fmt.Errorf("%w; the sealed data in %s needs %s", err, DataDir, sealedBy)
 	case key.ID() != sealedBy:
-		return "", fmt.Errorf("the Root Key file %s names %s, but the sealed data in %s needs %s: put back the copy of the Root Key file that names %s, then run koko server install again; nothing was written",
+		return "", fmt.Errorf("the Root Key file %s names %s, but the sealed data in %s needs %s: put back the copy of the Root Key file that names %s, then run koko server install again",
 			RootKeyFile, key.ID(), DataDir, sealedBy, sealedBy)
 	}
 	var keys *deployment.Keys
@@ -542,7 +551,7 @@ func (in *Installer) openKeys(ctx context.Context, sealedBy string) (string, err
 		err = errors.New("it is no longer initialised")
 	}
 	if err != nil {
-		return "", fmt.Errorf("open the koko server's keys in %s with the Root Key file %s: %w; nothing was written", DataDir, RootKeyFile, err)
+		return "", fmt.Errorf("open the koko server's keys in %s with the Root Key file %s: %w", DataDir, RootKeyFile, err)
 	}
 	return keys.HostKeyFingerprint(), nil
 }

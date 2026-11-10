@@ -66,6 +66,8 @@ type Machine struct {
 	NotRoot bool
 	// Systemd is systemd's version.
 	Systemd int
+	// SystemdErr, when set, is how reading systemd's version fails.
+	SystemdErr error
 	// Source is the default route's source IP; the zero Addr means the
 	// machine has no default route.
 	Source netip.Addr
@@ -460,6 +462,9 @@ func (m *Machine) Root() string {
 
 func (m *Machine) SystemdVersion(context.Context) (int, error) {
 	m.record("systemd --version")
+	if m.SystemdErr != nil {
+		return 0, m.SystemdErr
+	}
 	return m.Systemd, nil
 }
 
