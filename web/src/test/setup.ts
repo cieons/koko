@@ -5,10 +5,12 @@ import indexHTML from "../../index.html?raw";
 import { installCspWatch, takeCspViolations } from "./csp";
 import { installMatchMedia, resetMedia, withoutMotion } from "./media";
 
-// The document's head is index.html's: its title, and the <meta> whose id
-// keeps React Aria's usePress from adding a <style> element, which the CSP
-// refuses (static.test.ts checks index.html holds it).
-const head = new DOMParser().parseFromString(indexHTML, "text/html").head;
+// The document's language and head are index.html's: its title, and the
+// <meta> whose id keeps React Aria's usePress from adding a <style>
+// element, which the CSP refuses (static.test.ts checks index.html holds it).
+const index = new DOMParser().parseFromString(indexHTML, "text/html");
+const head = index.head;
+document.documentElement.lang = index.documentElement.lang;
 document.title = head.querySelector("title")?.textContent ?? "";
 const pressable = head.querySelector("#react-aria-pressable-style");
 if (pressable) {
@@ -75,8 +77,9 @@ if (!("inert" in HTMLElement.prototype)) {
 document.elementsFromPoint ??= () => [];
 
 // Each test starts from an empty document, at /, with no toast left from
-// the one before, nothing the browser remembers, the system in light mode
-// and a desktop's viewport; and ends with no CSP violation.
+// the one before, nothing the browser remembers, index.html's language and
+// title, the system in light mode and a desktop's viewport; and ends with
+// no CSP violation.
 afterEach(async () => {
   cleanup();
   // Imported here, not above: React Aria reads whether the document has
@@ -89,6 +92,7 @@ afterEach(async () => {
   resetMedia();
   document.documentElement.className = "";
   delete document.documentElement.dataset.theme;
+  document.documentElement.lang = index.documentElement.lang;
   document.title = head.querySelector("title")?.textContent ?? "";
   expect(violations, "the CSP, default-src 'self', would refuse these").toEqual([]);
 });

@@ -305,7 +305,7 @@ test("the language follows the browser's preferred languages: Chinese of any reg
   renderShell("/hosts");
 
   await screen.findByText("hosts page");
-  expect(document.documentElement.lang).toBe("zh-CN");
+  await waitFor(() => expect(document.documentElement.lang).toBe("zh-CN"));
   expect(places("主导航")).toEqual(["主机*", "机密"]);
   fireEvent.click(topBarButton("语言：简体中文"));
   expect(await screen.findByRole("menuitemradio", { name: "简体中文", checked: true })).toBeDefined();
@@ -323,7 +323,7 @@ test.each([
   renderShell("/hosts");
 
   await screen.findByText("hosts page");
-  expect(document.documentElement.lang).toBe(want);
+  await waitFor(() => expect(document.documentElement.lang).toBe(want));
 });
 
 test("the Language menu overrides the browser's language, and the browser keeps the choice", async () => {
@@ -343,7 +343,7 @@ test("the Language menu overrides the browser's language, and the browser keeps 
 
   renderShell("/hosts"); // a reload of the page
   await screen.findByText("hosts page");
-  expect(document.documentElement.lang).toBe("zh-CN");
+  await waitFor(() => expect(document.documentElement.lang).toBe("zh-CN"));
   expect(places("主导航")).toEqual(["主机*", "机密"]);
 });
 
