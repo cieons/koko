@@ -1,11 +1,13 @@
 import { Button, Dropdown, Label, Popover } from "@heroui/react";
-import { ChevronDown, Languages, Monitor, Moon, Sun } from "lucide-react";
-import type { ReactNode } from "react";
+import { ChevronDown, Languages, Monitor, Moon, Sun, UserRound } from "lucide-react";
+import { type ReactNode, useState } from "react";
+import { Link } from "react-aria-components";
 
 import { type Language, languages } from "../i18n/catalogues";
 import type { Caller } from "./caller";
 import { type Translate, useLanguageChoice, useT } from "./i18n";
 import { type Mode, modes, useMode } from "./mode";
+import { accountPage } from "./router";
 
 // The top bar's end: the two choices the browser keeps, Language and
 // Appearance, each an icon button that opens a menu of radio items, and the
@@ -115,15 +117,17 @@ function viaText(t: Translate, caller: Caller): string {
 /**
  * AccountPanel is the account button, the User's initial and name (the name
  * hidden on a phone) with a chevron, and the panel it opens: the initial,
- * the name and role, and how this browser reaches koko. Account and Sign out
- * join it with their pages (#125, #116).
+ * the name and role, how this browser reaches koko, and a link to Account,
+ * which closes the panel as it is followed. Sign out joins it with its page
+ * (#116).
  */
 export function AccountPanel({ caller }: { caller: Caller }) {
   const t = useT();
+  const [open, setOpen] = useState(false);
   const { name } = caller.user;
   const label = t("shell.account", { name });
   return (
-    <Popover>
+    <Popover isOpen={open} onOpenChange={setOpen}>
       <Button variant="ghost" className="h-10 gap-2 rounded-full pr-2.5 pl-1.5" aria-label={label}>
         <Initial name={name} />
         <span className="hidden font-medium sm:inline">{name}</span>
@@ -140,6 +144,16 @@ export function AccountPanel({ caller }: { caller: Caller }) {
               </p>
               <p className="t-label truncate">{viaText(t, caller)}</p>
             </div>
+          </div>
+          <div className="border-t border-line p-1.5">
+            <Link
+              href={accountPage}
+              onPress={() => setOpen(false)}
+              className="flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium text-foreground no-underline outline-none hover:bg-default data-[focus-visible]:ring-2 data-[focus-visible]:ring-focus"
+            >
+              <UserRound aria-hidden className="size-4 text-muted" />
+              {t("user.account.title")}
+            </Link>
           </div>
         </Popover.Dialog>
       </Popover.Content>

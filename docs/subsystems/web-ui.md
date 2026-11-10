@@ -274,7 +274,7 @@ empty.
   constant of the file that declares it, and the generator's mapping and
   refusals.
 - The shell's page tests are listed in [the web UI shell](web-shell.md#verifying).
-  The pages' tests come back with the pages (#122 to #125, #116), each
+  The pages' tests, back with the pages (#122 to #125), are each
   listed in its page's reference: [the record's
   pages](record-pages.md#verifying), [Secrets](secrets.md#verifying) and
-  [the Spaces, People and Devices pages](people-pages.md#verifying).
+  [the Access and Account pages](access-pages.md#verifying).

@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { type ComponentType, useMemo, useSyncExternalStore } from "react";
+import { type ComponentType, useEffect, useMemo, useSyncExternalStore } from "react";
 
 import type { MessageKey } from "../i18n/catalogues";
 
@@ -172,6 +172,25 @@ export function matchRoute(
   }
   return undefined;
 }
+
+/**
+ * movedTo is the page of a path a released koko served that has moved: it
+ * goes to the path to gives for its params, keeping its query and
+ * replacing the history entry (docs/web-design.md, "The page map").
+ */
+export function movedTo(to: (params: Readonly<Record<string, string>>) => string): ComponentType<PageProps> {
+  return function Moved({ params }: PageProps) {
+    const { search } = useLocation();
+    const path = to(params);
+    useEffect(() => {
+      navigate(path + search, { replace: true });
+    }, [path, search]);
+    return null;
+  };
+}
+
+/** accountPage is the path of Account, which the account panel links. */
+export const accountPage = "/account";
 
 /** signInPage is the path of Sign in, outside the frame (#116). */
 export const signInPage = "/signin";

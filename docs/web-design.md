@@ -10,7 +10,7 @@ action calls and the rules it follows stay in the subsystem references:
 [the web UI shell](subsystems/web-shell.md) and its page inventory,
 [the record's pages](subsystems/record-pages.md),
 [Secrets](subsystems/secrets.md#the-web-uis-secrets-page),
-[the Spaces, People and Devices pages](subsystems/people-pages.md) and
+[the Access and Account pages](subsystems/access-pages.md) and
 [Sign-ins](subsystems/signin.md). Where this design and a reference
 disagree on behaviour, the reference holds, and the difference is a bug in
 this design.
@@ -135,6 +135,7 @@ Sans CJK SC, Microsoft YaHei). The root is 16px; body text is 15px at 1.5.
 | `t-name` | 15px, 600, -0.01em | A record's name in a row |
 | body | 15px, 400 | |
 | `t-label` | 13px, muted | A fact's label, help, counts |
+| `t-figure` | 24px, 600, -0.02em, tabular numerals | A count that stands alone, such as a Space's in its panel |
 | `t-code` | Geist Mono 13px, no contextual ligatures | Machine values |
 
 Fields set in the code face are 16px under 640px wide, so iOS Safari does

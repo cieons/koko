@@ -25,10 +25,41 @@ export interface Read<Resp> {
  * one's.
  */
 export function useRead<Req, Resp>(op: Op<Req, Resp>, request: NoInfer<Req>): Read<Resp> {
+  return useLoad(op, request, callOne);
+}
+
+/**
+ * useReads calls a read operation once for each of requests, as a page
+ * that shows one answer per record does (space.show for each Space), and
+ * holds the answers in their order once every one has come; one that fails
+ * fails them all. It loads again as useRead does.
+ */
+export function useReads<Req, Resp>(op: Op<Req, Resp>, requests: readonly NoInfer<Req>[]): Read<Resp[]> {
+  return useLoad(op, requests, callEach);
+}
+
+function callOne<Req, Resp>(op: Op<Req, Resp>, request: Req): Promise<Resp> {
+  return call(op, request);
+}
+
+function callEach<Req, Resp>(op: Op<Req, Resp>, requests: readonly Req[]): Promise<Resp[]> {
+  return Promise.all(requests.map((r) => call(op, r)));
+}
+
+/**
+ * useLoad holds what load answers for op and request, loaded again when
+ * the request changes, on every navigation, when the window regains focus
+ * and on reload. An answer to an earlier request never shows as this one's.
+ */
+function useLoad<Req, Resp, Asked, Data>(
+  op: Op<Req, Resp>,
+  request: Asked,
+  load: (op: Op<Req, Resp>, request: Asked) => Promise<Data>,
+): Read<Data> {
   const { visit } = useLocation();
   const [focus, setFocus] = useState(0);
   const [reloads, setReloads] = useState(0);
-  const [state, setState] = useState<{ body: string; data?: Resp; error?: unknown }>({ body: "" });
+  const [state, setState] = useState<{ body: string; data?: Data; error?: unknown }>({ body: "" });
 
   useEffect(() => {
     const regained = () => setFocus((n) => n + 1);
@@ -39,7 +70,7 @@ export function useRead<Req, Resp>(op: Op<Req, Resp>, request: NoInfer<Req>): Re
   const body = JSON.stringify(request);
   useEffect(() => {
     let latest = true;
-    call(op, JSON.parse(body) as Req).then(
+    load(op, JSON.parse(body) as Asked).then(
       (data) => {
         if (latest) {
           setState({ body, data });
@@ -54,7 +85,7 @@ export function useRead<Req, Resp>(op: Op<Req, Resp>, request: NoInfer<Req>): Re
     return () => {
       latest = false;
     };
-  }, [op, body, visit, focus, reloads]);
+  }, [op, body, load, visit, focus, reloads]);
 
   const current = state.body === body ? state : undefined;
   return { data: current?.data, error: current?.error, reload: () => setReloads((n) => n + 1) };

@@ -58,8 +58,9 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
 - **The account panel** shows the User's initial, name and role, and how
   this browser reaches koko: "Through koko web on <device>" for a Device
   Session, "Signed in from <browser>" for a Sign-in, and "On the koko
-  server's machine" for the Local caller. Account and Sign out join it
-  with their pages (#125, #116).
+  server's machine" for the Local caller; then a link to Account
+  (`accountPage`), which closes the panel as it is followed. Sign out joins
+  it with its page (#116).
 - **The main region** (`<main id="main">`) holds the page. After a visit
   that leaves the focus on nothing, as when the link followed went with the
   page it was on, the focus moves to it; a visit that leaves the focus
@@ -118,6 +119,9 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   is a saved view and Back returns to the earlier state. The router uses the
   browser's history alone; the web front serves `index.html` for every path
   outside `/v1/`.
+- **A moved page.** A path a released koko served that has moved is a
+  route whose page is `movedTo(to)`: it goes to the path `to` gives for its
+  params, keeping its query and replacing the history entry.
 - **A visit** is each history entry the browser moves to: a link, Back or
   Forward, even to the URL it is on. A replace (`navigate(to, {replace:
   true})`), such as the redirect from `/`, refines the entry it is on and is
@@ -201,7 +205,9 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   window regains focus. The web UI holds no connection open and never polls.
   An answer to an earlier request never shows as the current one's; a failed
   reload keeps the last answer to the same request beside the error. `reload`
-  shows what a write changed. The one read a person asks for by a click,
+  shows what a write changed. `useReads` calls one read once per request, as
+  Access calls `space.show` for each Space, and holds the answers in order
+  once all have come; one that fails fails them all. The one read a person asks for by a click,
   showing or copying a Secret's value (`secret.show`), calls `call` on the
   click instead, and its page shows only the latest answer
   ([the Secrets page](secrets.md#the-web-uis-secrets-page)).
@@ -269,6 +275,7 @@ logic:
 | `StateMark` | `StateMark.tsx` | a Host's state as a mark of its own shape and its word |
 | `notify` | `notify.ts` | a toast saying what a call that changed something did ([Notices](#notices)) |
 | `Loading`, `LoadFailed`, `Loaded`, `EmptyState`, `NoMatch`, `Refusal` | `states.tsx` | the states every screen has |
+| `useFocusFallback` | `focus.ts` | the focus kept in place when an action takes away the control that had it, as Revoke does with its row: the list's heading takes it |
 
 A dialog or panel takes the focus as it opens, closes on Escape and gives
 the focus back to what opened it; every icon button has a name.
@@ -293,7 +300,9 @@ the focus back to what opened it; every icon button has a name.
 - **No match**: one panel saying nothing matches the view, and the button
   that clears the search and filters (`NoMatch`).
 - **A refused write**: the koko server's message in place, an alert, the
-  form kept as typed (`Refusal`).
+  form kept as typed (`Refusal`); a page that says more than the code's
+  message, such as the Personal Space that keeps a User from being deleted,
+  gives `Refusal` its own message as a string.
 - **Forms** validate when submitted (`Form`): the submit button stays
   enabled; each field at fault shows koko's message under it (a field's
   `validate`), the first takes the focus, and nothing is sent. The form
@@ -352,16 +361,17 @@ test holds one test per action (spec #108: "Patterns, not a re-skin").
 its Members; the koko server answers anyone else as for a record that does
 not exist. The page's references hold the rules each action follows:
 [the record's pages](record-pages.md), [Secrets](secrets.md#the-web-uis-secrets-page)
-and [the Spaces, People and Devices pages](people-pages.md). The move to
-HeroUI (#121) took the pages out; each comes back with its ticket (#122 to
-#125, #116), holding these actions.
+and [the Access and Account pages](access-pages.md). The move to
+HeroUI (#121) took the pages out; each came back with its ticket (#122 to
+#125), holding these actions, and Sign-ins come back with #116.
 
 **The frame**, on every page:
 
 | Action | Call | Who |
 | --- | --- | --- |
 | See who the web UI acts as, from which device | `user.current` | anyone |
-| Follow a link to each page the caller may see | none | anyone; People the Owner alone |
+| Follow a link to each page the caller may see | none | anyone; a person's panel the Owner alone |
+| Open Account from the account panel | none | anyone |
 | Choose the language, which the browser keeps | none | anyone |
 | Choose Light, Dark or System, which the browser keeps | none | anyone |
 
@@ -423,42 +433,53 @@ HeroUI (#121) took the pages out; each comes back with its ticket (#122 to
 | Move to another Space | `secret.move` | in both Spaces |
 | Delete, asking first | `secret.remove` | in the Space |
 
-**Spaces** (`/spaces`) and **a Space** (`/spaces/<name>`):
+**Access** (`/access`, which `/spaces` and `/people` go to; `all=1` in the
+query) and **a Space's panel** (`/access/spaces/<name>`, which
+`/spaces/<name>` goes to):
 
 | Action | Call | Who |
 | --- | --- | --- |
 | List the Spaces, a Personal Space marked so | `space.list` | anyone: the Spaces they can act in |
-| Add a Space | `space.add` | the Owner |
 | See a Space's Members and its counts of Hosts, Retired Hosts and Secrets | `space.show` | in the Space |
+| List the Users against the shared Spaces, the Removed ones when asked for | `user.list` (and `space.show`, `device.list`) | the Owner |
+| Add a Space | `space.add` | the Owner |
 | Rename a Space | `space.rename` | the Owner, on a shared Space |
 | Remove a Space, asking first | `space.remove` | the Owner, on a shared Space |
-| Add a Member, chosen among the Users who are not one | `space.member.add` (and `user.list`) | the Owner, on a shared Space |
-| Take a Member out | `space.member.remove` | the Owner, on a shared Space |
+| Make a User a Member: a cell, or Add a Member chosen among the Users who are not one | `space.member.add` (and `user.list`) | the Owner, on a shared Space |
+| Take a Member out: a cell, or Take out | `space.member.remove` | the Owner, on a shared Space |
+| Invite a User, to the Spaces chosen, their Join Code shown once, with Copy and its countdown | `user.invite`, then `space.member.add` | the Owner |
 
-**People** (`/people`, the Owner alone; `all=1` in the query):
-
-| Action | Call | Who |
-| --- | --- | --- |
-| List the Users, the Removed ones when asked for | `user.list` | the Owner |
-| Invite a User, their Join Code shown once, with Copy and its countdown | `user.invite` | the Owner |
-| Remove a User, asking first, then say whether they were deleted or Removed | `user.remove` | the Owner, on any User but the Owner who is not Removed |
-
-**Devices** (`/devices`; `all=1` in the query):
+**A person's panel** (`/access/people/<name>`, the Owner alone):
 
 | Action | Call | Who |
 | --- | --- | --- |
-| List the Device Sessions, the Revoked ones when asked for, this one marked | `device.list` | anyone: their own; the Owner everyone's |
+| See a User's role, Spaces, Personal Space and devices, the Revoked ones when asked for | `user.list`, `space.show`, `device.list` | the Owner |
+| Make them a Member of a shared Space, or take them out, by its switch | `space.member.add`, `space.member.remove` | the Owner |
+| Add a device for them, with an optional name, its Join Code shown once | `device.add` | the Owner, for a User not Removed |
+| Revoke a live Device Session of theirs, asking first; the Owner's own last only once its name is typed, with `last` | `device.revoke` | the Owner |
+| Remove the User, asking first, then say whether they were deleted or Removed | `user.remove` | the Owner, on any User but the Owner who is not Removed |
+
+**Account** (`/account`, which `/devices` goes to; `all=1` in the query):
+
+| Action | Call | Who |
+| --- | --- | --- |
+| See who the web UI acts as and how this browser got in | `user.current` | anyone |
+| Choose the language and Light, Dark or System, as the top bar does | none | anyone |
+| List one's own Device Sessions, the Revoked ones when asked for, this one marked | `device.list` | anyone |
 | Add a device, with an optional name, its Join Code shown once, with Copy and its countdown | `device.add` | anyone for themselves |
-| Add a device for another User, chosen among those not Removed | `device.add` (and `user.list`) | the Owner |
-| Revoke a live Device Session, asking first; the Owner's own last only once its name is typed, with `last` | `device.revoke` | anyone for their own; the Owner for anyone's |
+| Revoke a live Device Session, asking first; the Owner's own last only once its name is typed, with `last` | `device.revoke` | anyone for their own |
+| See what one's Personal Space holds | `space.show` | anyone |
+
+For the Owner, `/devices` listed everyone's Device Sessions; that view is
+now each person's panel under Access.
 
 ## Verifying
 
 - [`Shell.test.tsx`](../../web/src/shell/Shell.test.tsx), Vitest and React
   Testing Library against the [fake API](web-ui.md#testing-pages), with test
   pages of their own in the three places: the account panel for a Device
-  Session, a Sign-in and the Local caller; the Owner's three places and the
-  one the URL is in marked, a page beneath a place's path in it, a Member
+  Session, a Sign-in and the Local caller, and its Account link closing
+  it; the Owner's three places and the one the URL is in marked, a page beneath a place's path in it, a Member
   given no Owner-only place and its path showing Page not found; on a
   phone the places in the bar at the foot with their icons; `/` going to
   the first place, keeping the query; Page not found with its link to the

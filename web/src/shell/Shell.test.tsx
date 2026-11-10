@@ -57,6 +57,14 @@ function AccessPage() {
   );
 }
 
+function AccountPage() {
+  return (
+    <PageHead title="Account">
+      <p>account page</p>
+    </PageHead>
+  );
+}
+
 const routes: Route[] = [
   { path: "/hosts", page: HostsPage, nav: "shell.place.hosts", icon: Server },
   { path: "/secrets", page: SecretsPage, nav: "shell.place.secrets", icon: KeyRound },
@@ -92,9 +100,23 @@ test("the account panel names the User, their role and the device koko web runs 
 
   const panel = await openAccount("bob");
 
-  expect(panel.textContent).toBe("bobMemberThrough koko web on laptop");
+  expect(panel.textContent).toBe("bobMemberThrough koko web on laptopAccount");
   await expectAccessible();
   fireEvent.keyDown(panel, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
+test("the account panel's Account link goes to Account and closes the panel", async () => {
+  const api = fakeApi();
+  asDevice(api, bob);
+  renderShell("/hosts", [...routes, { path: "/account", page: AccountPage }]);
+  await screen.findByText("hosts page");
+
+  const panel = await openAccount("bob");
+  fireEvent.click(within(panel).getByRole("link", { name: "Account" }));
+
+  expect(await screen.findByText("account page")).toBeDefined();
+  expect(window.location.pathname).toBe("/account");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
 
@@ -107,7 +129,7 @@ test("for a Sign-in the account panel names the browser that signed in", async (
   renderShell("/hosts");
   await screen.findByText("hosts page");
 
-  expect((await openAccount("bob")).textContent).toBe("bobMemberSigned in from Firefox on Linux");
+  expect((await openAccount("bob")).textContent).toBe("bobMemberSigned in from Firefox on LinuxAccount");
 });
 
 test("for the Local caller the account panel names the Owner on the koko server's machine", async () => {
@@ -116,7 +138,7 @@ test("for the Local caller the account panel names the Owner on the koko server'
   renderShell("/hosts");
   await screen.findByText("hosts page");
 
-  expect((await openAccount("alice")).textContent).toBe("aliceOwnerOn the koko server's machine");
+  expect((await openAccount("alice")).textContent).toBe("aliceOwnerOn the koko server's machineAccount");
 });
 
 // The places.

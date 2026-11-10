@@ -270,6 +270,15 @@
     color: var(--muted);
   }
 
+  /* A count that stands alone, such as a Space's Hosts in its panel. */
+  .t-figure {
+    font-size: 1.5rem;
+    line-height: 1.2;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
   .t-num {
     font-variant-numeric: tabular-nums;
   }

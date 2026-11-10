@@ -147,13 +147,15 @@ export function AlertLine({ children }: { children: ReactNode }) {
 
 /**
  * Refusal shows why a call failed, in place, where the action was: the
- * message of the API error's code, announced as an alert, never a toast. It
- * shows nothing while there is no error.
+ * message of the API error's code, announced as an alert, never a toast; or,
+ * where the page says more than the code's message, such as the Personal
+ * Space that keeps a User from being deleted, the page's own message,
+ * given as a string. It shows nothing while there is no error.
  */
 export function Refusal({ error }: { error: unknown }) {
   const t = useT();
   if (error === undefined) {
     return null;
   }
-  return <AlertLine>{errorMessage(t, error)}</AlertLine>;
+  return <AlertLine>{typeof error === "string" ? error : errorMessage(t, error)}</AlertLine>;
 }

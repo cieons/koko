@@ -14,7 +14,7 @@ ADR; a proposed change lives in its issue or PR.
 | The Seal: the Root Key's file, sealed values, and the Root Key at start-up | [seal.md](seal.md) |
 | The web UI build: Node, the embedded app and placeholder, the generated types, page tests | [web-ui.md](web-ui.md) |
 | The web UI shell: the frame (side navigation, account menu), routing and who the web UI acts as, language, mode and catalogues, the API client, confirmations, edit forms, notices, what a page shows once | [web-shell.md](web-shell.md) |
-| The Spaces, People and Devices pages: who sees and does what, what asks first, and a Join Code shown once | [people-pages.md](people-pages.md) |
+| The Access and Account pages: the Users against the Spaces, a Space's and a person's panels, one's own devices, who sees and does what, what asks first, and a Join Code shown once | [access-pages.md](access-pages.md) |
 | The Host connector: logging in to a Host through its Relay, the pinned host key and connect retries | [host-connector.md](host-connector.md) |
 | Enroll: `koko host enroll`, its inputs, the host key it pins, the states, and the one line it adds to `authorized_keys` | [enroll.md](enroll.md) |
 | The resumable stream: the byte stream beneath a Tunnel, its frames, offset exchange and replay buffer | [resumable-stream.md](resumable-stream.md) |
