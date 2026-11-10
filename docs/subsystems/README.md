@@ -12,9 +12,9 @@ ADR; a proposed change lives in its issue or PR.
 | The CLI: the command tree, parser, runner, output layer and `--json` | [cli.md](cli.md) |
 | The store: SQLite, transactions, migrations and record ids | [store.md](store.md) |
 | The Seal: the Root Key's file, sealed values, and the Root Key at start-up | [seal.md](seal.md) |
-| The web UI build: Node, the embedded app and placeholder, the generated types, page tests | [web-ui.md](web-ui.md) |
-| The web UI shell: the frame (side navigation, account menu), routing and who the web UI acts as, language, mode and catalogues, the API client, confirmations, edit forms, notices, what a page shows once | [web-shell.md](web-shell.md) |
-| The Access and Account pages: the Users against the Spaces, a Space's and a person's panels, one's own devices, who sees and does what, what asks first, and a Join Code shown once | [access-pages.md](access-pages.md) |
+| The web UI build: Node, HeroUI and Tailwind, the size budget, the embedded app and placeholder, the generated types, page tests, the static checks and the real-browser check | [web-ui.md](web-ui.md) |
+| The web UI shell: the frame (the top bar with its places, Language, Appearance and the account panel, and the phone's bar), routing and who the web UI acts as, language, mode and catalogues, the API client, the states every screen has, confirmations, edit forms, notices, what a page shows once, the page inventory | [web-shell.md](web-shell.md) |
+| The Access and Account pages: the Users against the Spaces, a Space's and a person's panels, one's own devices and Browser Sign-ins, who sees and does what, what asks first, and a Join Code or Password Link shown once | [access-pages.md](access-pages.md) |
 | The Host connector: logging in to a Host through its Relay, the pinned host key and connect retries | [host-connector.md](host-connector.md) |
 | Enroll: `koko host enroll`, its inputs, the host key it pins, the states, and the one line it adds to `authorized_keys` | [enroll.md](enroll.md) |
 | The resumable stream: the byte stream beneath a Tunnel, its frames, offset exchange and replay buffer | [resumable-stream.md](resumable-stream.md) |
@@ -28,9 +28,9 @@ ADR; a proposed change lives in its issue or PR.
 | The Device Mux: which way a command goes and the direct path, starting it, the lock, its socket and runtime directory, the local protocol, liveness and reconnecting, the bare-name refresh, its state, the idle exit, the revocation disconnect and `koko disconnect` | [device-mux.md](device-mux.md) |
 | The access check and Spaces: who is calling, the rule, unseen equals unknown, memberships, what a Space holds, the access matrix | [access.md](access.md) |
 | Users: the record, `user ls`, and `user remove` deleting a User who never used koko or Removing anyone else | [users.md](users.md) |
-| Passwords, Password Links and Sign-ins: the hash, issuing and spending a link, the Sign-in cookie and its lifetime, the `/auth/` endpoints, the rate limits, what a Sign-in may do, the log lines | [signin.md](signin.md) |
+| Passwords, Password Links and Sign-ins: the hash, issuing and spending a link, the Sign-in cookie and its lifetime, the `/auth/` endpoints, the rate limits, what a Sign-in may do, the web UI's Sign in and Set a Password pages and its Password and Sign-ins parts of Account and a person's panel, the log lines | [signin.md](signin.md) |
 | The record: a Host's fields and their rules, a Service and its ports, Attributes, the Preset Attributes and the four types, the Note, the host and service operations and `attr.list`, filtering and sorting, relative dates, the one leak | [record.md](record.md) |
-| The record's pages: the Hosts list and its detail pane, its view in the URL, the PowerSearch filter, relative dates, sorting and columns, a Host's page and its actions, edit forms, the Services list and a Service's page | [record-pages.md](record-pages.md) |
+| The record's pages: the Hosts page and its Services view, the view in the URL, the filter, relative dates, sorting and columns, Add Host, a Host's page and its actions, edit forms, and a Service's panel | [record-pages.md](record-pages.md) |
 | Secrets: the record and its name rule, the commands and the one that prints a value, values in JSON, access, sealing, and the web UI's Secrets page | [secrets.md](secrets.md) |
 
 ## Maintaining a reference
