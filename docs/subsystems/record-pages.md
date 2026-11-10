@@ -1,21 +1,13 @@
 # The record's pages
 
-> **A Host and a Service come back in #124.** The move to HeroUI (ADR
-> 0046) took these pages out. The Hosts page, with its Services view and
-> Add Host, is back (#122); the sections from "A Host's page" to "A
-> Service's page" still describe the Astryx pages 6841eb2 held, whose
-> behaviour rules stand for #124, on [the web UI's
-> design](../web-design.md)'s layout. Their links to files and tests name
-> what 6841eb2 held.
-
 The web UI's pages for the record: the Hosts page, with its Services view,
-its search, Filter, sorting and columns, and Add Host; a Host's page and a
-Service's, with the actions on each. They sit in the [web UI
+its search, Filter, sorting and columns, and Add Host; a Host's page, with
+a Service's panel over it, and the actions on each. They sit in the [web UI
 shell](web-shell.md); what the operations do, and the filter terms and sort
 keys they take, is in [the record](record.md). The rules are P0 spec: the
 record, "The web UI's Host and Service pages"; the layout is [the web UI's
 design](../web-design.md) ("Hosts", "The Services view", "Add Host and
-Edit"). Each page is a chunk of its own, which loads the first time the web
+Edit", "A Host", "A Service"). Each page is a chunk of its own, which loads the first time the web
 UI shows it ([`lazyPage`](web-shell.md#pages-and-routing)).
 
 ## The Hosts list
@@ -205,62 +197,121 @@ when on) and the Note when it holds text. Then a toast says the Host is
 recorded and the page moves to it. A refusal shows in the panel, the form
 kept as typed. Cancel and Escape close it, sending nothing, the focus back
 on Add Host. [`HostFields`](../../web/src/pages/host/HostForm.tsx), the
-four groups, is what #124's Edit reuses without Name and Space.
+four groups, is what [Edit](#edit-forms) reuses without Name and Space.
 
 ## A Host's page
 
 [`HostPage`](../../web/src/pages/host/HostPage.tsx), at `/hosts/<host>`,
 the Host's name or its id, shows what `host.show` answers the caller, as
-`koko host show` does, on `detail-page`'s pattern:
+`koko host show` does, in the design's "A Host":
 
-- **The summary header**
-  ([`RecordHeader`](../../web/src/pages/host/RecordView.tsx)): a link back
-  to the Hosts, the name, its state in a `Badge` and its Space, and its
-  actions, with a refusal under them.
-- **The content:** the Services as its line items, each linking to its
-  page, with Add Service; the fields by key in a `MetadataList` (`relay`
-  linking to the Relay's page by its id, or "A Relay you cannot see";
-  `host_key` the pin's SHA-256 fingerprint, or "Not pinned"); and the
-  Attributes by key in another.
-- **The rail** holds the Note as written. At 1024 pixels and below the
-  rail's Note moves under the Attributes.
+- **The head**: the breadcrumb, Hosts › its Space, the Space a link to
+  the list narrowed to it (`/hosts?filter=space%3D<space>`); the name,
+  which names the browser's tab, with its [state mark](web-shell.md#parts);
+  **Edit**, and "More actions for <name>": Rename, Move to another Space,
+  then Retire and Delete as danger items.
+- **Reaching it**, by state: Managed, `ssh <name>` in a [command
+  line](web-shell.md#parts) with Copy, and that koko logs in as the Host
+  Account and keeps the Host's key; Registered, that koko cannot log in
+  yet, and `koko host enroll <name>` with Copy, since Enroll stays in the
+  CLI; Retired, one sentence. Under a hairline: Address, Port, Host
+  Account, the Relay when it has one (its name, a link to the Relay's page
+  by its id, or "A Relay you cannot see", ADR 0035) and Pinned host key
+  (the pin's SHA-256 fingerprint, or "Not pinned").
+- **Attributes**, each a label over its value as stored, four across:
+  Provider, Region, Price (with its currency), Billing cycle, Expires,
+  Renews automatically and Provider account, then every other key by
+  name; with none, one sentence. An expiry is a plain Attribute.
+- **Services**, a row each, its name and ports, a link that opens its
+  [panel](#a-services-panel), and **Add Service**.
+- **Secrets in <space>**: up to four of the Secrets `secret.list` answers
+  for the Host's Space, those whose name holds the Host's name first, each
+  a compact [`SecretRow`](../../web/src/pages/secret/SecretRow.tsx), with
+  Copy, Show and its menu as on [the Secrets
+  page](secrets.md#the-web-uis-secrets-page); "All N", when there are
+  more, links to `/secrets?space=<space>`.
+- **Note**, as written, then "Recorded <date>, changed <ago>" and the id.
 
-A Host no one can see answers `unknown_host`, as one that does not exist.
+On a phone the panels stack, Reaching it first. A Host no one can see
+answers `unknown_host`, and the page says no Host the caller can see has
+that name or id, with a link to Hosts.
 
 The actions name the Host by its id, so a rename made meanwhile never sends
-one to another Host. Each opens one of [the shell's dialogs](web-shell.md#dialogs),
-a bottom sheet on a phone, which gives the focus back to its button when it
-closes. Only retire and delete
-ask first, in the [confirmation dialog](web-shell.md#confirmations), saying
-what follows:
+one to another Host. Rename and Move are [short
+forms](web-shell.md#dialogs); Retire and Delete ask first, in the
+[confirmation dialog](web-shell.md#confirmations), saying what follows; a
+refusal, such as `relay_in_use` or `host_was_managed`, shows in place. A
+write that succeeded says so in a toast.
 
 | Action | Asks | After |
 | --- | --- | --- |
-| Enroll, for a Registered Host: shows `koko host enroll <host>` with a button that copies it, since Enroll stays in the CLI | no | nothing changes |
-| Edit: `address`, `port`, `account`, `relay`, the Attributes and the Note (`host.set`) | no | the page reloads |
-| Rename (`host.rename`) | no | the page moves to the new name, replacing its history entry |
-| Move to another Space (`host.move`) | no | the page reloads |
-| Add a Service: `name` and `ports` (`service.add`) | no | the page moves to the Service |
+| Edit (`host.set`), [below](#edit-forms) | no | the page loads again |
+| Rename (`host.rename`): the new name, checked by the name rule | no | the page moves to the new name, replacing its history entry |
+| Move to another Space (`host.move`): the Space, a searchable choice of the others `space.list` answers | no | the page loads again |
+| Add Service (`service.add`), [below](#a-services-panel) | no | the new Service's panel opens |
 | Retire (`host.retire`): it leaves the list and frees its name, its record, Services and pin kept under its id | yes | the page moves to `/hosts/<id>`, replacing its history entry |
 | Delete (`host.remove`), offered only with no pin: it goes with its Attributes, Note and Services, the count given | yes | the page goes back to `/hosts`, replacing its history entry |
 
 A Retired Host's page offers Edit, of its Attributes and Note alone, Move,
-and Delete when it has no pin; its Services show, read-only, as the koko
-server refuses any other change with `host_retired`.
+and Delete when it has no pin; Rename and Retire are disabled, there is no
+Add Service, and its Services' panels are read-only, as the koko server
+refuses any other change with `host_retired`.
 
 ## Edit forms
 
-[`EditRecord`](../../web/src/pages/host/RecordForm.tsx), a Host's and a
-Service's, in a dialog, sends only what differs from the record as the form
-opened with it ([`useEditForm`](web-shell.md#calls)), so a field someone
-else changed meanwhile is never overwritten, and cannot be saved with
-nothing changed. A value emptied is cleared through `unset`: `port` (back
-to 22), `relay`, `ports`, an Attribute, the Note; `address` and `account`
-cannot be emptied. One more Attribute can be added by key. A value is
-checked against its key's type first, as the filter checks one, a relative
-date such as `+1y` resolved in the browser's time zone, as the CLI resolves
-one in a write; an enum's comes from its list, and its clear button clears
-it. Saving never asks.
+[`EditHost`](../../web/src/pages/host/HostForm.tsx), which loads with its
+first opening, is the Host form in its wide side panel, but Name and Space,
+which Rename and Move change. It opens with the Host as `host.show`
+answered it ([`formValuesOf`](../../web/src/pages/host/HostForm.tsx)) and
+sends one `host.set`, naming the Host by its id, with only what differs
+from that ([`hostChanges`](../../web/src/pages/host/HostForm.tsx)), so a
+field someone else changed meanwhile is never overwritten. A value emptied
+is cleared through `unset`: the port (back to 22), the Relay (None), an
+Attribute, an enum's value (None, its first option), and the Note; Address
+and Host Account cannot be emptied. Renews automatically is a switch: on
+sends `yes`, and off, once it was on, `no`. What the Host form and a
+Service's panel share of the Attribute rows and of what an edit sends of
+them is [`AttributeRows`](../../web/src/pages/host/AttributeRows.tsx). The
+Relay is a searchable choice of the Managed Hosts reached directly but this
+one, with the Host's own Relay, a Relay it cannot see among them. Each
+value is checked against its key's type when the form is submitted, a
+relative date such as `+1y` resolved in the browser's time zone as the CLI
+resolves one in a write; nothing is sent while one is at fault. With
+nothing changed, Save closes the panel and sends nothing. A refusal shows
+in the panel, the form kept as typed. A Retired Host's form shows how koko
+reaches it disabled, takes its Attributes and Note alone, and says so.
+
+## A Service's panel
+
+[`OpenService`](../../web/src/pages/host/ServicePanel.tsx), at
+`/hosts/<host>/services/<service>`, a side panel over the Host's page, the
+Host by the name or id the Service names it by, shows what `service.show`
+answers, naming the Host by its id: Name, Ports (separated by commas; a
+bare port is TCP), the Attributes as key and value rows, as the Host
+form's, and the Note. **Save** checks each field (the name rule, each port
+as `record.ParseServicePort` takes one, each value against its key's type)
+and sends one `service.set` for the ports, Attributes and Note that
+changed, with `unset` for those emptied, then `service.rename` when the
+name changed. If the rename is refused, the panel says that the other
+changes are saved under the old name and shows the refusal in place; Save
+then sends the rename alone. With nothing changed, Save closes the panel
+and sends nothing. **Delete**, at the foot's start, asks first,
+and the panel closes. Closing the panel goes back to the Host's page,
+replacing the history entry; the page loads again after a write.
+
+[`AddService`](../../web/src/pages/host/ServicePanel.tsx), from the Host's
+**Add Service**, is the same panel, empty, its Name focused. It sends one
+`service.add` by the Host's id with only what is given, then the new
+Service's panel opens, giving the focus back to Add Service when it closes.
+
+A Service whose Host is Retired is reached through the Host's id; its
+panel shows its ports, Attributes and Note, says they cannot be changed,
+and offers no action. A Service the Host has not shows `unknown_service`
+in the panel, with Try again.
+
+`/services/<host>/<service>`, where a released koko showed a Service, goes
+to `/hosts/<host>/services/<service>`, keeping its query and replacing the
+history entry ([`routes.ts`](../../web/src/pages/host/routes.ts)).
 
 ## The Services view
 
@@ -269,7 +320,7 @@ tab of the Hosts page (`/hosts?view=services`), lists what `service.list`
 answers the caller for the view, as `koko service ls` does: never a Retired
 Host's Services. One panel, a table named "Services": the name, a link that
 covers its row and opens the Service on its Host's page,
-`/hosts/<host>/services/<service>` (#124); the Host, a link of its own
+`/hosts/<host>/services/<service>`; the Host, a link of its own
 above the row's that opens the Host; and the view's
 columns, by default `ports`, which the list shows but neither filters nor
 sorts on, so its header is no button and a URL sorting by it says so. Its
@@ -285,19 +336,6 @@ and where one is added. On a phone a Service is one link: its name, "on
 `/services`, where a released koko listed the Services, goes to
 `/hosts?view=services`, keeping its query and replacing the history entry
 ([`routes.ts`](../../web/src/pages/host/routes.ts)).
-
-## A Service's page
-
-[`ServicePage`](../../web/src/pages/service/ServicePage.tsx), at
-`/services/<host>/<service>`, the Host by the name or id the Service names
-it by, shows what `service.show` answers, on the Host page's pattern: a
-summary header with a link back to its Host, its name and its actions; its
-fields and Attributes; and its Note in the rail. It edits the ports,
-Attributes and Note and renames the Service, which never ask; the page then
-reloads, or moves to the new name. Delete asks first and goes back to the
-Host's page, replacing its history entry. A Service whose Host is Retired
-names it by its id, which holds a `_` no Host name holds, and its page says
-it is read-only and offers no action.
 
 ## Verifying
 
@@ -338,20 +376,30 @@ axe on each page, dialog and pane state it renders.
   each field checked on submit and nothing sent, and a refusal in place
   with the form kept; Cancel giving the focus back; the panel from the
   bottom on a phone.
-- [`host.test.tsx`](../../web/src/pages/host/host.test.tsx): a Host's
-  page with its fields, Attributes, Services, fingerprint, actions and Note
-  in the rail, and the Note under the content on a narrow screen; a
-  Registered Host's Enroll copying `koko host enroll`, an unseen Relay and
-  no pin; an unknown Host; the edit dialog sending only what changed, a
-  relative date resolved, a wrong value and an unchanged form refused, the
-  port, Relay and an enum cleared; rename and move never asking; retire and
-  delete asking with their consequence, Cancel sending nothing; delete
-  offered only with no pin; a Retired Host's page, its Attributes and Note
-  set, moved, and deleted with no pin; a Service added; a
-  dialog's Cancel giving the focus back.
-- The Service's page's tests, under 6841eb2's `pages/service/services.test.tsx`:
-  a Service's page; its edit dialog sending only what changed and clearing
-  its ports, its Note set; rename never asking; delete asking first; a
-  Service on a Retired Host read-only; an unknown Service (#124).
+- [`host.test.tsx`](../../web/src/pages/host/host.test.tsx): a Managed
+  Host's page with its breadcrumb, ssh line copied, facts, pin, Attributes
+  in order, Services, the Secrets of its Space (four, the Host's first,
+  and All N), Note and when it was recorded; a Secret copied and shown
+  there; a Registered Host's `koko host enroll` copied, a Relay unseen, no
+  pin and Delete offered; a Relay linked by its id, and no Delete with a
+  pin; an unknown Host; Edit sending only what changed, a relative date
+  resolved, and the port, the Relay and an enum cleared through `unset`;
+  Edit refusing wrong values before the call, sending nothing unchanged,
+  and a refusal in place; Rename, Move, Retire with `relay_in_use` and
+  Delete with `host_was_managed`, each by the Host's id, the confirmations'
+  Cancel sending nothing and giving the focus back; a Retired Host's page
+  with Rename and Retire disabled, no Add Service, its Edit, Move and
+  Delete; Renews automatically switched off and on; the page and the
+  Space's Secrets failing to load, with Try again; a phone's page and Edit
+  from the bottom; Escape closing Edit.
+- [`servicepanel.test.tsx`](../../web/src/pages/host/servicepanel.test.tsx):
+  a Service's panel opened from its row, and Escape giving the focus back
+  to it; Save as one `service.set` then `service.rename`; the rename
+  refused, saying what was saved, and sent alone after; the ports and an
+  Attribute cleared, and nothing sent with nothing changed; a wrong port or
+  name refused before any call; Delete asking first; Add Service as one
+  `service.add` opening the new Service's panel; a Retired Host's Service
+  read-only; an unknown Service; the `/services/<host>/<service>`
+  redirect.
 - [`reldate.test.ts`](../../web/src/pages/host/reldate.test.ts): every
   case of the CLI's relative-date table.

@@ -37,3 +37,19 @@ export function keyName(t: Translate, key: string): string | undefined {
 export function keyLabel(t: Translate, key: string): string {
   return keyName(t, key) ?? key;
 }
+
+/**
+ * purchase are the Preset keys of what a Host costs, in the order of a
+ * provider's order confirmation: the Host form gives each a field, and a
+ * Host's page shows them first.
+ */
+export const purchase = [
+  "provider",
+  "region",
+  "price",
+  "currency",
+  "billing_cycle",
+  "expires_at",
+  "auto_renew",
+  "provider_account",
+] as const;

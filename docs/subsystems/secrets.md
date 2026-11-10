@@ -227,7 +227,8 @@ of the shell's [dialogs](web-shell.md#parts).
 - **On a Host's page.** A row is
   [`SecretRow`](../../web/src/pages/secret/SecretRow.tsx), which holds its
   value, its Copy, Show and menu and their dialogs, so the Secrets of a
-  Host's Space show there with the same behaviour (#124).
+  Host's Space show there with the same behaviour, the row `compact`
+  ([a Host's page](record-pages.md#a-hosts-page)).
 
 ## Verifying
 

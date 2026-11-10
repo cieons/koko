@@ -209,11 +209,14 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   again after it failed reuses its key, and a write that succeeded, or a
   different request, takes a new one. A write that succeeds while a later
   one is pending leaves the later one its key.
-- **Edit forms** use [`useEditForm`](../../web/src/shell/form.ts), which
-  sends only the fields whose value differs from its baseline: the record as
-  the form opened with it, and after `saved()`, once a write succeeded, the
-  values written. A field someone else changed meanwhile is never
-  overwritten; the last writer wins per field.
+- **Edit forms** send only the fields whose value differs from their
+  baseline: the record as the form opened with it, and, once a write
+  succeeded, the values written. A field someone else changed meanwhile is
+  never overwritten; the last writer wins per field.
+  [`useEditForm`](../../web/src/shell/form.ts) holds a form of plain
+  values so; the Host form and a Service's panel, whose Attributes are
+  rows, compare each key in turn ([edit
+  forms](record-pages.md#edit-forms)).
 
 ## Shown once
 
@@ -398,7 +401,7 @@ HeroUI (#121) took the pages out; each comes back with its ticket (#122 to
 | Go back to the default view from a URL the list does not take, which says which term | none | anyone |
 | Open a Service or its Host: a Service opens on its Host's page | none | anyone |
 
-**A Service** (`/services/<host>/<service>`):
+**A Service** (`/hosts/<host>/services/<service>`, a panel over its Host's page, which `/services/<host>/<service>` goes to):
 
 | Action | Call | Who |
 | --- | --- | --- |

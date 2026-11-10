@@ -4,6 +4,9 @@ import type { KeyType } from "./view";
 /** manyValues is how many values an enum has before its value is picked in a searchable choice. */
 const manyValues = 8;
 
+/** noValue is the id of the option that clears the value: no enum's value, which never starts with '-'. */
+const noValue = "-";
+
 /** EnumChoiceProps are an enum's value field's. */
 export interface EnumChoiceProps {
   label: string;
@@ -11,6 +14,8 @@ export interface EnumChoiceProps {
   /** value is the value picked, or "" for none. */
   value: string;
   onChange: (value: string) => void;
+  /** none, when given, labels a first option that clears the value, as a form's field offers. */
+  none?: string;
   validate?: (value: string) => string | undefined;
   className?: string;
 }
@@ -19,10 +24,12 @@ export interface EnumChoiceProps {
  * EnumChoice picks an enum's value, as stored, in its declared order: a
  * select for a short list, such as a billing cycle, and a searchable choice
  * for a long one, such as currency (docs/web-design.md, "Searchable
- * choices").
+ * choices"). With none, its first option clears the value.
  */
-export function EnumChoice({ label, type, value, onChange, validate, className }: EnumChoiceProps) {
-  const options = (type.values ?? []).map((v) => ({ id: v, label: v }));
+export function EnumChoice({ label, type, value, onChange, none, validate, className }: EnumChoiceProps) {
+  const values = (type.values ?? []).map((v) => ({ id: v, label: v }));
+  const options = none === undefined ? values : [{ id: noValue, label: none }, ...values];
+  const set = (id: string | null) => onChange(id === null || id === noValue ? "" : id);
   const props = {
     label,
     value: value === "" ? null : value,
@@ -30,9 +37,5 @@ export function EnumChoice({ label, type, value, onChange, validate, className }
     validate: validate && ((v: string | null) => validate(v ?? "")),
     className,
   };
-  return options.length > manyValues ? (
-    <SearchChoice {...props} onChange={(v) => onChange(v ?? "")} />
-  ) : (
-    <Choice {...props} onChange={onChange} />
-  );
+  return values.length > manyValues ? <SearchChoice {...props} onChange={set} /> : <Choice {...props} onChange={set} />;
 }

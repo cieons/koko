@@ -82,3 +82,13 @@ export function validPort(value: string): boolean {
 export function splitPorts(written: string): string[] {
   return written.split(/[\s,]+/).filter((p) => p !== "");
 }
+
+/**
+ * validServicePort tells whether value is a Service's port as koko takes
+ * one: a port, 1 to 65535, then /tcp or /udp, or nothing for TCP
+ * (record.ParseServicePort).
+ */
+export function validServicePort(value: string): boolean {
+  const [port = "", protocol, ...more] = value.split("/");
+  return validPort(port) && (protocol === undefined || protocol === "tcp" || protocol === "udp") && more.length === 0;
+}

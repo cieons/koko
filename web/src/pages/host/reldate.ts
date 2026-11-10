@@ -4,6 +4,8 @@
 // the browser's time zone before each call, and keeps it as written in the
 // URL, so a bookmarked "expires within 30 days" view stays relative.
 
+import type { Clock } from "./view";
+
 /** relative is a relative date's form: a sign, at most 6 digits and a unit. */
 const relative = /^([+-])(\d{1,6})([dwmy])$/;
 
@@ -46,6 +48,11 @@ export function resolveDate(s: string, now: Date, timeZone: string): string | un
 /** browserTimeZone is the time zone the browser shows local times in. */
 export function browserTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+/** browserClock is the browser's clock now, in its time zone, which a relative date in a write resolves in. */
+export function browserClock(): Clock {
+  return { now: new Date(), timeZone: browserTimeZone() };
 }
 
 /** dateIn is now's calendar date in timeZone: its year, month from 0, and day. */

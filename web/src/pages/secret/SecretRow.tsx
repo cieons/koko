@@ -115,18 +115,20 @@ export interface SecretRowProps {
   spaces: readonly Space[] | undefined;
   /** onChanged hears that a write from the row changed or deleted the Secret, so the list loads again. */
   onChanged: () => void;
+  /** compact is the row in a panel's list on a Host's page: its name alone, without when it changed. */
+  compact?: boolean;
 }
 
 /**
- * SecretRow is a Secret in a list, on the Secrets page and on a Host's
- * page (docs/web-design.md, "Secrets"): its name, when it changed, Copy,
+ * SecretRow is a Secret in a list, on the Secrets page and, compact, on a
+ * Host's page (docs/web-design.md, "Secrets"): its name, when it changed, Copy,
  * Show and its menu. Copy calls secret.show and copies the value without
  * showing it. Show opens the value in the row, in the code face with its
  * own Copy, and becomes Hide; a value that is not UTF-8 shows, and copies,
  * as its base64. The menu sets a new value, renames, moves and deletes the
  * Secret, each in a dialog of its own; only Delete asks first.
  */
-export function SecretRow({ secret, spaces, onChanged }: SecretRowProps) {
+export function SecretRow({ secret, spaces, onChanged, compact = false }: SecretRowProps) {
   const t = useT();
   const language = useLanguage();
   const name = qualified(secret);
@@ -157,11 +159,13 @@ export function SecretRow({ secret, spaces, onChanged }: SecretRowProps) {
   };
 
   return (
-    <li className="border-b border-line px-5 py-3 last:border-0">
+    <li className={compact ? "border-t border-line py-2" : "border-b border-line px-5 py-3 last:border-0"}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div className="min-w-0 flex-1 basis-48">
-          <p className="t-name truncate">{secret.name}</p>
-          <p className="t-label">{t("secret.changed", { ago: formatAgo(secret.updated_at, language) })}</p>
+        <div className={`min-w-0 flex-1 ${compact ? "basis-32" : "basis-48"}`}>
+          <p className={`${compact ? "font-medium" : "t-name"} truncate`}>{secret.name}</p>
+          {!compact && (
+            <p className="t-label">{t("secret.changed", { ago: formatAgo(secret.updated_at, language) })}</p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <CopyButton

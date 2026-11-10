@@ -11,12 +11,21 @@ export interface RowAction {
   isDisabled?: boolean;
 }
 
+/** RowMenuProps are what a row menu holds, and how its button looks. */
+export interface RowMenuProps {
+  /** label names the menu and its button, such as "More actions for web1". */
+  label: string;
+  actions: readonly RowAction[];
+  /** variant is the button's: ghost in a row, secondary beside a page's other actions. */
+  variant?: "ghost" | "secondary";
+}
+
 /**
  * RowMenu holds the actions a row or a page uses less (docs/web-design.md,
  * "Components"): HeroUI's Dropdown behind an icon button named label, such
  * as "More actions for web1", the danger actions last, after a separator.
  */
-export function RowMenu({ label, actions }: { label: string; actions: readonly RowAction[] }) {
+export function RowMenu({ label, actions, variant = "ghost" }: RowMenuProps) {
   const plain = actions.filter((a) => a.danger !== true);
   const danger = actions.filter((a) => a.danger === true);
   const item = (a: RowAction) => (
@@ -33,7 +42,7 @@ export function RowMenu({ label, actions }: { label: string; actions: readonly R
   );
   return (
     <Dropdown>
-      <Button variant="ghost" isIconOnly className="rounded-full" aria-label={label}>
+      <Button variant={variant} isIconOnly className="rounded-full" aria-label={label}>
         <Ellipsis aria-hidden className="size-[1.125rem]" />
       </Button>
       <Dropdown.Popover placement="bottom end" className="min-w-48">

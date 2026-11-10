@@ -160,6 +160,7 @@ export interface SearchChoiceProps {
   hideLabel?: boolean;
   placeholder?: string;
   validate?: (value: string | null) => string | undefined;
+  isDisabled?: boolean;
   className?: string;
 }
 
@@ -188,6 +189,7 @@ export function SearchChoice(props: SearchChoiceProps) {
       {...selection}
       validate={validate && (() => validate(value))}
       defaultFilter={contains}
+      isDisabled={props.isDisabled}
       className={props.className}
       fullWidth
     >

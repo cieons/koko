@@ -1,48 +1,35 @@
 import { Button, Switch } from "@heroui/react";
-import { Plus, Trash2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
-import type { AttrKey } from "../../api/attr";
-import { type Host, HostAdd, type NewHost } from "../../api/host";
+import { type AttrKey, AttrList } from "../../api/attr";
+import { type Host, HostAdd, HostList, HostSet, type HostSetRequest, type NewHost } from "../../api/host";
 import type { Space } from "../../api/space";
 import { useCaller } from "../../shell/caller";
-import { useWrite } from "../../shell/data";
+import { useRead, useWrite } from "../../shell/data";
 import { useT } from "../../shell/i18n";
 import { navigate } from "../../shell/router";
-import { Field, SearchChoice } from "../../ui/fields";
+import { Field, type Option, SearchChoice } from "../../ui/fields";
 import { notify } from "../../ui/notify";
 import { SidePanel } from "../../ui/SidePanel";
-import { Refusal } from "../../ui/states";
+import { Loaded, LoadFailed, Refusal } from "../../ui/states";
+import { type AttributeRow, AttributeRows, recordChanges, type RecordText, rowsOf, text, typeOf } from "./AttributeRows";
 import { DateValue } from "./DateValue";
 import { EnumChoice } from "./EnumChoice";
+import { purchase } from "./keys";
 import { hostPath, validName, validPort } from "./record";
-import { browserTimeZone } from "./reldate";
-import { attrType, type Clock, type KeyType, readValue, validAttrKey } from "./view";
+import { browserClock } from "./reldate";
+import { type Clock, readValue } from "./view";
 
 // The Host form (docs/web-design.md, "Add Host and Edit"): four groups, in
 // the order of a provider's order confirmation. Add Host sends them in one
-// host.add; Edit (#124) shows the same fields but Name and Space.
-
-/** purchase are the Preset keys the purchase group gives a field each. */
-const purchase = [
-  "provider",
-  "region",
-  "price",
-  "currency",
-  "billing_cycle",
-  "expires_at",
-  "auto_renew",
-  "provider_account",
-] as const;
+// host.add; Edit shows the same fields but Name and Space, and sends what
+// changed in one host.set.
 
 /** noRelay is the Relay choice's id for none: no Host's name, which never starts with '-'. */
 const noRelay = "-";
 
-/** AttributeRow is one row of the form's other Attributes: a key and its value, as typed. */
-export interface AttributeRow {
-  key: string;
-  value: string;
-}
+/** unseenRelay is the Relay choice's id for a Relay the caller cannot see, which has no name to show. */
+const unseenRelay = "-unseen";
 
 /** HostValues are the form's values, as typed. */
 export interface HostValues {
@@ -74,14 +61,15 @@ export interface HostFieldsProps {
   spaces?: readonly Space[];
   /** relays are the Hosts that may be a Relay: Managed, reached directly. */
   relays: readonly Host[];
+  /** relayNow, in Edit, is the Host's Relay as it stands, offered though relays may not hold it. */
+  relayNow?: Option;
+  /**
+   * editing makes it Edit's form: the port may be emptied, back to 22; and
+   * for a Retired Host, how koko reaches it shows but takes no change.
+   */
+  editing?: "host" | "retired";
   attrs: readonly AttrKey[];
   clock: Clock;
-}
-
-/** typeOf is the type attr.list gives key, or text. */
-function typeOf(attrs: readonly AttrKey[], key: string): KeyType {
-  const found = attrs.find((a) => a.key === key);
-  return found ? attrType(found) : { type: "text" };
 }
 
 /**
@@ -89,8 +77,14 @@ function typeOf(attrs: readonly AttrKey[], key: string): KeyType {
  * it, the purchase, and anything else. Each field checks its value when the
  * form is submitted, against its key's type as attr.list gives it.
  */
-export function HostFields({ values, onChange, spaces, relays, attrs, clock }: HostFieldsProps) {
+export function HostFields({ values, onChange, spaces, relays, relayNow, editing, attrs, clock }: HostFieldsProps) {
   const t = useT();
+  const fixed = editing === "retired";
+  const relayOptions = [
+    { id: noRelay, label: t("host.form.noRelay") },
+    ...(relayNow !== undefined && !relays.some((r) => r.name === relayNow.id) ? [relayNow] : []),
+    ...relays.map((r) => ({ id: r.name, label: r.name })),
+  ];
   const set = <K extends keyof HostValues>(key: K) => (value: HostValues[K]) => onChange({ ...values, [key]: value });
   // ofItsType is the check of a field against its key's type, as attr.list gives it.
   const ofItsType = (key: string) => (value: string) =>
@@ -132,6 +126,7 @@ export function HostFields({ values, onChange, spaces, relays, attrs, clock }: H
             onChange={set("address")}
             description={t("host.form.addressHint")}
             validate={(v) => (v.trim() === "" ? t("host.form.required") : undefined)}
+            isDisabled={fixed}
             code
             className="sm:col-span-2"
           />
@@ -144,26 +139,29 @@ export function HostFields({ values, onChange, spaces, relays, attrs, clock }: H
             value={values.account}
             onChange={set("account")}
             validate={(v) => (v.trim() === "" ? t("host.form.required") : undefined)}
+            isDisabled={fixed}
             code
           />
           <Field
             label={t("host.key.port")}
             value={values.port}
             onChange={set("port")}
-            validate={(v) => (validPort(v) ? undefined : t("host.form.portRule"))}
+            description={editing === undefined ? undefined : t("host.form.portEmpty")}
+            validate={(v) =>
+              validPort(v.trim()) || (editing !== undefined && v.trim() === "") ? undefined : t("host.form.portRule")
+            }
+            isDisabled={fixed}
             inputMode="numeric"
             code
           />
-          {relays.length > 0 && (
+          {relayOptions.length > 1 && (
             <SearchChoice
               label={t("host.key.relay")}
               value={values.relay === "" ? noRelay : values.relay}
               onChange={(v) => set("relay")(v === null || v === noRelay ? "" : v)}
               description={t("host.form.relayHint")}
-              options={[
-                { id: noRelay, label: t("host.form.noRelay") },
-                ...relays.map((r) => ({ id: r.name, label: r.name })),
-              ]}
+              options={relayOptions}
+              isDisabled={fixed}
               className="sm:col-span-2"
             />
           )}
@@ -198,6 +196,7 @@ export function HostFields({ values, onChange, spaces, relays, attrs, clock }: H
             type={typeOf(attrs, "currency")}
             value={values.currency}
             onChange={set("currency")}
+            none={t("host.form.noValue")}
             className="sm:col-span-2"
           />
           <EnumChoice
@@ -205,6 +204,7 @@ export function HostFields({ values, onChange, spaces, relays, attrs, clock }: H
             type={typeOf(attrs, "billing_cycle")}
             value={values.billing_cycle}
             onChange={set("billing_cycle")}
+            none={t("host.form.noValue")}
             className="sm:col-span-2"
           />
           <DateValue
@@ -235,7 +235,7 @@ export function HostFields({ values, onChange, spaces, relays, attrs, clock }: H
         </div>
       </Group>
       <Group title={t("host.form.more")} lead={t("host.form.moreLead")}>
-        <AttributeRows rows={values.rows} onChange={set("rows")} attrs={attrs} clock={clock} />
+        <AttributeRows rows={values.rows} onChange={set("rows")} reserved={purchase} attrs={attrs} clock={clock} />
         <Field
           label={t("host.key.note")}
           value={values.note}
@@ -259,100 +259,6 @@ function Group({ title, lead, children }: { title: string; lead?: string; childr
       </legend>
       {children}
     </fieldset>
-  );
-}
-
-/**
- * AttributeRows are the form's other Attributes, a key and a value a row:
- * the key picked among those attr.list answers or typed anew, the value as
- * its key's type takes it.
- */
-function AttributeRows({
-  rows,
-  onChange,
-  attrs,
-  clock,
-}: {
-  rows: readonly AttributeRow[];
-  onChange: (rows: AttributeRow[]) => void;
-  attrs: readonly AttrKey[];
-  clock: Clock;
-}) {
-  const t = useT();
-  const setRow = (i: number, row: AttributeRow) => onChange(rows.map((r, j) => (j === i ? row : r)));
-  const taken = (i: number) => new Set<string>([...purchase, ...rows.filter((_, j) => j !== i).map((r) => r.key)]);
-  return (
-    <>
-      {rows.map((row, i) => {
-        const type = typeOf(attrs, row.key);
-        const keyOptions = attrs
-          .filter((a) => !taken(i).has(a.key))
-          .map((a) => ({ id: a.key, label: a.key }));
-        const validateKey = (key: string | null) =>
-          key === null
-            ? row.value === ""
-              ? undefined
-              : t("host.form.required")
-            : !validAttrKey(key)
-              ? t("host.form.keyRule")
-              : taken(i).has(key)
-                ? t("host.form.keyTaken", { key })
-                : undefined;
-        const validateValue = (value: string) =>
-          row.key === ""
-            ? undefined
-            : value.trim() === ""
-              ? t("host.form.required")
-              : readValue(type, value.trim(), clock) === undefined
-                ? type.type === "date"
-                  ? t("host.date.invalid", { value })
-                  : t("host.form.invalid", { key: row.key })
-                : undefined;
-        const valueLabel = row.key === "" ? t("host.form.attrValueNew") : t("host.form.attrValue", { key: row.key });
-        const setValue = (value: string) => setRow(i, { ...row, value });
-        return (
-          // A row has no id of its own, and goes only by its own button, so its index keys it.
-          <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-start gap-3">
-            <SearchChoice
-              label={t("host.form.attrKey")}
-              value={row.key === "" ? null : row.key}
-              onChange={(key) => setRow(i, { key: key ?? "", value: "" })}
-              options={keyOptions}
-              newValues
-              validate={validateKey}
-            />
-            {type.type === "enum" ? (
-              <EnumChoice label={valueLabel} type={type} value={row.value} onChange={setValue} validate={validateValue} />
-            ) : type.type === "date" ? (
-              <DateValue label={valueLabel} value={row.value} onChange={setValue} validate={validateValue} />
-            ) : (
-              <Field
-                label={valueLabel}
-                value={row.value}
-                onChange={setValue}
-                validate={validateValue}
-                inputMode={type.type === "number" ? "decimal" : undefined}
-              />
-            )}
-            <Button
-              isIconOnly
-              variant="tertiary"
-              aria-label={row.key === "" ? t("host.form.attrRemoveNew") : t("host.form.attrRemove", { key: row.key })}
-              onPress={() => onChange(rows.filter((_, j) => j !== i))}
-              className="mt-6"
-            >
-              <Trash2 aria-hidden className="size-4" />
-            </Button>
-          </div>
-        );
-      })}
-      <div>
-        <Button variant="secondary" onPress={() => onChange([...rows, { key: "", value: "" }])}>
-          <Plus aria-hidden className="size-4" />
-          {t("host.form.attrAdd")}
-        </Button>
-      </div>
-    </>
   );
 }
 
@@ -403,7 +309,7 @@ export function AddHost({ spaces, hosts, attrs = [], onClose }: AddHostProps) {
     ...blank,
     space: personal,
   }));
-  const clock: Clock = { now: new Date(), timeZone: browserTimeZone() };
+  const clock = browserClock();
   const submit = () => {
     void add.submit({ hosts: [newHost(values, attrs, clock)] }).then((added) => {
       const [recorded] = added?.hosts ?? [];
@@ -489,3 +395,176 @@ export function newHost(values: HostValues, attrs: readonly AttrKey[], clock: Cl
   return host;
 }
 
+/**
+ * formValuesOf are the Host form's values for host as it stands, which Edit
+ * opens with and sends only the changes from: its Relay by its name, or as
+ * one the caller cannot see.
+ */
+export function formValuesOf(host: Host): HostValues {
+  const a = host.attributes;
+  return {
+    name: host.name,
+    space: host.space,
+    address: host.address,
+    account: host.account,
+    port: String(host.port),
+    relay: host.relay === null ? "" : (host.relay.name ?? unseenRelay),
+    provider: text(a.provider),
+    region: text(a.region),
+    price: text(a.price),
+    currency: text(a.currency),
+    billing_cycle: text(a.billing_cycle),
+    expires_at: text(a.expires_at),
+    auto_renew: a.auto_renew === "yes",
+    provider_account: text(a.provider_account),
+    rows: rowsOf(a, purchase),
+    note: host.note ?? "",
+  };
+}
+
+/**
+ * hostChanges are what Edit sends in host.set: only the fields that differ
+ * from before, the record as the form opened with it, so a field someone
+ * else changed meanwhile is never overwritten; and unset for the port, the
+ * Relay, an Attribute and the Note emptied. The port emptied goes back to
+ * 22; Renews automatically switched off is no.
+ */
+export function hostChanges(
+  before: HostValues,
+  after: HostValues,
+  attrs: readonly AttrKey[],
+  clock: Clock,
+): Omit<HostSetRequest, "host"> {
+  const changes: Omit<HostSetRequest, "host"> = {};
+  const unset: string[] = [];
+  if (after.address.trim() !== before.address) {
+    changes.address = after.address.trim();
+  }
+  if (after.account.trim() !== before.account) {
+    changes.account = after.account.trim();
+  }
+  const port = after.port.trim();
+  if (port !== before.port) {
+    if (port === "") {
+      unset.push("port");
+    } else {
+      changes.port = Number(port);
+    }
+  }
+  if (after.relay !== before.relay) {
+    if (after.relay === "") {
+      unset.push("relay");
+    } else {
+      changes.relay = after.relay;
+    }
+  }
+  const record = recordChanges(recordText(before), recordText(after), attrs, clock);
+  const attributes = { ...record.attributes };
+  // Renews automatically is a switch: on is yes, and off, once it was on, is no.
+  if (after.auto_renew !== before.auto_renew) {
+    attributes.auto_renew = after.auto_renew ? "yes" : "no";
+  }
+  if (Object.keys(attributes).length > 0) {
+    changes.attributes = attributes;
+  }
+  if (record.note !== undefined) {
+    changes.note = record.note;
+  }
+  unset.push(...record.unset);
+  if (unset.length > 0) {
+    changes.unset = unset;
+  }
+  return changes;
+}
+
+/** recordText is what the Host form holds of a Host's Attributes and Note as typed, Renews automatically aside. */
+function recordText(values: HostValues): RecordText {
+  return {
+    attributes: new Map([
+      ...purchase.filter((k) => k !== "auto_renew").map((k): [string, string] => [k, values[k]]),
+      ...values.rows.map((r): [string, string] => [r.key, r.value]),
+    ]),
+    note: values.note,
+  };
+}
+
+/** EditHostProps are what Edit is drawn from. */
+export interface EditHostProps {
+  host: Host;
+  /** onSaved hears that host.set wrote the changes. */
+  onSaved: () => void;
+  onClose: () => void;
+}
+
+/**
+ * EditHost is Edit (docs/web-design.md, "Add Host and Edit"): the Host form
+ * but Name and Space, which Rename and Move change, in a wide side panel. It
+ * sends one host.set, naming the Host by its id, with only what changed and
+ * unset for what was emptied; with nothing changed it closes, sending
+ * nothing. A Retired Host's form takes its Attributes and Note alone, and
+ * says so.
+ */
+export function EditHost({ host, onSaved, onClose }: EditHostProps) {
+  const t = useT();
+  const attrs = useRead(AttrList, {});
+  const hosts = useRead(HostList, {});
+  const set = useWrite(HostSet);
+  const [before] = useState(() => formValuesOf(host));
+  const [values, setValues] = useState(before);
+  const clock = browserClock();
+  const retired = host.state === "retired";
+  const relayNow =
+    host.relay === null
+      ? undefined
+      : { id: before.relay, label: host.relay.name ?? t("host.relay.unseen") };
+  const submit = () => {
+    const changes = hostChanges(before, values, attrs.data?.attributes ?? [], clock);
+    if (Object.keys(changes).length === 0) {
+      onClose();
+      return;
+    }
+    void set.submit({ host: host.id, ...changes }).then((written) => {
+      if (written) {
+        notify(t("host.edit.done", { name: host.name }));
+        onSaved();
+      }
+    });
+  };
+  return (
+    <SidePanel
+      title={t("host.edit.title", { name: host.name })}
+      subtitle={retired ? t("host.edit.retired") : undefined}
+      wide
+      onSubmit={submit}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="tertiary" onPress={onClose}>
+            {t("shell.cancel")}
+          </Button>
+          <Button type="submit" isPending={set.pending}>
+            {t("host.edit.submit")}
+          </Button>
+        </>
+      }
+    >
+      <Loaded read={attrs}>
+        {({ attributes }) => (
+          <HostFields
+            values={values}
+            onChange={setValues}
+            relays={(hosts.data?.hosts ?? []).filter(
+              (h) => h.state === "managed" && h.relay === null && h.id !== host.id,
+            )}
+            relayNow={relayNow}
+            editing={retired ? "retired" : "host"}
+            attrs={attributes}
+            clock={clock}
+          />
+        )}
+      </Loaded>
+      {hosts.error !== undefined && <LoadFailed error={hosts.error} retry={hosts.reload} />}
+      <Refusal error={set.error} />
+    </SidePanel>
+  );
+}
