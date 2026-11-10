@@ -278,7 +278,8 @@ function AccessTable({
   const { search } = useLocation();
   const live = liveCount(users);
   return (
-    <div className="sheet overflow-x-auto px-5 pt-4 pb-2">
+    // scroll-pl-72 keeps a focused cell clear of the sticky Users column, w-72 (WCAG 2.4.11).
+    <div className="sheet scroll-pl-72 overflow-x-auto px-5 pt-4 pb-2">
       <table aria-label={t("space.access.table")} className="w-full border-separate border-spacing-0">
         <thead>
           <tr>

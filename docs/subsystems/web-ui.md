@@ -56,7 +56,10 @@ app sits in its providers is [the web UI shell](web-shell.md#providers).
   writes Obsidian's tokens on HeroUI's variable names, light on `:root`
   and dark on `.dark` and `[data-theme="dark"]`, the type roles (`t-display`
   to `t-code`), the panel (`.sheet`) and koko's adjustments to HeroUI's
-  parts. It is the one file that writes a colour; every other rule and
+  parts. The root's scroll padding keeps a focused control clear of the
+  sticky top bar and, under `ui/phone.ts`'s width, the phone's bar
+  (Access's table does the same for its sticky first column). It is the one
+  file that writes a colour; every other rule and
   class uses the tokens. Geist and Geist Mono, their Latin subsets as
   variable WOFF2 files, are bundled in `src/assets/fonts/` with their SIL
   Open Font License files; Chinese text uses the system's fonts.

@@ -144,6 +144,16 @@
     -webkit-text-size-adjust: 100%;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
+    /*
+     * A control that takes the focus scrolls clear of the sticky top bar
+     * (h-16) and, on a phone (ui/phone.ts's query), of the bar at the foot:
+     * a 2.75rem place, 0.5rem of padding and the safe area, as Shell.tsx
+     * draws them, with 0.5rem to spare (WCAG 2.4.11).
+     */
+    scroll-padding-top: 5rem;
+    @media (width < 768px) {
+      scroll-padding-bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 3.75rem);
+    }
   }
 
   body {
@@ -317,3 +327,4 @@
     box-shadow: 0 0 0 2px var(--focus);
   }
 }
+
