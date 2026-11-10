@@ -16,8 +16,8 @@ import (
 // no purge, since P0 has no backup (P0 spec: install and run). It never
 // removes /usr/local/bin/koko, the CLI, which install.sh put there: on a
 // machine as v0.1.0 or v0.2.0 left it, whose unit ran that file, it removes
-// only the unit. It reports the port the koko service listened on, for
-// install to take again. What is not there is not removed, so running it
+// only the unit. It reports the port the koko service listened on, and the
+// web listener's address its unit set, for install to take again. What is not there is not removed, so running it
 // again removes nothing.
 func (in *Installer) Uninstall(ctx context.Context) (install.UninstallReport, error) {
 	if err := in.checkRoot("uninstall"); err != nil {
@@ -32,6 +32,8 @@ func (in *Installer) Uninstall(ctx context.Context) (install.UninstallReport, er
 		// A port systemd does not tell stays unknown (0), and does not stop
 		// the uninstall.
 		report.ListenPort, _ = in.servicePort(ctx)
+		// The unit is the one place install keeps it, and it is about to go.
+		report.WebListen, _ = in.unitWebListen()
 		// The service stops, and leaves the boot, while systemd still knows
 		// its unit, and systemd forgets the unit once it is gone.
 		for _, args := range [][]string{{"stop", UnitName}, {"disable", UnitName}} {

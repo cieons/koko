@@ -221,6 +221,10 @@ type UninstallReport struct {
 	// ListenPort is the port the koko service listened on, which install
 	// takes again with --port, or 0 when that is unknown.
 	ListenPort int `json:"listen_port,omitzero"`
+	// WebListen is the web listener's address the koko unit set, which
+	// install takes again with --web-listen, or "" when it set none or
+	// that is unknown.
+	WebListen string `json:"web_listen,omitempty"`
 }
 
 // Refusal is install, or the koko server's start-up, refusing before it

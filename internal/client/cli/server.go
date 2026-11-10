@@ -231,6 +231,9 @@ type uninstalledJSON struct {
 	// ListenPort is the TCP port the koko server listened on, which
 	// install takes again with --port; left out when unknown.
 	ListenPort int `json:"listen_port,omitzero"`
+	// WebListen is the web listener's address the koko unit set, which
+	// install takes again with --web-listen; left out when none or unknown.
+	WebListen string `json:"web_listen,omitempty"`
 }
 
 // Human writes what uninstall removed, where what it kept is, and how to
@@ -251,9 +254,16 @@ Data directory:  %s
 Root Key:        %s
 System user:     %s
 `, r.DataDir, r.RootKeyFile, r.SystemUser)
-	again := "To run the koko server again on them, run sudo koko server install without --owner"
+	var with []string
 	if r.ListenPort != 0 {
-		again += fmt.Sprintf(", with --port %d", r.ListenPort)
+		with = append(with, fmt.Sprintf("--port %d", r.ListenPort))
+	}
+	if r.WebListen != "" {
+		with = append(with, "--web-listen "+r.WebListen)
+	}
+	again := "To run the koko server again on them, run sudo koko server install without --owner"
+	if len(with) > 0 {
+		again += ", with " + strings.Join(with, " and ")
 	}
 	b.WriteString("\n" + again + ".\n")
 	_, err := io.WriteString(w, b.String())
@@ -278,5 +288,6 @@ func serverUninstall(ctx context.Context, in *Input) (uninstalledJSON, error) {
 		RootKeyFile: report.RootKeyFile,
 		SystemUser:  report.SystemUser,
 		ListenPort:  report.ListenPort,
+		WebListen:   report.WebListen,
 	}, nil
 }

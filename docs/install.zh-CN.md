@@ -173,7 +173,7 @@ koko 目前没有备份命令。在 koko 服务器停止时复制的数据目录
 
 ## 卸载
 
-`koko server uninstall` 停止 koko 服务器，并删除其 unit 和 `/usr/local/bin/kokod`。它保留 CLI `/usr/local/bin/koko`、数据目录、根密钥和 `koko` 用户，并输出 koko 服务器原先监听的端口。如需在同一份数据上再次运行 koko 服务器，请运行不带 `--owner`、带上该 `--port` 的 `sudo koko server install`：它会再次安装与自身同一版本的 `kokod`。
+`koko server uninstall` 停止 koko 服务器，并删除其 unit 和 `/usr/local/bin/kokod`。它保留 CLI `/usr/local/bin/koko`、数据目录、根密钥和 `koko` 用户，并输出 koko 服务器原先监听的端口，以及原先设有的 Web 监听地址。如需在同一份数据上再次运行 koko 服务器，请运行不带 `--owner`、带上该 `--port`（若输出了 Web 监听地址，一并带上该 `--web-listen`）的 `sudo koko server install`：它会再次安装与自身同一版本的 `kokod`。
 
 ## 在容器中运行
 

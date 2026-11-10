@@ -93,11 +93,12 @@ func TestServerUninstall(t *testing.T) {
 }
 
 // For people, uninstall says what it removed and where what it kept is, and
-// how to run the koko server again on it, on the port it listened on.
+// how to run the koko server again on it, on the port it listened on and
+// with the web listener its unit set.
 func TestServerUninstallForPeople(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
-	install(t, m, "--owner", "alice", "--port", "8443")
+	install(t, m, "--owner", "alice", "--port", "8443", "--web-listen", "127.0.0.1:7823")
 	r := m.Koko("server", "uninstall")
 	r.WantSuccess(t)
 	for _, want := range []string{
@@ -107,7 +108,7 @@ func TestServerUninstallForPeople(t *testing.T) {
 		"Data directory:  /var/lib/koko\n",
 		"Root Key:        /etc/koko/root.key\n",
 		"System user:     koko\n",
-		"run sudo koko server install without --owner, with --port 8443",
+		"run sudo koko server install without --owner, with --port 8443 and --web-listen 127.0.0.1:7823.",
 	} {
 		if !strings.Contains(r.Stdout, want) {
 			t.Errorf("uninstall printed\n%s\nwhich does not say %q", r.Stdout, want)

@@ -301,9 +301,10 @@ runs `koko leave`, then joins with a new Join Code.
 `koko server uninstall` stops the koko server and removes its unit and
 `/usr/local/bin/kokod`. It keeps the CLI, `/usr/local/bin/koko`, the data
 directory, the Root Key and the `koko` user, and prints the port it
-listened on. To run the koko server again on the same data, run
-`sudo koko server install` without `--owner`, with that `--port`: it
-installs the `kokod` of its own version again.
+listened on, and the web listener's address when it had one. To run the
+koko server again on the same data, run `sudo koko server install` without
+`--owner`, with that `--port`, and that `--web-listen` when it printed
+one: it installs the `kokod` of its own version again.
 
 ## In a container
 
