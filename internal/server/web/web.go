@@ -348,15 +348,24 @@ func writePage(w http.ResponseWriter, status int, text string) {
 	_, _ = io.WriteString(w, text)
 }
 
+// contentSecurityPolicy is the policy every answer of the web front
+// carries: the web UI loads nothing from another site, runs no inline
+// script and applies no inline style sheet but one, and no other site
+// frames a page. The one is the <style> element React Aria adds on iOS
+// Safari while an overlay is open, @layer { * { overscroll-behavior:
+// contain } }, allowed by its hash (ADR 0046); the web UI's static checks
+// fail when the pinned React Aria adds another.
+const contentSecurityPolicy = "default-src 'self'; style-src 'self' 'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='; " +
+	"frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+
 // securityHeaders sets the headers every answer of the web front carries,
-// on either listener, so that both serve the web UI alike: a Content
-// Security Policy that loads nothing from another site and lets no other
-// site frame a page, no MIME sniffing, and no Referer. hsts adds
+// on either listener, so that both serve the web UI alike: the Content
+// Security Policy, no MIME sniffing, and no Referer. hsts adds
 // Strict-Transport-Security, for the web listener alone, whose answers
 // reach the browser over the reverse proxy's HTTPS; koko web serves
 // http://localhost.
 func securityHeaders(h http.Header, hsts bool) {
-	h.Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+	h.Set("Content-Security-Policy", contentSecurityPolicy)
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "no-referrer")
 	if hsts {

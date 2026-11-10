@@ -1,32 +1,30 @@
-import { AppShell, useAppShellMobile } from "@astryxdesign/core/AppShell";
-import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { NavIcon } from "@astryxdesign/core/NavIcon";
-import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
-import { Spinner } from "@astryxdesign/core/Spinner";
-import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
-import { Server, SearchX } from "lucide-react";
-import { useEffect, useEffectEvent } from "react";
+import { buttonVariants } from "@heroui/react";
+import { CircleAlert, TriangleAlert } from "lucide-react";
+import { type MouseEvent, type RefObject, useEffect, useRef } from "react";
+import { Link } from "react-aria-components";
 
 import { UserCurrent } from "../api/user";
 import type { MessageKey } from "../i18n/catalogues";
-import { AccountMenu } from "./AccountMenu";
+import { Page as PageHead } from "../ui/Page";
+import { usePhone } from "../ui/phone";
+import { Loading, LoadFailed } from "../ui/states";
 import { CallerContext, callerOf } from "./caller";
 import { useRead } from "./data";
-import { ErrorMessage, useT } from "./i18n";
+import { useT } from "./i18n";
 import { type Notice, useNotice } from "./notice";
 import { Providers } from "./providers";
 import { matchRoute, navigate, type Route, useLocation } from "./router";
+import { AccountPanel, LanguageChoice, ModeChoice } from "./TopBar";
 
 /**
- * Shell is the frame every page sits in, inside the Providers: Astryx's
- * AppShell with a top bar (koko's name, whom the web UI acts as, and the
- * account menu), the side navigation to the pages, a MobileNav drawer in its
- * place on a phone, the notices above them, and the page the URL names. It
- * learns who the web UI acts as from user.current, reloaded as every read
- * is, and renders a page only once it knows, so a Member never sees an
- * Owner-only page or link.
+ * Shell is the frame every page sits in, inside the Providers
+ * (docs/web-design.md, "The frame"): a skip link; the sticky top bar with
+ * koko's wordmark, the places the caller may see and, at its end, Language,
+ * Appearance and the account; the shell's notice under it; the page the URL
+ * names in the main region; and on a phone the places in a bar at the foot.
+ * It learns who the web UI acts as from user.current, reloaded as every
+ * read is, and renders a page only once it knows, so a Member never sees an
+ * Owner-only page or place.
  */
 export function Shell({ routes }: { routes: readonly Route[] }) {
   return (
@@ -38,113 +36,189 @@ export function Shell({ routes }: { routes: readonly Route[] }) {
 
 function Frame({ routes }: { routes: readonly Route[] }) {
   const t = useT();
+  const phone = usePhone();
   const userCurrent = useRead(UserCurrent, {});
   const caller = userCurrent.data && callerOf(userCurrent.data);
   const notice = useNotice(caller?.deviceSession?.id);
   const visible = routes.filter((r) => !r.ownerOnly || caller?.owner);
+  const places = caller ? visible.filter((r) => r.nav) : [];
+  const main = useRef<HTMLElement>(null);
+  useFocusMainAfterVisit(main);
+
+  const skip = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    main.current?.focus();
+  };
 
   return (
     <CallerContext value={caller}>
-      <AppShell
-        contentPadding={6}
-        banner={notice && <NoticeBanner notice={notice} />}
-        topNav={
-          <TopNav
-            label={t("shell.brand")}
-            heading={
-              <TopNavHeading heading={t("shell.brand")} headingHref="/" logo={<NavIcon icon={<Server />} />} />
-            }
-            endContent={<AccountMenu caller={caller} />}
-          />
-        }
-        sideNav={caller && <PageNav routes={visible} />}
-      >
-        <CloseMobileNavOnVisit />
-        {caller ? (
-          <Page routes={visible} />
-        ) : notice ? null : userCurrent.error ? (
-          <ErrorMessage error={userCurrent.error} />
-        ) : (
-          <Spinner label={t("shell.loading")} />
+      <div className="flex min-h-dvh flex-col">
+        <a
+          href="#main"
+          onClick={skip}
+          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-4 focus:z-50 focus:rounded-full focus:bg-surface focus:px-4 focus:py-2 focus:font-medium focus:shadow-sheet"
+        >
+          {t("shell.skip")}
+        </a>
+        <header className="sticky top-0 z-20 border-b border-line bg-background/80 backdrop-blur-xl">
+          <div className="mx-auto grid h-16 max-w-[76rem] grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 md:px-8">
+            <div className="flex min-w-0 items-center">
+              <Link
+                href="/"
+                className="rounded-md text-xl leading-none font-semibold tracking-[-0.04em] text-foreground outline-none select-none data-[focus-visible]:ring-2 data-[focus-visible]:ring-focus"
+              >
+                {t("shell.brand")}
+              </Link>
+            </div>
+            {!phone && places.length > 0 && (
+              <Places
+                places={places}
+                className="flex items-center gap-0.5 rounded-full bg-surface p-1 shadow-sheet"
+                item="h-8 px-4"
+              />
+            )}
+            <div className="col-start-3 flex items-center justify-end gap-0.5">
+              <LanguageChoice />
+              <ModeChoice />
+              {caller && <AccountPanel caller={caller} />}
+            </div>
+          </div>
+        </header>
+        {notice && <NoticeBar notice={notice} />}
+        <main
+          id="main"
+          ref={main}
+          tabIndex={-1}
+          className="mx-auto w-full max-w-[76rem] flex-1 px-4 pb-28 outline-none md:px-8 md:pb-16"
+        >
+          {caller ? (
+            <Page routes={visible} places={places} />
+          ) : notice ? null : userCurrent.error !== undefined ? (
+            <div className="pt-6">
+              <LoadFailed error={userCurrent.error} retry={userCurrent.reload} />
+            </div>
+          ) : (
+            <Loading />
+          )}
+        </main>
+        {phone && places.length > 0 && (
+          <div className="fixed inset-x-0 bottom-0 z-30 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            <Places
+              places={places}
+              className="flex w-full max-w-md items-stretch gap-1 rounded-full bg-surface p-1 shadow-sheet"
+              item="min-h-11 flex-1"
+              icons
+            />
+          </div>
         )}
-      </AppShell>
+      </div>
     </CallerContext>
   );
 }
 
-/** PageNav links each page the caller may see, in the order of routes, and marks the one the URL is in. */
-function PageNav({ routes }: { routes: readonly Route[] }) {
+/**
+ * useFocusMainAfterVisit moves the focus to the main region after a visit
+ * that left it on nothing, as when the link followed went with the page it
+ * was on, so reading starts again at the new page. A visit that left the
+ * focus where it was, such as on a place in the top bar, keeps it there.
+ */
+function useFocusMainAfterVisit(main: RefObject<HTMLElement | null>): void {
+  const { visit } = useLocation();
+  const first = useRef(visit);
+  useEffect(() => {
+    if (visit === first.current) {
+      return;
+    }
+    const focused = document.activeElement;
+    if (focused === null || focused === document.body) {
+      main.current?.focus({ preventScroll: true });
+    }
+  }, [visit, main]);
+}
+
+/**
+ * Places links each place the caller may see, in the order of routes, and
+ * marks the one the URL is in (aria-current), a page beneath it such as a
+ * Host's included: in the top bar's raised track on a desktop, and in the
+ * bar at the foot, with icons, on a phone.
+ */
+function Places({
+  places,
+  className,
+  item,
+  icons = false,
+}: {
+  places: readonly Route[];
+  className: string;
+  item: string;
+  icons?: boolean;
+}) {
   const t = useT();
   const { pathname } = useLocation();
   return (
-    <SideNav aria-label={t("shell.nav")}>
-      <SideNavSection title={t("shell.nav")} isHeaderHidden>
-        {routes.flatMap((r) =>
-          r.nav
-            ? [
-                <SideNavItem
-                  key={r.path}
-                  label={t(r.nav)}
-                  href={r.path}
-                  icon={r.icon}
-                  isSelected={pathname === r.path || pathname.startsWith(`${r.path}/`)}
-                />,
-              ]
-            : [],
-        )}
-      </SideNavSection>
-    </SideNav>
+    <nav aria-label={t("shell.nav")} className={className}>
+      {places.map((r) => {
+        const Icon = r.icon;
+        const current = pathname === r.path || pathname.startsWith(`${r.path}/`);
+        return (
+          <Link
+            key={r.path}
+            href={r.path}
+            aria-current={current ? "page" : undefined}
+            className={`place flex items-center justify-center gap-2 rounded-full text-sm font-medium text-muted no-underline outline-none transition-colors hover:text-foreground data-[focus-visible]:ring-2 data-[focus-visible]:ring-focus ${item}`}
+          >
+            {icons && Icon && <Icon aria-hidden className="size-4" />}
+            {t(r.nav as MessageKey)}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
 
-/** CloseMobileNavOnVisit closes the MobileNav drawer on every visit, such as one its links made. */
-function CloseMobileNavOnVisit() {
-  const { visit } = useLocation();
-  const { closeMobileNav } = useAppShellMobile();
-  // closeMobileNav changes as the drawer opens, which is no visit.
-  const close = useEffectEvent(() => closeMobileNav());
-  useEffect(() => close(), [visit]);
-  return null;
-}
-
-/** notices are how each notice shows: its status, and the messages of its title and description. */
+/** notices are how each notice shows: its tone, and the messages of its title and description. */
 const notices = {
-  stopped: {
-    status: "warning",
-    title: "shell.notice.stopped.title",
-    description: "shell.notice.stopped.description",
-  },
-  revoked: {
-    status: "error",
-    title: "shell.notice.revoked.title",
-    description: "shell.notice.revoked.description",
-  },
-  cookie: { status: "warning", title: "error.cookie_required", description: undefined },
-} as const satisfies Record<Notice, { status: string; title: MessageKey; description: MessageKey | undefined }>;
+  stopped: { tone: "warning", title: "shell.notice.stopped.title", description: "shell.notice.stopped.description" },
+  revoked: { tone: "danger", title: "shell.notice.revoked.title", description: "shell.notice.revoked.description" },
+  cookie: { tone: "warning", title: "error.cookie_required", description: undefined },
+} as const satisfies Record<
+  Notice,
+  { tone: "warning" | "danger"; title: MessageKey; description: MessageKey | undefined }
+>;
 
-/** NoticeBanner says, above the frame, why the web UI cannot act, announced as an alert. */
-function NoticeBanner({ notice }: { notice: Notice }) {
+/**
+ * NoticeBar says why the web UI cannot act, in one notice across the width
+ * under the top bar, announced as an alert, until what ends it. It is not a
+ * toast.
+ */
+function NoticeBar({ notice }: { notice: Notice }) {
   const t = useT();
-  const { status, title, description } = notices[notice];
+  const { tone, title, description } = notices[notice];
+  const Icon = tone === "danger" ? CircleAlert : TriangleAlert;
   return (
-    <Banner
-      status={status}
-      container="section"
+    <div
       role="alert"
-      title={t(title)}
-      description={description && t(description)}
-    />
+      className={tone === "danger" ? "bg-danger-soft text-danger-soft-foreground" : "bg-warning-soft text-warning-soft-foreground"}
+    >
+      <div className="mx-auto flex max-w-[76rem] items-start gap-3 px-4 py-3 md:px-8">
+        <Icon aria-hidden className="mt-0.5 size-5 shrink-0" />
+        <p>
+          <span className="font-semibold">{t(title)}</span>
+          {description !== undefined && <span> {t(description)}</span>}
+        </p>
+      </div>
+    </div>
   );
 }
 
 /**
  * Page renders the page the URL names among the routes the caller may see;
- * / goes to the first page the side navigation links.
+ * / goes, keeping its query, to the first place. A path no route matches,
+ * or one only the Owner may open, to a Member, shows "Page not found".
  */
-function Page({ routes }: { routes: readonly Route[] }) {
-  const t = useT();
+function Page({ routes, places }: { routes: readonly Route[]; places: readonly Route[] }) {
   const { pathname, search } = useLocation();
-  const first = routes.find((r) => r.nav);
+  const [first] = places;
   const home = pathname === "/" ? first : undefined;
   useEffect(() => {
     if (home) {
@@ -156,22 +230,22 @@ function Page({ routes }: { routes: readonly Route[] }) {
   }
   const match = matchRoute(routes, pathname);
   if (!match) {
-    return (
-      <EmptyState
-        headingLevel={1}
-        icon={<SearchX />}
-        title={t("shell.notFound.title")}
-        description={t("shell.notFound.description")}
-        actions={first && <Button variant="secondary" label={t("shell.notFound.home")} href={first.path} />}
-      />
-    );
+    return <NotFound first={first} />;
   }
   const { page: PageComponent } = match.route;
+  return <PageComponent params={match.params} />;
+}
+
+/** NotFound is the frame, a title, one sentence and a link to the first place, when there is one. */
+function NotFound({ first }: { first: Route | undefined }) {
+  const t = useT();
   return (
-    // .koko-page is the element a page's own CSS may size, such as the
-    // Hosts list, which fills the main area (host.css).
-    <div className="koko-page">
-      <PageComponent params={match.params} />
-    </div>
+    <PageHead title={t("shell.notFound.title")} lead={t("shell.notFound.description")}>
+      {first?.nav && (
+        <Link href={first.path} className={buttonVariants({ variant: "secondary" })}>
+          {t("shell.notFound.home", { page: t(first.nav) })}
+        </Link>
+      )}
+    </PageHead>
   );
 }

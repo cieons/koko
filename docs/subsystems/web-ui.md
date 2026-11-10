@@ -19,66 +19,74 @@ Serving it on `web@koko` is the [web front](web-front.md)'s job.
 - [`web/go.mod`](../../web/go.mod) makes `web/` a Go module of its own, so
   `./...` skips it, and with it the `.go` files some npm packages ship.
 
-## Astryx
+## HeroUI and Tailwind
 
-The web UI is built on Astryx, in its Neutral theme ([ADR
-0045](../adr/0045-the-web-ui-is-built-on-astryx.md)); how the app sits in
-its providers is [the web UI shell](web-shell.md#providers).
+The web UI is built on HeroUI v3, React Aria Components styled with
+Tailwind CSS 4, in koko's own theme, Obsidian ([ADR
+0046](../adr/0046-the-web-ui-is-built-on-heroui.md)); what every screen
+shows, and its values, is [the web UI's design](../web-design.md). How the
+app sits in its providers is [the web UI shell](web-shell.md#providers).
 
 - **The packages**, each at an exact version:
 
   | Package | In | Why |
   | --- | --- | --- |
-  | `@astryxdesign/core` | `dependencies` | the components, `reset.css` and `astryx.css` |
-  | `@astryxdesign/theme-neutral` | `dependencies` | the Neutral theme: `theme.css` and the built theme object; it brings `lucide-react` for icons |
-  | `lucide-react` | `dependencies` | the Lucide icons koko names itself, such as each page's in the side navigation; pinned at the version the theme brings, so there is one copy, and moved with it on each Astryx upgrade |
-  | `@stylexjs/stylex` | `dependencies` | the peer dependency of `@astryxdesign/core`, on its `0.19` line; no StyleX build step, since the CSS is prebuilt |
-  | `@astryxdesign/cli` | `devDependencies` | component docs and the agent docs for agents working in `web/`; never in the build |
+  | `@heroui/react` 3.2.7 | `dependencies` | the components, React Aria Components composed and styled |
+  | `@heroui/styles` 3.2.7 | `dependencies` | HeroUI's stylesheets: its base, one file per component, its default theme's variables, utilities and variants |
+  | `react-aria-components` 1.22.1 | `dependencies` | the primitives HeroUI composes, and those koko uses directly, such as `Link` and `RouterProvider`; the version HeroUI is built against, so there is one copy |
+  | `react-aria` 3.53.1 | `dependencies` | React Aria's hooks, at the version `react-aria-components` brings, so there is one copy; its `usePress` and `usePreventScroll` are what the CSP meets (below) |
+  | `@internationalized/date` 3.12.4 | `dependencies` | the calendar dates of the date field's value (`ui/DateInput.tsx`) |
+  | `lucide-react` 1.70.0 | `dependencies` | the icons koko names itself, such as each place's in the phone's bar |
+  | `tailwindcss` 4.3.5, `@tailwindcss/vite` 4.3.5 | `devDependencies` | Tailwind, the web UI's one styling vocabulary, and its Vite plugin, which builds the stylesheet; never in the build itself |
+  | `@react-aria/optimize-locales-plugin` 2.1.0 | `devDependencies` | keeps React Aria's own strings for English and Simplified Chinese alone (`vite.config.ts`) |
   | `axe-core` | `devDependencies` | the accessibility check of page tests |
 
-  Not adopted: `@astryxdesign/build`, Tailwind, canary releases, `vega`
-  and `charts`, and `astryx swizzle`.
-- **Install scripts.** `allowScripts` sets `@astryxdesign/core` and
-  `@astryxdesign/cli` to `false`: each ships a `postinstall` that only prints
-  a hint. No dependency's install script runs.
+  HeroUI v3 needs no animation library: its motion is CSS.
+- **Install scripts.** `allowScripts` in `package.json` lists `fsevents`,
+  the one dependency that ships one, as `false`, so no install script runs.
 - **Provenance.** CI's check job runs `npm audit signatures` after `npm ci`,
   and fails on a registry signature or provenance attestation that does not
   verify. It needs the registry, so `make check` does not run it.
-- **Components** are imported from their subpaths
-  (`@astryxdesign/core/Button`), never the package's root, so the build
-  leaves out the rest; `astryx.css` is taken whole.
-- **The CSP**, `default-src 'self'` ([the web front](web-front.md)), refuses
-  an inline script, a `<style>` element and a `data:` URL, so the web UI
-  needs none: `index.html` runs no inline script, Vite inlines no asset
-  (`assetsInlineLimit: 0`), and the theme is the built one, whose CSS is a
-  file. Astryx's layers (Dialog, Popover, Menu, Tooltip) would inject their
-  slide rules (`@position-try`) in a `<style>` element unless the document
-  holds an element of its id already, so
-  [`web/public/astryx-layer-rules.css`](../../web/public/astryx-layer-rules.css)
-  holds those rules and `index.html` links it under that id,
-  `astryx-layer-slide-rules`; Vite copies `public/` as it is, keeping the
-  link. `npm run astryx-layer-rules` writes the file from the pinned core.
-  Astryx's code blocks and date inputs inject styles too, and are not used
-  yet; a page that adopts one checks it under the CSP first.
-- **An upgrade** is a commit of its own: it bumps the three `@astryxdesign`
-  packages together (the theme pins core exactly, the CLI is at core's
-  version) and `lucide-react` to the version the new theme brings, reviews
-  what `npx astryx upgrade --from <old version>`
-  proposes, runs `npm run astryx-layer-rules`, refreshes the agent docs
-  (below) in the same commit, and passes the page tests, the size budget
-  and the real-browser check. koko stays on its pinned version until such a
-  commit; nothing moves it by itself.
-- **Agents working in `web/`** run the CLI at the pinned version there:
-  `npx astryx component <Name> --json` for a component's props,
-  `npx astryx build "<the page>"` for the template to start from,
-  `npx astryx template --list --type page` and `npx astryx template <name>`
-  for the templates, and `npx astryx search "<words>"`. `npx astryx init
-  --features agents --agent-docs-path AGENTS.md CLAUDE.md` wrote Astryx's
-  managed block into [`web/AGENTS.md`](../../web/AGENTS.md) and
-  [`web/CLAUDE.md`](../../web/CLAUDE.md), both committed; an edit goes
-  outside its markers, and an upgrade refreshes it with the same command.
-  `init --user` and its other features are never run, and the repository's
-  own `AGENTS.md` and `CLAUDE.md` stay koko's.
+- **The theme.** [`src/theme/heroui.css`](../../web/src/theme/heroui.css)
+  imports Tailwind, HeroUI's base, the style file of each HeroUI component
+  in use, in the order HeroUI's own `components/index.css` gives them, then
+  HeroUI's default theme, utilities and variants; a page that takes up
+  another component adds its file there.
+  [`src/theme/theme.css`](../../web/src/theme/theme.css) imports it, then
+  writes Obsidian's tokens on HeroUI's variable names, light on `:root`
+  and dark on `.dark` and `[data-theme="dark"]`, the type roles (`t-display`
+  to `t-code`), the panel (`.sheet`) and koko's adjustments to HeroUI's
+  parts. It is the one file that writes a colour; every other rule and
+  class uses the tokens. Geist and Geist Mono, their Latin subsets as
+  variable WOFF2 files, are bundled in `src/assets/fonts/` with their SIL
+  Open Font License files; Chinese text uses the system's fonts.
+- **The CSP**, `default-src 'self'` with one hash in `style-src` ([the web
+  front](web-front.md#the-headers-every-answer-carries)), refuses an inline
+  script, a `<style>` element but that one, and a `data:` URL, so the web UI
+  needs none: `index.html` runs no inline script, and Vite inlines no asset
+  (`assetsInlineLimit: 0`). React Aria adds two `<style>` elements of its
+  own: `usePress` adds its rule for pressable elements unless the document
+  holds an element whose id is `react-aria-pressable-style`, so
+  `index.html` holds a `<meta>` of that id and `theme.css` holds the rule
+  (`touch-action: pan-x pan-y pinch-zoom`); and on iOS Safari,
+  `usePreventScroll` adds `@layer { * { overscroll-behavior: contain } }`
+  while an overlay is open, which kokod's CSP allows by its hash, the path
+  ADR 0046 records after a run in the iOS Simulator. A page test fails on
+  any CSP violation (below), so an upgrade that adds a third is caught.
+- **An upgrade** is a commit of its own: it moves `@heroui/react` and
+  `@heroui/styles` together, `react-aria-components`, `react-aria` and
+  `@internationalized/date` to the versions the new HeroUI is built
+  against, and `tailwindcss` with `@tailwindcss/vite`; it checks the
+  component files `heroui.css` imports against HeroUI's new
+  `components/index.css`, and the static checks against the new React
+  Aria (a changed `<style>` text needs a new hash in kokod's CSP, and a
+  hash in this reference and ADR 0046); and it passes the page tests, the
+  size budget and the real-browser check, on iOS Safari too. koko stays on
+  its pinned versions until such a commit; nothing moves them by itself.
+- **Agents working in `web/`** read [the web UI's design](../web-design.md)
+  and HeroUI's own documentation (`https://heroui.com/react/llms.txt`),
+  checked against the pinned package's types, as
+  [`web/AGENTS.md`](../../web/AGENTS.md) says; there is no CLI.
 
 ## Size
 
@@ -86,13 +94,14 @@ its providers is [the web UI shell](web-shell.md#providers).
 on disk, and at most 450 KiB gzipped for the first load, the files a
 browser loads to show the first page (`index.html`, the scripts and
 stylesheets it names, and the fonts their stylesheets name). The reverse
-proxy compresses them for browsers. A page redone on Astryx keeps its own
-code out of the first load: its area's `routes.ts` gives it through
-[`lazyPage`](web-shell.md#pages-and-routing), a chunk of its own, as the
-record's pages are given, and it drops what its pattern's template offers
-that its inventory does not need, such as row selection for bulk actions or
-grouping. The size test logs each
-size, and a commit that changes the build much records them in its body.
+proxy compresses them for browsers. Every page keeps its own code out of
+the first load: its area's `routes.ts` gives it through
+[`lazyPage`](web-shell.md#pages-and-routing), a chunk of its own, and a
+part only forms use, such as the date field with its calendar
+(`ui/DateInput.tsx`), is imported by those forms alone, so it loads with
+them. The size test logs each size, and a commit that changes the build
+much records them in its body. With the frame alone (#121) the first load
+was 237 KB gzipped and the build 0.78 MB on disk.
 
 ## Building and embedding
 
@@ -157,27 +166,46 @@ handler answers
 requests as a dropped connection does, and `api.drop()` every one, as when
 `koko web` stopped, until `api.drop(0)`. So a page test runs the web UI's own
 client ([the shell](web-shell.md#calls)), with its retry and
-`Idempotency-Key`. The setup puts each test back at `/` with an empty
-`localStorage`, the system in light mode and a desktop's viewport, gives the document
-`index.html`'s title and its link to Astryx's layer rules, and stands in
-for what jsdom lacks: the `showModal` and `close` of a `<dialog>` (a test sends Escape as
-the dialog's `cancel` event); `matchMedia`, whose colour scheme
-[`setSystemScheme`](../../web/src/test/media.ts) changes, whose width,
-1280 pixels unless `setViewportWidth` makes it a phone's, answers Astryx's
-queries of the forms `(width < 768px)` and `(max-width: 640px)`, and every other query of which
-matches nothing; and a `ResizeObserver` and an
-`IntersectionObserver` that observe nothing, since jsdom lays nothing out.
+`Idempotency-Key`. The setup ([`test/setup.ts`](../../web/src/test/setup.ts))
+puts each test back at `/` with an empty `localStorage`, the system in
+light mode, a desktop's viewport and `<html>` without a mode; gives the
+document `index.html`'s title and its pressable `<meta>`; and stands in for
+what jsdom lacks: `matchMedia`, whose colour scheme
+[`setSystemScheme`](../../web/src/test/media.ts) changes and whose width,
+1280 pixels unless `setViewportWidth` makes it a phone's, answers the width
+queries Tailwind's breakpoints and the web UI ask, in pixels or rems
+(`(width < 768px)`, `(width >= 48rem)`, `(max-width: 640px)`,
+`(min-width: 40rem)`), every other query matching nothing; a
+`ResizeObserver` and an `IntersectionObserver` that observe nothing,
+`scrollIntoView` and `document.elementsFromPoint` that do nothing, since
+jsdom lays nothing out; and `inert`, which every supported browser has and
+React Aria sets on the page behind an open overlay. It also fails every
+test that leaves a CSP violation ([`test/csp.ts`](../../web/src/test/csp.ts)):
+each `securitypolicyviolation` event the document hears, and each
+`<style>` element, inline script or inline event handler added to the
+page, which jsdom, enforcing no CSP, would let through. React Aria's
+`usePress` adds no `<style>` under `NODE_ENV` `test`, so the CSP watch's
+own test stubs it to check `index.html`'s `<meta>`.
 A test of a capability's pages runs the whole app, inside the same
 [providers](web-shell.md#providers) as `main.tsx`'s, through
 [`test/pages.tsx`](../../web/src/test/pages.tsx). Before a test file's
 tests, it loads every page's chunk (`loadPage`), since a cold import on a
 busy runner can take longer than a test's wait for what the page shows
-(#119). `renderAt(path)` renders the app at a path, `actAs(api, user, deviceSession?)` makes `user.current` answer
-that User, on a Device Session of their laptop unless another is given,
-`tableRows(name)` reads the cells of the table that name labels,
-`alerts()`, `findAlert()` and `statuses()` read the alerts and statuses
-that say something (Astryx keeps empty live regions of both roles), and
-`chooseInAccountMenu(name)` chooses a language or a mode.
+(#119). `renderAt(path)` renders the app at a path, `actAs(api, user,
+deviceSession?)` makes `user.current` answer that User, on a Device Session
+of their laptop unless another is given, `tableRows(name)` reads the cells
+of the table that name labels, `alerts()`, `findAlert()` and `statuses()`
+read the alerts and statuses that say something (React Aria keeps empty
+live regions), `topBarButton(name)` finds a button of the top bar, and
+`chooseInTopBar(menu, option)` chooses a language or a mode.
+[`test/controls.ts`](../../web/src/test/controls.ts) drives React Aria's
+controls as a person does, each checking the page with axe while its list
+is open: `chooseRowAction(menu, action)` a row menu, `chooseOption(select,
+option, offered?)` a select, and `searchAndChoose(choice, typed, option,
+offered?)` a searchable choice, which it focuses and types in, as the
+combobox opens only on real focus; [`test/clipboard.ts`](../../web/src/test/clipboard.ts)
+stands in for the clipboard. React Aria's controls answer
+`fireEvent.click` as a press.
 `await expectAccessible()` ([`test/axe.ts`](../../web/src/test/axe.ts)) runs
 axe-core on what is rendered and fails naming each violation of WCAG 2.2 A
 and AA, all rules but `color-contrast`, which jsdom cannot compute and the
@@ -186,15 +214,26 @@ real-browser check covers.
 ## Static checks
 
 [`static.test.ts`](../../web/src/test/static.test.ts) reads the app's own
-files and fails on an import of `@astryxdesign/core`'s root, a colour
-literal in koko's CSS (hex, a colour function or a named colour), an import
-of the theme's `fonts.css`, a URL of another site in any CSS file or in
-`index.html`, or an inline script or event handler in `index.html`, and
-when `index.html` lacks the viewport or `color-scheme` tag, or the link to
-Astryx's layer rules under the id the pinned core looks for, or the file
-differs from what that core would inject. It reads every CSS file as
-written, which Vitest gives a test only for a `?raw` import
-(`vite.config.ts`), and fails when one reads empty.
+files and fails on:
+
+- a colour written anywhere but `src/theme/theme.css`: in another CSS file
+  (hex, a colour function or a named colour) or in a Tailwind arbitrary
+  value of the app's code, such as `shadow-[0_0_0_3px_#fff]`;
+- a HeroUI component style imported out of the order HeroUI's own
+  `components/index.css` gives, or one that file does not hold;
+- a URL of another site in any CSS file or in `index.html`;
+- `index.html` without the `<meta>` whose id the pinned `react-aria`'s
+  `usePress` looks for, or the theme without the rule it would add;
+- a `<style>` text the pinned `react-aria`'s `usePreventScroll` adds whose
+  hash is not the one, and the only one, in kokod's CSP
+  ([`web.go`](../../internal/server/web/web.go), which `vite.config.ts`
+  lets the test read);
+- an inline script or event handler in `index.html`, or `index.html`
+  without the viewport, `color-scheme` and icon tags.
+
+It reads every file as written, which Vitest gives a test only for a `?raw`
+import of a CSS file (`vite.config.ts`), and fails when a CSS file reads
+empty.
 
 ## Verifying
 
@@ -206,21 +245,28 @@ written, which Vitest gives a test only for a `?raw` import
   fails above [the budget](#size), logging each size.
 - [`static.test.ts`](../../web/src/test/static.test.ts): the static checks
   above; [`axe.test.tsx`](../../web/src/test/axe.test.tsx): the
-  accessibility check passing on the first page and on an Astryx dialog,
-  and naming a violation.
+  accessibility check passing on the frame with a HeroUI dialog open, and
+  naming a violation; [`csp.test.tsx`](../../web/src/test/csp.test.tsx): the
+  CSP watch recording a `securitypolicyviolation`, a `<style>` element, an
+  inline script and an inline handler, and a HeroUI button adding no
+  `<style>` with `index.html`'s `<meta>` and one without it.
 - The real-browser check, an acceptance check rather than a test (spec
-  #108: "Phones, dark mode and the real browser"): every page a change
-  touches, at 360×740, 390×844 and 1280×800, light and dark, English and
-  Chinese, with axe-core's `color-contrast` too, no CSP violation and no
-  request to another origin.
+  #108: "Phones, dark mode and the real browser"; [the design's
+  checks](../web-design.md#accessibility-and-checks)): every page and
+  overlay a change touches, at 360×740, 390×844, 1280×800 and 1440 wide,
+  light and dark, English and Chinese, with axe-core's `color-contrast`
+  too, no CSP violation, no request to another origin, no horizontal
+  scroll at 320 pixels, and one task per page done with the keyboard
+  alone; agent-browser drives CloakBrowser in Docker. An overlay's CSP
+  case on iOS Safari runs in the iOS Simulator, as ADR 0046's did.
 - [`internal/server/webui_test.go`](../../internal/server/webui_test.go): the
   start log says `web_ui_built`.
 - [`internal/shared/api/typescript_test.go`](../../internal/shared/api/typescript_test.go):
   the generated files are up to date, every registered error code is a
   constant of the file that declares it, and the generator's mapping and
   refusals.
-- The shell's page tests are listed in [the web UI shell](web-shell.md#verifying),
-  those of the Spaces, People and Devices pages in
-  [their reference](people-pages.md#verifying), those of the Host and
-  Service pages in [the record's pages](record-pages.md#verifying), and
-  those of the Secrets page in [Secrets](secrets.md#verifying).
+- The shell's page tests are listed in [the web UI shell](web-shell.md#verifying).
+  The pages' tests come back with the pages (#122 to #125, #116), each
+  listed in its page's reference: [the record's
+  pages](record-pages.md#verifying), [Secrets](secrets.md#verifying) and
+  [the Spaces, People and Devices pages](people-pages.md#verifying).

@@ -163,6 +163,12 @@ kept response, and the same key with another value is refused with
 
 ## The web UI's Secrets page
 
+> **Removed by #121, back in #123.** The move to HeroUI (ADR 0046) took
+> this page out; it comes back in #123. The behaviour rules below stand for
+> that ticket; the layout is [the web UI's design](../web-design.md), not
+> the Astryx layout this section describes. Its links to the page's file
+> and tests name what 6841eb2 held.
+
 [`SecretsPage`](../../web/src/pages/secret/SecretsPage.tsx), at `/secrets`,
 in the [web UI shell](web-shell.md), offers what the commands do, each
 action the same operation. It follows Astryx's `table-page` template (spec

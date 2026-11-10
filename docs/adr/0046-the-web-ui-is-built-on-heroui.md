@@ -45,7 +45,7 @@ TypeScript, built by make and never committed.
   still runs `npm audit signatures`, and `postinstall` scripts stay off
   through `allowScripts`.
 - The CSP stays `default-src 'self'`, and two things React Aria does are met
-  without loosening it:
+  with no inline style sheet allowed but one, by its hash:
   - `usePress` adds a `<style>` for `[data-react-aria-pressable]` when it
     first runs, unless the document already holds an element whose id is
     `react-aria-pressable-style`. `index.html` holds a `<meta>` with that
@@ -54,15 +54,22 @@ TypeScript, built by make and never committed.
     approved preview ran every page, panel and dialog with no CSP
     violation.
   - On iOS Safari, `usePreventScroll` adds a second `<style>`
-    (`* { overscroll-behavior: contain }`) each time an overlay opens, and
-    checks no id first. Under this CSP the browser refuses it and reports a
-    violation, and that rule does not apply. This was read from React
-    Aria's source and has not been run on an iOS device, so what a person
-    sees there is not yet known. The first ticket of the move runs it on
-    one and then takes one of two paths, recorded here: a patch of the
-    pinned `react-aria` that drops the element, with the rule in koko's
-    stylesheet under a class the overlay sets; or the element's hash in the
-    CSP's `style-src`, which is a change to the header kokod sends.
+    (`@layer { * { overscroll-behavior: contain } }`) each time an overlay
+    opens, and checks no id first. Run on iOS Safari 26.3 in the iOS
+    Simulator (#121), a page under `default-src 'self'` with a side panel
+    open reported a `style-src-elem` violation, and a scrolling region
+    inside the panel kept `overscroll-behavior: auto`, so a scroll that
+    reached its end could carry on to the page behind. Of the two paths
+    open, a patch of the pinned `react-aria` that drops the element, or the
+    element's hash in the CSP's `style-src`, the hash was taken: kokod's
+    policy is `default-src 'self'; style-src 'self'
+    'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='` with its other
+    directives as before. The same page under it reported no violation,
+    and the region read `contain`. The hash allows that one style sheet's
+    exact text and nothing else, keeps React Aria as it ships, and needs no
+    build step that rewrites a dependency; the web UI's static checks
+    compare it with the text the pinned `react-aria` adds, so an upgrade
+    that changes the text fails them.
   - A page test fails on any `securitypolicyviolation` event, so an upgrade
     that adds a third case is caught.
 - React Aria ships its own strings in some thirty languages. The build

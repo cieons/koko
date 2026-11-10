@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeAll } from "vitest";
+import { beforeAll, expect, onTestFinished } from "vitest";
 
 import type { DeviceSession } from "../api/device";
 import { type User, UserCurrent } from "../api/user";
@@ -21,6 +21,14 @@ beforeAll(async () => {
   await Promise.all(routes.map((route) => loadPage(route.page)));
 }, 60_000);
 
+/** preferLanguages makes the browser prefer these languages for one test. */
+export function preferLanguages(...preferred: string[]): void {
+  Object.defineProperty(navigator, "languages", { value: preferred, configurable: true });
+  onTestFinished(() => {
+    Reflect.deleteProperty(navigator, "languages");
+  });
+}
+
 /** renderAt renders the web UI, with all its pages, at path. */
 export function renderAt(path: string) {
   window.history.replaceState(null, "", path);
@@ -41,8 +49,8 @@ export function actAs(
 
 /**
  * alerts are the text of each alert in the page with something to say, in
- * document order: Astryx keeps a live region of role alert of its own,
- * empty until it announces something, which they leave out.
+ * document order, leaving out a live region React Aria keeps empty until it
+ * announces something.
  */
 export function alerts(): string[] {
   return saying("alert");
@@ -71,14 +79,19 @@ export async function findAlert(): Promise<string> {
   });
 }
 
+/** topBarButton is the button of the top bar whose name matches name, such as /^Language/. */
+export function topBarButton(name: string | RegExp): HTMLElement {
+  return within(screen.getByRole("banner")).getByRole("button", { name });
+}
+
 /**
- * chooseInAccountMenu opens the account menu in the top bar and chooses the
- * option named name, such as a language or a mode.
+ * chooseInTopBar opens the top bar's menu behind the button named button,
+ * such as Language or Appearance, and chooses its option named option.
  */
-export async function chooseInAccountMenu(name: string): Promise<void> {
-  const button = within(screen.getByRole("banner")).getByRole("button", { name: /^(Account|账户)$/ });
-  fireEvent.click(button);
-  fireEvent.click(await screen.findByRole("menuitemradio", { name }));
+export async function chooseInTopBar(button: "Language" | "Appearance" | "语言" | "外观", option: string): Promise<void> {
+  fireEvent.click(topBarButton(new RegExp(`^${button}[:：]`)));
+  fireEvent.click(await screen.findByRole("menuitemradio", { name: option }));
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
 }
 
 /** tableRows are the text of each cell of each row of the table named name, its header row aside. */

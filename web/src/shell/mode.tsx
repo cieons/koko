@@ -1,13 +1,12 @@
-import { Theme } from "@astryxdesign/core/theme";
-import { neutralTheme } from "@astryxdesign/theme-neutral/built";
-import { createContext, type ReactNode, useContext, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 
 // Light and dark: the web UI follows the system's mode until a choice of
 // Light or Dark overrides it, which the browser then remembers, as it
-// remembers the language. Astryx's Theme applies the mode, writing it to
-// <html data-theme> (absent for System), and its tokens follow.
+// remembers the language. The mode in effect, light or dark, is written to
+// <html> as its class and its data-theme, which the theme's tokens and
+// HeroUI's follow (theme/theme.css).
 
-/** modes are the choices of colour mode, System the default. */
+/** modes are the choices of colour mode: Light, Dark, or the system's, the default. */
 export const modes = ["light", "dark", "system"] as const;
 
 /** Mode is a choice of colour mode: Light, Dark, or the system's. */
@@ -15,6 +14,9 @@ export type Mode = (typeof modes)[number];
 
 /** storageKey is where the browser remembers the mode chosen. */
 const storageKey = "koko.theme";
+
+/** systemDark is the query of the system's colour scheme. */
+const systemDark = "(prefers-color-scheme: dark)";
 
 /** storedMode is the mode the browser remembers, System when none or unreadable. */
 export function storedMode(): Mode {
@@ -27,26 +29,46 @@ export function storedMode(): Mode {
 }
 
 /**
- * applyStoredMode writes the stored mode to <html data-theme> as Theme
- * does, for main.tsx to call before React's first render, which runs in a
- * later task: so no frame between shows the system's mode for a stored
- * Light or Dark. index.html may run no inline script that could do it
- * sooner.
+ * applyMode writes the mode in effect for mode to <html>: its class and its
+ * data-theme, light or dark, the system's for System.
+ */
+function applyMode(mode: Mode): void {
+  const dark = mode === "dark" || (mode === "system" && window.matchMedia(systemDark).matches);
+  const scheme = dark ? "dark" : "light";
+  const html = document.documentElement;
+  html.classList.toggle("dark", dark);
+  html.classList.toggle("light", !dark);
+  html.dataset.theme = scheme;
+}
+
+/**
+ * applyStoredMode writes the stored mode to <html>, for main.tsx to call
+ * before React's first render, which runs in a later task: so no frame
+ * between shows the other mode. index.html may run no inline script that
+ * could do it sooner.
  */
 export function applyStoredMode(): void {
-  const mode = storedMode();
-  if (mode === "system") {
-    document.documentElement.removeAttribute("data-theme");
-  } else {
-    document.documentElement.setAttribute("data-theme", mode);
-  }
+  applyMode(storedMode());
 }
 
 const ModeContext = createContext<[Mode, (mode: Mode) => void] | undefined>(undefined);
 
-/** ModeProvider holds the mode, and themes everything inside it in Astryx's Neutral theme. */
+/**
+ * ModeProvider holds the mode and keeps <html> in it: on each choice, and,
+ * for System, whenever the system's mode changes.
+ */
 export function ModeProvider({ children }: { children: ReactNode }) {
   const [mode, setChosen] = useState(storedMode);
+  useEffect(() => {
+    applyMode(mode);
+    if (mode !== "system") {
+      return;
+    }
+    const query = window.matchMedia(systemDark);
+    const follow = () => applyMode("system");
+    query.addEventListener("change", follow);
+    return () => query.removeEventListener("change", follow);
+  }, [mode]);
   const setMode = (next: Mode) => {
     try {
       localStorage.setItem(storageKey, next);
@@ -55,13 +77,7 @@ export function ModeProvider({ children }: { children: ReactNode }) {
     }
     setChosen(next);
   };
-  return (
-    <ModeContext value={[mode, setMode]}>
-      <Theme theme={neutralTheme} mode={mode}>
-        {children}
-      </Theme>
-    </ModeContext>
-  );
+  return <ModeContext value={[mode, setMode]}>{children}</ModeContext>;
 }
 
 /** useMode is the mode chosen, and a function that chooses another, which the browser remembers. */

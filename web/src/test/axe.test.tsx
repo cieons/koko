@@ -1,36 +1,41 @@
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { Button, Modal } from "@heroui/react";
 import { render, screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import { AttrList } from "../api/attr";
-import { HostList } from "../api/host";
 import { Shell } from "../shell/Shell";
 import { expectAccessible } from "./axe";
 import { fakeApi } from "./fakeApi";
-import { actAs, renderAt } from "./pages";
+import { actAs } from "./pages";
 
 // The accessibility check page tests call: it passes on what meets WCAG 2.2
 // AA and names each violation of what does not.
 
-test("the accessibility check passes on the web UI's first page and on an open Astryx dialog", async () => {
+test("the accessibility check passes on the frame with an open HeroUI dialog", async () => {
   const api = fakeApi();
   actAs(api, { id: "user_1", name: "alice", role: "owner", created_at: "2026-11-01T09:00:00Z" });
-  api.on(AttrList, () => ({ attributes: [] }));
-  api.on(HostList, () => ({ hosts: [] }));
-  const { unmount } = renderAt("/hosts");
-  await screen.findByRole("heading", { name: "No Host matches this view." });
-  await expectAccessible();
-  unmount();
-
   function DialogPage() {
     return (
-      <Dialog isOpen onOpenChange={() => {}}>
-        <DialogHeader title="Details" onOpenChange={() => {}} />
-      </Dialog>
+      <Modal.Backdrop isOpen>
+        <Modal.Container>
+          <Modal.Dialog>
+            <Modal.CloseTrigger aria-label="Close" />
+            <Modal.Header>
+              <Modal.Heading>Details</Modal.Heading>
+            </Modal.Header>
+            <Modal.Body>
+              <p>What the dialog says.</p>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button>Done</Button>
+            </Modal.Footer>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
     );
   }
   window.history.replaceState(null, "", "/dialog");
   render(<Shell routes={[{ path: "/dialog", page: DialogPage }]} />);
+
   await screen.findByRole("dialog", { name: "Details" });
   await expectAccessible();
 });

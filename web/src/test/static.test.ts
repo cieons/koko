@@ -1,24 +1,31 @@
 import { expect, test } from "vitest";
 
-// Not one of core's exports: the module that holds the layer rules, by its path.
-import { SLIDE_RULES_ID, slideRulesCss } from "../../node_modules/@astryxdesign/core/dist/Layer/layerSlideRules.js";
+import webGo from "../../../internal/server/web/web.go?raw";
+import herouiIndex from "../../node_modules/@heroui/styles/dist/components/index.css?raw";
+import usePress from "../../node_modules/react-aria/dist/private/interactions/usePress.mjs?raw";
+import usePreventScroll from "../../node_modules/react-aria/dist/private/overlays/usePreventScroll.mjs?raw";
 import indexHTML from "../../index.html?raw";
 
-// Static checks of the web UI's own source, which keep it on Astryx's terms
-// (ADR 0045): components from their subpaths, so the build leaves out the
-// rest; only Astryx's tokens for colour, so koko's CSS is right in light
-// and dark mode; and nothing loaded from another site, so the CSP stays
-// default-src 'self'.
+// Static checks of the web UI's own source, which keep it on ADR 0046's
+// terms: a colour is written in the theme's stylesheet alone, so the rest is
+// right in light and dark mode; HeroUI's component styles come in the order
+// HeroUI gives them; and the CSP stays met: nothing loaded from another
+// site, no inline script or handler, and each <style> element the pinned
+// React Aria adds either kept out by index.html's <meta> or allowed by its
+// hash in kokod's header.
 
 /** code is every TypeScript file of the app and its tests, by path. */
 const code = import.meta.glob<string>(["../**/*.ts", "../**/*.tsx"], { query: "?raw", import: "default", eager: true });
 
-/** css is every CSS file of koko's own, public/'s included. */
-const css = import.meta.glob<string>(["../**/*.css", "../../public/*.css"], {
+/** css is every CSS file of koko's own, by path. */
+const css = import.meta.glob<string>(["../**/*.css"], {
   query: "?raw",
   import: "default",
   eager: true,
 });
+
+/** themePath is the one stylesheet that writes a colour. */
+const themePath = "../theme/theme.css";
 
 /** withoutComments is CSS without its comments. */
 function withoutComments(source: string): string {
@@ -39,13 +46,12 @@ function offending(files: Record<string, string>, pattern: RegExp, clean: (s: st
 // empty string, which would pass every check below.
 test("the checks read the app's files as written", () => {
   expect(code["../main.tsx"]).toContain("createRoot(");
-  expect(css["../shell/app.css"]).toContain("@font-face");
+  expect(css[themePath]).toContain("@font-face");
   expect(Object.values(css).filter((source) => source.trim() === "")).toEqual([]);
   expect(indexHTML).toContain('<div id="root">');
-});
-
-test("no file imports @astryxdesign/core's root, only its components' subpaths", () => {
-  expect(offending(code, /["']@astryxdesign\/core["']/)).toEqual([]);
+  expect(webGo).toContain("func securityHeaders(");
+  expect(usePress).toContain("STYLE_ID");
+  expect(usePreventScroll).toContain("createElement('style')");
 });
 
 // The CSS named colours, beside the hex and functional notations.
@@ -68,24 +74,44 @@ const namedColours =
 /** colourLiteral matches a value that holds a colour written out rather than a token. */
 const colourLiteral = new RegExp(
   String.raw`#[0-9a-f]{3,8}\b|\b(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix|light-dark)\(|` +
-    String.raw`(^|[\s,(])(${namedColours.split(" ").join("|")})($|[\s,)])`,
+    String.raw`(^|[\s,(_])(${namedColours.split(" ").join("|")}|transparent|currentcolor)($|[\s,)_])`,
   "i",
 );
 
-test("koko's CSS writes no colour literal, only Astryx's tokens", () => {
+test("a colour is written in the theme's stylesheet alone: no other CSS file writes one", () => {
   // Every declaration, its value on one line or several; a selector, which
   // ends at a {, and a font's name are no colour.
-  const literals = Object.entries(css).flatMap(([path, source]) =>
-    [...withoutComments(source).matchAll(/([\w-]+)\s*:([^;{}]+)(?=[;}])/g)]
-      .map(([, property = "", value = ""]) => [property, value.replace(/\s+/g, " ").trim()] as const)
-      .filter(([property, value]) => !property.endsWith("font-family") && colourLiteral.test(value))
-      .map(([property, value]) => `${path}: ${property}: ${value}`),
+  const literals = Object.entries(css)
+    .filter(([path]) => path !== themePath)
+    .flatMap(([path, source]) =>
+      [...withoutComments(source).matchAll(/([\w-]+)\s*:([^;{}]+)(?=[;}])/g)]
+        .map(([, property = "", value = ""]) => [property, value.replace(/\s+/g, " ").trim()] as const)
+        .filter(([property, value]) => !property.endsWith("font-family") && colourLiteral.test(value))
+        .map(([property, value]) => `${path}: ${property}: ${value}`),
+    );
+  expect(literals).toEqual([]);
+});
+
+test("a colour is written in the theme's stylesheet alone: no class name writes one in an arbitrary value", () => {
+  // Tailwind's arbitrary values, such as shadow-[0_0_0_3px_var(--ok-halo)],
+  // in the app's code; its tests aside.
+  const app = Object.fromEntries(Object.entries(code).filter(([path]) => !/\.test\.tsx?$|\/test\//.test(path)));
+  const literals = Object.entries(app).flatMap(([path, source]) =>
+    [...source.matchAll(/[\w-]+-\[([^\]\s"'`]+)\]/g)]
+      .filter(([, value = ""]) => colourLiteral.test(value))
+      .map(([written]) => `${path}: ${written}`),
   );
   expect(literals).toEqual([]);
 });
 
-test("the theme's fonts.css, which loads Figtree from Google Fonts, is never imported", () => {
-  expect(offending({ ...code, ...css }, /@astryxdesign\/[^"']*fonts\.css/)).toEqual([]);
+test("HeroUI's component styles are imported in the order HeroUI's own index gives them", () => {
+  const order = [...herouiIndex.matchAll(/@import "\.\/([\w-]+)\.css"/g)].map(([, name]) => name);
+  const imported = [...(css["../theme/heroui.css"] ?? "").matchAll(/@heroui\/styles\/components\/([\w-]+)\.css/g)].map(
+    ([, name]) => name,
+  );
+  expect(imported.length).toBeGreaterThan(0);
+  expect(imported.filter((name) => !order.includes(name))).toEqual([]);
+  expect(imported).toEqual([...imported].sort((a, b) => order.indexOf(a) - order.indexOf(b)));
 });
 
 test("no CSS file and not index.html names a URL of another site", () => {
@@ -93,16 +119,37 @@ test("no CSS file and not index.html names a URL of another site", () => {
   expect(offending({ ...css, "index.html": indexHTML }, /(\bhttps?:)?\/\/[\w.-]+/i, withoutComments)).toEqual([]);
 });
 
-// Astryx's layers inject their slide rules in a <style> element, which the
-// CSP refuses, unless the document holds an element of their id already.
-// index.html links them under that id, from public/, which the build copies
-// as it is; npm run astryx-layer-rules writes the file.
-test("index.html links Astryx's layer rules as they stand in the pinned version, under the id Astryx looks for", () => {
-  expect(indexHTML).toContain(`<link rel="stylesheet" id="${SLIDE_RULES_ID}" href="/astryx-layer-rules.css">`);
-  const file = (css["../../public/astryx-layer-rules.css"] ?? "").replace(/^\/\*[\s\S]*?\*\/\n/, "");
-  expect(file.replaceAll("\n", ""), "public/astryx-layer-rules.css is stale: run npm run astryx-layer-rules").toBe(
-    slideRulesCss(),
+// React Aria's usePress adds its rule for pressable elements in a <style>
+// element, which the CSP refuses, unless the document holds an element of
+// the id it looks for. index.html holds a <meta> of that id, and the theme
+// holds the rule itself.
+test("index.html holds the <meta> whose id the pinned React Aria looks for, and the theme its rule", () => {
+  const id = /STYLE_ID = '([\w-]+)'/.exec(usePress)?.[1];
+  expect(id).toBe("react-aria-pressable-style");
+  expect(indexHTML).toContain(`<meta id="${id}" name="${id}" content="static">`);
+  const attribute = /PRESSABLE_ATTRIBUTE = '([\w-]+)'/.exec(usePress)?.[1];
+  const declaration = /style\.textContent = `[^`]*\{\s*([\w-]+:[^;}]+);\s*\}\s*\}\s*`/.exec(usePress)?.[1];
+  expect([attribute, declaration]).toEqual(["data-react-aria-pressable", "touch-action: pan-x pan-y pinch-zoom"]);
+  expect(withoutComments(css[themePath] ?? "")).toContain(`[${attribute}] {\n    ${declaration};\n  }`);
+});
+
+/** sha256 is the base64 SHA-256 of text, as a CSP hash source writes it. */
+async function sha256(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return btoa(String.fromCharCode(...new Uint8Array(digest)));
+}
+
+// On iOS Safari, React Aria's usePreventScroll adds a <style> element each
+// time an overlay opens, checking no id first. kokod's CSP allows it by its
+// hash (ADR 0046), which holds only while the pinned React Aria adds the
+// same text.
+test("kokod's CSP allows by its hash the <style> element the pinned React Aria adds on iOS Safari, and no other", async () => {
+  const added = [...usePreventScroll.matchAll(/style\.textContent = `([\s\S]*?)`\.trim\(\)/g)].map(([, text]) =>
+    (text ?? "").trim(),
   );
+  expect(added).toEqual(["@layer {\n  * {\n    overscroll-behavior: contain;\n  }\n}"]);
+  const hashes = [...webGo.matchAll(/'sha256-([\w+/=]+)'/g)].map(([, hash]) => hash);
+  expect(hashes).toEqual([await sha256(added[0] ?? "")]);
 });
 
 test("index.html runs no inline script, and carries the viewport, color-scheme and icon tags", () => {
@@ -112,7 +159,7 @@ test("index.html runs no inline script, and carries the viewport, color-scheme a
     expect({ script, src: /\bsrc=/.test(attributes ?? ""), body: body?.trim() }).toEqual({ script, src: true, body: "" });
   }
   expect(indexHTML.match(/<[^>]*\son[a-z]+\s*=/gi) ?? []).toEqual([]);
-  // viewport-fit=cover lets Astryx's AppShell keep its top bar in a phone's safe area.
+  // viewport-fit=cover lets the phone's bar keep clear of the safe area.
   expect(indexHTML).toContain('<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">');
   expect(indexHTML).toContain('<meta name="color-scheme" content="light dark">');
   // An icon of its own, so the browser asks for no /favicon.ico.

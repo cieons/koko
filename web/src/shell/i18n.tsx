@@ -1,15 +1,14 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 
 import { ApiError, DroppedError } from "../client";
 import { catalogues, type Language, languages, type MessageKey } from "../i18n/catalogues";
 
 // Language: the web UI follows the browser's preferred languages until the
-// account menu picks one, which the browser then remembers. Names, keys,
-// values and Notes are never translated: they reach a message only as its
-// parameters, shown as stored.
+// top bar's Language menu picks one, which the browser then remembers.
+// Names, keys, values and Notes are never translated: they reach a message
+// only as its parameters, shown as stored.
 
-/** storageKey is where the browser remembers the language the switch picked. */
+/** storageKey is where the browser remembers the language the Language menu picked. */
 const storageKey = "koko.language";
 
 /**
@@ -30,7 +29,7 @@ export function chooseLanguage(preferred: readonly string[]): Language {
   return "en";
 }
 
-/** remembered is the language the switch picked, unless none or unreadable. */
+/** remembered is the language the Language menu picked, unless none or unreadable. */
 function remembered(): Language | undefined {
   try {
     const stored = localStorage.getItem(storageKey);
@@ -61,7 +60,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.setItem(storageKey, next);
     } catch {
-      // The switch still works for this page when the browser cannot store it.
+      // The choice still applies to this page when the browser cannot store it.
     }
     setChosen(next);
   };
@@ -100,16 +99,6 @@ export function errorMessage(t: Translate, error: unknown): string {
     return t("shell.error.dropped");
   }
   return t("shell.error.unexpected");
-}
-
-/**
- * ErrorMessage shows why a call failed, in place, where the action was: an
- * error Banner with the message of the API error's code, announced as an
- * alert, never a toast.
- */
-export function ErrorMessage({ error }: { error: unknown }) {
-  const t = useT();
-  return <Banner status="error" role="alert" title={errorMessage(t, error)} />;
 }
 
 /** useLanguageChoice is the language, and a function that chooses another, which the browser remembers. */

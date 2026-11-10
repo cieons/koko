@@ -1,37 +1,42 @@
-import { InternationalizationProvider } from "@astryxdesign/core/i18n";
-import { LinkProvider } from "@astryxdesign/core/Link";
-import zhCN from "@astryxdesign/core/locales/zh-CN.generated.js";
+import { I18nProvider, RouterProvider, Toast } from "@heroui/react";
 import type { ReactNode } from "react";
 
+import type { Language } from "../i18n/catalogues";
 import { LanguageProvider, useLanguage } from "./i18n";
 import { ModeProvider } from "./mode";
-import { Link } from "./router";
+import { navigate, type NavigateOptions } from "./router";
 
-/** astryxMessages are Astryx's own catalogues of the languages koko ships beyond its built-in English. */
-const astryxMessages = { "zh-CN": zhCN };
+declare module "react-aria-components" {
+  interface RouterConfig {
+    routerOptions: NavigateOptions;
+  }
+}
+
+/** locales are React Aria's locale for each of koko's languages, the two the build keeps (vite.config.ts). */
+const locales: Record<Language, string> = { en: "en-US", "zh-CN": "zh-CN" };
 
 /**
- * Providers are what every page of the web UI renders inside: koko's
- * language; Astryx's Neutral theme in the mode chosen; Astryx's own strings
- * (a dialog's close label, a table's empty state) in koko's language; and
- * koko's router behind every link an Astryx component renders.
+ * Providers are what every page of the web UI renders inside, in main.tsx
+ * and in the page tests alike: koko's language; the mode, Light, Dark or
+ * System, kept on <html>; React Aria's own strings, such as a dialog's close
+ * label, its dates and numbers, in koko's language; koko's router behind
+ * every link HeroUI renders; and the toasts, bottom end.
  */
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <LanguageProvider>
       <ModeProvider>
-        <AstryxStrings>
-          <LinkProvider component={Link}>{children}</LinkProvider>
-        </AstryxStrings>
+        <AriaLocale>
+          <RouterProvider navigate={(to, options) => navigate(to, options)}>
+            {children}
+            <Toast.Provider placement="bottom end" />
+          </RouterProvider>
+        </AriaLocale>
       </ModeProvider>
     </LanguageProvider>
   );
 }
 
-function AstryxStrings({ children }: { children: ReactNode }) {
-  return (
-    <InternationalizationProvider locale={useLanguage()} messages={astryxMessages}>
-      {children}
-    </InternationalizationProvider>
-  );
+function AriaLocale({ children }: { children: ReactNode }) {
+  return <I18nProvider locale={locales[useLanguage()]}>{children}</I18nProvider>;
 }

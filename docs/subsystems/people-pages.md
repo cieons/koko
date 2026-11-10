@@ -1,5 +1,12 @@
 # The Spaces, People and Devices pages
 
+> **Removed by #121, back in #125 and #116.** The move to HeroUI (ADR
+> 0046) took these pages out; Access and Account come back in #125, their
+> Passwords and Sign-ins in #116. The behaviour rules below stand for those
+> tickets; the layout is [the web UI's design](../web-design.md), not the
+> Astryx layouts this reference describes. Its links to the pages' files
+> and tests name what 6841eb2 held.
+
 The web UI's pages for people: who works where, who belongs, and which
 devices can reach the koko server. They sit in the [web UI
 shell](web-shell.md), which routes to them, decides who the web UI acts as and

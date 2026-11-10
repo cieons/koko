@@ -1,7 +1,6 @@
-import { Banner } from "@astryxdesign/core/Banner";
-import { Spinner } from "@astryxdesign/core/Spinner";
 import { Component, type ComponentType, lazy, type ReactNode, Suspense } from "react";
 
+import { AlertLine, Loading } from "../ui/states";
 import { useT } from "./i18n";
 import type { PageProps } from "./router";
 
@@ -12,7 +11,7 @@ const loaders = new WeakMap<ComponentType<PageProps>, () => Promise<unknown>>();
  * lazyPage is a page whose code loads, as a chunk of its own, the first
  * time the web UI shows it, so the first load carries only the shell and
  * the page the browser opens (the size budget, docs/subsystems/web-ui.md).
- * While the chunk loads the page shows a spinner; a chunk that does not
+ * While the chunk loads the frame shows Loading; a chunk that does not
  * load, as after the koko server was upgraded under an open tab, says so in
  * place instead of leaving the frame empty. loadPage loads it ahead of time.
  */
@@ -48,11 +47,6 @@ export async function loadPage(page: ComponentType<PageProps>): Promise<void> {
   await loaders.get(page)?.();
 }
 
-function Loading() {
-  const t = useT();
-  return <Spinner label={t("shell.loading")} />;
-}
-
 /** ChunkNotLoaded is why a page's chunk did not load. */
 class ChunkNotLoaded extends Error {
   constructor(cause: unknown) {
@@ -78,13 +72,18 @@ class LoadFailure extends Component<{ children: ReactNode }, { error?: unknown }
       return this.props.children;
     }
     if (error instanceof ChunkNotLoaded) {
-      return <LoadFailed />;
+      return <ChunkFailed />;
     }
     throw error;
   }
 }
 
-function LoadFailed() {
+/** ChunkFailed says, in place of the page, that the browser page must be reloaded. */
+function ChunkFailed() {
   const t = useT();
-  return <Banner status="error" role="alert" title={t("shell.pageNotLoaded")} />;
+  return (
+    <div className="mt-6 md:mt-9">
+      <AlertLine>{t("shell.pageNotLoaded")}</AlertLine>
+    </div>
+  );
 }

@@ -1,20 +1,13 @@
 import type { LucideIcon } from "lucide-react";
-import {
-  type AnchorHTMLAttributes,
-  type ComponentType,
-  type MouseEvent,
-  type ReactNode,
-  type Ref,
-  useMemo,
-  useSyncExternalStore,
-} from "react";
+import { type ComponentType, useMemo, useSyncExternalStore } from "react";
 
 import type { MessageKey } from "../i18n/catalogues";
 
 // The router: each page is a path, and a page keeps its state (filters,
 // sorting, columns) in the URL's query, so a bookmark is a saved view. It
 // uses the browser's history alone; the web front serves index.html for every
-// path outside /v1/.
+// path outside /v1/. HeroUI's links follow it through React Aria's
+// RouterProvider (providers.tsx).
 
 /** PageProps are what the router gives a page. */
 export interface PageProps {
@@ -30,9 +23,13 @@ export interface Route {
    */
   path: string;
   page: ComponentType<PageProps>;
-  /** nav, when set, links the page from the side navigation under this message. */
+  /**
+   * nav, when set, makes the page one of the places the top bar links, in
+   * the order of routes, under this message; a page beneath its path, such
+   * as a Host's under /hosts, is in that place too.
+   */
   nav?: MessageKey;
-  /** icon is the Lucide icon beside a linked page's name in the side navigation. */
+  /** icon is the Lucide icon beside a place's name in the phone's bar. */
   icon?: LucideIcon;
   /** ownerOnly hides the page, and its link, from a Member. */
   ownerOnly?: boolean;
@@ -145,55 +142,6 @@ export function useQueryFlag(name: string): [boolean, (on: boolean) => void] {
   return [params.get(name) === "1", set];
 }
 
-/**
- * LinkProps are a link's: where it goes, and any attribute of an <a>, which
- * Astryx's components pass to the link component LinkProvider gives them.
- */
-export type LinkProps = Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "href"> & {
-  to: string;
-  /** href, which Astryx passes beside to, is ignored for to. */
-  href?: string;
-  ref?: Ref<HTMLAnchorElement>;
-  children?: ReactNode;
-};
-
-/**
- * Link is a link to a page of the web UI, followed without a page load. A
- * link to another origin, or one opened in another window, the browser
- * follows itself.
- */
-export function Link({ to, onClick, ...anchor }: LinkProps) {
-  const { pathname } = useLocation();
-  const follow = (event: MouseEvent<HTMLAnchorElement>) => {
-    onClick?.(event);
-    // A modified click, or another button, opens the link as the browser
-    // would, in a new tab or window.
-    if (
-      event.defaultPrevented ||
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey ||
-      (anchor.target !== undefined && anchor.target !== "_self") ||
-      anchor.download !== undefined ||
-      new URL(to, window.location.href).origin !== window.location.origin
-    ) {
-      return;
-    }
-    event.preventDefault();
-    navigate(to);
-  };
-  return (
-    <a
-      {...anchor}
-      href={to}
-      onClick={follow}
-      aria-current={anchor["aria-current"] ?? (pathname === to ? "page" : undefined)}
-    />
-  );
-}
-
 /** matchRoute finds the route of pathname, with the params of its path. */
 export function matchRoute(
   routes: readonly Route[],
@@ -223,4 +171,12 @@ export function matchRoute(
     }
   }
   return undefined;
+}
+
+/** signInPage is the path of Sign in, outside the frame (#116). */
+export const signInPage = "/signin";
+
+/** signInPath is Sign in's path, which comes back to next, the page it was sent from, once signed in. */
+export function signInPath(next: string): string {
+  return `${signInPage}?${new URLSearchParams({ next })}`;
 }

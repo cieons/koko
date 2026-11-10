@@ -1,8 +1,9 @@
-// A stand-in for window.matchMedia, which jsdom lacks and Astryx reads: the
-// system's colour scheme is light and the viewport a desktop's, 1280 CSS
-// pixels wide, unless a test says otherwise. A query of the width in the
-// forms Astryx asks it, "(width < 768px)" and "(max-width: 640px)", follows
-// the width; every other media query matches nothing.
+// A stand-in for window.matchMedia, which jsdom lacks: the system's colour
+// scheme is light and the viewport a desktop's, 1280 CSS pixels wide, unless
+// a test says otherwise. A query of the width follows it, in the forms
+// Tailwind's breakpoints and the web UI ask it: "(width < 768px)",
+// "(width >= 48rem)", "(max-width: 640px)", "(min-width: 40rem)", a rem
+// being 16 pixels. Every other media query matches nothing.
 
 type Scheme = "light" | "dark";
 
@@ -12,6 +13,28 @@ const desktopWidth = 1280;
 let scheme: Scheme = "light";
 let width = desktopWidth;
 const lists = new Set<FakeMediaQueryList>();
+
+/** pixels is a length of a media query in CSS pixels. */
+function pixels(amount: string, unit: string): number {
+  return Number(amount) * (unit === "rem" || unit === "em" ? 16 : 1);
+}
+
+/** widthMatches answers a query of the viewport's width, or undefined for any other query. */
+function widthMatches(media: string): boolean | undefined {
+  const range = /^\(width\s*(<|<=|>|>=)\s*([\d.]+)(px|rem|em)\)$/.exec(media);
+  if (range) {
+    const [, op, amount = "", unit = ""] = range;
+    const edge = pixels(amount, unit);
+    return { "<": width < edge, "<=": width <= edge, ">": width > edge, ">=": width >= edge }[op as "<"];
+  }
+  const bound = /^\((min|max)-width:\s*([\d.]+)(px|rem|em)\)$/.exec(media);
+  if (bound) {
+    const [, side, amount = "", unit = ""] = bound;
+    const edge = pixels(amount, unit);
+    return side === "min" ? width >= edge : width <= edge;
+  }
+  return undefined;
+}
 
 class FakeMediaQueryList extends EventTarget implements MediaQueryList {
   readonly media: string;
@@ -27,12 +50,7 @@ class FakeMediaQueryList extends EventTarget implements MediaQueryList {
     if (asked !== undefined) {
       return asked === scheme;
     }
-    const narrowerThan = /^\(width < (\d+)px\)$/.exec(this.media)?.[1];
-    if (narrowerThan !== undefined) {
-      return width < Number(narrowerThan);
-    }
-    const atMost = /^\(max-width: (\d+)px\)$/.exec(this.media)?.[1];
-    return atMost !== undefined && width <= Number(atMost);
+    return widthMatches(this.media.trim()) ?? false;
   }
 
   addListener(listener: ((this: MediaQueryList, event: MediaQueryListEvent) => unknown) | null): void {

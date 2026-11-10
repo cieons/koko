@@ -19,8 +19,9 @@ test rules, acceptance checks and the commit format.
 
 Before editing Go code, load the `use-modern-go` skill when it is available.
 
-Work in `web/` reads [web/AGENTS.md](web/AGENTS.md) too: Astryx's own
-guidance and its CLI, at the version koko pins.
+Work in `web/` reads [web/AGENTS.md](web/AGENTS.md) too: the web UI's
+design, HeroUI's documentation at the version koko pins, and the parts the
+shell gives every page.
 
 ## Language
 

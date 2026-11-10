@@ -1,5 +1,12 @@
 # The record's pages
 
+> **Removed by #121, back in #122 and #124.** The move to HeroUI (ADR
+> 0046) took these pages out; Hosts and Services come back in #122, a Host
+> and a Service in #124. The behaviour rules below stand for those
+> tickets; the layout is [the web UI's design](../web-design.md), not the
+> Astryx layouts this reference describes. Its links to the pages' files
+> and tests name what 6841eb2 held.
+
 The web UI's pages for the record: the Hosts list, with its filters,
 sorting and columns, a Host's page, the Services list and a Service's page,
 with the actions on each. They sit in the [web UI shell](web-shell.md); what

@@ -197,14 +197,19 @@ address.
 ### The headers every answer carries
 
 Every answer of the web listener carries
-`Content-Security-Policy: default-src 'self'; frame-ancestors 'none';
-base-uri 'none'; form-action 'self'`, `X-Content-Type-Options: nosniff`,
-`Referrer-Policy: no-referrer` and `Strict-Transport-Security:
+`Content-Security-Policy: default-src 'self'; style-src 'self'
+'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='; frame-ancestors
+'none'; base-uri 'none'; form-action 'self'`, `X-Content-Type-Options:
+nosniff`, `Referrer-Policy: no-referrer` and `Strict-Transport-Security:
 max-age=31536000`; `koko web`'s carry the same but the last
-([`securityHeaders`](../../internal/server/web/listener.go)). The policy
-lets a page load nothing from another site, nor run an inline script, apply
-an inline style sheet or load a `data:` URL, so the web UI's build must
-hold none of them.
+([`securityHeaders`](../../internal/server/web/web.go)). The policy lets a
+page load nothing from another site, nor run an inline script, apply an
+inline style sheet or load a `data:` URL, so the web UI's build must hold
+none of them. The one inline style sheet it allows, by its hash, is the
+`<style>` element React Aria adds on iOS Safari while an overlay is open
+([ADR 0046](../adr/0046-the-web-ui-is-built-on-heroui.md));
+[the web UI's static checks](web-ui.md#static-checks) fail when the pinned
+React Aria adds another text.
 
 ## Runs, tokens and the cookie
 

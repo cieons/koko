@@ -1,14 +1,10 @@
-import { deviceRoutes } from "./pages/device/routes";
-import { hostRoutes } from "./pages/host/routes";
-import { secretRoutes } from "./pages/secret/routes";
-import { serviceRoutes } from "./pages/service/routes";
-import { spaceRoutes } from "./pages/space/routes";
-import { userRoutes } from "./pages/user/routes";
 import type { Route } from "./shell/router";
 
 /**
- * routes are the web UI's pages, in the order the header links them; / goes
- * to the first linked page the caller may see. Each area lists its pages in
- * pages/<area>/routes.ts and adds one line here.
+ * routes are the web UI's pages, in the order the top bar links its places;
+ * / goes to the first place the caller may see. Each area lists its pages in
+ * pages/<area>/routes.ts and adds one line here. The move to HeroUI (ADR
+ * 0046) builds the pages again one at a time, so until the first is back
+ * every path shows the frame with "Page not found".
  */
-export const routes: Route[] = [...hostRoutes, ...serviceRoutes, ...secretRoutes, ...spaceRoutes, ...userRoutes, ...deviceRoutes];
+export const routes: Route[] = [];

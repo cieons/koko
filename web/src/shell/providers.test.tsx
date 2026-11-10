@@ -1,31 +1,27 @@
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Link as AstryxLink } from "@astryxdesign/core/Link";
-import { useTheme } from "@astryxdesign/core/theme";
+import { Button, Link, Modal } from "@heroui/react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { type User, UserCurrent } from "../api/user";
 import { fakeApi } from "../test/fakeApi";
 import { setSystemScheme } from "../test/media";
-import { chooseInAccountMenu } from "../test/pages";
+import { chooseInTopBar } from "../test/pages";
 import { applyStoredMode, modes, useMode } from "./mode";
 import { type Route, useLocation } from "./router";
 import { Shell } from "./Shell";
 
-// The providers every page renders inside: Astryx's theme in the mode
-// chosen, Astryx's own strings in koko's language, and koko's router behind
-// Astryx's links.
+// The providers every page renders inside: the mode kept on <html>, React
+// Aria's own strings in koko's language, and koko's router behind HeroUI's
+// links.
 
 const alice: User = { id: "user_1", name: "alice", role: "owner", created_at: "2026-11-01T09:00:00Z" };
 
-/** A page that shows the mode chosen, the mode Astryx shows, and offers each choice. */
+/** A page that shows the mode chosen and offers each choice. */
 function ModePage() {
   const [mode, setMode] = useMode();
-  const shown = useTheme().mode;
   return (
     <>
       <p>chosen: {mode}</p>
-      <p>shown: {shown}</p>
       {modes.map((m) => (
         <button key={m} type="button" onClick={() => setMode(m)}>
           {m}
@@ -37,9 +33,19 @@ function ModePage() {
 
 function DialogPage() {
   return (
-    <Dialog isOpen onOpenChange={() => {}}>
-      <DialogHeader title="Details" onOpenChange={() => {}} />
-    </Dialog>
+    <Modal.Backdrop isOpen>
+      <Modal.Container>
+        <Modal.Dialog aria-label="Details">
+          <Modal.CloseTrigger />
+          <Modal.Header>
+            <Modal.Heading>Details</Modal.Heading>
+          </Modal.Header>
+          <Modal.Footer>
+            <Button>Done</Button>
+          </Modal.Footer>
+        </Modal.Dialog>
+      </Modal.Container>
+    </Modal.Backdrop>
   );
 }
 
@@ -48,7 +54,7 @@ function LinkPage() {
   return (
     <>
       <p>at {pathname}</p>
-      <AstryxLink href="/link/next">Next</AstryxLink>
+      <Link href="/link/next">Next</Link>
     </>
   );
 }
@@ -65,16 +71,20 @@ function renderShell(path: string) {
   return render(<Shell routes={routes} />);
 }
 
+/** shown is the mode <html> shows: its class and its data-theme. */
+function shown(): [string, string | undefined] {
+  const html = document.documentElement;
+  return [html.className, html.dataset.theme];
+}
+
 test("the mode is System by default, following the system's light or dark mode", async () => {
   renderShell("/mode");
 
   expect(await screen.findByText("chosen: system")).toBeDefined();
-  expect(screen.getByText("shown: light")).toBeDefined();
-  expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+  expect(shown()).toEqual(["light", "light"]);
 
   act(() => setSystemScheme("dark"));
-  expect(await screen.findByText("shown: dark")).toBeDefined();
-  expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+  expect(shown()).toEqual(["dark", "dark"]);
 });
 
 test("choosing Light or Dark overrides the system's mode and is remembered; System follows it again", async () => {
@@ -83,68 +93,57 @@ test("choosing Light or Dark overrides the system's mode and is remembered; Syst
   await screen.findByText("chosen: system");
 
   fireEvent.click(screen.getByRole("button", { name: "light" }));
-  expect(await screen.findByText("shown: light")).toBeDefined();
-  expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+  expect(await screen.findByText("chosen: light")).toBeDefined();
+  expect(shown()).toEqual(["light", "light"]);
   expect(localStorage.getItem("koko.theme")).toBe("light");
 
   fireEvent.click(screen.getByRole("button", { name: "dark" }));
-  expect(await screen.findByText("shown: dark")).toBeDefined();
-  expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+  expect(await screen.findByText("chosen: dark")).toBeDefined();
+  expect(shown()).toEqual(["dark", "dark"]);
   expect(localStorage.getItem("koko.theme")).toBe("dark");
 
   fireEvent.click(screen.getByRole("button", { name: "system" }));
   expect(await screen.findByText("chosen: system")).toBeDefined();
-  expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+  expect(shown()).toEqual(["dark", "dark"]);
   expect(localStorage.getItem("koko.theme")).toBe("system");
 });
 
-test("a stored Light or Dark is applied to the page before the first render, and the first render keeps it", async () => {
+test("a stored Light or Dark is applied to <html> before the first render, and the first render keeps it", async () => {
   for (const stored of ["dark", "light"] as const) {
     localStorage.setItem("koko.theme", stored);
     setSystemScheme(stored === "dark" ? "light" : "dark");
 
     applyStoredMode();
-    expect(document.documentElement.getAttribute("data-theme")).toBe(stored);
+    expect(shown()).toEqual([stored, stored]);
 
     const { unmount } = renderShell("/mode");
     expect(await screen.findByText(`chosen: ${stored}`)).toBeDefined();
-    expect(screen.getByText(`shown: ${stored}`)).toBeDefined();
-    expect(document.documentElement.getAttribute("data-theme")).toBe(stored);
+    expect(shown()).toEqual([stored, stored]);
     unmount();
   }
 });
 
 test("a stored mode that is not one of the choices is System", async () => {
-  document.documentElement.setAttribute("data-theme", "dark");
+  setSystemScheme("dark");
   localStorage.setItem("koko.theme", "sepia");
 
   applyStoredMode();
-  expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+  expect(shown()).toEqual(["dark", "dark"]);
 
   renderShell("/mode");
   expect(await screen.findByText("chosen: system")).toBeDefined();
 });
 
-test("Astryx's own strings follow koko's language: a dialog's close label in English and in Chinese", async () => {
+test("React Aria's own strings follow koko's language: a dialog's close label in English and in Chinese", async () => {
   renderShell("/dialog");
-  expect(await screen.findByRole("button", { name: "Close" })).toBeDefined();
+  expect(await screen.findByRole("button", { name: "Dismiss" })).toBeDefined();
 
-  await chooseInAccountMenu("简体中文");
-  expect(await screen.findByRole("button", { name: "关闭" })).toBeDefined();
-  expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+  await chooseInTopBar("Language", "简体中文");
+  expect(await screen.findByRole("button", { name: "取消" })).toBeDefined();
+  expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
 });
 
-test("the providers put no style element in the page, which the CSP, default-src 'self', would refuse", async () => {
-  localStorage.setItem("koko.theme", "dark");
-  renderShell("/dialog");
-  await screen.findByRole("dialog");
-
-  await chooseInAccountMenu("简体中文");
-  await screen.findByRole("button", { name: "关闭" });
-  expect(document.querySelectorAll("style")).toHaveLength(0);
-});
-
-test("a link an Astryx component renders goes through koko's router, without a page load", async () => {
+test("a link HeroUI renders goes through koko's router, without a page load", async () => {
   renderShell("/link/first");
   await screen.findByText("at /link/first");
 

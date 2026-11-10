@@ -2,42 +2,25 @@
 
 Project-specific guidance for AI coding agents.
 
-koko's web UI, on Astryx (ADR 0045): read
-[the web UI build](../docs/subsystems/web-ui.md) and
-[the web UI shell](../docs/subsystems/web-shell.md) first, and the
-repository's own [AGENTS.md](../AGENTS.md). Its CSP is `default-src 'self'`:
-no inline script, no `<style>` element, no `data:` URL and no file from
-another site. Import components from their subpaths, never
-`@astryxdesign/core`'s root. The block below is Astryx's: edit outside it.
+koko's web UI, on HeroUI in koko's Obsidian theme (ADR 0046): read
+[the web UI's design](../docs/web-design.md), which says what every screen
+shows and the values it uses, [the web UI build](../docs/subsystems/web-ui.md)
+and [the web UI shell](../docs/subsystems/web-shell.md) first, and the
+repository's own [AGENTS.md](../AGENTS.md).
 
-<!-- ASTRYX:START -->
-Astryx v0.7.11 · 174 components
-CLI: run every command as `npx astryx <cmd>` (shown below as `astryx ...`).
-
-SETUP (once, in app entry e.g. main.tsx) — without these, components render unstyled:
-  import "@astryxdesign/core/reset.css";
-  import "@astryxdesign/core/astryx.css";
-
-WORKFLOW — start every page from a template, never from scratch:
-1. `astryx build "<idea>"` — names the template to scaffold from and the parts it lacks.
-2. `astryx template <name> <path>` — scaffold it; keep its frame, gap and padding; replace the content.
-3. `astryx template <Block>` for parts it lacks; `astryx component <Name>` to read props before using one.
-Changing an existing page? Keep it: skip step 2 and add blocks/components inside its sections.
-Before you deliver a build, run `astryx doctor --built <dir>`; don't deliver it if it fails.
-
-RULES:
-- No <div> — components handle all layout and spacing.
-- Read `astryx docs layout` before changing a template's frame.
-- Dense data = rows (Table, List/Item), not Card-wrapped lists. Badge = counts only.
-- Style with component props first, then tokens (var(--color-*|--spacing-*|--radius-*)). No raw hex/px. No StyleX/Tailwind compiler here — don't use xstyle/utility classes directly. Some templates use StyleX and need a compiler plugin; see `astryx docs styling-overview`.
-- Palettes and custom colors go through the theme, never :root overrides. Run `astryx theme add <slug>` to import; `theme eject <slug>` only forks source. See `astryx docs theme`.
-- SELF-CHECK: re-read the file; replace any raw <div>/<span>, imported .css/@apply, or hardcoded #hex/px with the component or a token.
-
-`astryx help` lists every command. Key ones beyond the workflow:
-  search "<query>"   find any component / hook / doc / template
-  discover <words>   integrations you could add
-  docs <topic>       getting-started, principles, tokens, theme … (`astryx docs` lists all)
-  docs cli           commands and API reference
-  docs authoring     build an integration package, and every field it holds
-  upgrade --from <old version> --apply   run after a dependency bump
-<!-- ASTRYX:END -->
+- Look HeroUI's components up in its documentation,
+  `https://heroui.com/react/llms.txt`, and check what it says against the
+  pinned package's types in `node_modules/@heroui/react/dist`, rather than
+  from memory. The version is the one `package.json` pins.
+- Build on the shell's parts before HeroUI's own: the frame, the page head
+  and panel, the states every screen has, the dialogs, the fields (a
+  searchable `SearchChoice` wherever a person picks one item from a list
+  that can grow) and the rest in `src/ui/` and `src/shell/`.
+- Layout is Tailwind's utilities; a colour is written in
+  `src/theme/theme.css` alone, as a token, and everything else uses the
+  tokens. A HeroUI component taken up for the first time adds its style
+  file to `src/theme/heroui.css`, in HeroUI's order.
+- The CSP is `default-src 'self'`, with one hash in `style-src` for the
+  `<style>` element React Aria adds on iOS Safari: no inline script, no
+  other `<style>` element, no `data:` URL and no file from another site. Every string comes from the two catalogues, in the formal register
+  of product UI.

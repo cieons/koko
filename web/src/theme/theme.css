@@ -1,0 +1,297 @@
+/*
+ * Obsidian, koko's theme on HeroUI (ADR 0046; docs/web-design.md, "Tokens"
+ * and "Type"). This is the one stylesheet that writes a colour: every other
+ * rule and component uses the tokens below. The page is one quiet neutral;
+ * content lies on panels raised a little above it, lit along their top edge;
+ * one cool blue marks the action to take.
+ */
+@import "./heroui.css";
+
+/*
+ * Geist and Geist Mono, their Latin subsets, bundled under the SIL Open Font
+ * License 1.1 (assets/fonts/*-OFL.txt), so nothing loads from another site.
+ * Chinese text falls through to the system's fonts.
+ */
+@font-face {
+  font-family: Geist;
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../assets/fonts/geist-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F,
+    U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../assets/fonts/geist-mono-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F,
+    U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* The tokens Tailwind's utilities name beside HeroUI's own: text-ink-2, border-line, bg-ok, shadow-sheet. */
+@theme inline {
+  --font-sans:
+    Geist, "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", system-ui,
+    sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, "PingFang SC", monospace;
+  --color-line: var(--line);
+  --color-ink-2: var(--ink-2);
+  --color-ok: var(--ok);
+  --shadow-sheet: var(--sheet-shadow);
+  --shadow-overlay: var(--overlay-shadow);
+}
+
+/*
+ * Light, on :root and on the class and attribute the mode sets on <html>
+ * (shell/mode.tsx). Unlayered, these win over HeroUI's layered defaults.
+ */
+:root,
+.light,
+[data-theme="light"] {
+  --radius: 0.75rem;
+  --field-radius: 0.75rem;
+  --background: oklch(0.972 0.003 265);
+  --foreground: oklch(0.2 0.015 265);
+  --ink-2: oklch(0.36 0.016 265);
+  --muted: oklch(0.47 0.018 265);
+  --surface: oklch(1 0 0);
+  --surface-secondary: oklch(0.972 0.003 265);
+  --surface-tertiary: oklch(0.95 0.005 265);
+  --overlay: oklch(1 0 0);
+  --default: oklch(0.948 0.005 265);
+  --default-foreground: var(--foreground);
+  --accent: oklch(0.52 0.18 262);
+  --accent-foreground: oklch(0.99 0 0);
+  /* A filled button darkens on hover: lightened, its white label falls under 4.5:1 in dark. */
+  --accent-hover: color-mix(in oklab, var(--accent) 92%, var(--darken));
+  --focus: oklch(0.52 0.18 262);
+  --link: oklch(0.46 0.18 262);
+  --line: oklch(0.93 0.005 265);
+  --border: oklch(0.895 0.007 265);
+  --separator: var(--line);
+  --ok: oklch(0.5 0.13 155);
+  /* The halo of the Managed mark. */
+  --ok-halo: color-mix(in oklab, var(--ok) 22%, transparent);
+  --success: oklch(0.62 0.15 155);
+  --danger: oklch(0.555 0.21 26);
+  /* A danger button's fill, under white text. Danger as text is --danger. */
+  --danger-fill: var(--danger);
+  --field-background: oklch(1 0 0);
+  /*
+   * The Owner's choice (2026-11-10): a light edge, about 1.5:1 on a panel,
+   * under the 3:1 of WCAG 1.4.11. Not to be raised in a review.
+   */
+  --field-border: oklch(0.86 0.009 265);
+  --field-border-width: 1px;
+  --field-shadow: 0 1px 2px oklch(0.2 0.02 265 / 0.05);
+  --sheet-shadow:
+    0 0 0 1px oklch(0.2 0.02 265 / 0.07), 0 1px 2px oklch(0.2 0.02 265 / 0.05),
+    0 16px 32px -16px oklch(0.2 0.02 265 / 0.14);
+  --surface-shadow: var(--sheet-shadow);
+  --overlay-shadow: 0 0 0 1px oklch(0.2 0.02 265 / 0.08), 0 20px 48px -12px oklch(0.2 0.02 265 / 0.25);
+  --button-highlight: inset 0 1px 0 oklch(1 0 0 / 0.2), 0 1px 2px oklch(0.3 0.15 262 / 0.4);
+  --current-place-shadow: inset 0 1px 0 oklch(1 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.12);
+  --segment: oklch(1 0 0);
+  --backdrop: oklch(0.2 0.02 265 / 0.35);
+  /* What a filled button's hover is mixed with: 8% black. */
+  --darken: oklch(0 0 0);
+}
+
+.dark,
+[data-theme="dark"] {
+  --background: oklch(0.115 0.004 265);
+  --foreground: oklch(0.97 0.003 265);
+  --ink-2: oklch(0.87 0.006 265);
+  --muted: oklch(0.72 0.012 265);
+  --surface: oklch(0.165 0.006 265);
+  --surface-secondary: oklch(0.2 0.007 265);
+  --surface-tertiary: oklch(0.235 0.008 265);
+  --overlay: oklch(0.2 0.007 265);
+  --default: oklch(0.235 0.008 265);
+  --accent: oklch(0.565 0.19 262);
+  --accent-foreground: oklch(0.99 0 0);
+  --focus: oklch(0.74 0.13 262);
+  --link: oklch(0.8 0.11 262);
+  --line: oklch(0.225 0.007 265);
+  --border: oklch(0.29 0.009 265);
+  --ok: oklch(0.8 0.15 155);
+  --success: oklch(0.78 0.16 155);
+  /* No one red holds 4.5:1 both as text on these surfaces and under white text, so the two part. */
+  --danger: oklch(0.64 0.2 26);
+  --danger-fill: oklch(0.58 0.2 26);
+  --field-background: oklch(0.14 0.005 265);
+  --field-border: oklch(0.33 0.01 265);
+  /* Not `none`: a field's focus ring is composed with this shadow, and `none` in the list voids it. */
+  --field-shadow: 0 0 0 0 transparent inset;
+  --sheet-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.07), 0 0 0 1px oklch(1 0 0 / 0.05), 0 24px 48px -24px oklch(0 0 0 / 0.9);
+  --overlay-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.09), 0 0 0 1px oklch(1 0 0 / 0.08), 0 24px 48px -12px oklch(0 0 0 / 0.8);
+  --segment: oklch(0.31 0.01 265);
+  --backdrop: oklch(0 0 0 / 0.6);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    font-size: 100%;
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    min-height: 100dvh;
+    background: var(--background);
+    color: var(--foreground);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+  }
+
+  :lang(zh-CN) body {
+    line-break: strict;
+  }
+
+  /*
+   * React Aria's own rule for pressable elements. usePress would add it in a
+   * <style> element, which the CSP refuses, unless the document holds an
+   * element of id react-aria-pressable-style: index.html's <meta> (ADR 0046).
+   */
+  [data-react-aria-pressable] {
+    touch-action: pan-x pan-y pinch-zoom;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--accent) 26%, transparent);
+  }
+}
+
+@layer components {
+  /* HeroUI's parts, adjusted to Obsidian. */
+  .description,
+  .field-error {
+    font-size: 0.8125rem;
+    line-height: 1.45;
+  }
+
+  /* A field set in the code face keeps 16px on a phone, so iOS Safari does not zoom the page on focus. */
+  @media (width < 40rem) {
+    .input.t-code,
+    .textarea.t-code {
+      font-size: 1rem;
+    }
+  }
+
+  .button--primary {
+    box-shadow: var(--button-highlight);
+  }
+
+  .button--danger {
+    --button-bg: var(--danger-fill);
+    --button-bg-hover: color-mix(in oklab, var(--danger-fill) 92%, var(--darken));
+    --button-bg-pressed: var(--button-bg-hover);
+  }
+
+  .button--secondary {
+    background: var(--surface);
+    color: var(--foreground);
+    box-shadow: var(--sheet-shadow);
+  }
+
+  .button--secondary:hover {
+    background: var(--surface-secondary);
+  }
+
+  /* A chosen segment inverts: the choice reads at once, in either mode, without a colour. */
+  .toggle-button {
+    --toggle-button-bg-selected: var(--foreground);
+    --toggle-button-bg-selected-hover: var(--foreground);
+    --toggle-button-bg-selected-pressed: var(--foreground);
+    --toggle-button-fg-selected: var(--background);
+  }
+
+  /* The current place in the top bar and the phone's bar. */
+  .place[aria-current="page"] {
+    background: var(--default);
+    color: var(--foreground);
+    box-shadow: var(--current-place-shadow);
+  }
+
+  /* Type roles. */
+  .t-display {
+    font-size: 1.75rem;
+    line-height: 1.2;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+  }
+
+  .t-title {
+    font-size: 1.25rem;
+    line-height: 1.3;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .t-heading {
+    font-size: 0.875rem;
+    line-height: 1.45;
+    font-weight: 600;
+  }
+
+  .t-name {
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .t-label {
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+
+  .t-num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .t-code {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    font-variant-ligatures: no-contextual;
+    overflow-wrap: anywhere;
+  }
+
+  /* The panel: the one raised surface, used for every group of content. */
+  .sheet {
+    background: var(--surface);
+    color: var(--surface-foreground);
+    border-radius: 1rem;
+    box-shadow: var(--sheet-shadow);
+  }
+
+  /* A row that is a link: one Tab stop, which the whole row shows the focus of. */
+  .row-link {
+    position: relative;
+    display: block;
+    border-radius: 0.625rem;
+    outline: none;
+    transition: background-color 120ms ease;
+  }
+
+  .row-link:hover {
+    background: var(--surface-secondary);
+  }
+
+  .row-link:focus-visible,
+  .row-link[data-focus-visible] {
+    box-shadow: 0 0 0 2px var(--focus);
+  }
+}

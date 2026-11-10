@@ -1,10 +1,6 @@
-// Astryx's styles, in the order it requires, then koko's own. The Neutral
-// theme's fonts.css is never imported: it loads Figtree from Google Fonts,
-// and app.css declares the copy koko bundles (ADR 0045).
-import "@astryxdesign/core/reset.css";
-import "@astryxdesign/core/astryx.css";
-import "@astryxdesign/theme-neutral/theme.css";
-import "./shell/app.css";
+// The theme: HeroUI's styles for the components in use, then Obsidian's
+// tokens, type and panel (ADR 0046).
+import "./theme/theme.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

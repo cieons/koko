@@ -1,19 +1,21 @@
 # The web UI shell
 
 The frame every page of the web UI sits in, and the parts pages share: the
-side navigation and the account menu, routing and who the web UI acts as,
-the language, the mode and the catalogues, the API client, pages that load
-when first shown, the dialogs of actions that never ask, the confirmation
-dialog, edit forms, reloading, what a page shows once, and the notices and
-refusals. The pages themselves are their capabilities'; where an area adds its pages and its
+top bar with its places, its Language and Appearance menus and the account
+panel, routing and who the web UI acts as, the language, the mode and the
+catalogues, the API client, pages that load when first shown, the states
+every screen has, the dialogs and side panels, the confirmation, the
+fields, edit forms, reloading, what a page shows once, and the notices,
+toasts and refusals. What each looks like is [the web UI's
+design](../web-design.md). The pages themselves are their capabilities'; where an area adds its pages and its
 catalogue files is in [code layout](code-layout.md#where-an-area-adds-its-parts).
 How the app is built, embedded and typed is [the web UI build](web-ui.md); how
 a browser reaches it is [`koko web` and the web front](web-front.md).
 
 ## Providers
 
-The web UI is built on Astryx ([ADR
-0045](../adr/0045-the-web-ui-is-built-on-astryx.md)). The `Shell` renders
+The web UI is built on HeroUI ([ADR
+0046](../adr/0046-the-web-ui-is-built-on-heroui.md)). The `Shell` renders
 everything inside [`Providers`](../../web/src/shell/providers.tsx), so the
 app [`main.tsx`](../../web/src/main.tsx) renders and the app a page test
 renders sit in the same ones, outermost first:
@@ -21,89 +23,95 @@ renders sit in the same ones, outermost first:
 | Provider | Gives |
 | --- | --- |
 | `LanguageProvider` | koko's language and its catalogues ([Language](#language)) |
-| [`ModeProvider`](../../web/src/shell/mode.tsx) | the mode chosen, and Astryx's `Theme` with `neutralTheme` (from `@astryxdesign/theme-neutral/built`) in that mode |
-| `InternationalizationProvider` | Astryx's own strings, such as a dialog's close label, in koko's language: `en`, or `zh-CN` from Astryx's `locales/zh-CN.generated.js` |
-| `LinkProvider` | koko's router `Link` behind every link an Astryx component renders |
+| [`ModeProvider`](../../web/src/shell/mode.tsx) | the mode chosen, kept on `<html>` ([Light and dark](#light-and-dark)) |
+| `I18nProvider` | React Aria's own strings, such as a dialog's dismiss label, and its dates and numbers, in koko's language: `en-US` or `zh-CN`, the two locales the build keeps |
+| `RouterProvider` | koko's router behind every link HeroUI and React Aria render, so a link's `href` is followed without a page load; a link takes `routerOptions`, koko's `NavigateOptions`, such as `{ replace: true }` |
 
-`main.tsx` imports Astryx's `reset.css`, `astryx.css` and the theme's
-`theme.css`, in that order, then koko's
-[`shell/app.css`](../../web/src/shell/app.css). The theme's `fonts.css`,
-which loads Figtree from Google Fonts, is never imported: `app.css` declares
-the copy in `web/src/assets/fonts/` (Figtree's variable WOFF2, latin, under
-the SIL Open Font License beside it) and names the system's Chinese fonts
-after it in `--font-family-body`. koko's CSS uses Astryx's tokens and never
-a literal colour. Every page is built on Astryx (#110, #111, #112), so
-`app.css` holds no rules for pages not yet redone any more; what a page's
-components have no prop for is in the page's own CSS file, on koko's own
-classes, in Astryx's lowest layer, `reset`, so every property a component
-sets itself still wins.
+`Toast.Provider`, inside them, shows the toasts at the bottom end
+([Notices](#notices)). `main.tsx` imports
+[`theme/theme.css`](../../web/src/theme/theme.css), the theme on HeroUI's
+styles ([the web UI build](web-ui.md#heroui-and-tailwind)).
 
 ## The frame
 
-The [`Shell`](../../web/src/shell/Shell.tsx) is Astryx's `AppShell`, laid
-out as its `AppShellTopNavWithSideNav` pattern (spec #108: "Patterns, not a
-re-skin"):
+The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
+([The frame](../web-design.md#the-frame)):
 
-- **The top bar** (`TopNav`) holds koko's name, linking `/`; whom the web UI
-  acts as ([below](#who-the-web-ui-acts-as)); and the
-  [account menu](../../web/src/shell/AccountMenu.tsx), a `DropdownMenu` behind
-  the User's `Avatar` that chooses the language and the mode, each a group
-  of radio items. The account page and signing out join it with Sign-ins
-  (#114, #116).
-- **The side navigation** (`SideNav`, named "Pages") links each page the
-  caller may see, in the order of `routes`, under its name and its Lucide
-  icon (`Route.icon`), and marks the one the URL is in (`aria-current`), a
-  page beneath it such as a Host included.
-- **On a phone**, below Astryx's `md` width (768 pixels), the top bar
-  carries a button that opens the side navigation's links in a `MobileNav`
-  drawer, which every visit closes; whom the web UI acts as moves into the
-  account menu, where the bar has no room for it.
-- **The content** is `AppShell`'s `<main>`, with Astryx's skip link before
-  the frame. Each page sits inside an element of class `koko-page`, which
-  a page's own CSS may size: the Hosts list's fills the main area with it.
-- **The notices** are the `AppShell`'s banner, above the top bar
+- **A skip link**, "Skip to main content", is the first stop of Tab; it
+  moves the focus to the main region, without changing the URL.
+- **The top bar**, sticky, holds koko's wordmark, a link to `/`; in the
+  centre, from 768 pixels wide, the places the caller may see, in a raised
+  track; and at its end ([`TopBar.tsx`](../../web/src/shell/TopBar.tsx))
+  the Language and Appearance buttons, each an icon button named for its
+  value ("Language: English", "Appearance: System") that opens a menu of
+  radio items, and, once `user.current` has answered, the account button,
+  named "Account: <name>", which opens the account panel.
+- **The places** are the routes with a `nav` message, in the order of
+  `routes`; the three of the design, Hosts, Secrets and Access, have their
+  messages in the shell's catalogue (`shell.place.*`), and each comes back
+  to the top bar with its page. The one the URL is in, a page beneath its
+  path such as a Host's included, has `aria-current="page"`. A Member gets
+  no place whose route is `ownerOnly`.
+- **On a phone**, under 768 pixels wide, the places move to a bar fixed at
+  the foot, each with its Lucide icon (`Route.icon`) and its name, above
+  the safe area; the main region leaves room for it.
+- **The account panel** shows the User's initial, name and role, and how
+  this browser reaches koko: "Through koko web on <device>" for a Device
+  Session, "Signed in from <browser>" for a Sign-in, and "On the koko
+  server's machine" for the Local caller. Account and Sign out join it
+  with their pages (#125, #116).
+- **The main region** (`<main id="main">`) holds the page. After a visit
+  that leaves the focus on nothing, as when the link followed went with the
+  page it was on, the focus moves to it; a visit that leaves the focus
+  where it was, such as on a place, keeps it there.
+- **The document's title** is the page's own name, then koko ("web1 ·
+  koko"): the page's head (`Page`, [Parts](#parts)) sets it.
+- **The notices** are one notice across the width under the top bar
   ([Notices](#notices)).
-- **A path with no page** shows Astryx's `EmptyState`, "Page not found",
-  with a link to the first page; so does a path only the Owner may open, to
-  a Member.
+- **A path with no page** shows "Page not found" in the frame, with one
+  sentence and a link to the first place; so does a path only the Owner may
+  open, to a Member. Until the first page is back (#122), `/` and every
+  path show it.
+- **Until `user.current` answers** the main region shows Loading; if it
+  fails, why, with Try again ([States](#the-states-every-screen-has)).
 - **The icon** of the browser's tab is `web/public/favicon.svg`, which
   `index.html` links, so the browser asks for no `/favicon.ico`.
-  `index.html`'s viewport tag carries `viewport-fit=cover`, which lets
-  `AppShell` keep its top bar in a phone's safe area.
+  `index.html`'s viewport tag carries `viewport-fit=cover`, which lets the
+  phone's bar keep clear of the safe area.
 
 ## Light and dark
 
-- **The mode** is System by default: Astryx follows the system's light or
-  dark mode (`prefers-color-scheme`). Light or Dark overrides it, and the
-  browser keeps the choice in `localStorage` (`koko.theme`), as it keeps
-  the language. `useMode()` is the mode chosen and the function that
-  chooses another, which the account menu calls: Light, Dark or System.
-- **`<html data-theme>`** holds `light` or `dark` for a choice of either,
-  and is absent for System; Astryx's `Theme` writes it, and its tokens
-  follow. `index.html` carries `<meta name="color-scheme" content="light
-  dark">` for the first frame, and `main.tsx` writes a stored choice to
-  `<html>` (`applyStoredMode`) before React's first render, which runs in
-  a later task, since `index.html` may run no inline script.
+- **The mode** is System by default: the web UI follows the system's light
+  or dark mode (`prefers-color-scheme`), and changes with it. Light or Dark
+  overrides it, and the browser keeps the choice in `localStorage`
+  (`koko.theme`), as it keeps the language. `useMode()` is the mode chosen
+  and the function that chooses another, which the Appearance menu calls.
+- **`<html>`** holds the mode in effect, light or dark, the system's for
+  System, as its class (`light` or `dark`) and its `data-theme`; the
+  theme's tokens and HeroUI's follow both. `index.html` carries `<meta
+  name="color-scheme" content="light dark">` for the first frame, and
+  `main.tsx` writes the stored choice to `<html>` (`applyStoredMode`)
+  before React's first render, which runs in a later task, since
+  `index.html` may run no inline script.
 
 ## Pages and routing
 
 - **A page is a path.** A [`Route`](../../web/src/shell/router.tsx) names a
   path (a `:name` segment matches any one segment, decoded, and reaches the
-  page as `params.name`), the page component, the message the side
-  navigation links it under (`nav`) and its Lucide icon there (`icon`), and
-  whether only the Owner sees it (`ownerOnly`). The side navigation links
-  pages in the order of `routes` in
+  page as `params.name`), the page component, the message the top bar
+  links it under as a place (`nav`) and its Lucide icon in the phone's bar
+  (`icon`), and whether only the Owner sees it (`ownerOnly`). The top bar
+  links the places in the order of `routes` in
   [`web/src/routes.ts`](../../web/src/routes.ts), and `/` goes, keeping its
-  query, to the first linked page the caller may see. A path no route
+  query, to the first place the caller may see. A path no route
   matches, or one that does not decode, shows that there is no page there.
 - **A page loads when first shown.** An area's `routes.ts` gives a page as
   [`lazyPage(load)`](../../web/src/shell/lazyPage.tsx), so its code is a
-  chunk of its own, outside [the first load](web-ui.md#size); so far the
-  record's pages do, and each page's redesign on Astryx moves its own. A
-  spinner shows while the chunk loads, and a chunk that does not load, as
-  after the koko server was upgraded under an open tab, shows an error
-  `Banner` saying to reload the browser page, in place of the page; any
-  other error a page throws goes on past it. `loadPage(page)` loads a lazy
+  chunk of its own, outside [the first load](web-ui.md#size). Loading
+  shows while the chunk loads, and a chunk that does not load, as after
+  the koko server was upgraded under an open tab, says in place of the
+  page, as an alert, that the browser page must be reloaded; any other
+  error a page throws goes on past it. `loadPage(page)` loads a lazy
   page's chunk ahead of time, once, so its first render does not wait on
   it; the page tests load every page so before they run.
 - **Page state lives in the URL's query** (`useSearchParams`, and
@@ -111,15 +119,15 @@ re-skin"):
   is a saved view and Back returns to the earlier state. The router uses the
   browser's history alone; the web front serves `index.html` for every path
   outside `/v1/`.
-- **A visit** is each history entry the browser moves to: a `Link`, Back or
+- **A visit** is each history entry the browser moves to: a link, Back or
   Forward, even to the URL it is on. A replace (`navigate(to, {replace:
   true})`), such as the redirect from `/`, refines the entry it is on and is
   not a new visit.
 
 ## Who the web UI acts as
 
-- **The top bar** shows the User and the device name, and the side
-  navigation the links to the pages the caller may see.
+- **The account panel** shows the User and how this browser reaches koko,
+  and the top bar the places the caller may see.
 - **It learns them from `user.current`**
   ([`api.UserCurrent`](../../internal/shared/api/user.go)), the operation
   `koko join` asks, so the web UI adds no operation of its own (ADR 0006). It
@@ -127,10 +135,12 @@ re-skin"):
   renders a page only once it has answered, and pages read the answer as a
   [`Caller`](../../web/src/shell/caller.tsx) (`useCaller`).
 - **Over the Unix socket** `user.current` answers the Owner with no Device
-  Session, for the Local caller (ADR 0008), so the top bar shows the Owner's
-  name "on the koko server's machine" where a device name would be.
+  Session, for the Local caller (ADR 0008), so the account panel says "On
+  the koko server's machine" where a device would be. On the web listener
+  it answers the User of this browser's Sign-in (`signin`), whose browser
+  the panel names.
 - **Owner-only pages and buttons.** The role in `user.current`'s User decides:
-  a Member gets no link to an `ownerOnly` route, and its path shows no page;
+  a Member gets no place for an `ownerOnly` route, and its path shows no page;
   `<OwnerOnly>` shows its children to the Owner alone. The koko server refuses
   a Member's Owner-only call anyway ([the access check](access.md)).
 
@@ -158,15 +168,15 @@ re-skin"):
 - **Choosing.** The first of the browser's preferred languages
   (`navigator.languages`) that the web UI ships wins: Chinese of any region
   gives Simplified Chinese, English gives English, and none gives English.
-  The account menu overrides it, and the browser keeps the choice in
-  `localStorage` (`koko.language`). `<html lang>` follows the language, and
-  so do Astryx's own strings ([Providers](#providers)).
+  The top bar's Language menu overrides it, and the browser keeps the
+  choice in `localStorage` (`koko.language`). `<html lang>` follows the
+  language, and so do React Aria's own strings ([Providers](#providers)).
 - **Never translated.** Names, keys, values and Notes reach a message only as
   its `{name}` parameters, shown as stored.
   [`formatDate`](../../web/src/shell/format.ts) shows a date as `YYYY-MM-DD`
   in both languages: a calendar date as stored, and a time the API returns
   (RFC 3339 in UTC) as its UTC date, the first ten characters the CLI prints.
-- **API errors** show their code's message (`errorMessage`, `ErrorMessage`);
+- **API errors** show their code's message (`errorMessage`, `Refusal`);
   the server's own English message is not shown.
 
 ## Calls
@@ -212,65 +222,99 @@ the browser keeps in its back-forward cache holds it no more when Back brings
 it back, and the page forgets it at once by setting it to `undefined`.
 
 A line a page shows once to be pasted elsewhere, a Join Code's `koko join`
-line today and a Password Link later, shows in
-[`ShownOnceLine`](../../web/src/shell/ShownOnceLine.tsx): a region named for
-what it holds, in an Astryx `Card`, with the line in Astryx's `Code`, which
-breaks anywhere on a phone and one click selects whole; a copy
-`IconButton` beside it, which says whether the browser copied it (the two
-are [`CopyLine`](../../web/src/shell/CopyLine.tsx), which any line to copy
-shows in, such as a Registered Host's `koko host enroll` or a revealed
-Secret value, whose lines it keeps); and the
-time left as text, counted each second on the browser's clock from when the
-line showed, for the validity the page asked for (`validFor`). The time
-left reads in minutes and seconds (`14:59`) for its last hour, and before
-that in days and whole hours in the language (`6 days, 23 hours`, `6天23小时`,
-`Intl.DurationFormat`), as a validity of up to 7 days (#115) calls for. Once
-it ran out, the line goes and the page's own words say what to do instead.
+line or a Password Link, shows in
+[`ShownOnceLine`](../../web/src/ui/ShownOnceLine.tsx): a region named for
+what it holds, an inset block with a dashed accent edge holding its name,
+the time left and the line in the code face, which breaks anywhere and one
+click selects whole; under it the page's words (`intro`), the line that it
+is shown only here, and Copy. The time left is counted each second on the
+browser's clock from when the line showed, for the validity the page asked
+for (`validFor`). It reads in minutes and seconds (`14:59`) for its last
+hour, and before that in days and whole hours in the language (`6 days,
+23 hours`, `6天23小时`, `Intl.DurationFormat`), as a validity of up to 7
+days (#115) calls for. Once it ran out, the line goes and the page's own
+words say what to do instead.
 
-## Dialogs
+## Parts
 
-An action that never asks first opens a dialog of the shell's
-([`AdaptiveDialog.tsx`](../../web/src/shell/AdaptiveDialog.tsx)), open
-while the page renders it:
+The parts of the design's Components table
+([Components](../web-design.md#components)), in
+[`web/src/ui/`](../../web/src/ui), each built on HeroUI and the shell's
+logic:
 
-- **`AdaptiveDialog`** is an Astryx `Dialog` named by its `title`, with an
-  optional `description` under it, its content, and a `footer` for its
-  buttons; below Astryx's `md` width (`phone`, 768 pixels) it is a
-  `BottomSheet` named so, its title a heading. It takes the focus as it
-  opens and gives it back where it was when it closes; Escape and the close
-  button close it (`onClose`), and a click beside it too, unless `isForm`.
-  A value shown or a step of a wizard is one, with the page's own buttons in
-  its footer.
-- **`FormDialog`** is the form of one action in an `AdaptiveDialog` with
-  `isForm`: its fields, the refusal in place (`error`, an `ErrorMessage`),
-  Cancel, and the button that acts (`submit`), which, like Enter in a
-  field, sends the form (`onSubmit`) only when it is `ready`.
+| Part | File | What it is |
+| --- | --- | --- |
+| `Page` | `Page.tsx` | a page's head: its title, an optional line, its actions, a detail page's breadcrumb; it names the browser's tab (`useDocumentTitle`) |
+| `Sheet` | `Page.tsx` | a panel, named by its title as a region; `list` lays a list on it edge to edge |
+| `Form` | `Form.tsx` | a form that validates when it is submitted ([States](#the-states-every-screen-has)) |
+| `FormDialog` | `FormDialog.tsx` | a short form of one to three fields in HeroUI's `Modal`, open while the page renders it: its fields, the refusal in place (`error`), Cancel, and the button that acts (`submit`), pending while the call runs (`pending`); a click beside it does not close it |
+| `SidePanel` | `SidePanel.tsx` | HeroUI's `Drawer`, open while the page renders it: from the right on a desktop (`wide` for the Host form), from the bottom on a phone, with a handle; with `onSubmit` it is a `Form`, and a click beside it does not close it |
+| `ConfirmDialog` | `ConfirmDialog.tsx` | the confirmation ([Confirmations](#confirmations)) |
+| `Field` | `fields.tsx` | a text field or area, its label above, help under it and its error in place; `code` sets a machine value in the code face, with no spelling or capital corrected |
+| `Choice` | `fields.tsx` | HeroUI's `Select`, for one item of a short fixed list |
+| `SearchChoice` | `fields.tsx` | HeroUI's `ComboBox`, for one item of a list that can grow (the Owner's rule): the list narrows to the items holding what is typed, whatever its case; it takes an item of its list alone, unless `newValues`, as an Attribute key does |
+| `Segments` | `fields.tsx` | HeroUI's `ToggleButtonGroup`, a choice among two to four, all in view |
+| `DateInput` | `DateInput.tsx` | HeroUI's `DatePicker`, a calendar date as `YYYY-MM-DD`; a module the forms that use it import alone, so the calendar is not in the first load |
+| `RowMenu` | `RowMenu.tsx` | HeroUI's `Dropdown` behind an icon button named for it, its danger actions last after a separator |
+| `CopyButton` | `copy.tsx` | Copy: "Copied" for 1.6 s, announced politely; a browser that does not allow it says to select the text |
+| `CommandLine` | `copy.tsx` | a command to copy: a `$`, which Copy leaves out, the command in the code face, and Copy, in an inset block named for it |
+| `ShownOnceLine` | `ShownOnceLine.tsx` | what a page shows once ([Shown once](#shown-once)) |
+| `StateMark` | `StateMark.tsx` | a Host's state as a mark of its own shape and its word |
+| `notify` | `notify.ts` | a toast saying what a call that changed something did ([Notices](#notices)) |
+| `Loading`, `LoadFailed`, `Loaded`, `EmptyState`, `NoMatch`, `Refusal` | `states.tsx` | the states every screen has |
+
+A dialog or panel takes the focus as it opens, closes on Escape and gives
+the focus back to what opened it; every icon button has a name.
+
+## The states every screen has
+
+[`states.tsx`](../../web/src/ui/states.tsx) gives each state of the design
+([States every screen has](../web-design.md#states-every-screen-has)):
+
+- **Loading**: a page keeps its title and frame; while its first call runs,
+  each panel shows nothing for 300 ms, then three skeleton rows in place of
+  its list, announced as loading (`Loading`). A button whose call runs is
+  pending and takes no second press.
+- **Failed to load**: the panel shows the koko server's message and Try
+  again (`LoadFailed`). A read refused `signin_required` goes to
+  `/signin?next=<this page>` instead, replacing the history entry; Sign in
+  itself never goes to itself. `Loaded` shows a read's answer once it has
+  one, Loading until then, and the failure, above the last answer when a
+  reload failed.
+- **Empty**: one panel with a line saying what is missing, a sentence
+  saying what the thing is for, and the action that adds one (`EmptyState`).
+- **No match**: one panel saying nothing matches the view, and the button
+  that clears the search and filters (`NoMatch`).
+- **A refused write**: the koko server's message in place, an alert, the
+  form kept as typed (`Refusal`).
+- **Forms** validate when submitted (`Form`): the submit button stays
+  enabled; each field at fault shows koko's message under it (a field's
+  `validate`), the first takes the focus, and nothing is sent. The form
+  carries `noValidate`, so the browser's own bubbles never show; it calls
+  `checkValidity`, whose invalid events React Aria's fields hear.
 
 ## Confirmations
 
-[`ConfirmDialog`](../../web/src/shell/ConfirmDialog.tsx) asks before an
-irreversible action (retire, removing a record, revoke, removing a User) with
-a title, the consequence and the action's button, as Astryx's
-`AlertDialogDeleteConfirmation` pattern does. It is Astryx's `AlertDialog`
-(`role="alertdialog"`, named by its title and described by the
-consequence), open while the page renders it, so the page behind takes no
-input, a click beside it does nothing, Escape cancels, and the focus returns
-where it was when it closes. Its first control takes the focus: Cancel, so
-Enter never acts by accident. With `typedName`, it adds the field for the
-name, which takes the focus, and the action stays disabled until that name
-is typed exactly: the web UI's form of `--last`, for the Owner's own last
-Device Session. `AlertDialog` takes no content of its own, so that variant
-is its composition (`Dialog`, `Layout`, `Heading`, `Text` and two `Button`s)
-with the field added. On a phone, at 640 pixels wide and below, the buttons
-fill the width, the action above Cancel; Astryx offers no bottom sheet for
-an alert dialog. Reversible writes, revealing a Secret and issuing a Join
-Code never ask.
+[`ConfirmDialog`](../../web/src/ui/ConfirmDialog.tsx) asks before an
+irreversible action (retire, removing a record, revoke, removing a User)
+with a title, the consequence and the action's button, a danger button. It
+is HeroUI's `AlertDialog` (`role="alertdialog"`, named by its title and
+described by the consequence), open while the page renders it, so the page
+behind takes no input, a click beside it does nothing, Escape cancels
+unless its call runs (`pending`), and the focus returns where it was when
+it closes. Its first control takes the focus: Cancel, so Enter never acts
+by accident. With `typedName`, it adds the field for the name, which takes
+the focus, and the action stays disabled until that name is typed exactly:
+the web UI's form of `--last`, for the Owner's own last Device Session. A
+refusal shows in it (`error`). Reversible writes, revealing a Secret and
+issuing a Join Code never ask.
 
 ## Notices
 
 Every call's outcome reaches the shell (`observeCalls`), which shows one
-notice above the frame, an Astryx `Banner` across the width, announced as
-an alert ([`notice.ts`](../../web/src/shell/notice.ts)):
+notice across the width under the top bar, announced as an alert, until
+what ends it ([`notice.ts`](../../web/src/shell/notice.ts)); it is not a
+toast:
 
 | Notice | When | Ends |
 | --- | --- | --- |
@@ -281,17 +325,19 @@ an alert ([`notice.ts`](../../web/src/shell/notice.ts)):
 When the Device Session is Revoked elsewhere, `koko web` exits, and the page
 can tell only that it stopped.
 
+**What a call changed** shows in a toast at the bottom end (`notify`),
+such as "web1 is Retired.".
+
 **A refusal** shows in place, where the action was, never as a toast:
-`ErrorMessage` is an error `Banner` with the message of the API error's
-code, announced as an alert (`role="alert"` on its message alone). Astryx
-keeps live regions of roles `alert` and `status` of its own, empty until
-it announces something, so a test reads the alerts that say something
-(`alerts()`, `findAlert()`, `statuses()` in
+`Refusal` is a block with the message of the API error's code, announced
+as an alert (`role="alert"`). React Aria keeps live regions of its own,
+empty until it announces something, so a test reads the alerts that say
+something (`alerts()`, `findAlert()`, `statuses()` in
 [`web/src/test/pages.tsx`](../../web/src/test/pages.tsx)).
 
 ## The page inventory
 
-Every action each page offered before its redesign on Astryx, with the
+Every action each page offered before its redesign, with the
 call it makes and who may take it. A redesign may move an action, but each
 stays possible by the same call with the same request, and each page's
 test holds one test per action (spec #108: "Patterns, not a re-skin").
@@ -299,7 +345,9 @@ test holds one test per action (spec #108: "Patterns, not a re-skin").
 its Members; the koko server answers anyone else as for a record that does
 not exist. The page's references hold the rules each action follows:
 [the record's pages](record-pages.md), [Secrets](secrets.md#the-web-uis-secrets-page)
-and [the Spaces, People and Devices pages](people-pages.md).
+and [the Spaces, People and Devices pages](people-pages.md). The move to
+HeroUI (#121) took the pages out; each comes back with its ticket (#122 to
+#125, #116), holding these actions.
 
 **The frame**, on every page:
 
@@ -400,49 +448,68 @@ and [the Spaces, People and Devices pages](people-pages.md).
 
 - [`Shell.test.tsx`](../../web/src/shell/Shell.test.tsx), Vitest and React
   Testing Library against the [fake API](web-ui.md#testing-pages), with test
-  pages of their own: the top bar on a device and over the Unix socket;
-  the side navigation marking the page the URL is in, and axe on the
-  frame; on a phone, the drawer the top bar opens, linking no Owner-only
-  page to a Member and closed by a visit, and the account menu naming whom
-  the web UI acts as; the account menu choosing the mode, remembered; "Page
-  not found" with its link to the first page; a
-  write and a read retried once, with and without the same key; a form
-  resubmitted with its key, a new key after success or for another request,
-  and overlapping writes; an edit form sending only changed fields, its
-  baseline after a save, and Save never asking; the dialog, its focus going
-  to Cancel and back to the button that opened it, axe, Escape, and its
-  typed-name variant with the focus on its field and back on the button
-  that opened it, its action above Cancel on a phone; a Member seeing no Owner-only page, link or button, and
-  the Owner seeing them; the language from the browser's preferences, the
-  account menu overriding it and remembered; an API error's message, in its
-  `Banner`, in either language, and axe on it; values shown as stored; the three notices, revoking the web UI's
-  own Device Session, and a refusal ending the stopped notice; reloads on
-  focus and on each visit; page state in the URL and Back; `/` going to the
-  first page.
+  pages of their own in the three places: the account panel for a Device
+  Session, a Sign-in and the Local caller; the Owner's three places and the
+  one the URL is in marked, a page beneath a place's path in it, a Member
+  given no Owner-only place and its path showing Page not found; on a
+  phone the places in the bar at the foot with their icons; `/` going to
+  the first place, keeping the query; Page not found with its link to the
+  first place, and with no page yet, on every path; the document's title;
+  the skip link as the first stop of Tab, moving the focus to the main
+  region; the focus moved to the main region after a visit that left it on
+  nothing, and kept on a place; the language from the browser's
+  preferences, the Language menu overriding it and kept; Light, Dark and
+  System from the Appearance menu, kept, System following the system; axe
+  on the frame, the account panel and both menus, light and dark, at a
+  desktop's and a phone's width; the three notices, revoking the web UI's
+  own Device Session, a refusal ending the stopped notice; and
+  `user.current` failing, with Try again.
+- [`calls.test.tsx`](../../web/src/shell/calls.test.tsx): a write and a
+  read retried once, with and without the same key; a form resubmitted
+  with its key, a new key after success or for another request, and
+  overlapping writes; an edit form sending only changed fields, and its
+  baseline after a save; Owner-only buttons for a Member and the Owner; an
+  API error's message in place in either language, and axe on it; values
+  shown as stored; reloads on focus and on each visit; page state in the
+  URL and Back.
 - [`providers.test.tsx`](../../web/src/shell/providers.test.tsx): the mode
   System by default and following a faked system mode; Light and Dark
-  chosen, kept in `localStorage`, written to `<html data-theme>`, and
-  System again; a stored choice applied before the first render, and one
-  that is no choice read as System; an Astryx dialog's close label in
-  English and in Chinese; no `<style>` element in the page, which the CSP
-  refuses, with an Astryx dialog open; an Astryx link followed through
-  koko's router.
+  chosen, kept in `localStorage`, written to `<html>`'s class and
+  `data-theme`, and System again; a stored choice applied before the first
+  render, and one that is no choice read as System; a React Aria string, a
+  dialog's dismiss label, in English and in Chinese; a HeroUI link followed
+  through koko's router.
+- [`lazyPage.test.tsx`](../../web/src/shell/lazyPage.test.tsx): a lazy
+  page's Loading, then the page; a page `loadPage` loaded rendering without
+  waiting on its chunk, which loads once; a chunk that does not load saying
+  so in the frame, and axe on it; another error not taken for one.
+- [`states.test.tsx`](../../web/src/ui/states.test.tsx): Loading after 300
+  ms and axe; LoadFailed with Try again; `signin_required` going to Sign
+  in with `next`, and not from Sign in; `Loaded`'s three cases; the empty
+  state, no match and a refusal, each with axe.
+- [`dialogs.test.tsx`](../../web/src/ui/dialogs.test.tsx): a short form
+  validating on submit (the error under its field, the focus on it,
+  nothing sent, `noValidate`), its refusal in place with the form kept as
+  typed, a pending call taking no second press, Cancel, Escape and the
+  close button closing it with the focus back; a side panel from the right
+  and from the bottom, named, axe, Escape and the focus back, and as a form
+  validating on submit; a confirmation described by its consequence, the
+  focus on Cancel and back on its opener, acting, Escape not while its
+  call runs, its refusal, and its typed-name variant.
+- [`fields.test.tsx`](../../web/src/ui/fields.test.tsx): a field in the
+  code face with its help; a `Choice`; a `SearchChoice` narrowing whatever
+  the case, taking no value outside its list, and with `newValues` taking
+  one; `Segments`; a row menu with its danger action last.
+- [`parts.test.tsx`](../../web/src/ui/parts.test.tsx): a page's head and
+  the tab's title; Copy, "Copied" for 1.6 s and its failure; a command
+  line; the state marks; a toast; the date field typed and picked.
+- [`ShownOnceLine.test.tsx`](../../web/src/ui/ShownOnceLine.test.tsx): a
+  line valid for 7 days counting down in days and hours, then in minutes
+  and seconds, then gone; axe; Copy copying the line whole.
 - [`catalogues.test.ts`](../../web/src/i18n/catalogues.test.ts): the
   completeness test above.
-- [`ShownOnceLine.test.tsx`](../../web/src/shell/ShownOnceLine.test.tsx):
-  a line valid for 7 days counting down in days and hours, then in minutes
-  and seconds, then gone; axe; the copy button copying the line whole.
 - [`format.test.ts`](../../web/src/shell/format.test.ts): dates as
   `YYYY-MM-DD`; the time left in minutes and seconds, and in days and hours
   in either language.
-- [`App.test.tsx`](../../web/src/App.test.tsx): the web UI opens on its first
-  page.
-- [`AdaptiveDialog.test.tsx`](../../web/src/shell/AdaptiveDialog.test.tsx):
-  a dialog named and described by its title and description, axe, the focus
-  back on its opener when it closes; a bottom sheet on a phone; a form
-  dialog sending only when ready, from its button or Enter, its refusal,
-  and Cancel sending nothing.
-- [`lazyPage.test.tsx`](../../web/src/shell/lazyPage.test.tsx): a lazy
-  page's spinner, then the page; a page `loadPage` loaded rendering
-  without waiting on its chunk, which loads once; a chunk that does not load saying
-  so in the frame; another error not taken for one.
+- [`App.test.tsx`](../../web/src/App.test.tsx): the web UI opens on the
+  frame.
