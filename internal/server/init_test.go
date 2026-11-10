@@ -61,8 +61,10 @@ func TestInitialisationCreatesTheOwnerWithTheirPersonalSpace(t *testing.T) {
 func TestCommandsAreRefusedBeforeInitialisation(t *testing.T) {
 	h := harness.Start(t, harness.NoInit())
 	msg := h.Koko("space", "add", "ops", "--json").WantError(t, 1, "not_initialised")
-	if !strings.Contains(msg, "koko server install --owner") {
-		t.Errorf("message %q does not say how to initialise the koko server", msg)
+	for _, how := range []string{"koko server install --owner <user>", "kokod run", "--address <host[:port]>", "KOKO_OWNER and KOKO_ADDRESS"} {
+		if !strings.Contains(msg, how) {
+			t.Errorf("message %q does not name %q, a way to initialise the koko server", msg, how)
+		}
 	}
 	h.Koko("space", "ls", "--json").WantError(t, 1, "not_initialised")
 

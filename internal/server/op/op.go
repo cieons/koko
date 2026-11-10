@@ -403,7 +403,8 @@ func (a *API) checkInitialised(ctx context.Context, tx store.Tx, o operation) er
 		return fmt.Errorf("tell whether the koko server is initialised: %w", err)
 	}
 	if !ok {
-		return api.CodeNotInitialised.Errorf("the koko server is not initialised yet: koko server install --owner <owner> initialises it")
+		return api.CodeNotInitialised.Errorf("the koko server is not initialised yet: sudo koko server install --owner <user> initialises a koko service, " +
+			"and kokod run, such as a container's, initialises its koko server at start given --owner <user> and --address <host[:port]>, or KOKO_OWNER and KOKO_ADDRESS")
 	}
 	return nil
 }
