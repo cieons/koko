@@ -7,8 +7,8 @@ import type en from "../en/shell";
 // in every catalogue; a term without an entry stays in English:
 //
 //   Host 主机 · Service 服务 · Attribute 属性 · Preset Attribute 预设属性 ·
-//   Note 备注 · Relay 中继 · Registered 已登记 · Enroll 纳管 ·
-//   Managed 已纳管 · Retired 已退役 · Host Account 主机账户 ·
+//   Note 备注 · Relay 中继 · Registered 已登记 · Enroll 接入 ·
+//   Managed 已接入 · Retired 已下线 · Host Account 主机账户 ·
 //   Pinned host key 固定的主机密钥 · Secret 机密 · Space 空间 ·
 //   Personal Space 个人空间 · User 用户 · Owner 所有者 · Member 成员 ·
 //   Invite 邀请 · Removed 已移除 · Join 加入 · Join Code 加入码 ·
@@ -17,6 +17,9 @@ import type en from "../en/shell";
 //   koko server koko 服务器 · Server Address 服务器地址 ·
 //   Web UI Web 界面 · Web URL Web 地址 · Root Key 根密钥 ·
 //   koko key koko 密钥 · Gateway 网关 · Local caller 本机调用方
+//
+// 已下线 is a Host that is gone, its record kept; 离线, a connection that is
+// down, never names it.
 //
 // Command names (koko web, koko join), names, keys and values are never
 // translated.

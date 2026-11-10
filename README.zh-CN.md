@@ -34,7 +34,7 @@ curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | 
 - 通过空间控制谁能查看和访问哪些主机。
 - 机密：密码、密钥和令牌保存在空间中，以一把从不与数据存放在一起的密钥密封，只有 `koko secret show` 会输出其内容。凭据只应存入机密：备注和属性均以明文存储。
 - 网关终结每一个 SSH 会话，因此只有 koko 持有主机所信任的密钥。
-- 纳管主机时只添加一个公钥，不作其他任何更改。
+- 接入主机时只添加一个公钥，不作其他任何更改。
 - 只使用一个 SSH 端口（默认 7822），无需证书；`ssh`、`scp` 和 `rsync` 可直接经由该端口使用，无需改动。
 - 以 CLI 为核心，内置供编程 agent 使用的 skill（`koko skill`）。
 

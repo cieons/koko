@@ -8,7 +8,7 @@ export default {
   "service.filter.label": "筛选服务",
   "service.view.invalid": "此页面地址中的 {parts} 不是服务列表接受的内容。",
   "service.detail.label": "{name} 的详情",
-  "service.detail.readOnly": "其主机已退役，因此该服务保持原样，不可修改。",
+  "service.detail.readOnly": "其主机已下线，因此该服务保持原样，不可修改。",
   "service.edit.button": "编辑",
   "service.edit.title": "编辑 {name}",
   "service.rename.button": "重命名",
