@@ -56,10 +56,17 @@ app sits in its providers is [the web UI shell](web-shell.md#providers).
   writes Obsidian's tokens on HeroUI's variable names, light on `:root`
   and dark on `.dark` and `[data-theme="dark"]`, the type roles (`t-display`
   to `t-code`), the panel (`.sheet`) and koko's adjustments to HeroUI's
-  parts. The root's scroll padding keeps a focused control clear of the
-  sticky top bar and, under `ui/phone.ts`'s width, the phone's bar
-  (Access's table does the same for its sticky first column). It is the one
-  file that writes a colour; every other rule and
+  parts. Two of its rules are for keyboard and contrast-theme users. The
+  root's scroll padding keeps a focused control clear of the sticky top bar
+  and, under `ui/phone.ts`'s width, the phone's bar (Access's table does the
+  same for its sticky first column). Under `forced-colors: active`, where
+  the browser drops shadows and paints fills in the page's colour, the
+  focus ring is a `Highlight` outline; panels, overlays and a switch's track
+  get a `CanvasText` edge; the current place, the chosen tab and the chosen
+  segment are filled with `SelectedItem`, the tab's indicator hidden; and a
+  checked box, a chosen radio and a switch turned on are filled with
+  `Highlight`, their mark in `HighlightText`. It is the one file that
+  writes a colour; every other rule and
   class uses the tokens. Geist and Geist Mono, their Latin subsets as
   variable WOFF2 files, are bundled in `src/assets/fonts/` with their SIL
   Open Font License files; Chinese text uses the system's fonts.

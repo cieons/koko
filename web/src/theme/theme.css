@@ -328,3 +328,71 @@
   }
 }
 
+/*
+ * Forced colours, such as Windows' contrast themes, drop shadows and paint
+ * fills in the page's colour, and HeroUI draws the focus ring as a shadow,
+ * edges panels and overlays with shadows, and marks a chosen place, tab,
+ * segment, checked box, switch or radio with fills. There they are drawn in
+ * the system's colours instead (WCAG 2.4.7, 1.4.11).
+ */
+@layer utilities {
+  @media (forced-colors: active) {
+    /* A panel or overlay; a list box inside a popover has the popover's edge. */
+    .sheet,
+    [role="dialog"],
+    [role="alertdialog"],
+    [role="listbox"]:not([role="dialog"] *) {
+      outline: 1px solid CanvasText;
+    }
+
+    /* Not on what only a script focuses, such as the main region after a navigation. */
+    :is(:focus-visible, [data-focus-visible="true"]):not([tabindex="-1"]) {
+      outline: 2px solid Highlight;
+      outline-offset: 2px;
+    }
+
+    .place[aria-current="page"],
+    .tabs__tab[aria-selected="true"],
+    .toggle-button[data-selected="true"] {
+      forced-color-adjust: none;
+      background: SelectedItem;
+      color: SelectedItemText;
+    }
+
+    .tabs__indicator {
+      display: none;
+    }
+
+    /* The track has no edge of its own, so an outline draws it without moving the thumb. */
+    .switch__control {
+      outline: 1px solid CanvasText;
+    }
+
+    .switch__thumb {
+      forced-color-adjust: none;
+      background: CanvasText;
+    }
+
+    :is(.checkbox__content, .radio__content, .switch__content)[data-selected="true"] {
+      .checkbox__control,
+      .checkbox__control::before,
+      .radio__control,
+      .switch__control {
+        forced-color-adjust: none;
+        background: Highlight;
+        border-color: Highlight;
+      }
+
+      .checkbox__indicator svg {
+        forced-color-adjust: none;
+        stroke: HighlightText;
+      }
+
+      .radio__indicator::before,
+      .switch__thumb {
+        forced-color-adjust: none;
+        background: HighlightText;
+      }
+    }
+  }
+}
