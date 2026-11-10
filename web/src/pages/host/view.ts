@@ -59,7 +59,7 @@ export interface Term {
 }
 
 /** readTerm reads a term written as the CLI takes it, or undefined when it is malformed. */
-function readTerm(written: string): Term | undefined {
+export function readTerm(written: string): Term | undefined {
   const eq = written.indexOf("=");
   const left = eq < 0 ? written : written.slice(0, eq);
   const value = eq < 0 ? undefined : written.slice(eq + 1);
@@ -105,6 +105,11 @@ const reserved = new Set([
 
 /** attrKey is the Attribute key rule: snake_case, 1 to 63 characters, starting with a letter. */
 const attrKey = /^[a-z][a-z0-9_]{0,62}$/;
+
+/** validAttrKey tells whether key may be an Attribute's key: snake_case, and no field's name. */
+export function validAttrKey(key: string): boolean {
+  return attrKey.test(key) && !reserved.has(key);
+}
 
 /** KeyTypes gives the type of each key a list takes, or undefined for a key it does not. */
 export type KeyTypes = (key: string) => KeyType | undefined;

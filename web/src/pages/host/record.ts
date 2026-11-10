@@ -40,16 +40,37 @@ export function hostPath(host: Host): string {
 }
 
 /**
- * servicePath is the path of a Service's page: its Host, by the name or
- * id the Service names it by, and its name.
+ * serviceFields are the fields service.list filters and sorts on, with
+ * their types, as api.ServiceListFields has them; every other key is an
+ * Attribute key.
+ */
+export const serviceFields: Fields = {
+  id: { type: "text" },
+  name: { type: "text" },
+  host: { type: "text" },
+};
+
+/**
+ * servicePath is where a Service opens: on its Host's page, the Host by
+ * the name or id the Service names it by (docs/web-design.md, "The page
+ * map").
  */
 export function servicePath(host: string, name: string): string {
-  return `/services/${encodeURIComponent(host)}/${encodeURIComponent(name)}`;
+  return `${hostPathOf(host)}/services/${encodeURIComponent(name)}`;
 }
 
 /** qualified names a Service as every command does: <host>/<service>. */
 export function qualified(service: Service): string {
   return `${service.host}/${service.name}`;
+}
+
+/**
+ * validName tells whether value is a Host's or a Service's name, a
+ * lowercase DNS label: 1 to 63 of a-z, 0-9 and '-', not starting or ending
+ * with '-' (package name).
+ */
+export function validName(value: string): boolean {
+  return /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(value);
 }
 
 /** validPort tells whether value is a port, 1 to 65535. */

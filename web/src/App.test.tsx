@@ -1,6 +1,10 @@
 import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
+import { AttrList } from "./api/attr";
+import { HostList } from "./api/host";
+import { ServiceList } from "./api/service";
+import { SpaceList } from "./api/space";
 import { expectAccessible } from "./test/axe";
 import { fakeApi } from "./test/fakeApi";
 import { actAs, renderAt } from "./test/pages";
@@ -18,4 +22,18 @@ test("the web UI opens on the frame, with the User's account in the top bar", as
   expect(screen.getByRole("heading", { level: 1, name: "Page not found" })).toBeDefined();
   expect(api.calls.map((c) => [c.method, c.path, c.request])).toEqual([["POST", "/v1/user.current", {}]]);
   await expectAccessible();
+});
+
+test("/ opens at Hosts, the first place", async () => {
+  const api = fakeApi();
+  actAs(api, { id: "user_1", name: "alice", role: "owner", created_at: "2026-11-01T09:00:00Z" });
+  api.on(AttrList, () => ({ attributes: [] }));
+  api.on(SpaceList, () => ({ spaces: [{ id: "space_1", name: "alice", personal: true }] }));
+  api.on(HostList, () => ({ hosts: [] }));
+  api.on(ServiceList, () => ({ services: [] }));
+
+  renderAt("/");
+
+  expect(await screen.findByRole("heading", { level: 1, name: "Hosts" })).toBeDefined();
+  expect(window.location.pathname).toBe("/hosts");
 });

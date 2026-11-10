@@ -1,3 +1,4 @@
+import { hostRoutes } from "./pages/host/routes";
 import { secretRoutes } from "./pages/secret/routes";
 import type { Route } from "./shell/router";
 
@@ -8,4 +9,4 @@ import type { Route } from "./shell/router";
  * 0046) builds the pages again one at a time, in the places' order: Hosts,
  * Secrets, then Access.
  */
-export const routes: Route[] = [...secretRoutes];
+export const routes: Route[] = [...hostRoutes, ...secretRoutes];

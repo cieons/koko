@@ -180,6 +180,18 @@
     line-height: 1.45;
   }
 
+  .checkbox__control,
+  .checkbox__control::before {
+    border-radius: 0.3125rem;
+  }
+
+  /* An off switch keeps the field edge, so it reads as a control before it is turned on (WCAG 1.4.11).
+     Set through Tailwind's inset-ring variable, so the focus ring still composes over it. */
+  .switch:not([data-selected="true"]) .switch__control {
+    --tw-inset-ring-shadow: inset 0 0 0 1px var(--field-border);
+    box-shadow: var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000);
+  }
+
   /* A field set in the code face keeps 16px on a phone, so iOS Safari does not zoom the page on focus. */
   @media (width < 40rem) {
     .input.t-code,

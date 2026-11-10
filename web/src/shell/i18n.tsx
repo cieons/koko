@@ -89,6 +89,32 @@ export function useT(): Translate {
   return useLanguageState().t;
 }
 
+/**
+ * CountKey is a message counted in the language's plural forms: one key
+ * whose `.one` and `.other` messages both exist, such as "host.count.hosts"
+ * for "1 Host" and "9 Hosts".
+ */
+export type CountKey = {
+  [K in MessageKey]: K extends `${infer Base}.other` ? (`${Base}.one` extends MessageKey ? Base : never) : never;
+}[MessageKey];
+
+/** Count is a counted message of the current language, with count as its {count} and any other parameters. */
+export type Count = (key: CountKey, count: number, params?: Readonly<Record<string, string | number>>) => string;
+
+/**
+ * useCount is the counted messages of the current language: the plural
+ * form the language's rules give count, `.one` or else `.other`, so
+ * English says "1 Host" and "9 Hosts" and Chinese, which has one form,
+ * says both in its `.other`.
+ */
+export function useCount(): Count {
+  const { language, t } = useLanguageState();
+  return (key, count, params = {}) => {
+    const form = new Intl.PluralRules(language).select(count) === "one" ? "one" : "other";
+    return t(`${key}.${form}` as MessageKey, { ...params, count });
+  };
+}
+
 /** errorMessage is the message for a failed call in the current language. */
 export function errorMessage(t: Translate, error: unknown): string {
   if (error instanceof ApiError) {

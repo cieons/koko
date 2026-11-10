@@ -177,6 +177,9 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   (RFC 3339 in UTC) as its UTC date, the first ten characters the CLI prints.
   `formatAgo` shows how long ago such a time was, in the language ("3 days
   ago", "3天前"), as a Secret's "Changed" does.
+- **Counts.** A message that counts takes the language's plural forms,
+  `<key>.one` and `<key>.other` (`useCount`), so English says "1 Host" and
+  "9 Hosts"; Simplified Chinese, with one form, says both in `.other`.
 - **API errors** show their code's message (`errorMessage`, `Refusal`);
   the server's own English message is not shown.
 
@@ -359,7 +362,7 @@ HeroUI (#121) took the pages out; each comes back with its ticket (#122 to
 | Choose the language, which the browser keeps | none | anyone |
 | Choose Light, Dark or System, which the browser keeps | none | anyone |
 
-**Hosts** (`/hosts`; the view in the query: `filter`, `sort`, `columns`, `all=1`):
+**Hosts** (`/hosts`; the view in the query: `filter`, `sort`, `columns`, `all=1`, and `q`, `view=services` and `space`):
 
 | Action | Call | Who |
 | --- | --- | --- |
@@ -367,10 +370,10 @@ HeroUI (#121) took the pages out; each comes back with its ticket (#122 to
 | Build a filter term: a key, a comparison, a value; take one away | none (the URL) | anyone |
 | Sort by a header; Shift-click for a further key | none (the URL) | anyone |
 | Show or hide a column | none (the URL) | anyone |
-| Show the Retired Hosts; ticked and fixed while a `state=retired` term is there | none (`all=1`) | anyone |
+| Show the Retired Hosts, through the state select, and while a `state=retired` term is there | none (`all=1`) | anyone |
 | Go back to the default view from a URL the list does not take, which says which term | none | anyone |
 | Open a Host, a Retired one by its id | none | anyone |
-| Add a Host: `name`, `space`, `address`, `port`, `account`, `relay` | `host.add` (and `space.list` for the Spaces) | anyone, in a Space they can act in |
+| Add a Host: `name`, `space`, `address`, `port`, `account`, `relay`, its Attributes and Note | `host.add` (and `space.list` for the Spaces) | anyone, in a Space they can act in |
 
 **A Host** (`/hosts/<name or id>`); a Retired Host offers only what says so:
 
@@ -386,14 +389,14 @@ HeroUI (#121) took the pages out; each comes back with its ticket (#122 to
 | Delete, with no pin, asking first | `host.remove` | in the Space; Retired too |
 | Open a Service, or the Relay | none | in the Space; Retired too |
 
-**Services** (`/services`; the view in the query: `filter`, `sort`, `columns`):
+**Services** (`/hosts?view=services`, which `/services` goes to; the view in the query: `filter`, `sort`, `columns`, and `q` and `space`):
 
 | Action | Call | Who |
 | --- | --- | --- |
 | List the Services, filtered, sorted, in the columns chosen | `service.list` (and `attr.list`) | anyone: the Services of their Spaces |
 | Build a filter term, sort, show or hide a column | none (the URL) | anyone |
 | Go back to the default view from a URL the list does not take, which says which term | none | anyone |
-| Open a Service or its Host | none | anyone |
+| Open a Service or its Host: a Service opens on its Host's page | none | anyone |
 
 **A Service** (`/services/<host>/<service>`):
 
@@ -516,4 +519,4 @@ HeroUI (#121) took the pages out; each comes back with its ticket (#122 to
   `YYYY-MM-DD`; how long ago a time was, in either language; the time left in minutes and seconds, and in days and hours
   in either language.
 - [`App.test.tsx`](../../web/src/App.test.tsx): the web UI opens on the
-  frame.
+  frame; `/` opens at Hosts.

@@ -48,6 +48,12 @@ window.IntersectionObserver ??= NoIntersectionObserver;
 
 Element.prototype.scrollIntoView ??= function scrollIntoView() {};
 
+// React Aria's shared element transition, behind HeroUI's tab indicator,
+// asks an element for its animations, which jsdom never runs.
+Element.prototype.getAnimations ??= function getAnimations() {
+  return [];
+};
+
 // Every browser the web UI supports has inert, which React Aria sets on the
 // page behind an open overlay; without it, React Aria falls back on
 // aria-hidden, which axe rightly faults over the focusable elements inside.
