@@ -61,7 +61,8 @@ var (
 	CodeUnsupportedMediaType = Code{"unsupported_media_type", http.StatusUnsupportedMediaType}
 	// CodeInternal: the koko server failed in a way it did not expect; its log says why.
 	CodeInternal = Code{"internal_error", http.StatusInternalServerError}
-	// CodeInvalidName: a name is not 1 to 63 of a-z, 0-9 and '-' (package name).
+	// CodeInvalidName: a name breaks its rule, such as 1 to 63 of a-z, 0-9
+	// and '-', with '_' too in a Secret's name (package name).
 	CodeInvalidName = Code{"invalid_name", http.StatusBadRequest}
 	// CodeNameTaken: a record of this kind already holds the name.
 	CodeNameTaken = Code{"name_taken", http.StatusConflict}

@@ -51,7 +51,10 @@ export const CodeUnsupportedMediaType = "unsupported_media_type";
 /** CodeInternal: the koko server failed in a way it did not expect; its log says why. */
 export const CodeInternal = "internal_error";
 
-/** CodeInvalidName: a name is not 1 to 63 of a-z, 0-9 and '-' (package name). */
+/**
+ * CodeInvalidName: a name breaks its rule, such as 1 to 63 of a-z, 0-9
+ * and '-', with '_' too in a Secret's name (package name).
+ */
 export const CodeInvalidName = "invalid_name";
 
 /** CodeNameTaken: a record of this kind already holds the name. */

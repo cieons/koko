@@ -8,7 +8,7 @@ export default {
   "error.unsupported_media_type": "The koko server accepts only JSON.",
   "error.internal_error": "The koko server failed unexpectedly. Its log records the cause.",
   "error.invalid_name":
-    "A name is 1 to 63 lowercase letters, digits and hyphens, and does not start or end with a hyphen.",
+    "A name is 1 to 63 lowercase letters, digits and hyphens, and does not start or end with a hyphen. A Secret's name may also contain underscores, and only its first character must be a letter or a digit.",
   "error.name_taken": "This name is already in use.",
   "error.not_initialised": "The koko server is not initialised yet.",
   "error.local_only": "Only a command run on the koko server's own machine can do this.",

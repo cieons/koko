@@ -9,7 +9,8 @@ export default {
   "error.method_not_allowed": "koko 服务器仅接受 POST 请求。",
   "error.unsupported_media_type": "koko 服务器仅接受 JSON。",
   "error.internal_error": "koko 服务器发生意外错误，原因记录在其日志中。",
-  "error.invalid_name": "名称须为 1 至 63 个小写字母、数字或连字符，且不得以连字符开头或结尾。",
+  "error.invalid_name":
+    "名称须为 1 至 63 个小写字母、数字或连字符，且不得以连字符开头或结尾。机密的名称还可包含下划线，仅首字符须为字母或数字。",
   "error.name_taken": "此名称已被占用。",
   "error.not_initialised": "koko 服务器尚未初始化。",
   "error.local_only": "此操作仅能由 koko 服务器本机上运行的命令执行。",
