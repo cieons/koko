@@ -162,4 +162,4 @@ from can be another one still.
 
 ## Moved to the code standards
 
-- Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09; #38, #43, #49, #54, #60, #70, #90, #119).
+- Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10; #38, #43, #49, #54, #60, #70, #90, #119, #120).

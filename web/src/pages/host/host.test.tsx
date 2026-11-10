@@ -454,6 +454,6 @@ test("a dialog's Cancel sends nothing and gives the focus back to the action's b
   fireEvent.click((await dialog("Rename web1")).getByRole("button", { name: "Cancel" }));
 
   await vi.waitFor(() => expect(screen.queryByRole("dialog", { name: "Rename web1" })).toBeNull());
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Rename" }));
+  await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Rename" })));
   expect(writes(api)).toEqual([]);
 });

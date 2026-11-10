@@ -147,14 +147,16 @@ test("Invite is a wizard that never asks, and shows its koko join line once, unt
   expect(shown.textContent).toContain("koko join koko_testinvite");
   expect(within(shown).getByRole("button", { name: "Copy" })).toBeDefined();
   expect(shown.textContent).toMatch(/It expires in 1[45]:\d\d\./);
-  // The button that invited went with the first step; the focus is on the last step's own.
-  expect(document.activeElement).toBe(within(wizard).getByRole("button", { name: "Done" }));
+  // The button that invited went with the first step; the focus moves to the last step's own
+  // once that step has rendered, so the test waits for the focus itself.
+  const done = within(wizard).getByRole("button", { name: "Done" });
+  await waitFor(() => expect(document.activeElement).toBe(done));
   expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(api.requests(UserInvite)).toEqual([{ name: "dave" }]);
   await waitFor(() => expect(rows().map((r) => r[0])).toEqual(["alice", "bob", "dave"]));
   await expectAccessible();
 
-  fireEvent.click(within(wizard).getByRole("button", { name: "Done" }));
+  fireEvent.click(done);
 
   expect(screen.queryByRole("dialog", { name: "Invite User" })).toBeNull();
   expect(document.body.textContent).not.toContain("koko_testinvite");

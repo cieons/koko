@@ -489,7 +489,7 @@ test("the typed-name variant confirms only once the name is typed exactly", asyn
   const input = within(dialog).getByLabelText("Type laptop to confirm.");
 
   expect(dialog.textContent).toContain("laptop can never connect again.");
-  expect(document.activeElement).toBe(input);
+  await waitFor(() => expect(document.activeElement).toBe(input));
   await expectAccessible();
   expect(confirm.disabled).toBe(true);
   fireEvent.click(confirm);

@@ -57,7 +57,7 @@ test("an adaptive dialog is a Dialog named by its title, described, that gives t
   fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
   await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(onClose).toHaveBeenCalledTimes(1);
-  expect(document.activeElement).toBe(open);
+  await vi.waitFor(() => expect(document.activeElement).toBe(open));
 });
 
 test("on a phone an adaptive dialog is a bottom sheet named by its title", async () => {

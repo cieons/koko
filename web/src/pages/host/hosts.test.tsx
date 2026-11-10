@@ -539,6 +539,6 @@ test("Add Host's Cancel sends nothing and gives the focus back to its button", a
   fireEvent.click(add.getByRole("button", { name: "Cancel" }));
 
   await vi.waitFor(() => expect(screen.queryByRole("dialog", { name: "Add Host" })).toBeNull());
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add Host" }));
+  await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add Host" })));
   expect(api.requests(HostAdd)).toEqual([]);
 });
