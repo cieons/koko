@@ -661,7 +661,10 @@ func (h *Host) probeClient(conn *ssh.ServerConn, nc *hostConn, open *openSession
 	interval, countMax := h.settings.clientAliveInterval, h.settings.clientAliveCountMax
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	var unanswered atomic.Int32
+	var unanswered, sent, answered atomic.Int32
+	// lastAnswer is when a probe was last answered, in Unix nanoseconds.
+	var lastAnswer atomic.Int64
+	start := time.Now()
 	for {
 		select {
 		case <-ticker.C:
@@ -672,12 +675,17 @@ func (h *Host) probeClient(conn *ssh.ServerConn, nc *hostConn, open *openSession
 			continue
 		}
 		if unanswered.Add(1) > int32(countMax) {
+			// A test that sees its SSH Session end learns why from this.
+			h.t.Logf("sshhost: ClientAlive closed the connection %v after it opened: %d probes unanswered; %d sent, %d answered, the last %s; the client's last byte came %v ago",
+				time.Since(start).Round(time.Millisecond), countMax, sent.Load(), answered.Load(),
+				since(lastAnswer.Load()), time.Since(time.Unix(0, nc.lastRead.Load())).Round(time.Millisecond))
 			_ = conn.Close()
 			return
 		}
 		// The reply may never come: each probe waits for it apart, until
 		// the connection ends.
 		h.wg.Go(func() {
+			sent.Add(1)
 			var err error
 			if ch := open.first(); ch != nil {
 				_, err = ch.SendRequest("keepalive@openssh.com", true, nil)
@@ -685,10 +693,20 @@ func (h *Host) probeClient(conn *ssh.ServerConn, nc *hostConn, open *openSession
 				_, _, err = conn.SendRequest("keepalive@openssh.com", true, nil)
 			}
 			if err == nil {
+				answered.Add(1)
+				lastAnswer.Store(time.Now().UnixNano())
 				unanswered.Store(0)
 			}
 		})
 	}
+}
+
+// since says how long ago the Unix nanoseconds at were, or "never" for 0.
+func since(at int64) string {
+	if at == 0 {
+		return "never"
+	}
+	return time.Since(time.Unix(0, at)).Round(time.Millisecond).String() + " ago"
 }
 
 // sendSignal sends the command the signal named name, without its "SIG", as
