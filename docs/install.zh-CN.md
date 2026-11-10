@@ -2,7 +2,7 @@
 
 [English](install.md)
 
-koko 的每个发布版本包含两个程序：CLI `koko`，支持 Linux 和 macOS；koko 服务器 `kokod`，仅支持 Linux。一行命令即可安装 CLI；同一行命令加上 `--owner`，会在一台由 systemd 管理的 Linux 机器上同时安装 koko 服务器。没有 systemd 的环境中，可使用镜像 `ghcr.io/cieons/koko` 在容器中运行 koko 服务器（见[在容器中运行](#在容器中运行)）。本文介绍安装、校验发布版本、升级与回退、保管根密钥、恢复到另一台机器，以及根密钥丢失时的处理，随后介绍容器部署下的相应操作。各步骤的实现原理见[安装器](subsystems/installer.md)和[发布](subsystems/release.md)参考文档（英文）。
+koko 的每个发布版本包含两个程序：CLI `koko`，支持 Linux 和 macOS；koko 服务器 `kokod`，仅支持 Linux。一行命令即可安装 CLI；同一行命令加上 `--owner`，会在一台由 systemd 管理的 Linux 机器上同时安装 koko 服务器。没有 systemd 的环境中，可使用镜像 `ghcr.io/cieons/koko` 在容器中运行 koko 服务器（见[在容器中运行](#在容器中运行)）。本文介绍安装、校验发布版本、升级与回退、保管根密钥、恢复到另一台机器，以及根密钥丢失时的处理，随后介绍容器部署下的相应操作，最后介绍如何经由反向代理向浏览器提供 Web 界面（见[在浏览器中使用 Web 界面](#在浏览器中使用-web-界面)）。各步骤的实现原理见[安装器](subsystems/installer.md)和[发布](subsystems/release.md)参考文档（英文）。
 
 ## 机器要求
 
@@ -215,11 +215,13 @@ services:
     security_opt: [no-new-privileges:true]
     ports:
       - "7822:7822"        # with another host port, name it in KOKO_ADDRESS
+      # - "127.0.0.1:7823:7823"            # the web UI, for a reverse proxy on this machine alone
     volumes:
       - ./state:/koko      # the data and the Root Key, beside this file: make it with install -d (above), or use a named volume
     environment:
       KOKO_OWNER: alice                  # read only at the first start
       KOKO_ADDRESS: koko.example.com     # host[:published port]; read only at the first start
+      # KOKO_WEB_LISTEN: 0.0.0.0:7823      # the web UI: see docs/install.md, "The web UI in a browser"
 ```
 
 将 `KOKO_OWNER` 设为所有者的用户名，将 `KOKO_ADDRESS` 设为设备访问 koko 服务器所用的地址：与 [`--address`](#安装) 相同，建议使用 DNS 名称。然后在该文件所在目录中运行：
@@ -348,3 +350,114 @@ gh attestation verify oci://ghcr.io/cieons/koko:0.2.0 --repo cieons/koko
 ### 将根密钥分开存放
 
 如需将根密钥存放在备份目录之外，可从其他位置以只读方式挂载根密钥，并将 `KOKO_ROOT_KEY_FILE` 指向它。首次启动后，运行 `docker compose down`，然后以 root 将 `state/root.key` 移到一个单独的目录，例如 `/etc/koko-key/root.key`（先运行 `mkdir /etc/koko-key`），属主仍为 uid 65532，并执行 `chmod 0400`。然后在 `volumes:` 中加入 `/etc/koko-key/root.key:/run/secrets/koko-root.key:ro`，在 `environment:` 中加入 `KOKO_ROOT_KEY_FILE: /run/secrets/koko-root.key`，再运行 `docker compose up -d`。koko 服务器只读取该文件；无法读取时，会在启动时拒绝运行。
+
+## 在浏览器中使用 Web 界面
+
+Web 界面有两种访问方式。`koko web` 在已加入的设备上或 koko 服务器所在的机器上，向运行它的人提供 Web 界面，无需其他准备。不使用 CLI 的人（例如通过手机登记主机的团队成员）则在 **Web 地址**以用户名和密码登录。为此，koko 服务器通过第二个监听器，即 Web 监听器，以明文 HTTP 向反向代理（例如 Caddy）提供 Web 界面，由反向代理持有域名及其 TLS 证书，因为 koko 自身不处理 TLS（见 [ADR 0042](adr/0042-the-web-ui-is-also-served-over-plain-http-to-the-owners-reverse-proxy.md)，英文）。
+
+**切勿将 Web 监听器直接暴露在网络上。** 它提供的是明文 HTTP，发送给它的密码将以未加密的形式在网络上传输。此外，它以 `X-Forwarded-For` 请求头的最后一项（由反向代理追加）作为客户端地址，直接访问它的客户端因此可以自行指定按地址计数的登录限制所统计的地址，届时仅按用户名计数的限制仍然有效。请如下文所示将其绑定到回环地址，且不要在云服务商的防火墙中开放其端口。
+
+### 开启监听器
+
+Web 监听器在设置地址之前处于关闭状态。对于通过 systemd 安装的机器，请在 koko 服务器所在的机器上以 root 运行 `koko server install`，并通过 `--web-listen` 指定地址：
+
+```sh
+sudo koko server install --web-listen 127.0.0.1:7823
+```
+
+该命令与安装命令一样，将 koko 服务器原地升级到 CLI 的构建并保留其记录，随后重启 koko 服务器，使 Web 监听器监听 `127.0.0.1:7823`，仅同一机器上的反向代理能够访问。此后的升级会保留该地址；`--web-listen off` 可再次关闭监听器。端口被其他进程占用时，安装程序会拒绝执行，并指出该进程。
+
+在容器中，监听器监听容器的所有地址，再由端口映射将其仅发布到 Docker 宿主机的回环地址上。在 `compose.yaml`（见[启动](#启动)）中，删除两行含有 7823 端口的配置开头的 `# `，使其如下所示：
+
+```yaml
+    ports:
+      - "7822:7822"        # with another host port, name it in KOKO_ADDRESS
+      - "127.0.0.1:7823:7823"            # the web UI, for a reverse proxy on this machine alone
+    environment:
+      KOKO_WEB_LISTEN: 0.0.0.0:7823      # the web UI: see docs/install.md, "The web UI in a browser"
+```
+
+然后运行 `docker compose up -d`。使用 `docker run` 时，加上 `-p 127.0.0.1:7823:7823 -e KOKO_WEB_LISTEN=0.0.0.0:7823`。如果反向代理同样运行在容器中，并与 `koko` 容器共用一个 Docker 网络，则无需发布该端口：反向代理可通过 `koko:7823` 访问监听器。
+
+每次启动时，koko 服务器会记录一行 `web listener` 日志，写明监听器的地址和 Web 地址（见 `journalctl -u koko` 或 `docker logs koko`），`koko server show` 也会显示这两项。
+
+### 反向代理
+
+使用 Caddy 时，在 Caddyfile 中为该域名添加一个站点：
+
+```caddyfile
+koko.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:7823
+}
+```
+
+Caddy 会为该域名获取证书，按浏览器发送的原样转发 `Host` 请求头，并设置 `X-Forwarded-For`，以客户端地址作为其最后一项，即满足 koko 的全部要求。koko 提供的 Web 界面文件未经压缩，`encode zstd gzip` 负责压缩这些文件。Web 界面在域名的根路径提供，不支持在子路径下提供（例如 `https://example.com/koko`）。
+
+> **nginx** 默认以上游地址作为 `Host`，且不设置 `X-Forwarded-For`。请在转发至 Web 监听器的 `location` 中加入：
+>
+> ```nginx
+> proxy_set_header Host $host;
+> proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+> ```
+>
+> 缺少 `Host` 一行时，koko 服务器会以 `421` 和一个写明其 Web 地址的页面回应所有请求。缺少 `X-Forwarded-For` 一行时，所有浏览器的地址均为反向代理的地址，任何人失败 10 次后，所有人的登录请求都将在 15 分钟内被拒绝。
+
+### 设置 Web 地址
+
+Web 地址是反向代理提供服务的 `https://` 地址，端口不是 443 时才写明端口，且不含路径。在 koko 服务器所在的机器上运行：
+
+```sh
+koko server set web_url=https://koko.example.com
+```
+
+在容器中运行：`docker exec koko koko server set web_url=https://koko.example.com`。与服务器地址一样，Web 地址只能在 koko 服务器所在的机器上设置，设备和浏览器均无法设置。设置之前，Web 监听器以一个写明该命令的页面回应所有请求。设置之后，koko 服务器只回应 `Host` 请求头与 Web 地址的主机名和端口一致的请求。更改 Web 地址立即生效：为原地址签发的密码链接随即失效，所有浏览器均需重新登录。`koko server set --unset web_url` 可停止浏览器访问，同时保留监听器。
+
+### 邀请浏览器用户
+
+对于将在浏览器中使用 koko 的人，所有者以密码链接代替加入码发出邀请：
+
+```sh
+koko user invite bob --web
+```
+
+该命令将 bob 创建为成员，并输出一个链接 `https://koko.example.com/password#…`，仅可使用一次，15 分钟内有效。`--valid` 可将有效期设为 1 分钟至 7 天，例如对稍后才会打开的链接使用 `--valid 1d`；`koko device add` 同样接受 `--valid`。在 Web 界面中，同样的邀请位于“访问权限”页面：依次选择“邀请”“通过浏览器”和“有效期”。所有者可在任一设备上、在 koko 服务器所在的机器上（容器中使用 `docker exec koko`），或在以所有者身份登录的浏览器中执行上述操作。bob 与其他成员一样加入空间：运行 `koko space member add <space> bob`，或在邀请时直接选择空间。
+
+在浏览器中打开该链接后，页面显示用户名并要求设置密码：至少 15 个字符，至多 128 个字符，可使用除用户名本身以外的任意字符。设置完成后，该浏览器即已登录。此后，bob 在 `https://koko.example.com` 以用户名 `bob` 和该密码登录。
+
+### 重置与移除密码
+
+用户遗失密码时，可获得新的密码链接；同时希望使用浏览器的 CLI 用户（包括所有者）也通过同样的方式获得密码链接：
+
+```sh
+koko password link bob
+```
+
+该命令与邀请一样接受 `--valid`，并使 bob 此前未使用的链接失效。通过该链接设置密码后，以 bob 身份登录的所有浏览器均会退出登录。在 Web 界面中，对应的操作是“访问权限”页面上 bob 面板中的“签发密码链接”；该页面上每个人所在的行会注明其是否已设置密码。
+
+如需取消浏览器访问，同时保留该用户及其空间和设备，请运行：
+
+```sh
+koko password rm bob
+```
+
+该命令删除密码，并使以 bob 身份登录的所有浏览器退出登录；在 Web 界面中，对应 bob 面板中的“移除密码”。`koko user remove bob` 则完全移除 bob，其浏览器的登录会话随之结束；如果 bob 从未使用过 koko，则直接删除该用户。
+
+### 登录会话
+
+每个已登录的浏览器即一个登录会话。浏览器退出登录、7 天未使用、开始 30 天后、用户的密码被重新设置或移除，或登录会话被吊销时，登录会话即结束：
+
+```sh
+koko signin ls
+koko signin revoke <id>
+```
+
+`koko signin ls` 列出调用者自己的登录会话，所有者可看到所有用户的登录会话；加上 `--all` 时，一并列出已结束的登录会话。在 Web 界面中，每个人可在“账户”页面的“浏览器登录会话”中查看自己的登录会话；该页面的“修改密码”用于修改本人的密码，并使本人的其他浏览器退出登录。所有者可在“访问权限”页面上某人的面板中查看其登录会话，并通过“吊销”结束它们。
+
+同一用户名连续 10 次密码错误后，以该用户名登录的请求将在 15 分钟内被拒绝，通过密码链接设置密码后即解除。同一地址在 15 分钟内失败 10 次后，该地址的请求将被拒绝，直至最早一次失败已满 15 分钟。已登录的浏览器不受影响。
+
+### 浏览器用户可执行的操作
+
+登录后，用户在 Web 界面中可执行的操作与在其设备上相同，完全取决于其空间成员身份：可维护其所在空间的主机、服务和机密；所有者可执行其在设备上能够执行的全部操作。与在设备上一样，`koko server set` 仍只能在 koko 服务器所在的机器上运行。浏览器无法访问主机：它不会打开 SSH 会话或隧道，因为只有设备才能经由网关连接。需要使用 SSH 的浏览器用户，可在“账户”页面通过“添加设备”签发加入码，再在安装了 CLI 的计算机上以 `koko join` 使用该加入码；此后该计算机与该用户的其他设备一样可以访问主机。
+
+使用 CLI 的所有者可继续使用无需密码的 `koko web`。

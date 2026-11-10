@@ -15,8 +15,10 @@ services:
     security_opt: [no-new-privileges:true]
     ports:
       - "7822:7822"        # with another host port, name it in KOKO_ADDRESS
+      # - "127.0.0.1:7823:7823"            # the web UI, for a reverse proxy on this machine alone
     volumes:
       - ./state:/koko      # the data and the Root Key, beside this file: make it with install -d (above), or use a named volume
     environment:
       KOKO_OWNER: alice                  # read only at the first start
       KOKO_ADDRESS: koko.example.com     # host[:published port]; read only at the first start
+      # KOKO_WEB_LISTEN: 0.0.0.0:7823      # the web UI: see docs/install.md, "The web UI in a browser"

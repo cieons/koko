@@ -37,6 +37,14 @@ upgrading, going back and restoring. Without systemd, run the image
 `ghcr.io/cieons/koko` with Docker
 ([In a container](docs/install.md#in-a-container)).
 
+The web UI opens with `koko web` on any joined device. People who do not
+use the CLI, such as a teammate on a phone, use it in a browser instead:
+the koko server serves it to a reverse proxy, such as Caddy, that holds a
+domain and its certificate, and each person signs in with a Password,
+which they set through a one-time Password Link the Owner issues. Signed in, they
+keep the record their Spaces allow, and reach no Host over SSH
+([The web UI in a browser](docs/install.md#the-web-ui-in-a-browser)).
+
 ## What it does
 
 - A record of hosts and the services on them, described by typed

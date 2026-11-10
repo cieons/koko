@@ -9,7 +9,9 @@ with systemd. Without systemd, the koko server runs in a container from its
 image, `ghcr.io/cieons/koko` ([In a container](#in-a-container)). This page
 covers installing them, checking a release, upgrading and going back,
 keeping the Root Key, restoring onto another machine, and what to do
-without the Root Key, then the same for the container. How each step works
+without the Root Key, then the same for the container, and last, serving
+the web UI to browsers through a reverse proxy
+([The web UI in a browser](#the-web-ui-in-a-browser)). How each step works
 is in the [installer](subsystems/installer.md) and
 [release](subsystems/release.md) references.
 
@@ -372,11 +374,13 @@ services:
     security_opt: [no-new-privileges:true]
     ports:
       - "7822:7822"        # with another host port, name it in KOKO_ADDRESS
+      # - "127.0.0.1:7823:7823"            # the web UI, for a reverse proxy on this machine alone
     volumes:
       - ./state:/koko      # the data and the Root Key, beside this file: make it with install -d (above), or use a named volume
     environment:
       KOKO_OWNER: alice                  # read only at the first start
       KOKO_ADDRESS: koko.example.com     # host[:published port]; read only at the first start
+      # KOKO_WEB_LISTEN: 0.0.0.0:7823      # the web UI: see docs/install.md, "The web UI in a browser"
 ```
 
 Set `KOKO_OWNER` to the Owner's User name, and `KOKO_ADDRESS` to the
@@ -603,3 +607,204 @@ first), still uid 65532's, and `chmod 0400` it. Then add
 `KOKO_ROOT_KEY_FILE: /run/secrets/koko-root.key` to `environment:`, and run
 `docker compose up -d`. The koko server only reads it; one it cannot read
 is refused at start.
+
+## The web UI in a browser
+
+The web UI is reached in two ways. `koko web` serves it to the person
+running it, on a joined device or on the koko server's machine, and needs
+nothing more. A person who does not use the CLI, such as a teammate who
+records Hosts from a phone, signs in instead at the **Web URL**, with
+their User name and a Password. For that, the koko server serves the web
+UI over plain HTTP on a second listener, the web listener, to a reverse
+proxy such as Caddy, which holds a domain and its TLS certificate, since
+koko does no TLS itself
+([ADR 0042](adr/0042-the-web-ui-is-also-served-over-plain-http-to-the-owners-reverse-proxy.md)).
+
+**Never expose the web listener directly.** It serves plain HTTP, so a
+Password sent to it would cross the network unencrypted. It also takes the
+client's address from the last entry of the `X-Forwarded-For` header,
+which the proxy appends, so a client that reached it directly could choose
+the address the per-address sign-in limit counts; only the limit for each
+name would still hold. Bind it to the loopback address, as below, and do
+not open its port in the provider's firewall.
+
+### Turning the listener on
+
+The web listener is off until it is given an address. On a machine
+installed with systemd, give it to `koko server install` with
+`--web-listen`, on the koko server's machine, as root:
+
+```sh
+sudo koko server install --web-listen 127.0.0.1:7823
+```
+
+This upgrades the koko server in place to the CLI's build, as the install
+line does, keeping its record, and restarts it with the web listener on
+`127.0.0.1:7823`, where only a proxy on the same machine reaches it. Later
+upgrades keep the address; `--web-listen off` turns the listener off again.
+Install refuses a port another process holds, naming it.
+
+In a container, the listener takes every address of the container, and the
+port mapping publishes it on the Docker host's loopback address alone.
+In `compose.yaml` ([Starting it](#starting-it)), remove the `# ` that
+starts each of the two lines naming port 7823, so that they read:
+
+```yaml
+    ports:
+      - "7822:7822"        # with another host port, name it in KOKO_ADDRESS
+      - "127.0.0.1:7823:7823"            # the web UI, for a reverse proxy on this machine alone
+    environment:
+      KOKO_WEB_LISTEN: 0.0.0.0:7823      # the web UI: see docs/install.md, "The web UI in a browser"
+```
+
+Then run `docker compose up -d`. With `docker run`, add
+`-p 127.0.0.1:7823:7823 -e KOKO_WEB_LISTEN=0.0.0.0:7823`. When the proxy
+runs in a container too, on a Docker network shared with the `koko`
+container, the port need not be published: the proxy reaches the listener
+at `koko:7823`.
+
+At each start, the koko server logs a `web listener` line naming the
+listener's address and the Web URL (`journalctl -u koko`, or
+`docker logs koko`), and `koko server show` names both.
+
+### The reverse proxy
+
+With Caddy, add a site for the domain to the Caddyfile:
+
+```caddyfile
+koko.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:7823
+}
+```
+
+Caddy obtains the domain's certificate, passes the `Host` header on as the
+browser sent it, and sets `X-Forwarded-For` with the client's address as
+its last entry, which is all koko needs. `encode zstd gzip` compresses the web UI's files,
+which koko serves uncompressed. The web UI is served at the root of the
+domain; serving it under a path, such as `https://example.com/koko`, is not
+supported.
+
+> **nginx** by default sends the upstream's address as `Host` and sets no
+> `X-Forwarded-For`. In the `location` that proxies to the web listener,
+> add:
+>
+> ```nginx
+> proxy_set_header Host $host;
+> proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+> ```
+>
+> Without the `Host` line, the koko server answers every request with
+> `421` and a page naming its Web URL. Without the `X-Forwarded-For` line,
+> every browser has the proxy's address, so 10 failed attempts from anyone
+> stop sign-ins from everyone for 15 minutes.
+
+### Setting the Web URL
+
+The Web URL is the `https://` address the proxy serves, with a port only
+when it is not 443, and no path. On the koko server's machine:
+
+```sh
+koko server set web_url=https://koko.example.com
+```
+
+In a container: `docker exec koko koko server set web_url=https://koko.example.com`.
+Only the koko server's machine sets it, as it sets the Server Address: a
+device or a browser cannot. Until it is set, the web listener answers every
+request with a page naming this command. The koko server then answers only
+requests whose `Host` header names the Web URL's host and port. Changing
+the Web URL takes effect at once: Password Links issued for the old
+address stop working, and every browser signs in again.
+`koko server set --unset web_url` stops browser access and keeps the
+listener.
+
+### Inviting a browser User
+
+The Owner invites a person who will use koko in a browser with a Password
+Link instead of a Join Code:
+
+```sh
+koko user invite bob --web
+```
+
+This creates bob as a Member and prints a link,
+`https://koko.example.com/password#…`, which works once, within 15
+minutes. `--valid` sets from 1 minute to 7 days, such as `--valid 1d` for a
+link that will be opened later; `koko device add` takes `--valid` too. In
+the web UI, the same Invite is on the Access page: **Invite**, then **In a
+browser** and **Valid for**. The Owner runs these on any device, on the
+koko server's machine (`docker exec koko` in a container), or in a browser
+signed in as the Owner. bob becomes a Member of a Space as any Member does:
+`koko space member add <space> bob`, or in the Invite itself.
+
+Opened in a browser, the link shows the User name and asks for a Password:
+at least 15 characters and at most 128, any characters allowed, other
+than the User name itself. Once it is
+set, the browser is signed in. From then on, bob signs in at
+`https://koko.example.com` with the name `bob` and that Password.
+
+### Resetting and removing a Password
+
+A User who has lost their Password gets a new Password Link, as does a User
+of the CLI who wants to use a browser too, the Owner included:
+
+```sh
+koko password link bob
+```
+
+It takes `--valid` as the Invite does, and voids bob's earlier link if it
+was not used. Setting a Password through it signs out every browser
+signed in as bob. In the web UI, it is **Issue Password Link** in bob's
+panel on the Access page, where each person's row says whether they have
+a Password.
+
+To take browser access away and keep the User, their Spaces and their
+devices:
+
+```sh
+koko password rm bob
+```
+
+This deletes the Password and signs out every browser signed in as bob; it
+is **Remove Password** in bob's panel. `koko user remove bob` Removes bob
+altogether, ending their browsers' Sign-ins with everything else, or
+deletes bob when they never used koko.
+
+### Sign-ins
+
+Each browser signed in is a Sign-in. It ends when the browser signs out,
+after 7 days unused, 30 days after it began, when the User's Password is
+set or removed, or when it is revoked:
+
+```sh
+koko signin ls
+koko signin revoke <id>
+```
+
+`koko signin ls` lists the caller's own Sign-ins, and every User's for the
+Owner; `--all` adds the ended ones. In the web UI, each person sees their
+own under **Browser Sign-ins** on the Account page, where **Change
+Password** also changes their Password and signs out their other browsers.
+The Owner sees a person's Sign-ins in that person's panel on the Access
+page, with **Revoke**.
+
+After 10 wrong Passwords in a row for one name, sign-ins with that name
+are refused for 15 minutes, or until a Password is set through a Password
+Link. After 10 failed attempts from one address within 15 minutes, that
+address is refused until the oldest is 15 minutes old. Browsers already
+signed in keep working.
+
+### What a browser User can do
+
+Signed in, a User may do in the web UI exactly what their Space membership
+allows, as on a device of theirs: keep the Hosts, Services and Secrets of
+their Spaces, and for the Owner, everything the Owner does from a device.
+As from a device, `koko server set` stays on the koko server's machine. A browser
+never reaches a Host: it opens no SSH Session and no Tunnel, since only a
+device connects through the Gateway. A browser User who needs SSH adds a
+device with **Add device** on the Account page; its Join Code is spent by
+`koko join` on a computer with the CLI, which then reaches Hosts as any
+device of that User does.
+
+The Owner who uses the CLI can keep using `koko web`, which needs no
+Password.
