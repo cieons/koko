@@ -11,7 +11,7 @@
 # (.github/workflows/systemd.yml) runs it on a fresh runner.
 #
 # In this order: a binary that does not match SHA256SUMS is never run; the
-# older build installs, listens on 7822 as the koko user with the Root Key
+# older build installs, listens on 8443 as the koko user with the Root Key
 # through LoadCredential=, and a device joins with the printed Join Code and
 # makes an API call; install.sh of the newer build, without arguments,
 # upgrades both programs, downloading kokod once, and the koko service
@@ -20,10 +20,11 @@
 # with install.sh, without kokod; uninstall keeps koko, the data directory,
 # the Root Key and the koko user; and koko server install, run again on that
 # data directory put back by root, downloads kokod again and starts the koko
-# server with its record on the default port, 7822. On the way it checks
-# what only a real systemd shows: the Environment systemctl show quotes. koko
-# server install refusing a container that systemd does not run is the
-# container check's (release/container-check.sh).
+# server with its record on the default port, 7822, where the device follows
+# it with koko connect. On the way it checks what only a real systemd shows:
+# the Environment systemctl show quotes. koko server install refusing a
+# container that systemd does not run is the container check's
+# (release/container-check.sh).
 #
 # install.sh downloads with curl and koko server install with Go, both from
 # https://github.com, so the check serves a fake GitHub over HTTPS on
@@ -38,9 +39,9 @@
 #
 # Run it only on a throwaway Linux machine with systemd, Docker, jq, ss,
 # python3, openssl, update-ca-certificates and passwordless sudo, where koko
-# was never installed and nothing listens on 443: it installs koko as root on
-# port 7822, and leaves its data, its Root Key and its user behind. It puts
-# /etc/hosts and the trust store back as they were.
+# was never installed and nothing listens on 443, 8443 or 7822: it installs
+# koko as root on port 8443, then 7822, and leaves its data, its Root Key and
+# its user behind. It puts /etc/hosts and the trust store back as they were.
 
 set -eu
 
@@ -88,9 +89,11 @@ newer_tag=$(version "$newer")
 damaged=v0.0.0-damaged
 
 work=$(mktemp -d)
-# port is the koko server's default port (ADR 0036), which the older build
-# is given with --port, since it may be from before that default.
-port=7822
+# port is the port the older build is given with --port, not the default,
+# so that the upgrade shows it kept it; default_port is the newer build's
+# default (ADR 0036), which install takes once nothing tells it the port.
+port=8443
+default_port=7822
 device=koko-systemd-check-device
 image=ubuntu:24.04
 github=$work/github
@@ -413,8 +416,8 @@ id koko >/dev/null || fail "uninstall removed the koko user"
 step "koko server install without arguments downloads kokod again and runs the data directory root put back, with its record, on the default port"
 # Without the unit or the drop-in, install cannot know the port the koko
 # server listened on, so it takes the newer build's default, and says so by
-# naming the address devices must connect to, which a port read from a
-# drop-in would not.
+# naming the address devices must connect to, which the device then takes
+# with koko connect.
 sudo rm -f /etc/systemd/system/koko.service.d/listen.conf
 sudo chown -R root:root /var/lib/koko
 mark
@@ -422,12 +425,14 @@ mark
 # shellcheck disable=SC2024
 sudo /usr/local/bin/koko server install --json >"$work/out"
 jq . "$work/out"
-jq -e --argjson port "$port" '.upgraded and .listen_port == $port and .devices_must_connect == "localhost:\($port)"' "$work/out" >/dev/null ||
-	fail "koko server install did not take the default port $port"
+jq -e --argjson port "$default_port" '.upgraded and .listen_port == $port and .devices_must_connect == "localhost:\($port)"' "$work/out" >/dev/null ||
+	fail "koko server install did not take the default port $default_port"
+port=$default_port
 check_downloaded
 check_newer
 not_koko=$(sudo find /var/lib/koko ! -user koko)
 [ -z "$not_koko" ] || fail "systemd left these in the data directory to another user than koko: $not_koko"
+docker exec "$device" koko connect "localhost:$port" || fail "the device's koko connect localhost:$port failed"
 device_calls
 
 step "every check passed"

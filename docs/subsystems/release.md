@@ -251,17 +251,16 @@ higher, and Go stamps it. Then
 1. install.sh refuses a release whose binary does not match its
    `SHA256SUMS`, runs nothing and writes nothing;
 2. install.sh of the older build installs it with `--owner alice --address
-   localhost --port 7822`, the port given since the older build may be from
-   before 7822 was the default
+   localhost --port 8443`, a port other than the default, 7822
    ([ADR 0036](../adr/0036-the-koko-server-listens-on-7822-by-default.md)),
-   through its own `server install`, which in a build from before `kokod`
-   installs the whole koko server: the service is active, its process runs
-   as `koko` and
-   listens on 7822, systemd holds its `root-key` credential
-   (`LoadCredential=`, asked over D-Bus, since `systemctl show` prints it
-   as `[unprintable]`), and `koko` cannot read `/etc/koko/root.key`;
+   so that the upgrade in step 5 shows it kept the port rather than took
+   the default, through its own `server install`, which in a build from
+   before `kokod` installs the whole koko server: the service is active, its
+   process runs as `koko` and listens on 8443, systemd holds its `root-key`
+   credential (`LoadCredential=`, asked over D-Bus, since `systemctl show`
+   prints it as `[unprintable]`), and `koko` cannot read `/etc/koko/root.key`;
 3. a device joins with the printed Join Code and lists the Users;
-4. with a drop-in setting `KOKO_LISTEN=[::]:7822`, `systemctl show` quotes
+4. with a drop-in setting `KOKO_LISTEN=[::]:8443`, `systemctl show` quotes
    that entry as the installer reads it;
 5. install.sh of the newer build, without arguments, upgrades both: the fake
    GitHub served the newer release's `kokod-linux-<arch>` once, and nothing
@@ -269,9 +268,9 @@ higher, and Go stamps it. Then
    `/usr/local/bin/kokod` are the newer build's files, and `koko version`
    and `kokod version` say its version; the unit runs
    `/usr/local/bin/kokod run`, the service runs `kokod` as `koko` under a new
-   process on the port it kept, with no capability held or to be gained (`CapEff`
-   and `CapBnd` in `/proc/<pid>/status`), a `koko.db.before-<n>` snapshot
-   is there, and the device still works. Then the device installs the
+   process on the port it kept, 8443, with no capability held or to be
+   gained (`CapEff` and `CapBnd` in `/proc/<pid>/status`), a
+   `koko.db.before-<n>` snapshot is there, and the device still works. Then the device installs the
    newer CLI, as **The device** below says;
 6. `koko server uninstall`, running the `kokod` installed and asking the
    fake GitHub nothing, leaves nothing running or listening, removes the
@@ -283,7 +282,8 @@ higher, and Go stamps it. Then
    removed it, and starts the koko server again on the newer build's
    default port, 7822, saying devices must connect to `localhost:7822`, as
    it does for a port it cannot know was the same; systemd gives every file
-   back to `koko`, and the device still works.
+   back to `koko`, and the device, moved there with `koko connect
+   localhost:7822`, still works.
 
 **The fake GitHub.** install.sh and `koko server install` run unchanged,
 with the real curl and Go's own HTTPS client. The script makes a test CA
@@ -307,8 +307,9 @@ what runs as root on every koko server, for a test alone.
 **The device** is a Docker container (`ubuntu:24.04`) on the host's network,
 with the older build's binary copied in as its `/usr/local/bin/koko`. Its
 own filesystem has no `/run/koko/koko.sock`, so its commands go over TCP to
-`localhost:7822`, as a device's do, through its Device Mux, and not through
-the Unix socket as the Local caller. It keeps the older CLI through the
+`localhost:8443`, then `localhost:7822` from step 7 on, as a device's do,
+through its Device Mux, and not through the Unix socket as the Local
+caller. It keeps the older CLI through the
 upgrade, as a device does when its koko server is upgraded. After step 5,
 it installs the newer CLI as a device does: `curl` and `ca-certificates`
 from Ubuntu's archive, the test CA in its own trust store, `github.com`
