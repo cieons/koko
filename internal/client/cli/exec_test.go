@@ -53,16 +53,22 @@ func wantRefused(t *testing.T, r harness.Result, banner string) {
 }
 
 // waitServerLog waits until the koko server's log holds a line matching
-// pattern, and returns its submatches. It fails the test after 10 s.
+// pattern, and returns its submatches. It fails the test after 10 s,
+// printing the log.
 func waitServerLog(t *testing.T, h *harness.Harness, pattern string) []string {
 	t.Helper()
 	re := regexp.MustCompile(pattern)
-	var m []string
-	eventually(t, "the log holds a line matching "+pattern, func() bool {
-		m = re.FindStringSubmatch(h.Log())
-		return m != nil
-	})
-	return m
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		log := h.Log()
+		if m := re.FindStringSubmatch(log); m != nil {
+			return m
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the log holds no line matching %s within 10 s; it holds:\n%s", pattern, log)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // A joined device reaches a Host over its Device Connection, as its User.

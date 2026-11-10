@@ -13,6 +13,8 @@ import (
 	"cmp"
 	"context"
 	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"math/rand/v2"
@@ -307,7 +309,13 @@ func (h *Harness) Call[Req, Resp any](o api.Op[Req, Resp], req Req) (Resp, error
 		return serverconn.DialSocket(ctx, h.socket)
 	})
 	defer c.Close()
-	return c.Call(h.t.Context(), o, req)
+	resp, err := c.Call(h.t.Context(), o, req)
+	if e, ok := errors.AsType[*api.Error](err); ok && e.Code == api.CodeInternal.Name {
+		// The answer only points at the log, which the failing test would
+		// otherwise never show.
+		err = fmt.Errorf("%w; the koko server logged:\n%s", err, h.Log())
+	}
+	return resp, err
 }
 
 // NewRootKeyFile makes a new Root Key in a file of its own in a temporary
