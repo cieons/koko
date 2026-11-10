@@ -385,8 +385,9 @@ when devices must take the new address.
 
 [`Installer.Uninstall`](../../internal/server/installer/uninstall.go), when
 the unit is there, reads the port the koko service listens on from systemd
-and the web listener's address from the unit's `KOKO_WEB_LISTEN`, runs `systemctl stop` and `disable koko.service` while systemd still knows
-the unit, removes the unit and runs `daemon-reload`; it then removes
+and the web listener's address from the unit's `KOKO_WEB_LISTEN`, runs
+`systemctl stop` and `disable koko.service` while systemd still knows the
+unit, removes the unit and runs `daemon-reload`; it then removes
 `/usr/local/bin/kokod`. It never removes `/usr/local/bin/koko`, the CLI,
 which `install.sh` put there, so on a machine as v0.1.0 or v0.2.0 left it,
 whose unit ran that file, it removes only the unit. It keeps
@@ -394,8 +395,10 @@ whose unit ran that file, it removes only the unit. It keeps
 paths, with the port and the web listener's address, which a later
 install no longer knows: the hint for people says to run
 `sudo koko server install` without `--owner` and with that `--port` and,
-when the unit set one, that `--web-listen`. There is no purge: P0 has no backup, and one command
-would erase the record, the Secrets and the koko key. Drop-ins are the
+when the unit set one, that `--web-listen`. Neither stops the uninstall
+when it cannot be read: it is left out of the report and the hint, as
+unknown. There is no purge: P0 has no backup, and one command would erase
+the record, the Secrets and the koko key. Drop-ins are the
 Owner's and stay. What is not there is not removed, so running it again
 removes nothing and asks systemd nothing; it removed `kokod`, so a run
 after it downloads it again, or is given one with `--kokod`, as install
@@ -403,7 +406,7 @@ after it is. Install
 without `--owner` then runs the koko server again on the data it kept, as
 [the upgrade](#the-upgrade). With `--json` (`listen_port` left out when
 systemd did not tell it, and `web_listen`, such as `"127.0.0.1:7823"`,
-when the unit set none):
+left out when the unit set none or could not be read):
 
 ```json
 {
