@@ -8,8 +8,9 @@ koko is self-hosted. It keeps the record of servers rented across
 providers, and it is the one door people and AI agents use to reach them.
 
 **Status:** v0.3.0, the first release in which `koko`, the CLI, and
-`kokod`, the koko server, are two programs. It provides the features listed
-below and is still at an early stage.
+`kokod`, the koko server, are two programs, and in which people without the
+CLI use the web UI in a browser, behind a reverse proxy. It provides the
+features listed below and is still at an early stage.
 
 ## Installing
 
