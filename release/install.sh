@@ -125,10 +125,11 @@ main() {
 	# half written, and a v0.1.0 or v0.2.0 koko server, whose unit ran
 	# $bin/koko, has had its unit rewritten by now. The file has one name, so
 	# a run cut short leaves at most one, which the next run replaces.
-	$as_root mkdir -p -m 0755 "$bin" &&
-		$as_root install -m 0755 "$tmp/$asset" "$bin/.koko.new" &&
-		$as_root mv -f "$bin/.koko.new" "$bin/koko" ||
-		fail "could not write $bin/koko"
+	{
+		$as_root mkdir -p -m 0755 "$bin" &&
+			$as_root install -m 0755 "$tmp/$asset" "$bin/.koko.new" &&
+			$as_root mv -f "$bin/.koko.new" "$bin/koko"
+	} || fail "could not write $bin/koko"
 	printf 'install.sh: installed koko %s at %s/koko\n' "$tag" "$bin" >&2
 	# Under curl | sh, sh would read on from stdin, which may stay open.
 	exit 0
