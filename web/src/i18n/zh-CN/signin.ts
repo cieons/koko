@@ -76,7 +76,7 @@ export default {
     "{name} 的登录会话随即结束，其中包括当前浏览器的登录会话，当前浏览器将退出登录；未使用的密码链接同时失效。该用户及其设备予以保留。",
   "signin.remove.done": "已移除 {name} 的密码。",
   "signin.webURLUnset": "密码链接须包含 Web 地址，但尚未设置。请在 koko 服务器本机上执行 koko server set web_url= 进行设置。",
-  "error.web_url_unset": "签发密码链接需要 Web URL，但尚未设置。所有者可在 koko 服务器所在机器上执行 koko server set web_url= 进行设置。",
+  "error.web_url_unset": "签发密码链接需要 Web 地址，但尚未设置。所有者可在 koko 服务器所在机器上执行 koko server set web_url= 进行设置。",
   "error.invalid_password": "密码长度须为 15 至 128 个字符，且不得与用户名相同。字符种类不限。",
   "error.wrong_password": "用户名或密码不正确。",
   "error.too_many_attempts": "失败次数过多，请稍后重试，最长需等待 15 分钟。",
