@@ -1,13 +1,15 @@
 import { Button, Dropdown, Label, Popover } from "@heroui/react";
-import { ChevronDown, Languages, Monitor, Moon, Sun, UserRound } from "lucide-react";
+import { ChevronDown, Languages, LogOut, Monitor, Moon, Sun, UserRound } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Link } from "react-aria-components";
 
 import { type Language, languages } from "../i18n/catalogues";
+import { Refusal } from "../ui/states";
 import type { Caller } from "./caller";
 import { type Translate, useLanguageChoice, useT } from "./i18n";
 import { type Mode, modes, useMode } from "./mode";
 import { accountPage } from "./router";
+import { useSignOut } from "./signOut";
 
 // The top bar's end: the two choices the browser keeps, Language and
 // Appearance, each an icon button that opens a menu of radio items, and the
@@ -115,11 +117,39 @@ function viaText(t: Translate, caller: Caller): string {
 }
 
 /**
+ * SignOutItem is the account panel's Sign out, for a browser signed in with
+ * a Password; a refusal shows under it, and goes as the panel closes.
+ */
+function SignOutItem() {
+  const t = useT();
+  const signOut = useSignOut();
+  return (
+    <>
+      <Button
+        variant="ghost"
+        fullWidth
+        isPending={signOut.pending}
+        onPress={signOut.signOut}
+        className="h-10 justify-start gap-3 rounded-xl px-3 text-sm font-medium"
+      >
+        <LogOut aria-hidden className="size-4 text-muted" />
+        {t("signin.signOut")}
+      </Button>
+      {signOut.error !== undefined && (
+        <div className="p-1.5">
+          <Refusal error={signOut.error} />
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
  * AccountPanel is the account button, the User's initial and name (the name
  * hidden on a phone) with a chevron, and the panel it opens: the initial,
  * the name and role, how this browser reaches koko, and a link to Account,
- * which closes the panel as it is followed. Sign out joins it with its page
- * (#116).
+ * which closes the panel as it is followed; and, for a browser signed in
+ * with a Password, Sign out, a refusal of which shows in the panel.
  */
 export function AccountPanel({ caller }: { caller: Caller }) {
   const t = useT();
@@ -154,6 +184,7 @@ export function AccountPanel({ caller }: { caller: Caller }) {
               <UserRound aria-hidden className="size-4 text-muted" />
               {t("user.account.title")}
             </Link>
+            {caller.signin && <SignOutItem />}
           </div>
         </Popover.Dialog>
       </Popover.Content>

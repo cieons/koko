@@ -1,5 +1,5 @@
-// The signin area's messages: Sign in, Set a Password, and its API error
-// codes.
+// The signin area's messages: Sign in, Set a Password, the Password and
+// Browser Sign-ins on Account, Sign out, and its API error codes.
 export default {
   "signin.title": "Sign in",
   "signin.lead": "With the User name and Password of a User of this koko server.",
@@ -9,8 +9,8 @@ export default {
   "signin.passwordRequired": "Enter the Password.",
   "signin.submit": "Sign in",
   "signin.lost": "A lost Password is reset by the Owner, who issues a new Password Link.",
-  "signin.tooMany.one": "Too many failed attempts. Signing in is possible again in {count} minute.",
-  "signin.tooMany.other": "Too many failed attempts. Signing in is possible again in {count} minutes.",
+  "signin.tooMany.one": "Too many failed attempts. Try again in {count} minute.",
+  "signin.tooMany.other": "Too many failed attempts. Try again in {count} minutes.",
   "signin.set.title": "Set a Password",
   "signin.set.lead": "For {name}, the User name to sign in with. The Password signs in to the Web UI and never reaches a Host.",
   "signin.set.submit": "Set Password and sign in",
@@ -30,6 +30,32 @@ export default {
   "signin.linkInvalid.title": "This Password Link no longer works",
   "signin.linkInvalid.lead": "It has expired, or a newer link replaced it. The Owner can issue a new Password Link.",
   "signin.toSignIn": "Go to Sign in",
+  "signin.signOut": "Sign out",
+  "signin.change.current": "Current Password",
+  "signin.change.submit": "Change Password",
+  "signin.change.wrong": "The current Password is incorrect.",
+  "signin.change.done": "The Password is changed. The other browsers signed in with it are signed out.",
+  "signin.change.viaDevice": "This browser came through koko web, so a Password is changed in a browser signed in with it.",
+  "signin.change.viaLocal":
+    "This browser acts on the koko server's own machine, so a Password is changed in a browser signed in with it.",
+  "signin.signins.title": "Browser Sign-ins",
+  "signin.signins.none": "No browser is signed in as {name}.",
+  "signin.signins.here": "This browser",
+  "signin.signins.ended": "Ended",
+  "signin.signins.ends": "Expires {date}",
+  "signin.signins.endedOn": "Ended {date}: {reason}",
+  "signin.signins.showEnded": "Show ended Sign-ins",
+  "signin.end.signed_out": "signed out",
+  "signin.end.expired": "expired",
+  "signin.end.revoked": "revoked",
+  "signin.end.password_changed": "the Password was changed",
+  "signin.end.password_removed": "the Password was removed",
+  "signin.end.user_removed": "the User was Removed",
+  "signin.revoke": "Revoke",
+  "signin.revoke.title": "Revoke the Sign-in from {client}",
+  "signin.revoke.consequence": "That browser is signed out at once and must sign in again with the Password.",
+  "signin.revoke.consequenceHere": "This is the Sign-in of this browser. Once it is revoked, this browser is signed out.",
+  "signin.revokedDone": "The Sign-in from {client} is revoked.",
   "error.web_url_unset":
     "A Password Link requires the Web URL, which is not set. The Owner sets it with koko server set web_url= on the koko server's machine.",
   "error.invalid_password":

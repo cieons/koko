@@ -31,9 +31,9 @@ export default {
   "device.revoke.consequenceHere":
     "{name} is the device this page runs through. Once it is revoked, this page can take no further action, this device deletes its key, and the Join Codes it issued stop working. The devices it added keep working.",
   "device.revoke.consequenceLast":
-    "{name} is the Owner's last device. Once it is revoked, only koko device add on the koko server's own machine can add a device for the Owner.",
+    "{name} is the Owner's last device. Once it is revoked, a device can be added for the Owner only by koko device add on the koko server's own machine, or from a browser signed in with the Owner's Password.",
   "device.revoke.consequenceLastHere":
-    "{name} is the Owner's last device and the one this page runs through. Once it is revoked, this page can take no further action, this device deletes its key, and only koko device add on the koko server's own machine can add a device for the Owner.",
+    "{name} is the Owner's last device and the one this page runs through. Once it is revoked, this page can take no further action, this device deletes its key, and a device can be added for the Owner only by koko device add on the koko server's own machine, or from a browser signed in with the Owner's Password.",
   "device.revoke.confirm": "Revoke",
   "device.revokedDone": "{name} is Revoked.",
   "error.revoked": "This device's Device Session was Revoked.",

@@ -59,8 +59,11 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   this browser reaches koko: "Through koko web on <device>" for a Device
   Session, "Signed in from <browser>" for a Sign-in, and "On the koko
   server's machine" for the Local caller; then a link to Account
-  (`accountPage`), which closes the panel as it is followed. Sign out joins
-  it with its page (#116).
+  (`accountPage`), which closes the panel as it is followed; and, for a
+  browser signed in with a Password, Sign out (`useSignOut` in
+  [`signOut.ts`](../../web/src/shell/signOut.ts)), which posts to
+  `/auth/signout` and goes to Sign in, replacing the history entry, its
+  refusal shown in the panel.
 - **The main region** (`<main id="main">`) holds the page. After a visit
   that leaves the focus on nothing, as when the link followed went with the
   page it was on, the focus moves to it; a visit that leaves the focus
@@ -202,8 +205,8 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   or during the answer) is sent once more; a second drop throws a
   `DroppedError`. `koko web`'s browser connections reopen after a Device
   Connection drop, since only Tunnels Resume (ADR 0021).
-- **The `/auth/` endpoints** are not API operations: Sign in and Set a
-  Password post to them with
+- **The `/auth/` endpoints** are not API operations: Sign in, Set a
+  Password, Account's Password and Sign out post to them with
   [`post`](../../web/src/client.ts), typed by their generated
   `AuthEndpoint` values (`AuthSignIn`, [the web UI build](web-ui.md#generated-types)),
   once, with no retry and no `Idempotency-Key`, since a Password Link sent
@@ -390,6 +393,7 @@ HeroUI (#121) took the pages out; each came back with its ticket (#122 to
 | See who the web UI acts as, from which device | `user.current` | anyone |
 | Follow a link to each page the caller may see | none | anyone; a person's panel the Owner alone |
 | Open Account from the account panel | none | anyone |
+| Sign out, from the account panel | `/auth/signout` | a browser signed in with a Password |
 | Choose the language, which the browser keeps | none | anyone |
 | Choose Light, Dark or System, which the browser keeps | none | anyone |
 
@@ -487,6 +491,10 @@ query) and **a Space's panel** (`/access/spaces/<name>`, which
 | Add a device, with an optional name, its Join Code shown once, with Copy and its countdown | `device.add` | anyone for themselves |
 | Revoke a live Device Session, asking first; the Owner's own last only once its name is typed, with `last` | `device.revoke` | anyone for their own |
 | See what one's Personal Space holds | `space.show` | anyone |
+| Change one's Password: the current one and the new one twice, which keeps this Sign-in and ends the others | `/auth/password` | a browser signed in with a Password |
+| List one's own Browser Sign-ins, the ended ones when asked for, this browser's marked | `signin.list` | anyone |
+| Revoke a live Sign-in, asking first; this browser's own signs it out | `signin.revoke` | anyone for their own |
+| Sign out | `/auth/signout` | a browser signed in with a Password |
 
 For the Owner, `/devices` listed everyone's Device Sessions; that view is
 now each person's panel under Access.

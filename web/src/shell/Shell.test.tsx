@@ -129,7 +129,7 @@ test("for a Sign-in the account panel names the browser that signed in", async (
   renderShell("/hosts");
   await screen.findByText("hosts page");
 
-  expect((await openAccount("bob")).textContent).toBe("bobMemberSigned in from Firefox on LinuxAccount");
+  expect((await openAccount("bob")).textContent).toBe("bobMemberSigned in from Firefox on LinuxAccountSign out");
 });
 
 test("for the Local caller the account panel names the Owner on the koko server's machine", async () => {

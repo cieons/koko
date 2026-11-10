@@ -236,7 +236,7 @@ test("the Owner's own last device needs its name typed and sends last, on that d
 
   const asking = await revoke("laptop");
   expect(asking.textContent).toContain(
-    "laptop is the Owner's last device and the one this page runs through. Once it is revoked, this page can take no further action, this device deletes its key, and only koko device add on the koko server's own machine can add a device for the Owner.",
+    "laptop is the Owner's last device and the one this page runs through. Once it is revoked, this page can take no further action, this device deletes its key, and a device can be added for the Owner only by koko device add on the koko server's own machine, or from a browser signed in with the Owner's Password.",
   );
   const confirm = within(asking).getByRole("button", { name: "Revoke" });
   expect(confirm).toHaveProperty("disabled", true);
@@ -254,7 +254,7 @@ test("the Owner's own last device needs its name typed and sends last over the U
 
   const asking = await revoke("laptop");
   expect(asking.textContent).toContain(
-    "laptop is the Owner's last device. Once it is revoked, only koko device add on the koko server's own machine can add a device for the Owner.",
+    "laptop is the Owner's last device. Once it is revoked, a device can be added for the Owner only by koko device add on the koko server's own machine, or from a browser signed in with the Owner's Password.",
   );
   fireEvent.change(within(asking).getByRole("textbox", { name: "Type laptop to confirm" }), { target: { value: "laptop" } });
   fireEvent.click(within(asking).getByRole("button", { name: "Revoke" }));

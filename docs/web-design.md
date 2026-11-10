@@ -466,7 +466,8 @@ For the Owner:
 - **Revoking a device** asks first and says what follows: the device is
   cut off; for the device the web UI runs through, this page stops and the
   device deletes its key; for the Owner's own last live device, only the
-  koko server's own machine can add a device for the Owner again, and the
+  koko server's own machine, or a browser signed in with the Owner's
+  Password, can add a device for the Owner again, and the
   device's name must be typed (the call carries `last`). A refused revoke
   reloads the list.
 - **A Space's panel**: three counts (Hosts, Retired Hosts, Secrets) that

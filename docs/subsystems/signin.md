@@ -200,6 +200,24 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-set-a-passw
   to Sign in.
 - Both show koko's wordmark, one panel and the two languages as buttons
   ([`Door`](../../web/src/pages/signin/Door.tsx)).
+- **Account's Password** ([`ChangePassword`](../../web/src/pages/signin/ChangePassword.tsx)),
+  for a browser signed in with a Password: the current Password, then the
+  new one twice as Set a Password asks it, checked on submit, posted as
+  `{"current", "password"}` to `/auth/password`, which keeps this Sign-in
+  and ends the User's others; the Browser Sign-ins are read again. A wrong
+  current Password shows in place, the form kept. Through `koko web` or for
+  the Local caller, one sentence says a Password is changed in a browser
+  signed in with it.
+- **Browser Sign-ins** ([`SignIns`](../../web/src/pages/signin/SignIns.tsx)),
+  on Account for one's own (`signin.list` naming the User): each browser's
+  label, this browser's marked, its address in the code face, when it was
+  last used and when it ends; "Show ended Sign-ins" adds the ended ones,
+  struck through, with when and why. Revoke asks first and says what
+  follows; revoking this browser's own goes to Sign in. A refused revoke
+  reads the list again.
+- **Sign out**, by Account's title and in the account panel for a browser
+  signed in with a Password, posts to `/auth/signout` and goes to Sign in,
+  replacing the history entry ([`useSignOut`](../../web/src/shell/signOut.ts)).
 
 ## Users
 
@@ -276,3 +294,13 @@ or an `/auth/` body.
   Password and signing in, `invalid_password` in place, `link_used` and
   `link_invalid` from either call, no fragment, and a failed read with Try
   again.
+- [`account.test.tsx`](../../web/src/pages/signin/account.test.tsx), with
+  [`signins.fixture.ts`](../../web/src/pages/signin/signins.fixture.ts):
+  Account for a Sign-in with its Password form, Sign-ins and Sign out;
+  changing the Password, the other Sign-ins ended; its fields checked on
+  submit; a wrong current Password in place; through `koko web` and for
+  the Local caller no form and no Sign out; Revoke asking first, its
+  consequence and the focus on the list's heading; revoking this browser's
+  own going to Sign in; a refused revoke reading the list again; the ended
+  Sign-ins with why; none; Sign out on Account and in the account panel,
+  its failure in the panel.

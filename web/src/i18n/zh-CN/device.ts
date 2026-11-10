@@ -32,9 +32,9 @@ export default {
   "device.revoke.consequenceHere":
     "{name} 是此页面所经由的设备。吊销后，此页面将无法执行任何操作，此设备将删除其密钥，由其签发的加入码随即失效。由其添加的设备不受影响。",
   "device.revoke.consequenceLast":
-    "{name} 是所有者的最后一台设备。吊销后，只能在 koko 服务器本机上运行 koko device add 为所有者添加设备。",
+    "{name} 是所有者的最后一台设备。吊销后，只能在 koko 服务器本机上运行 koko device add，或在凭所有者密码登录的浏览器中，为所有者添加设备。",
   "device.revoke.consequenceLastHere":
-    "{name} 是所有者的最后一台设备，也是此页面所经由的设备。吊销后，此页面将无法执行任何操作，此设备将删除其密钥，并且只能在 koko 服务器本机上运行 koko device add 为所有者添加设备。",
+    "{name} 是所有者的最后一台设备，也是此页面所经由的设备。吊销后，此页面将无法执行任何操作，此设备将删除其密钥，并且只能在 koko 服务器本机上运行 koko device add，或在凭所有者密码登录的浏览器中，为所有者添加设备。",
   "device.revoke.confirm": "吊销",
   "device.revokedDone": "{name} 已吊销。",
   "error.revoked": "此设备的设备会话已被吊销。",

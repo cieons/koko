@@ -139,7 +139,7 @@ test("Sign in refused too_many_attempts says in how many minutes to try again", 
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
   await waitFor(() =>
-    expect(alerts()).toEqual(["Too many failed attempts. Signing in is possible again in 10 minutes."]),
+    expect(alerts()).toEqual(["Too many failed attempts. Try again in 10 minutes."]),
   );
 });
 
@@ -338,7 +338,7 @@ test("a Password Link that could not be read says why, with Try again", async ()
   renderAt(`/password#${secret}`);
 
   await waitFor(() =>
-    expect(alerts()).toEqual(["Too many failed attempts. Signing in is possible again in 1 minute."]),
+    expect(alerts()).toEqual(["Too many failed attempts. Try again in 1 minute."]),
   );
   await expectAccessible();
   refuse = false;

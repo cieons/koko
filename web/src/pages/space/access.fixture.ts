@@ -1,4 +1,5 @@
 import { DeviceAdd, DeviceList, DeviceRevoke, type DeviceSession } from "../../api/device";
+import { SignInList } from "../../api/signin";
 import {
   SpaceAdd,
   type SpaceDetail,
@@ -106,6 +107,8 @@ export function serve(api: FakeApi, w: World, caller: User = alice): void {
     w.spaces = w.spaces.map((s) => (s.id === next.id ? next : s));
     return { space: next };
   };
+  // No browser is signed in, unless a test serves Sign-ins (signins.fixture.ts).
+  api.on(SignInList, () => ({ signins: [] }));
   api.on(UserList, ({ all }) => ({ users: w.users.filter((u) => all === true || u.removed_at === undefined) }));
   api.on(SpaceList, () => ({
     spaces: w.spaces.filter(sees).map(({ id, name, personal }) => ({ id, name, personal })),

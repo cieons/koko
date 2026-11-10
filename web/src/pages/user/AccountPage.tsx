@@ -1,11 +1,19 @@
+import { Button } from "@heroui/react";
+import { LogOut } from "lucide-react";
+import { useState } from "react";
+
 import { type Language, languages } from "../../i18n/catalogues";
 import { type Caller, useCaller } from "../../shell/caller";
 import { type Translate, useLanguageChoice, useT } from "../../shell/i18n";
 import { type Mode, modes, useMode } from "../../shell/mode";
 import { useQueryFlag } from "../../shell/router";
+import { useSignOut } from "../../shell/signOut";
 import { Segments } from "../../ui/fields";
 import { Page, Sheet } from "../../ui/Page";
+import { Refusal } from "../../ui/states";
 import { Devices } from "../device/Devices";
+import { ChangePassword } from "../signin/ChangePassword";
+import { SignIns } from "../signin/SignIns";
 import { PersonalSpace } from "./PersonPanel";
 
 /**
@@ -13,13 +21,17 @@ import { PersonalSpace } from "./PersonPanel";
  * acts as, their role and how this browser got in; the two choices this
  * browser keeps, Language and Appearance, mirroring the top bar; the
  * caller's own devices, this one marked, the Revoked ones too with all=1;
- * and what their Personal Space holds. The Password and Sign-ins come with
- * #116.
+ * their Browser Sign-ins, this browser's marked; and what their Personal
+ * Space holds. A browser signed in with a Password changes it in the
+ * Password panel and signs out from the title; through koko web or for the
+ * Local caller the panel says where a Password is changed instead.
  */
 export function AccountPage() {
   const t = useT();
   const caller = useCaller();
   const [all, setAll] = useQueryFlag("all");
+  const [changes, setChanges] = useState(0);
+  const signOut = useSignOut();
   const { name } = caller.user;
   return (
     <Page
@@ -31,9 +43,33 @@ export function AccountPage() {
         </span>
       }
       lead={viaText(t, caller)}
+      actions={
+        caller.signin && (
+          <Button variant="secondary" isPending={signOut.pending} onPress={signOut.signOut}>
+            <LogOut aria-hidden className="size-4" />
+            {t("signin.signOut")}
+          </Button>
+        )
+      }
     >
+      {signOut.error !== undefined && (
+        <div className="mb-5">
+          <Refusal error={signOut.error} />
+        </div>
+      )}
       <div className="grid items-start gap-5 lg:grid-cols-2">
-        <ThisBrowser />
+        <div className="flex flex-col gap-5">
+          <Sheet title={t("signin.password")}>
+            {caller.signin ? (
+              <ChangePassword user={name} onChanged={() => setChanges((n) => n + 1)} />
+            ) : (
+              <p className="text-muted">
+                {t(caller.deviceSession ? "signin.change.viaDevice" : "signin.change.viaLocal")}
+              </p>
+            )}
+          </Sheet>
+          <ThisBrowser />
+        </div>
         <div className="flex flex-col gap-5">
           <Devices
             user={name}
@@ -43,6 +79,7 @@ export function AccountPage() {
             level={2}
             className="sheet p-6"
           />
+          <SignIns user={name} level={2} changes={changes} className="sheet p-6" />
           <PersonalSpacePanel name={name} />
         </div>
       </div>

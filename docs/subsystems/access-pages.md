@@ -10,7 +10,8 @@ the CLI also has. How they look is [the web UI's
 design](../web-design.md#access-access); what the operations do is in [the
 access check and Spaces](access.md), [Users](users.md), [Join
 Codes](join-codes.md) and [revoking](device-connection.md#revoking).
-Passwords and Sign-ins join both pages with #116.
+One's own Password and Browser Sign-ins are on Account
+([Sign-ins](signin.md#the-web-uis-pages)).
 
 ## The pages
 
@@ -64,10 +65,12 @@ link to its Hosts; their devices; and Remove User. It finds the User in
 `user.list` with `all`, so a Removed User's panel opens too, and says so.
 
 **Account** shows the User's name and role and how this browser got in
-(through `koko web` on a device, a Sign-in, or the Local caller); This
-browser, Language and Appearance as segments that set what the top bar's
-menus set; the caller's devices; and their Personal Space. The account
-panel links to it.
+(through `koko web` on a device, a Sign-in, or the Local caller), with
+Sign out by the title for a Sign-in; the Password, changed there for a
+Sign-in and otherwise one sentence saying where; This browser, Language
+and Appearance as segments that set what the top bar's menus set; the
+caller's devices; their Browser Sign-ins; and their Personal Space. The
+account panel links to it.
 
 **Devices**, on Account and in a person's panel
 ([`Devices`](../../web/src/pages/device/Devices.tsx)), list one User's
@@ -110,8 +113,9 @@ as one still showing a second device of the Owner's, is put right and the
 confirmation then asks for the name. The revoke confirmation states the
 consequence: the device is cut off and the Join Codes it issued stop
 working; or this page stops and the device deletes its key, for the device
-the web UI runs through; or only the koko server's own machine adds a
-device for the Owner, for the Owner's last; or both of the last two.
+the web UI runs through; or, for the Owner's last, that only the koko
+server's own machine or a browser signed in with the Owner's Password adds
+a device for the Owner; or both of the last two.
 
 When Revoke or Take out takes away the button that had the focus, as its
 row goes once the list is read again, the focus moves to the list's heading,

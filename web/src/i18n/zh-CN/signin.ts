@@ -1,7 +1,7 @@
 import type en from "../en/signin";
 
-// The signin area's messages: Sign in, Set a Password, and its API error
-// codes.
+// The signin area's messages: Sign in, Set a Password, the Password and
+// Browser Sign-ins on Account, Sign out, and its API error codes.
 export default {
   "signin.title": "登录",
   "signin.lead": "请使用本 koko 服务器上用户的用户名与密码。",
@@ -11,8 +11,8 @@ export default {
   "signin.passwordRequired": "请输入密码。",
   "signin.submit": "登录",
   "signin.lost": "密码遗失时，由所有者签发新的密码链接进行重置。",
-  "signin.tooMany.one": "失败次数过多，请于 {count} 分钟后再次登录。",
-  "signin.tooMany.other": "失败次数过多，请于 {count} 分钟后再次登录。",
+  "signin.tooMany.one": "失败次数过多，请于 {count} 分钟后重试。",
+  "signin.tooMany.other": "失败次数过多，请于 {count} 分钟后重试。",
   "signin.set.title": "设置密码",
   "signin.set.lead": "用户：{name}，即登录时使用的用户名。该密码仅用于登录 Web 界面，不会传至任何主机。",
   "signin.set.submit": "设置密码并登录",
@@ -32,6 +32,31 @@ export default {
   "signin.linkInvalid.title": "此密码链接已失效",
   "signin.linkInvalid.lead": "链接已过期，或已被新的链接取代。可请所有者签发新的密码链接。",
   "signin.toSignIn": "前往登录",
+  "signin.signOut": "退出登录",
+  "signin.change.current": "当前密码",
+  "signin.change.submit": "修改密码",
+  "signin.change.wrong": "当前密码不正确。",
+  "signin.change.done": "密码已修改，凭该密码登录的其他浏览器均已退出登录。",
+  "signin.change.viaDevice": "当前浏览器经由 koko web 打开，密码须在凭该密码登录的浏览器中修改。",
+  "signin.change.viaLocal": "当前浏览器在 koko 服务器本机上操作，密码须在凭该密码登录的浏览器中修改。",
+  "signin.signins.title": "浏览器登录会话",
+  "signin.signins.none": "{name} 当前未在任何浏览器中登录。",
+  "signin.signins.here": "当前浏览器",
+  "signin.signins.ended": "已结束",
+  "signin.signins.ends": "{date} 到期",
+  "signin.signins.endedOn": "{date} 结束：{reason}",
+  "signin.signins.showEnded": "显示已结束的登录会话",
+  "signin.end.signed_out": "已退出登录",
+  "signin.end.expired": "已过期",
+  "signin.end.revoked": "已吊销",
+  "signin.end.password_changed": "密码已修改",
+  "signin.end.password_removed": "密码已移除",
+  "signin.end.user_removed": "用户已移除",
+  "signin.revoke": "吊销",
+  "signin.revoke.title": "吊销来自 {client} 的登录会话",
+  "signin.revoke.consequence": "该浏览器将立即退出登录，须凭密码重新登录。",
+  "signin.revoke.consequenceHere": "这是当前浏览器的登录会话。吊销后，当前浏览器将退出登录。",
+  "signin.revokedDone": "来自 {client} 的登录会话已吊销。",
   "error.web_url_unset": "签发密码链接需要 Web URL，但尚未设置。所有者可在 koko 服务器所在机器上执行 koko server set web_url= 进行设置。",
   "error.invalid_password": "密码长度须为 15 至 128 个字符，且不得与用户名相同。字符种类不限。",
   "error.wrong_password": "用户名或密码不正确。",
