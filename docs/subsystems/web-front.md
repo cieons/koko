@@ -136,7 +136,9 @@ default, is off: a koko server without it listens on nothing new.
   refused with exit 2 before the koko server starts. It is bound
   ([`listenWeb`](../../internal/server/weblisten.go)) before the store
   opens; an address another process holds is refused with `port_taken`,
-  naming that process when [`portowner`](#the-port-owner-lookup) finds it.
+  naming that process as [`portowner`](#the-port-owner-lookup) finds it,
+  and the commands that name it (`ss -ltnp`, `lsof -i`) when portowner
+  cannot tell its pid.
   The docs give `127.0.0.1:7823` on systemd, and `0.0.0.0:7823` in a
   container, published on the host's loopback. Outside a container
   (`server.Config.InContainer`, which `cmd/kokod` sets when `/.dockerenv` or

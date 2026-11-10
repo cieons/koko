@@ -6,11 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"sync"
+	"syscall"
 
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/server/transport"
+	"github.com/cieons/koko/internal/shared/install"
+	"github.com/cieons/koko/internal/shared/portowner"
 )
 
 // tcpListener is the koko server's TCP listener, where devices reach it over
@@ -44,11 +48,40 @@ func (l *tcpListener) bind(ctx context.Context) error {
 	}
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "tcp", l.addr)
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return listenAddressTaken(ctx, l.addr)
+	}
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", l.addr, err)
 	}
 	l.ln = ln
 	return nil
+}
+
+// listenAddressTaken is the refusal of a listen address another process
+// holds. It does not say that nothing was written: at a first start, the
+// Root Key file it made stays.
+func listenAddressTaken(ctx context.Context, addr string) error {
+	_, port, _ := net.SplitHostPort(addr)
+	return &install.Refusal{Reason: install.PortTaken, Message: fmt.Sprintf(
+		"port %s, where the koko server listens for devices (--listen %s), is taken by %s: stop it, or give the koko server another port with --listen (KOKO_LISTEN)",
+		port, addr, portHolder(ctx, port))}
+}
+
+// portHolder names the process that holds the TCP port, for a refusal: as
+// portowner tells it, and with the commands that name it when portowner
+// cannot tell its pid, such as for another user's process.
+func portHolder(ctx context.Context, port string) string {
+	holder := "another process"
+	if n, err := strconv.Atoi(port); err == nil {
+		if p, err := portowner.Lookup(ctx, n); err == nil {
+			if p.PID != 0 {
+				return p.String()
+			}
+			holder = p.String()
+		}
+	}
+	return holder + " (sudo ss -ltnp or sudo lsof -i :" + port + " names it)"
 }
 
 // serve serves Device Connections on the bound listener, presenting

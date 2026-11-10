@@ -8,12 +8,10 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/cieons/koko/internal/shared/install"
-	"github.com/cieons/koko/internal/shared/portowner"
 )
 
 // webShutdownGrace bounds how long Close waits for the web listener's calls
@@ -55,16 +53,10 @@ func listenWeb(ctx context.Context, addr string) (*webListener, error) {
 }
 
 // webAddressTaken is the refusal of a web listener address another process
-// holds, naming it when portowner can.
+// holds, naming it (portHolder).
 func webAddressTaken(ctx context.Context, addr string) error {
-	holder := "another process"
 	_, port, _ := net.SplitHostPort(addr)
-	if n, err := strconv.Atoi(port); err == nil {
-		if p, err := portowner.Lookup(ctx, n); err == nil {
-			holder = p.String()
-		}
-	}
-	return install.Refuse(install.PortTaken, "the web listener's address %s is taken by %s: stop it, or give the web listener another address with --web-listen (KOKO_WEB_LISTEN)", addr, holder)
+	return install.Refuse(install.PortTaken, "the web listener's address %s is taken by %s: stop it, or give the web listener another address with --web-listen (KOKO_WEB_LISTEN)", addr, portHolder(ctx, port))
 }
 
 // serve answers the listener's requests with h, until close.

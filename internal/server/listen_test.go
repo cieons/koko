@@ -2,7 +2,11 @@ package server_test
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
@@ -11,7 +15,9 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/server"
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/install"
 )
 
 // tcpHostKey connects to the koko server's TCP listener at addr and returns
@@ -85,5 +91,41 @@ func TestARefusedInitialisationLeavesNothingListening(t *testing.T) {
 	}
 	if _, err := tcpHostKey(t, addr); err != nil {
 		t.Errorf("after initialisation, connecting to %s: %v", addr, err)
+	}
+}
+
+// A listen address another process holds is refused with port_taken,
+// naming the process, here the test's own, and --listen.
+func TestATakenListenAddressNamesItsHolder(t *testing.T) {
+	var lc net.ListenConfig
+	taken, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = taken.Close() })
+	srv, err := server.Start(t.Context(), server.Config{
+		DataDir:     t.TempDir(),
+		RootKeyPath: harness.NewRootKeyFile(t),
+		Owner:       harness.Owner,
+		Address:     harness.Address,
+		Listen:      taken.Addr().String(),
+		Log:         io.Discard,
+		Filesystems: harness.LocalDisk{},
+		ProcessUIDs: harness.NotRoot,
+		SocketPath:  filepath.Join(harness.ShortTempDir(t), "koko.sock"),
+	})
+	if err == nil {
+		_ = srv.Close()
+		t.Fatalf("the koko server started on %s, which another process holds", taken.Addr())
+	}
+	refusal, ok := errors.AsType[*install.Refusal](err)
+	if !ok || refusal.Reason != install.PortTaken {
+		t.Fatalf("start-up failed with %v, want a port_taken refusal", err)
+	}
+	_, port, _ := net.SplitHostPort(taken.Addr().String())
+	for _, want := range []string{"port " + port, fmt.Sprintf("pid %d", os.Getpid()), "--listen"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal %q does not say %q", err, want)
+		}
 	}
 }

@@ -18,6 +18,10 @@ one-time code is
   `:7822`, [ADR 0036](../adr/0036-the-koko-server-listens-on-7822-by-default.md)),
   a host and a port number. A Server Address without a port names
   the port the listener bound ([`joinTarget`](../../internal/server/jointarget.go)).
+  An address another process holds is refused with `port_taken`, naming
+  that process as [`portowner`](../../internal/shared/portowner/portowner.go)
+  finds it, and the commands that name it (`ss -ltnp`, `lsof -i`) when
+  portowner cannot tell its pid, as the web listener's refusal does.
 - **Its host key** is the koko server's sealed host key, the one Join Codes
   name, the same across restarts. The Unix socket keeps its own key made at
   each start ([the API](api.md#the-way-in)).
