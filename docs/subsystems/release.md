@@ -338,8 +338,10 @@ image` once, as the release's build job does, and loads its own platform's
 image from the archive into Docker with `skopeo`. Then
 [`release/container-check.sh`](../../release/container-check.sh) `<dist>`
 checks, first, that the Compose file `docs/install.md` and
-`docs/install.zh-CN.md` show is `release/compose.yaml` as it is, and that
-both give the `install -d` line it runs, then, in order:
+`docs/install.zh-CN.md` show is `release/compose.yaml` as it is, that
+both give the `install -d` line it runs, and that both show its two
+commented lines naming port 7823 as they read once the `# ` that starts
+them is removed, then, in order:
 
 1. the first start, through the Compose file, in a deployment folder whose
    `state/` the docs' `sudo install -d -o 65532 -g 65532 -m 0700` line made,
@@ -370,18 +372,39 @@ both give the `install -d` line it runs, then, in order:
 6. `docker compose down`, then `up -d`, recreates the container on the
    same `state/`: the Server Address, the Root Key's id and the host key's
    fingerprint are the same, nothing warns, and the device still works;
-7. a copy of `data/`, taken with the container stopped, in a new
+7. the web listener, behind a real Caddy
+   ([ADR 0042](../adr/0042-the-web-ui-is-also-served-over-plain-http-to-the-owners-reverse-proxy.md)):
+   `server.show`'s `web_listen` is `null` until the Compose file's two
+   commented lines for it are on, edited as the docs say; with them, it is
+   set, the `web listener` line names its address rather than `off`, and
+   `127.0.0.1:7823` on the Docker host answers `503` naming `koko server
+   set web_url=`. A
+   `caddy:2` container on the Compose project's network serves `koko.test`
+   with `tls internal`, `encode zstd gzip` and `reverse_proxy koko:7823`,
+   published on `127.0.0.1:18443`. After `docker exec koko koko server set
+   web_url=https://koko.test` and `koko user invite bob --web --valid 1d`,
+   `curl --connect-to` with Caddy's root certificate, as a browser at
+   `https://koko.test` with the Web URL as its `Origin`: learns whom the
+   link is for, spends it (getting the `__Host-koko` cookie), sees it
+   refused as `link_used` the second time, signs in with the Password,
+   calls `user.current` as bob's Sign-in, sees another `Origin` refused
+   with `bad_origin`, signs out, and sees the signed-out cookie answered
+   `signin_required`. The `signed in` log line names an address other
+   than Caddy's own, the one Caddy appended to `X-Forwarded-For`, and no
+   log line holds the Password or the link's secret. Every request has
+   10 s, and Caddy 60 s to serve the site;
+8. a copy of `data/`, taken with the container stopped, in a new
    `state/` without `root.key`, is refused at start with `KOKO_OWNER` set,
    naming the Root Key's id the sealed data needs, and no `root.key` is
    written;
-8. `koko server install` in a plain `ubuntu:24.04` container with no
+9. `koko server install` in a plain `ubuntu:24.04` container with no
    network (`--network none`) refuses with `unsupported_platform`, naming
    `ghcr.io/cieons/koko`, and writes nothing there: a download tried first
    would have failed as `download_failed` instead;
-9. the archive's index holds `linux/amd64` and `linux/arm64` and nothing
-   else, and in each platform's layers `/usr/local/bin/kokod` and
-   `/usr/local/bin/koko` have the SHA-256s `SHA256SUMS` lists for its
-   `kokod-linux-<arch>` and `koko-linux-<arch>`.
+10. the archive's index holds `linux/amd64` and `linux/arm64` and nothing
+    else, and in each platform's layers `/usr/local/bin/kokod` and
+    `/usr/local/bin/koko` have the SHA-256s `SHA256SUMS` lists for its
+    `kokod-linux-<arch>` and `koko-linux-<arch>`.
 
 **One build.** The check runs only the image of the commit it checks.
 Upgrading across a migration step and going back belong to the binaries,
@@ -404,7 +427,8 @@ network, with the release's `koko-linux-<arch>` as its `koko`, so that its
 commands go over TCP to the published port, as a device's do.
 
 Run the script only on a throwaway Linux machine with Docker, `skopeo`,
-`jq` and passwordless `sudo`, where no container is named `koko` and
-nothing listens on 17822; it removes the containers, networks, volumes,
-image and files it made. On a failure it prints `docker logs koko` and the device's Device
-Mux log.
+`jq`, `curl` and passwordless `sudo`, where no container is named `koko` and
+nothing listens on 17822, 7823 or 18443; it removes the containers,
+networks, volumes, image and files it made. On a failure it prints `docker
+logs koko`, the device's Device Mux log and, once Caddy runs, `docker logs`
+of Caddy.

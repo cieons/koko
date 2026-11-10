@@ -23,7 +23,11 @@
 # docker kill, then docker start, takes over the stale socket; a changed
 # KOKO_ADDRESS logs the warning and changes no record; docker compose down,
 # then up, keeps the record on the same state/, and the device still works;
-# a copy of data/ without root.key is refused, writing no Root Key;
+# the web listener, off until the Compose file's two commented lines for it
+# are on, serves behind a real Caddy at https://koko.test, where a Password
+# Link is spent, bob signs in, calls user.current and signs out, another
+# Origin is refused, and the log names the address Caddy passed in
+# X-Forwarded-For; a copy of data/ without root.key is refused, writing no Root Key;
 # koko server install refuses in a plain container with no network, naming
 # the image, before any download; and
 # the image's index holds linux/amd64 and linux/arm64, each with the kokod
@@ -38,10 +42,10 @@
 # machine's network, with the release's binary as its koko, so that it
 # reaches the koko server over TCP at the published port, as a device does.
 #
-# Run it only on a throwaway Linux machine with Docker, skopeo, jq and
+# Run it only on a throwaway Linux machine with Docker, skopeo, jq, curl and
 # passwordless sudo, where no container is named koko and nothing listens
-# on 17822. It removes the containers, networks, volumes, image and files it
-# made.
+# on 17822, 7823 or 18443. It removes the containers, networks, volumes,
+# image and files it made.
 
 set -eu
 
@@ -82,6 +86,14 @@ prepare='sudo install -d -o 65532 -g 65532 -m 0700 state'
 device=koko-check-device
 volume_container=koko-check-volume
 ubuntu=ubuntu:24.04
+# The web listener sits behind a real Caddy, which serves koko.test with a
+# certificate of its own local authority on the Docker host's loopback at
+# $web_port. uncomment is the docs' edit of the Compose file that turns the
+# web listener on: the "# " that starts each line naming port 7823 goes.
+caddy=koko-check-caddy
+caddy_image=caddy:2
+web_port=18443
+uncomment='/7823/s/^\( *\)# /\1/'
 work=$(mktemp -d)
 
 # On a failure, show what the koko server and the device logged. Whatever
@@ -93,8 +105,12 @@ on_exit() {
 		docker logs koko || :
 		step "after the failure: the device's Device Mux log"
 		docker exec "$device" sh -c 'cat /tmp/koko-0/*.log' || :
+		if docker inspect "$caddy" >/dev/null 2>&1; then
+			step "after the failure: docker logs $caddy"
+			docker logs "$caddy" || :
+		fi
 	fi
-	docker rm -f "$device" "$volume_container" >/dev/null 2>&1 || :
+	docker rm -f "$device" "$volume_container" "$caddy" >/dev/null 2>&1 || :
 	for d in koko rootmade volume copy; do
 		[ ! -d "$work/$d" ] || compose "$d" down --volumes --remove-orphans >/dev/null 2>&1 || :
 	done
@@ -200,6 +216,36 @@ empty() {
 	[ -z "$left" ] || fail "$1 is not empty: $left"
 }
 
+# web_lines prints the lines of release/compose.yaml that name port 7823 as
+# they read once the docs' edit has turned them on.
+web_lines() {
+	sed "$uncomment" "$repo/release/compose.yaml" | grep 7823
+}
+
+# web sends a $1 request for path $2 at https://koko.test through Caddy, as a
+# browser there would, with the cookie jar $3 (/dev/null for none) and, when
+# given, the JSON body $4. Its Origin header is $origin, or the Web URL when
+# that is empty. It saves the answer's body in $work/body and prints its
+# status.
+web() {
+	method=$1 path=$2 jar_file=$3 body=${4-}
+	set -- -sS --max-time 10 --connect-to "koko.test:443:127.0.0.1:$web_port" --cacert "$work/root.crt" \
+		-o "$work/body" -w '%{http_code}' -X "$method" -H "Origin: ${origin:-https://koko.test}"
+	[ "$jar_file" = /dev/null ] || set -- "$@" -b "$jar_file" -c "$jar_file"
+	[ -z "$body" ] || set -- "$@" -H 'Content-Type: application/json' --data "$body"
+	curl "$@" "https://koko.test$path"
+}
+
+# web_is sends web's $1 request for path $2 with the cookie jar $3 and the
+# body $4, and checks that it is answered with the status $5 and a body that
+# has the jq expression $6 true, saying $7 otherwise.
+web_is() {
+	got=$(web "$1" "$2" "$3" "$4") || fail "$7: curl could not reach https://koko.test$2"
+	if [ "$got" != "$5" ] || ! jq -e "$6" "$work/body" >/dev/null; then
+		fail "$7: $1 $2 was answered $got: $(cat "$work/body")"
+	fi
+}
+
 # owned checks that path $1 is uid and gid 65532's and, when $2 is given,
 # has mode $2.
 owned() {
@@ -212,6 +258,11 @@ owned() {
 }
 
 step "the install docs show release/compose.yaml as it is"
+# The section on the web UI shows the two commented lines naming port 7823
+# as the docs' edit turns them on.
+web_lines >"$work/web-lines"
+[ "$(wc -l <"$work/web-lines" | tr -d ' ')" = 2 ] ||
+	fail "release/compose.yaml does not hold two commented lines naming port 7823"
 for doc in docs/install.md docs/install.zh-CN.md; do
 	# The block in the docs is the yaml block whose first line is the
 	# Compose file's.
@@ -223,6 +274,9 @@ for doc in docs/install.md docs/install.zh-CN.md; do
 	diff -u "$repo/release/compose.yaml" "$work/shown" >&2 ||
 		fail "the Compose file $doc shows is not release/compose.yaml"
 	grep -qxF -- "$prepare" "$repo/$doc" || fail "$doc does not give the line: $prepare"
+	while IFS= read -r line; do
+		grep -qxF -- "$line" "$repo/$doc" || fail "$doc does not show the line, once on: $line"
+	done <"$work/web-lines"
 done
 
 step "the image of $arch, loaded from $dist/koko-image.tar as $image"
@@ -351,6 +405,77 @@ show_is ".address == \"$address\" and .root_key_id == \"$key_id\" and .host_key_
 wait_log koko 'koko server started'
 ! grep -q 'koko server set address=' "$work/log" || fail "docker logs koko warns, with KOKO_ADDRESS as recorded"
 device_calls
+
+step "the web listener is off until the Compose file's two commented lines for it are on"
+show_is '.web_listen == null' "the web listener is on without KOKO_WEB_LISTEN"
+(cd "$work/koko" && sed "$uncomment" compose.yaml >compose.web.yaml && mv compose.web.yaml compose.yaml)
+# The override's ports replace the Compose file's, so they take the web
+# listener's published port from the line just turned on.
+publish=$(web_lines | sed -n 's/^ *- \("[^"]*"\).*/\1/p')
+[ -n "$publish" ] || fail "release/compose.yaml publishes no port 7823"
+sed "s/^\( *ports: !override \[\".*\"\)\]/\1, $publish]/" "$work/koko/compose.override.yaml" >"$work/override"
+grep -qF "$publish" "$work/override" || fail "the override file's ports could not take $publish"
+mv "$work/override" "$work/koko/compose.override.yaml"
+compose koko up -d
+wait_serving koko
+show_is '.web_listen != null and .web_url == null' "the web listener is not on, or a Web URL is set"
+wait_log koko 'msg="web listener"'
+grep 'msg="web listener"' "$work/log" | grep -qv 'listen=off' ||
+	fail "docker logs koko says the web listener is off"
+# The published port is the Docker host's loopback alone, and without a Web
+# URL every request gets the page naming the command that sets it.
+got=$(curl -sS --max-time 10 -o "$work/body" -w '%{http_code}' http://127.0.0.1:7823/) ||
+	fail "the web listener's port is not published on 127.0.0.1:7823"
+if [ "$got" != 503 ] || ! grep -qF 'koko server set web_url=' "$work/body"; then
+	fail "the web listener without a Web URL answered $got: $(cat "$work/body")"
+fi
+
+step "behind Caddy, a Password Link is spent, bob signs in and out, a wrong Origin is refused, and the log names the client's address"
+net=$(docker inspect koko --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}')
+printf '%s\n' 'koko.test {' '	tls internal' '	encode zstd gzip' '	reverse_proxy koko:7823' '}' >"$work/Caddyfile"
+docker run -d --name "$caddy" --network "$net" -p "127.0.0.1:$web_port:443" \
+	-v "$work/Caddyfile:/etc/caddy/Caddyfile:ro" "$caddy_image" >/dev/null
+caddy_ip=$(docker inspect "$caddy" --format "{{(index .NetworkSettings.Networks \"$net\").IPAddress}}")
+docker exec koko koko server set web_url=https://koko.test >/dev/null
+# Caddy makes its root certificate, then the site's, at its start.
+deadline=$(($(date +%s) + 60))
+until docker exec "$caddy" cat /data/caddy/pki/authorities/local/root.crt >"$work/root.crt" 2>/dev/null &&
+	[ "$(web GET / /dev/null 2>/dev/null)" = 200 ]; do
+	[ "$(date +%s)" -lt "$deadline" ] || { docker logs "$caddy" >&2 || :; fail "https://koko.test did not serve the web UI through Caddy within 60 s"; }
+	sleep 0.5
+done
+docker exec koko koko user invite bob --web --valid 1d --json >"$work/invite"
+link=$(jq -r .password_link "$work/invite")
+case $link in
+https://koko.test/password#?*) secret=${link#*#} ;;
+*) fail "koko user invite bob --web printed no Password Link at https://koko.test: $(cat "$work/invite")" ;;
+esac
+password='a long phrase bob keeps to himself'
+jar=$work/jar
+: >"$jar"
+web_is POST /auth/link /dev/null "{\"link\": \"$secret\"}" 200 '.user == "bob"' "the Password Link is not bob's"
+web_is POST /auth/password "$jar" "{\"link\": \"$secret\", \"password\": \"$password\"}" 200 '.user.name == "bob"' "spending the Password Link failed"
+grep -qF __Host-koko "$jar" || fail "spending the Password Link set no __Host-koko cookie"
+web_is POST /auth/password /dev/null "{\"link\": \"$secret\", \"password\": \"$password\"}" 410 '.error.code == "link_used"' "the spent Password Link was not refused as used"
+: >"$jar"
+web_is POST /auth/signin "$jar" "{\"name\": \"bob\", \"password\": \"$password\"}" 200 '.user.name == "bob"' "bob's sign-in failed"
+web_is POST /v1/user.current "$jar" '{}' 200 '.user.name == "bob" and .signin.id != null' "user.current did not answer bob's Sign-in"
+origin=https://elsewhere.example
+web_is POST /v1/user.current "$jar" '{}' 403 '.error.code == "bad_origin"' "a call with another Origin was not refused"
+origin=
+cp "$jar" "$work/jar.before"
+web_is POST /auth/signout "$jar" '{}' 200 'true' "signing out failed"
+web_is POST /v1/user.current "$work/jar.before" '{}' 401 '.error.code == "signin_required"' "the ended Sign-in's cookie still works"
+# The koko server's peer is Caddy; the client's address is the one Caddy
+# appended to X-Forwarded-For.
+wait_log koko 'msg="signed in"'
+client=$(grep 'msg="signed in"' "$work/log" | sed -n 's/.* address=\([^ ]*\).*/\1/p' | tail -n 1)
+[ -n "$client" ] && [ "$client" != "$caddy_ip" ] ||
+	fail "the signed in line names the address '$client', not the one Caddy ($caddy_ip) passed in X-Forwarded-For"
+echo "the client's address is $client; Caddy's is $caddy_ip"
+! grep -qF -- "$password" "$work/log" || fail "docker logs koko holds bob's Password"
+! grep -qF -- "$secret" "$work/log" || fail "docker logs koko holds the Password Link's secret"
+docker rm -f "$caddy" >/dev/null
 
 step "a copy of data/ without root.key is refused, naming the id it needs, and writes no Root Key"
 deployment copy

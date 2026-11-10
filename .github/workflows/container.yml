@@ -3,8 +3,8 @@ name: container
 # Runs the koko server's image as its Owner would, through the install docs'
 # release/compose.yaml, on each platform the image is built for, each on a
 # runner of its own platform, natively: the first start, the refusals, a
-# device joining, a kill and a restart, recreating the container, and the
-# index's binaries (release/container-check.sh, docs/subsystems/release.md).
+# device joining, a kill and a restart, recreating the container, a browser
+# signing in behind Caddy, and the index's binaries (release/container-check.sh, docs/subsystems/release.md).
 on:
   push:
     branches: [main]
@@ -46,5 +46,5 @@ jobs:
       # skopeo loads this platform's image from the archive into Docker.
       - name: Install skopeo
         run: command -v skopeo >/dev/null || { sudo apt-get update && sudo apt-get install -y skopeo; }
-      - name: Start, join, kill, recreate and refuse
+      - name: Start, join, kill, recreate, sign in behind Caddy and refuse
         run: release/container-check.sh dist
