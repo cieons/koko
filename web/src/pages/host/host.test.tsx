@@ -141,7 +141,7 @@ test("a Managed Host's page: the breadcrumb, how to reach it, its pin, Attribute
   });
 
   await openHost("/hosts/web1", "web1");
-  expect(document.title).toBe("web1 · koko");
+  await waitFor(() => expect(document.title).toBe("web1 · koko"));
   expect(api.requests(HostShow)).toEqual([{ host: "web1" }]);
   const breadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
   expect(within(breadcrumb).getByRole("link", { name: "Hosts" }).getAttribute("href")).toBe("/hosts");

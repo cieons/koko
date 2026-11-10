@@ -192,7 +192,7 @@ test("a path with no page shows Page not found in the frame, with a link to the 
 
   expect(await screen.findByRole("heading", { level: 1, name: "Page not found" })).toBeDefined();
   expect(screen.getByText("This address leads to no page of this koko server.")).toBeDefined();
-  expect(document.title).toBe("Page not found · koko");
+  await waitFor(() => expect(document.title).toBe("Page not found · koko"));
   await expectAccessible();
   fireEvent.click(screen.getByRole("link", { name: "Go to Hosts" }));
 
@@ -217,13 +217,13 @@ test("the document's title is the page's own name, then koko", async () => {
   asDevice(api, alice);
   renderShell("/hosts");
   await screen.findByText("hosts page");
-  expect(document.title).toBe("Hosts · koko");
+  await waitFor(() => expect(document.title).toBe("Hosts · koko"));
 
   await chooseInTopBar("Language", "简体中文");
   act(() => navigate("/secrets"));
 
   await screen.findByText("secrets page");
-  expect(document.title).toBe("Secrets · koko");
+  await waitFor(() => expect(document.title).toBe("Secrets · koko"));
 });
 
 test("the skip link is the first stop of Tab and moves the focus to the main region", async () => {

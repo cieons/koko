@@ -80,7 +80,7 @@ test("the Hosts host.list answers, grouped by Space, a panel each in the default
   expect(screen.getByRole("tab", { name: /^Hosts/ }).getAttribute("aria-selected")).toBe("true");
   expect(screen.getAllByRole("tab").map(visibleText)).toEqual(["Hosts3", "Services2"]);
   expect(listRequests(api)).toEqual([{ with_note: true }]);
-  expect(document.title).toBe("Hosts · koko");
+  await waitFor(() => expect(document.title).toBe("Hosts · koko"));
   await expectAccessible();
 });
 

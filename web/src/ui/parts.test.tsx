@@ -31,18 +31,18 @@ test("a page's head shows its title, line and actions, and names the browser's t
   expect(screen.getByText("9 Hosts in 3 Spaces.")).toBeDefined();
   expect(screen.getByRole("button", { name: "Add Host" })).toBeDefined();
   expect(within(screen.getByRole("region", { name: "ops" })).getByText("a panel")).toBeDefined();
-  expect(document.title).toBe("Hosts · koko");
+  await waitFor(() => expect(document.title).toBe("Hosts · koko"));
   await expectAccessible();
 });
 
-test("a page whose title is more than text names the tab by its name", () => {
+test("a page whose title is more than text names the tab by its name", async () => {
   renderIn(
     <Page title={<span>web1 ●</span>} name="web1">
       <p>the Host</p>
     </Page>,
   );
 
-  expect(document.title).toBe("web1 · koko");
+  await waitFor(() => expect(document.title).toBe("web1 · koko"));
 });
 
 test("Copy copies, reads Copied for 1.6 s, announced politely, then Copy again", async () => {

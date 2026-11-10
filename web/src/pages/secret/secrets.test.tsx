@@ -119,7 +119,7 @@ test("a Member sees one panel per Space of theirs, each Secret's name and when i
   expect(
     within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Secrets" }),
   ).toHaveProperty("ariaCurrent", "page");
-  expect(document.title).toBe("Secrets · koko");
+  await waitFor(() => expect(document.title).toBe("Secrets · koko"));
   await expectAccessible();
 });
 
