@@ -7,8 +7,12 @@ The koko server's SQLite database, `koko.db` in the data directory, in
 
 [`store.Open`](../../internal/server/store/store.go) creates the data directory
 (0700) when it is missing, opens `koko.db` with `modernc.org/sqlite` through
-`database/sql`, and migrates it. The DSN sets every default koko relies on, on
-every connection:
+`database/sql`, and migrates it. Before SQLite opens it, it makes `koko.db`
+when it is missing and gives it, and any `-wal` and `-shm` file beside it,
+mode 0600, whatever the umask; SQLite makes those two files with the
+database's mode, and a snapshot gets 0600 too. A file another user owns,
+whose mode koko may not change, keeps its own. The DSN sets every default
+koko relies on, on every connection:
 
 ```
 file:<escaped path>?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(FULL)&_txlock=immediate

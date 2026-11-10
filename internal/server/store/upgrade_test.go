@@ -187,6 +187,7 @@ func TestAnOlderSchemaIsSnapshotThenMigrated(t *testing.T) {
 		t.Errorf("user_version after the upgrade = %d, want 3", got)
 	}
 	wantSnapshots(t, dir, "koko.db.before-3")
+	wantOwnerOnly(t, filepath.Join(dir, "koko.db.before-3"))
 	addNote(t, s, "second")
 	stop(t, s)
 

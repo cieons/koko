@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -66,6 +67,9 @@ func open(ctx context.Context, dataDir string, sc schema) (*Store, error) {
 		return nil, fmt.Errorf("create data directory %s: %w", dataDir, err)
 	}
 	path := filepath.Join(dataDir, FileName)
+	if err := ownerOnly(path); err != nil {
+		return nil, err
+	}
 	write, err := sql.Open("sqlite", dsn(path, false))
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
@@ -82,6 +86,34 @@ func open(ctx context.Context, dataDir string, sc schema) (*Store, error) {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 	return s, nil
+}
+
+// fileMode is the mode of koko.db, its -wal and -shm files and its
+// snapshots: the record is its owner's alone, whatever the umask or the data
+// directory's mode.
+const fileMode = 0o600
+
+// ownerOnly makes koko.db at path when it is missing, and gives it and any
+// -wal and -shm file beside it fileMode. It runs before SQLite opens it,
+// since SQLite makes the -wal and -shm files with the database file's mode.
+// A file another user owns, which koko may not change the mode of, keeps
+// the mode its owner gave it, as SQLite would keep it: koko starts on it as
+// it did before.
+func ownerOnly(path string) error {
+	f, err := os.OpenFile(path, os.O_RDONLY|os.O_CREATE, fileMode)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", path, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("open %s: %w", path, err)
+	}
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		err := os.Chmod(p, fileMode)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, fs.ErrPermission) {
+			return fmt.Errorf("set the mode of %s to %o: %w", p, fileMode, err)
+		}
+	}
+	return nil
 }
 
 // dsn is koko's DSN with writes beginning IMMEDIATE, or with every statement

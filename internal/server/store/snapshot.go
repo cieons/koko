@@ -144,6 +144,9 @@ func (s *Store) vacuumInto(ctx context.Context, path string) error {
 	if _, err := s.write.ExecContext(ctx, "VACUUM INTO ?", tmp); err != nil {
 		return fmt.Errorf("write %s: %w", tmp, err)
 	}
+	if err := os.Chmod(tmp, fileMode); err != nil {
+		return fmt.Errorf("set the mode of %s to %o: %w", tmp, fileMode, err)
+	}
 	if err := syncPath(tmp); err != nil {
 		return err
 	}
