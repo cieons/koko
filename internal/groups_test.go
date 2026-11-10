@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -89,6 +90,7 @@ func TestPackageGroupsStaySeparate(t *testing.T) {
 
 type goPackage struct {
 	ImportPath string
+	Dir        string
 	GoFiles    []string
 	Deps       []string
 }
@@ -97,7 +99,7 @@ type goPackage struct {
 // dependencies.
 func listPackages(t *testing.T, goos string) []goPackage {
 	t.Helper()
-	cmd := exec.CommandContext(t.Context(), "go", "list", "-json=ImportPath,GoFiles,Deps", module+"/...")
+	cmd := exec.CommandContext(t.Context(), "go", "list", "-json=ImportPath,Dir,GoFiles,Deps", module+"/...")
 	cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH=amd64", "CGO_ENABLED=0")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -120,5 +122,29 @@ func listPackages(t *testing.T, goos string) []goPackage {
 	if len(pkgs) == 0 {
 		t.Fatal("go list found no packages")
 	}
+	readThrough(t, pkgs)
 	return pkgs
+}
+
+// readThrough reads, in the test process itself, the directories go list
+// read in its own: each package's, and each above it up to the module's
+// root. Go's test cache keys a result on the directories a test reads, by
+// each file's name, size, mode and time, so a changed import, or a file or
+// a package added anywhere, runs the test again rather than passing it
+// from the cache.
+func readThrough(t *testing.T, pkgs []goPackage) {
+	t.Helper()
+	read := map[string]bool{}
+	for _, pkg := range pkgs {
+		root := strings.TrimSuffix(pkg.Dir, filepath.FromSlash(strings.TrimPrefix(pkg.ImportPath, module)))
+		for dir := pkg.Dir; !read[dir]; dir = filepath.Dir(dir) {
+			if _, err := os.ReadDir(dir); err != nil {
+				t.Fatal(err)
+			}
+			read[dir] = true
+			if dir == root {
+				break
+			}
+		}
+	}
 }
