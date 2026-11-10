@@ -21,6 +21,8 @@ export interface FormDialogProps {
   onSubmit: () => void;
   /** onClose hears Cancel, Escape and the close button; the page then stops rendering the dialog. */
   onClose: () => void;
+  /** size is md for a form with a field of several lines, such as a Secret's value; sm by default. */
+  size?: "sm" | "md";
   children: ReactNode;
 }
 
@@ -32,11 +34,21 @@ export interface FormDialogProps {
  * not close it, so what was typed is not lost. The form validates on
  * submit (Form), and a refusal shows in place, the form kept as typed.
  */
-export function FormDialog({ title, lead, submit, pending, error, onSubmit, onClose, children }: FormDialogProps) {
+export function FormDialog({
+  title,
+  lead,
+  submit,
+  pending,
+  error,
+  onSubmit,
+  onClose,
+  size = "sm",
+  children,
+}: FormDialogProps) {
   const t = useT();
   return (
     <Modal.Backdrop isOpen isDismissable={false} onOpenChange={(open) => open || onClose()}>
-      <Modal.Container size="sm">
+      <Modal.Container size={size}>
         <Modal.Dialog aria-label={title}>
           <Form label={title} onSubmit={onSubmit}>
             <Modal.CloseTrigger aria-label={t("shell.close")} />

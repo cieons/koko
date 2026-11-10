@@ -43,22 +43,27 @@ export async function chooseOption(select: string, option: string, offered?: str
 }
 
 /**
- * searchAndChoose types typed in the searchable choice named choice, as a
- * person narrows its list, checks the page with the list open with axe,
+ * searchAndChoose types typed in the searchable choice named choice, or the
+ * one given, as a person narrows its list, checks the list open with axe,
  * checks the options it then offers, when offered is given, and chooses the
  * one named option.
+ *
+ * axe checks the list alone: while it is open, React Aria hides the rest of
+ * the page from assistive technology, its controls with it, so axe would
+ * fault each of them as focusable yet hidden; but the focus stays in the
+ * field, and Tab closes the list, and with it the hiding, before it moves.
  */
 export async function searchAndChoose(
-  choice: string,
+  choice: string | HTMLElement,
   typed: string,
   option: string,
   offered?: string[],
 ): Promise<void> {
-  const input = screen.getByRole("combobox", { name: choice });
+  const input = typeof choice === "string" ? screen.getByRole("combobox", { name: choice }) : choice;
   act(() => input.focus());
   fireEvent.change(input, { target: { value: typed } });
   const listbox = await screen.findByRole("listbox");
-  await expectAccessible();
+  await expectAccessible(listbox);
   if (offered) {
     await waitFor(() => expect(offeredOptions()).toEqual(offered));
   }

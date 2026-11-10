@@ -3,7 +3,8 @@
 // a test says otherwise. A query of the width follows it, in the forms
 // Tailwind's breakpoints and the web UI ask it: "(width < 768px)",
 // "(width >= 48rem)", "(max-width: 640px)", "(min-width: 40rem)", a rem
-// being 16 pixels. Every other media query matches nothing.
+// being 16 pixels. The system asks for reduced motion only within
+// withoutMotion. Every other media query matches nothing.
 
 type Scheme = "light" | "dark";
 
@@ -12,6 +13,7 @@ const desktopWidth = 1280;
 
 let scheme: Scheme = "light";
 let width = desktopWidth;
+let reducedMotion = false;
 const lists = new Set<FakeMediaQueryList>();
 
 /** pixels is a length of a media query in CSS pixels. */
@@ -49,6 +51,9 @@ class FakeMediaQueryList extends EventTarget implements MediaQueryList {
     const asked = /prefers-color-scheme:\s*(light|dark)/.exec(this.media)?.[1];
     if (asked !== undefined) {
       return asked === scheme;
+    }
+    if (/prefers-reduced-motion:\s*reduce/.test(this.media)) {
+      return reducedMotion;
     }
     return widthMatches(this.media.trim()) ?? false;
   }
@@ -95,6 +100,20 @@ export function setViewportWidth(next: number): void {
   changeMedia(() => {
     width = next;
   });
+}
+
+/**
+ * withoutMotion runs fn as on a system that asks for reduced motion, such
+ * as closing toasts, which HeroUI then removes at once rather than after
+ * their exit animation.
+ */
+export function withoutMotion(fn: () => void): void {
+  reducedMotion = true;
+  try {
+    fn();
+  } finally {
+    reducedMotion = false;
+  }
 }
 
 /** changeMedia makes a change to the media, then tells every query whose answer it changed. */

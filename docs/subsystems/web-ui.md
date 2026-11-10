@@ -167,15 +167,18 @@ requests as a dropped connection does, and `api.drop()` every one, as when
 `koko web` stopped, until `api.drop(0)`. So a page test runs the web UI's own
 client ([the shell](web-shell.md#calls)), with its retry and
 `Idempotency-Key`. The setup ([`test/setup.ts`](../../web/src/test/setup.ts))
-puts each test back at `/` with an empty `localStorage`, the system in
-light mode, a desktop's viewport and `<html>` without a mode; gives the
+puts each test back at `/` with no toast left from the one before, an
+empty `localStorage`, the system in light mode, a desktop's viewport and
+`<html>` without a mode; gives the
 document `index.html`'s title and its pressable `<meta>`; and stands in for
 what jsdom lacks: `matchMedia`, whose colour scheme
 [`setSystemScheme`](../../web/src/test/media.ts) changes and whose width,
 1280 pixels unless `setViewportWidth` makes it a phone's, answers the width
 queries Tailwind's breakpoints and the web UI ask, in pixels or rems
 (`(width < 768px)`, `(width >= 48rem)`, `(max-width: 640px)`,
-`(min-width: 40rem)`), every other query matching nothing; a
+`(min-width: 40rem)`), and reduced motion only within `withoutMotion`,
+which the setup clears the toasts in so HeroUI removes them at once,
+every other query matching nothing; a
 `ResizeObserver` and an `IntersectionObserver` that observe nothing,
 `scrollIntoView` and `document.elementsFromPoint` that do nothing, since
 jsdom lays nothing out; and `inert`, which every supported browser has and
@@ -199,11 +202,16 @@ read the alerts and statuses that say something (React Aria keeps empty
 live regions), `topBarButton(name)` finds a button of the top bar, and
 `chooseInTopBar(menu, option)` chooses a language or a mode.
 [`test/controls.ts`](../../web/src/test/controls.ts) drives React Aria's
-controls as a person does, each checking the page with axe while its list
-is open: `chooseRowAction(menu, action)` a row menu, `chooseOption(select,
-option, offered?)` a select, and `searchAndChoose(choice, typed, option,
-offered?)` a searchable choice, which it focuses and types in, as the
-combobox opens only on real focus; [`test/clipboard.ts`](../../web/src/test/clipboard.ts)
+controls as a person does, each checking with axe while its list is open:
+`chooseRowAction(menu, action)` a row menu and `chooseOption(select,
+option, offered?)` a select, each the whole page, and
+`searchAndChoose(choice, typed, option, offered?)` a searchable choice,
+named or given, which it focuses and types in, as the combobox opens only
+on real focus. That one checks its list alone: while the list is open,
+React Aria hides the rest of the page from assistive technology, and axe
+would fault every control there as focusable yet hidden, though the focus
+stays in the field and Tab closes the list before it moves;
+[`test/clipboard.ts`](../../web/src/test/clipboard.ts)
 stands in for the clipboard. React Aria's controls answer
 `fireEvent.click` as a press.
 `await expectAccessible()` ([`test/axe.ts`](../../web/src/test/axe.ts)) runs

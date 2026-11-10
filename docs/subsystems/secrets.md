@@ -163,76 +163,97 @@ kept response, and the same key with another value is refused with
 
 ## The web UI's Secrets page
 
-> **Removed by #121, back in #123.** The move to HeroUI (ADR 0046) took
-> this page out; it comes back in #123. The behaviour rules below stand for
-> that ticket; the layout is [the web UI's design](../web-design.md), not
-> the Astryx layout this section describes. Its links to the page's file
-> and tests name what 6841eb2 held.
-
 [`SecretsPage`](../../web/src/pages/secret/SecretsPage.tsx), at `/secrets`,
 in the [web UI shell](web-shell.md), offers what the commands do, each
-action the same operation. It follows Astryx's `table-page` template (spec
-#108): a header with the title, the number of Secrets and Add Secret, a
-search field, and the table, which on a phone scrolls sideways in its own
-box with the Space and name pinned. It loads as a chunk of its own the
-first time it is visited (`lazyPage`), and each of its dialogs is one of
-the shell's [dialogs](web-shell.md#dialogs), a bottom sheet on a phone.
+action the same operation; what it looks like is [the web UI's
+design](../web-design.md#secrets-secrets). It loads as a chunk of its own
+the first time it is visited (`lazyPage`), and each of its dialogs is one
+of the shell's [dialogs](web-shell.md#parts).
 
-- **The list** is `secret.list` without a Space: the names of the Secrets
-  in every Space the caller can act in, by Space, then name, as `koko
-  secret ls` prints them. A Member sees only their Spaces' Secrets, since the
-  koko server answers no others. The search narrows the rows to those whose
-  `<space>/<name>` holds what was typed, whatever its case; it stays in the
-  URL's query (`?q=`), refined in place rather than as a new visit, so a
-  bookmark opens the list narrowed. Nothing matching says so, with a button
-  that clears the search.
-- **Revealing.** No value is fetched until a row's Show is clicked, which
-  calls `secret.show` and never asks first. The value shows in a dialog, in
-  the shell's `CopyLine` (Astryx's `Code`, its lines and spaces kept, and a
-  button that copies it, as a [line shown once](web-shell.md#shown-once)
-  has), and is forgotten when the dialog
-  closes (Hide, its close button or Escape), after 30 seconds, when the
-  Secret is written to, or when the page is left. A value `secret.show`
-  answers after a later reveal, a close, a write to its Secret or the
-  browser leaving the page never shows. It lives only in the page's state
-  ([shown once](web-shell.md#shown-once)), never in the URL or the
-  browser's storage, and the web front sends every API answer with
-  `Cache-Control: no-store` ([the web front](web-front.md#the-web-front)), so
-  the browser's cache holds none. A refused reveal says why in the dialog.
+- **The list** is `secret.list` without a Space: the Secrets in every
+  Space the caller can act in, as `koko secret ls` prints them, one panel
+  per Space under its name, "Personal Space" where it is one, and its
+  count. A Member sees only their Spaces' Secrets, since the koko server
+  answers no others. A row shows the Secret's name and when it changed
+  ("Changed 3 days ago"), then Copy, Show and its menu.
+- **The search and the Space select.** The search narrows the rows to those
+  whose `<space>/<name>` holds what was typed, whatever its case; the Space
+  select, a searchable choice with "All Spaces" first, shown when the
+  caller has two Spaces or more, narrows them to one Space. Both stay in
+  the URL's query (`?q=`, `?space=`), refined in place rather than as a new
+  visit, so a bookmark opens the page narrowed and a Host's page can link
+  to it narrowed to its Space. Nothing matching says so, with a button that
+  clears both; no Secret at all says what a Secret is for, with Add Secret.
+- **A value.** No value is fetched until a row's Copy or Show is clicked,
+  each of which calls `secret.show` and never asks first. Copy copies the
+  value and puts nothing on the page. Show opens the value in its row, in
+  an inset block in the code face, its lines and spaces kept, with a Copy of
+  its own, and becomes Hide. The value leaves the page after Hide, after 30
+  seconds, when its Secret is written to (from its row, or as a reload
+  finds it changed), when the page is left within the web UI and when the
+  browser leaves it (`pagehide`); a value `secret.show` answers after any
+  of those never shows. If the focus was in the value when it left, it goes
+  back to Show. A value lives only in the row's state ([shown
+  once](web-shell.md#shown-once)), never in the URL or the browser's
+  storage, and the web front sends every API answer with `Cache-Control:
+  no-store` ([the web front](web-front.md#the-web-front)), so the browser's
+  cache holds none. A refused Copy or Show says why in its row.
+- **Copying.** Copy on a row hands the clipboard a `ClipboardItem` as it is
+  clicked, which the value fills once `secret.show` answers, so a browser
+  that allows a copy only straight after a click, as Safari does, still
+  copies it ([Parts](web-shell.md#parts), `CopyButton`). A browser that
+  does not allow copying says, on a row, to show the value and select it,
+  and under a value shown, to select it.
 - **A value that is not UTF-8** shows as the standard base64 it came in, as
-  `koko secret show --json` prints it, marked so; Copy then copies the
-  base64. A value of UTF-8 bytes shows as text, exactly, a leading byte-order
-  mark and a trailing newline included.
-- **The writes.** Add Secret opens a dialog that takes a Space the caller
-  can act in (their Personal Space unless they choose another), a name and
-  a value typed into a field that keeps several lines, such as a private
-  key; the value goes as the base64 of its UTF-8 bytes. A row's overflow
-  menu ("Actions for" the Secret) offers Set value, Rename, Move and Delete:
-  set takes a new value, rename a new name, and move another Space, each in
-  a dialog of its own. None of these asks first, and an add or set retried
-  after a dropped connection carries the same `Idempotency-Key`
-  ([calls](web-shell.md#calls)). Delete asks first, in a dialog saying that
-  the Secret and its value are deleted permanently. A refusal shows its
-  code's message in the dialog that made the call.
+  `koko secret show --json` prints it, marked so; both Copy buttons then
+  copy the base64. A value of UTF-8 bytes shows as text, exactly, a leading
+  byte-order mark and a trailing newline included.
+- **The writes.** Add Secret opens a dialog that takes a name, a Space the
+  caller can act in (the Space the page is narrowed to, else their Personal
+  Space, unless they choose another, in a searchable choice) and a value
+  typed into a field that keeps several lines, such as a private key; the
+  value goes as the base64 of its UTF-8 bytes. A row's menu ("More actions
+  for" the Secret) offers Set a new value, Rename, Move and Delete: set
+  takes a new value, rename a new name, starting from the current one, and
+  move another Space the caller can act in, in a searchable choice, each in
+  a dialog of its own; Move is disabled when the caller has no other
+  Space. Each form checks its fields when it is submitted. None of these
+  asks first, and an add or set retried after a dropped connection carries
+  the same `Idempotency-Key` ([calls](web-shell.md#calls)). Delete asks
+  first, in a dialog saying that the Secret and its value are deleted
+  permanently. A refusal shows its code's message in the dialog that made
+  the call, the form kept as typed; a write that succeeded says so in a
+  toast, and the list loads again.
+- **On a Host's page.** A row is
+  [`SecretRow`](../../web/src/pages/secret/SecretRow.tsx), which holds its
+  value, its Copy, Show and menu and their dialogs, so the Secrets of a
+  Host's Space show there with the same behaviour (#124).
 
 ## Verifying
 
 - [`secrets.test.tsx`](../../web/src/pages/secret/secrets.test.tsx), Vitest
-  and React Testing Library, with axe on the page and on every dialog it
-  opens: a Member's list from `secret.list` without a Space, and an empty
-  list saying so; the search by Space or name, kept in the URL, from a
-  bookmark too, and nothing matching saying so; no `secret.show` until a
-  click; a click revealing the value in a dialog, never asking, and the
-  value gone after 30 seconds on a faked clock; Copy, Hide and the close
-  button; a refused reveal; a value answered too late, after a later
-  reveal, a close, the browser leaving the page or a set, never shown; the
-  value gone once the page is left within the web UI or the browser leaves
-  it; a value that is not UTF-8 shown and copied as base64; a browser that
-  cannot copy; add and set never asking, sending the typed value's UTF-8 as
-  base64, and resending the same `Idempotency-Key` after a drop; no value
-  in the URL or the browser's storage; rename and move never asking, move
-  offering the caller's other Spaces; a refusal shown in its dialog; delete
-  asking first and deleting only once confirmed.
+  and React Testing Library, with axe on the page and on every dialog and
+  menu it opens: a Member's panels from `secret.list` without a Space, with
+  each Secret's name and when it changed, an empty list saying so, and a
+  list that does not load, with Try again; the search by Space or name and
+  the Space select, kept in the URL in place, from a bookmark too, and
+  nothing matching saying so; no `secret.show` until a click; Copy calling
+  `secret.show` and copying without putting the value on the page; Show
+  opening the value in its row, never asking, its own Copy, and Hide; the
+  value gone after 30 seconds on a faked clock, with the focus back on
+  Show; a refused Show and Copy; a value answered too late, after the
+  browser left the page, a set from its row or a navigation, never shown;
+  the value gone once its Secret is written to, from its row or as a reload
+  finds it; the value gone once the page is left within the web UI or the
+  browser leaves it; a value that is not UTF-8 shown and copied as base64
+  by both Copy buttons; a browser that cannot copy, from a row and from a
+  value shown; Add Secret and Set a new value never asking, sending the
+  typed value's UTF-8 as base64, and resending the same `Idempotency-Key`
+  after a drop; Add Secret taking the Space the page is narrowed to, and
+  checking its fields before it sends; no value in the URL or the browser's
+  storage; Rename and Move never asking, Move offering the caller's other
+  Spaces; a refusal shown in its dialog; Delete asking first and deleting
+  only once confirmed.
 - [`secret_web_test.go`](../../internal/client/cli/secret_web_test.go) (S1,
   against `koko web`): `secret.show` over `web@koko`, answered or refused,
   carries `Cache-Control: no-store`.

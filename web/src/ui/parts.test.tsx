@@ -77,6 +77,41 @@ test("Copy in a browser that does not allow it says to select the text and copy 
   );
 });
 
+test("Copy of a value fetched on the click hands the clipboard a ClipboardItem at once, so Safari keeps the click's permission", async () => {
+  const items: ClipboardItem[] = [];
+  const write = vi.fn((written: ClipboardItem[]) => {
+    items.push(...written);
+    return Promise.resolve();
+  });
+  Object.defineProperty(navigator, "clipboard", { value: { write, writeText: vi.fn() }, configurable: true });
+  class FakeClipboardItem {
+    readonly types: string[];
+    readonly #data: Record<string, Promise<Blob>>;
+    constructor(data: Record<string, Promise<Blob>>) {
+      this.#data = data;
+      this.types = Object.keys(data);
+    }
+    getType(type: string): Promise<Blob> {
+      return this.#data[type] ?? Promise.reject(new Error(type));
+    }
+  }
+  vi.stubGlobal("ClipboardItem", FakeClipboardItem);
+  onTestFinished(() => {
+    Reflect.deleteProperty(navigator, "clipboard");
+    vi.unstubAllGlobals();
+  });
+  let answer: (value: string) => void = () => undefined;
+  renderIn(<CopyButton label="Copy the value of ops/db" value={() => new Promise((resolve) => (answer = resolve))} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Copy the value of ops/db" }));
+
+  // The clipboard has the item before the value has come.
+  await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+  act(() => answer("s3cret"));
+  expect(await (await items[0]?.getType("text/plain"))?.text()).toBe("s3cret");
+  expect(await screen.findByText("Copied")).toBeDefined();
+});
+
 test("a command line shows the command after a $ that Copy leaves out", async () => {
   const writeText = clipboard();
   renderIn(<CommandLine command="ssh web1" label="SSH command" />);

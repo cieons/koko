@@ -70,8 +70,7 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   ([Notices](#notices)).
 - **A path with no page** shows "Page not found" in the frame, with one
   sentence and a link to the first place; so does a path only the Owner may
-  open, to a Member. Until the first page is back (#122), `/` and every
-  path show it.
+  open, to a Member.
 - **Until `user.current` answers** the main region shows Loading; if it
   fails, why, with Try again ([States](#the-states-every-screen-has)).
 - **The icon** of the browser's tab is `web/public/favicon.svg`, which
@@ -176,6 +175,8 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   [`formatDate`](../../web/src/shell/format.ts) shows a date as `YYYY-MM-DD`
   in both languages: a calendar date as stored, and a time the API returns
   (RFC 3339 in UTC) as its UTC date, the first ten characters the CLI prints.
+  `formatAgo` shows how long ago such a time was, in the language ("3 days
+  ago", "3天前"), as a Secret's "Changed" does.
 - **API errors** show their code's message (`errorMessage`, `Refusal`);
   the server's own English message is not shown.
 
@@ -198,8 +199,8 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   An answer to an earlier request never shows as the current one's; a failed
   reload keeps the last answer to the same request beside the error. `reload`
   shows what a write changed. The one read a person asks for by a click,
-  revealing a Secret's value (`secret.show`), calls `call` on the click
-  instead, and its page shows only the latest answer
+  showing or copying a Secret's value (`secret.show`), calls `call` on the
+  click instead, and its page shows only the latest answer
   ([the Secrets page](secrets.md#the-web-uis-secrets-page)).
 - **Writes** go through `useWrite`, one per form: submitting the same request
   again after it failed reuses its key, and a write that succeeded, or a
@@ -247,7 +248,7 @@ logic:
 | `Page` | `Page.tsx` | a page's head: its title, an optional line, its actions, a detail page's breadcrumb; it names the browser's tab (`useDocumentTitle`) |
 | `Sheet` | `Page.tsx` | a panel, named by its title as a region; `list` lays a list on it edge to edge |
 | `Form` | `Form.tsx` | a form that validates when it is submitted ([States](#the-states-every-screen-has)) |
-| `FormDialog` | `FormDialog.tsx` | a short form of one to three fields in HeroUI's `Modal`, open while the page renders it: its fields, the refusal in place (`error`), Cancel, and the button that acts (`submit`), pending while the call runs (`pending`); a click beside it does not close it |
+| `FormDialog` | `FormDialog.tsx` | a short form of one to three fields in HeroUI's `Modal`, open while the page renders it: its fields, the refusal in place (`error`), Cancel, and the button that acts (`submit`), pending while the call runs (`pending`); a click beside it does not close it; `size="md"` for a field of several lines |
 | `SidePanel` | `SidePanel.tsx` | HeroUI's `Drawer`, open while the page renders it: from the right on a desktop (`wide` for the Host form), from the bottom on a phone, with a handle; with `onSubmit` it is a `Form`, and a click beside it does not close it |
 | `ConfirmDialog` | `ConfirmDialog.tsx` | the confirmation ([Confirmations](#confirmations)) |
 | `Field` | `fields.tsx` | a text field or area, its label above, help under it and its error in place; `code` sets a machine value in the code face, with no spelling or capital corrected |
@@ -256,7 +257,7 @@ logic:
 | `Segments` | `fields.tsx` | HeroUI's `ToggleButtonGroup`, a choice among two to four, all in view |
 | `DateInput` | `DateInput.tsx` | HeroUI's `DatePicker`, a calendar date as `YYYY-MM-DD`; a module the forms that use it import alone, so the calendar is not in the first load |
 | `RowMenu` | `RowMenu.tsx` | HeroUI's `Dropdown` behind an icon button named for it, its danger actions last after a separator |
-| `CopyButton` | `copy.tsx` | Copy: "Copied" for 1.6 s, announced politely; a browser that does not allow it says to select the text |
+| `CopyButton` | `copy.tsx` | Copy: "Copied" for 1.6 s, announced politely; a browser that does not allow it says to select the text. A value fetched on the click, as a Secret's row copies one, keeps the button pending until it comes and goes to the clipboard as a `ClipboardItem` at once (`writeClipboard`), since Safari refuses a copy made after a wait; a failure to fetch it goes to `onError` |
 | `CommandLine` | `copy.tsx` | a command to copy: a `$`, which Copy leaves out, the command in the code face, and Copy, in an inset block named for it |
 | `ShownOnceLine` | `ShownOnceLine.tsx` | what a page shows once ([Shown once](#shown-once)) |
 | `StateMark` | `StateMark.tsx` | a Host's state as a mark of its own shape and its word |
@@ -337,8 +338,8 @@ something (`alerts()`, `findAlert()`, `statuses()` in
 
 ## The page inventory
 
-Every action each page offered before its redesign, with the
-call it makes and who may take it. A redesign may move an action, but each
+Every action each page offered before its redesign, and each its
+redesign adds, with the call it makes and who may take it. A redesign may move an action, but each
 stays possible by the same call with the same request, and each page's
 test holds one test per action (spec #108: "Patterns, not a re-skin").
 "In the Space" is anyone who can act in the record's Space: the Owner, and
@@ -409,6 +410,7 @@ HeroUI (#121) took the pages out; each comes back with its ticket (#122 to
 | --- | --- | --- |
 | List the Secrets by Space | `secret.list` (and `space.list`) | anyone: the Secrets of their Spaces |
 | Show a value, then copy it or hide it | `secret.show` | in the Space |
+| Copy a value without showing it | `secret.show` | in the Space |
 | Add: `space`, `name`, a value of several lines | `secret.add` | in the Space |
 | Set a new value | `secret.set` | in the Space |
 | Rename | `secret.rename` | in the Space |
@@ -501,7 +503,9 @@ HeroUI (#121) took the pages out; each comes back with its ticket (#122 to
   the case, taking no value outside its list, and with `newValues` taking
   one; `Segments`; a row menu with its danger action last.
 - [`parts.test.tsx`](../../web/src/ui/parts.test.tsx): a page's head and
-  the tab's title; Copy, "Copied" for 1.6 s and its failure; a command
+  the tab's title; Copy, "Copied" for 1.6 s and its failure; Copy of a value
+  fetched on the click, handing the clipboard a `ClipboardItem` before the
+  value comes; a command
   line; the state marks; a toast; the date field typed and picked.
 - [`ShownOnceLine.test.tsx`](../../web/src/ui/ShownOnceLine.test.tsx): a
   line valid for 7 days counting down in days and hours, then in minutes
@@ -509,7 +513,7 @@ HeroUI (#121) took the pages out; each comes back with its ticket (#122 to
 - [`catalogues.test.ts`](../../web/src/i18n/catalogues.test.ts): the
   completeness test above.
 - [`format.test.ts`](../../web/src/shell/format.test.ts): dates as
-  `YYYY-MM-DD`; the time left in minutes and seconds, and in days and hours
+  `YYYY-MM-DD`; how long ago a time was, in either language; the time left in minutes and seconds, and in days and hours
   in either language.
 - [`App.test.tsx`](../../web/src/App.test.tsx): the web UI opens on the
   frame.

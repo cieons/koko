@@ -8,14 +8,48 @@ import { useT } from "../shell/i18n";
 export const copiedFor = 1600;
 
 /**
+ * writeClipboard puts text on the clipboard. Text still being fetched, as a
+ * Secret's value is on Copy, goes in a ClipboardItem where the browser has
+ * one, so the click's permission to copy holds while it comes: Safari
+ * refuses a writeText made after a wait.
+ */
+export async function writeClipboard(text: string | Promise<string>): Promise<void> {
+  if (typeof text !== "string" && typeof ClipboardItem === "function" && "write" in navigator.clipboard) {
+    const blob = text.then((t) => new Blob([t], { type: "text/plain" }));
+    await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+    return;
+  }
+  await navigator.clipboard.writeText(await text);
+}
+
+/** CopyButtonProps are what Copy copies, and how it looks. */
+export interface CopyButtonProps {
+  /**
+   * value is the text to copy, or a function that fetches it on the click,
+   * as Copy on a Secret's row calls secret.show; what that function throws
+   * goes to onError.
+   */
+  value: string | (() => Promise<string>);
+  /** label names the button where "Copy" alone does not say what it copies, such as "Copy the value of ops/db". */
+  label?: string;
+  /** failed is what a browser that does not allow copying shows; by default, to select the text and copy it. */
+  failed?: string;
+  onError?: (error: unknown) => void;
+  variant?: "primary" | "secondary" | "tertiary";
+  size?: "sm" | "md";
+}
+
+/**
  * CopyButton copies value to the clipboard (docs/web-design.md,
  * "Components"). It reads "Copied" for 1.6 s after, announced politely; a
  * browser without the clipboard API, or one that refuses it, says to select
- * the text and copy it by hand instead.
+ * the text and copy it by hand instead. A value fetched on the click shows
+ * the button pending until it has come.
  */
-export function CopyButton({ value, variant = "secondary" }: { value: string; variant?: "primary" | "secondary" }) {
+export function CopyButton({ value, label, failed, onError, variant = "secondary", size = "md" }: CopyButtonProps) {
   const t = useT();
   const [outcome, setOutcome] = useState<"copied" | "failed">();
+  const [pending, setPending] = useState(false);
   useEffect(() => {
     if (outcome !== "copied") {
       return;
@@ -24,8 +58,21 @@ export function CopyButton({ value, variant = "secondary" }: { value: string; va
     return () => clearTimeout(timer);
   }, [outcome]);
   const copy = async () => {
+    setOutcome(undefined);
+    const text = typeof value === "string" ? value : value();
+    const written = writeClipboard(text);
+    setPending(typeof text !== "string");
     try {
-      await navigator.clipboard.writeText(value);
+      await text;
+    } catch (error) {
+      written.catch(() => undefined); // the value failed, not the clipboard
+      onError?.(error);
+      return;
+    } finally {
+      setPending(false);
+    }
+    try {
+      await written;
       setOutcome("copied");
     } catch {
       setOutcome("failed");
@@ -34,13 +81,20 @@ export function CopyButton({ value, variant = "secondary" }: { value: string; va
   const copied = outcome === "copied";
   return (
     <>
-      <Button variant={variant} onPress={() => void copy()} className="shrink-0">
+      <Button
+        variant={variant}
+        size={size}
+        aria-label={label}
+        isPending={pending}
+        onPress={() => void copy()}
+        className="shrink-0"
+      >
         {copied ? <Check aria-hidden className="size-4" /> : <Copy aria-hidden className="size-4" />}
         <span aria-live="polite">{copied ? t("shell.copied") : t("shell.copy")}</span>
       </Button>
       {outcome === "failed" && (
         <p role="status" className="t-label basis-full">
-          {t("shell.copyFailed")}
+          {failed ?? t("shell.copyFailed")}
         </p>
       )}
     </>

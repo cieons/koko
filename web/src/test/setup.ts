@@ -3,7 +3,7 @@ import { afterEach, expect } from "vitest";
 
 import indexHTML from "../../index.html?raw";
 import { installCspWatch, takeCspViolations } from "./csp";
-import { installMatchMedia, resetMedia } from "./media";
+import { installMatchMedia, resetMedia, withoutMotion } from "./media";
 
 // The document's head is index.html's: its title, and the <meta> whose id
 // keeps React Aria's usePress from adding a <style> element, which the CSP
@@ -68,11 +68,15 @@ if (!("inert" in HTMLElement.prototype)) {
 // CSP watch would take for the page's.
 document.elementsFromPoint ??= () => [];
 
-// Each test starts from an empty document, at /, with nothing the browser
-// remembers, the system in light mode and a desktop's viewport; and ends
-// with no CSP violation.
-afterEach(() => {
+// Each test starts from an empty document, at /, with no toast left from
+// the one before, nothing the browser remembers, the system in light mode
+// and a desktop's viewport; and ends with no CSP violation.
+afterEach(async () => {
   cleanup();
+  // Imported here, not above: React Aria reads whether the document has
+  // inert as it loads, so it must load after the stand-in above.
+  const { toast } = await import("@heroui/react");
+  withoutMotion(() => toast.clear());
   const violations = takeCspViolations();
   window.history.replaceState(null, "", "/");
   localStorage.clear();
