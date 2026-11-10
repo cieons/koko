@@ -138,9 +138,14 @@ Mux declared on time looked early to the test, and CI's macOS job on `main`
 went red at 71971a9, which touched nothing near the probe. The Device Mux's
 test also left its real wake and route watches on, and a probe either
 sends at once gets less time than `DeviceDead`, so the moment it counts
-from can be another one still.
-**Seen:** 1 (2026-11-09)
-**Evidence:** c152887 (#54); check run 42542720470; #100
+from can be another one still. `TestASilentConnectionIsDeadAfterDead`
+counted the probes that reached the peer after it shut the path, which it
+could shut while a probe's answer was on its way; `liveness.Watch` sends
+no probe while one is unanswered, so none came after, and a local
+`make check` failed.
+**Seen:** 2 (2026-11-09, 2026-11-10)
+**Evidence:** c152887 (#54); check run 42542720470; #100; the liveness
+test's fix of 2026-11-10
 
 ## Moved to the code standards
 

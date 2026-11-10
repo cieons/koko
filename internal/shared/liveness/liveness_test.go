@@ -34,6 +34,11 @@ type gate struct {
 	shut chan struct{}
 	once sync.Once
 	end  <-chan struct{}
+
+	mu sync.Mutex
+	// passed is when bytes last passed the gate, the moment Watch counts
+	// its silence from.
+	passed time.Time
 }
 
 func (g *gate) Read(b []byte) (int, error) {
@@ -46,7 +51,19 @@ func (g *gate) Read(b []byte) (int, error) {
 		return 0, net.ErrClosed
 	default:
 	}
+	if n > 0 {
+		g.mu.Lock()
+		g.passed = time.Now()
+		g.mu.Unlock()
+	}
 	return n, err
+}
+
+// lastPassed returns when bytes last passed the gate.
+func (g *gate) lastPassed() time.Time {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.passed
 }
 
 func (g *gate) close() { g.once.Do(func() { close(g.shut) }) }
@@ -163,7 +180,9 @@ func TestAQuietConnectionThatAnswersLives(t *testing.T) {
 }
 
 // A connection on which nothing arrives any more is declared dead after
-// dead without a byte, having been probed after probe.
+// dead without a byte, having been probed after probe. Both are timed from
+// the last byte that passed the gate, as Watch times them: the gate may
+// shut while a probe is unanswered, and Watch sends no other then.
 func TestASilentConnectionIsDeadAfterDead(t *testing.T) {
 	const probe, dead = 50 * time.Millisecond, 200 * time.Millisecond
 	p, g, result := watched(t, probe, dead, nil)
@@ -173,21 +192,18 @@ func TestASilentConnectionIsDeadAfterDead(t *testing.T) {
 		}
 	}
 	g.close()
-	silent := time.Now()
 	var err error
 	select {
 	case err = <-result:
 	case <-time.After(5 * time.Second):
 		t.Fatalf("Watch did not declare a silent connection dead within 5 s")
 	}
-	quiet := time.Since(silent)
+	silent := g.lastPassed()
+	if quiet := time.Since(silent); quiet < dead {
+		t.Errorf("declared dead %v after the last byte passed the gate, want at least %v", quiet, dead)
+	}
 	if e, ok := errors.AsType[*liveness.DeadError](err); !ok || e.Quiet < dead {
 		t.Errorf("Watch returned %v, want a *DeadError of at least %v", err, dead)
-	}
-	// The last answer came at most a probe's wait, and its round trip,
-	// before the gate shut.
-	if quiet < dead-2*probe {
-		t.Errorf("declared dead %v after the gate shut, want at least %v", quiet, dead-2*probe)
 	}
 	var after int
 	for _, at := range p.probed() {
