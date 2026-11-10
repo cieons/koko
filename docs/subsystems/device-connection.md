@@ -352,7 +352,11 @@ closes their Device Connections
 ([`transport.Server.CloseDeviceSessions`](../../internal/server/transport/transport.go)):
 each one once the calls in flight on it have answered (so a device that
 revoked itself gets its answer), at most 5 s later, and any connection of
-theirs that authenticated while the revocation committed is refused. Just
+theirs that authenticated while the revocation committed is refused. A call
+in flight gets its own result when it looked up its Device Session before
+the revocation committed, and `revoked` otherwise; either answer reaches the
+command through the Device Mux ([the Device Mux](device-mux.md#state-and-exit))
+and the browser through `koko web` ([the end](web-front.md#koko-web)). Just
 before it closes one, it sends the **revocation disconnect**, the SSH
 global request [`wire.RequestRevoked`](../../internal/shared/wire/wire.go)
 (`revoked@koko`, no payload, no reply wanted), since SSH carries no reason

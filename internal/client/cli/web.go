@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/shared/api"
@@ -106,7 +107,7 @@ func web(ctx context.Context, in *Input, ready func(webJSON) error) error {
 		waitForOpener := openBrowser(ctx, in.inv, res.Address)
 		defer waitForOpener()
 	}
-	f := forwarder{conn: conn, payload: wire.WebPayload(port), stderr: in.inv.Stderr}
+	f := forwarder{conn: conn, payload: wire.WebPayload(port), stderr: in.inv.Stderr, passOn: in.runner.Timings.Resolve().PassOn}
 	err = f.serve(ctx, ln)
 	if lost, ok := errors.AsType[*connectionEnded](err); ok {
 		return webEnded(in, lost.err)
@@ -182,6 +183,10 @@ type forwarder struct {
 	conn    serverconn.Conn
 	payload []byte
 	stderr  io.Writer
+	// passOn bounds how long, once the connection to the koko server has
+	// ended, the browser connections may take to pass on what it sent
+	// before (timing.PassOn).
+	passOn time.Duration
 }
 
 // connectionEnded is serve's error when the connection to the koko server
@@ -196,7 +201,9 @@ func (e *connectionEnded) Error() string {
 
 // serve forwards each browser connection on ln. It returns nil once ctx
 // ends, and a *connectionEnded when the connection to the koko server ends
-// first. Either way it closes every browser connection before it returns.
+// first. Either way it closes every browser connection before it returns:
+// at once when ctx ends, and once each has passed on what the koko server
+// sent before, within passOn in all, when the connection ends.
 func (f forwarder) serve(ctx context.Context, ln net.Listener) error {
 	lost := make(chan error, 1)
 	go func() { lost <- f.conn.Wait() }()
@@ -227,17 +234,37 @@ func (f forwarder) serve(ctx context.Context, ln net.Listener) error {
 		}
 	}()
 
-	var err error
+	var (
+		err   error
+		ended bool
+	)
 	select {
 	case <-ctx.Done():
 	case waitErr := <-lost:
-		err = &connectionEnded{err: waitErr}
+		err, ended = &connectionEnded{err: waitErr}, true
 	case <-accepting:
 		err = fmt.Errorf("accept a browser connection: %w", acceptErr)
 	}
 	_ = ln.Close()
 	<-accepting
 	// Nothing accepts any more, so the set of browser connections is final.
+	if ended {
+		// Each channel ends with the connection, once it has given up what
+		// the koko server sent before, such as the answer to a call in
+		// flight when the Device Session was Revoked: the browsers get it
+		// first, unless one does not read it within passOn, or koko web is
+		// interrupted meanwhile.
+		piped := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(piped)
+		}()
+		select {
+		case <-piped:
+		case <-time.After(f.passOn):
+		case <-ctx.Done():
+		}
+	}
 	mu.Lock()
 	for c := range browsers {
 		_ = c.Close()

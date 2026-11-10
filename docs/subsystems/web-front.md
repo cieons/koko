@@ -47,7 +47,11 @@ irreversible tier: it prints a credential, its token.
    Device Mux from idling out, with or without a browser connection open.
 6. **The end** ([`webEnded`](../../internal/client/cli/web.go)). It runs
    until interrupted (exit 0), and it closes every browser connection before
-   it exits. Otherwise it ends when its connection to the koko server does:
+   it exits. Otherwise it ends when its connection to the koko server does,
+   once each browser connection has passed on what the koko server sent on
+   its channel before, such as the answer to a call in flight when the
+   Device Session was Revoked, or `timing.PassOn` (5 s) has passed, for a
+   browser that does not read ([`serve`](../../internal/client/cli/web.go)):
    - `koko disconnect` stopped the Device Mux: a stop, as Ctrl-C is, so it
      says `koko: koko disconnect stopped koko web.` on stderr and exits 0;
      `koko disconnect` counts it among the commands it ended.
@@ -303,6 +307,11 @@ and user. It is per OS ([rule 13](code-layout.md#rules-for-working-in-parallel))
   refused; the token and the cookie absent from stderr and every log;
   `koko disconnect` ending `koko web` and counting it; and, in
   `realTime`, a running `koko web` keeping the Device Mux from idling out.
+- [`web_forward_test.go`](../../internal/client/cli/web_forward_test.go),
+  `koko web`'s forwarder over a fake connection to the koko server that
+  ends, revoked: a 16 MB answer the browser reads only after the end
+  reaching it in full, and a browser that reads nothing keeping the
+  forwarder no longer than `timing.PassOn`.
 - `web.start`'s rows in the [access matrix](access.md), `device_only` for a
   Sign-in among them, and its refusal of a Revoked Device Session in
   [`revoked_test.go`](../../internal/server/revoked_test.go).

@@ -13,6 +13,7 @@ moves here.
 | A fix reaches every sibling. | Grep for the same pattern across subcommands, API handlers, transports and access modes, and fix each one in the same change. |
 | A failed read or parse means "unknown". | It never means empty, absent or equal. A file that doesn't parse is copied aside before koko writes over it. |
 | Secrets stay out of output. | Secrets, the koko key, a device's private key, Join Codes, and `koko web` tokens and cookies appear in no CLI output, log line, error message or test fixture, except from a command whose purpose is to show one. |
+| A channel or connection closes only once every request on it has its answer. | What passes calls on, such as the in-process Host, the Gateway, the Device Mux and `koko web`'s forwarder, closes its side only once it has passed on what the other side sent before its end, bounded for a reader that does not read. An answer sent after the close is dropped, and the side that asked sees `EOF`; merged work did this on three separate days ([LESSONS.md](../LESSONS.md#moved-to-the-code-standards)). |
 | koko writes only files it owns. | On a user's machine koko writes its own files (an include target, its skill file, its state) and joins them to the user's files with one include line. The user's own content stays byte-for-byte. |
 
 ## Tests
