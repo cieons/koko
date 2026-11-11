@@ -46,6 +46,8 @@ export default {
   "shell.via.device": "经由 {device} 上的 koko web",
   "shell.via.signin": "通过 {client} 登录",
   "shell.via.local": "位于 koko 服务器本机",
+  "shell.browser.on": "{system} 上的 {browser}",
+  "shell.browser.unknown": "浏览器",
   "shell.loading": "正在加载",
   "shell.pageNotLoaded": "无法加载此页面，请刷新浏览器页面后重试。",
   "shell.notFound.title": "页面不存在",

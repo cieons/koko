@@ -2,8 +2,8 @@ package signin
 
 import "strings"
 
-// A browser or a system, as a client label names it, found in a User-Agent
-// by the first of its marks that it holds.
+// A browser or a system, as a Sign-in names it, found in a User-Agent by the
+// first of its marks that it holds.
 type uaName struct {
 	name  string
 	marks []string
@@ -31,18 +31,10 @@ var systems = []uaName{
 	{"Linux", []string{"Linux"}},
 }
 
-// clientLabel is the short label of the browser a User-Agent names, such as
-// "Safari on iPhone" or "Firefox", or "Browser" when it names none of the
-// common ones.
-func clientLabel(userAgent string) string {
-	browser, system := find(browsers, userAgent), find(systems, userAgent)
-	switch {
-	case browser == "":
-		return "Browser"
-	case system == "":
-		return browser
-	}
-	return browser + " on " + system
+// clientOf is the browser and the system a User-Agent names, such as
+// "Safari" and "iPhone", each "" when it names none of the common ones.
+func clientOf(userAgent string) (browser, system string) {
+	return find(browsers, userAgent), find(systems, userAgent)
 }
 
 func find(names []uaName, userAgent string) string {

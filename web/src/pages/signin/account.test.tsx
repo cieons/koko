@@ -5,9 +5,9 @@ import { AuthPassword, AuthSignOut, SignInList, SignInRevoke } from "../../api/s
 import { type User, UserCurrent } from "../../api/user";
 import { expectAccessible } from "../../test/axe";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
-import { actAs, alerts, renderAt, topBarButton } from "../../test/pages";
+import { actAs, alerts, preferLanguages, renderAt, topBarButton } from "../../test/pages";
 import { alice, bob, serve, world } from "../space/access.fixture";
-import { serveSignIns, signIns, type SignIns } from "./signins.fixture";
+import { firefox, serveSignIns, signIn, signIns, type SignIns } from "./signins.fixture";
 
 // Account's Password and Browser Sign-ins, and Sign out, against a fake
 // koko server: for a browser signed in with a Password, through koko web,
@@ -16,24 +16,27 @@ import { serveSignIns, signIns, type SignIns } from "./signins.fixture";
 /** password is a new Password that keeps the rule. */
 const password = "correct horse battery staple";
 
-/** atAccount renders Account for bob signed in from Firefox on Linux (signin_bob_1), and waits for his Sign-ins. */
-async function atAccount(s: SignIns = signIns(), caller: User = bob): Promise<FakeApi> {
+/**
+ * atAccount renders Account for bob signed in from Firefox on Linux
+ * (signin_bob_1), and waits for his Sign-ins in the panel named region.
+ */
+async function atAccount(s: SignIns = signIns(), caller: User = bob, region = "Browser Sign-ins"): Promise<FakeApi> {
   const api = fakeApi();
   api.on(UserCurrent, () => ({
     user: caller,
-    signin: { id: `signin_${caller.name}_1`, client: "Firefox on Linux", started_at: "", expires_at: "" },
+    signin: { id: `signin_${caller.name}_1`, client: "Firefox on Linux", ...firefox, started_at: "", expires_at: "" },
   }));
   serve(api, world(), caller);
   serveSignIns(api, s, caller);
   renderAt("/account");
-  await waitFor(() => expect(signins().length).toBeGreaterThan(0));
+  await waitFor(() => expect(signins(region).length).toBeGreaterThan(0));
   return api;
 }
 
-/** signins are the rows of the Browser Sign-ins panel, as their text. */
-function signins(): string[] {
-  const region = screen.queryByRole("region", { name: "Browser Sign-ins" });
-  return region ? within(region).queryAllByRole("listitem").map((i) => i.textContent ?? "") : [];
+/** signins are the rows of the Browser Sign-ins panel named region, as their text. */
+function signins(region = "Browser Sign-ins"): string[] {
+  const panel = screen.queryByRole("region", { name: region });
+  return panel ? within(panel).queryAllByRole("listitem").map((i) => i.textContent ?? "") : [];
 }
 
 function field(name: string): HTMLInputElement {
@@ -230,6 +233,38 @@ test("a User signed in from no browser is told so", async () => {
   renderAt("/account");
 
   expect(await screen.findByText("No browser is signed in as bob.")).toBeDefined();
+});
+
+test("a browser koko does not recognise is named Browser", async () => {
+  const s = signIns();
+  s.signins.push(signIn("bob", 4, {}));
+  await atAccount(s);
+
+  expect(signins()[2]).toMatch(/^Browser203\.0\.113\.7 · /);
+  expect(screen.getByRole("button", { name: "Revoke the Sign-in from Browser" })).toBeDefined();
+});
+
+test("in Chinese each browser is named in Chinese, on Account, in Browser Sign-ins, Revoke and the account panel", async () => {
+  preferLanguages("zh-CN");
+  const s = signIns();
+  s.signins.push(signIn("bob", 4, {}), signIn("bob", 5, { browser: "Firefox" }));
+  await atAccount(s, bob, "浏览器登录会话");
+
+  expect(screen.getByText("当前浏览器已凭密码通过 Linux 上的 Firefox 登录。")).toBeDefined();
+  expect(signins("浏览器登录会话").map((row) => row.split("203.0.113.7")[0])).toEqual([
+    "Linux 上的 Firefox当前浏览器",
+    "iPhone 上的 Safari",
+    "浏览器",
+    "Firefox",
+  ]);
+  fireEvent.click(screen.getByRole("button", { name: "吊销来自 iPhone 上的 Safari 的登录会话" }));
+  const dialog = await screen.findByRole("alertdialog", { name: "吊销来自 iPhone 上的 Safari 的登录会话" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "吊销" }));
+  expect(await screen.findByText("来自 iPhone 上的 Safari 的登录会话已吊销。")).toBeDefined();
+
+  fireEvent.click(topBarButton("账户：bob"));
+  const panel = await screen.findByRole("dialog", { name: "账户：bob" });
+  expect(within(panel).getByText("通过 Linux 上的 Firefox 登录")).toBeDefined();
 });
 
 // Sign out.

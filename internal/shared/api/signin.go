@@ -43,9 +43,16 @@ type SignIn struct {
 	ID string `json:"id"`
 	// User is the name of the User the browser is signed in as.
 	User string `json:"user"`
-	// Client is a short label of the browser, made from its User-Agent at
-	// sign-in, such as "Safari on iPhone", or "Browser".
+	// Client is the browser's English label, made of Browser and System
+	// by ClientLabel, such as "Safari on iPhone", or "Browser"; the CLI
+	// prints it.
 	Client string `json:"client"`
+	// Browser is the browser its User-Agent named at sign-in, such as
+	// "Safari"; left out when it named none koko recognises.
+	Browser string `json:"browser,omitempty"`
+	// System is the system its User-Agent named at sign-in, such as
+	// "iPhone"; left out when it named none koko recognises.
+	System string `json:"system,omitempty"`
 	// Address is the client's address when the Sign-in was last used, as
 	// the reverse proxy passed it on.
 	Address string `json:"address"`
@@ -68,10 +75,26 @@ type SignIn struct {
 // CurrentSignIn is the Sign-in a call came on, as user.current names it.
 type CurrentSignIn struct {
 	ID string `json:"id"`
-	// Client is the browser's label, such as "Safari on iPhone".
+	// Client, Browser and System name the browser, as SignIn's do.
 	Client    string `json:"client"`
+	Browser   string `json:"browser,omitempty"`
+	System    string `json:"system,omitempty"`
 	StartedAt string `json:"started_at"`
 	ExpiresAt string `json:"expires_at"`
+}
+
+// ClientLabel is a Sign-in's English label of its browser and system:
+// "Safari on iPhone", the browser alone without a system, or "Browser"
+// without a browser koko recognises. The web UI makes the same label in
+// the reader's language.
+func ClientLabel(browser, system string) string {
+	switch {
+	case browser == "":
+		return "Browser"
+	case system == "":
+		return browser
+	}
+	return browser + " on " + system
 }
 
 // PasswordLinkRequest issues a Password Link for the User Name names.

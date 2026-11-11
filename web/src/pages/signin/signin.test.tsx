@@ -24,7 +24,7 @@ const password = "correct horse battery staple";
 function signedIn(api: FakeApi): void {
   api.on(UserCurrent, () => ({
     user: bob,
-    signin: { id: "signin_1", client: "Firefox on Linux", started_at: "", expires_at: "" },
+    signin: { id: "signin_1", client: "Firefox on Linux", browser: "Firefox", system: "Linux", started_at: "", expires_at: "" },
   }));
   serve(api, world(), bob);
 }

@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { type SignIn, SignInList, SignInRevoke } from "../../api/signin";
 import type { MessageKey } from "../../i18n/catalogues";
+import { browserName } from "../../shell/browserName";
 import { type Caller, useCaller } from "../../shell/caller";
 import { useRead, useWrite } from "../../shell/data";
 import { formatAgo, formatDate } from "../../shell/format";
@@ -71,7 +72,7 @@ export function SignIns({ user, level, changes = 0, className = "" }: SignInsPro
                   <li key={s.id} className="flex items-center justify-between gap-4 border-t border-line py-3">
                     <div className="min-w-0">
                       <p className="flex flex-wrap items-center gap-2">
-                        <span className={`t-name ${live ? "" : "text-muted line-through"}`}>{s.client}</span>
+                        <span className={`t-name ${live ? "" : "text-muted line-through"}`}>{browserName(t, s)}</span>
                         {s.id === caller.signin?.id && (
                           <Chip color="accent" variant="soft">
                             {t("signin.signins.here")}
@@ -93,7 +94,7 @@ export function SignIns({ user, level, changes = 0, className = "" }: SignInsPro
                     {live && (
                       <Button
                         variant="danger-soft"
-                        aria-label={t("signin.revoke.title", { client: s.client })}
+                        aria-label={t("signin.revoke.title", { client: browserName(t, s) })}
                         onPress={() => setRevoking(s)}
                       >
                         {t("signin.revoke")}
@@ -184,7 +185,7 @@ function RevokeSignIn({
   const here = signin.id === caller.signin?.id;
   return (
     <ConfirmDialog
-      title={t("signin.revoke.title", { client: signin.client })}
+      title={t("signin.revoke.title", { client: browserName(t, signin) })}
       consequence={revokeConsequence(t, signin, caller)}
       confirm={t("signin.revoke")}
       pending={revoke.pending}
@@ -197,7 +198,7 @@ function RevokeSignIn({
           } else if (here) {
             navigate(signInPage, { replace: true });
           } else {
-            notify(t("signin.revokedDone", { client: signin.client }));
+            notify(t("signin.revokedDone", { client: browserName(t, signin) }));
             onDone();
           }
         })

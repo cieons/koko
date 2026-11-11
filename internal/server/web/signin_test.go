@@ -140,8 +140,14 @@ func TestAPasswordLinkSetsThePasswordAndSignsIn(t *testing.T) {
 	wantRefusalHeadersBut(t, a.Header)
 	status, body := current(b)
 	var cur api.UserCurrentResponse
-	if err := json.Unmarshal([]byte(body), &cur); status != http.StatusOK || err != nil || cur.SignIn == nil || cur.SignIn.Client != "Safari on iPhone" || cur.DeviceSession != nil {
-		t.Errorf("user.current answered %d %s, want erin's Sign-in from Safari on iPhone", status, body)
+	if err := json.Unmarshal([]byte(body), &cur); status != http.StatusOK || err != nil || cur.SignIn == nil || cur.DeviceSession != nil ||
+		cur.SignIn.Client != "Safari on iPhone" || cur.SignIn.Browser != "Safari" || cur.SignIn.System != "iPhone" {
+		t.Errorf("user.current answered %d %s, want erin's Sign-in from Safari on iPhone, its browser and system apart", status, body)
+	}
+	listed, err := h.Call(api.SignInList, api.SignInListRequest{User: "erin"})
+	if err != nil || len(listed.SignIns) != 1 || listed.SignIns[0].Client != "Safari on iPhone" ||
+		listed.SignIns[0].Browser != "Safari" || listed.SignIns[0].System != "iPhone" {
+		t.Errorf("signin.list of erin: %v %+v, want one Sign-in from Safari on iPhone, its browser and system apart", err, listed)
 	}
 
 	again := h.Browser()

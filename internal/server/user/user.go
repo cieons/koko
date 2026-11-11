@@ -64,7 +64,10 @@ func current(ctx context.Context, tx store.Tx, caller op.Caller, _ api.UserCurre
 	}
 	resp := api.UserCurrentResponse{User: who.User, DeviceSession: who.DeviceSession}
 	if si := who.SignIn; si != nil {
-		resp.SignIn = &api.CurrentSignIn{ID: si.ID, Client: si.Client, StartedAt: si.StartedAt, ExpiresAt: si.ExpiresAt}
+		resp.SignIn = &api.CurrentSignIn{
+			ID: si.ID, Client: si.Client, Browser: si.Browser, System: si.System,
+			StartedAt: si.StartedAt, ExpiresAt: si.ExpiresAt,
+		}
 	}
 	return resp, nil
 }

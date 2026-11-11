@@ -3,6 +3,7 @@ import { LogOut } from "lucide-react";
 import { useState } from "react";
 
 import { type Language, languages } from "../../i18n/catalogues";
+import { browserName } from "../../shell/browserName";
 import { type Caller, useCaller } from "../../shell/caller";
 import { type Translate, useLanguageChoice, useT } from "../../shell/i18n";
 import { type Mode, modes, useMode } from "../../shell/mode";
@@ -93,7 +94,7 @@ function viaText(t: Translate, caller: Caller): string {
     return t("user.account.viaDevice", { device: caller.deviceSession.device });
   }
   if (caller.signin) {
-    return t("user.account.viaSignin", { client: caller.signin.client });
+    return t("user.account.viaSignin", { client: browserName(t, caller.signin) });
   }
   return t("user.account.viaLocal");
 }

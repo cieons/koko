@@ -174,15 +174,16 @@ func (s *Service) start(ctx context.Context, tx store.Tx, u api.User, a Attempt)
 	token := base64.RawURLEncoding.EncodeToString(b[:])
 	id := store.NewID(signInPrefix)
 	expires := now.Add(access.SignInLifetime)
-	client := clientLabel(a.UserAgent)
+	browser, system := clientOf(a.UserAgent)
 	stamp := now.Format(time.RFC3339)
 	_, err := tx.ExecContext(ctx, `INSERT INTO signins
-		(id, user_id, token_hash, client, started_address, address, started_at, last_used_at, expires_at)
-		VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?6, ?7)`, id, u.ID, tokenHash(token), client, a.Address, stamp, expires.Format(time.RFC3339))
+		(id, user_id, token_hash, browser, system, started_address, address, started_at, last_used_at, expires_at)
+		VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?7, ?8)`,
+		id, u.ID, tokenHash(token), browser, system, a.Address, stamp, expires.Format(time.RFC3339))
 	if err != nil {
 		return Started{}, fmt.Errorf("record a Sign-in of %s: %w", u.Name, err)
 	}
-	afterCommit(ctx, s.log, "signed in", "user", u.Name, "signin", id, "client", client, "address", a.Address)
+	afterCommit(ctx, s.log, "signed in", "user", u.Name, "signin", id, "client", api.ClientLabel(browser, system), "address", a.Address)
 	return Started{ID: id, Token: token, User: u, Expires: expires}, nil
 }
 

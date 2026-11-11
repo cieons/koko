@@ -23,6 +23,8 @@ export default {
   "shell.via.device": "Through koko web on {device}",
   "shell.via.signin": "Signed in from {client}",
   "shell.via.local": "On the koko server's machine",
+  "shell.browser.on": "{browser} on {system}",
+  "shell.browser.unknown": "Browser",
   "shell.loading": "Loading",
   "shell.pageNotLoaded": "This page could not be loaded. Reload the browser page to try again.",
   "shell.notFound.title": "Page not found",

@@ -157,7 +157,7 @@ test("Remove Password on the Owner's own panel, from a browser signed in with it
   w.users = w.users.map((u) => (u.name === "alice" ? { ...u, password_set_at: "2026-11-04T09:00:00Z" } : u));
   api.on(UserCurrent, () => ({
     user: alice,
-    signin: { id: "signin_alice_1", client: "Safari on macOS", started_at: "", expires_at: "" },
+    signin: { id: "signin_alice_1", client: "Safari on macOS", browser: "Safari", system: "macOS", started_at: "", expires_at: "" },
   }));
   serve(api, w);
   serveSignIns(api, signIns(), alice);

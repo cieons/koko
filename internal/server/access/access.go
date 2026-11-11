@@ -246,7 +246,7 @@ const (
 // one way a Sign-in record is read, so who is calling and the signin
 // operations answer alike.
 func SignIns(ctx context.Context, tx store.Tx, now time.Time, where string, args ...any) ([]api.SignIn, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT s.id, u.name, s.client, s.address, s.started_at, s.last_used_at,
+	rows, err := tx.QueryContext(ctx, `SELECT s.id, u.name, s.browser, s.system, s.address, s.started_at, s.last_used_at,
 			s.expires_at, s.ended_at, s.end_reason
 		FROM signins s JOIN users u ON u.id = s.user_id
 		WHERE `+where+` ORDER BY u.name, s.started_at, s.id`, args...)
@@ -258,10 +258,11 @@ func SignIns(ctx context.Context, tx store.Tx, now time.Time, where string, args
 	for rows.Next() {
 		var s api.SignIn
 		var ended, reason sql.NullString
-		err := rows.Scan(&s.ID, &s.User, &s.Client, &s.Address, &s.StartedAt, &s.LastUsedAt, &s.ExpiresAt, &ended, &reason)
+		err := rows.Scan(&s.ID, &s.User, &s.Browser, &s.System, &s.Address, &s.StartedAt, &s.LastUsedAt, &s.ExpiresAt, &ended, &reason)
 		if err != nil {
 			return nil, fmt.Errorf("read Sign-ins: %w", err)
 		}
+		s.Client = api.ClientLabel(s.Browser, s.System)
 		s.EndedAt, s.EndReason = ended.String, reason.String
 		if s.ExpiresAt, err = signInExpiry(s); err != nil {
 			return nil, err

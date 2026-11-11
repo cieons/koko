@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/cieons/koko/internal/shared/api"
 )
 
 // At most two hashes run at once: a burst of sign-ins waits its turn. With
@@ -43,23 +45,25 @@ func TestAtMostTwoHashesRunAtOnce(t *testing.T) {
 	}
 }
 
-// A client label names the common browsers and systems, and "Browser" for
-// any other.
-func TestClientLabels(t *testing.T) {
+// A User-Agent names one of the common browsers and systems, or none, and
+// the English label joins what it names.
+func TestClientsOfUserAgents(t *testing.T) {
 	t.Parallel()
-	for ua, want := range map[string]string{
-		"Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Mobile/15E148 Safari/604.1": "Safari on iPhone",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36":                         "Chrome on Windows",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0":           "Edge on Windows",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Safari/605.1.15":                   "Safari on macOS",
-		"Mozilla/5.0 (Linux; Android 16; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36":                   "Chrome on Android",
-		"Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0":                                                                  "Firefox on Linux",
-		"Mozilla/5.0 (iPad; CPU OS 26_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/142.0 Mobile/15E148 Safari/604.1":           "Chrome on iPad",
-		"curl/8.17.0": "Browser",
-		"":            "Browser",
+	for ua, want := range map[string][3]string{
+		"Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Mobile/15E148 Safari/604.1": {"Safari", "iPhone", "Safari on iPhone"},
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36":                         {"Chrome", "Windows", "Chrome on Windows"},
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0":           {"Edge", "Windows", "Edge on Windows"},
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Safari/605.1.15":                   {"Safari", "macOS", "Safari on macOS"},
+		"Mozilla/5.0 (Linux; Android 16; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36":                   {"Chrome", "Android", "Chrome on Android"},
+		"Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0":                                                                  {"Firefox", "Linux", "Firefox on Linux"},
+		"Mozilla/5.0 (iPad; CPU OS 26_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/142.0 Mobile/15E148 Safari/604.1":           {"Chrome", "iPad", "Chrome on iPad"},
+		"Firefox/140.0": {"Firefox", "", "Firefox"},
+		"curl/8.17.0":   {"", "", "Browser"},
+		"":              {"", "", "Browser"},
 	} {
-		if got := clientLabel(ua); got != want {
-			t.Errorf("clientLabel(%q) = %q, want %q", ua, got, want)
+		browser, system := clientOf(ua)
+		if got := [3]string{browser, system, api.ClientLabel(browser, system)}; got != want {
+			t.Errorf("%q names the browser, the system and the label %q, want %q", ua, got, want)
 		}
 	}
 }

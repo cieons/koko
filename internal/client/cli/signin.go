@@ -73,7 +73,10 @@ var signinMappings = []mapping{
 		"link": "shown as password_link, beside its user and expires_at",
 	}},
 	{api: reflect.TypeFor[api.PasswordRemoveResponse](), cli: reflect.TypeFor[passwordRemoval]()},
-	{api: reflect.TypeFor[api.SignIn](), cli: reflect.TypeFor[signInJSON]()},
+	{api: reflect.TypeFor[api.SignIn](), cli: reflect.TypeFor[signInJSON](), omitted: map[string]string{
+		"browser": "the CLI names the browser by client, its English label made of browser and system",
+		"system":  "the CLI names the browser by client, its English label made of browser and system",
+	}},
 	{api: reflect.TypeFor[api.SignInListResponse]()},
 	{api: reflect.TypeFor[api.SignInRevokeResponse]()},
 }

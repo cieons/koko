@@ -6,12 +6,23 @@ import { type FakeApi, refusal } from "../../test/fakeApi";
 // answers signin.list and signin.revoke from them as the koko server would,
 // and each write changes them.
 
-/** signIn is a live Sign-in of user from client, with id signin_<user>_<n>. */
-export function signIn(user: string, n: number, client: string, more: Partial<SignIn> = {}): SignIn {
+/** Client is the browser and the system a Sign-in names, each left out when koko recognises none. */
+export type Client = Pick<SignIn, "browser" | "system">;
+
+/** firefox is the client of the browser the tests sign in from: Firefox on Linux. */
+export const firefox: Client = { browser: "Firefox", system: "Linux" };
+
+/**
+ * signIn is a live Sign-in of user from client, with id signin_<user>_<n>,
+ * and the English label the koko server makes of client (api.ClientLabel).
+ */
+export function signIn(user: string, n: number, client: Client, more: Partial<SignIn> = {}): SignIn {
+  const { browser, system } = client;
   return {
     id: `signin_${user}_${n}`,
     user,
-    client,
+    client: browser === undefined ? "Browser" : system === undefined ? browser : `${browser} on ${system}`,
+    ...client,
     address: "203.0.113.7",
     started_at: "2026-11-03T09:00:00Z",
     last_used_at: "2026-11-07T09:00:00Z",
@@ -32,10 +43,10 @@ export interface SignIns {
 export function signIns(): SignIns {
   return {
     signins: [
-      signIn("alice", 1, "Safari on macOS"),
-      signIn("bob", 1, "Firefox on Linux"),
-      signIn("bob", 2, "Safari on iPhone"),
-      signIn("bob", 3, "Chrome on Windows", { ended_at: "2026-11-05T09:00:00Z", end_reason: "signed_out" }),
+      signIn("alice", 1, { browser: "Safari", system: "macOS" }),
+      signIn("bob", 1, firefox),
+      signIn("bob", 2, { browser: "Safari", system: "iPhone" }),
+      signIn("bob", 3, { browser: "Chrome", system: "Windows" }, { ended_at: "2026-11-05T09:00:00Z", end_reason: "signed_out" }),
     ],
   };
 }

@@ -86,7 +86,7 @@ test("for a Sign-in Account names the browser that signed in, and marks no devic
   const api = fakeApi();
   api.on(UserCurrent, () => ({
     user: bob,
-    signin: { id: "signin_1", client: "Firefox on Linux", started_at: "", expires_at: "" },
+    signin: { id: "signin_1", client: "Firefox on Linux", browser: "Firefox", system: "Linux", started_at: "", expires_at: "" },
   }));
   serve(api, world(), bob);
   renderAt("/account");

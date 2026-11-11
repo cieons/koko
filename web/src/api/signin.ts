@@ -30,10 +30,21 @@ export interface SignIn {
   /** User is the name of the User the browser is signed in as. */
   user: string;
   /**
-   * Client is a short label of the browser, made from its User-Agent at
-   * sign-in, such as "Safari on iPhone", or "Browser".
+   * Client is the browser's English label, made of Browser and System
+   * by ClientLabel, such as "Safari on iPhone", or "Browser"; the CLI
+   * prints it.
    */
   client: string;
+  /**
+   * Browser is the browser its User-Agent named at sign-in, such as
+   * "Safari"; left out when it named none koko recognises.
+   */
+  browser?: string;
+  /**
+   * System is the system its User-Agent named at sign-in, such as
+   * "iPhone"; left out when it named none koko recognises.
+   */
+  system?: string;
   /**
    * Address is the client's address when the Sign-in was last used, as
    * the reverse proxy passed it on.
@@ -62,8 +73,10 @@ export interface SignIn {
 /** CurrentSignIn is the Sign-in a call came on, as user.current names it. */
 export interface CurrentSignIn {
   id: string;
-  /** Client is the browser's label, such as "Safari on iPhone". */
+  /** Client, Browser and System name the browser, as SignIn's do. */
   client: string;
+  browser?: string;
+  system?: string;
   started_at: string;
   expires_at: string;
 }

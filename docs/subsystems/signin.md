@@ -14,13 +14,15 @@ The web listener itself, its Host and Origin checks and its headers are in
 
 ## The record
 
-One migration step, [`signins.sql`](../../internal/server/store/migrations/signins.sql):
+Two migration steps, [`signins.sql`](../../internal/server/store/migrations/signins.sql)
+and [`signins_browser_system.sql`](../../internal/server/store/migrations/signins_browser_system.sql),
+which keeps a Sign-in's browser and system apart in place of its label:
 
 | Table | What it holds |
 | --- | --- |
 | `passwords` | A User's one Password, or no row: its id (`password_…`), the User, its Argon2id hash as a PHC string sealed under the Root Key for the row's id ([the Seal](seal.md)), when it was set and how (`link` or `change`). Setting a Password writes a new row. |
 | `password_links` | Each Password Link: its id (`passwordlink_…`), the User, the SHA-256 of its secret, what issued it (a Device Session's or a Sign-in's id, or NULL for the Unix socket), when it was issued, expires, was used and was voided. Spent links are kept. |
-| `signins` | Each Sign-in: its id (`signin_…`), the User, the SHA-256 of its cookie's token, the client label, the client's address at sign-in and when last used, its start, its Last used time, its expiry 30 days on, and once it ends, when, why and by whom. Ended Sign-ins are kept, as Revoked Device Sessions are. |
+| `signins` | Each Sign-in: its id (`signin_…`), the User, the SHA-256 of its cookie's token, the browser and the system its User-Agent named (`browser` and `system`, `''` for none), the client's address at sign-in and when last used, its start, its Last used time, its expiry 30 days on, and once it ends, when, why and by whom. Ended Sign-ins are kept, as Revoked Device Sessions are. |
 
 ## Passwords
 
@@ -74,9 +76,23 @@ One migration step, [`signins.sql`](../../internal/server/store/migrations/signi
 - **The cookie**: `__Host-koko`, `Secure`, `HttpOnly`, `SameSite=Lax`,
   `Path=/`, no `Domain`, `Max-Age` up to the Sign-in's expiry 30 days on.
   Its value is 256 random bits in unpadded base64url, kept as its SHA-256.
-- **The client label** ([`clientLabel`](../../internal/server/signin/client.go))
-  is made at sign-in from the `User-Agent` by a small table of the common
-  browsers and systems, such as "Safari on iPhone", or "Browser".
+- **The browser and the system** ([`clientOf`](../../internal/server/signin/client.go))
+  are found at sign-in in the `User-Agent` by a small table of the common
+  browsers and systems, such as Safari and iPhone, each none when the
+  table holds none it names. A Sign-in as the API answers it carries both,
+  `browser` and `system`, each left out for none, and `client`, the
+  English label the koko server makes of them when it answers
+  ([`api.ClientLabel`](../../internal/shared/api/signin.go)): "Safari on
+  iPhone", the browser alone without a system, or "Browser" without a
+  browser. The CLI prints `client`; the web UI names the browser in the
+  reader's language from `browser` and `system` by the same rule
+  ([`browserName`](../../web/src/shell/browserName.ts)): "{browser} on
+  {system}" and "Browser" in English, "{system} 上的 {browser}" and "浏览器"
+  in Chinese. A Sign-in recorded before the two were kept apart keeps what
+  its label said: the migration step
+  [`signins_browser_system.sql`](../../internal/server/store/migrations/signins_browser_system.sql)
+  split each label, which the koko server had made from the same table,
+  exactly.
 - **Lifetime.** A Sign-in ends 30 days after it began
   (`access.SignInLifetime`) or 7 days after it was last used
   (`access.SignInIdle`), whichever comes first, on the koko server's clock.
@@ -164,7 +180,8 @@ may, but:
   the Unix socket's.
 
 `user.current` answers the Sign-in as `signin`, `{"id", "client",
-"started_at", "expires_at"}`, in place of `device_session`. Log lines that
+"browser", "system", "started_at", "expires_at"}`, `browser` and `system`
+left out for none, in place of `device_session`. Log lines that
 name who acted (`issued_by`, `revoked_by`, `removed_by`, `ended_by`,
 `enrolled_by`) give a Sign-in's id ([`Identity.By`](../../internal/server/access/access.go)).
 
@@ -273,7 +290,8 @@ or an `/auth/` body.
 - [`internal/server/web/signin_test.go`](../../internal/server/web/signin_test.go),
   S1 through the web listener with the harness's `Browser`
   ([`browser.go`](../../internal/harness/browser.go)) and `h.SignIn`: a
-  Password Link setting the Password and the cookie's attributes; wrong
+  Password Link setting the Password and the cookie's attributes, and the
+  Sign-in's browser and system in `user.current` and `signin.list`; wrong
   names and Passwords answered the same bytes; the address limit with
   `Retry-After`, of each kind of failure, and attempts sent at once; the
   name limit, its lockout,
@@ -286,7 +304,11 @@ or an `/auth/` body.
   the hash sealed, absent in plain from the data directory, of the stated
   parameters, and an older one rehashed at sign-in;
   [`hash_internal_test.go`](../../internal/server/signin/hash_internal_test.go):
-  at most two hashes at once, the client labels, the limits' bound.
+  at most two hashes at once, the browser and system of each kind of
+  `User-Agent` and their English label, the limits' bound.
+- [`signins_browser_system_test.go`](../../internal/server/store/signins_browser_system_test.go):
+  a Sign-in recorded before the browser and the system were kept apart
+  keeps what its label said.
 - The access matrix's two Sign-in callers, and
   `TestAnEndedSignInIsRefusedByEveryOperation` in
   [`revoked_test.go`](../../internal/server/revoked_test.go)
@@ -316,8 +338,10 @@ or an `/auth/` body.
   the Local caller no form and no Sign out; Revoke asking first, its
   consequence and the focus on the list's heading; revoking this browser's
   own going to Sign in; a refused revoke reading the list again; the ended
-  Sign-ins with why; none; Sign out on Account and in the account panel,
-  its failure in the panel.
+  Sign-ins with why; none; a browser koko does not recognise named
+  Browser; in Chinese, each browser named in Chinese on Account, in the
+  Browser Sign-ins, Revoke and its notice and the account panel; Sign out
+  on Account and in the account panel, its failure in the panel.
 - [`person.test.tsx`](../../web/src/pages/signin/person.test.tsx): a
   person's panel with its Password, Issue Password Link and Remove
   Password, and their Sign-ins; a User without a Password; Issue Password

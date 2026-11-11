@@ -5,6 +5,7 @@ import { Link } from "react-aria-components";
 
 import { type Language, languages } from "../i18n/catalogues";
 import { Refusal } from "../ui/states";
+import { browserName } from "./browserName";
 import type { Caller } from "./caller";
 import { type Translate, useLanguageChoice, useT } from "./i18n";
 import { type Mode, modes, useMode } from "./mode";
@@ -111,7 +112,7 @@ function viaText(t: Translate, caller: Caller): string {
     return t("shell.via.device", { device: caller.deviceSession.device });
   }
   if (caller.signin) {
-    return t("shell.via.signin", { client: caller.signin.client });
+    return t("shell.via.signin", { client: browserName(t, caller.signin) });
   }
   return t("shell.via.local");
 }

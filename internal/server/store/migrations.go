@@ -30,6 +30,7 @@ var steps = []string{
 	"hosts_relay.sql",
 	"deployment_web_url.sql",
 	"signins.sql",
+	"signins_browser_system.sql",
 }
 
 //go:embed migrations/*.sql

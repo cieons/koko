@@ -124,7 +124,7 @@ test("for a Sign-in the account panel names the browser that signed in", async (
   const api = fakeApi();
   api.on(UserCurrent, () => ({
     user: bob,
-    signin: { id: "signin_1", client: "Firefox on Linux", started_at: "", expires_at: "" },
+    signin: { id: "signin_1", client: "Firefox on Linux", browser: "Firefox", system: "Linux", started_at: "", expires_at: "" },
   }));
   renderShell("/hosts");
   await screen.findByText("hosts page");
