@@ -24,11 +24,16 @@ jobs:
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     # make test bounds each test binary with go test's -timeout, well inside
     # this, so a hanging test fails the job with a goroutine dump instead of
-    # being cancelled without a log.
-    timeout-minutes: 15
+    # being cancelled without a log. The Ubuntu job takes 8 to 10 minutes
+    # and the macOS one 7 to 12 (docs/subsystems/release.md, "The check
+    # workflow"), so a slow runner still ends well inside the limit.
+    timeout-minutes: 20
+    env:
+      GOLANGCI_LINT_VERSION: v2.15.0
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
+        id: go
         with:
           go-version-file: go.mod
       # The Node version is the one web/package.json's devEngines names.
@@ -37,22 +42,48 @@ jobs:
           node-version-file: web/package.json
           cache: npm
           cache-dependency-path: web/package-lock.json
-      # The action only installs golangci-lint and keeps its cache; make lint
-      # runs it, once for each OS koko builds for. It builds golangci-lint
-      # with go install, through the Go module proxy, rather than download
-      # GitHub's release binary: GitHub's release downloads answered 504 for
-      # hours on 2026-11-08 and failed every run before a test ran.
-      - uses: golangci/golangci-lint-action@v9
+      # golangci-lint's binary and the cache of its last run, kept from one
+      # run to the next: building the binary took 56 to 72 s of every run
+      # (#161). A new golangci-lint, Go, or go.mod builds it again.
+      - uses: actions/cache@v6
+        id: golangci-lint
         with:
-          version: v2.15.0
+          path: |
+            ~/go/bin/golangci-lint
+            ~/.cache/golangci-lint
+            ~/Library/Caches/golangci-lint
+          key: golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ runner.os }}-${{ runner.arch }}-go${{ steps.go.outputs.go-version }}-${{ hashFiles('go.mod') }}
+      # The action only installs golangci-lint, where the cache above holds
+      # none; make lint runs it, once for each OS koko builds for. It builds
+      # golangci-lint with go install, through the Go module proxy, rather
+      # than download GitHub's release binary: GitHub's release downloads
+      # answered 504 for hours on 2026-11-08 and failed every run before a
+      # test ran.
+      - uses: golangci/golangci-lint-action@v9
+        if: steps.golangci-lint.outputs.cache-hit != 'true'
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
           install-mode: goinstall
           install-only: true
+          skip-cache: true
       # The real-OpenSSH test (internal/client/openssh) runs the system's
       # ssh, scp, sftp, sftp-server and rsync, and fails rather than skips
-      # without one; macOS ships them all.
+      # without one; macOS ships them all, and so does the Ubuntu runner's
+      # image today. apt runs only when one is missing: apt-get update waited
+      # 3 to 7 minutes for package mirrors whose names did not resolve, to
+      # install nothing, and took the job past its limit once (#161).
       - name: Install the OpenSSH client, sftp-server and rsync
         if: runner.os == 'Linux'
         run: |
+          missing=
+          for tool in ssh scp sftp rsync /usr/lib/openssh/sftp-server; do
+            command -v "$tool" >/dev/null || missing="$missing $tool"
+          done
+          if [ -z "$missing" ]; then
+            echo "all installed"
+            exit 0
+          fi
+          echo "missing:$missing"
           sudo apt-get update
           sudo apt-get install -y openssh-client openssh-sftp-server rsync
       # npm ci installs the web UI's dependencies as make would, and npm

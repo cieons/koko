@@ -426,7 +426,7 @@ that anything that would prompt fails rather than hangs.
 - **The tools.** `ssh`, `scp`, `sftp` and `rsync` from `PATH`, OpenSSH 9.0
   or later (whose scp speaks SFTP and takes `-O`), and `sftp-server` from
   where Debian, Fedora, Arch and macOS put it. A missing one fails the
-  test, never skips it; CI's Ubuntu job installs them
+  test, never skips it; CI's Ubuntu job installs any its runner lacks
   (`.github/workflows/check.yml`), and macOS ships them.
 - **The koko binary.** It builds `cmd/koko` once, with `-race` exactly
   when the test runs with it, so the build takes the packages `go test`

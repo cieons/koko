@@ -344,6 +344,48 @@ run. [The container check](#the-container-check) runs what
 it, its user, entrypoint, command, environment, `/koko` and `/run/koko`.
 Its `EXPOSE` and labels are checked by hand.
 
+## The check workflow
+
+The [check workflow](../../.github/workflows/check.yml) runs `make check`
+on every push to `main`, on every pull request, and on a release's tag. Its
+**check** job runs once on `ubuntu-latest` and once on `macos-latest`, each
+with a limit of 20 minutes:
+
+1. It sets up Go and Node, and takes golangci-lint's binary and the cache
+   of its last run from the workflow's cache. Where the cache holds none
+   (a new golangci-lint, Go or `go.mod`), it builds the binary with
+   `go install`, which takes about a minute.
+2. On Ubuntu it checks that the tools of
+   [the real-OpenSSH test](code-layout.md#the-real-openssh-test) are
+   installed, and runs apt only for a missing one. The runner's image ships
+   them all.
+3. `npm ci` and `npm audit signatures` in `web/`.
+4. `make check`: the web UI's build, lint for each OS koko builds for,
+   vet, the Go tests with `-race`, Vitest, and the cross builds.
+
+What each step of the Ubuntu job took on `main` on 2026-11-11, on the
+fastest and the slowest of five runs (#161):
+
+| Step | Seconds |
+| --- | --- |
+| Checkout, Go and Node | 21 to 24 |
+| Building golangci-lint (before its binary was cached) | 56 to 72 |
+| The OpenSSH tools | 5 with them installed |
+| `npm ci` and `npm audit signatures` | 10 to 14 |
+| `make webui` | 2 to 3 |
+| `make lint`, three OSes | 84 to 109 |
+| `go vet` and `go test -race` | 226 to 291 |
+| Vitest | 60 to 93 |
+| `make cross`, four targets | 63 to 79 |
+
+The Go tests' time is that of `internal/client/cli` (168 to 218 s) and
+`internal/server/access` (161 to 211 s), which run side by side; every
+other package takes under 45 s. The same commit's steps take up to 1.3
+times as long on a slow runner as on a fast one. The Ubuntu job is expected
+to take 8 to 10 minutes and the macOS job 7 to 12. If the Ubuntu job grows
+past 12 minutes, move `make lint` and `make cross` into a job of their own
+beside the tests.
+
 ## The real-systemd check
 
 The [systemd workflow](../../.github/workflows/systemd.yml) installs koko
