@@ -108,11 +108,14 @@ Windows included, which refuses with `kokod runs on Linux only`.
 The [release workflow](../../.github/workflows/release.yml) runs on a pushed
 `v*` tag, in these jobs:
 
-1. **check**, **systemd** and **container**: the
+1. **check**, **systemd**, **container** and **window**: the
    [check workflow](../../.github/workflows/check.yml) on the tag, on Linux
-   and macOS, [the real-systemd check](#the-real-systemd-check) and
-   [the container check](#the-container-check), on each platform; nothing
-   is built unless all three pass;
+   and macOS, [the real-systemd check](#the-real-systemd-check),
+   [the container check](#the-container-check), on each platform, and
+   [`release/oldest-check.sh`](../../release/oldest-check.sh), which
+   refuses a patch release whose `compat.Oldest` differs from the
+   previous release's ([before tagging](#before-tagging)); nothing is
+   built unless all four pass;
 2. **build**, with a read-only token and no credentials left in the
    checkout, since it runs koko's and npm's code: `make dist`, a check that
    `dist/koko-linux-amd64 version` and `dist/kokod-linux-amd64 version` are
@@ -154,6 +157,17 @@ Details stay in the issue and the docs; the notes link to them.
 
 Attestations and anonymous downloads need the repository public (or, for
 attestations, GitHub Enterprise Cloud).
+
+### Before tagging
+
+- **`compat.Oldest`** ([ADR 0049](../adr/0049-the-cli-and-the-koko-server-work-together-within-a-window-of-versions.md)),
+  the oldest koko the CLI and the koko server of the build work with, moves
+  only at a minor release (`vX.Y.0`), and that release's notes say so,
+  naming the version below which the CLI and the koko server turn away
+  each other. A patch release (`vX.Y.Z`, Z > 0) keeps the previous
+  release's: the release job's **window** job refuses one that moves it,
+  as a pre-release of one, comparing with the highest release tag below
+  it; a previous release from before the window, which has none, passes.
 
 ## install.sh
 
@@ -302,11 +316,21 @@ download, an Intel Mac's included; a checksum that does not match, a binary
 `SHA256SUMS` does not list, failed downloads, a release not published, no
 release at all; and a `koko server install` that fails, whose exit status
 install.sh takes, writing no CLI. CI runs them under Ubuntu's `sh` (dash)
-and macOS's. `release/` holds no Go code but the test, so nothing imports
+and macOS's. `release/` holds no Go code but the tests, so nothing imports
 it, and it is in no [package group](code-layout.md#the-package-groups).
 
 The release workflow runs only on a tag, and no test runs it; actionlint
-checks it by hand. [The container check](#the-container-check) runs what
+checks it by hand.
+[`release/oldest_check_test.go`](../../release/oldest_check_test.go) runs
+`oldest-check.sh` on a git repository of releases made in a temporary
+directory: a patch release, and a pre-release of one, that moves
+`compat.Oldest` refused, naming both; one that keeps it, a minor release
+that moves it, and a patch release after a release from before the
+window passing; the previous release found by version, `v0.10.0` after
+`v0.5.2`; a tag without `compat.Oldest`, a missing tag, and a previous
+release whose `Oldest` is in a form the script cannot read, refused. A
+test keeps `compat.Oldest` on the one line of `compat.go` that the script
+and the real-systemd workflow read. [The container check](#the-container-check) runs what
 `make image` builds: its index's platforms and binaries, and, by running
 it, its user, entrypoint, command, environment, `/koko` and `/run/koko`.
 Its `EXPOSE` and labels are checked by hand.
@@ -323,8 +347,13 @@ migration step is a file added to `internal/server/store/migrations/`,
 [the store](store.md#migrations)). Each build must be a release's, since
 `koko server install` downloads only the `kokod` of its own release, and Go
 stamps a release's version only at a tag ([Building one](#building-one)):
-so the workflow first tags the commit `v0.0.2` and the older one `v0.0.1`,
-in its checkout only, never pushed. On a release's tag, that tag is the
+so the workflow first tags the commit and the older one, in its checkout
+only, never pushed. The CLI and the koko server turn away each other below
+`compat.Oldest` ([the window](api.md#the-way-in)), so the tags are
+pre-releases of the patch after it, read from
+[`compat.go`](../../internal/shared/compat/compat.go): `v0.3.1-check.2`
+for the commit and `v0.3.1-check.1` for the older one while it is
+`v0.3.0`. On a release's tag from that patch on, the release's tag is the
 higher, and Go stamps it. Then
 [`release/systemd-check.sh`](../../release/systemd-check.sh)
 `<older dist> <newer dist>` checks, in order:
