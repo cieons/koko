@@ -321,9 +321,18 @@ export function SearchChoices(props: SearchChoicesProps) {
       </Autocomplete.Trigger>
       {props.description !== undefined && <Description>{props.description}</Description>}
       <FieldError>{(v) => (v.validationDetails.valueMissing ? required : v.validationErrors.join(" "))}</FieldError>
-      <Autocomplete.Popover>
+      {/* The popover scrolls, within the height React Aria gives it, not
+          its list: the list takes no focus of its own, the search field
+          holding it, so a keyboard reaches what scrolls through the field,
+          which stays in view. */}
+      <Autocomplete.Popover className="overflow-y-auto">
         <Autocomplete.Filter filter={contains}>
-          <SearchField autoFocus aria-label={props.searchLabel} variant="secondary">
+          <SearchField
+            autoFocus
+            aria-label={props.searchLabel}
+            variant="secondary"
+            className="sticky top-0 z-10 bg-overlay px-1.5 pb-1"
+          >
             <SearchField.Group>
               <SearchField.SearchIcon />
               <SearchField.Input placeholder={props.searchLabel} autoComplete="off" spellCheck="false" />
@@ -331,7 +340,7 @@ export function SearchChoices(props: SearchChoicesProps) {
             </SearchField.Group>
           </SearchField>
           <ListBox
-            className="max-h-60 overflow-y-auto"
+            className="max-h-none overflow-visible"
             renderEmptyState={() => <p className="px-3 py-2 text-sm text-muted">{props.noMatch}</p>}
           >
             {optionItems(options)}
