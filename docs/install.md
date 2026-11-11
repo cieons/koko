@@ -199,8 +199,33 @@ runs from. Open SSH Sessions, `koko web` and running commands carry on.
 `koko update --check` says what it would do and changes nothing. Root's
 `/usr/local/bin/koko` upgrades with `sudo koko update`.
 
-The koko server upgrades with the install line run again as root, without
-arguments:
+The koko server, installed with systemd, upgrades in place with one
+command, run by the Owner on any of their devices or on its own machine:
+
+```sh
+koko server upgrade            # to the latest release
+koko server upgrade --check    # what it would upgrade to; changes nothing
+```
+
+`koko server upgrade` asks the koko server for the upgrade, and the koko
+server asks its upgrade helper, `koko-upgrade.service`, which runs as root.
+The helper takes nothing from the koko server but the version of a release
+newer than the one installed. It downloads that release's `kokod` itself,
+checks it against the release's `SHA256SUMS` and its build, keeps the
+`kokod` installed as `/var/lib/koko-upgrade/kokod.previous`, and installs
+the new one, which restarts the koko server. Every open SSH Session through
+it ends. When the new `kokod` does not start, the helper stops it, puts the
+database's snapshot back when it had changed the schema, and installs the
+previous `kokod` again. `koko server upgrade` waits for the outcome, then
+brings the CLI that ran it to the same release when `koko update` can
+replace it, or says how to. On failure it exits with `upgrade_failed` and
+the reason, and leaves the CLI as it was. The web UI offers the Owner the
+same upgrade. `koko server show` shows the outcome of the last upgrade, and
+`journalctl -u koko -u koko-upgrade` on the machine shows the details.
+
+The install line, run again as root without arguments, also upgrades the
+koko server, and installs the upgrade helper on a koko server that lacks
+it:
 
 ```sh
 curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sudo sh
@@ -212,11 +237,11 @@ restarts the koko server, which keeps its record, its Owner, its Server
 Address and its keys. Every open SSH Session ends, with a line saying the
 koko server is restarting. Only then does install.sh replace `koko`. When
 the koko server's upgrade fails, install.sh stops there and leaves the CLI
-as it was, so the CLI never runs ahead of the koko server beside it. If the
-two diverge nonetheless, for example after the CLI is installed by hand,
-`koko status` on the koko server's machine reports that the koko server
-there is another build and names `sudo koko server install`, which brings
-it to the CLI's build.
+as it was, so the CLI never runs ahead of the koko server beside it. After
+`koko server upgrade`, the koko server may run a newer release than root's
+CLI beside it, which works. `koko server install` then refuses to put the
+older `kokod` of that CLI in place of the newer one, and names `sudo koko
+update`, which brings the CLI up first ([Going back](#going-back)).
 
 Run on the koko server's machine without `sudo`, the line installs the
 CLI of the user who runs it, in `~/.local/bin`, and leaves root's
@@ -268,8 +293,10 @@ To keep one `koko` for every user of the machine instead, run the line
 with `| sudo sh`: it replaces `/usr/local/bin/koko`, as before, and
 `sudo koko update` upgrades it from then on.
 
-On a v0.3.x koko server with systemd, run the line as root, as above. The
-CLI there stays root's `/usr/local/bin/koko`.
+On a v0.3.x koko server with systemd, run the line as root, as above. It
+upgrades the koko server and installs the upgrade helper, so that `koko
+server upgrade` and the web UI's upgrade work from then on. The CLI there
+stays root's `/usr/local/bin/koko`.
 
 ## Going back
 
@@ -293,7 +320,8 @@ curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | 
 
 with that release in place of `v0.3.0`. The release's own install.sh, at
 `releases/download/v0.3.0/install.sh`, also works, with the same
-`KOKO_VERSION`. When the upgrade changed no schema, nothing more is
+`KOKO_VERSION`. `koko server upgrade` and the upgrade helper only ever go
+forward, so going back is always this line. When the upgrade changed no schema, nothing more is
 needed. When it did, the older koko refuses to install over the newer
 database and writes nothing, while the newer koko server keeps running, and
 install.sh leaves the CLI as it was. Its refusal names the snapshot to put
@@ -319,6 +347,14 @@ with the snapshot the refusal named in place of `koko.db.before-<n>`, and
 the same version as above in place of `v0.3.0`. Anything written after the
 upgrade is lost with the newer database, which stays in
 `/var/lib/koko-newer`.
+
+`koko server install` refuses to replace a `kokod` that is a newer release
+than its own CLI, as after `koko server upgrade`, so that changing a setting
+with an older CLI never takes the koko server back. It names both versions
+and `sudo koko update`, and writes nothing. `KOKO_VERSION` naming the CLI's
+own release lets it through, which is how the lines above go back:
+install.sh passes `KOKO_VERSION` on to `koko server install`. Run by hand,
+the same is `sudo env KOKO_VERSION=v0.3.0 koko server install`.
 
 Going back to v0.2.0 or v0.1.0, from before `koko` and `kokod` were two
 programs, takes one more line, with or without a snapshot. The older koko
@@ -383,13 +419,18 @@ runs `koko leave`, then joins with a new Join Code.
 
 ## Uninstalling
 
-`koko server uninstall` stops the koko server and removes its unit and
-`/usr/local/bin/kokod`. It keeps the CLI, `/usr/local/bin/koko`, the data
-directory, the Root Key and the `koko` user, and prints the port it
+`koko server uninstall` stops the koko server and removes its unit, the
+upgrade helper's units and its directory, `/var/lib/koko-upgrade`, and
+`/usr/local/bin/kokod`, so that nothing of koko is left running as root.
+It keeps the CLI, `/usr/local/bin/koko`, the data directory, the Root Key
+and the `koko` user, and prints the port it
 listened on, and the web listener's address when it had one. To run the
 koko server again on the same data, run `sudo koko server install` without
 `--owner`, with that `--port`, and that `--web-listen` when it printed
 one: it installs the `kokod` of its own version again.
+
+The CLI is one file: remove it with `rm ~/.local/bin/koko`, or with `sudo
+rm /usr/local/bin/koko` for root's.
 
 ## In a container
 

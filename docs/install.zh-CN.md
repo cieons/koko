@@ -115,13 +115,22 @@ koko update
 
 该命令下载最新发布版本中适用于本机的 `koko`，使用发布版本的 `SHA256SUMS` 及其构建信息校验，然后替换当前运行的文件。已打开的 SSH 会话、`koko web` 和正在运行的命令均不受影响。`koko update --check` 只说明将执行的操作，不做任何更改。root 的 `/usr/local/bin/koko` 使用 `sudo koko update` 升级。
 
-koko 服务器的升级方式是以 root 不带参数再次运行安装命令：
+通过 systemd 安装的 koko 服务器可使用一条命令就地升级，所有者可在其任一设备或 koko 服务器所在的机器上运行：
+
+```sh
+koko server upgrade            # 升级到最新发布版本
+koko server upgrade --check    # 说明将升级到的版本，不做任何更改
+```
+
+`koko server upgrade` 请求 koko 服务器升级，koko 服务器再请求以 root 运行的升级助手 `koko-upgrade.service`。升级助手从 koko 服务器处只接收一个比已安装版本更新的发布版本号。它自行下载该发布版本的 `kokod`，使用发布版本的 `SHA256SUMS` 及其构建信息校验，将已安装的 `kokod` 保留为 `/var/lib/koko-upgrade/kokod.previous`，然后安装新的 `kokod`，koko 服务器随之重启。所有经由 koko 服务器的 SSH 会话都会结束。新的 `kokod` 无法启动时，升级助手会将其停止；如果它已更改数据库 schema，则放回数据库快照，然后重新安装原先的 `kokod`。`koko server upgrade` 等待升级结果，随后在 `koko update` 可替换运行该命令的 CLI 时，将其升级到同一版本，否则说明升级方法。升级失败时，该命令以 `upgrade_failed` 退出并给出原因，CLI 保持不变。Web 界面为所有者提供同样的升级。`koko server show` 显示上一次升级的结果，在该机器上运行 `journalctl -u koko -u koko-upgrade` 可查看详细信息。
+
+以 root 不带参数再次运行安装命令同样可以升级 koko 服务器，并为尚无升级助手的 koko 服务器安装升级助手：
 
 ```sh
 curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sudo sh
 ```
 
-该命令先升级 koko 服务器，再升级 root 的 CLI。`koko server install` 将 `kokod` 替换为新发布版本中的文件，重新写入 systemd unit 并重启 koko 服务器；服务器的记录、所有者、服务器地址和密钥均保持不变。所有已打开的 SSH 会话都会结束，并显示一行提示，说明 koko 服务器正在重启。此后 install.sh 才替换 `koko`。如果 koko 服务器升级失败，install.sh 会就此停止，CLI 保持不变，因此 CLI 的版本不会领先于同一机器上的 koko 服务器。如果两者仍出现不一致（例如手动安装 CLI 之后），在 koko 服务器所在的机器上运行 `koko status`，会提示该机器上的 koko 服务器属于另一构建，并给出 `sudo koko server install`，运行该命令即可使 koko 服务器与 CLI 的构建一致。
+该命令先升级 koko 服务器，再升级 root 的 CLI。`koko server install` 将 `kokod` 替换为新发布版本中的文件，重新写入 systemd unit 并重启 koko 服务器；服务器的记录、所有者、服务器地址和密钥均保持不变。所有已打开的 SSH 会话都会结束，并显示一行提示，说明 koko 服务器正在重启。此后 install.sh 才替换 `koko`。如果 koko 服务器升级失败，install.sh 会就此停止，CLI 保持不变，因此 CLI 的版本不会领先于同一机器上的 koko 服务器。执行 `koko server upgrade` 之后，koko 服务器的版本可能新于同一机器上 root 的 CLI，两者可以正常配合。此时 `koko server install` 会拒绝以该 CLI 对应的较旧 `kokod` 替换较新的 `kokod`，并给出 `sudo koko update`，用于先将 CLI 升级（见[回退](#回退)）。
 
 在 koko 服务器所在的机器上不使用 `sudo` 运行安装命令时，CLI 会安装到运行者自身的 `~/.local/bin` 中，root 的 `/usr/local/bin/koko` 保持不变：在该机器上请使用 `| sudo sh` 运行。可免密码使用 `sudo` 的用户仍会通过 `sudo` 升级 koko 服务器。对于两者均不满足的用户，不带参数的安装命令会使 koko 服务器保持不变，并给出相应提示，指出 `koko server upgrade`；带参数时则会拒绝，且不写入任何内容。
 
@@ -148,7 +157,7 @@ v0.3.x 及更早版本的 CLI 安装命令以 root 安装 `/usr/local/bin/koko`�
 
 如需为本机所有用户保留同一个 `koko`，请改用 `| sudo sh` 运行安装命令：该命令与以往一样替换 `/usr/local/bin/koko`，此后使用 `sudo koko update` 升级。
 
-对于由 systemd 管理的 v0.3.x koko 服务器，请按上文以 root 运行安装命令。该机器上的 CLI 仍为 root 的 `/usr/local/bin/koko`。
+对于由 systemd 管理的 v0.3.x koko 服务器，请按上文以 root 运行安装命令。该命令升级 koko 服务器并安装升级助手，此后即可使用 `koko server upgrade` 和 Web 界面中的升级。该机器上的 CLI 仍为 root 的 `/usr/local/bin/koko`。
 
 ## 回退
 
@@ -166,7 +175,7 @@ koko update --version v0.3.0
 curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | env KOKO_VERSION=v0.3.0 sh
 ```
 
-将 `v0.3.0` 替换为要回退到的版本。也可以使用该版本自带的 install.sh（位于 `releases/download/v0.3.0/install.sh`），并指定相同的 `KOKO_VERSION`。如果升级未更改 schema，回退即已完成。如果更改了 schema，旧版本的 koko 会拒绝在较新的数据库上安装，不写入任何内容，较新的 koko 服务器继续运行，install.sh 也不会改动 CLI。拒绝信息中会指出需要放回原位的快照：
+将 `v0.3.0` 替换为要回退到的版本。也可以使用该版本自带的 install.sh（位于 `releases/download/v0.3.0/install.sh`），并指定相同的 `KOKO_VERSION`。`koko server upgrade` 和升级助手只会升级到更新的版本，因此回退始终使用此命令。如果升级未更改 schema，回退即已完成。如果更改了 schema，旧版本的 koko 会拒绝在较新的数据库上安装，不写入任何内容，较新的 koko 服务器继续运行，install.sh 也不会改动 CLI。拒绝信息中会指出需要放回原位的快照：
 
 ```text
 koko: /var/lib/koko/koko.db: it is at schema version 14, which this koko (schema version 13) predates: run the newer koko that migrated it, or go back by putting koko.db.before-14 in place of koko.db; nothing was written
@@ -185,6 +194,8 @@ curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | 
 ```
 
 其中，将 `koko.db.before-<n>` 替换为拒绝信息中指出的快照，将 `v0.3.0` 替换为上文中的同一版本。升级后写入的数据会随较新的数据库一同丢失，该数据库保留在 `/var/lib/koko-newer` 中。
+
+`koko server install` 会拒绝替换比其自身 CLI 更新的 `kokod`（例如执行 `koko server upgrade` 之后的情况），以免使用较旧的 CLI 更改设置时使 koko 服务器回退。拒绝信息会指出两个版本以及 `sudo koko update`，且不写入任何内容。`KOKO_VERSION` 指定 CLI 自身的版本时则允许继续，上述回退命令即依此工作：install.sh 会将 `KOKO_VERSION` 传递给 `koko server install`。手动运行时，对应的命令为 `sudo env KOKO_VERSION=v0.3.0 koko server install`。
 
 回退到 v0.2.0 或 v0.1.0（当时 `koko` 和 `kokod` 尚未拆分为两个程序）时，无论是否需要恢复快照，都需要多执行一行命令。旧版本的 koko 会安装其自身的二进制文件和 unit，而 `/usr/local/bin/kokod` 会被保留且不再使用。旧版本的 koko 服务器开始运行后，删除 `/usr/local/bin/kokod`：
 
@@ -220,7 +231,9 @@ koko 目前没有备份命令。在 koko 服务器停止时复制的数据目录
 
 ## 卸载
 
-`koko server uninstall` 停止 koko 服务器，并删除其 unit 和 `/usr/local/bin/kokod`。它保留 CLI `/usr/local/bin/koko`、数据目录、根密钥和 `koko` 用户，并输出 koko 服务器原先监听的端口，以及原先设有的 Web 监听地址。如需在同一份数据上再次运行 koko 服务器，请运行不带 `--owner`、带上该 `--port`（若输出了 Web 监听地址，一并带上该 `--web-listen`）的 `sudo koko server install`：它会再次安装与自身同一版本的 `kokod`。
+`koko server uninstall` 停止 koko 服务器，并删除其 unit、升级助手的 unit 及其目录 `/var/lib/koko-upgrade`，以及 `/usr/local/bin/kokod`，不在机器上留下任何以 root 运行的 koko 组件。它保留 CLI `/usr/local/bin/koko`、数据目录、根密钥和 `koko` 用户，并输出 koko 服务器原先监听的端口，以及原先设有的 Web 监听地址。如需在同一份数据上再次运行 koko 服务器，请运行不带 `--owner`、带上该 `--port`（若输出了 Web 监听地址，一并带上该 `--web-listen`）的 `sudo koko server install`：它会再次安装与自身同一版本的 `kokod`。
+
+CLI 只有一个文件：使用 `rm ~/.local/bin/koko` 删除；root 的 CLI 使用 `sudo rm /usr/local/bin/koko` 删除。
 
 ## 在容器中运行
 
