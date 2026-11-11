@@ -175,7 +175,10 @@ types, and `api.calls` records each request (method, path, parsed body and
 headers); `api.requests(SpaceAdd)` is the bodies of one operation's calls.
 A handler may answer later, with a promise, and refuses a call by
 throwing `refusal(code, status)`, or `refusal(code, status, retryAfter)`
-for one whose answer carries `Retry-After`; an operation without a
+for one whose answer carries `Retry-After`, or `batchRefusal({1:
+"relay_in_use"})` for a batch refused for the records at those indexes,
+as [ADR 0050](../adr/0050-a-write-of-several-records-is-applied-all-or-none.md)
+has it; an operation without a
 handler answers
 `unknown_operation`, as the koko server does. `api.drop(n)` fails the next `n`
 requests as a dropped connection does, and `api.drop()` every one, as when

@@ -27,7 +27,8 @@ Spaces alone, as `koko host ls` shows them.
   Spaces" first, shown when `space.list` answers two Spaces or more; in
   the Hosts view the state select (In use, Managed, Registered, Retired,
   "All, with Retired"); **Filter**; in the Hosts view **Group by**
-  ([below](#group-by)); from 768 pixels wide, the columns button; and
+  ([below](#group-by)); from 768 pixels wide, the columns button; in the
+  Hosts view **Select** ([the Select mode](#the-select-mode)); and
   **Reset view** ([the view remembered](#the-view-in-the-url)).
   The view's terms that no select shows are chips under them, each with a
   button, "Remove the filter <term>", that takes it away.
@@ -75,6 +76,60 @@ A panel's table, or its list on a phone, is named by its Space and value
 
 The Services view lists its Services on one panel, not by Space, so it
 has no Group by, and choosing it drops the Hosts view's.
+
+## The Select mode
+
+**Select**, in the Hosts view's controls, starts the Select mode (#134,
+[the design](../web-design.md#the-select-mode)), in which several Hosts
+are ticked and one action is taken on them all. The page's part is
+[`useHostSelectMode`](../../web/src/pages/host/HostBatch.tsx); what any
+list page shares is in [`web/src/pages/batch/`](../../web/src/pages/batch/):
+the mode and its selection
+([`useSelectMode`](../../web/src/pages/batch/useSelectMode.tsx),
+[`selection.ts`](../../web/src/pages/batch/selection.ts)), the bar
+([`BatchBar`](../../web/src/pages/batch/BatchBar.tsx)) and the dialog
+([`BatchDialog`](../../web/src/pages/batch/BatchDialog.tsx)).
+
+- **In the mode** a row is no link: it has a checkbox, and a click or tap
+  anywhere on it toggles it. A Shift-click ticks, or unticks, every row
+  from the one toggled last to it, in the order the page shows them. Each
+  table's header has a checkbox for its rows, named "Select the 4 Hosts of
+  ops"; with Group by the Space's heading has one for the whole Space, and
+  on a phone, which has no table, each heading and subheading has one.
+- **The bar** at the foot is there from the start of the mode: "3
+  selected", how many of them the view does not show ("1 not in this
+  view"), **Select all N** ("Select all N matching" while the search or a
+  term narrows the view) until every row shown is ticked, the actions,
+  unavailable until a Host is ticked, and **Done**, which leaves the mode
+  and clears the selection, as pressing Select again does.
+- **The selection is kept** while the search, Filter, Group by, the sort
+  and the columns change and while the list reloads, by the Hosts' ids,
+  so it can be gathered across several searches. It holds any Host
+  `host.list` answers with `all`, a Retired one too; a Host that is gone
+  has left it. The Services view shows neither the button nor the bar.
+- **An action** opens one dialog for the whole batch, whose title and
+  button name the action and the count ("Retire 12 Hosts") and which lists
+  the Hosts. Applied, it is one call of the operation's batch form, all or
+  none ([the API](api.md#batches)): a notice says what was done, every
+  read of the page loads again, the mode ends and the selection clears.
+
+  | Action | Asks | Leaves out, saying so | Call |
+  | --- | --- | --- | --- |
+  | Move | the Space, of those that do not hold every Host selected | the Hosts in that Space already | `host.move` with `hosts`, `space` |
+  | Attribute: set | the key, which may be a new one, and its value, in the field of its type | none; it says how many have the key now | `host.set` with `hosts`, `attributes` |
+  | Attribute: remove | the key, of those the Hosts selected have | the Hosts without the key | `host.set` with `hosts`, `unset` |
+  | Retire | to confirm, stating what follows | the Hosts Retired already | `host.retire` with `hosts` |
+  | Delete | to confirm, and for more than one their number typed | the Hosts that have been Managed (a pinned host key) | `host.remove` with `hosts` |
+
+  With every Host selected left out, the dialog says so and offers only
+  Close.
+- **A refused batch** changed nothing. The dialog stays, headed "No Host
+  was moved", lists each Host at fault (the refusal's `items`, by index)
+  with the message of its code, and offers to send the batch again
+  without them ("Move the other 17 Hosts"), or only Close when every Host
+  is at fault. Cancel leaves the selection as it was. A failure that
+  names no Host, as a dropped connection or a batch of one, shows in
+  place, the form kept, and sending again reuses the Idempotency-Key.
 
 ## The view in the URL
 
@@ -402,6 +457,17 @@ axe on each page, dialog and pane state it renders.
   view; the Services tab dropping it; a field refused; a phone's lists.
   [`group.test.ts`](../../web/src/pages/host/group.test.ts) holds the order
   of each type, natural text order as the koko server's.
+- [`select.test.tsx`](../../web/src/pages/host/select.test.tsx): the
+  Select mode entered and left, by Done and by the button; a row, a
+  Shift-click's range, a table's header and, with Group by, a Space's
+  heading ticked; Select all and Select all matching; the selection kept
+  across a search and a state term, with the count of those not shown, and
+  sent whole; each action's dialog with its count, its list, what it
+  leaves out and its one call, the Attribute's value refused when its key
+  does not take it, and Delete's typed count; a refused batch naming the
+  Hosts at fault, Cancel keeping the selection, and the rest sent; a batch
+  with every Host at fault, and a refusal that names none; a phone's rows
+  and headings.
 - [`filter.test.tsx`](../../web/src/pages/host/filter.test.tsx): every
   comparison of every type built in Filter into the URL's term and back
   from it as the same chip and filter, relative dates kept as written and

@@ -8,6 +8,7 @@ import type { Read } from "../../shell/data";
 import { useT } from "../../shell/i18n";
 import { Sheet } from "../../ui/Page";
 import { AlertLine, Loaded } from "../../ui/states";
+import type { SelectMode } from "../batch/useSelectMode";
 import type { Defaults, ListPage, Tab } from "./controls";
 import { hostFields, serviceFields } from "./record";
 import { type Clock, type Columns, type Fields, type KeyTypes, sortBy, type View } from "./view";
@@ -56,6 +57,8 @@ export interface ListProps {
   services: readonly Service[];
   /** clear goes to the view's default, clearing the search and filters, and forgets the view remembered. */
   clear: () => void;
+  /** mode is the Hosts view's Select mode (#134). */
+  mode: SelectMode;
 }
 
 /** sorter is what a header's click does to the view: sortBy, as repeated --sort. */

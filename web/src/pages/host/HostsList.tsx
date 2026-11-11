@@ -1,11 +1,15 @@
+import { useEffect } from "react";
 import { Link } from "react-aria-components";
 
 import { type Host, HostList } from "../../api/host";
 import type { Service } from "../../api/service";
 import { useRead } from "../../shell/data";
 import { type Translate, useCount, useT } from "../../shell/i18n";
+import { usePhone } from "../../ui/phone";
 import { NoMatch } from "../../ui/states";
 import { StateMark } from "../../ui/StateMark";
+import { tickedOf } from "../batch/selection";
+import { Tick } from "../batch/Tick";
 import { groupBy } from "./group";
 import { keyLabel } from "./keys";
 import { columnsOf, InPanel, type ListProps, Missing, ShownCount, sorter, ViewFault } from "./ListParts";
@@ -58,36 +62,81 @@ function HostGroups(props: ListProps & { query: ListQuery }) {
  * in the order of the Spaces' names, and in it a panel, or, with Group by,
  * a subheading and a panel per value of its key (byValue); within a panel
  * the Hosts keep the order host.list answered them in, the view's sort or
- * else by name.
+ * else by name. In the Select mode (#134) each row has a checkbox and
+ * toggles in place of opening its Host, and each group has a checkbox for
+ * its rows: a table's header has its own, and the Space's heading has one
+ * where Group by splits the Space or, on a phone, where there is no table.
  */
-function Groups({ page, setView, types, q, spaces, services, clear, listed }: ListProps & { listed: readonly Host[] }) {
+function Groups({
+  page,
+  setView,
+  types,
+  q,
+  spaces,
+  services,
+  clear,
+  mode,
+  listed,
+}: ListProps & { listed: readonly Host[] }) {
   const t = useT();
   const count = useCount();
+  const phone = usePhone();
+  const { selecting, selection, report } = mode;
   const ofHost = byHost(services);
   const servicesOf = (h: Host) => ofHost.get(h.state === "retired" ? h.id : h.name) ?? [];
   const shown = listed.filter((h) => matches(hostValues(h, servicesOf(h)), q));
   const narrowed = q !== "" || page.list.filters.length > 0;
+  const grouped = page.group !== "";
+  // Group by's subheadings: a Space's Hosts by their value of its key, in the order host.list sorts its type in.
+  const byValue = (hosts: readonly Host[]) =>
+    groupBy(hosts, (h) => h.attributes[page.group], types(page.group) ?? { type: "text" });
+  const sections = [...new Set(shown.map((h) => h.space))].sort().map((space) => {
+    const hosts = shown.filter((h) => h.space === space);
+    const parts = grouped
+      ? byValue(hosts).map(({ value, records }) => ({
+          key: value === undefined ? "" : String(value),
+          name: value === undefined ? t("host.group.lacks", { key: page.group }) : String(value),
+          records,
+        }))
+      : [];
+    return { space, hosts, parts };
+  });
+  // The Hosts in the order the page shows them, which a Shift-click's range and "Select all" follow.
+  const order = sections.flatMap((s) => (grouped ? s.parts.flatMap((p) => p.records) : s.hosts)).map((h) => h.id);
+  const orderKey = order.join(",");
+  useEffect(() => {
+    report(orderKey === "" ? [] : orderKey.split(","), narrowed);
+  }, [report, orderKey, narrowed]);
+
   if (shown.length === 0) {
     return <NoMatch message={t("host.list.noMatch")} clear={t("host.list.clear")} onClear={clear} />;
   }
   const personal = new Set(spaces.filter((s) => s.personal).map((s) => s.name));
-  const groups = [...new Set(shown.map((h) => h.space))].sort();
   const columns = page.list.columns.map((key) => hostColumn(t, key, page.list.columns));
-  // Group by's subheadings: a Space's Hosts by their value of its key, in the order host.list sorts its type in.
-  const byValue = (hosts: readonly Host[]) =>
-    groupBy(hosts, (h) => h.attributes[page.group], types(page.group) ?? { type: "text" });
   const first: Column<Host> = {
     key: "name",
     label: t("host.key.name"),
     sortable: true,
-    cell: (h) => <HostName host={h} services={servicesOf(h)} />,
+    cell: (h) => <HostName host={h} services={servicesOf(h)} link={!selecting} />,
   };
+  const ids = (hosts: readonly Host[]) => hosts.map((h) => h.id);
+  const tickRow = (h: Host, on: boolean, shift: boolean) => selection.toggle(h.id, on, shift ? order : undefined);
+  const groupLabel = (hosts: readonly Host[], group: string) =>
+    t("batch.tickGroup", { things: count("host.count.hosts", hosts.length), group });
+  const groupTick = (hosts: readonly Host[], group: string) => (
+    <Tick
+      label={groupLabel(hosts, group)}
+      ticked={tickedOf(selection, ids(hosts))}
+      onChange={(on) => selection.setMany(ids(hosts), on)}
+      // In line with the rows' checkboxes: a table's on a desktop, a list's on a phone.
+      className="-my-3 md:ml-1"
+    />
+  );
   return (
     <>
       {narrowed && <ShownCount>{count("host.list.shown", listed.length, { shown: shown.length })}</ShownCount>}
       <div className="flex flex-col gap-6">
-        {groups.map((space) => {
-          const hosts = shown.filter((h) => h.space === space);
+        {sections.map(({ space, hosts, parts }) => {
           const id = `space-${space}`;
           const panel = (label: string, records: readonly Host[]) => (
             <div className="sheet overflow-hidden">
@@ -99,30 +148,49 @@ function Groups({ page, setView, types, q, spaces, services, clear, listed }: Li
                 columns={columns}
                 sort={page.list.sort}
                 onSort={sorter(page.list, setView)}
-                phoneRow={(h) => <PhoneRow host={h} />}
+                phoneRow={(h) => (
+                  <PhoneRow
+                    host={h}
+                    tick={selecting ? { ticked: selection.has(h.id), onTick: (on) => tickRow(h, on, false) } : undefined}
+                  />
+                )}
+                ticks={
+                  selecting
+                    ? {
+                        ticked: (h) => selection.has(h.id),
+                        onTick: tickRow,
+                        labelOf: (h) => t("batch.tick", { name: h.name }),
+                        all: tickedOf(selection, ids(records)),
+                        onAll: (on) => selection.setMany(ids(records), on),
+                        allLabel: groupLabel(records, label),
+                      }
+                    : undefined
+                }
               />
             </div>
           );
           return (
             <section key={space} aria-labelledby={id}>
-              <h2 id={id} className="t-heading mb-2 flex items-baseline gap-2 px-1">
-                {space}
+              <h2 className="t-heading mb-2 flex min-h-6 items-center gap-2 px-1">
+                {selecting && (grouped || phone) && groupTick(hosts, space)}
+                <span id={id}>{space}</span>
                 <span className="t-num font-normal text-muted">{hosts.length}</span>
                 {personal.has(space) && <span className="t-label font-normal">{t("host.list.personal")}</span>}
               </h2>
-              {page.group === "" ? (
+              {!grouped ? (
                 panel(space, hosts)
               ) : (
                 <div className="flex flex-col gap-4">
-                  {byValue(hosts).map(({ value, records }) => {
-                    const name = value === undefined ? t("host.group.lacks", { key: page.group }) : String(value);
+                  {parts.map(({ key, name, records }) => {
+                    const label = t("host.group.table", { space, group: name });
                     return (
-                      <div key={value === undefined ? "" : String(value)}>
-                        <h3 className="t-label mb-1.5 flex items-baseline gap-2 px-1 text-ink-2">
+                      <div key={key}>
+                        <h3 className="t-label mb-1.5 flex min-h-6 items-center gap-2 px-1 text-ink-2">
+                          {selecting && phone && groupTick(records, label)}
                           {name}
                           <span className="t-num text-muted">{records.length}</span>
                         </h3>
-                        {panel(t("host.group.table", { space, group: name }), records)}
+                        {panel(label, records)}
                       </div>
                     );
                   })}
@@ -136,13 +204,17 @@ function Groups({ page, setView, types, q, spaces, services, clear, listed }: Li
   );
 }
 
-/** HostName is a row's first cell: the link to the Host, and its Services' names after it. */
-function HostName({ host, services }: { host: Host; services: readonly Service[] }) {
+/** HostName is a row's first cell: the link to the Host, or its name alone where the row toggles, and its Services' names after it. */
+function HostName({ host, services, link }: { host: Host; services: readonly Service[]; link: boolean }) {
   return (
     <>
-      <Link href={hostPath(host)} className={linkClass}>
-        {host.name}
-      </Link>
+      {link ? (
+        <Link href={hostPath(host)} className={linkClass}>
+          {host.name}
+        </Link>
+      ) : (
+        <span className="t-name">{host.name}</span>
+      )}
       {services.length > 0 && (
         <span className="ml-3 t-label">{services.map((s) => s.name).join(", ")}</span>
       )}
@@ -150,15 +222,18 @@ function HostName({ host, services }: { host: Host; services: readonly Service[]
   );
 }
 
-/** PhoneRow is a Host on a phone: one link of three lines, its name and state, its address, and its provider, region and expiry. */
-function PhoneRow({ host }: { host: Host }) {
+/**
+ * PhoneRow is a Host on a phone: one link of three lines, its name and
+ * state, its address, and its provider, region and expiry. With tick, in
+ * the Select mode, the row is no link: a checkbox before the lines, and a
+ * tap anywhere toggles it.
+ */
+function PhoneRow({ host, tick }: { host: Host; tick?: { ticked: boolean; onTick: (on: boolean) => void } }) {
+  const t = useT();
   const a = host.attributes;
   const where = [a.provider, a.region].filter((v) => v !== undefined).join(" · ");
-  return (
-    <Link
-      href={hostPath(host)}
-      className="row-link flex flex-col gap-1.5 rounded-none px-4 py-3.5 text-foreground no-underline"
-    >
+  const lines = (
+    <>
       <span className="flex items-center justify-between gap-3">
         <span className="t-name truncate">{host.name}</span>
         <StateMark state={host.state} />
@@ -170,6 +245,25 @@ function PhoneRow({ host }: { host: Host }) {
           {a.expires_at !== undefined && <span className="t-num shrink-0">{a.expires_at}</span>}
         </span>
       )}
+    </>
+  );
+  if (tick) {
+    return (
+      <div
+        onClick={() => tick.onTick(!tick.ticked)}
+        className={`flex cursor-pointer items-center select-none ${tick.ticked ? "bg-accent-soft" : ""}`}
+      >
+        <Tick label={t("batch.tick", { name: host.name })} ticked={tick.ticked} onChange={tick.onTick} className="ml-1" />
+        <span className="flex min-w-0 flex-1 flex-col gap-1.5 py-3.5 pr-4 pl-0.5">{lines}</span>
+      </div>
+    );
+  }
+  return (
+    <Link
+      href={hostPath(host)}
+      className="row-link flex flex-col gap-1.5 rounded-none px-4 py-3.5 text-foreground no-underline"
+    >
+      {lines}
     </Link>
   );
 }

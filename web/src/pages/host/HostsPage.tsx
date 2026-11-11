@@ -27,6 +27,7 @@ import {
   writeListPage,
 } from "./controls";
 import { Filter, TermChips } from "./Filter";
+import { useHostSelectMode } from "./HostBatch";
 import { HostsList } from "./HostsList";
 import { keyLabel } from "./keys";
 import { columnsOf, defaults, fieldsOf, InPanel, type ListProps } from "./ListParts";
@@ -45,7 +46,8 @@ const AddHost = lazy(() => import("./HostForm").then((m) => ({ default: m.AddHos
  * the Space and state selects, Filter, Group by, sorting by a header and
  * the columns button over them, each kept in the URL in koko's grammar,
  * which the browser remembers for each view (useRememberedView), with
- * Reset view; and Add Host.
+ * Reset view; Select, which starts the Hosts view's Select mode
+ * (useHostSelectMode); and Add Host.
  */
 export function HostsPage() {
   const t = useT();
@@ -90,6 +92,7 @@ export function HostsPage() {
               attrs={a.attributes}
               spaces={s.spaces}
               hosts={h.hosts.filter((host) => host.state !== "retired")}
+              recorded={h.hosts}
               services={v.services}
             />
           )}
@@ -153,6 +156,7 @@ function ListArea({
   attrs,
   spaces,
   hosts,
+  recorded,
   services,
 }: {
   page: ListPage;
@@ -161,6 +165,8 @@ function ListArea({
   attrs: readonly AttrKey[];
   spaces: readonly Space[];
   hosts: readonly Host[];
+  /** recorded are every Host, Retired ones too, which a selection may hold. */
+  recorded: readonly Host[];
   services: readonly Service[];
 }) {
   const t = useT();
@@ -170,6 +176,7 @@ function ListArea({
   const types = keyTypes(fields, attrs);
   const clock: Clock = { now: new Date(), timeZone: browserTimeZone() };
   const setView = (next: View) => setPage({ ...page, list: next });
+  const { mode, select, overlays } = useHostSelectMode({ recorded, spaces, attrs, clock });
   const names = spaces.map((s) => s.name);
   const spaceSelect = names.length > 1;
   // The terms the Space and state selects show, in the Hosts view; every other term is a chip.
@@ -204,117 +211,123 @@ function ListArea({
     hosts,
     services,
     clear: remembered.reset,
+    mode,
   };
   return (
-    <Tabs
-      selectedKey={tab}
-      onSelectionChange={(k) => setPage(switchTab(page, k as Tab, defaults, spaceShown?.value))}
-      className="gap-0"
-    >
-      <div className="mb-5 flex flex-wrap items-center gap-2.5">
-        {/* The tabs keep their width in the row, which wraps instead. */}
-        <Tabs.ListContainer className="shrink-0">
-          <Tabs.List aria-label={t("host.list.views")}>
-            <Tabs.Tab id="hosts" className={viewTabClass}>
-              {t("host.list.title")}
-              <span className="t-num ml-1.5 text-muted">{hosts.length}</span>
-              <Tabs.Indicator />
-            </Tabs.Tab>
-            <Tabs.Tab id="services" className={viewTabClass}>
-              {t("host.services.title")}
-              <span className="t-num ml-1.5 text-muted">{services.length}</span>
-              <Tabs.Indicator />
-            </Tabs.Tab>
-          </Tabs.List>
-        </Tabs.ListContainer>
-        <SearchField
-          aria-label={t(tab === "hosts" ? "host.search" : "host.services.search")}
-          value={page.q}
-          onChange={(q) => setPage({ ...page, q }, true)}
-          className="min-w-56 flex-1"
-          fullWidth
-        >
-          <SearchField.Group>
-            <SearchField.SearchIcon />
-            <SearchField.Input placeholder={t(tab === "hosts" ? "host.search.hint" : "host.services.search.hint")} />
-            <SearchField.ClearButton aria-label={t("host.search.clear")} />
-          </SearchField.Group>
-        </SearchField>
-        {spaceSelect && (
-          <SearchChoice
-            label={t("host.key.space")}
-            hideLabel
-            value={space ?? "*"}
-            onChange={(chosen) => {
-              const name = chosen === null || chosen === "*" ? undefined : chosen;
-              if (tab === "hosts") {
-                setView(chooseSpace(view, name));
-              } else {
-                setPage({ ...page, space: name ?? "" });
-              }
-            }}
-            options={[{ id: "*", label: t("host.list.allSpaces") }, ...names.map((n) => ({ id: n, label: n }))]}
-            className="min-w-36 flex-1 md:w-44 md:flex-none"
+    <>
+      <Tabs
+        selectedKey={tab}
+        onSelectionChange={(k) => setPage(switchTab(page, k as Tab, defaults, spaceShown?.value))}
+        className="gap-0"
+      >
+        <div className="mb-5 flex flex-wrap items-center gap-2.5">
+          {/* The tabs keep their width in the row, which wraps instead. */}
+          <Tabs.ListContainer className="shrink-0">
+            <Tabs.List aria-label={t("host.list.views")}>
+              <Tabs.Tab id="hosts" className={viewTabClass}>
+                {t("host.list.title")}
+                <span className="t-num ml-1.5 text-muted">{hosts.length}</span>
+                <Tabs.Indicator />
+              </Tabs.Tab>
+              <Tabs.Tab id="services" className={viewTabClass}>
+                {t("host.services.title")}
+                <span className="t-num ml-1.5 text-muted">{services.length}</span>
+                <Tabs.Indicator />
+              </Tabs.Tab>
+            </Tabs.List>
+          </Tabs.ListContainer>
+          <SearchField
+            aria-label={t(tab === "hosts" ? "host.search" : "host.services.search")}
+            value={page.q}
+            onChange={(q) => setPage({ ...page, q }, true)}
+            className="min-w-56 flex-1"
+            fullWidth
+          >
+            <SearchField.Group>
+              <SearchField.SearchIcon />
+              <SearchField.Input placeholder={t(tab === "hosts" ? "host.search.hint" : "host.services.search.hint")} />
+              <SearchField.ClearButton aria-label={t("host.search.clear")} />
+            </SearchField.Group>
+          </SearchField>
+          {spaceSelect && (
+            <SearchChoice
+              label={t("host.key.space")}
+              hideLabel
+              value={space ?? "*"}
+              onChange={(chosen) => {
+                const name = chosen === null || chosen === "*" ? undefined : chosen;
+                if (tab === "hosts") {
+                  setView(chooseSpace(view, name));
+                } else {
+                  setPage({ ...page, space: name ?? "" });
+                }
+              }}
+              options={[{ id: "*", label: t("host.list.allSpaces") }, ...names.map((n) => ({ id: n, label: n }))]}
+              className="min-w-36 flex-1 md:w-44 md:flex-none"
+            />
+          )}
+          {tab === "hosts" && (
+            <Choice
+              label={t("host.key.state")}
+              hideLabel
+              value={stateChoice(view)}
+              onChange={(choice) => setView(chooseState(view, choice as StateChoice))}
+              options={[
+                { id: "inUse", label: t("host.list.inUse") },
+                { id: "managed", label: t("host.state.managed") },
+                { id: "registered", label: t("host.state.registered") },
+                { id: "retired", label: t("host.state.retired") },
+                { id: "all", label: t("host.list.withRetired") },
+              ]}
+              // No narrower than the state it shows, so its label stays on one line.
+              className="min-w-max flex-1 md:w-48 md:flex-none"
+            />
+          )}
+          <Filter
+            fields={fields}
+            attrs={attrs}
+            types={types}
+            clock={clock}
+            onAdd={(term) => setView({ ...view, filters: [...view.filters, term] })}
           />
-        )}
-        {tab === "hosts" && (
-          <Choice
-            label={t("host.key.state")}
-            hideLabel
-            value={stateChoice(view)}
-            onChange={(choice) => setView(chooseState(view, choice as StateChoice))}
-            options={[
-              { id: "inUse", label: t("host.list.inUse") },
-              { id: "managed", label: t("host.state.managed") },
-              { id: "registered", label: t("host.state.registered") },
-              { id: "retired", label: t("host.state.retired") },
-              { id: "all", label: t("host.list.withRetired") },
-            ]}
-            // No narrower than the state it shows, so its label stays on one line.
-            className="min-w-max flex-1 md:w-48 md:flex-none"
-          />
-        )}
-        <Filter
-          fields={fields}
-          attrs={attrs}
+          {tab === "hosts" && (
+            <SearchChoice
+              label={t("host.group")}
+              inlineLabel
+              value={page.group === "" ? "*" : page.group}
+              onChange={(chosen) => setPage({ ...page, group: chosen === null || chosen === "*" ? "" : chosen })}
+              options={[
+                { id: "*", label: t("host.group.none") },
+                // The keys as Filter offers them, and a key the URL holds that attr.list does not answer.
+                ...[...new Set([...attrs.map((a) => a.key), page.group].filter((k) => k !== ""))].map((k) => ({
+                  id: k,
+                  label: k,
+                })),
+              ]}
+              className="min-w-48 flex-1 md:w-56 md:flex-none"
+            />
+          )}
+          {!phone && (
+            <ColumnsButton keys={columnKeys} shown={view.columns} labelOf={(k) => keyLabel(t, k)} onChange={showColumn} />
+          )}
+          {tab === "hosts" && select}
+          <ResetView view={remembered} />
+        </div>
+        <TermChips
+          terms={chips}
           types={types}
           clock={clock}
-          onAdd={(term) => setView({ ...view, filters: [...view.filters, term] })}
+          onRemove={(index) => setView({ ...view, filters: view.filters.filter((_, i) => i !== index) })}
         />
-        {tab === "hosts" && (
-          <SearchChoice
-            label={t("host.group")}
-            inlineLabel
-            value={page.group === "" ? "*" : page.group}
-            onChange={(chosen) => setPage({ ...page, group: chosen === null || chosen === "*" ? "" : chosen })}
-            options={[
-              { id: "*", label: t("host.group.none") },
-              // The keys as Filter offers them, and a key the URL holds that attr.list does not answer.
-              ...[...new Set([...attrs.map((a) => a.key), page.group].filter((k) => k !== ""))].map((k) => ({
-                id: k,
-                label: k,
-              })),
-            ]}
-            className="min-w-48 flex-1 md:w-56 md:flex-none"
-          />
-        )}
-        {!phone && (
-          <ColumnsButton keys={columnKeys} shown={view.columns} labelOf={(k) => keyLabel(t, k)} onChange={showColumn} />
-        )}
-        <ResetView view={remembered} />
-      </div>
-      <TermChips
-        terms={chips}
-        types={types}
-        clock={clock}
-        onRemove={(index) => setView({ ...view, filters: view.filters.filter((_, i) => i !== index) })}
-      />
-      <Tabs.Panel id="hosts" className="p-0">
-        <HostsList {...listProps} />
-      </Tabs.Panel>
-      <Tabs.Panel id="services" className="p-0">
-        <ServicesList {...listProps} />
-      </Tabs.Panel>
-    </Tabs>
+        <Tabs.Panel id="hosts" className="p-0">
+          <HostsList {...listProps} />
+        </Tabs.Panel>
+        <Tabs.Panel id="services" className="p-0">
+          <ServicesList {...listProps} />
+        </Tabs.Panel>
+      </Tabs>
+      {/* Outside the Tabs, whose children React Aria also renders into its own hidden collection: a dialog there would open twice. */}
+      {tab === "hosts" && overlays}
+    </>
   );
 }

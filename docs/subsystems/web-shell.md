@@ -243,7 +243,9 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   connection open and never polls.
   An answer to an earlier request never shows as the current one's; a failed
   reload keeps the last answer to the same request beside the error. `reload`
-  shows what a write changed. The one read a person asks for by a click,
+  shows what a write changed, and `reloadReads` loads every read on the
+  page again, for a write that changed records several reads show, as a
+  batch does. The one read a person asks for by a click,
   showing or copying a Secret's value (`secret.show`), calls `call` on the
   click instead, and its page shows only the latest answer
   ([the Secrets page](secrets.md#the-web-uis-secrets-page)).
@@ -501,6 +503,11 @@ HeroUI (#121) took the pages out; each came back with its ticket (#122 to
 | Go back to the default view from a URL the list does not take, which says which term | none | anyone |
 | Reset view: the default view, the view the browser remembers forgotten | none | anyone |
 | Open a Host, a Retired one by its id | none | anyone |
+| Select several Hosts: a row, a range, a group, all the view shows, kept while the view changes | none | anyone |
+| Move the Hosts selected to a Space, in one batch | `host.move` with `hosts` | in each Host's Space and the one moved to |
+| Set or remove one Attribute of the Hosts selected, in one batch | `host.set` with `hosts` | in each Host's Space |
+| Retire the Hosts selected, asking first, in one batch | `host.retire` with `hosts` | in each Host's Space |
+| Delete the Hosts selected that were never Managed, asking first, in one batch | `host.remove` with `hosts` | in each Host's Space |
 | Add a Host: `name`, `space`, `address`, `port`, `account`, `relay`, its Attributes and Note | `host.add` (and `space.list` for the Spaces) | anyone, in a Space they can act in |
 
 **A Host** (`/hosts/<name or id>`); a Retired Host offers only what says so:

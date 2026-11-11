@@ -5,6 +5,7 @@
 // key; catalogues.test.ts checks that, and that every registered API error
 // code has a message in its area's file.
 
+import enBatch from "./en/batch";
 import enDevice from "./en/device";
 import enEnroll from "./en/enroll";
 import enErrors from "./en/errors";
@@ -17,6 +18,7 @@ import enSignin from "./en/signin";
 import enSpace from "./en/space";
 import enUser from "./en/user";
 import enWeb from "./en/web";
+import zhBatch from "./zh-CN/batch";
 import zhDevice from "./zh-CN/device";
 import zhEnroll from "./zh-CN/enroll";
 import zhErrors from "./zh-CN/errors";
@@ -43,6 +45,7 @@ const en = {
   ...enEnroll,
   ...enService,
   ...enSignin,
+  ...enBatch,
 };
 
 /** MessageKey is the key of a message, such as "shell.language". */
@@ -64,6 +67,7 @@ const zhCN: Catalogue = {
   ...zhEnroll,
   ...zhService,
   ...zhSignin,
+  ...zhBatch,
 };
 
 /** The languages the web UI ships, English first: the default. */

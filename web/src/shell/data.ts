@@ -8,6 +8,20 @@ import { useLocation } from "./router";
 // open and never polls: a read reloads on each navigation and whenever the
 // window regains focus.
 
+/** readers are what loads each read on the page again. */
+const readers = new Set<() => void>();
+
+/**
+ * reloadReads loads every read on the page again, as the window regaining
+ * focus does: for a write that changed records several reads show, such as
+ * a batch, whose records the page's counts and its list each read.
+ */
+export function reloadReads(): void {
+  for (const reload of readers) {
+    reload();
+  }
+}
+
 /** Read is what useRead holds of one read. */
 export interface Read<Resp> {
   /** data is the last answer to this request, kept while it reloads. */
@@ -34,7 +48,11 @@ export function useRead<Req, Resp>(op: Op<Req, Resp>, request: NoInfer<Req>, { e
   useEffect(() => {
     const regained = () => setFocus((n) => n + 1);
     window.addEventListener("focus", regained);
-    return () => window.removeEventListener("focus", regained);
+    readers.add(regained);
+    return () => {
+      window.removeEventListener("focus", regained);
+      readers.delete(regained);
+    };
   }, []);
 
   const body = JSON.stringify(request);

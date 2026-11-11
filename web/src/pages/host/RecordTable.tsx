@@ -4,13 +4,16 @@ import { type MouseEvent, type ReactNode, useId } from "react";
 
 import { useT } from "../../shell/i18n";
 import { usePhone } from "../../ui/phone";
+import type { Ticked } from "../batch/selection";
+import { Tick } from "../batch/Tick";
 import { readSortKey } from "./view";
 
 // The table a list's records lie in, on a panel: a header row whose
 // headers sort the list, a click by that key alone and a Shift-click as a
 // further key, and a row per record that is one link to it. On a phone each
 // record is a row of lines instead. And the columns button, which ticks the
-// columns shown.
+// columns shown. In a Select mode (#134) each row has a checkbox before it
+// and toggles on a click, and is no link.
 
 /** linkClass is a row's link, whose box covers its row, so the whole row opens the record and is one Tab stop. */
 export const linkClass =
@@ -40,14 +43,40 @@ export interface RecordTableProps<R> {
   onSort: (key: string, further: boolean) => void;
   /** phoneRow is a record as a phone shows it: one link of a few lines. */
   phoneRow: (record: R) => ReactNode;
+  /** ticks, in a Select mode, puts a checkbox before each row, which a click anywhere on the row toggles, and one for them all in the header row. */
+  ticks?: RowTicks<R>;
+}
+
+/** RowTicks are a table's checkboxes in a Select mode: one a row, and the header's for every row. */
+export interface RowTicks<R> {
+  ticked: (record: R) => boolean;
+  /** onTick hears a row ticked or unticked, and whether Shift was held, which ticks a range. */
+  onTick: (record: R, on: boolean, shift: boolean) => void;
+  /** labelOf names a row's checkbox, such as "Select web1". */
+  labelOf: (record: R) => string;
+  all: Ticked;
+  onAll: (on: boolean) => void;
+  /** allLabel names the header's checkbox, such as "Select the 14 Hosts of ops". */
+  allLabel: string;
 }
 
 /**
  * RecordTable is a list's records on a panel: a table on a desktop, rows of
  * lines on a phone. The whole row is the link to its record; its first
- * cell's link covers it, so it is one Tab stop.
+ * cell's link covers it, so it is one Tab stop. With ticks, a row is no
+ * link: a click anywhere on it ticks it, and its checkbox is its Tab stop.
  */
-export function RecordTable<R>({ label, records, idOf, first, columns, sort, onSort, phoneRow }: RecordTableProps<R>) {
+export function RecordTable<R>({
+  label,
+  records,
+  idOf,
+  first,
+  columns,
+  sort,
+  onSort,
+  phoneRow,
+  ticks,
+}: RecordTableProps<R>) {
   const phone = usePhone();
   if (phone) {
     return (
@@ -65,28 +94,45 @@ export function RecordTable<R>({ label, records, idOf, first, columns, sort, onS
       <table aria-label={label} className="w-full border-separate border-spacing-0">
         <thead>
           <tr>
-            <Header column={first} sort={sort} onSort={onSort} />
+            {ticks && (
+              <th scope="col" className="h-10 w-11 border-b border-line py-0 pr-0 pl-2">
+                <Tick label={ticks.allLabel} ticked={ticks.all} onChange={ticks.onAll} className="-my-1" />
+              </th>
+            )}
+            <Header column={first} sort={sort} onSort={onSort} flush={ticks !== undefined} />
             {columns.map((c) => (
               <Header key={c.key} column={c} sort={sort} onSort={onSort} />
             ))}
           </tr>
         </thead>
         <tbody>
-          {records.map((r) => (
-            <tr key={idOf(r)} className="group relative hover:bg-surface-secondary">
-              <th
-                scope="row"
-                className="h-15 max-w-80 border-b border-line px-5 text-left font-normal whitespace-nowrap group-last:border-0"
+          {records.map((r) => {
+            const ticked = ticks?.ticked(r) === true;
+            return (
+              <tr
+                key={idOf(r)}
+                onClick={ticks ? (event) => ticks.onTick(r, !ticked, event.shiftKey) : undefined}
+                className={`group relative ${ticked ? "bg-accent-soft" : "hover:bg-surface-secondary"} ${ticks ? "cursor-pointer select-none" : ""}`}
               >
-                {first.cell(r)}
-              </th>
-              {columns.map((c) => (
-                <td key={c.key} className="max-w-72 truncate border-b border-line px-5 group-last:border-0">
-                  {c.cell(r)}
-                </td>
-              ))}
-            </tr>
-          ))}
+                {ticks && (
+                  <td className="w-11 border-b border-line py-0 pr-0 pl-2 group-last:border-0">
+                    <Tick label={ticks.labelOf(r)} ticked={ticked} onChange={(on, shift) => ticks.onTick(r, on, shift)} />
+                  </td>
+                )}
+                <th
+                  scope="row"
+                  className={`h-15 max-w-80 border-b border-line text-left font-normal whitespace-nowrap group-last:border-0 ${ticks ? "pr-5 pl-2" : "px-5"}`}
+                >
+                  {first.cell(r)}
+                </th>
+                {columns.map((c) => (
+                  <td key={c.key} className="max-w-72 truncate border-b border-line px-5 group-last:border-0">
+                    {c.cell(r)}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -103,10 +149,13 @@ function Header<R>({
   column,
   sort,
   onSort,
+  flush = false,
 }: {
   column: Column<R>;
   sort: readonly string[];
   onSort: (key: string, further: boolean) => void;
+  /** flush sets the header against a checkbox column before it. */
+  flush?: boolean;
 }) {
   const t = useT();
   const id = useId();
@@ -114,7 +163,7 @@ function Header<R>({
   const rank = keys.findIndex((k) => k.key === column.key);
   const key = keys[rank];
   const direction = key?.desc === true ? "descending" : "ascending";
-  const className = "h-10 border-b border-line px-5 text-left font-normal whitespace-nowrap";
+  const className = `h-10 border-b border-line text-left font-normal whitespace-nowrap ${flush ? "pr-5 pl-2" : "px-5"}`;
   if (!column.sortable) {
     return (
       <th scope="col" className={`${className} t-label`}>

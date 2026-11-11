@@ -164,19 +164,6 @@ not only with the local clone's version.
 **Evidence:** d6db4d8 (#143); runs 42982103558 and 42982103626; fixed by
 7fe9f3d and 6791357
 
-### What a fake remembers about a file by its inode holds the file open
-
-**Why:** the fake machine recorded each file's owner by device and inode,
-as `os.SameFile` compares them, and kept the record after the file was
-removed. Linux then gave the freed inode of a temporary file the installer
-had given to `root` to a later `upgrade.request`, the fake answered `root`
-for it, and the upgrade helper refused the request:
-`TestTheUpgradeHelperPutsThePreviousKokodBack` failed on CI's ubuntu job at
-c36357e, which touched nothing near the helper. An inode is one file's only
-while that file exists or is held open.
-**Seen:** 1 (2026-11-11)
-**Evidence:** check run 43006445436; #150
-
 ## Moved to the code standards
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128; check run 42951455550).

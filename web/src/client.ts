@@ -1,5 +1,5 @@
 import type { Op } from "./api/api";
-import type { ErrorResponse } from "./api/errors";
+import type { ErrorResponse, ItemError } from "./api/errors";
 import type { AuthEndpoint } from "./api/signin";
 
 /** ApiError is a call the koko server refused, with its stable error code. */
@@ -10,12 +10,19 @@ export class ApiError extends Error {
    * one, as too_many_attempts does: how long to wait before trying again.
    */
   readonly retryAfter?: number;
+  /**
+   * items are, in the refusal of a batch of several records, each record
+   * at fault, by its index in the batch (ADR 0050); every other refusal
+   * has none.
+   */
+  readonly items?: readonly ItemError[];
 
-  constructor(code: string, message: string, retryAfter?: number) {
+  constructor(code: string, message: string, retryAfter?: number, items?: readonly ItemError[]) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     this.retryAfter = retryAfter;
+    this.items = items;
   }
 }
 
@@ -139,7 +146,7 @@ function answered<Resp>({ response, body }: { response: Response; body: string }
   if (!response.ok) {
     const { error } = parsed as ErrorResponse;
     const retryAfter = Number.parseInt(response.headers.get("Retry-After") ?? "", 10);
-    throw new ApiError(error.code, error.message, Number.isNaN(retryAfter) ? undefined : retryAfter);
+    throw new ApiError(error.code, error.message, Number.isNaN(retryAfter) ? undefined : retryAfter, error.items);
   }
   return parsed as Resp;
 }

@@ -212,6 +212,7 @@ HeroUI parts, as the preview composes them:
 | Searchable choice | `ComboBox` | Picking one item from a list that can grow; see below |
 | Segments | `ToggleButtonGroup` | A choice among two to four, all in view; the chosen one inverts (text colour as fill) |
 | Row menu | `Dropdown` | The actions a row uses less |
+| Selection bar | an island at the foot, `Button`s | The count, Select all, the actions and Done of [the Select mode](#the-select-mode) |
 | Copy | `Button` | Becomes "Copied" for 1.6 s, announced politely |
 | Command line | a `<code>` in an inset block | A `$`, the command, Copy; a line for a file has no `$` |
 | Shown once | an inset block with a dashed accent edge | A Join Code or Password Link, its time left counting down, Copy, and the line that it is not shown again |
@@ -262,6 +263,7 @@ closes it, unless closing would lose something.
 | A popover or menu: Filter, Columns, a select's or searchable choice's list, a row menu, the top bar's menus, the account panel | Closes it, always |
 | A short form or a side panel with a form: Add Host, Edit, Add Service, a Service's panel, Rename, Move, Add Secret, Set value, Add Space, the first step of Invite, Add device and a Password Link; a Space's panel, for its Add Members field; a person's panel, for its Add to a Space field | Closes it while nothing in it has changed; once something has been typed or chosen, does nothing |
 | A confirmation | Cancels it, as Cancel does, unless its call runs; a name typed in it to confirm is not kept |
+| A batch's dialog ([the Select mode](#the-select-mode)) | A form (Move, Attribute) as a short form; a confirmation (Retire, Delete) as one, but not once the count has been typed; a refused batch's list of records at fault closes, as Cancel does |
 | A value shown once: a Join Code or a Password Link | Does nothing, since the value cannot be shown again; Done, the close button and Escape close it |
 | A side panel without a form: a Service on a Retired Host | Closes it, always |
 
@@ -330,7 +332,8 @@ released, so it needs no redirect.
   search field that grows; a Space select ("All Spaces" first), shown when
   there are two Spaces or more; then, in the Hosts view, a state select
   (In use, Managed, Registered, Retired, "All, with Retired"), **Filter**,
-  **Group by**, the columns button (desktop only) and **Reset view**. Each
+  **Group by**, the columns button (desktop only), **Select**
+  ([the Select mode](#the-select-mode)) and **Reset view**. Each
   control keeps its label on one line, a tab as wide as its label and
   count; when room runs out the row wraps onto a second line.
 - **Filter** opens a popover: field or Attribute, comparison, value (a
@@ -511,6 +514,54 @@ Retired is reached through the Host's id, and its panel offers no action.
   page](subsystems/secrets.md#the-web-uis-secrets-page)).
 - Add Secret: Name, Space, Value (several lines). Set a new value: one
   field. Delete asks first.
+
+### The Select mode
+
+Acting on several records at once, the Owner's choice of three designs on
+a live preview (#134): a mode, the same on a phone and a desktop, over a
+checkbox column with a bar and over actions on the whole view. It is on
+the Hosts list.
+
+- **Select** (secondary, a list with ticks) sits in the controls row.
+  Pressed, it becomes **Done** (primary) and the mode is on: rows are no
+  longer links; each shows a checkbox before its name, and a click or tap
+  anywhere on a row toggles it. A ticked row takes the soft accent fill.
+  Shift-click ticks a range on a desktop.
+- **Groups.** Each table's header row has a checkbox for its rows. With
+  Group by, the Space's heading has one for the whole Space; on a phone,
+  where a panel is a list, each heading and subheading has one. A group
+  with some rows ticked shows the mixed state.
+- **The bar** floats at the foot from the start of the mode, an island
+  like the phone's bar of places, which it covers on a phone: the count
+  ("12 selected"), how many of those the view does not show ("3 not in
+  this view"), **Select all N** ("Select all N matching" under a search
+  or Filter) until every row shown is ticked, the actions, each an icon
+  and a word, the ones that take something away set apart in the danger
+  colour, and **Done**. The actions are unavailable until something is
+  ticked. On a phone the bar is two lines: the count, Select all and Done
+  over the actions. Done leaves the mode and clears the selection.
+- **The selection is kept when the view changes.** Search, Filter, Group
+  by and sorting keep working in the mode, so a selection can be gathered
+  across several searches.
+- **Actions on Hosts:** Move (to a Space), Attribute (set or remove one),
+  Retire, Delete.
+- **One dialog per batch.** Its title and its button name the action and
+  the count ("Retire 12 Hosts"), and it lists the records, two columns in
+  an inset block that scrolls in place. Move and Attribute are a short
+  form (`Modal`, medium); Retire and Delete are a confirmation
+  (`AlertDialog`) that states the consequence, and Delete of more than
+  one asks for the count to be typed.
+- **Left out before sending, and said so** under the list: Hosts already
+  in the chosen Space, already Retired, without the key being removed,
+  and, for Delete, Hosts that have been Managed. The count in the title
+  and the button is of the records the batch acts on.
+- **A refused batch.** A batch is applied in full or not at all. Refused,
+  the dialog stays and says nothing was applied ("No Host was moved"),
+  lists the records at fault, each with the koko server's reason, and
+  offers to send the batch again without them ("Move the other 17
+  Hosts"). Cancel leaves the selection as it was.
+- **Success.** A notice says what was done ("17 Hosts are now in ops."),
+  the mode ends and the selection clears.
 
 ### Access (`/access`)
 
