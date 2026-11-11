@@ -22,7 +22,7 @@ import { SpaceList } from "../../api/space";
 import { navigate } from "../../shell/router";
 import { expectAccessible } from "../../test/axe";
 import { clipboard } from "../../test/clipboard";
-import { chooseRowAction, clickOutside, searchAndChoose } from "../../test/controls";
+import { chooseRowAction, clickOutside, expectChosen, searchAndChoose } from "../../test/controls";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { setViewportWidth } from "../../test/media";
 import { actAs, alerts, renderAt } from "../../test/pages";
@@ -287,7 +287,7 @@ test("Edit sends one host.set with only what changed, a relative date resolved, 
   expect(within(panel).queryByRole("textbox", { name: "Name" })).toBeNull();
   expect(within(panel).queryByRole("combobox", { name: "Space" })).toBeNull();
   expect((within(panel).getByRole("textbox", { name: "Port" }) as HTMLInputElement).value).toBe("2222");
-  expect((within(panel).getByRole("combobox", { name: "Relay" }) as HTMLInputElement).value).toBe("web1");
+  await expectChosen(within(panel).getByRole("combobox", { name: "Relay" }), "web1");
   expect((within(panel).getByRole("textbox", { name: "Value of cores" }) as HTMLInputElement).value).toBe("8");
   await expectAccessible();
 

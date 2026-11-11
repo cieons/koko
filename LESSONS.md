@@ -149,5 +149,5 @@ test's fix of 2026-11-10
 
 ## Moved to the code standards
 
-- Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128).
+- Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128; check run 42951455550).
 - A channel or connection closes only once every request on it has its answer: [What a change contains](docs/code-standards.md#what-a-change-contains) (seen 2026-11-06, 2026-11-08, 2026-11-10; #49, #59, #64, #81, #127).

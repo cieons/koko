@@ -3,7 +3,7 @@ import { expect, test, vi } from "vitest";
 
 import { ServiceList } from "../../api/service";
 import { expectAccessible } from "../../test/axe";
-import { searchAndChoose } from "../../test/controls";
+import { expectChosen, searchAndChoose } from "../../test/controls";
 import { fakeApi } from "../../test/fakeApi";
 import { setViewportWidth } from "../../test/media";
 import { actAs, renderAt } from "../../test/pages";
@@ -250,7 +250,7 @@ test("the Space select writes a space term, shows one built in Filter, and leave
   const first = renderAt("/hosts");
   await screen.findByRole("table", { name: "ops" });
   const space = screen.getByRole("combobox", { name: "Space" }) as HTMLInputElement;
-  expect(space.value).toBe("All Spaces");
+  await expectChosen(space, "All Spaces");
 
   await searchAndChoose("Space", "op", "ops");
   expect(query()).toEqual([["filter", "space=ops"]]);
@@ -265,7 +265,7 @@ test("the Space select writes a space term, shows one built in Filter, and leave
 
   renderAt("/hosts?filter=space%3Ddev&filter=space!%3Dops");
   await screen.findByRole("table", { name: "dev" });
-  expect((screen.getByRole("combobox", { name: "Space" }) as HTMLInputElement).value).toBe("All Spaces");
+  await expectChosen("Space", "All Spaces");
   expect(chips()).toEqual(["space = dev", "space ≠ ops"]);
 });
 

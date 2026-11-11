@@ -101,3 +101,15 @@ export async function searchAndChoose(
   fireEvent.click(within(listbox).getByRole("option", { name: option }));
   await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
 }
+
+/**
+ * expectChosen waits for the searchable choice, by its name or itself, to
+ * show text: it first shows with its field empty, and React Aria fills in
+ * the item chosen a render later.
+ */
+export async function expectChosen(choice: string | HTMLElement, text: string): Promise<void> {
+  await waitFor(() => {
+    const input = typeof choice === "string" ? screen.getByRole<HTMLInputElement>("combobox", { name: choice }) : choice;
+    expect((input as HTMLInputElement).value).toBe(text);
+  });
+}

@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { HostAdd } from "../../api/host";
 import { expectAccessible } from "../../test/axe";
-import { clickOutside, searchAndChoose } from "../../test/controls";
+import { clickOutside, expectChosen, searchAndChoose } from "../../test/controls";
 import { fakeApi, refusal } from "../../test/fakeApi";
 import { setViewportWidth } from "../../test/media";
 import { actAs, alerts, renderAt } from "../../test/pages";
@@ -50,7 +50,7 @@ test("a Host added with only the fields given, in the caller's Personal Space, a
 
   const panel = await openAddHost();
   await waitFor(() => expect(document.activeElement).toBe(within(panel).getByRole("textbox", { name: "Name" })));
-  expect((within(panel).getByRole("combobox", { name: "Space" }) as HTMLInputElement).value).toBe("alice");
+  await expectChosen(within(panel).getByRole("combobox", { name: "Space" }), "alice");
   expect((within(panel).getByRole("textbox", { name: "Host Account" }) as HTMLInputElement).value).toBe("root");
   expect((within(panel).getByRole("textbox", { name: "Port" }) as HTMLInputElement).value).toBe("22");
   await expectAccessible();

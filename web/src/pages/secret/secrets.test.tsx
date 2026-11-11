@@ -16,7 +16,7 @@ import { type Space, SpaceList } from "../../api/space";
 import type { User } from "../../api/user";
 import { expectAccessible } from "../../test/axe";
 import { clipboard } from "../../test/clipboard";
-import { chooseRowAction, searchAndChoose } from "../../test/controls";
+import { chooseRowAction, expectChosen, searchAndChoose } from "../../test/controls";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { actAs, alerts, renderAt, statuses } from "../../test/pages";
 
@@ -201,7 +201,7 @@ test("a bookmark with a search and a Space opens the list narrowed", async () =>
 
   expect(names()).toEqual({ ops: ["token"] });
   expect(screen.getByRole<HTMLInputElement>("searchbox", { name: "Search Secrets" }).value).toBe("token");
-  expect(screen.getByRole<HTMLInputElement>("combobox", { name: "Space" }).value).toBe("ops");
+  await expectChosen("Space", "ops");
 });
 
 // Copy, Show and Hide.
