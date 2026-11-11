@@ -1,5 +1,5 @@
 ---
-status: refined by ADR-0041
+status: refined by ADR-0041; its upgrade, refined by ADR-0048
 ---
 
 # The koko server installs itself and has no configuration file

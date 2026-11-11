@@ -1,3 +1,7 @@
+---
+status: its CLI in /usr/local/bin, refined by ADR-0047; its install over a newer kokod, refined by ADR-0049
+---
+
 # koko installs the koko server of its own version
 
 The CLI comes first, and the koko server is installed when asked for, the

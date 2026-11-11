@@ -1,3 +1,7 @@
+---
+status: its rejected compatibility rule, refined by ADR-0049
+---
+
 # koko is the CLI and kokod the koko server
 
 koko ships two programs, built from one module at one commit and released

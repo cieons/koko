@@ -1,3 +1,7 @@
+---
+status: its payload, refined by ADR-0049
+---
+
 # The koko server reports its version in an SSH global request
 
 Once a connection to the koko server has authenticated, and before the koko
