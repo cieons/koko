@@ -45,13 +45,34 @@ didn't run is listed as not run.
 
 ## Commits
 
-The subject names the area, then says what the user now sees, as plain
-behaviour:
+A commit follows [Conventional Commits](https://www.conventionalcommits.org/):
+one short subject line, then a blank line and a body when the change needs
+one.
 
 ```
-gateway: a revoked Device Session ends the open Tunnel instead of the next one (#12)
+fix(gateway): end the open Tunnel when its Device Session is revoked (#12)
+
+A revoked Device Session ended the next Tunnel it opened rather than the
+one already open, so ...
+
+Verified: TestRevokeEndsTheOpenTunnel fails without the fix.
 ```
 
-The area is the subsystem (`cli`, `api`, `gateway`, `tunnel`, `enroll`,
-`space`, `secret`, `web`). The body says how the change was verified and
-which test fails without it.
+- **Type.** Use one of:
+  - `feat`: behaviour a person or an agent can use;
+  - `fix`: a bug;
+  - `docs`, `test`;
+  - `refactor`: no change in behaviour;
+  - `perf`, `build`, `ci`, `chore`.
+
+  A change that breaks compatibility adds `!` after the scope and a
+  `BREAKING CHANGE:` footer.
+- **Scope.** The area, the subsystem: `cli`, `api`, `gateway`, `tunnel`,
+  `enroll`, `space`, `secret`, `server`, `web`, `install`, `release`.
+- **Subject.** Imperative, lower case after the colon, and no full stop.
+  It ends with the issue, `(#12)`, and is at most 72 characters with it.
+  It says what changes, not how.
+- **Body.** Wrapped at 72 columns. It covers:
+  - what changed and why, and the decisions taken;
+  - how the change was verified, and which test fails without it;
+  - for user-facing strings, each listed as English | Chinese.

@@ -132,12 +132,25 @@ The [release workflow](../../.github/workflows/release.yml) runs on a pushed
       it (`actions/attest`, `subject-name`, `subject-digest`,
       `push-to-registry`);
    4. `gh release create` with every file in the `dist/` artifact and notes
-      generated from the commits. A tag with a pre-release part
+      generated from the commits, which the person releasing then replaces
+      with the release's notes (below). A tag with a pre-release part
       (`v0.3.0-rc.1`) is published as a pre-release, which
       `releases/latest` skips;
    5. `latest` moved to the index digest by `skopeo copy`, unless the tag
       has a pre-release part. Moved last, `latest` never names an image
       whose Release failed to publish.
+
+**Release notes.** Three sections, each item one line: a short summary of
+what changed for the reader, ending with its issue (`#146`) or, without
+one, its commit's short hash, which GitHub links:
+
+- **What's new**: the `feat` commits.
+- **Fixes**: the `fix` commits.
+- **Upgrading**: only what this release asks of the reader, such as a
+  schema change and its snapshot, or a step that `koko update` and the
+  Compose lines do not cover.
+
+Details stay in the issue and the docs; the notes link to them.
 
 Attestations and anonymous downloads need the repository public (or, for
 attestations, GitHub Enterprise Cloud).
