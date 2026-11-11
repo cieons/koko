@@ -111,9 +111,20 @@ func join(ctx context.Context, in *Input) (joined, error) {
 	// direct path does. A connection that joined but sends no report is
 	// such a drop.
 	joining := conn
-	if _, err := conn.Report(dialing); err != nil {
+	switch report, err := conn.Report(dialing); {
+	case err != nil:
 		_ = conn.Close()
 		joining = nil
+	default:
+		// The join is done by now, in SSH authentication, but nothing
+		// more is sent to a koko server this CLI does not work with.
+		if err := in.window(report, "at "+code.Address); err != nil {
+			_ = conn.Close()
+			staged.Abort()
+			_, e := classify(err)
+			return joined{}, &cliError{code: e.Code, message: fmt.Sprintf(
+				"the Join Code joined this device, but %s; the code is spent: ask for a new one once that is done, and revoke the Device Session this join left, which koko device ls lists", e.Message)}
+		}
 	}
 	c := apiclient.New(func(ctx context.Context) (serverconn.Conn, error) {
 		if first := joining; first != nil {

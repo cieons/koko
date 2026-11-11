@@ -48,7 +48,7 @@ func TestCompareOrdersKokosVersions(t *testing.T) {
 
 // A CLI states its version in its SSH version string, and the koko server
 // reads it back; a string that states none, as every CLI before the window
-// sent, is v0.3.0.
+// sent, or none koko can read, is v0.3.0.
 func TestTheSSHVersionStringCarriesTheCLIsVersion(t *testing.T) {
 	t.Parallel()
 	for _, version := range []string{"v0.4.0", "v0.4.0-rc.1", "v0.4.1-0.20261112090000-0123456789ab+dirty", "(devel)"} {
@@ -60,7 +60,7 @@ func TestTheSSHVersionStringCarriesTheCLIsVersion(t *testing.T) {
 			t.Errorf("CLIVersion(%q) = %q, want %q", s, got, version)
 		}
 	}
-	for _, s := range []string{"SSH-2.0-koko", "SSH-2.0-OpenSSH_9.6", "SSH-2.0-kokoX v9.0.0", ""} {
+	for _, s := range []string{"SSH-2.0-koko", "SSH-2.0-OpenSSH_9.6", "SSH-2.0-kokoX v9.0.0", "SSH-2.0-koko unknown", "SSH-2.0-koko v0.0.1 extra", ""} {
 		if got := compat.CLIVersion(s); got != "v0.3.0" {
 			t.Errorf("CLIVersion(%q) = %q, want v0.3.0, the version of a CLI that states none", s, got)
 		}

@@ -271,7 +271,9 @@ fake GitHub (the releases hook, `server.Config.Releases`).
 09:00 UTC: v0.5.0 is available`, or `not checked yet`, `… is the latest
 release`, or `…, which failed: <error>`, comparing versions as
 [`compat`](../../internal/shared/compat/compat.go) does: a pseudo-version
-just before its next release, `(devel)` the newest.
+just before its next release, one that names no release before it, as a
+build from a clone without tags has (`v0.0.0-<time>-<revision>`), after
+every release, and `(devel)` the newest.
 
 ### How it upgrades
 

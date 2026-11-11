@@ -32,19 +32,21 @@ func (e *outsideWindow) Error() string { return e.err.Error() }
 
 func (e *outsideWindow) Unwrap() error { return e.err }
 
-// window checks, from the koko server's report, that it and this CLI work
-// together, and fails with an *outsideWindow otherwise.
-func (in *Input) window(report wire.Report) error {
+// window checks, from the report of the koko server where names, such as
+// "at koko.example.com:7822", that it and this CLI work together, and
+// fails with an *outsideWindow otherwise. A version it cannot read, as
+// compat.Valid says, is unknown, and it judges none by it.
+func (in *Input) window(report wire.Report, where string) error {
 	self := in.runner.self().Version
 	switch {
-	case report.Oldest != "" && compat.Newer(report.Oldest, self):
+	case compat.Valid(self) && compat.Valid(report.Oldest) && compat.Newer(report.Oldest, self):
 		return &outsideWindow{report: report, err: &cliError{code: api.CodeCLITooOld.Name, message: fmt.Sprintf(
 			"this koko is %s, older than %s, the oldest koko the koko server %s works with: run koko update",
-			self, report.Oldest, in.where())}}
-	case compat.Newer(compat.Oldest, report.Version):
+			self, report.Oldest, where)}}
+	case compat.Valid(report.Version) && compat.Newer(compat.Oldest, report.Version):
 		return &outsideWindow{report: report, err: &cliError{code: codeServerTooOld, message: fmt.Sprintf(
 			"the koko server %s runs koko %s, older than %s, the oldest koko this koko works with: upgrade the koko server",
-			in.where(), report.Version, compat.Oldest)}}
+			where, report.Version, compat.Oldest)}}
 	}
 	return nil
 }

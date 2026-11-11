@@ -175,8 +175,9 @@ status. A command reaches the koko server only on its first `in.Call`, so
   ([the device](device-connection.md#on-the-device)), the API's
   `cli_too_old` for a CLI below the oldest koko the koko server's report
   names, before it sends anything, naming both versions and `koko update`,
-  which `koko tunnel` prints as its one line, exit 1, before ssh exits 255
-  ([the window](api.md#the-way-in)), `already_joined`
+  which `koko tunnel` prints as its one line, exit 1, before ssh exits 255,
+  and `koko join`, whose join is done in SSH authentication, after it,
+  saying the code is spent ([the window](api.md#the-way-in)), `already_joined`
   (`koko join` on a joined device, naming `koko device revoke` and `koko
   leave`; `koko ssh setup` on one, naming `koko join`),
   `invalid_join_code` (the koko server refused the Join Code, used, expired

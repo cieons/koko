@@ -286,7 +286,7 @@ func (in *Input) connect(ctx context.Context) (serverconn.Conn, error) {
 	// Here already: reach waited for it. One that does not parse fails the
 	// command's first call, as server_unreachable.
 	if report, err := conn.Report(ctx); err == nil {
-		if err := in.window(report); err != nil {
+		if err := in.window(report, in.where()); err != nil {
 			_ = conn.Close()
 			return nil, err
 		}

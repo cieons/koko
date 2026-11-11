@@ -5,9 +5,11 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -189,6 +191,34 @@ func TestACLIBelowTheWindowFailsEveryCommandItself(t *testing.T) {
 		t.Errorf("the koko server answered %d call(s), want none", n)
 	}
 	harness.Run(t, releaseCLI(t, "v0.5.0", path), nil, "space", "ls").WantSuccess(t)
+}
+
+// A CLI below the window that joins, in SSH authentication, sends nothing
+// more: it fails with cli_too_old, naming the Server Address, says that
+// the code is spent, and keeps no join.
+func TestAJoinBelowTheWindowSendsNothingMore(t *testing.T) {
+	t.Parallel()
+	h := harness.Start(t)
+	jc := deviceAdd(t, h, "laptop")
+	home := t.TempDir()
+	r := harness.Run(t, releaseCLI(t, "v0.2.0", ""), []string{"HOME=" + home}, "join", jc.Code, "--json")
+	msg := r.WantError(t, 1, "cli_too_old")
+	for _, want := range []string{"at " + decode(t, jc.Code).Address, "v0.2.0", compat.Oldest, "the code is spent"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the message %q does not name %q", msg, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, ".ssh", "koko", "client.json")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the device keeps a client config after the refusal (%v), want none", err)
+	}
+}
+
+// A koko server whose version this CLI cannot read is not judged by it:
+// unknown is not too old.
+func TestAServerVersionTheCLICannotReadIsNotJudged(t *testing.T) {
+	t.Parallel()
+	path, _ := otherServer(t, wire.Report{Version: "unknown", Operations: []string{"space.list"}, Oldest: "unknown"})
+	harness.Run(t, releaseCLI(t, "v0.4.0", path), nil, "space", "ls").WantSuccess(t)
 }
 
 // A command whose operation the koko server does not report fails with

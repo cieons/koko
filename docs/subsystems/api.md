@@ -57,7 +57,14 @@ UI's TypeScript types are generated from them
 - **The window** ([ADR 0049](../adr/0049-the-cli-and-the-koko-server-work-together-within-a-window-of-versions.md)).
   [`compat.Oldest`](../../internal/shared/compat/compat.go), `v0.3.0` now,
   is the oldest koko the CLI and the koko server of a build work with, in
-  both directions; it moves only at a minor release. The transport refuses
+  both directions; it moves only at a minor release. Versions compare as
+  `compat.Compare` orders them: a pseudo-version just before its next
+  release, but one that names no release before it, as a build from a
+  clone without tags has (`v0.0.0-<time>-<revision>`, CI's shallow
+  checkouts among them), after every release, as `(devel)` is, so a build
+  without a release's version never falls below the window. A version
+  neither end can read (`compat.Valid`) is unknown, and judged by neither:
+  the transport takes a stated version it cannot read as none. The transport refuses
   a CLI older than the report's `oldest`, but keeps its connection, so
   that it hears why: every call is answered `cli_too_old` (426), and every
   `tunnel@koko` and `web@koko` open is refused as administratively

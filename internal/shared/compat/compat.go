@@ -63,6 +63,13 @@ func rank(v string) int {
 	return 0
 }
 
+// Valid tells whether v is one of koko's versions: a release, a
+// pseudo-version or "(devel)". Any other, such as "unknown" from a build
+// with no build information, cannot be placed in the window.
+func Valid(v string) bool {
+	return v == devel || semver.IsValid(v)
+}
+
 // Newer tells whether the version a is newer than b.
 func Newer(a, b string) bool {
 	return Compare(a, b) > 0
@@ -77,9 +84,10 @@ func SSHVersion(version string) string {
 }
 
 // CLIVersion returns the version a client's SSH version string states, as
-// SSHVersion wrote it, or v0.3.0 for a string that states none.
+// SSHVersion wrote it, or v0.3.0 for a string that states none, or none
+// that is Valid.
 func CLIVersion(sshVersion string) string {
-	if v, ok := strings.CutPrefix(sshVersion, wire.Version+" "); ok && v != "" {
+	if v, ok := strings.CutPrefix(sshVersion, wire.Version+" "); ok && Valid(v) {
 		return v
 	}
 	return unstated
