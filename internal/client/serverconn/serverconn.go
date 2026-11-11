@@ -24,6 +24,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/cieons/koko/internal/shared/build"
+	"github.com/cieons/koko/internal/shared/compat"
 	"github.com/cieons/koko/internal/shared/joincode"
 	"github.com/cieons/koko/internal/shared/liveness"
 	"github.com/cieons/koko/internal/shared/sshconn"
@@ -67,6 +69,11 @@ var ErrDisconnected = errors.New("koko disconnect stopped the Device Mux")
 // user is the SSH user name koko sends; it identifies nobody.
 const user = "koko"
 
+// clientVersion is the SSH version string koko sends: koko's, with this
+// build's version, which the koko server reads to tell whether it works
+// with this CLI (ADR 0049).
+var clientVersion = compat.SSHVersion(build.Read().Version)
+
 // DialSocket connects over the koko server's Unix socket at path, as the
 // Local caller. The socket pins no host key: it sits in a directory only koko
 // can write (ADR 0008). When nothing is at path, the error wraps
@@ -87,7 +94,7 @@ func DialSocket(ctx context.Context, path string) (Conn, error) {
 }
 
 // Handshake runs the SSH handshake with cfg over nc, a connection to addr,
-// with koko's version string, as user koko unless cfg names another (the
+// with the CLI's version string, as user koko unless cfg names another (the
 // Device Mux takes the command's home there), and returns the Conn on it.
 // It gives up when ctx ends. On failure it closes nc.
 func Handshake(ctx context.Context, nc net.Conn, addr string, cfg *ssh.ClientConfig) (Conn, error) {
@@ -101,7 +108,7 @@ func Handshake(ctx context.Context, nc net.Conn, addr string, cfg *ssh.ClientCon
 func handshake(ctx context.Context, nc net.Conn, addr string, cfg *ssh.ClientConfig) (*sshConn, error) {
 	stop := context.AfterFunc(ctx, func() { _ = nc.Close() })
 	defer stop()
-	cfg.User, cfg.ClientVersion = cmp.Or(cfg.User, user), wire.Version
+	cfg.User, cfg.ClientVersion = cmp.Or(cfg.User, user), clientVersion
 	conn, chans, reqs, err := ssh.NewClientConn(nc, addr, cfg)
 	if err != nil {
 		_ = nc.Close()
@@ -299,7 +306,7 @@ func Join(ctx context.Context, address string, fingerprint [sha256.Size]byte, ke
 }
 
 // dialTCP connects to the koko server at address and runs the SSH
-// handshake with cfg, as user koko with koko's version string, over the
+// handshake with cfg, as user koko with the CLI's version string, over the
 // connection wrap returns for it (nil for itself), or gives up when ctx
 // ends.
 func dialTCP(ctx context.Context, address string, wrap func(net.Conn) net.Conn, cfg *ssh.ClientConfig) (*sshConn, error) {

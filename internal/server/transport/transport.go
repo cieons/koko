@@ -7,6 +7,13 @@
 // server's version and operations report once it has authenticated, before
 // any channel is served (wire.RequestReport).
 //
+// The CLI states its version in its SSH version string (compat.SSHVersion),
+// which the transport reads at authentication and attaches to the caller.
+// A CLI older than the oldest koko the report names (ADR 0049) keeps its
+// connection, so that it hears why: each of its calls is answered
+// cli_too_old, and each tunnel@koko and web@koko open it asks for is
+// refused, with the same message.
+//
 // The Unix socket speaks SSH with "none" authentication and a host key made in
 // memory at each start; every connection on it is the Local caller.
 //
@@ -25,6 +32,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -39,7 +47,10 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/server/op"
+	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/compat"
 	"github.com/cieons/koko/internal/shared/liveness"
+	"github.com/cieons/koko/internal/shared/release"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -125,7 +136,7 @@ type Server struct {
 func New(api, web http.Handler, report func() wire.Report, log *slog.Logger) *Server {
 	s := &Server{
 		log:     log,
-		api:     newChannelServer(api, wire.ChannelAPI, log),
+		api:     newChannelServer(refuseTooOld(api), wire.ChannelAPI, log),
 		web:     newChannelServer(web, wire.ChannelWeb, log),
 		report:  report,
 		timings: timing.Timings{}.Resolve(),
@@ -160,6 +171,10 @@ type Connection struct {
 	// nc is the connection beneath ssh, which closeOnceSent half-closes.
 	nc     *halfCloser
 	caller op.Caller
+	// tooOld, for a CLI older than the oldest koko the koko server works
+	// with, is the message every call and every tunnel@koko and web@koko
+	// open on the connection is refused with; "" within the window.
+	tooOld string
 
 	mu sync.Mutex
 	// calls counts the HTTP requests in flight on the connection's
@@ -379,9 +394,11 @@ func (s *Server) serve(nc net.Conn, w wayIn) {
 		return
 	}
 	caller := w.callerOf(conn)
+	caller.CLIVersion = compat.CLIVersion(string(conn.ClientVersion()))
+	report := s.report()
 	ctx, ended := context.WithCancel(context.Background())
 	defer ended()
-	connection := &Connection{ctx: ctx, ssh: conn, nc: beneath, caller: caller}
+	connection := &Connection{ctx: ctx, ssh: conn, nc: beneath, caller: caller, tooOld: tooOld(caller.CLIVersion, report.Oldest)}
 	if !s.trackConn(connection) {
 		if s.isRevoked(caller.DeviceSession) {
 			// It authenticated while its revocation committed. Its requests
@@ -402,7 +419,7 @@ func (s *Server) serve(nc net.Conn, w wayIn) {
 	defer s.untrackConn(connection)
 	// Before any channel is served, so the report reaches the client before
 	// the answer to its first channel open.
-	if _, _, err := conn.SendRequest(wire.RequestReport, false, s.report().Marshal()); err != nil {
+	if _, _, err := conn.SendRequest(wire.RequestReport, false, report.Marshal()); err != nil {
 		s.log.Debug("send the report", "addr", nc.RemoteAddr(), "err", err)
 		_ = conn.Close()
 		return
@@ -414,6 +431,10 @@ func (s *Server) serve(nc net.Conn, w wayIn) {
 	for nch := range chans {
 		cc := &callerConn{caller: caller, conn: connection}
 		kind := nch.ChannelType()
+		if connection.tooOld != "" && (kind == wire.ChannelWeb || kind == wire.ChannelTunnel) {
+			_ = nch.Reject(ssh.Prohibited, connection.tooOld)
+			continue
+		}
 		var dest *channelServer
 		switch {
 		case kind == wire.ChannelAPI:
@@ -455,6 +476,36 @@ func (s *Server) serve(nc net.Conn, w wayIn) {
 		cc.Conn = wire.Conn(ch)
 		dest.channels.push(cc)
 	}
+}
+
+// tooOld returns the message a CLI of version is refused with when it is
+// older than oldest, the oldest koko the koko server works with, and ""
+// when it is not, or the report names no oldest. It names the version
+// needed and how to upgrade: koko update, or the install line for a koko
+// before v0.4.0, which has no koko update.
+func tooOld(version, oldest string) string {
+	if oldest == "" || compat.Compare(version, oldest) >= 0 {
+		return ""
+	}
+	return fmt.Sprintf("this koko is older than the oldest koko the koko server works with, %s: upgrade it with koko update, "+
+		"or, for a koko before v0.4.0, with the install line: %s", oldest, release.InstallLine)
+}
+
+// refuseTooOld answers every call on the connection of a CLI older than
+// the oldest koko the koko server works with cli_too_old, and passes every
+// other call on to h.
+func refuseTooOld(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, ok := ConnectionFrom(r.Context())
+		if !ok || c.tooOld == "" {
+			h.ServeHTTP(w, r)
+			return
+		}
+		body, _ := json.Marshal(api.ErrorResponse{Error: api.Error{Code: api.CodeCLITooOld.Name, Message: c.tooOld}}) // strings only: never fails
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(api.CodeCLITooOld.Status)
+		_, _ = w.Write(body)
+	})
 }
 
 // watch probes the Device Connection c, over lc, once nothing has come from

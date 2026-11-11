@@ -42,6 +42,7 @@ import (
 	"github.com/cieons/koko/internal/server/webui"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/build"
+	"github.com/cieons/koko/internal/shared/compat"
 	"github.com/cieons/koko/internal/shared/release"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
@@ -286,8 +287,12 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	// operation itself, below.
 	front := web.New(a, signins, st, key, clock, log)
 	version := build.Read().Version
-	// Each connection is reported every operation registered below.
-	report := func() wire.Report { return wire.Report{Version: version, Operations: a.Names()} }
+	// Each connection is reported every operation registered below, and
+	// the oldest koko this one works with, below which the transport
+	// refuses a CLI.
+	report := func() wire.Report {
+		return wire.Report{Version: version, Operations: a.Names(), Oldest: compat.Oldest}
+	}
 	t := transport.New(a, front, report, log)
 	t.UseTimings(cfg.Timings)
 	// The Gateway takes every tunnel@koko channel; it opens the host key and

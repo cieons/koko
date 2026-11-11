@@ -90,3 +90,11 @@ export const CodeIdempotencyKeyReused = "idempotency_key_reused";
  * (MaxRequestBody).
  */
 export const CodeRequestTooLarge = "request_too_large";
+
+/**
+ * CodeCLITooOld: the CLI is older than the oldest koko the koko server
+ * works with (wire.Report's Oldest), so the koko server answers none of
+ * its calls, and the CLI, once it reads the report, sends none; koko
+ * update upgrades it.
+ */
+export const CodeCLITooOld = "cli_too_old";

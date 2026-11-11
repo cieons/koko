@@ -26,8 +26,10 @@ import (
 // environment variable does.
 const SocketPath = "/run/koko/koko.sock"
 
-// Version is the SSH version string of the koko server and the CLI. It carries
-// no version number; the koko server reports its version after authentication.
+// Version is koko's SSH version string. The koko server, the Gateway and koko's
+// connections to Hosts send it with no version number: the koko server
+// reports its version after authentication. The CLI's connections to the
+// koko server add the CLI's version as a comment (compat.SSHVersion).
 const Version = "SSH-2.0-koko"
 
 // RequestReport is the SSH global request that carries the koko server's
@@ -61,6 +63,11 @@ type Report struct {
 	// Operations names every operation the koko server serves, such as
 	// "space.add".
 	Operations []string `json:"operations"`
+	// Oldest is the oldest koko the koko server works with
+	// (compat.Oldest): it refuses every call and channel of a CLI below
+	// it, and a CLI that reads it fails every command itself. A koko
+	// server from before the window reports none.
+	Oldest string `json:"oldest,omitempty"`
 }
 
 // Marshal encodes the report as RequestReport's payload.

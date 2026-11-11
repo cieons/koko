@@ -43,13 +43,34 @@ UI's TypeScript types are generated from them
   connection's caller, and the connection itself, to every request
   (`op.WithCaller`, `transport.ConnectionFrom`); the API refuses a request
   without a caller.
+- **The CLI's version.** The CLI's connections to the koko server, on
+  either SSH way in, send the version string `SSH-2.0-koko <version>`, the
+  CLI's version as a comment, as RFC 4253 allows
+  ([`compat.SSHVersion`](../../internal/shared/compat/compat.go)); the koko
+  server, the Gateway and koko's connections to Hosts keep `SSH-2.0-koko`.
+  The transport reads it at authentication, before any channel, and
+  attaches it to the caller as `op.Caller.CLIVersion`; a string that states
+  none, as every CLI before the window sent, counts as `v0.3.0`. The string
+  goes out before encryption, as OpenSSH's does, so a network observer
+  learns the CLI's version; the koko server's still goes only in the
+  report.
+- **The window** ([ADR 0049](../adr/0049-the-cli-and-the-koko-server-work-together-within-a-window-of-versions.md)).
+  [`compat.Oldest`](../../internal/shared/compat/compat.go), `v0.3.0` now,
+  is the oldest koko the CLI and the koko server of a build work with, in
+  both directions; it moves only at a minor release. The transport refuses
+  a CLI older than the report's `oldest`, but keeps its connection, so
+  that it hears why: every call is answered `cli_too_old` (426), and every
+  `tunnel@koko` and `web@koko` open is refused as administratively
+  prohibited, with the same message, which names the version needed,
+  `koko update`, and the install line for a koko before v0.4.0.
 - **The version and operations report.** Once a connection has
   authenticated, before any channel is served, the transport sends it the
   SSH global request [`wire.RequestReport`](../../internal/shared/wire/wire.go),
   `report@koko`, wanting no reply, whose payload is `wire.Report` in JSON:
-  `{"version", "operations"}`, the build's version and the name of every
-  operation registered with the API (`op.API.Names`), the same before
-  and after initialisation. It reaches the client before the answer to its
+  `{"version", "operations", "oldest"}`, the build's version, the name of
+  every operation registered with the API (`op.API.Names`), the same before
+  and after initialisation, and `compat.Oldest`; a koko server from before
+  the window sends no `oldest`, and a CLI ignores fields it does not know. It reaches the client before the answer to its
   first channel open, so it costs no round trip
   ([ADR 0027](../adr/0027-the-koko-server-reports-its-version-in-an-ssh-global-request.md)).
   The client's connection keeps it (`serverconn.Conn.Report`).
@@ -131,6 +152,7 @@ first call, through the dial it was given, and for each call:
 | `name_taken` | 409 | A record already holds the name where names must differ: a Space or a User for a new User's name, which they share; a Space for a Space's; one of the same User's devices or valid Join Codes for a device's; a Host that is not Retired, in any Space, for a Host's, with the same message whichever Space holds it; a Secret of the same Space for a Secret's. |
 | `not_initialised` | 409 | The koko server is not initialised, so it answers no operation but `server.init` ([initialisation](initialisation.md#before-initialisation)). |
 | `request_too_large` | 413 | The body is over 16 MiB. |
+| `cli_too_old` | 426 | The CLI is older than the oldest koko the koko server works with ([the window](#the-way-in)); the transport answers it before the API, for every call on the connection. |
 | `unsupported_media_type` | 415 | The body is not `application/json`. |
 | `idempotency_key_reused` | 422 | The caller's `Idempotency-Key` came with another request (another operation or body) within the last 10 minutes. |
 | `unexpected_host_key` | 409 | Enroll met a host key other than the pinned one, or the one `host_key` names, and did not log in; the message holds both fingerprints ([Enroll](enroll.md)). |
@@ -293,18 +315,22 @@ over the table `idempotency_keys`; the design is P0 spec: reach and
   without preparing again, a failed `prepare` storing nothing, a `prepare`
   not cancelled when its caller drops, and none before initialisation.
 - [`internal/server/transport/transport_test.go`](../../internal/server/transport/transport_test.go):
-  SSH on the socket, the version string, the report sent unasked before any
-  channel, the Local caller, refused channel types, a new host key at each
-  start, mode 0666.
+  SSH on the socket, the version string, the CLI's version on the caller,
+  the report sent unasked before any channel, the Local caller, refused
+  channel types, a new host key at each start, mode 0666.
 - [`internal/server/transport/close_test.go`](../../internal/server/transport/close_test.go):
   a device on a slow link that sends while its connection closes gets in
   full the answer to its last call before a stop, and the answer to the
   call revoking its own Device Session with the revocation disconnect.
 - [`internal/server/report_test.go`](../../internal/server/report_test.go):
-  the koko server reports every operation and its build's version.
+  the koko server reports every operation, its build's version and
+  `compat.Oldest`.
 - [`internal/client/cli/skew_test.go`](../../internal/client/cli/skew_test.go):
   `server_too_old` from a koko server that lacks the command's operation,
-  with nothing sent, and an older CLI working against a newer koko server.
+  with nothing sent, an older CLI working against a newer koko server, and
+  the real transport refusing a CLI below the window, stated or, past
+  v0.3.0, unstated, with `cli_too_old` on a call and on a `tunnel@koko` and
+  `web@koko` open, and serving one at it.
 - [`internal/client/cli/retry_test.go`](../../internal/client/cli/retry_test.go):
   a write and a read cut mid-flight on a direct Device Connection retried
   once on a new one, the write applied once.

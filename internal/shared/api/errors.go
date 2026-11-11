@@ -82,6 +82,11 @@ var (
 	// CodeRequestTooLarge: the request body is over the koko server's limit
 	// (MaxRequestBody).
 	CodeRequestTooLarge = Code{"request_too_large", http.StatusRequestEntityTooLarge}
+	// CodeCLITooOld: the CLI is older than the oldest koko the koko server
+	// works with (wire.Report's Oldest), so the koko server answers none of
+	// its calls, and the CLI, once it reads the report, sends none; koko
+	// update upgrades it.
+	CodeCLITooOld = Code{"cli_too_old", http.StatusUpgradeRequired}
 )
 
 // MaxRequestBody is the largest request body the koko server reads, in
@@ -104,6 +109,7 @@ var commonCodes = []Code{
 	CodeOwnerOnly,
 	CodeIdempotencyKeyReused,
 	CodeRequestTooLarge,
+	CodeCLITooOld,
 }
 
 // codes lists every area's error codes after the common ones; an area that

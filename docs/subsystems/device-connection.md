@@ -28,6 +28,11 @@ one-time code is
 - **SSH** with the version string `SSH-2.0-koko`, carrying the socket's
   channels, `api@koko`, `web@koko` and `tunnel@koko`, and refusing any other type
   ([`transport.ServeTCP`](../../internal/server/transport/transport.go)).
+  The device's end, the CLI or its Device Mux, sends `SSH-2.0-koko
+  <version>`, its version as a comment, which the koko server reads at
+  authentication; a CLI below [the window](api.md#the-way-in) keeps its
+  Device Connection, so that `koko status` and `koko leave` still work, but
+  every call and Tunnel on it is refused with `cli_too_old`.
   A `web@koko` channel reaches the web front, which lets it in by the
   cookie of the connection's Device Session ([`koko web` and the web
   front](web-front.md#runs-tokens-and-the-cookie)).

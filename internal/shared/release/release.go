@@ -35,6 +35,10 @@ import (
 // <GitHub>/download/<tag>/<name>.
 const GitHub = "https://github.com/cieons/koko/releases"
 
+// InstallLine installs the latest koko for the user who runs it: the way
+// up for a koko before v0.4.0, which has no koko update.
+const InstallLine = "curl -fsSL " + GitHub + "/latest/download/install.sh | sh"
+
 // KokoPackage is koko's main package, which a koko file's Go build
 // information names, so that koko update tells koko from another program,
 // such as kokod, before it installs it.

@@ -49,6 +49,10 @@ type Caller struct {
 	// SignIn is the id of the Sign-in whose cookie a call on the web
 	// listener carried (ADR 0043).
 	SignIn string
+	// CLIVersion is the version the CLI stated in its SSH version string,
+	// v0.3.0 for one that stated none (compat.CLIVersion), for a call over
+	// the Unix socket or a Device Connection.
+	CLIVersion string
 }
 
 type callerKey struct{}

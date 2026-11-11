@@ -10,11 +10,13 @@ import (
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/build"
+	"github.com/cieons/koko/internal/shared/compat"
 )
 
-// The koko server reports its build's version and every API operation, the
-// same before and after initialisation, so a CLI can tell which commands
-// this koko server lacks.
+// The koko server reports its build's version, every API operation and
+// the oldest koko it works with, the same before and after
+// initialisation, so a CLI can tell which commands this koko server lacks,
+// and whether it is too old for it.
 func TestTheReportListsEveryOperation(t *testing.T) {
 	var want []string
 	for _, o := range api.Operations() {
@@ -40,6 +42,9 @@ func TestTheReportListsEveryOperation(t *testing.T) {
 			}
 			if r.Version != build.Read().Version {
 				t.Errorf("reported version %q, want the build's %q", r.Version, build.Read().Version)
+			}
+			if r.Oldest != compat.Oldest {
+				t.Errorf("reported the oldest koko it works with as %q, want compat.Oldest, %q", r.Oldest, compat.Oldest)
 			}
 			if !slices.Equal(r.Operations, want) {
 				t.Errorf("reported operations %v, want every operation: %v", r.Operations, want)

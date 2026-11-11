@@ -38,8 +38,6 @@ var updateCommands = []Command{
 const (
 	userKokoDir = ".local/bin"
 	rootKokoDir = "/usr/local/bin"
-	// installLine installs koko for the user who runs it.
-	installLine = "curl -fsSL " + release.GitHub + "/latest/download/install.sh | sh"
 )
 
 // firstWithUpdate is the minor version of v0 whose release is the first
@@ -98,7 +96,7 @@ func (in *Input) updateTarget(k Kokod) (updateTarget, error) {
 	root := filepath.Join(rootKokoDir, "koko")
 	if exe == resolvedFile(k.Path(rootKokoDir), "koko") {
 		if !k.RunsAsRoot() {
-			return updateTarget{}, refuse("this koko is root's, at %s: run sudo koko update, or install koko for this user with %s", root, installLine)
+			return updateTarget{}, refuse("this koko is root's, at %s: run sudo koko update, or install koko for this user with %s", root, release.InstallLine)
 		}
 		return updateTarget{file: exe, path: root, shown: root}, nil
 	}
@@ -251,7 +249,7 @@ func (u updateJSON) Human(w io.Writer) error {
 		fmt.Fprintf(&b, "Commands from now on run %s. Open SSH Sessions, koko web and the %s Device Mux carry on, "+
 			"and the Device Mux exits after 10 minutes idle.\n", u.to, u.from)
 		if !hasUpdate(u.to) {
-			fmt.Fprintf(&b, "%s has no koko update: to come back to a later release, run the install line again: %s\n", u.to, installLine)
+			fmt.Fprintf(&b, "%s has no koko update: to come back to a later release, run the install line again: %s\n", u.to, release.InstallLine)
 		}
 	}
 	_, err := io.WriteString(w, b.String())

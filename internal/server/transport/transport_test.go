@@ -20,9 +20,11 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/transport"
+	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -124,6 +126,40 @@ func TestSocketSpeaksSSHAsKoko(t *testing.T) {
 	c, _ := dial(t, startSocket(t, whoAmI))
 	if v := string(c.ServerVersion()); v != "SSH-2.0-koko" {
 		t.Errorf("server version = %q, want SSH-2.0-koko", v)
+	}
+}
+
+// The caller carries the version the CLI states in its SSH version string:
+// this build's from koko's own client, and v0.3.0 from a client that states
+// none, as every CLI before the window did.
+func TestTheCallerCarriesTheCLIsVersion(t *testing.T) {
+	path := startSocket(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, _ := op.CallerFrom(r.Context())
+		_, _ = io.WriteString(w, c.CLIVersion)
+	}))
+	conn, err := serverconn.DialSocket(t.Context(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	ch, err := conn.OpenChannel(t.Context(), wire.ChannelAPI, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ch.Close() }()
+	if got, want := get(t, ch, bufio.NewReader(ch)), build.Read().Version; got != want {
+		t.Errorf("koko's own client is taken as %q, want this build's %q", got, want)
+	}
+
+	c, _ := dial(t, path)
+	plain, reqs, err := c.OpenChannel(wire.ChannelAPI, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go ssh.DiscardRequests(reqs)
+	defer func() { _ = plain.Close() }()
+	if got := get(t, plain, bufio.NewReader(plain)); got != "v0.3.0" {
+		t.Errorf("a client sending %s is taken as %q, want v0.3.0", c.ClientVersion(), got)
 	}
 }
 

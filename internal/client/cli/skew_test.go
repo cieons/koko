@@ -1,17 +1,26 @@
 package cli_test
 
 import (
+	"bufio"
+	"encoding/json/v2"
+	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"golang.org/x/crypto/ssh"
+
 	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/server/transport"
+	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/compat"
+	kokorelease "github.com/cieons/koko/internal/shared/release"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -40,6 +49,116 @@ func otherServer(t *testing.T, report wire.Report) (string, *atomic.Int32) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return path, &calls
+}
+
+// clientAs connects to the koko server's socket at path as a client whose
+// SSH version string is sshVersion, as a CLI of another version would.
+func clientAs(t *testing.T, path, sshVersion string) *ssh.Client {
+	t.Helper()
+	var d net.Dialer
+	nc, err := d.DialContext(t.Context(), "unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, chans, reqs, err := ssh.NewClientConn(nc, path, &ssh.ClientConfig{
+		User:            "koko",
+		ClientVersion:   sshVersion,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := ssh.NewClient(conn, chans, reqs)
+	t.Cleanup(func() { _ = c.Close() })
+	return c
+}
+
+// callAs makes one space.list call over c, as an older CLI would, and
+// returns the HTTP status and the error object, if it answered one.
+func callAs(t *testing.T, c *ssh.Client) (int, api.Error) {
+	t.Helper()
+	ch, reqs, err := c.OpenChannel(wire.ChannelAPI, nil)
+	if err != nil {
+		t.Fatalf("open %s: %v", wire.ChannelAPI, err)
+	}
+	go ssh.DiscardRequests(reqs)
+	defer func() { _ = ch.Close() }()
+	req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://koko/v1/space.list", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	if err := req.Write(ch); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(ch), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var e api.ErrorResponse
+	if resp.StatusCode != http.StatusOK {
+		if err := json.UnmarshalRead(resp.Body, &e); err != nil {
+			t.Fatalf("read the %s answer: %v", resp.Status, err)
+		}
+	}
+	return resp.StatusCode, e.Error
+}
+
+// A CLI older than the oldest koko the koko server works with, by the
+// version it states or, once the window has moved past v0.3.0, by stating
+// none, keeps its connection, and hears why on every call and channel:
+// cli_too_old, naming the version needed, koko update and the install
+// line, with nothing passed on.
+func TestTheServerRefusesACLIBelowTheWindow(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, sshVersion, oldest string }{
+		{"stated", "SSH-2.0-koko v0.0.1", compat.Oldest},
+		{"unstated", "SSH-2.0-koko", "v0.5.0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			path, calls := otherServer(t, wire.Report{Version: "v0.5.0", Operations: []string{"space.list"}, Oldest: tc.oldest})
+			c := clientAs(t, path, tc.sshVersion)
+			for range 2 { // the connection stays open after a refusal
+				status, e := callAs(t, c)
+				if status != http.StatusUpgradeRequired || e.Code != api.CodeCLITooOld.Name {
+					t.Fatalf("a call answered %d %q, want %d cli_too_old", status, e.Code, http.StatusUpgradeRequired)
+				}
+				for _, want := range []string{tc.oldest, "koko update", kokorelease.InstallLine} {
+					if !strings.Contains(e.Message, want) {
+						t.Errorf("the message %q does not name %q", e.Message, want)
+					}
+				}
+				for _, kind := range []string{wire.ChannelTunnel, wire.ChannelWeb} {
+					_, _, err := c.OpenChannel(kind, wire.WebPayload(8080))
+					oe, ok := errors.AsType[*ssh.OpenChannelError](err)
+					if !ok || oe.Reason != ssh.Prohibited || oe.Message != e.Message {
+						t.Errorf("opening %s failed with %v, want administratively prohibited with %q", kind, err, e.Message)
+					}
+				}
+			}
+			if n := calls.Load(); n != 0 {
+				t.Errorf("the koko server's API answered %d call(s), want none", n)
+			}
+		})
+	}
+}
+
+// A CLI at the oldest koko the koko server works with keeps working.
+func TestTheServerServesACLIAtTheWindow(t *testing.T) {
+	t.Parallel()
+	path, calls := otherServer(t, wire.Report{Version: "v0.5.0", Operations: []string{"space.list"}, Oldest: "v0.5.0"})
+	c := clientAs(t, path, compat.SSHVersion("v0.5.0"))
+	if status, e := callAs(t, c); status != http.StatusOK {
+		t.Errorf("a call answered %d %+v, want 200", status, e)
+	}
+	ch, reqs, err := c.OpenChannel(wire.ChannelWeb, wire.WebPayload(8080))
+	if err != nil {
+		t.Fatalf("open %s: %v", wire.ChannelWeb, err)
+	}
+	go ssh.DiscardRequests(reqs)
+	_ = ch.Close()
+	if n := calls.Load(); n != 1 {
+		t.Errorf("the koko server's API answered %d call(s), want 1", n)
+	}
 }
 
 // A command whose operation the koko server does not report fails with
