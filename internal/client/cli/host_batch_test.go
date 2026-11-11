@@ -51,6 +51,25 @@ func TestARelayRetiresInABatchWithTheHostsBehindIt(t *testing.T) {
 	}
 }
 
+// A batch host.set that gives a Relay and the Hosts behind it a new Relay
+// counts only the Hosts outside it as using the old one, so its outcome
+// does not hang on the order the Hosts are named in, as --where's order
+// is their names'.
+func TestARelayTakesANewRelayInABatchWithTheHostsBehindIt(t *testing.T) {
+	t.Parallel()
+	h := harness.Start(t)
+	relay := managedHost(t, h, "gw")
+	managedHost(t, h, "gw2")
+	relayedHost(t, h, "gw", "web1", relay)
+
+	if e := sendError(t, h, api.HostSet, `{"hosts": ["gw", "web1"], "relay": "gw2"}`); e.Code != "" {
+		t.Errorf("giving gw and web1, which uses it, the Relay gw2 = %+v, want it done", e)
+	}
+	if got := relayOf(t, h.Koko("host", "show", "web1", "--json")); got == nil || got.Name == nil || *got.Name != "gw2" {
+		t.Errorf("web1's Relay is %+v, want gw2", got)
+	}
+}
+
 // A batch host.move ends, once it commits, the live SSH Sessions to each
 // moved Host of a Member who cannot act in the new Space; a refused batch
 // ends none.

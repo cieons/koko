@@ -23,7 +23,8 @@ so a record the caller may not act on is at fault as one that does not
 exist. A batch adds the rules that only several records need:
 
 - `host.retire` counts only the Hosts outside the batch as using a Relay,
-  so a Relay retires with the Hosts behind it.
+  so a Relay retires with the Hosts behind it; `host.set` does the same
+  when it gives a Relay and the Hosts behind it a new Relay together.
 - `host.set` changes each Host alike; a Host that holds the values already
   is not at fault, and a request that names nothing to change is refused
   once, with `invalid_request`, as for one Host.

@@ -222,7 +222,8 @@ operation names otherwise ([the record](record.md#a-refused-batch),
   `hosts` or `secrets`, and leaves out the one-record form's `host` or
   `secret`.
 - **What only several records need**: `host.retire` counts only the Hosts
-  outside the batch as using a Relay; `secret.move` refuses two Secrets of
+  outside the batch as using a Relay, and so does `host.set` giving the
+  batch a new Relay, so neither hangs on the order the Hosts are named in; `secret.move` refuses two Secrets of
   one name bound for the same Space, each with `name_taken`; `host.set`
   refuses a request that names nothing to change once, without `items`,
   and a Host that holds the values already is not at fault.
