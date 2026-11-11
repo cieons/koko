@@ -283,7 +283,9 @@ released, so it needs no redirect.
   search field that grows; a Space select ("All Spaces" first), shown when
   there are two Spaces or more; then, in the Hosts view, a state select
   (In use, Managed, Registered, Retired, "All, with Retired"), **Filter**
-  and the columns button (desktop only).
+  and the columns button (desktop only). Each control keeps its label on
+  one line, a tab as wide as its label and count; when room runs out the
+  row wraps onto a second line.
 - **Filter** opens a popover: field or Attribute, comparison, value (a
   select for an enum, a date field for a date). Each term becomes a chip
   under the controls with a remove button named for it.

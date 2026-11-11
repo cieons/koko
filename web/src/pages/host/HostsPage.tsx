@@ -124,6 +124,13 @@ function joined(
   };
 }
 
+/**
+ * viewTabClass makes a view tab as wide as its label and count, on one line:
+ * HeroUI sizes a tab to the whole list, which splits the list among the
+ * tabs whatever their labels.
+ */
+const viewTabClass = "w-auto whitespace-nowrap";
+
 /** ListArea is the row of controls, the chips of the view's terms and the list of the view chosen. */
 function ListArea({
   page,
@@ -189,14 +196,15 @@ function ListArea({
       className="gap-0"
     >
       <div className="mb-5 flex flex-wrap items-center gap-2.5">
-        <Tabs.ListContainer>
+        {/* The tabs keep their width in the row, which wraps instead. */}
+        <Tabs.ListContainer className="shrink-0">
           <Tabs.List aria-label={t("host.list.views")}>
-            <Tabs.Tab id="hosts">
+            <Tabs.Tab id="hosts" className={viewTabClass}>
               {t("host.list.title")}
               <span className="t-num ml-1.5 text-muted">{hosts.length}</span>
               <Tabs.Indicator />
             </Tabs.Tab>
-            <Tabs.Tab id="services">
+            <Tabs.Tab id="services" className={viewTabClass}>
               {t("host.services.title")}
               <span className="t-num ml-1.5 text-muted">{services.length}</span>
               <Tabs.Indicator />
@@ -246,7 +254,8 @@ function ListArea({
               { id: "retired", label: t("host.state.retired") },
               { id: "all", label: t("host.list.withRetired") },
             ]}
-            className="min-w-36 flex-1 md:w-48 md:flex-none"
+            // No narrower than the state it shows, so its label stays on one line.
+            className="min-w-max flex-1 md:w-48 md:flex-none"
           />
         )}
         <Filter
