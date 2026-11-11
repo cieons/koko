@@ -10,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/client/devicemux"
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/timing"
 )
@@ -31,6 +33,7 @@ type statusOut struct {
 	Socket        *string           `json:"socket"`
 	CLIVersion    string            `json:"cli_version"`
 	ServerVersion *string           `json:"server_version"`
+	ServerLatest  *string           `json:"server_latest"`
 	ServerError   *errorOut         `json:"server_error"`
 	DeviceMux     *struct {
 		Socket          string    `json:"socket"`
@@ -83,7 +86,8 @@ func deref[T any](p *T) any {
 // On a joined device, koko status shows the Server Address, the device's
 // Device Session (its id, User and device name), this CLI's version and the
 // koko server's, as it reported it on connecting; there is nothing to warn
-// about. It makes no API call.
+// about. For the Owner it asks only who the device's User is and the
+// update check's latest release, which no check has found yet.
 func TestStatusOnAJoinedDevice(t *testing.T) {
 	t.Parallel()
 	h := harness.Start(t)
@@ -99,8 +103,11 @@ func TestStatusOnAJoinedDevice(t *testing.T) {
 	if v := build.Read().Version; s.CLIVersion != v || deref(s.ServerVersion) != v {
 		t.Errorf("status shows the versions %q and %v, want %q for both, the koko server running in this test", s.CLIVersion, deref(s.ServerVersion), v)
 	}
-	if n := h.Calls() - calls; n != 0 {
-		t.Errorf("status made %d API call(s), want none", n)
+	if n := h.Calls() - calls; n != 2 {
+		t.Errorf("status made %d API call(s), want 2: user.current and server.show", n)
+	}
+	if s.ServerLatest != nil {
+		t.Errorf("status shows the latest release %q, which no check has found", *s.ServerLatest)
 	}
 
 	r := d.Koko("status")
@@ -344,5 +351,57 @@ func TestStatusNamesBareNamesSSHReadsAsAddresses(t *testing.T) {
 	r.WantSuccess(t)
 	if want := "\nWarning: koko cannot read its ssh_config, so it cannot tell which Hosts ssh reaches only as <name>.koko.\n"; !strings.HasSuffix(r.Stdout, want) {
 		t.Errorf("status says\n%s\nwithout the line %q", r.Stdout, want)
+	}
+}
+
+// For the Owner, koko status names the latest release the koko server's
+// update check found, and says to upgrade when it is newer than the koko
+// server's version.
+func TestStatusNamesANewerReleaseForTheOwner(t *testing.T) {
+	t.Parallel()
+	// Over the Unix socket, the Local caller is the Owner.
+	socket := cannedServer(t, `{"address": "koko.example.com", "listen_port": 7822, "version": "v0.4.0", "upgrade_way": "systemd",
+		"update_check": {"enabled": true, "checked_at": "2026-11-11T09:00:30Z", "latest": "v0.5.0", "error": null}}`)
+	run := func(args ...string) harness.Result {
+		return harness.Run(t, cli.Runner{SocketPath: socket}, []string{"HOME=" + t.TempDir()}, args...)
+	}
+	if s, _ := status(t, run); deref(s.ServerLatest) != "v0.5.0" {
+		t.Errorf("status shows the latest release %v, want v0.5.0", deref(s.ServerLatest))
+	}
+	r := run("status")
+	r.WantSuccess(t)
+	if want := "koko server:     koko v0.4.0 (v0.5.0 is available: koko server upgrade)\n"; !strings.Contains(r.Stdout, want) {
+		t.Errorf("status says\n%s\nwith no line %q", r.Stdout, want)
+	}
+}
+
+// koko status asks the koko server for its update check only for the
+// Owner: a Member's status makes no server.show call and shows no latest
+// release.
+func TestStatusAsksForTheLatestReleaseOnlyForTheOwner(t *testing.T) {
+	t.Parallel()
+	rel := harness.NewMachine(t).Release("v0.5.0")
+	rel.Latest()
+	h := harness.Start(t, harness.UpdateCheck(rel))
+	if _, err := h.Call(api.ServerCheckUpdate, api.ServerCheckUpdateRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	h.Koko("user", "invite", "bob").WantSuccess(t)
+	owner, member := h.Join(harness.Owner), h.Join("bob")
+	shows := func() int { return strings.Count(h.Log(), `msg="api call" path=/v1/server.show `) }
+
+	before := shows()
+	if s, _ := status(t, owner.Koko); deref(s.ServerLatest) != "v0.5.0" {
+		t.Errorf("the Owner's status shows the latest release %v, want v0.5.0", deref(s.ServerLatest))
+	}
+	if n := shows() - before; n != 1 {
+		t.Errorf("the Owner's status made %d server.show calls, want 1", n)
+	}
+	before = shows()
+	if s, _ := status(t, member.Koko); s.ServerLatest != nil {
+		t.Errorf("a Member's status shows the latest release %q, want null", *s.ServerLatest)
+	}
+	if n := shows() - before; n != 0 {
+		t.Errorf("a Member's status made %d server.show calls, want none", n)
 	}
 }

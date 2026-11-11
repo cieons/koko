@@ -4,6 +4,7 @@
   "socket": "<socket>",
   "cli_version": "<version>",
   "server_version": "<version>",
+  "server_latest": null,
   "server_error": null,
   "device_mux": null,
   "revocation": null,

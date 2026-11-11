@@ -11,7 +11,9 @@ import (
 
 	"github.com/cieons/koko/internal/client/apiclient"
 	"github.com/cieons/koko/internal/client/devicefiles"
+	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/build"
+	"github.com/cieons/koko/internal/shared/compat"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -20,8 +22,10 @@ var statusCommands = []Command{
 		Verb:    "status",
 		Summary: "Show the koko server this device reaches and as whom, both versions, any revocation, and whether ssh reads koko's ssh_config",
 		Tier:    Read,
-		// It calls no operation: the koko server's version comes in the
-		// report every connection carries (ADR 0027).
+		// Its main operation is none: the koko server's version comes in
+		// the report every connection carries (ADR 0027). For the Owner it
+		// also asks user.current and server.show, for the latest release
+		// the koko server's update check found.
 		Run: action(status),
 	},
 }
@@ -43,6 +47,9 @@ type statusJSON struct {
 	// ServerVersion is the koko server's version, as it reported it on
 	// connecting; null when it was not reached.
 	ServerVersion *string `json:"server_version"`
+	// ServerLatest is koko's latest release, as the koko server's update
+	// check found it, for the Owner; null when unknown, and for a Member.
+	ServerLatest *string `json:"server_latest"`
 	// ServerError is why the koko server was not reached, as the error
 	// object any command that calls it would fail with now; null when it
 	// answered.
@@ -112,9 +119,12 @@ func (s statusJSON) Human(w io.Writer) error {
 	if s.Socket != nil {
 		line("Unix socket", "%s, as the Local caller", *s.Socket)
 	}
-	if s.ServerVersion != nil {
+	switch {
+	case s.ServerVersion != nil && s.ServerLatest != nil && compat.Newer(*s.ServerLatest, *s.ServerVersion):
+		line("koko server", "koko %s (%s is available: koko server upgrade)", *s.ServerVersion, *s.ServerLatest)
+	case s.ServerVersion != nil:
 		line("koko server", "koko %s", *s.ServerVersion)
-	} else {
+	default:
 		line("koko server", "not reached: %s", s.ServerError.Message)
 	}
 	if m := s.DeviceMux; m != nil {
@@ -185,6 +195,7 @@ func status(ctx context.Context, in *Input) (statusJSON, error) {
 		if in.socket != "" {
 			s.Socket = &in.socket
 		}
+		s.ServerLatest = in.latestForTheOwner(ctx)
 	}
 	if m := in.deviceMux; m != nil {
 		s.DeviceMux = m.json()
@@ -223,6 +234,26 @@ func status(ctx context.Context, in *Input) (statusJSON, error) {
 		return statusJSON{}, err
 	}
 	return s, nil
+}
+
+// latestForTheOwner returns koko's latest release, as the koko server's
+// update check found it, when the caller is the Owner: the Local caller,
+// or a device whose User user.current names the Owner. It asks
+// server.show for nobody else, and answers nil for anything it cannot
+// learn, such as from a koko server older than the check: status reports
+// what it can and fails on none of it.
+func (in *Input) latestForTheOwner(ctx context.Context) *string {
+	if in.socket == "" {
+		who, err := in.Call(ctx, api.UserCurrent, api.UserCurrentRequest{})
+		if err != nil || who.User.Role != api.RoleOwner {
+			return nil
+		}
+	}
+	resp, err := in.Call(ctx, api.ServerShow, api.ServerShowRequest{})
+	if err != nil {
+		return nil
+	}
+	return resp.Server.UpdateCheck.Latest
 }
 
 // report returns the koko server's version and operations report,

@@ -415,7 +415,7 @@ The Device Mux's refresh still keeps the path there
 | `koko disconnect` | reversible | none | `{"device_muxes": [{"socket", "commands_ended"}], "commands_ended"}`: each Device Mux it stopped, by socket, with how many commands were connected to it, which ended, and the sum ([`koko disconnect`](device-mux.md#state-and-exit)) |
 | `koko ssh setup` | reversible | `server.show`, then `host.list` | `{"ssh_config", "include_warning"}`: the path of koko's ssh_config it wrote for this OS user on the koko server's own machine, and `include_warning` as `koko status` prints it ([on the koko server's own machine](device-connection.md#on-the-koko-servers-own-machine)) |
 | `koko leave` | irreversible | none: it never contacts the koko server | `{"server_address", "device_session"}`: the koko server the device left and its Device Session there, left behind, as `koko status` names one ([`koko leave`](device-connection.md#on-the-device)) |
-| `koko status` | read | none: the koko server's version comes from its report | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_error", "device_mux", "revocation", "include_warning", "names_read_as_addresses"}`, below |
+| `koko status` | read | none: the koko server's version comes from its report; for the Owner, `user.current` on a device, then `server.show` | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_latest", "server_error", "device_mux", "revocation", "include_warning", "names_read_as_addresses"}`, below |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko update [--check] [--version <vX.Y.Z>]` | reversible | none: it never contacts the koko server | `{"path", "from", "to", "updated"}`, or with `--check` `{"path", "installed", "target", "update_available"}` ([`koko update`](#koko-update)) |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
@@ -476,7 +476,10 @@ Session as `{"id", "user", "device"}` (as `device ls` names one in
 `added_by`), both `null` when it has not joined; `socket` is the Unix socket
 path when commands reach the koko server on its own machine, as the Local
 caller; `cli_version` is this koko's version and `server_version` the one
-the koko server reported on connecting, or `null`; `server_error` is the
+the koko server reported on connecting, or `null`; `server_latest` is
+the latest koko release the koko server's [update
+check](initialisation.md#the-update-check) found, for the Owner only, or
+`null` when unknown or for a Member; `server_error` is the
 error object (`{"code", "message"}`) any command that calls the koko server
 would fail with now, such as `not_joined`, `revoked` or
 `server_unreachable`, or `null`; `device_mux` is the
@@ -510,3 +513,12 @@ koko server install to bring it to this CLI's`, since install keeps the two
 on one machine one build ([ADR 0041](../adr/0041-koko-installs-the-koko-server-of-its-own-version.md)).
 The JSON gains nothing, as both versions are in it. Over a Device
 Connection, two versions are normal, and it adds nothing.
+
+For the Owner, once the koko server answered, status asks for the update
+check: over the Unix socket the Local caller is the Owner, and on a device
+`user.current` says whether its User is. Only then does it call
+`server.show`, so a Member's status makes no `server.show` call. When
+`server_latest` is newer than `server_version`, the `koko server` line
+ends `(v0.5.0 is available: koko server upgrade)`. Either call failing,
+or a koko server older than the check, leaves `server_latest` `null`, and
+status still exits 0.

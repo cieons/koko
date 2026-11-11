@@ -498,7 +498,8 @@ Device Session, the address, `reason=dead` and the error, `no answer for
   ([the Gateway](gateway.md#verifying)).
 - [`status_test.go`](../../internal/client/cli/status_test.go): `koko
   status` joined, over the socket, not joined, revoked and unreachable, its
-  Include warnings, and the bare names ssh reads as IP addresses.
+  Include warnings, the bare names ssh reads as IP addresses, and the
+  Owner's latest release, asked for with `server.show` for the Owner only.
 - [`retry_test.go`](../../internal/client/cli/retry_test.go)
   `TestAJoinWhoseCallIsCutStillJoins`: `user.current` cut mid-flight and sent
   again on a Device Connection of the new key.
