@@ -150,11 +150,16 @@ export interface HostShowResponse {
 
 /**
  * HostSetRequest changes the fields and Attributes of a Host that it names,
- * and only those.
+ * or of several, and only those.
  */
 export interface HostSetRequest {
   /** Host names the Host, by its name or its id. */
-  host: string;
+  host?: string;
+  /**
+   * Hosts, in place of Host, names several Hosts, each by its name or its
+   * id, to change alike, all or none (ADR 0050). From revision 2.
+   */
+  hosts?: string[];
   /** Address, Port and Account, when given, replace the Host's. */
   address?: string;
   port?: number;
@@ -173,9 +178,13 @@ export interface HostSetRequest {
   unset?: string[];
 }
 
-/** HostSetResponse is the Host as host.set left it. */
+/**
+ * HostSetResponse is the Host as host.set left it, or for Hosts each Host
+ * as it left them, in the order asked.
+ */
 export interface HostSetResponse {
-  host: Host;
+  host?: Host;
+  hosts?: Host[];
 }
 
 /** HostRenameRequest gives a Host a new name, its SSH Name. */
@@ -191,42 +200,67 @@ export interface HostRenameResponse {
   host: Host;
 }
 
-/** HostMoveRequest moves a Host to another Space. */
+/** HostMoveRequest moves a Host, or several, to another Space. */
 export interface HostMoveRequest {
   /** Host names the Host, by its name or its id. */
-  host: string;
+  host?: string;
+  /**
+   * Hosts, in place of Host, names several Hosts, each by its name or its
+   * id, to move, all or none (ADR 0050). From revision 2.
+   */
+  hosts?: string[];
   /** Space names the Space to move it to. */
   space: string;
 }
 
-/** HostMoveResponse is the Host in its new Space. */
+/**
+ * HostMoveResponse is the Host in its new Space, or for Hosts each Host
+ * there, in the order asked.
+ */
 export interface HostMoveResponse {
-  host: Host;
+  host?: Host;
+  hosts?: Host[];
 }
 
-/** HostRetireRequest names a Host to retire. */
+/** HostRetireRequest names a Host to retire, or several. */
 export interface HostRetireRequest {
   /** Host names the Host, by its name or its id. */
-  host: string;
+  host?: string;
+  /**
+   * Hosts, in place of Host, names several Hosts, each by its name or its
+   * id, to retire, all or none (ADR 0050). From revision 2.
+   */
+  hosts?: string[];
 }
 
 /**
  * HostRetireResponse is the Host as host.retire left it: Retired, and
- * named by its id alone from then on.
+ * named by its id alone from then on; or for Hosts each Host so, in the
+ * order asked.
  */
 export interface HostRetireResponse {
-  host: Host;
+  host?: Host;
+  hosts?: Host[];
 }
 
-/** HostRemoveRequest names a Host to delete. */
+/** HostRemoveRequest names a Host to delete, or several. */
 export interface HostRemoveRequest {
   /** Host names the Host, by its name or its id. */
-  host: string;
+  host?: string;
+  /**
+   * Hosts, in place of Host, names several Hosts, each by its name or its
+   * id, to delete, all or none (ADR 0050). From revision 2.
+   */
+  hosts?: string[];
 }
 
-/** HostRemoveResponse is the Host host.remove deleted, as it was. */
+/**
+ * HostRemoveResponse is the Host host.remove deleted, as it was, or for
+ * Hosts each Host so, in the order asked.
+ */
 export interface HostRemoveResponse {
-  host: Host;
+  host?: Host;
+  hosts?: Host[];
 }
 
 /**
@@ -259,6 +293,9 @@ export const HostShow: Op<HostShowRequest, HostShowResponse> = {
 /**
  * HostSet changes the fields, Attributes and Note it names, and only
  * those, so two callers changing different keys never undo each other.
+ * A batch changes each of its Hosts alike; a Host that holds the values
+ * already is not at fault, and a request that names nothing to change is
+ * refused once, as for one Host.
  */
 export const HostSet: Op<HostSetRequest, HostSetResponse> = {
   name: "host.set",
@@ -292,7 +329,8 @@ export const HostMove: Op<HostMoveRequest, HostMoveResponse> = {
  * pin, leaves host.list unless all asks for it, and frees its name, so
  * that only its id names it. A Host Retired already is refused with
  * CodeHostRetired, and the Relay of a Host that is not Retired with
- * CodeRelayInUse.
+ * CodeRelayInUse; in a batch, only Hosts outside it count, so a Relay
+ * retires with the Hosts behind it.
  */
 export const HostRetire: Op<HostRetireRequest, HostRetireResponse> = {
   name: "host.retire",
@@ -326,12 +364,6 @@ export const CodeInvalidValue = "invalid_value";
  * deleted.
  */
 export const CodeHostWasManaged = "host_was_managed";
-
-/**
- * CodeInvalidBatch: a batch host.add whose Hosts at fault are at fault
- * for different reasons; the error's items give each its own code.
- */
-export const CodeInvalidBatch = "invalid_batch";
 
 /**
  * CodeHostRetired: the call would do what a Retired Host does not take:

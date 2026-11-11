@@ -243,11 +243,11 @@ resolvers cannot drift.
 | `host.add` | Records the Hosts in `hosts`, all or none, each Registered. One Host at fault is refused with its own error; in a batch of several, every Host is checked and the refusal lists each one at fault ([a refused batch](#a-refused-batch)). |
 | `host.list` | Every Host the caller can see that matches the filters, the Retired ones only with `all`, by the sort keys and then by name, in natural order, and id ([filtering and sorting](#filtering-and-sorting)); the Notes only with `with_note`. |
 | `host.show` | One Host, with its Services as `services`, by name in natural order, without their Notes, which the service area lists for it ([where an area adds its parts](code-layout.md#where-an-area-adds-its-parts)). |
-| `host.set` | Sets the address, port, Host Account, Relay, Attributes and Note it names, and clears the Attribute keys in `unset`, the Note for `note`, the Relay for `relay`, and the port back to 22 for `port`; nothing else changes. It refuses a request that changes nothing, a key both set and cleared, and clearing the address or the Host Account ([`record.Required`](../../internal/shared/record/record.go)). It takes no `name`, `space` or `state`, and on a Retired Host only Attributes and the Note ([retiring a Host](#retiring-a-host)). |
+| `host.set` | Sets, on the Host `host` names or on each of `hosts` ([a refused batch](#a-refused-batch)), the address, port, Host Account, Relay, Attributes and Note it names, and clears the Attribute keys in `unset`, the Note for `note`, the Relay for `relay`, and the port back to 22 for `port`; nothing else changes. It refuses a request that changes nothing, a key both set and cleared, and clearing the address or the Host Account ([`record.Required`](../../internal/shared/record/record.go)). It takes no `name`, `space` or `state`, and on a Retired Host only Attributes and the Note ([retiring a Host](#retiring-a-host)). In a batch, a Host that holds the values already is not at fault. |
 | `host.rename` | A new name, checked as on `host.add`; the id and everything else stay. A Retired Host is refused with `host_retired`. |
-| `host.move` | Another Space, with the Attributes, Note and Services; the name stays. A Retired Host moves too. It ends each live SSH Session to the Host of a caller who cannot act in the new Space ([the Gateway](gateway.md#access-during-a-live-ssh-session)). |
-| `host.retire` | Makes a Registered or Managed Host Retired, keeping its record, and answers it so; one Retired already is refused with `host_retired`, and the Relay of a Host that is not Retired with `relay_in_use` ([retiring a Host](#retiring-a-host)). |
-| `host.remove` | Deletes the Host with its Attributes, Note and Services; answers it as it was. A Host with a pin has been Managed, and is refused with `host_was_managed`: it stays on record, and retiring it is the way on. |
+| `host.move` | Another Space, for the Host `host` names or each of `hosts`, with the Attributes, Note and Services; the name stays. A Retired Host moves too. It ends each live SSH Session to the Host of a caller who cannot act in the new Space ([the Gateway](gateway.md#access-during-a-live-ssh-session)). |
+| `host.retire` | Makes a Registered or Managed Host Retired, or each of `hosts`, keeping its record, and answers it so; one Retired already is refused with `host_retired`, and the Relay of a Host that is not Retired with `relay_in_use`, counting in a batch only the Hosts outside it, so a Relay retires with the Hosts behind it ([retiring a Host](#retiring-a-host)). |
+| `host.remove` | Deletes the Host, or each of `hosts`, with its Attributes, Note and Services; answers it as it was. A Host with a pin has been Managed, and is refused with `host_was_managed`: it stays on record, and retiring it is the way on. |
 | `host.enroll` | Makes the Host Managed with its pinned host key ([Enroll](enroll.md)). |
 | `service.add` | Records a Service on a Host, with its ports, none when left out. On a Retired Host it, `service.set`, `service.rename` and `service.remove` are refused with `host_retired`. |
 | `service.list` | Every Service that matches the filters, on the Hosts the caller can see that are not Retired, by the sort keys and then by Host name, name and id ([filtering and sorting](#filtering-and-sorting)); the Notes only with `with_note`. |
@@ -290,9 +290,11 @@ whose Host Account, state, pin or Relay changed while Enroll logged in to it.
 
 ### A refused batch
 
-A `host.add` of several Hosts that refuses any of them checks every one,
-adds none, and lists each Host at fault in the error's `items` ([the error
-object](api.md#calls), [`api.HostBatchError`](../../internal/shared/api/host.go)).
+A `host.add` of several Hosts, and from their revision 2 a `host.set`,
+`host.move`, `host.retire` or `host.remove` of several, named in `hosts`,
+that refuses any of them checks every one, applies none, and lists each
+Host at fault in the error's `items` ([batches](api.md#batches),
+[`api.BatchError`](../../internal/shared/api/errors.go)).
 The error's code is the one every item shares, or `invalid_batch` when they
 differ; its message lists each item on a line of its own:
 
@@ -303,7 +305,9 @@ differ; its message lists each item on a line of its own:
 ```
 
 A Host under the name of an earlier Host of the batch is refused with
-`name_taken`, whether or not the earlier one is at fault. A request of one
+`name_taken`, whether or not the earlier one is at fault; in the other
+batches, a Host named twice, by name or by id, is at fault at its later
+index with `invalid_request`. A request of one
 Host is refused with that Host's own error and no `items`, as before. The
 Hosts the batch recorded before a refusal go with the rolled-back
 transaction.

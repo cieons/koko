@@ -1,6 +1,7 @@
 // Code generated from internal/shared/api/secret.go by make generate; DO NOT EDIT.
 
 import type { Op } from "./api";
+import type { SecretRef } from "./enroll";
 
 /**
  * Secret is a Secret as the API names it: its name in its Space, and never
@@ -102,31 +103,49 @@ export interface SecretRenameResponse {
   secret: Secret;
 }
 
-/** SecretMoveRequest moves a Secret, keeping its name, to another Space. */
+/**
+ * SecretMoveRequest moves a Secret, keeping its name, to another Space, or
+ * several Secrets.
+ */
 export interface SecretMoveRequest {
-  space: string;
-  name: string;
+  space?: string;
+  name?: string;
+  /**
+   * Secrets, in place of Space and Name, names several Secrets to move,
+   * all or none (ADR 0050). From revision 2.
+   */
+  secrets?: SecretRef[];
   /** NewSpace names the Space to move it to, which must not hold its name. */
   new_space: string;
 }
 
-/** SecretMoveResponse is the Secret in its new Space, without its value. */
+/**
+ * SecretMoveResponse is the Secret in its new Space, without its value, or
+ * for Secrets each Secret there, in the order asked.
+ */
 export interface SecretMoveResponse {
-  secret: Secret;
+  secret?: Secret;
+  secrets?: Secret[];
 }
 
-/** SecretRemoveRequest names a Secret to delete. */
+/** SecretRemoveRequest names a Secret to delete, or several. */
 export interface SecretRemoveRequest {
-  space: string;
-  name: string;
+  space?: string;
+  name?: string;
+  /**
+   * Secrets, in place of Space and Name, names several Secrets to delete,
+   * all or none (ADR 0050). From revision 2.
+   */
+  secrets?: SecretRef[];
 }
 
 /**
  * SecretRemoveResponse is the Secret secret.remove deleted, as it was,
- * without its value.
+ * without its value, or for Secrets each Secret so, in the order asked.
  */
 export interface SecretRemoveResponse {
-  secret: Secret;
+  secret?: Secret;
+  secrets?: Secret[];
 }
 
 /**
@@ -190,7 +209,9 @@ export const SecretRename: Op<SecretRenameRequest, SecretRenameResponse> = {
  * another Space; the caller must be able to act in both, and a NewSpace
  * they cannot act in is refused with CodeUnknownSpace too. A NewSpace
  * that holds the name is refused with CodeNameTaken; moving a Secret to
- * its own Space changes nothing.
+ * its own Space changes nothing. Two Secrets of a batch under one name
+ * that would land in NewSpace together are each refused with
+ * CodeNameTaken.
  */
 export const SecretMove: Op<SecretMoveRequest, SecretMoveResponse> = {
   name: "secret.move",

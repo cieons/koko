@@ -118,34 +118,48 @@ type SecretRenameResponse struct {
 	Secret Secret `json:"secret"`
 }
 
-// SecretMoveRequest moves a Secret, keeping its name, to another Space.
+// SecretMoveRequest moves a Secret, keeping its name, to another Space, or
+// several Secrets.
 type SecretMoveRequest struct {
-	Space string `json:"space"`
-	Name  string `json:"name"`
+	Space string `json:"space,omitempty"`
+	Name  string `json:"name,omitempty"`
+	// Secrets, in place of Space and Name, names several Secrets to move,
+	// all or none (ADR 0050). From revision 2.
+	Secrets []SecretRef `json:"secrets,omitempty"`
 	// NewSpace names the Space to move it to, which must not hold its name.
 	NewSpace string `json:"new_space"`
 }
 
-// SecretMoveResponse is the Secret in its new Space, without its value.
+// SecretMoveResponse is the Secret in its new Space, without its value, or
+// for Secrets each Secret there, in the order asked.
 type SecretMoveResponse struct {
-	Secret Secret `json:"secret"`
+	Secret  Secret   `json:"secret,omitzero"`
+	Secrets []Secret `json:"secrets,omitempty"`
 }
 
-// SecretRemoveRequest names a Secret to delete.
+// SecretRemoveRequest names a Secret to delete, or several.
 type SecretRemoveRequest struct {
-	Space string `json:"space"`
-	Name  string `json:"name"`
+	Space string `json:"space,omitempty"`
+	Name  string `json:"name,omitempty"`
+	// Secrets, in place of Space and Name, names several Secrets to delete,
+	// all or none (ADR 0050). From revision 2.
+	Secrets []SecretRef `json:"secrets,omitempty"`
 }
 
 // SecretRemoveResponse is the Secret secret.remove deleted, as it was,
-// without its value.
+// without its value, or for Secrets each Secret so, in the order asked.
 type SecretRemoveResponse struct {
-	Secret Secret `json:"secret"`
+	Secret  Secret   `json:"secret,omitzero"`
+	Secrets []Secret `json:"secrets,omitempty"`
 }
 
 // The secret operations. Each names its Space as space.show does: a Space
 // the caller cannot act in is refused exactly as one that does not exist,
 // with CodeUnknownSpace.
+//
+// secret.move and secret.remove take, from revision 2, secrets in place of
+// space and name: a batch, applied all or none in one transaction (ADR
+// 0050), refused as the host operations refuse one.
 var (
 	// SecretList lists Secrets without their values: those of one Space, or
 	// of every Space the caller can act in.
@@ -172,11 +186,17 @@ var (
 	// another Space; the caller must be able to act in both, and a NewSpace
 	// they cannot act in is refused with CodeUnknownSpace too. A NewSpace
 	// that holds the name is refused with CodeNameTaken; moving a Secret to
-	// its own Space changes nothing.
-	SecretMove = Op[SecretMoveRequest, SecretMoveResponse]{Name: "secret.move", Write: true}
+	// its own Space changes nothing. Two Secrets of a batch under one name
+	// that would land in NewSpace together are each refused with
+	// CodeNameTaken.
+	SecretMove = Op[SecretMoveRequest, SecretMoveResponse]{Name: "secret.move", Write: true, Revision: 2, Added: secretsAdded}
 	// SecretRemove deletes a Secret and its value, for good.
-	SecretRemove = Op[SecretRemoveRequest, SecretRemoveResponse]{Name: "secret.remove", Write: true}
+	SecretRemove = Op[SecretRemoveRequest, SecretRemoveResponse]{Name: "secret.remove", Write: true, Revision: 2, Added: secretsAdded}
 )
+
+// secretsAdded are the request fields of a batch of Secrets, added at
+// revision 2 of secret.move and secret.remove.
+var secretsAdded = map[string]int{"secrets": 2, "secrets[].space": 2, "secrets[].name": 2}
 
 var secretOperations = []Operation{
 	SecretList,

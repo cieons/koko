@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 )
 
 // Error is the error object of a failed call. Its code is stable: within a
@@ -87,6 +88,10 @@ var (
 	// its calls, and the CLI, once it reads the report, sends none; koko
 	// update upgrades it.
 	CodeCLITooOld = Code{"cli_too_old", http.StatusUpgradeRequired}
+	// CodeInvalidBatch: the records at fault in a batch, a write that names
+	// several records all or none, are at fault for different reasons; the
+	// error's items give each its own code (BatchError).
+	CodeInvalidBatch = Code{"invalid_batch", http.StatusBadRequest}
 )
 
 // MaxRequestBody is the largest request body the koko server reads, in
@@ -110,6 +115,26 @@ var commonCodes = []Code{
 	CodeIdempotencyKeyReused,
 	CodeRequestTooLarge,
 	CodeCLITooOld,
+	CodeInvalidBatch,
+}
+
+// BatchError is the refusal of a batch of n records, n above 1, for the
+// records at fault, items, at least one, in the order of the batch: none
+// of the n is changed (ADR 0030, ADR 0050). records names them, such as
+// "Hosts", and done what the batch would have done, such as "moved". Its
+// code is the one every item shares, or CodeInvalidBatch when they differ,
+// and its message names each item by its index, on a line of its own.
+func BatchError(n int, records, done string, items []ItemError) *Error {
+	code := items[0].Code
+	var b strings.Builder
+	fmt.Fprintf(&b, "none of the %d %s was %s, for the %d at fault:", n, records, done, len(items))
+	for _, it := range items {
+		if it.Code != code {
+			code = CodeInvalidBatch.Name
+		}
+		fmt.Fprintf(&b, "\n[%d] %s", it.Index, it.Message)
+	}
+	return &Error{Code: code, Message: b.String(), Items: items}
 }
 
 // codes lists every area's error codes after the common ones; an area that

@@ -346,7 +346,7 @@ func invalid(hostName string, err error) error {
 
 // add is host.add: it records the Hosts, all or none. One Host at fault is
 // refused as it is; in a batch of several, every Host is checked, and the
-// refusal lists each one at fault (api.HostBatchError). A later Host of the
+// refusal lists each one at fault (api.BatchError). A later Host of the
 // batch under an earlier one's name is at fault, whether or not the earlier
 // one is.
 func add(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostAddRequest) (api.HostAddResponse, error) {
@@ -379,7 +379,7 @@ func add(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostAddRequ
 	}
 	if len(faults) > 0 {
 		// Returning an error rolls back the Hosts already recorded.
-		return api.HostAddResponse{}, api.HostBatchError(len(req.Hosts), faults)
+		return api.HostAddResponse{}, api.BatchError(len(req.Hosts), "Hosts", "added", faults)
 	}
 	return resp, nil
 }
@@ -485,7 +485,7 @@ func relayFor(ctx context.Context, tx store.Tx, who access.Identity, hostID, hos
 		return stored{}, api.CodeInvalidRelay.Errorf(
 			"%s has a Relay itself, and a Relay is exactly one hop: koko does not pass through two", r.Name)
 	}
-	used, err := usedAsRelay(ctx, tx, hostID)
+	used, err := usedAsRelay(ctx, tx, hostID, nil)
 	switch {
 	case err != nil:
 		return stored{}, err
@@ -497,12 +497,23 @@ func relayFor(ctx context.Context, tx store.Tx, who access.Identity, hostID, hos
 	return r, nil
 }
 
-// usedAsRelay tells whether a Host that is not Retired has the Host whose id
-// is hostID as its Relay.
-func usedAsRelay(ctx context.Context, tx store.Tx, hostID string) (bool, error) {
-	var used bool
-	err := tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM hosts WHERE relay_id = ? AND state <> 'retired')", hostID).Scan(&used)
+// usedAsRelay tells whether a Host that is not Retired, and whose id is not
+// among except, has the Host whose id is hostID as its Relay.
+func usedAsRelay(ctx context.Context, tx store.Tx, hostID string, except []string) (bool, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT id FROM hosts WHERE relay_id = ? AND state <> 'retired'", hostID)
 	if err != nil {
+		return false, fmt.Errorf("check whether a Host uses %s as its Relay: %w", hostID, err)
+	}
+	defer func() { _ = rows.Close() }()
+	used := false
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return false, fmt.Errorf("check whether a Host uses %s as its Relay: %w", hostID, err)
+		}
+		used = used || !slices.Contains(except, id)
+	}
+	if err := rows.Err(); err != nil {
 		return false, fmt.Errorf("check whether a Host uses %s as its Relay: %w", hostID, err)
 	}
 	return used, nil
@@ -659,32 +670,57 @@ func show(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostShowRe
 const retiredTakes = "a Retired Host takes only changes to its Attributes and Note, and moves"
 
 // set is host.set: it changes the fields, Attributes and Note the request
-// names, and only those. A Retired Host keeps its address, port and Host
-// Account as they were. A Managed Host whose Host Account changes goes back
-// to Registered, which it announces on changes, so its SSH Sessions end.
+// names, and only those, of the Host it names or of each Host of a batch.
+// A request that names nothing to change is refused once; a Host that holds
+// the values already is not at fault.
 func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequest, changes *access.Signal) (api.HostSetResponse, error) {
-	who, h, err := target(ctx, tx, caller, req.Host)
+	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
 		return api.HostSetResponse{}, err
 	}
-	v := values{address: req.Address, port: req.Port, account: req.Account, relay: req.Relay, attributes: req.Attributes, note: req.Note}
-	if v.address == nil && v.port == nil && v.account == nil && v.relay == nil && len(v.attributes) == 0 && v.note == nil && len(req.Unset) == 0 {
-		return api.HostSetResponse{}, api.CodeInvalidRequest.Errorf("name at least one field, Attribute or Note of %s to change", h.Name)
+	n, err := findNamed(ctx, tx, who, req.Host, req.Hosts)
+	if err != nil {
+		return api.HostSetResponse{}, err
 	}
+	if req.Address == nil && req.Port == nil && req.Account == nil && req.Relay == nil && len(req.Attributes) == 0 && req.Note == nil && len(req.Unset) == 0 {
+		of := fmt.Sprintf("the %d Hosts", len(n.hosts))
+		if !n.several {
+			of = n.hosts[0].Name
+		}
+		return api.HostSetResponse{}, api.CodeInvalidRequest.Errorf("name at least one field, Attribute or Note of %s to change", of)
+	}
+	hosts, err := n.each("changed", func(h stored) (api.Host, error) {
+		return setOne(ctx, tx, who, h, req, changes)
+	})
+	switch {
+	case err != nil:
+		return api.HostSetResponse{}, err
+	case n.several:
+		return api.HostSetResponse{Hosts: hosts}, nil
+	}
+	return api.HostSetResponse{Host: hosts[0]}, nil
+}
+
+// setOne changes the Host h as host.set's req says, and answers it as the
+// change left it. A Retired Host keeps its address, port and Host Account
+// as they were. A Managed Host whose Host Account changes goes back to
+// Registered, which it announces on changes, so its SSH Sessions end.
+func setOne(ctx context.Context, tx store.Tx, who access.Identity, h stored, req api.HostSetRequest, changes *access.Signal) (api.Host, error) {
+	v := values{address: req.Address, port: req.Port, account: req.Account, relay: req.Relay, attributes: req.Attributes, note: req.Note}
 	if h.State == api.HostRetired && (v.address != nil || v.port != nil || v.account != nil || v.relay != nil ||
 		slices.Contains(req.Unset, "port") || slices.Contains(req.Unset, "relay")) {
-		return api.HostSetResponse{}, api.CodeHostRetired.Errorf(
+		return api.Host{}, api.CodeHostRetired.Errorf(
 			"%s (%s) is Retired, so its address, port, Host Account and Relay stay as they were: %s", h.Name, h.ID, retiredTakes)
 	}
 	if err := v.check(h.Name); err != nil {
-		return api.HostSetResponse{}, err
+		return api.Host{}, err
 	}
 	var cleared []string
 	for _, k := range req.Unset {
 		_, setToo := req.Attributes[k]
 		switch {
 		case setToo, k == "note" && req.Note != nil, k == "port" && req.Port != nil, k == "relay" && req.Relay != nil:
-			return api.HostSetResponse{}, api.CodeInvalidRequest.Errorf("%s is both set and cleared", k)
+			return api.Host{}, api.CodeInvalidRequest.Errorf("%s is both set and cleared", k)
 		case k == "note":
 			h.Note = ""
 		case k == "relay":
@@ -692,12 +728,12 @@ func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequ
 		case k == "port":
 			v.port = new(record.DefaultPort)
 		case slices.Contains(record.Required, k):
-			return api.HostSetResponse{}, invalid(h.Name, fmt.Errorf("the %s cannot be cleared: a Host always has one", k))
+			return api.Host{}, invalid(h.Name, fmt.Errorf("the %s cannot be cleared: a Host always has one", k))
 		case record.Reserved(k):
-			return api.HostSetResponse{}, invalid(h.Name, fmt.Errorf("%q is a field host.set does not clear", k))
+			return api.Host{}, invalid(h.Name, fmt.Errorf("%q is a field host.set does not clear", k))
 		default:
 			if err := record.CheckKey(k); err != nil {
-				return api.HostSetResponse{}, invalid(h.Name, err)
+				return api.Host{}, invalid(h.Name, err)
 			}
 			cleared = append(cleared, k)
 		}
@@ -725,26 +761,26 @@ func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequ
 	if v.relay != nil {
 		r, err := relayFor(ctx, tx, who, h.ID, h.Name, *v.relay)
 		if err != nil {
-			return api.HostSetResponse{}, err
+			return api.Host{}, err
 		}
 		h.relay = &relayLink{id: r.ID}
 	}
 
-	_, err = tx.ExecContext(ctx, "UPDATE hosts SET address = ?, port = ?, account = ?, relay_id = ?, state = ?, note = ?, updated_at = ? WHERE id = ?",
+	_, err := tx.ExecContext(ctx, "UPDATE hosts SET address = ?, port = ?, account = ?, relay_id = ?, state = ?, note = ?, updated_at = ? WHERE id = ?",
 		h.Address, h.Port, h.Account, h.relayID(), h.State, sql.NullString{String: h.Note, Valid: h.Note != ""}, op.Now(ctx).Format(time.RFC3339), h.ID)
 	if err != nil {
-		return api.HostSetResponse{}, fmt.Errorf("change the Host %s: %w", h.Name, err)
+		return api.Host{}, fmt.Errorf("change the Host %s: %w", h.Name, err)
 	}
 	if err := setAttributes(ctx, tx, h.ID, v.attributes); err != nil {
-		return api.HostSetResponse{}, err
+		return api.Host{}, err
 	}
 	for _, k := range cleared {
 		if _, err := tx.ExecContext(ctx, "DELETE FROM host_attributes WHERE host_id = ? AND key = ?", h.ID, k); err != nil {
-			return api.HostSetResponse{}, fmt.Errorf("clear the Attribute %s of %s: %w", k, h.Name, err)
+			return api.Host{}, fmt.Errorf("clear the Attribute %s of %s: %w", k, h.Name, err)
 		}
 	}
 	changed, err := find(ctx, tx, who, h.ID)
-	return api.HostSetResponse{Host: changed.Host}, err
+	return changed.Host, err
 }
 
 // rename is host.rename: the Host takes a new name, its SSH Name, and keeps
@@ -772,12 +808,17 @@ func rename(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRena
 	return api.HostRenameResponse{Host: renamed.Host}, err
 }
 
-// move is host.move: the Host goes to another Space with its Attributes and
-// Note, keeping its name. The caller must be able to act in both Spaces. It
-// announces the move on changes, so each SSH Session to the Host of a caller
-// who cannot act in the new Space ends.
+// move is host.move: the Host, or each Host of a batch, goes to another
+// Space with its Attributes and Note, keeping its name. The caller must be
+// able to act in both Spaces. It announces each move on changes, so each
+// SSH Session to a moved Host of a caller who cannot act in the new Space
+// ends once the call commits.
 func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRequest, changes *access.Signal) (api.HostMoveResponse, error) {
-	who, h, err := target(ctx, tx, caller, req.Host)
+	who, err := access.Who(ctx, tx, caller)
+	if err != nil {
+		return api.HostMoveResponse{}, err
+	}
+	n, err := findNamed(ctx, tx, who, req.Host, req.Hosts)
 	if err != nil {
 		return api.HostMoveResponse{}, err
 	}
@@ -785,70 +826,109 @@ func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRe
 	if err != nil {
 		return api.HostMoveResponse{}, err
 	}
-	if to.ID != h.spaceID {
-		_, err := tx.ExecContext(ctx, "UPDATE hosts SET space_id = ?, updated_at = ? WHERE id = ?", to.ID, op.Now(ctx).Format(time.RFC3339), h.ID)
-		if err != nil {
-			return api.HostMoveResponse{}, fmt.Errorf("move the Host %s to %s: %w", h.Name, to.Name, err)
+	hosts, err := n.each("moved", func(h stored) (api.Host, error) {
+		if to.ID != h.spaceID {
+			_, err := tx.ExecContext(ctx, "UPDATE hosts SET space_id = ?, updated_at = ? WHERE id = ?", to.ID, op.Now(ctx).Format(time.RFC3339), h.ID)
+			if err != nil {
+				return api.Host{}, fmt.Errorf("move the Host %s to %s: %w", h.Name, to.Name, err)
+			}
+			changes.Publish(ctx, access.Change{Hosts: []string{h.ID}})
 		}
-		changes.Publish(ctx, access.Change{Hosts: []string{h.ID}})
+		moved, err := find(ctx, tx, who, h.ID)
+		return moved.Host, err
+	})
+	switch {
+	case err != nil:
+		return api.HostMoveResponse{}, err
+	case n.several:
+		return api.HostMoveResponse{Hosts: hosts}, nil
 	}
-	moved, err := find(ctx, tx, who, h.ID)
-	return api.HostMoveResponse{Host: moved.Host}, err
+	return api.HostMoveResponse{Host: hosts[0]}, nil
 }
 
-// retire is host.retire: the Host becomes Retired, which is terminal, and
-// keeps its record, Attributes, Note, Services, Space and pin. Its name is
-// free from then on, since only a Host that is not Retired holds one
-// (checkFree, and the index hosts_live_name), so only its id names it. It
-// announces the retirement on changes, so its SSH Sessions end.
+// retire is host.retire: the Host, or each Host of a batch, becomes Retired,
+// which is terminal, and keeps its record, Attributes, Note, Services,
+// Space and pin. Its name is free from then on, since only a Host that is
+// not Retired holds one (checkFree, and the index hosts_live_name), so only
+// its id names it. A Relay is refused while a Host outside the batch that
+// is not Retired uses it, so a Relay retires with the Hosts behind it. It
+// announces each retirement on changes, so the Host's SSH Sessions end.
 func retire(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRetireRequest, changes *access.Signal) (api.HostRetireResponse, error) {
-	who, h, err := target(ctx, tx, caller, req.Host)
+	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
 		return api.HostRetireResponse{}, err
 	}
-	if h.State == api.HostRetired {
-		return api.HostRetireResponse{}, api.CodeHostRetired.Errorf("%s (%s) is Retired already", h.Name, h.ID)
+	n, err := findNamed(ctx, tx, who, req.Host, req.Hosts)
+	if err != nil {
+		return api.HostRetireResponse{}, err
 	}
-	// The refusal shows through to a caller who cannot see the Host that
-	// uses it, telling only that one exists (ADR 0014's accepted cost).
-	used, err := usedAsRelay(ctx, tx, h.ID)
+	batch := n.ids()
+	hosts, err := n.each("retired", func(h stored) (api.Host, error) {
+		if h.State == api.HostRetired {
+			return api.Host{}, api.CodeHostRetired.Errorf("%s (%s) is Retired already", h.Name, h.ID)
+		}
+		// The refusal shows through to a caller who cannot see the Host
+		// that uses it, telling only that one exists (ADR 0014's accepted
+		// cost).
+		used, err := usedAsRelay(ctx, tx, h.ID, batch)
+		switch {
+		case err != nil:
+			return api.Host{}, err
+		case used:
+			return api.Host{}, api.CodeRelayInUse.Errorf(
+				"%s is the Relay of a Host that is not Retired, so it is not Retired: give that Host another Relay, with koko host set <host> relay=<relay>, or none, with --unset relay; koko host ls relay=%s lists those you can see",
+				h.Name, h.Name)
+		}
+		_, err = tx.ExecContext(ctx, "UPDATE hosts SET state = ?, updated_at = ? WHERE id = ?", api.HostRetired, op.Now(ctx).Format(time.RFC3339), h.ID)
+		if err != nil {
+			return api.Host{}, fmt.Errorf("retire the Host %s: %w", h.Name, err)
+		}
+		changes.Publish(ctx, access.Change{Hosts: []string{h.ID}})
+		retired, err := find(ctx, tx, who, h.ID)
+		return retired.Host, err
+	})
 	switch {
 	case err != nil:
 		return api.HostRetireResponse{}, err
-	case used:
-		return api.HostRetireResponse{}, api.CodeRelayInUse.Errorf(
-			"%s is the Relay of a Host that is not Retired, so it is not Retired: give that Host another Relay, with koko host set <host> relay=<relay>, or none, with --unset relay; koko host ls relay=%s lists those you can see",
-			h.Name, h.Name)
+	case n.several:
+		return api.HostRetireResponse{Hosts: hosts}, nil
 	}
-	_, err = tx.ExecContext(ctx, "UPDATE hosts SET state = ?, updated_at = ? WHERE id = ?", api.HostRetired, op.Now(ctx).Format(time.RFC3339), h.ID)
-	if err != nil {
-		return api.HostRetireResponse{}, fmt.Errorf("retire the Host %s: %w", h.Name, err)
-	}
-	changes.Publish(ctx, access.Change{Hosts: []string{h.ID}})
-	retired, err := find(ctx, tx, who, h.ID)
-	return api.HostRetireResponse{Host: retired.Host}, err
+	return api.HostRetireResponse{Host: hosts[0]}, nil
 }
 
-// remove is host.remove: the Host goes, with its Attributes, Note and
-// Services. A Host that has been Managed, which its pin shows, is kept on
-// record instead, and retiring it is the way on unless it is Retired
-// already.
+// remove is host.remove: the Host, or each Host of a batch, goes, with its
+// Attributes, Note and Services, and is answered as it was. A Host that has
+// been Managed, which its pin shows, is kept on record instead, and
+// retiring it is the way on unless it is Retired already.
 func remove(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRemoveRequest) (api.HostRemoveResponse, error) {
-	_, h, err := target(ctx, tx, caller, req.Host)
+	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
 		return api.HostRemoveResponse{}, err
 	}
-	if h.pin != nil {
-		var wayOn string
-		if h.State != api.HostRetired {
-			wayOn = fmt.Sprintf(". Retire it instead, with koko host retire %s, which frees its name", h.Name)
+	n, err := findNamed(ctx, tx, who, req.Host, req.Hosts)
+	if err != nil {
+		return api.HostRemoveResponse{}, err
+	}
+	hosts, err := n.each("removed", func(h stored) (api.Host, error) {
+		if h.pin != nil {
+			var wayOn string
+			if h.State != api.HostRetired {
+				wayOn = fmt.Sprintf(". Retire it instead, with koko host retire %s, which frees its name", h.Name)
+			}
+			return api.Host{}, api.CodeHostWasManaged.Errorf(
+				"%s has been Managed, so koko keeps its record: a Host that was ever Managed is never deleted%s", h.Name, wayOn)
 		}
-		return api.HostRemoveResponse{}, api.CodeHostWasManaged.Errorf(
-			"%s has been Managed, so koko keeps its record: a Host that was ever Managed is never deleted%s", h.Name, wayOn)
+		// Its Attributes and Services go with it (ON DELETE CASCADE).
+		if _, err := tx.ExecContext(ctx, "DELETE FROM hosts WHERE id = ?", h.ID); err != nil {
+			return api.Host{}, fmt.Errorf("delete the Host %s: %w", h.Name, err)
+		}
+		return h.Host, nil
+	})
+	switch {
+	case err != nil:
+		return api.HostRemoveResponse{}, err
+	case n.several:
+		return api.HostRemoveResponse{Hosts: hosts}, nil
 	}
-	// Its Attributes and Services go with it (ON DELETE CASCADE).
-	if _, err := tx.ExecContext(ctx, "DELETE FROM hosts WHERE id = ?", h.ID); err != nil {
-		return api.HostRemoveResponse{}, fmt.Errorf("delete the Host %s: %w", h.Name, err)
-	}
-	return api.HostRemoveResponse{Host: h.Host}, nil
+	return api.HostRemoveResponse{Host: hosts[0]}, nil
 }

@@ -145,13 +145,13 @@ first call, through the dial it was given, and for each call:
   every item and is `[]`, never `null`, when empty.
 - An error is an HTTP status and `{"error": {"code": "...", "message": "..."}}`.
   The code is stable snake_case: within `/v1` codes are only added. The
-  refusal of a batch of several items, so far a `host.add` of several Hosts
-  ([a refused batch](record.md#a-refused-batch)), also holds `items`
+  refusal of a batch of several items also holds `items`
   ([`api.ItemError`](../../internal/shared/api/errors.go), [ADR
   0030](../adr/0030-a-refused-batch-lists-each-item-at-fault.md)): each item
   at fault as `{"index", "code", "message"}`, its place in the batch counted
   from 0 and the code and message it would be refused with alone, in the
-  batch's order. Every other error leaves `items` out.
+  batch's order. Every other error leaves `items` out. See
+  [batches](#batches).
 
 | Code | Status | When |
 | --- | --- | --- |
@@ -159,7 +159,7 @@ first call, through the dial it was given, and for each call:
 | `unknown_field` | 400 | The body holds a field the operation does not know. |
 | `invalid_name` | 400 | A name breaks its rule: a lowercase DNS label ([`name.Check`](../../internal/shared/name/name.go)), or for a Secret, `name.CheckSecret`'s. |
 | `invalid_value` | 400 | A Host's field, an Attribute or the Note, or a value given for one, breaks its rule ([the record](record.md#a-host)): a Preset's value that does not parse as its type, or comes in another JSON type, among them, and a filter term's value not of its key's type. |
-| `invalid_batch` | 400 | The Hosts at fault in a `host.add` of several are at fault for different reasons; `items` gives each its own code ([a refused batch](record.md#a-refused-batch)). Hosts all at fault for one reason are refused with that reason's code. |
+| `invalid_batch` | 400 | The records at fault in a batch of several are at fault for different reasons; `items` gives each its own code ([batches](#batches)). Records all at fault for one reason are refused with that reason's code. |
 | `revoked` | 401 | The call came on a Device Session that is Revoked ([the Device Connection](device-connection.md#who-is-calling)). |
 | `local_only` | 403 | The operation answers only the Local caller, over the Unix socket; `server.set` not even a browser tab of `koko web` there ([initialisation](initialisation.md#the-deployment-afterwards)). |
 | `owner_only` | 403 | Only the Owner may do what the call asks, such as changing Spaces and their Members, inviting a User, or issuing a Join Code for another User's device; it is answered before the call reads anything it names ([the access check](access.md#what-a-caller-cannot-see)). |
@@ -193,6 +193,42 @@ An area adds its codes beside its types (see
 [code layout](code-layout.md#where-an-area-adds-its-parts)). An operation
 returns `code.Errorf(...)`; a code that is not registered reaches the caller as
 `internal_error`, and the log names it.
+
+## Batches
+
+A batch is a write that names several records and applies them all or none,
+in its one transaction ([ADR 0030](../adr/0030-a-refused-batch-lists-each-item-at-fault.md),
+[ADR 0050](../adr/0050-a-write-of-several-records-is-applied-all-or-none.md)):
+`host.add`'s `hosts`, and from their revision 2 the `hosts` of `host.set`,
+`host.move`, `host.retire` and `host.remove` and the `secrets` of
+`secret.move` and `secret.remove`, each in place of the one record the
+operation names otherwise ([the record](record.md#a-refused-batch),
+[Secrets](secrets.md#renaming-moving-and-deleting)).
+
+- **Every record is checked** as the one-record form checks it, access
+  included, and the koko server goes on to the next after one at fault.
+  When any is, it applies none and refuses with
+  [`api.BatchError`](../../internal/shared/api/errors.go): the code every
+  item shares, or `invalid_batch`, a message that says what none of them
+  had done to it and lists each item on a line of its own, `[3] ...`, and
+  `items`. [`op.Batch`](../../internal/server/op/batch.go) gathers the items
+  at fault; returning the error rolls back what the others wrote.
+- **A batch of one** is refused with its record's own error and no
+  `items`, as the one-record form is.
+- **A request names its records one way**: both forms, or an empty list,
+  is `invalid_request`. A record named twice, by name and id alike, is at
+  fault at its later index, with `invalid_request`.
+- **The answer** is the records in the order asked, under the list's name,
+  `hosts` or `secrets`, and leaves out the one-record form's `host` or
+  `secret`.
+- **What only several records need**: `host.retire` counts only the Hosts
+  outside the batch as using a Relay; `secret.move` refuses two Secrets of
+  one name bound for the same Space, each with `name_taken`; `host.set`
+  refuses a request that names nothing to change once, without `items`,
+  and a Host that holds the values already is not at fault.
+- **Effects after the commit**, such as the access-change signal that ends
+  SSH Sessions, are published per record, and reach no one when the batch
+  is refused.
 
 ## Revisions
 
@@ -390,6 +426,17 @@ over the table `idempotency_keys`; the design is P0 spec: reach and
   a prepared write holding no lock while it prepares, a retry answered
   without preparing again, a failed `prepare` storing nothing, a `prepare`
   not cancelled when its caller drops, and none before initialisation.
+- [`internal/server/host/batch_test.go`](../../internal/server/host/batch_test.go)
+  and [`internal/server/secret/batch_test.go`](../../internal/server/secret/batch_test.go):
+  each batch write applied whole in the order asked, one record at fault
+  applying none and named by its index and code, `invalid_batch` for two
+  reasons, both forms or an empty list refused, a batch of one refused as
+  one record, a record named twice, a Member's batch checked record by
+  record, `host.set`'s request that names nothing, and two Secrets of one
+  name bound for one Space;
+  [`internal/client/cli/host_batch_test.go`](../../internal/client/cli/host_batch_test.go)
+  a Relay retired with the Hosts behind it, and a batch move ending the SSH
+  Sessions that lose their Hosts only once it is applied.
 - [`internal/server/transport/transport_test.go`](../../internal/server/transport/transport_test.go):
   SSH on the socket, the version string, the CLI's version on the caller,
   the report sent unasked before any channel, the Local caller, refused

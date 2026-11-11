@@ -1,9 +1,7 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/cieons/koko/internal/shared/record"
 )
@@ -149,10 +147,13 @@ type HostShowResponse struct {
 }
 
 // HostSetRequest changes the fields and Attributes of a Host that it names,
-// and only those.
+// or of several, and only those.
 type HostSetRequest struct {
 	// Host names the Host, by its name or its id.
-	Host string `json:"host"`
+	Host string `json:"host,omitempty"`
+	// Hosts, in place of Host, names several Hosts, each by its name or its
+	// id, to change alike, all or none (ADR 0050). From revision 2.
+	Hosts []string `json:"hosts,omitempty"`
 	// Address, Port and Account, when given, replace the Host's.
 	Address *string `json:"address,omitzero"`
 	Port    *int    `json:"port,omitzero"`
@@ -169,9 +170,11 @@ type HostSetRequest struct {
 	Unset []string `json:"unset,omitempty"`
 }
 
-// HostSetResponse is the Host as host.set left it.
+// HostSetResponse is the Host as host.set left it, or for Hosts each Host
+// as it left them, in the order asked.
 type HostSetResponse struct {
-	Host Host `json:"host"`
+	Host  Host   `json:"host,omitzero"`
+	Hosts []Host `json:"hosts,omitempty"`
 }
 
 // HostRenameRequest gives a Host a new name, its SSH Name.
@@ -187,46 +190,69 @@ type HostRenameResponse struct {
 	Host Host `json:"host"`
 }
 
-// HostMoveRequest moves a Host to another Space.
+// HostMoveRequest moves a Host, or several, to another Space.
 type HostMoveRequest struct {
 	// Host names the Host, by its name or its id.
-	Host string `json:"host"`
+	Host string `json:"host,omitempty"`
+	// Hosts, in place of Host, names several Hosts, each by its name or its
+	// id, to move, all or none (ADR 0050). From revision 2.
+	Hosts []string `json:"hosts,omitempty"`
 	// Space names the Space to move it to.
 	Space string `json:"space"`
 }
 
-// HostMoveResponse is the Host in its new Space.
+// HostMoveResponse is the Host in its new Space, or for Hosts each Host
+// there, in the order asked.
 type HostMoveResponse struct {
-	Host Host `json:"host"`
+	Host  Host   `json:"host,omitzero"`
+	Hosts []Host `json:"hosts,omitempty"`
 }
 
-// HostRetireRequest names a Host to retire.
+// HostRetireRequest names a Host to retire, or several.
 type HostRetireRequest struct {
 	// Host names the Host, by its name or its id.
-	Host string `json:"host"`
+	Host string `json:"host,omitempty"`
+	// Hosts, in place of Host, names several Hosts, each by its name or its
+	// id, to retire, all or none (ADR 0050). From revision 2.
+	Hosts []string `json:"hosts,omitempty"`
 }
 
 // HostRetireResponse is the Host as host.retire left it: Retired, and
-// named by its id alone from then on.
+// named by its id alone from then on; or for Hosts each Host so, in the
+// order asked.
 type HostRetireResponse struct {
-	Host Host `json:"host"`
+	Host  Host   `json:"host,omitzero"`
+	Hosts []Host `json:"hosts,omitempty"`
 }
 
-// HostRemoveRequest names a Host to delete.
+// HostRemoveRequest names a Host to delete, or several.
 type HostRemoveRequest struct {
 	// Host names the Host, by its name or its id.
-	Host string `json:"host"`
+	Host string `json:"host,omitempty"`
+	// Hosts, in place of Host, names several Hosts, each by its name or its
+	// id, to delete, all or none (ADR 0050). From revision 2.
+	Hosts []string `json:"hosts,omitempty"`
 }
 
-// HostRemoveResponse is the Host host.remove deleted, as it was.
+// HostRemoveResponse is the Host host.remove deleted, as it was, or for
+// Hosts each Host so, in the order asked.
 type HostRemoveResponse struct {
-	Host Host `json:"host"`
+	Host  Host   `json:"host,omitzero"`
+	Hosts []Host `json:"hosts,omitempty"`
 }
 
 // The host operations. Space membership decides each of them: a Host in a
 // Space the caller cannot act in answers exactly as one that does not
 // exist, with CodeUnknownHost, and a Space they cannot act in as an unknown
 // one, with CodeUnknownSpace.
+//
+// host.set, host.move, host.retire and host.remove take, from revision 2,
+// hosts in place of host: a batch, applied all or none in one transaction
+// (ADR 0050). A request naming both, or an empty hosts, is refused with
+// CodeInvalidRequest; a batch of several that refuses any Host checks each
+// and lists every one at fault (BatchError), and a batch of one is refused
+// with its Host's own error. A Host named twice in a batch is at fault at
+// its later index.
 var (
 	// HostAdd records Hosts, all or none, each in the Space it names or the
 	// caller's Personal Space. A name a Host that is not Retired holds is
@@ -240,22 +266,26 @@ var (
 	HostShow = Op[HostShowRequest, HostShowResponse]{Name: "host.show"}
 	// HostSet changes the fields, Attributes and Note it names, and only
 	// those, so two callers changing different keys never undo each other.
-	HostSet = Op[HostSetRequest, HostSetResponse]{Name: "host.set", Write: true}
+	// A batch changes each of its Hosts alike; a Host that holds the values
+	// already is not at fault, and a request that names nothing to change is
+	// refused once, as for one Host.
+	HostSet = Op[HostSetRequest, HostSetResponse]{Name: "host.set", Write: true, Revision: 2, Added: map[string]int{"hosts": 2}}
 	// HostRename gives a Host a new name, refused with CodeNameTaken as
 	// host.add refuses one.
 	HostRename = Op[HostRenameRequest, HostRenameResponse]{Name: "host.rename", Write: true}
 	// HostMove moves a Host, with its Attributes, Note and Services, to
 	// another Space; the caller must be able to act in both. Its name stays.
-	HostMove = Op[HostMoveRequest, HostMoveResponse]{Name: "host.move", Write: true}
+	HostMove = Op[HostMoveRequest, HostMoveResponse]{Name: "host.move", Write: true, Revision: 2, Added: map[string]int{"hosts": 2}}
 	// HostRetire makes a Registered or Managed Host Retired, which is
 	// terminal. It keeps its record, Attributes, Note, Services, Space and
 	// pin, leaves host.list unless all asks for it, and frees its name, so
 	// that only its id names it. A Host Retired already is refused with
 	// CodeHostRetired, and the Relay of a Host that is not Retired with
-	// CodeRelayInUse.
-	HostRetire = Op[HostRetireRequest, HostRetireResponse]{Name: "host.retire", Write: true}
+	// CodeRelayInUse; in a batch, only Hosts outside it count, so a Relay
+	// retires with the Hosts behind it.
+	HostRetire = Op[HostRetireRequest, HostRetireResponse]{Name: "host.retire", Write: true, Revision: 2, Added: map[string]int{"hosts": 2}}
 	// HostRemove deletes a Host, with its Attributes, Note and Services.
-	HostRemove = Op[HostRemoveRequest, HostRemoveResponse]{Name: "host.remove", Write: true}
+	HostRemove = Op[HostRemoveRequest, HostRemoveResponse]{Name: "host.remove", Write: true, Revision: 2, Added: map[string]int{"hosts": 2}}
 )
 
 var hostOperations = []Operation{
@@ -282,9 +312,6 @@ var (
 	// its pinned host key shows: such a Host is kept on record, never
 	// deleted.
 	CodeHostWasManaged = Code{"host_was_managed", http.StatusConflict}
-	// CodeInvalidBatch: a batch host.add whose Hosts at fault are at fault
-	// for different reasons; the error's items give each its own code.
-	CodeInvalidBatch = Code{"invalid_batch", http.StatusBadRequest}
 	// CodeHostRetired: the call would do what a Retired Host does not take:
 	// change its address, port, Host Account or Relay, rename it, Enroll it,
 	// retire it again, or change its Services. A Retired Host takes only
@@ -305,26 +332,7 @@ var hostCodes = []Code{
 	CodeUnknownHost,
 	CodeInvalidValue,
 	CodeHostWasManaged,
-	CodeInvalidBatch,
 	CodeHostRetired,
 	CodeInvalidRelay,
 	CodeRelayInUse,
-}
-
-// HostBatchError is the refusal of a host.add of n Hosts, n above 1, for the
-// Hosts at fault, items, at least one, in the order of the batch: none of
-// the n is added.
-// Its code is the one every item shares, or CodeInvalidBatch when they
-// differ, and its message names each item by its index.
-func HostBatchError(n int, items []ItemError) *Error {
-	code := items[0].Code
-	var b strings.Builder
-	fmt.Fprintf(&b, "none of the %d Hosts was added, for the %d at fault:", n, len(items))
-	for _, it := range items {
-		if it.Code != code {
-			code = CodeInvalidBatch.Name
-		}
-		fmt.Fprintf(&b, "\n[%d] %s", it.Index, it.Message)
-	}
-	return &Error{Code: code, Message: b.String(), Items: items}
 }

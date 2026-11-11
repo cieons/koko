@@ -18,4 +18,5 @@ export default {
   "error.request_too_large": "This request is larger than the koko server accepts.",
   "error.cli_too_old":
     "This koko is older than the oldest version the koko server works with. Upgrade it with koko update.",
+  "error.invalid_batch": "Several of the records are at fault, each for its own reason, so none was changed.",
 };

@@ -90,6 +90,12 @@ Space.
   through `space.ByName`, so a caller who cannot act in either is answered
   as for a Space that does not exist, naming that Space; the Owner, and
   the Local caller, may move between any two.
+- **Several at once.** From their revision 2, `secret.move` and
+  `secret.remove` take `secrets`, a list of `{"space", "name"}`, in place
+  of `space` and `name`, and answer `secrets`: a batch, all or none
+  ([batches](api.md#batches)). Each Secret is checked as alone; two
+  Secrets of one name bound for the same Space are each refused with
+  `name_taken`, and one already in that Space is not at fault.
 - **Delete** (`secret rm`, `secret.remove`) removes the Secret's row, its
   sealed value with it. A Secret has no Retired state and P0 keeps no value
   history, so nothing brings it back. Its `--json` is the Secret as it was,

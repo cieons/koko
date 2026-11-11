@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cieons/koko/internal/server/access"
@@ -184,11 +185,17 @@ func rename(ctx context.Context, tx store.Tx, caller op.Caller, req api.SecretRe
 	return api.SecretRenameResponse{Secret: renamed}, nil
 }
 
-// move is secret.move: the Secret goes to another Space, keeping its name.
-// The caller must be able to act in both Spaces. Its value is sealed for its
-// id, which stays, so it is not resealed.
+// move is secret.move: the Secret, or each Secret of a batch, goes to
+// another Space, keeping its name. The caller must be able to act in both
+// Spaces. Its value is sealed for its id, which stays, so it is not
+// resealed. Two Secrets of a batch under one name that would land in the
+// Space together are each at fault, as a name the Space holds is.
 func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.SecretMoveRequest) (api.SecretMoveResponse, error) {
-	who, sec, err := target(ctx, tx, caller, req.Space, req.Name)
+	who, err := access.Who(ctx, tx, caller)
+	if err != nil {
+		return api.SecretMoveResponse{}, err
+	}
+	n, err := findNamed(ctx, tx, who, req.Space, req.Name, req.Secrets)
 	if err != nil {
 		return api.SecretMoveResponse{}, err
 	}
@@ -196,33 +203,65 @@ func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.SecretMove
 	if err != nil {
 		return api.SecretMoveResponse{}, err
 	}
-	if to.ID == sec.spaceID {
-		return api.SecretMoveResponse{Secret: sec.Secret}, nil
+	landing := map[string][]string{}
+	for i, sec := range n.secrets {
+		if !n.batch.Faulted(i) && sec.spaceID != to.ID {
+			landing[sec.Name] = append(landing[sec.Name], fmt.Sprintf("[%d]", i))
+		}
 	}
-	moved := sec.Secret
-	moved.Space = to.Name
-	if err := checkFree(ctx, tx, to.ID, moved); err != nil {
+	secrets, err := n.each("moved", func(sec stored) (api.Secret, error) {
+		if sec.spaceID == to.ID {
+			return sec.Secret, nil
+		}
+		moved := sec.Secret
+		moved.Space = to.Name
+		if same := landing[sec.Name]; len(same) > 1 {
+			return api.Secret{}, api.CodeNameTaken.Errorf("the Secrets %s of this batch would all be %s, and a Space holds one Secret of a name",
+				strings.Join(same, ", "), qualified(moved))
+		}
+		if err := checkFree(ctx, tx, to.ID, moved); err != nil {
+			return api.Secret{}, err
+		}
+		moved.UpdatedAt = op.Now(ctx).Format(time.RFC3339)
+		_, err = tx.ExecContext(ctx, "UPDATE secrets SET space_id = ?, updated_at = ? WHERE id = ?", to.ID, moved.UpdatedAt, sec.ID)
+		if err != nil {
+			return api.Secret{}, fmt.Errorf("move the Secret %s to %s: %w", qualified(sec.Secret), qualified(moved), err)
+		}
+		return moved, nil
+	})
+	switch {
+	case err != nil:
 		return api.SecretMoveResponse{}, err
+	case n.several:
+		return api.SecretMoveResponse{Secrets: secrets}, nil
 	}
-	moved.UpdatedAt = op.Now(ctx).Format(time.RFC3339)
-	_, err = tx.ExecContext(ctx, "UPDATE secrets SET space_id = ?, updated_at = ? WHERE id = ?", to.ID, moved.UpdatedAt, sec.ID)
-	if err != nil {
-		return api.SecretMoveResponse{}, fmt.Errorf("move the Secret %s to %s: %w", qualified(sec.Secret), qualified(moved), err)
-	}
-	return api.SecretMoveResponse{Secret: moved}, nil
+	return api.SecretMoveResponse{Secret: secrets[0]}, nil
 }
 
-// remove is secret.remove: the Secret goes, and its value with it. P0 keeps
-// no value history, so nothing brings it back.
+// remove is secret.remove: the Secret, or each Secret of a batch, goes, and
+// its value with it. P0 keeps no value history, so nothing brings it back.
 func remove(ctx context.Context, tx store.Tx, caller op.Caller, req api.SecretRemoveRequest) (api.SecretRemoveResponse, error) {
-	_, sec, err := target(ctx, tx, caller, req.Space, req.Name)
+	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
 		return api.SecretRemoveResponse{}, err
 	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM secrets WHERE id = ?", sec.ID); err != nil {
-		return api.SecretRemoveResponse{}, fmt.Errorf("delete the Secret %s: %w", qualified(sec.Secret), err)
+	n, err := findNamed(ctx, tx, who, req.Space, req.Name, req.Secrets)
+	if err != nil {
+		return api.SecretRemoveResponse{}, err
 	}
-	return api.SecretRemoveResponse{Secret: sec.Secret}, nil
+	secrets, err := n.each("removed", func(sec stored) (api.Secret, error) {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM secrets WHERE id = ?", sec.ID); err != nil {
+			return api.Secret{}, fmt.Errorf("delete the Secret %s: %w", qualified(sec.Secret), err)
+		}
+		return sec.Secret, nil
+	})
+	switch {
+	case err != nil:
+		return api.SecretRemoveResponse{}, err
+	case n.several:
+		return api.SecretRemoveResponse{Secrets: secrets}, nil
+	}
+	return api.SecretRemoveResponse{Secret: secrets[0]}, nil
 }
 
 // resolveName resolves the qualified name spaceName/secretName as who gives
@@ -259,20 +298,27 @@ func target(ctx context.Context, tx store.Tx, caller op.Caller, spaceName, secre
 	if err != nil {
 		return access.Identity{}, stored{}, err
 	}
+	st, err := find(ctx, tx, who, spaceName, secretName)
+	return who, st, err
+}
+
+// find returns the Secret spaceName/secretName as who sees it, as target
+// does.
+func find(ctx context.Context, tx store.Tx, who access.Identity, spaceName, secretName string) (stored, error) {
 	sp, sec, err := resolveName(ctx, tx, who, spaceName, secretName)
 	if err != nil {
-		return access.Identity{}, stored{}, err
+		return stored{}, err
 	}
 	st := stored{Secret: sec, spaceID: sp.ID}
 	err = tx.QueryRowContext(ctx, "SELECT id, sealed, created_at, updated_at FROM secrets WHERE space_id = ? AND name = ?",
 		sp.ID, secretName).Scan(&st.ID, &st.sealed, &st.CreatedAt, &st.UpdatedAt)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return access.Identity{}, stored{}, api.CodeUnknownSecret.Errorf("no Secret is named %s", qualified(sec))
+		return stored{}, api.CodeUnknownSecret.Errorf("no Secret is named %s", qualified(sec))
 	case err != nil:
-		return access.Identity{}, stored{}, fmt.Errorf("read the Secret %s: %w", qualified(sec), err)
+		return stored{}, fmt.Errorf("read the Secret %s: %w", qualified(sec), err)
 	}
-	return who, st, nil
+	return st, nil
 }
 
 // checkName refuses sec's name unless it passes the name rule, naming sec.

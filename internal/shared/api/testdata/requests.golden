@@ -102,6 +102,17 @@ attributes 1 object of record.Value
 note 1 string
 unset 1 list of string
 
+== host.set 2
+host 1 string
+hosts 2 list of string
+address 1 string
+port 1 number
+account 1 string
+relay 1 string
+attributes 1 object of record.Value
+note 1 string
+unset 1 list of string
+
 == host.rename 1
 host 1 string
 new_name 1 string
@@ -110,11 +121,24 @@ new_name 1 string
 host 1 string
 space 1 string
 
+== host.move 2
+host 1 string
+hosts 2 list of string
+space 1 string
+
 == host.retire 1
 host 1 string
 
+== host.retire 2
+host 1 string
+hosts 2 list of string
+
 == host.remove 1
 host 1 string
+
+== host.remove 2
+host 1 string
+hosts 2 list of string
 
 == secret.list 1
 space 1 string
@@ -143,9 +167,24 @@ space 1 string
 name 1 string
 new_space 1 string
 
+== secret.move 2
+space 1 string
+name 1 string
+secrets 2 list of object
+secrets[].space 2 string
+secrets[].name 2 string
+new_space 1 string
+
 == secret.remove 1
 space 1 string
 name 1 string
+
+== secret.remove 2
+space 1 string
+name 1 string
+secrets 2 list of object
+secrets[].space 2 string
+secrets[].name 2 string
 
 == attr.list 1
 

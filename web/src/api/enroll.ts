@@ -49,11 +49,14 @@ export interface HostEnrollRequest {
 
 /**
  * SecretRef names a Secret, by its Space and its name, as the secret
- * operations name one.
+ * operations name one: in host.enroll's secret, and in the batches of
+ * secret.move and secret.remove. Both are left out when empty only so that
+ * the batches' fields, added at their revision 2, follow the rule for such
+ * fields (Op.Added); a Secret named has both.
  */
 export interface SecretRef {
-  space: string;
-  name: string;
+  space?: string;
+  name?: string;
 }
 
 /**

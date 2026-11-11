@@ -98,3 +98,10 @@ export const CodeRequestTooLarge = "request_too_large";
  * update upgrades it.
  */
 export const CodeCLITooOld = "cli_too_old";
+
+/**
+ * CodeInvalidBatch: the records at fault in a batch, a write that names
+ * several records all or none, are at fault for different reasons; the
+ * error's items give each its own code (BatchError).
+ */
+export const CodeInvalidBatch = "invalid_batch";

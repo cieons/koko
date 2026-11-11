@@ -53,7 +53,7 @@ var hostInputFields = func() []string {
 // hostAddStdin is koko host add without a name: it records the Hosts JSON on
 // stdin holds, one as an object or several as an array, all or none. Every
 // Host meets the rules readHostPairs checks, before any call; a batch with
-// Hosts at fault is refused listing each of them (api.HostBatchError).
+// Hosts at fault is refused listing each of them (api.BatchError).
 func hostAddStdin(ctx context.Context, in *Input) (addedHosts, error) {
 	switch {
 	case len(in.Pairs()) > 0:
@@ -102,7 +102,7 @@ func hostAddStdin(ctx context.Context, in *Input) (addedHosts, error) {
 	case len(items) == 1:
 		return addedHosts{}, &usageError{message: faults[0].Message}
 	}
-	e := api.HostBatchError(len(items), faults)
+	e := api.BatchError(len(items), "Hosts", "added", faults)
 	return addedHosts{}, &usageError{message: e.Message, items: e.Items}
 }
 

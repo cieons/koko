@@ -71,10 +71,13 @@ type HostEnrollRequest struct {
 }
 
 // SecretRef names a Secret, by its Space and its name, as the secret
-// operations name one.
+// operations name one: in host.enroll's secret, and in the batches of
+// secret.move and secret.remove. Both are left out when empty only so that
+// the batches' fields, added at their revision 2, follow the rule for such
+// fields (Op.Added); a Secret named has both.
 type SecretRef struct {
-	Space string `json:"space"`
-	Name  string `json:"name"`
+	Space string `json:"space,omitempty"`
+	Name  string `json:"name,omitempty"`
 }
 
 // String is the Secret's name as a command takes it, <space>/<secret>.

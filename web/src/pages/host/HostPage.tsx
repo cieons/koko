@@ -503,7 +503,7 @@ function MoveHost({
       onSubmit={() =>
         void move.submit({ host: host.id, space: space ?? "" }).then((moved) => {
           if (moved) {
-            notify(t("host.move.done", { name: host.name, space: moved.host.space }));
+            notify(t("host.move.done", { name: host.name, space: space ?? "" }));
             onDone();
           }
         })
@@ -545,7 +545,8 @@ function RetireHost({ host, onClose }: { host: Host; onClose: () => void }) {
           if (retired) {
             notify(t("host.retire.done", { name: host.name }));
             onClose();
-            navigate(hostPath(retired.host), { replace: true });
+            // A Retired Host is named by its id alone.
+            navigate(hostPathOf(host.id), { replace: true });
           }
         })
       }

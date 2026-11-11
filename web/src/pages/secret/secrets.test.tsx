@@ -550,7 +550,7 @@ test("Rename never asks, and starts from the Secret's name", async () => {
 
 test("Move never asks, and offers the caller's other Spaces to search", async () => {
   const api = await asBob();
-  api.on(SecretMove, ({ new_space, name }) => ({ secret: secret(new_space, name) }));
+  api.on(SecretMove, ({ new_space, name = "" }) => ({ secret: secret(new_space, name) }));
 
   await chooseRowAction("More actions for ops/db-password", "Move");
   const form = screen.getByRole("dialog", { name: "Move ops/db-password" });
@@ -583,7 +583,7 @@ test("a refused write says why, in the dialog it came from, the form kept as typ
 
 test("Delete asks first, saying what it does, and deletes only once confirmed", async () => {
   const api = await asBob();
-  api.on(SecretRemove, ({ space, name }) => ({ secret: secret(space, name) }));
+  api.on(SecretRemove, ({ space = "", name = "" }) => ({ secret: secret(space, name) }));
 
   await chooseRowAction("More actions for ops/db-password", "Delete");
   const dialog = screen.getByRole("alertdialog", { name: "Delete ops/db-password" });
