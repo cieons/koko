@@ -178,7 +178,12 @@ type Call struct {
 // owned is a file the machine was asked to give an owner, known by its
 // FileInfo so that it keeps its owner across a rename, as a chown does.
 type owned struct {
-	info  os.FileInfo
+	info os.FileInfo
+	// file holds the file open until the test ends. A FileInfo tells files
+	// apart by device and inode, and a file system hands a removed file's
+	// inode to a later file, which would then be taken for this one; an
+	// inode with an open file is not handed out.
+	file  *os.File
 	owner string
 }
 
@@ -687,12 +692,23 @@ func (m *Machine) Chown(path, name string) error {
 // chown records name as the owner of the file at the real path, with m.mu
 // held.
 func (m *Machine) chown(path, name string) error {
-	info, err := os.Stat(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	m.owners = slices.DeleteFunc(m.owners, func(o owned) bool { return os.SameFile(o.info, info) })
-	m.owners = append(m.owners, owned{info: info, owner: name})
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return err
+	}
+	m.owners = slices.DeleteFunc(m.owners, func(o owned) bool {
+		if !os.SameFile(o.info, info) {
+			return false
+		}
+		_ = o.file.Close()
+		return true
+	})
+	m.owners = append(m.owners, owned{info: info, file: file, owner: name})
 	return nil
 }
 
@@ -1184,7 +1200,8 @@ func (m *Machine) stopService() {
 }
 
 // stop stops the upgrade helper's path unit, and a run of the helper it
-// started, then the koko service, when the test ends.
+// started, then the koko service, and lets go of the files the machine gave
+// an owner, when the test ends.
 func (m *Machine) stop() {
 	m.mu.Lock()
 	w := m.watch
@@ -1194,4 +1211,8 @@ func (m *Machine) stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.stopService()
+	for _, o := range m.owners {
+		_ = o.file.Close()
+	}
+	m.owners = nil
 }
