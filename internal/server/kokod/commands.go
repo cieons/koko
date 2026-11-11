@@ -50,7 +50,7 @@ var commands = []*command{
 	},
 	{
 		name:    "uninstall",
-		summary: "Stop the koko server here and remove its unit and kokod, as root; its data, Root Key and system user stay",
+		summary: "Stop the koko server here and remove its units, its upgrade helper and kokod, as root; its data, Root Key and system user stay",
 		json:    "Print a refusal as JSON; the report is JSON always",
 		run:     uninstallCmd,
 	},

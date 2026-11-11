@@ -1,0 +1,4 @@
+koko server:  v0.4.0
+Latest:       v0.5.0, checked at <time>
+Upgrade:      koko server upgrade, or the web UI
+v0.5.0 is available: koko server upgrade installs it.

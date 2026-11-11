@@ -38,7 +38,8 @@ any write:
    running as root, naming the command line again after `sudo`; and no
    `/run/systemd/system`, with the refusal `kokod install` makes too
    (`install.NoSystemd`), so that a container gets it at once.
-3. **Getting `kokod`:** the file `--kokod` names, or else
+3. **Getting `kokod`,** after `install` refuses [a newer
+   `kokod`](#a-newer-kokod) installed: the file `--kokod` names, or else
    `/usr/local/bin/kokod` when its build is this `koko`'s, or else, when
    this `koko` is a release, [the download](#the-download) of that
    release's `kokod-linux-<arch>`. A `koko` that is no release (a
@@ -94,6 +95,22 @@ machine and gets `kokod` as install does (steps 2 to 4), then runs `kokod
 uninstall --json` and prints its
 [`install.UninstallReport`](../../internal/shared/install/install.go)
 ([uninstall](#uninstall)).
+
+## A newer kokod
+
+`koko server install`, and not `uninstall`, refuses with `kokod_newer`
+(exit 1), after the machine's checks and before any `kokod` is read or
+downloaded, when the `kokod` installed at `/usr/local/bin/kokod` is a
+release newer than this `koko`, as one the upgrade helper installed is
+([`refuseNewerKokod`](../../internal/client/cli/kokod.go)): install runs the
+`kokod` of its own build, so it would take the koko server back. The
+message names both versions, `sudo koko update` to bring this `koko` up
+first, and how to go back on purpose. The one exception is `KOKO_VERSION`
+in its environment naming this `koko`'s own version, with or without its
+`v`, which `install.sh` passes on (`sudo -n env KOKO_VERSION=…`) when the
+Owner goes back with it. So changing a setting with an older `koko` never
+downgrades the koko server. `kokod install` itself refuses no older
+`kokod`: the helper installs the previous one with it.
 
 ## The download
 
@@ -595,6 +612,14 @@ tests uninstall: the service stopped while its unit is there, the unit and
 `kokod` gone, `/usr/local/bin/koko` kept, what it keeps, the port, the
 golden, running it again, install after it, and on a machine as v0.2.0 left
 it, with no `kokod`, the unit alone removed.
+[`server_upgrade_command_test.go`](../../internal/client/cli/server_upgrade_command_test.go)
+tests `koko server install` refusing a newer `kokod` before any download,
+with or without a `KOKO_VERSION` of another release, and going back with
+`KOKO_VERSION` naming its own; and `koko server upgrade` on the fake
+machine, through the helper's path unit and the restart (its goldens, the
+CLI updated after a success, left after a failure and when `koko update`
+may not replace it, a version not newer refused, and `--check`'s one
+request to the fake GitHub, goldens and refusals).
 [`server_download_test.go`](../../internal/client/cli/server_download_test.go)
 tests the download, with `koko` stated as release `v9.9.9` on the fake
 machine (`m.Release`), whose fake GitHub serves that release and logs every

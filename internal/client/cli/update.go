@@ -139,12 +139,19 @@ func update(ctx context.Context, in *Input) (updateJSON, error) {
 			return updateJSON{}, downloadFailed(err, nothingChanged)
 		}
 	}
-	self := k.Self().Version
-	out := updateJSON{check: in.Bool("check"), path: t.path, shown: t.shown, from: self, to: tag}
-	if out.check || tag == self {
+	out := updateJSON{check: in.Bool("check"), path: t.path, shown: t.shown, from: k.Self().Version, to: tag}
+	if out.check || tag == out.from {
 		return out, nil
 	}
+	return in.updateTo(ctx, k, t, tag)
+}
 
+// updateTo replaces the koko at t with the release tag's, downloaded beside
+// it and checked, then points koko's ssh_config at it: koko update's steps
+// once it knows what to install, which koko server upgrade takes too.
+func (in *Input) updateTo(ctx context.Context, k Kokod, t updateTarget, tag string) (updateJSON, error) {
+	src := in.releases(k)
+	out := updateJSON{path: t.path, shown: t.shown, from: k.Self().Version, to: tag}
 	dir, err := os.MkdirTemp(filepath.Dir(t.file), ".koko-update-") // mode 0700
 	if err != nil {
 		return updateJSON{}, fmt.Errorf("make a directory beside %s to download koko into: %w", t.path, err)

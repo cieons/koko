@@ -15,6 +15,7 @@ import (
 
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/build"
+	"github.com/cieons/koko/internal/shared/compat"
 	"github.com/cieons/koko/internal/shared/install"
 	"github.com/cieons/koko/internal/shared/release"
 )
@@ -86,6 +87,11 @@ func kokodToRun(ctx context.Context, in *Input) (file string, done func(), err e
 		return "", nil, refusalError(err)
 	}
 	self := k.Self()
+	if in.line.cmd.Verb == "install" {
+		if err := in.refuseNewerKokod(k); err != nil {
+			return "", nil, err
+		}
+	}
 	if given != "" {
 		if problem := kokodProblem(k, given); problem != "" {
 			return "", nil, usagef("--kokod names %s; give the kokod of this koko's build for %s; nothing was written", problem, k.Platform())
@@ -107,6 +113,33 @@ func kokodToRun(ctx context.Context, in *Input) (file string, done func(), err e
 			in.line.cmd.Verb, self, there)
 	}
 	return downloadKokod(ctx, in, k)
+}
+
+// codeKokodNewer: koko server install would replace the kokod installed
+// with an older one, its own: the koko server here was upgraded past this
+// koko, as through the upgrade helper; nothing was written.
+const codeKokodNewer = "kokod_newer"
+
+// refuseNewerKokod refuses koko server install, before any download, when
+// the kokod installed is a newer release than this koko, which installs the
+// kokod of its own build: so an older CLI, changing a setting, never takes
+// the koko server back. KOKO_VERSION naming this koko's own version in the
+// environment, as install.sh passes on when the Owner goes back on purpose,
+// lets it through.
+func (in *Input) refuseNewerKokod(k Kokod) error {
+	self := k.Self()
+	b, err := k.Build(k.Path(install.KokodPath))
+	if err != nil || b.Path != install.KokodPackage || !b.Release() || !compat.Newer(b.Version, self.Version) {
+		return nil
+	}
+	if v := in.inv.getenv("KOKO_VERSION"); v != "" && "v"+strings.TrimPrefix(v, "v") == self.Version {
+		return nil
+	}
+	return &cliError{code: codeKokodNewer, message: fmt.Sprintf(
+		"the kokod installed at %s is %s, newer than this koko, %s, whose kokod koko server install would put in its place: "+
+			"bring this koko to %s first with sudo koko update, then run koko server install again; "+
+			"to go back to %s on purpose, run it with KOKO_VERSION=%s in its environment (sudo env KOKO_VERSION=%s koko server install …); nothing was written",
+		install.KokodPath, b.Version, self.Version, b.Version, self.Version, self.Version, self.Version)}
 }
 
 // checkMachine refuses, before any kokod is read, a machine that cannot run

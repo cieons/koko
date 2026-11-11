@@ -196,7 +196,13 @@ status. A command reaches the koko server only on its first `in.Call`, so
   or `koko update` could not find or download the release it installs, or
   got a file it does not install, [`koko update`](#koko-update)),
   `update_unsupported` (`koko update` of a koko it did not install, naming
-  how to upgrade that one),
+  how to upgrade that one), `upgrade_failed` (`koko server upgrade` whose
+  upgrade failed, with the outcome's message, or did not end within 15
+  minutes; this koko left as it was, [`koko server
+  upgrade`](#koko-server-upgrade)), `kokod_newer` (`koko server install`
+  where the `kokod` installed is a newer release than this koko, before any
+  download, naming both, `sudo koko update` and `KOKO_VERSION`,
+  [the installer](installer.md#a-newer-kokod)),
   and `internal_error` for a failure it did not expect. `kokod` reports `invalid_usage`, `unsupported_platform`
   and `port_taken` too, so those three live in the shared
   [`install`](../../internal/shared/install/install.go) package, beside
@@ -387,6 +393,52 @@ once it has replaced its file, so a refusal or a failure changes nothing.
 The Device Mux's refresh still keeps the path there
 ([the bare-name refresh](device-mux.md#the-bare-name-refresh)).
 
+## `koko server upgrade`
+
+[`koko server upgrade`](../../internal/client/cli/server_upgrade.go), the
+Owner's, upgrades the koko server in place through its upgrade helper
+([ADR 0048](../adr/0048-the-koko-server-upgrades-itself-through-a-root-helper-that-takes-only-a-newer-releases-version.md),
+[the helper](installer.md#the-upgrade-helper)), then this koko. It is in the
+irreversible tier by its path, since the koko server restarts and every open
+SSH Session through it ends, and never prompts (ADR 0019).
+
+- **`--check [--json]`** calls `server.check_update`, which checks at once,
+  then `server.show` for `upgrade_way`, and changes nothing. It prints the
+  koko server's version, the latest release with when it was checked, and
+  how the koko server upgrades, as `koko server show`'s `Upgrade:` line
+  does; its JSON is `{"version", "latest", "checked_at",
+  "update_available", "upgrade_way"}`. It exits 0, or 1 with
+  `update_check_failed`, and 2 with `--version`. `--check` only lowers the
+  command's risk, so the command keeps its tier, and a harness asks before
+  it as before the upgrade; `koko server show` is the read-tier way to see
+  the last check's result.
+- **The upgrade, `[--version <vX.Y.Z>] [--json]`**, in this order:
+  1. `--version` must be a release's tag, or it exits 2.
+  2. `server.show`, for the outcome there before, then `server.upgrade`
+     with the version, whose refusals (`upgrade_unsupported`,
+     `invalid_request`, `upgrade_running`, `owner_only`) are the command's.
+     For people it says on stderr: `Asked the koko server to upgrade from
+     v0.4.0 to v0.5.0. It restarts, and every open SSH Session through it
+     ends.`
+  3. It reads `server.show`'s `last_upgrade` every second until an outcome
+     other than the one before, to that version, is final, trying each call
+     that fails while the koko server restarts again, on a new connection,
+     for at most 15 minutes, which covers the helper's 10-minute download.
+     Then it gives up with `upgrade_failed`, naming `journalctl -u koko -u
+     koko-upgrade`.
+  4. A failed outcome exits 1 with `upgrade_failed` and its message, and
+     leaves this koko as it was.
+  5. After a success, when this koko is older than the release the koko
+     server now runs and `koko update` may replace it, it is updated to
+     that release by [`koko update`](#koko-update)'s steps, which it prints
+     as `koko update` does. Otherwise it is left, and stderr says why and
+     the line that brings it there (`koko update --version vX.Y.Z`, with
+     `sudo` for root's).
+
+  Its JSON is `{"server": {"from", "to", "state", "message"}, "cli": <koko
+  update's JSON> | null}`. With `--json` stderr says nothing on success, so
+  that a failure's holds its error object alone.
+
 ## The commands so far
 
 | Command | Tier | Calls | `--json` |
@@ -425,6 +477,7 @@ The Device Mux's refresh still keeps the path there
 | `koko update [--check] [--version <vX.Y.Z>]` | reversible | none: it never contacts the koko server | `{"path", "from", "to", "updated"}`, or with `--check` `{"path", "installed", "target", "update_available"}` ([`koko update`](#koko-update)) |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
 | `koko server install [--owner <user>] [--address <host[:port]>] [--port <port>] [--web-listen <host:port\|off>] [--kokod <file>]` | irreversible | `server.init`, after it runs `kokod install` | `{"upgraded", "address", "host_key_fingerprint", "root_key_file", "root_key_id", "listen_port", "join_code"}`, the Join Code as `device add` prints it; an upgrade has no `join_code`, and may have `devices_must_connect` ([the installer](installer.md#what-it-prints)). Without `--kokod` it runs the `kokod` installed of its build, or else downloads its release's ([the download](installer.md#the-download)) |
+| `koko server upgrade [--check] [--version <vX.Y.Z>]` (Owner) | irreversible | `server.upgrade` and `server.show`; with `--check`, `server.check_update` and `server.show` | `{"server": {"from", "to", "state", "message"}, "cli"}`, or with `--check` `{"version", "latest", "checked_at", "update_available", "upgrade_way"}` ([`koko server upgrade`](#koko-server-upgrade)) |
 | `koko server uninstall [--kokod <file>]` | irreversible | none: it runs `kokod uninstall` | `{"removed", "data_dir", "root_key_file", "system_user", "listen_port", "web_listen"}` ([the installer](installer.md#uninstall)). It gets `kokod` as install does, downloading it when none of its build is installed |
 | `koko server show` | read | `server.show` | `{"address", "listen_port", "host_key_fingerprint", "version", "root_key_file", "root_key_id", "data_dir", "web_url", "web_listen", "update_check": {"enabled", "checked_at", "latest", "error"}, "upgrade_way", "last_upgrade"}`, `web_url` and `web_listen` `null` while unset and off ([the deployment afterwards](initialisation.md#the-deployment-afterwards)), the check for a new release, each of its fields but `enabled` `null` while unknown ([the update check](initialisation.md#the-update-check)), how the koko server upgrades, `systemd`, `image` or `none`, and the outcome of its last upgrade, `null` while there is none ([how it upgrades](initialisation.md#how-it-upgrades)) |
 | `koko server set address=<host[:port]>`, `web_url=<https://host[:port]>`, `update_check=on\|off`, `--unset web_url` (Owner, over the Unix socket only) | reversible | `server.set` | the settings as `server show` prints them, as the change left them |

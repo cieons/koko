@@ -50,13 +50,14 @@ var serverCommands = []Command{
 	{
 		Noun:    "server",
 		Verb:    "uninstall",
-		Summary: "Stop the koko server on this Linux machine and remove its unit and kokod, as root; its data, Root Key, system user and koko stay",
+		Summary: "Stop the koko server on this Linux machine and remove its units, its upgrade helper and kokod, as root; its data, Root Key, system user and koko stay",
 		Flags:   []Flag{kokodFlag},
 		// It stops the koko server and removes it from the machine (P0
 		// spec: install and run).
 		Tier: Irreversible,
 		Run:  action(serverUninstall),
 	},
+	serverUpgradeCommand,
 	{
 		Noun:    "server",
 		Verb:    "show",
@@ -97,6 +98,7 @@ var serverMappings = []mapping{
 	},
 	{api: reflect.TypeFor[api.UpdateCheck](), cli: reflect.TypeFor[updateCheckJSON]()},
 	{api: reflect.TypeFor[api.LastUpgrade](), cli: reflect.TypeFor[lastUpgradeJSON]()},
+	{api: reflect.TypeFor[api.ServerUpgradeResponse](), cli: reflect.TypeFor[serverUpgradeOutcome]()},
 }
 
 // installedJSON is what koko server install prints once the koko server
