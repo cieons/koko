@@ -153,7 +153,8 @@ or the add field, Add to a Space or Add Members, once the list is empty.
 Invite, Add device and Issue Password Link issue in two steps
 ([`IssueDialog`](../../web/src/pages/device/IssueDialog.tsx)): the first
 takes the new User's name, how they will use koko and the shared Spaces to
-make them a Member of, or the device's optional name, and each takes
+make them a Member of, chosen in a searchable choice of several, or the
+device's optional name, and each takes
 **Valid for** ([`ValidForChoice`](../../web/src/pages/device/IssueDialog.tsx)):
 15 minutes, 1 hour, 1 day or 7 days, as segments, starting at the koko
 server's own 15 minutes (#108, ADR 0044), which a request leaves out;
@@ -222,8 +223,8 @@ koko server whose writes change what it answers
   the panel alone; the Owner's own panel;
   a Removed User's; Remove User asking first, then Removed or deleted, and
   `space_not_empty` naming the Personal Space; Add device for that User;
-  Invite with its Spaces, the Join Code shown once with Done focused, its
-  copy and countdown, and gone once the dialog closes; Invite when a
+  Invite with several Spaces chosen from the search, the Join Code shown
+  once with Done focused, its copy and countdown, and gone once the dialog closes; Invite when a
   membership call fails; a refused Invite; the code gone once the browser
   leaves the page, the page is left within the web UI, or its time runs
   out.

@@ -39,6 +39,7 @@ export default {
   "user.invite.nameRequired": "请输入名称。",
   "user.invite.spaces": "空间",
   "user.invite.spacesHint": "该用户将成为所选空间的成员，此后可随时调整。",
+  "user.invite.spacesPlaceholder": "选择空间",
   "user.invite.done": "已邀请 {name}",
   "user.invite.notAdded": "{name} 未成为 {spaces} 的成员：{reason}可在 {name} 的面板中添加成员关系。",
   "user.invite.expired": "此加入码已过期。请在 {name} 的面板中通过“添加设备”签发新的加入码。",

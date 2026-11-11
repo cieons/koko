@@ -7,7 +7,7 @@ import { UserInvite, UserRemove } from "../../api/user";
 import { navigate } from "../../shell/router";
 import { expectAccessible } from "../../test/axe";
 import { clipboard } from "../../test/clipboard";
-import { searchAndChoose } from "../../test/controls";
+import { searchAndChoose, searchAndChooseSeveral } from "../../test/controls";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { actAs, alerts, renderAt } from "../../test/pages";
 import { alice, joinCode, serve, space, type World, world } from "../space/access.fixture";
@@ -256,7 +256,7 @@ test("Add device in a person's panel issues the Join Code for that User", async 
 
 // Invite.
 
-test("Invite takes a name and the Spaces, then shows the Join Code once, with Done focused", async () => {
+test("Invite takes a name and several Spaces chosen from the search, then shows the Join Code once, with Done focused", async () => {
   stopClock();
   const writeText = clipboard();
   const api = await asOwner("/access");
@@ -270,8 +270,10 @@ test("Invite takes a name and the Spaces, then shows the Join Code once, with Do
   await expectAccessible();
 
   fireEvent.change(within(dialog).getByRole("textbox", { name: "Name" }), { target: { value: "erin" } });
-  fireEvent.click(within(dialog).getByRole("checkbox", { name: "ops" }));
-  fireEvent.click(within(dialog).getByRole("checkbox", { name: "web" }));
+  await searchAndChooseSeveral("Spaces", "op", ["ops"], { holder: dialog, offered: ["ops"] });
+  await searchAndChooseSeveral("Spaces", "WE", ["web"], { holder: dialog, offered: ["web"] });
+  expect(within(dialog).getAllByRole("row").map((r) => r.textContent)).toEqual(["ops", "web"]);
+  await expectAccessible();
   fireEvent.click(within(dialog).getByRole("button", { name: "Invite" }));
 
   const done = await screen.findByRole("dialog", { name: "erin is invited" });
@@ -312,8 +314,7 @@ test("Invite still shows the Join Code when a membership call fails, and names t
   fireEvent.click(screen.getByRole("button", { name: "Invite" }));
   const dialog = await screen.findByRole("dialog", { name: "Invite" });
   fireEvent.change(within(dialog).getByRole("textbox", { name: "Name" }), { target: { value: "erin" } });
-  fireEvent.click(within(dialog).getByRole("checkbox", { name: "ops" }));
-  fireEvent.click(within(dialog).getByRole("checkbox", { name: "web" }));
+  await searchAndChooseSeveral("Spaces", "", ["ops", "web"], { holder: dialog });
   fireEvent.click(within(dialog).getByRole("button", { name: "Invite" }));
 
   const done = await screen.findByRole("dialog", { name: "erin is invited" });
@@ -338,7 +339,7 @@ test("a refused Invite says why on its first step, the name kept as typed", asyn
   fireEvent.click(screen.getByRole("button", { name: "Invite" }));
   const dialog = await screen.findByRole("dialog", { name: "Invite" });
   fireEvent.change(within(dialog).getByRole("textbox", { name: "Name" }), { target: { value: "bob" } });
-  fireEvent.click(within(dialog).getByRole("checkbox", { name: "ops" }));
+  await searchAndChooseSeveral("Spaces", "", ["ops"], { holder: dialog });
   fireEvent.click(within(dialog).getByRole("button", { name: "Invite" }));
 
   await waitFor(() => expect(alerts()).toEqual(["This name is already in use."]));

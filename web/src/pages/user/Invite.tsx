@@ -1,4 +1,4 @@
-import { Checkbox, CheckboxGroup, Description, Label, Radio, RadioGroup } from "@heroui/react";
+import { Description, Label, Radio, RadioGroup } from "@heroui/react";
 import { type ReactNode, useState } from "react";
 
 import type { JoinCode } from "../../api/device";
@@ -9,7 +9,7 @@ import { call } from "../../client";
 import { useWrite } from "../../shell/data";
 import { errorMessage, useLanguage, useT } from "../../shell/i18n";
 import { useShownOnce } from "../../shell/shownOnce";
-import { Field } from "../../ui/fields";
+import { Field, SearchChoices } from "../../ui/fields";
 import { AlertLine } from "../../ui/states";
 import {
   defaultValidFor,
@@ -48,11 +48,12 @@ interface Invited {
  * name; how they will use koko, in a terminal (a Join Code) or in a
  * browser (a Password Link, which needs the Web URL, from server.show, and
  * is disabled with the reason while it is unset); Valid for; and the shared
- * Spaces to make them a Member of; then the code or link, shown once. It
- * calls user.invite, then space.member.add once per Space chosen. A
- * membership call that fails leaves the Invite made, so the second step
- * still shows the code or link, which cannot be shown again, and names each
- * Space they were not added to. It never asks first.
+ * Spaces to make them a Member of, a searchable choice of several; then
+ * the code or link, shown once. It calls user.invite, then
+ * space.member.add once per Space chosen. A membership call that fails
+ * leaves the Invite made, so the second step still shows the code or link,
+ * which cannot be shown again, and names each Space they were not added
+ * to. It never asks first.
  */
 export function Invite({
   shared,
@@ -178,22 +179,16 @@ export function Invite({
       </RadioGroup>
       <ValidForChoice value={validFor} onChange={setValidFor} />
       {shared.length > 0 && (
-        <CheckboxGroup value={spaces} onChange={setSpaces}>
-          <Label>{t("user.invite.spaces")}</Label>
-          <Description>{t("user.invite.spacesHint")}</Description>
-          <div className="mt-1 flex flex-wrap gap-x-6 gap-y-2">
-            {shared.map((s) => (
-              <Checkbox key={s.id} value={s.name}>
-                <Checkbox.Content>
-                  <Checkbox.Control>
-                    <Checkbox.Indicator />
-                  </Checkbox.Control>
-                  {s.name}
-                </Checkbox.Content>
-              </Checkbox>
-            ))}
-          </div>
-        </CheckboxGroup>
+        <SearchChoices
+          label={t("user.invite.spaces")}
+          values={spaces}
+          onChange={setSpaces}
+          options={shared.map((s) => ({ id: s.name, label: s.name }))}
+          placeholder={t("user.invite.spacesPlaceholder")}
+          searchLabel={t("space.access.search.spaces")}
+          noMatch={t("space.access.noSpace")}
+          description={t("user.invite.spacesHint")}
+        />
       )}
     </IssueDialog>
   );

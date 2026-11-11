@@ -37,6 +37,7 @@ export default {
   "user.invite.nameRequired": "Enter a name.",
   "user.invite.spaces": "Spaces",
   "user.invite.spacesHint": "They become a Member of each Space chosen. This can be changed at any time.",
+  "user.invite.spacesPlaceholder": "Choose Spaces",
   "user.invite.done": "{name} is invited",
   "user.invite.notAdded": "{name} is not a Member of {spaces}: {reason} The memberships can be added in the panel of {name}.",
   "user.invite.expired": "This Join Code has expired. Issue a new one with Add device in the panel of {name}.",

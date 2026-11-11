@@ -231,7 +231,7 @@ Where a person picks several items from a list that can grow, the control
 is HeroUI's `Autocomplete` with several chosen: a field showing each item
 picked as a tag with its remove button, whose list has a search field over
 it and ticks each item picked. The places: a Space's panel, Add Members
-(the Users who are not Members).
+(the Users who are not Members), and Invite's shared Spaces.
 
 The list opens when the field is pressed or typed in, or on its button or
 the up or down arrow. It does not open when the field only takes the focus,
@@ -562,7 +562,8 @@ no person's panel: `/access/people/<name>` shows "Page not found" to them.
 1. Name; "How they will use koko" as two radio cards, **In a terminal** (a
    Join Code) and **In a browser** (a Password Link, disabled with the
    reason while the Web URL is unset); **Valid for** as four segments (15
-   minutes, 1 hour, 1 day, 7 days); the shared Spaces as checkboxes.
+   minutes, 1 hour, 1 day, 7 days); **Spaces**, the shared Spaces to make
+   them a Member of, a searchable choice of several, as Add Members is.
 2. "<name> is invited": the code or link shown once with its time left and
    Copy. For a Join Code, the `koko join <code>` line too.
 
