@@ -16,6 +16,7 @@ import (
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/install"
+	"github.com/cieons/koko/internal/shared/release"
 )
 
 // Kokod is the machine koko server install and uninstall put the koko server
@@ -137,19 +138,8 @@ func checkMachine(in *Input, k Kokod) error {
 // returns "" when it is kokod of koko's own build, built for the machine's
 // platform.
 func kokodProblem(k Kokod, file string) string {
-	self := k.Self()
 	b, err := k.Build(file)
-	switch {
-	case err != nil:
-		return fmt.Sprintf("%s, which is not kokod: %v", file, err)
-	case b.Path != install.KokodPackage:
-		return fmt.Sprintf("%s, which is %s, not kokod (%s)", file, b.Path, install.KokodPackage)
-	case !b.Same(self):
-		return fmt.Sprintf("kokod %s, and this koko is %s: koko runs only the kokod of its own build", b, self)
-	case b.Platform != k.Platform():
-		return fmt.Sprintf("kokod for %s, and this machine is %s", b.Platform, k.Platform())
-	}
-	return ""
+	return release.Mismatch(file, b, err, ownKokod(k))
 }
 
 // runKokod runs `kokod <args> --json` from file and reads the report it

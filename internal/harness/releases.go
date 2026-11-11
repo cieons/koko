@@ -14,9 +14,9 @@ import (
 	"github.com/cieons/koko/internal/shared/install"
 )
 
-// releasesPath is where GitHub serves koko's release assets, below which
-// each release's are at <version>/<name>.
-const releasesPath = "/cieons/koko/releases/download"
+// releasesPath is where GitHub serves koko's releases, each release's
+// assets at <releasesPath>/download/<version>/<name>.
+const releasesPath = "/cieons/koko/releases"
 
 // Releases is a fake GitHub that serves one koko release's assets over
 // HTTPS, as koko server install downloads them: an httptest TLS server that
@@ -68,7 +68,7 @@ func (r *Releases) URL(name string) string {
 // Path is the request path of the release's asset name, as the log names
 // it.
 func (r *Releases) Path(name string) string {
-	return releasesPath + "/" + r.version + "/" + name
+	return releasesPath + "/download/" + r.version + "/" + name
 }
 
 // Put makes the release's asset name content, leaving SHA256SUMS as it is.
