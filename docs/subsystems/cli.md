@@ -172,7 +172,11 @@ status. A command reaches the koko server only on its first `in.Call`, so
   `host_key_mismatch` (the koko server presented a host key other than the
   one pinned), the API's `revoked` for a device whose Device Session the
   koko server refused as Revoked or that keeps the record of it
-  ([the device](device-connection.md#on-the-device)), `already_joined`
+  ([the device](device-connection.md#on-the-device)), the API's
+  `cli_too_old` for a CLI below the oldest koko the koko server's report
+  names, before it sends anything, naming both versions and `koko update`,
+  which `koko tunnel` prints as its one line, exit 1, before ssh exits 255
+  ([the window](api.md#the-way-in)), `already_joined`
   (`koko join` on a joined device, naming `koko device revoke` and `koko
   leave`; `koko ssh setup` on one, naming `koko join`),
   `invalid_join_code` (the koko server refused the Join Code, used, expired
@@ -185,7 +189,8 @@ status. A command reaches the koko server only on its first `in.Call`, so
   list the command's operation; the message names the koko server's version
   and the command, and nothing was sent; or, so far for `koko ssh setup`
   only, the koko server answered without a field the command needs, which
-  names it), `download_failed` (`koko server install` or `uninstall` could
+  names it; or the koko server is below `compat.Oldest`, and every command
+  fails with it, naming both versions, before sending anything), `download_failed` (`koko server install` or `uninstall` could
   not download the `kokod` of its release, or got a file it does not run;
   the message names the URL and `--kokod`, [the download](installer.md#the-download);
   or `koko update` could not find or download the release it installs, or
@@ -415,7 +420,7 @@ The Device Mux's refresh still keeps the path there
 | `koko disconnect` | reversible | none | `{"device_muxes": [{"socket", "commands_ended"}], "commands_ended"}`: each Device Mux it stopped, by socket, with how many commands were connected to it, which ended, and the sum ([`koko disconnect`](device-mux.md#state-and-exit)) |
 | `koko ssh setup` | reversible | `server.show`, then `host.list` | `{"ssh_config", "include_warning"}`: the path of koko's ssh_config it wrote for this OS user on the koko server's own machine, and `include_warning` as `koko status` prints it ([on the koko server's own machine](device-connection.md#on-the-koko-servers-own-machine)) |
 | `koko leave` | irreversible | none: it never contacts the koko server | `{"server_address", "device_session"}`: the koko server the device left and its Device Session there, left behind, as `koko status` names one ([`koko leave`](device-connection.md#on-the-device)) |
-| `koko status` | read | none: the koko server's version comes from its report; for the Owner, `user.current` on a device, then `server.show` | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_latest", "server_error", "device_mux", "revocation", "include_warning", "names_read_as_addresses"}`, below |
+| `koko status` | read | none: the koko server's version comes from its report; for the Owner, `user.current` on a device, then `server.show` | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_latest", "server_oldest", "server_error", "device_mux", "revocation", "include_warning", "names_read_as_addresses"}`, below |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko update [--check] [--version <vX.Y.Z>]` | reversible | none: it never contacts the koko server | `{"path", "from", "to", "updated"}`, or with `--check` `{"path", "installed", "target", "update_available"}` ([`koko update`](#koko-update)) |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
@@ -479,10 +484,15 @@ caller; `cli_version` is this koko's version and `server_version` the one
 the koko server reported on connecting, or `null`; `server_latest` is
 the latest koko release the koko server's [update
 check](initialisation.md#the-update-check) found, for the Owner only, or
-`null` when unknown or for a Member; `server_error` is the
+`null` when unknown or for a Member; `server_oldest` is the oldest koko
+the koko server works with, as its report names it
+([the window](api.md#the-way-in)), or `null` when it was not reached or
+names none, as one from before the window; `server_error` is the
 error object (`{"code", "message"}`) any command that calls the koko server
 would fail with now, such as `not_joined`, `revoked` or
-`server_unreachable`, or `null`; `device_mux` is the
+`server_unreachable`, or, when it answered, `cli_too_old` or
+`server_too_old` for a CLI and a koko server outside each other's window,
+or `null`; `device_mux` is the
 [Device Mux](device-mux.md) status reached the koko server through,
 `{"socket", "state", "since", "last_error", "waiting_to_resume"}`, where
 `state` is `connected` (since it opened its Device Connection, `last_error`
@@ -506,13 +516,18 @@ koko ([the device's ssh](device-connection.md#ssh)), in the file's order:
 counts the rest and says to use `ssh <name>.koko`, or says that koko cannot
 tell. It exits 0 whether or not the koko
 server answered, and 1 only when the device's own files cannot be read.
-When it reached the koko server over the Unix socket, on its own machine,
-and `server_version` differs from `cli_version`, the human form adds one
-line under `This CLI`: `the koko server here is another build: run sudo
-koko server install to bring it to this CLI's`, since install keeps the two
-on one machine one build ([ADR 0041](../adr/0041-koko-installs-the-koko-server-of-its-own-version.md)).
-The JSON gains nothing, as both versions are in it. Over a Device
-Connection, two versions are normal, and it adds nothing.
+Two versions are normal on every machine, the koko server's own included,
+since a koko server upgraded from the web UI leaves the CLI there as it
+was ([ADR 0049](../adr/0049-the-cli-and-the-koko-server-work-together-within-a-window-of-versions.md)).
+The human form says how the two work together: `This CLI` ends `(the
+koko server runs v0.5.0: koko update brings this CLI to it)` when the koko
+server runs a newer release, not a development build, since `koko update`
+installs releases; `(older than the oldest the koko server works with,
+v0.5.0: run koko update)` when the CLI is below the koko server's oldest;
+and the `koko server` line ends `(older than the oldest this CLI works
+with, v0.3.0: upgrade the koko server)` when the koko server is below
+`compat.Oldest`. Outside the window status still shows both versions and
+exits 0, and calls nothing more.
 
 For the Owner, once the koko server answered, status asks for the update
 check: over the Unix socket the Local caller is the Owner, and on a device

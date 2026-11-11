@@ -1,0 +1,3 @@
+Unix socket:     <socket>, as the Local caller
+koko server:     koko v0.6.0
+This CLI:        koko v0.4.0 (older than the oldest the koko server works with, v0.5.0: run koko update)

@@ -505,6 +505,10 @@ Device Session, the address, `reason=dead` and the error, `no answer for
   status` joined, over the socket, not joined, revoked and unreachable, its
   Include warnings, the bare names ssh reads as IP addresses, and the
   Owner's latest release, asked for with `server.show` for the Owner only.
+- [`status_window_test.go`](../../internal/client/cli/status_window_test.go):
+  `koko status`'s notes on how the CLI and the koko server work together,
+  with no drift line over the socket, and a koko server below the window
+  failing every command with `server_too_old` over a Device Connection.
 - [`retry_test.go`](../../internal/client/cli/retry_test.go)
   `TestAJoinWhoseCallIsCutStillJoins`: `user.current` cut mid-flight and sent
   again on a Device Connection of the new key.

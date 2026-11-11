@@ -275,12 +275,31 @@ func (in *Input) client() *apiclient.Client {
 	return in.api
 }
 
-// connect reaches the koko server: over its Unix socket when the socket is
+// connect reaches the koko server (reach), and then, from its report,
+// checks that it and this CLI work together (window), so that a command
+// outside the window sends nothing.
+func (in *Input) connect(ctx context.Context) (serverconn.Conn, error) {
+	conn, err := in.reach(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Here already: reach waited for it. One that does not parse fails the
+	// command's first call, as server_unreachable.
+	if report, err := conn.Report(ctx); err == nil {
+		if err := in.window(report); err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
+	}
+	return conn, nil
+}
+
+// reach reaches the koko server: over its Unix socket when the socket is
 // at its fixed path, and otherwise the koko server this device joined. It
 // returns once the koko server's report has come, and waits for the
 // connection and the report at most timing.CommandWait, so a command is
 // never stuck (P0 spec: reach).
-func (in *Input) connect(ctx context.Context) (serverconn.Conn, error) {
+func (in *Input) reach(ctx context.Context) (serverconn.Conn, error) {
 	path := cmp.Or(in.runner.SocketPath, wire.SocketPath)
 	socketCtx, cancel := context.WithTimeout(ctx, in.runner.Timings.Resolve().CommandWait)
 	defer cancel()

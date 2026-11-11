@@ -34,6 +34,7 @@ type statusOut struct {
 	CLIVersion    string            `json:"cli_version"`
 	ServerVersion *string           `json:"server_version"`
 	ServerLatest  *string           `json:"server_latest"`
+	ServerOldest  *string           `json:"server_oldest"`
 	ServerError   *errorOut         `json:"server_error"`
 	DeviceMux     *struct {
 		Socket          string    `json:"socket"`

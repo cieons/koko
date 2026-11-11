@@ -332,7 +332,9 @@ over the table `idempotency_keys`; the design is P0 spec: reach and
   with nothing sent, an older CLI working against a newer koko server, and
   the real transport refusing a CLI below the window, stated or, past
   v0.3.0, unstated, with `cli_too_old` on a call and on a `tunnel@koko` and
-  `web@koko` open, and serving one at it.
+  `web@koko` open, and serving one at it and a build from a clone without
+  tags; a CLI that reads an oldest above itself failing every command with
+  `cli_too_old`, `koko tunnel` included, with nothing sent.
 - [`internal/client/cli/retry_test.go`](../../internal/client/cli/retry_test.go):
   a write and a read cut mid-flight on a direct Device Connection retried
   once on a new one, the write applied once.

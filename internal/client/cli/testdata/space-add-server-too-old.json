@@ -1,6 +1,6 @@
 {
   "error": {
     "code": "server_too_old",
-    "message": "the koko server runs koko v0.1.0, which has no space.add, so koko space add needs a newer koko server: upgrade the koko server"
+    "message": "the koko server runs koko v0.3.0, which has no space.add, so koko space add needs a newer koko server: upgrade the koko server"
   }
 }

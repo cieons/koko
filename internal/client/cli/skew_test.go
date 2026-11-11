@@ -168,16 +168,39 @@ func TestTheServerServesACLIAtTheWindow(t *testing.T) {
 	}
 }
 
+// A CLI that reads in the report an oldest above itself fails every
+// command with cli_too_old, naming both versions and koko update, and
+// sends nothing; koko tunnel, ssh's ProxyCommand, prints the same line,
+// after which ssh exits 255. A CLI at the oldest keeps working.
+func TestACLIBelowTheWindowFailsEveryCommandItself(t *testing.T) {
+	t.Parallel()
+	path, calls := otherServer(t, wire.Report{Version: "v0.6.0", Operations: []string{"space.list"}, Oldest: "v0.5.0"})
+	below := releaseCLI(t, "v0.4.0", path)
+	r := harness.Run(t, below, nil, "space", "ls", "--json")
+	msg := r.WantError(t, 1, "cli_too_old")
+	if want := "this koko is v0.4.0, older than v0.5.0, the oldest koko the koko server on this machine works with: run koko update"; msg != want {
+		t.Errorf("the message is %q, want %q", msg, want)
+	}
+	tunnel := harness.Run(t, below, nil, "tunnel", "web1.koko")
+	if tunnel.Status != 1 || tunnel.Stdout != "" || tunnel.Stderr != "koko: "+msg+"\n" {
+		t.Errorf("koko tunnel: exit status %d, stdout %q, stderr %q; want 1 and the line %q", tunnel.Status, tunnel.Stdout, tunnel.Stderr, msg)
+	}
+	if n := calls.Load(); n != 0 {
+		t.Errorf("the koko server answered %d call(s), want none", n)
+	}
+	harness.Run(t, releaseCLI(t, "v0.5.0", path), nil, "space", "ls").WantSuccess(t)
+}
+
 // A command whose operation the koko server does not report fails with
 // server_too_old, naming the koko server's version and the command, and
 // sends nothing.
 func TestACommandTheServerLacksIsServerTooOld(t *testing.T) {
 	t.Parallel()
-	path, calls := otherServer(t, wire.Report{Version: "v0.1.0", Operations: []string{"space.list"}})
+	path, calls := otherServer(t, wire.Report{Version: "v0.3.0", Operations: []string{"space.list"}})
 	r := harness.Run(t, cli.Runner{SocketPath: path}, nil, "space", "add", "ops", "--json")
 	msg := r.WantError(t, 1, "server_too_old")
-	if !strings.Contains(msg, "v0.1.0") || !strings.Contains(msg, "koko space add") {
-		t.Errorf("message %q does not name the koko server's version, v0.1.0, and the command, koko space add", msg)
+	if !strings.Contains(msg, "v0.3.0") || !strings.Contains(msg, "koko space add") {
+		t.Errorf("message %q does not name the koko server's version, v0.3.0, and the command, koko space add", msg)
 	}
 	harness.Golden(t, "space-add-server-too-old.json", r.Stderr)
 	if n := calls.Load(); n != 0 {

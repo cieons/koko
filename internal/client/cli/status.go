@@ -20,7 +20,7 @@ import (
 var statusCommands = []Command{
 	{
 		Verb:    "status",
-		Summary: "Show the koko server this device reaches and as whom, both versions, any revocation, and whether ssh reads koko's ssh_config",
+		Summary: "Show the koko server this device reaches and as whom, both versions and whether they work together, any revocation, and whether ssh reads koko's ssh_config",
 		Tier:    Read,
 		// Its main operation is none: the koko server's version comes in
 		// the report every connection carries (ADR 0027). For the Owner it
@@ -50,9 +50,14 @@ type statusJSON struct {
 	// ServerLatest is koko's latest release, as the koko server's update
 	// check found it, for the Owner; null when unknown, and for a Member.
 	ServerLatest *string `json:"server_latest"`
-	// ServerError is why the koko server was not reached, as the error
-	// object any command that calls it would fail with now; null when it
-	// answered.
+	// ServerOldest is the oldest koko the koko server works with, as it
+	// reported it on connecting; null when it was not reached, or reports
+	// none, as one from before the window.
+	ServerOldest *string `json:"server_oldest"`
+	// ServerError is the error object any command that calls the koko
+	// server would fail with now: why it was not reached, or, when it
+	// answered, that it and this CLI do not work together (cli_too_old or
+	// server_too_old); null when commands work.
 	ServerError *errorJSON `json:"server_error"`
 	// DeviceMux is the Device Mux commands reach the koko server through,
 	// and its state; null when they reach it another way, or not at all.
@@ -106,6 +111,14 @@ type revocationJSON struct {
 	LearnedAt     string               `json:"learned_at"`
 }
 
+// errorCode is the code of ServerError, or "" when there is none.
+func (s statusJSON) errorCode() string {
+	if s.ServerError == nil {
+		return ""
+	}
+	return s.ServerError.Code
+}
+
 func (s statusJSON) Human(w io.Writer) error {
 	var b strings.Builder
 	line := func(label, format string, args ...any) {
@@ -120,6 +133,8 @@ func (s statusJSON) Human(w io.Writer) error {
 		line("Unix socket", "%s, as the Local caller", *s.Socket)
 	}
 	switch {
+	case s.ServerVersion != nil && s.errorCode() == codeServerTooOld:
+		line("koko server", "koko %s (older than the oldest this CLI works with, %s: upgrade the koko server)", *s.ServerVersion, compat.Oldest)
 	case s.ServerVersion != nil && s.ServerLatest != nil && compat.Newer(*s.ServerLatest, *s.ServerVersion):
 		line("koko server", "koko %s (%s is available: koko server upgrade)", *s.ServerVersion, *s.ServerLatest)
 	case s.ServerVersion != nil:
@@ -140,11 +155,14 @@ func (s statusJSON) Human(w io.Writer) error {
 			line("Resuming", "%d SSH Sessions wait to Resume", n)
 		}
 	}
-	line("This CLI", "koko %s", s.CLIVersion)
-	if s.Socket != nil && s.ServerVersion != nil && *s.ServerVersion != s.CLIVersion {
-		// On the koko server's own machine, koko server install keeps the
-		// two one build; elsewhere, two versions are normal.
-		fmt.Fprintf(&b, "%17s%s\n", "", "the koko server here is another build: run sudo koko server install to bring it to this CLI's")
+	switch v := s.ServerVersion; {
+	case s.errorCode() == api.CodeCLITooOld.Name:
+		line("This CLI", "koko %s (older than the oldest the koko server works with, %s: run koko update)", s.CLIVersion, *s.ServerOldest)
+	case v != nil && (build.Info{Version: *v}).Release() && compat.Newer(*v, s.CLIVersion):
+		// Only a release: koko update installs releases.
+		line("This CLI", "koko %s (the koko server runs %s: koko update brings this CLI to it)", s.CLIVersion, *v)
+	default:
+		line("This CLI", "koko %s", s.CLIVersion)
 	}
 	if r := s.Revocation; r != nil {
 		d := r.DeviceSession
@@ -182,19 +200,30 @@ func namesReadAsAddressesWarning(names []string) string {
 // cannot reach is part of what it shows, so status fails only when it
 // cannot read the device's own files.
 func status(ctx context.Context, in *Input) (statusJSON, error) {
-	s := statusJSON{CLIVersion: build.Read().Version}
+	s := statusJSON{CLIVersion: in.runner.self().Version}
 	// The koko server is reached first: refusing the device as a Revoked
 	// Device Session's runs the revocation cleanup, so the files read after
 	// show the device as it now is.
 	report, err := in.report(ctx)
+	outside, isOutside := errors.AsType[*outsideWindow](err)
 	if err != nil {
 		_, e := classify(err)
 		s.ServerError = &errorJSON{Code: e.Code, Message: e.Message}
-	} else {
+	}
+	if isOutside {
+		// It answered, but no command works: status still shows it.
+		report = outside.report
+	}
+	if err == nil || isOutside {
 		s.ServerVersion = &report.Version
+		if report.Oldest != "" {
+			s.ServerOldest = &report.Oldest
+		}
 		if in.socket != "" {
 			s.Socket = &in.socket
 		}
+	}
+	if err == nil {
 		s.ServerLatest = in.latestForTheOwner(ctx)
 	}
 	if m := in.deviceMux; m != nil {

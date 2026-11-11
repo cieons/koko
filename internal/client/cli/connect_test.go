@@ -103,7 +103,7 @@ func fakeSocket(t *testing.T, path string, report bool) {
 			}
 			go ssh.DiscardRequests(reqs)
 			if report {
-				r := wire.Report{Version: "v0.1.0", Operations: []string{"space.list"}}
+				r := wire.Report{Version: "v0.3.0", Operations: []string{"space.list"}}
 				_, _, _ = conn.SendRequest(wire.RequestReport, false, r.Marshal())
 			}
 			for nch := range chans {

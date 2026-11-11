@@ -99,14 +99,14 @@ func proxySSH(ctx context.Context, in *Input) error {
 // Mux, starting a new one should the old one have crashed, or direct. It
 // runs beside the command, so it notes nothing on in. A failure that no
 // try will change, as the device is no longer joined, its Device Session
-// was Revoked, or the koko server presents a host key other than the
-// pinned one, wraps tunnel.ErrFinal; the Tunnel tries again after any
-// other.
+// was Revoked, the koko server presents a host key other than the pinned
+// one, or it and this CLI no longer work together, as after an upgrade,
+// wraps tunnel.ErrFinal; the Tunnel tries again after any other.
 func (in *Input) redial(ctx context.Context) (serverconn.Conn, error) {
 	conn, err := in.unconnected().connect(ctx)
 	if err != nil {
 		switch _, e := classify(err); e.Code {
-		case codeNotJoined, api.CodeRevoked.Name, codeHostKeyMismatch:
+		case codeNotJoined, api.CodeRevoked.Name, codeHostKeyMismatch, api.CodeCLITooOld.Name, codeServerTooOld:
 			return nil, fmt.Errorf("%w: %w", tunnel.ErrFinal, err)
 		}
 		return nil, err

@@ -46,7 +46,9 @@ const (
 	// codeServerTooOld: the koko server does not serve the command's
 	// operation, so it is older than the CLI, and nothing was sent; or it
 	// answered without a field the command needs, as koko ssh setup needs
-	// server.show's host_key.
+	// server.show's host_key; or it is older than compat.Oldest, so the
+	// CLI sends it nothing (ADR 0049). Its opposite, cli_too_old, is the
+	// API's, as the koko server answers it too.
 	codeServerTooOld = "server_too_old"
 	// codeDownloadFailed: koko server install or uninstall could not
 	// download the kokod of koko's release, or koko update could not find

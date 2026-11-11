@@ -9,6 +9,7 @@
   "cli_version": "<version>",
   "server_version": "<version>",
   "server_latest": null,
+  "server_oldest": "v0.3.0",
   "server_error": null,
   "device_mux": null,
   "revocation": null,
