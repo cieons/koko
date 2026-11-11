@@ -1,11 +1,14 @@
 # The koko server upgrades itself through a root helper that takes only a newer release's version
 
 The koko server learns of new releases by itself, and the Owner upgrades
-it from the web UI with one button, the Owner's choice of 2026-11-11. Once
-a day `kokod run` sends one `HEAD` to the `releases/latest` redirect,
+it from the web UI with one button, the Owner's choice of 2026-11-11. A
+few minutes after it starts, after a small random delay, and every 6 hours
+after that, `kokod run` sends one `HEAD` to the `releases/latest` redirect,
 carrying nothing about the deployment, unless the Owner turns the check off
-(`koko server set update_check=off`). The web UI shows the Owner, and only
-the Owner, that a newer release is out. On a koko server installed with
+(`koko server set update_check=off`). The Owner can also check at once,
+with the web UI's "Check now" or `koko server upgrade --check`, which call
+`server.check_update`, change nothing, and work with the check off. The web
+UI shows the Owner, and only the Owner, that a newer release is out. On a koko server installed with
 systemd, its button and `koko server upgrade` call one operation,
 `server.upgrade`, for the Owner only.
 
@@ -68,6 +71,10 @@ the helper's upgrade runs it. It revises #101's rejection of a
 - An upgrade restarts the koko server, which ends every open SSH Session
   (ADR 0021). The web UI's confirmation says so; `koko server upgrade` is
   in the irreversible tier and never prompts (ADR 0019).
+- `koko server upgrade --check` stays in the irreversible tier by its
+  path: ADR 0019 forbids a flag that raises a command's risk, and `--check`
+  only lowers it, so an agent's harness asks before it, the cautious side.
+  `koko server show` is the read-tier way to see the last check's result.
 - `koko server upgrade` waits for the outcome, then brings the CLI that ran
   it to the same version when it can, in `install.sh`'s order: the koko
   server first.
