@@ -17,7 +17,7 @@ export interface ConfirmDialogProps {
    * the web UI's form of the CLI's --last.
    */
   typedName?: string;
-  /** pending says the action's call runs: Escape no longer cancels, and its button takes no second press. */
+  /** pending says the action's call runs: neither Escape nor a click beside it cancels, and its button takes no second press. */
   pending?: boolean;
   /** error is why the action was refused, if it was, shown in place. */
   error?: unknown;
@@ -31,8 +31,8 @@ export interface ConfirmDialogProps {
  * and issuing a Join Code never ask. It is HeroUI's AlertDialog, open while
  * the page renders it (role alertdialog, named by its title and described
  * by the consequence): the page behind takes no input, a click beside it
- * does nothing, Escape cancels unless the call runs, and the focus goes back
- * to what opened it when it closes. Its first control takes the focus:
+ * and Escape cancel unless the call runs, and the focus goes back to what
+ * opened it when it closes. Its first control takes the focus:
  * Cancel, so Enter never acts by accident, or the field for the typed name,
  * and the action stays disabled until that name is typed exactly. The
  * refusal shows in place.
@@ -54,7 +54,7 @@ export function ConfirmDialog({
   return (
     <AlertDialog.Backdrop
       isOpen
-      isDismissable={false}
+      isDismissable={!pending}
       isKeyboardDismissDisabled={pending}
       onOpenChange={(open) => open || onCancel()}
     >

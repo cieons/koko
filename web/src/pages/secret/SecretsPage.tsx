@@ -248,7 +248,8 @@ function AddSecret({
 }) {
   const t = useT();
   const caller = useCaller();
-  const [space, setSpace] = useState<string | null>(narrowed === "" ? caller.user.name : narrowed);
+  const [opened] = useState(narrowed === "" ? caller.user.name : narrowed);
+  const [space, setSpace] = useState<string | null>(opened);
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
   const add = useWrite(SecretAdd);
@@ -260,6 +261,7 @@ function AddSecret({
       submit={t("secret.add")}
       size="md"
       pending={add.pending}
+      changed={space !== opened || name !== "" || value !== ""}
       error={add.error ?? spacesError}
       onSubmit={() =>
         void add

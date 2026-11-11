@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { HostAdd } from "../../api/host";
 import { expectAccessible } from "../../test/axe";
-import { searchAndChoose } from "../../test/controls";
+import { clickOutside, searchAndChoose } from "../../test/controls";
 import { fakeApi, refusal } from "../../test/fakeApi";
 import { setViewportWidth } from "../../test/media";
 import { actAs, alerts, renderAt } from "../../test/pages";
@@ -178,6 +178,36 @@ test("Cancel closes Add Host, sending nothing, and gives the focus back to Add H
 
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add Host" })).toBeNull());
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add Host" })));
+  expect(writes(api)).toEqual([]);
+});
+
+test("a click beside Add Host closes it while nothing in it has changed, giving the focus back, but not once something is typed or chosen", async () => {
+  const api = fakeApi();
+  actAs(api, alice);
+  records(api, { hosts: [web1] });
+
+  await openAddHost();
+  await clickOutside();
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add Host" })).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add Host" })));
+
+  // Typed in.
+  fireEvent.click(screen.getByRole("button", { name: "Add Host" }));
+  const typed = await screen.findByRole("dialog", { name: "Add Host" });
+  type("Name", "web2");
+  await clickOutside();
+  expect(screen.getByRole("dialog", { name: "Add Host" })).toBe(typed);
+  expect(screen.getByRole<HTMLInputElement>("textbox", { name: "Name" }).value).toBe("web2");
+  fireEvent.keyDown(typed, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add Host" })).toBeNull());
+
+  // Chosen: the Space, whose field keeps the focus the click takes.
+  fireEvent.click(screen.getByRole("button", { name: "Add Host" }));
+  const chosen = await screen.findByRole("dialog", { name: "Add Host" });
+  await searchAndChoose(within(chosen).getByRole("combobox", { name: "Space" }), "ops", "ops");
+  await clickOutside();
+  expect(screen.getByRole("dialog", { name: "Add Host" })).toBe(chosen);
+  expect(screen.queryByRole("listbox")).toBeNull();
   expect(writes(api)).toEqual([]);
 });
 

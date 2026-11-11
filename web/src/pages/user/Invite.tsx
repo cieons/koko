@@ -25,6 +25,9 @@ import { useWebURL } from "../signin/webURL";
 /** Method is how the invited person will use koko: a Join Code for the CLI, or a Password Link for a browser. */
 type Method = "terminal" | "browser";
 
+/** defaultMethod is the Method an Invite starts at. */
+const defaultMethod: Method = "terminal";
+
 /** Issued is what an Invite issued, shown once: a Join Code or a Password Link. */
 type Issued = { joinCode: JoinCode } | { link: PasswordLink };
 
@@ -63,7 +66,7 @@ export function Invite({
   const t = useT();
   const language = useLanguage();
   const [name, setName] = useState("");
-  const [method, setMethod] = useState<Method>("terminal");
+  const [method, setMethod] = useState<Method>(defaultMethod);
   const [validFor, setValidFor] = useState<ValidFor>(defaultValidFor);
   const [spaces, setSpaces] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
@@ -109,6 +112,7 @@ export function Invite({
       lead={t("user.invite.lead")}
       submit={t("user.invite")}
       pending={invite.pending || adding}
+      changed={name !== "" || method !== defaultMethod || validFor !== defaultValidFor || spaces.length > 0}
       error={invite.error}
       doneTitle={t("user.invite.done", { name: invited?.user ?? name })}
       issued={

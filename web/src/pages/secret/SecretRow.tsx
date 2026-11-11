@@ -267,6 +267,7 @@ function SetValue({ secret, onDone, onCancel }: ChangeProps) {
       submit={t("secret.set")}
       size="md"
       pending={set.pending}
+      changed={value !== ""}
       error={set.error}
       onSubmit={() =>
         void set
@@ -321,6 +322,7 @@ function Rename({ secret, onDone, onCancel }: ChangeProps) {
       title={t("secret.rename.title", { name: qualified(secret) })}
       submit={t("secret.rename")}
       pending={rename.pending}
+      changed={newName !== secret.name}
       error={rename.error}
       onSubmit={() =>
         void rename
@@ -353,6 +355,7 @@ function Move({ secret, spaces, onDone, onCancel }: ChangeProps & { spaces: read
       lead={t("secret.move.lead", { space: secret.space })}
       submit={t("secret.move")}
       pending={move.pending}
+      changed={target !== null}
       error={move.error}
       onSubmit={() => {
         const space = target ?? "";

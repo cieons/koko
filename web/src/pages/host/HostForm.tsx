@@ -6,6 +6,7 @@ import { type Host, HostAdd, HostList, HostSet, type HostSetRequest, type NewHos
 import type { Space } from "../../api/space";
 import { useCaller } from "../../shell/caller";
 import { useRead, useWrite } from "../../shell/data";
+import { differs } from "../../shell/form";
 import { useT } from "../../shell/i18n";
 import { navigate } from "../../shell/router";
 import { Field, type Option, SearchChoice } from "../../ui/fields";
@@ -305,10 +306,11 @@ export function AddHost({ spaces, hosts, attrs = [], onClose }: AddHostProps) {
   const caller = useCaller();
   const add = useWrite(HostAdd);
   const personal = spaces?.find((s) => s.personal && s.name === caller.user.name)?.name ?? caller.user.name;
-  const [values, setValues] = useState<HostValues>(() => ({
+  const [opened] = useState<HostValues>(() => ({
     ...blank,
     space: personal,
   }));
+  const [values, setValues] = useState(opened);
   const clock = browserClock();
   const submit = () => {
     void add.submit({ hosts: [newHost(values, attrs, clock)] }).then((added) => {
@@ -326,6 +328,8 @@ export function AddHost({ spaces, hosts, attrs = [], onClose }: AddHostProps) {
       subtitle={t("host.add.lead")}
       wide
       onSubmit={submit}
+      changed={differs(values, opened)}
+      pending={add.pending}
       onClose={onClose}
       footer={
         <>
@@ -536,6 +540,8 @@ export function EditHost({ host, onSaved, onClose }: EditHostProps) {
       subtitle={retired ? t("host.edit.retired") : undefined}
       wide
       onSubmit={submit}
+      changed={differs(values, before)}
+      pending={set.pending}
       onClose={onClose}
       footer={
         <>

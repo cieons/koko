@@ -264,7 +264,9 @@ for (`validFor`). It reads in minutes and seconds (`14:59`) for its last
 hour, and before that in days and whole hours in the language (`6 days,
 23 hours`, `6天23小时`, `Intl.DurationFormat`), as a validity of up to 7
 days (#115) calls for. Once it ran out, the line goes and the page's own
-words say what to do instead.
+words say what to do instead. The dialog that shows it
+([`IssueDialog`](../../web/src/pages/device/IssueDialog.tsx)) is not
+closed by a click beside it, since what it shows cannot be shown again.
 
 ## Parts
 
@@ -278,8 +280,8 @@ logic:
 | `Page` | `Page.tsx` | a page's head: its title, an optional line, its actions, a detail page's breadcrumb; it names the browser's tab (`useDocumentTitle`) |
 | `Sheet` | `Page.tsx` | a panel, named by its title as a region; `list` lays a list on it edge to edge |
 | `Form` | `Form.tsx` | a form that validates when it is submitted ([States](#the-states-every-screen-has)) |
-| `FormDialog` | `FormDialog.tsx` | a short form of one to three fields in HeroUI's `Modal`, open while the page renders it: its fields, the refusal in place (`error`), Cancel, and the button that acts (`submit`), pending while the call runs (`pending`); a click beside it does not close it; `size="md"` for a field of several lines |
-| `SidePanel` | `SidePanel.tsx` | HeroUI's `Drawer`, open while the page renders it: from the right on a desktop (`wide` for the Host form), from the bottom on a phone, with a handle; with `onSubmit` it is a `Form`, and a click beside it does not close it |
+| `FormDialog` | `FormDialog.tsx` | a short form of one to three fields in HeroUI's `Modal`, open while the page renders it: its fields, the refusal in place (`error`), Cancel, and the button that acts (`submit`), pending while the call runs (`pending`); a click beside it closes it unless a field has `changed` or the call runs ([Closing an overlay](../web-design.md#components)); `size="md"` for a field of several lines |
+| `SidePanel` | `SidePanel.tsx` | HeroUI's `Drawer`, open while the page renders it: from the right on a desktop (`wide` for the Host form), from the bottom on a phone, with a handle; with `onSubmit` it is a `Form`; a click beside it closes it unless a field has `changed` or the form's call runs (`pending`) |
 | `ConfirmDialog` | `ConfirmDialog.tsx` | the confirmation ([Confirmations](#confirmations)) |
 | `Field` | `fields.tsx` | a text field or area, its label above, help under it and its error in place; `code` sets a machine value in the code face, with no spelling or capital corrected |
 | `Choice` | `fields.tsx` | HeroUI's `Select`, for one item of a short fixed list |
@@ -295,8 +297,9 @@ logic:
 | `Loading`, `LoadFailed`, `Loaded`, `EmptyState`, `NoMatch`, `Refusal` | `states.tsx` | the states every screen has |
 | `useFocusFallback` | `focus.ts` | the focus kept in place when an action takes away the control that had it, as Revoke does with its row: the list's heading takes it |
 
-A dialog or panel takes the focus as it opens, closes on Escape and gives
-the focus back to what opened it; every icon button has a name.
+A dialog or panel takes the focus as it opens, closes on Escape, and on a
+click beside it as [Closing an overlay](../web-design.md#components) says,
+and gives the focus back to what opened it; every icon button has a name.
 
 ## The states every screen has
 
@@ -337,8 +340,8 @@ irreversible action (retire, removing a record, revoke, removing a User)
 with a title, the consequence and the action's button, a danger button. It
 is HeroUI's `AlertDialog` (`role="alertdialog"`, named by its title and
 described by the consequence), open while the page renders it, so the page
-behind takes no input, a click beside it does nothing, Escape cancels
-unless its call runs (`pending`), and the focus returns where it was when
+behind takes no input, a click beside it and Escape cancel unless its call
+runs (`pending`), and the focus returns where it was when
 it closes. Its first control takes the focus: Cancel, so Enter never acts
 by accident. With `typedName`, it adds the field for the name, which takes
 the focus, and the action stays disabled until that name is typed exactly:

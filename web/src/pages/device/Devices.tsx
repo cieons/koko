@@ -231,6 +231,7 @@ function AddDevice({ user, onAdded, onClose }: { user: string; onAdded: () => vo
       lead={t("device.add.lead")}
       submit={t("device.add.submit")}
       pending={add.pending}
+      changed={device !== "" || validFor !== defaultValidFor}
       error={add.error}
       doneTitle={t("device.joinCode.title")}
       issued={

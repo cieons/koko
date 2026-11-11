@@ -15,6 +15,11 @@ export interface FormDialogProps {
   submit: string;
   /** pending says the form's call runs: its button shows so and takes no second press. */
   pending: boolean;
+  /**
+   * changed says a field holds something other than what it opened with,
+   * typed or chosen: a click beside the dialog then no longer closes it.
+   */
+  changed: boolean;
   /** error is why the call was refused, if it was, shown in place above the buttons. */
   error?: unknown;
   /** onSubmit sends the form, once its fields are valid, from its button or Enter in a field. */
@@ -30,15 +35,18 @@ export interface FormDialogProps {
  * FormDialog is a short form of one to three fields, such as a rename, a
  * move or a new value, in HeroUI's Modal, open while the page renders it
  * (docs/web-design.md, "Components"). It takes the focus as it opens and
- * gives it back to what opened it when it closes; a click beside it does
- * not close it, so what was typed is not lost. The form validates on
- * submit (Form), and a refusal shows in place, the form kept as typed.
+ * gives it back to what opened it when it closes. A click beside it closes
+ * it while nothing in it has changed and no call runs, and not otherwise,
+ * so what was typed is not lost (docs/web-design.md, "Closing an
+ * overlay"). The form validates on submit (Form), and a refusal shows in
+ * place, the form kept as typed.
  */
 export function FormDialog({
   title,
   lead,
   submit,
   pending,
+  changed,
   error,
   onSubmit,
   onClose,
@@ -47,7 +55,7 @@ export function FormDialog({
 }: FormDialogProps) {
   const t = useT();
   return (
-    <Modal.Backdrop isOpen isDismissable={false} onOpenChange={(open) => open || onClose()}>
+    <Modal.Backdrop isOpen isDismissable={!changed && !pending} onOpenChange={(open) => open || onClose()}>
       <Modal.Container size={size}>
         <Modal.Dialog aria-label={title}>
           <Form label={title} onSubmit={onSubmit}>

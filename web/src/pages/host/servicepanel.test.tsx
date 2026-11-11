@@ -17,6 +17,7 @@ import {
 import { SpaceList } from "../../api/space";
 import { expectAccessible } from "../../test/axe";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
+import { clickOutside } from "../../test/controls";
 import { actAs, alerts, renderAt, statuses } from "../../test/pages";
 import { alice, attributes, host, service, spaces, writes } from "./records.fixture";
 
@@ -102,6 +103,24 @@ test("a Service's panel opens from its row with its name, ports, Attributes and 
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(window.location.pathname).toBe("/hosts/web1");
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("link", { name: /^nginx/ })));
+  expect(writes(api)).toEqual([]);
+});
+
+test("a click beside a Service's panel closes it while nothing in it has changed, the focus back on its row, but not once a field is typed in", async () => {
+  const api = fakeApi();
+  actAs(api, alice);
+  served(api, [web1], [nginx]);
+
+  renderAt("/hosts/web1");
+  await openPanel("nginx");
+  await clickOutside();
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("link", { name: /^nginx/ })));
+
+  const panel = await openPanel("nginx");
+  type("Ports", "443/tcp");
+  await clickOutside();
+  expect(screen.getByRole("dialog", { name: "nginx" })).toBe(panel);
   expect(writes(api)).toEqual([]);
 });
 

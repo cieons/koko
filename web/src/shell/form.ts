@@ -35,3 +35,12 @@ export function useEditForm<T extends Record<string, unknown>>(initial: T): Edit
   }
   return { values, set, changes, saved: () => setBaseline(values) };
 }
+
+/**
+ * differs says a form's values are not those it opened with, compared as
+ * the plain data a form holds (strings, numbers, booleans, and arrays and
+ * objects of them), so a field typed in and emptied again is unchanged.
+ */
+export function differs<T>(values: T, opened: T): boolean {
+  return JSON.stringify(values) !== JSON.stringify(opened);
+}

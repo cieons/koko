@@ -56,6 +56,12 @@ export interface IssueDialogProps {
   submit: string;
   /** pending says the issuing calls run: the button shows so and takes no second press. */
   pending: boolean;
+  /**
+   * changed says a field of the first step holds something other than what
+   * it opened with, typed or chosen: a click beside the dialog then no
+   * longer closes it.
+   */
+  changed: boolean;
   /** error is why the issue was refused, shown in place on the first step. */
   error?: unknown;
   onSubmit: () => void;
@@ -75,6 +81,10 @@ export interface IssueDialogProps {
  * first; the second shows what was issued, once, with Done, which takes the
  * focus, since the button that issued goes with the first step. The page
  * keeps what was issued in useShownOnce and forgets it as the dialog closes.
+ * A click beside the first step closes it while nothing in it has changed
+ * and no call runs; a click beside the second never does, since what it
+ * shows cannot be shown again: Done, the close button and Escape close it
+ * (docs/web-design.md, "Closing an overlay").
  */
 export function IssueDialog(props: IssueDialogProps) {
   const t = useT();
@@ -97,7 +107,11 @@ export function IssueDialog(props: IssueDialogProps) {
     </>
   );
   return (
-    <Modal.Backdrop isOpen isDismissable={false} onOpenChange={(open) => open || props.onClose()}>
+    <Modal.Backdrop
+      isOpen
+      isDismissable={!done && !props.changed && !props.pending}
+      onOpenChange={(open) => open || props.onClose()}
+    >
       <Modal.Container size="md">
         <Modal.Dialog aria-label={title}>
           {done ? (

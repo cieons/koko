@@ -193,7 +193,7 @@ HeroUI parts, as the preview composes them:
 | Button | `Button` | Primary: one per page at most. Secondary: panel colour and shadow. Tertiary and ghost inside panels. Danger for the confirming action only |
 | Side panel | `Drawer` | From the right on a desktop (32rem, 44rem for the Host form), inset 12px with a 1.75rem radius; from the bottom on a phone, with a handle, at most 92% of the height |
 | Short form | `Modal` | One to three fields; the refusal shows in place |
-| Confirmation | `AlertDialog` | States what is lost; closes on Escape unless the call runs; can ask for a name to be typed |
+| Confirmation | `AlertDialog` | States what is lost; closes on Escape or a click beside it unless the call runs; can ask for a name to be typed |
 | Field, select, date | `TextField`, `Select`, `DatePicker` | Label above; help under; the error in place |
 | Searchable choice | `ComboBox` | Picking one item from a list that can grow; see below |
 | Segments | `ToggleButtonGroup` | A choice among two to four, all in view; the chosen one inverts (text colour as fill) |
@@ -232,6 +232,25 @@ which HeroUI's `ComboBox` does by default: a modal overlay gives the focus
 back to the field it was in when a click beside the overlay takes it away,
 and a list that opened then would take that click, so the overlay would
 not close (#133).
+
+**Closing an overlay**, the Owner's rule (#133): a click beside an overlay
+closes it, unless closing would lose something.
+
+| Overlay | A click beside it |
+| --- | --- |
+| A popover or menu: Filter, Columns, a select's or searchable choice's list, a row menu, the top bar's menus, the account panel | Closes it, always |
+| A short form or a side panel with a form: Add Host, Edit, Add Service, a Service's panel, Rename, Move, Add Secret, Set value, Add Space, the first step of Invite, Add device and a Password Link; a Space's panel, for its Add a Member field | Closes it while nothing in it has changed; once something has been typed or chosen, does nothing |
+| A confirmation | Cancels it, as Cancel does, unless its call runs; a name typed in it to confirm is not kept |
+| A value shown once: a Join Code or a Password Link | Does nothing, since the value cannot be shown again; Done, the close button and Escape close it |
+| A side panel without a form: a person's, whose switches act at once, and a Service on a Retired Host | Closes it, always |
+
+A form that has changed is not closed by a click beside it, rather than
+asking whether to discard what was typed: a stray click loses nothing and
+asks nothing, and Cancel and Escape still close it at once. A form whose
+call runs is not closed by one either. Wherever a click beside an overlay
+closes it, the focus goes back to what opened it, as after Escape. With a
+list open in an overlay, the first click beside it closes the list and the
+next the overlay, as Escape does.
 
 ## States every screen has
 
@@ -543,7 +562,8 @@ The frame, a title, one sentence and a link to Hosts.
   390×844 and 1280×800, and at 1440 wide. The preview is at 0 violations.
   Page tests run axe on the same states, without colour contrast, which
   jsdom cannot compute.
-- Every overlay takes focus when it opens, closes on Escape and returns
+- Every overlay takes focus when it opens, closes on Escape, and on a
+  click beside it as [Closing an overlay](#components) says, and returns
   focus to what opened it. Every icon button has a name. A row that is a
   link is one Tab stop.
 - No horizontal scroll at 320px.

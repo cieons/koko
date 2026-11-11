@@ -1,10 +1,11 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { DeviceAdd, DeviceList, DeviceRevoke } from "../../api/device";
 import { type User, UserCurrent } from "../../api/user";
 import { expectAccessible } from "../../test/axe";
 import { clipboard } from "../../test/clipboard";
+import { clickOutside } from "../../test/controls";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { setViewportWidth } from "../../test/media";
 import { actAs, alerts, chooseInTopBar, renderAt, topBarButton } from "../../test/pages";
@@ -170,6 +171,35 @@ test("Add device issues a Join Code for the caller's own device, never asking fi
   expect(document.body.textContent).not.toContain(joinCode);
 });
 
+test("a click beside Add device closes it while nothing in it has changed, but never once its Join Code shows, which Done closes", async () => {
+  const api = await atAccount();
+  const add = screen.getByRole("button", { name: "Add device" });
+
+  act(() => add.focus());
+  fireEvent.click(add);
+  await screen.findByRole("dialog", { name: "Add device" });
+  await clickOutside();
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(add));
+  expect(api.requests(DeviceAdd)).toEqual([]);
+
+  fireEvent.click(add);
+  const dialog = await screen.findByRole("dialog", { name: "Add device" });
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "Device name" }), { target: { value: "desk" } });
+  await clickOutside();
+  expect(screen.getByRole("dialog", { name: "Add device" })).toBe(dialog);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Issue Join Code" }));
+
+  const done = await screen.findByRole("dialog", { name: "The Join Code is ready" });
+  await waitFor(() => expect(document.activeElement).toBe(within(done).getByRole("button", { name: "Done" })));
+  await clickOutside();
+  expect(within(done).getByRole("region", { name: "Join Code" }).textContent).toContain(joinCode);
+  fireEvent.click(within(done).getByRole("button", { name: "Done" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(add));
+  expect(document.body.textContent).not.toContain(joinCode);
+});
+
 test("Add device on a phone opens its dialog and issues the code", async () => {
   setViewportWidth(390);
   const api = await atAccount();
@@ -218,6 +248,35 @@ test("Revoke asks first, states the consequence, and revokes the device", async 
   await waitFor(() => expect(screen.queryByRole("alertdialog", { name: "Revoke phone" })).toBeNull());
   // Its Revoke button went with it, so the focus moves to the list's heading.
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "Devices" })));
+});
+
+test("a click beside Revoke cancels it, the focus going back to its button, but not while the revoke runs", async () => {
+  const w = world();
+  const api = await atAccount({ w });
+  const button = screen.getByRole("button", { name: "Revoke phone" });
+
+  act(() => button.focus());
+  const idle = await revoke("phone");
+  await waitFor(() => expect(document.activeElement).toBe(within(idle).getByRole("button", { name: "Cancel" })));
+  await clickOutside();
+  await waitFor(() => expect(screen.queryByRole("alertdialog", { name: "Revoke phone" })).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(button));
+  expect(api.requests(DeviceRevoke)).toEqual([]);
+
+  let answer = () => {};
+  const phone = w.devices.find((d) => d.user === "bob" && d.device === "phone");
+  api.on(
+    DeviceRevoke,
+    () => new Promise((resolve) => (answer = () => resolve({ device_session: { ...phone!, revoked_at: "2026-11-08T09:00:00Z" } }))),
+  );
+  const asking = await revoke("phone");
+  fireEvent.click(within(asking).getByRole("button", { name: "Revoke" }));
+  await waitFor(() => expect(api.requests(DeviceRevoke)).toHaveLength(1));
+  await clickOutside();
+  expect(screen.getByRole("alertdialog", { name: "Revoke phone" })).toBe(asking);
+  act(() => answer());
+  expect(await screen.findByText("phone is Revoked.")).toBeDefined();
+  await waitFor(() => expect(screen.queryByRole("alertdialog", { name: "Revoke phone" })).toBeNull());
 });
 
 test("revoking the device this page runs through says this page stops", async () => {

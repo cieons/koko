@@ -93,6 +93,7 @@ function IssueLink({ user, onClose }: { user: User; onClose: () => void }) {
       lead={t("signin.link.lead", { name: user.name })}
       submit={t("signin.link.issue")}
       pending={issue.pending}
+      changed={validFor !== defaultValidFor}
       error={issue.error}
       doneTitle={t("signin.link.ready")}
       issued={

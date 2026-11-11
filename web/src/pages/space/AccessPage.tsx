@@ -506,6 +506,7 @@ function AddSpace({ onAdded, onCancel }: { onAdded: () => void; onCancel: () => 
       lead={t("space.add.lead")}
       submit={t("space.add")}
       pending={add.pending}
+      changed={name !== ""}
       error={add.error}
       onSubmit={() =>
         void add.submit({ name }).then((added) => {

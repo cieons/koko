@@ -47,6 +47,8 @@ export function SpacePanel({ name, membership, onChanged, onClose }: SpacePanelP
   const editable = caller.owner && detail !== undefined && !detail.personal;
   const [dialog, setDialog] = useState<"rename" | "remove">();
   const [members, refocus] = useFocusFallback<HTMLHeadingElement>(read.data);
+  // The User picked in Add a Member and not yet added, which a click beside the panel would lose.
+  const [member, setMember] = useState<string | null>(null);
   const changed = () => {
     read.reload();
     onChanged();
@@ -55,6 +57,7 @@ export function SpacePanel({ name, membership, onChanged, onClose }: SpacePanelP
     <SidePanel
       title={name}
       subtitle={detail && (detail.personal ? t("space.personalOf", { name }) : t("space.shared"))}
+      changed={member !== null}
       onClose={onClose}
       footer={
         editable ? (
@@ -113,7 +116,13 @@ export function SpacePanel({ name, membership, onChanged, onClose }: SpacePanelP
               {!space.personal && <p className="t-label">{t("space.members.ownerNote")}</p>}
               {editable && membership && <Refusal error={membership.error} />}
               {editable && membership && (
-                <AddMember space={space} membership={membership} onAdded={read.reload} />
+                <AddMember
+                  space={space}
+                  membership={membership}
+                  user={member}
+                  onUser={setMember}
+                  onAdded={read.reload}
+                />
               )}
             </section>
           </>
@@ -171,12 +180,24 @@ function Counts({ space }: { space: SpaceDetail }) {
 /**
  * AddMember makes a User a Member of the Space, chosen in a searchable
  * choice among those who are not one (user.list): neither the Owner, who
- * sees every Space, nor a Removed User.
+ * sees every Space, nor a Removed User. The panel holds the User picked
+ * (user), so a click beside it does not lose the pick.
  */
-function AddMember({ space, membership, onAdded }: { space: SpaceDetail; membership: Membership; onAdded: () => void }) {
+function AddMember({
+  space,
+  membership,
+  user,
+  onUser: setUser,
+  onAdded,
+}: {
+  space: SpaceDetail;
+  membership: Membership;
+  user: string | null;
+  onUser: (user: string | null) => void;
+  onAdded: () => void;
+}) {
   const t = useT();
   const users = useRead(UserList, {});
-  const [user, setUser] = useState<string | null>(null);
   const candidates = (users.data?.users ?? []).filter(
     (u) => u.role !== "owner" && u.removed_at === undefined && !space.members.some((m) => m.name === u.name),
   );
@@ -226,6 +247,7 @@ function RenameSpace({ name, onRenamed, onCancel }: { name: string; onRenamed: (
       title={t("space.rename.title", { name })}
       submit={t("space.rename")}
       pending={rename.pending}
+      changed={newName !== name}
       error={rename.error}
       onSubmit={() =>
         void rename.submit({ name, new_name: newName }).then((renamed) => {

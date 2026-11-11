@@ -1,11 +1,12 @@
 import { Button } from "@heroui/react";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { type ReactNode, useState } from "react";
 import { expect, test, vi } from "vitest";
 
 import { ApiError } from "../client";
 import { Providers } from "../shell/providers";
 import { expectAccessible } from "../test/axe";
+import { clickOutside } from "../test/controls";
 import { setViewportWidth } from "../test/media";
 import { alerts } from "../test/pages";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -56,6 +57,7 @@ function RenameDialog(props: {
       lead="Commands that use the old name stop working."
       submit="Rename"
       pending={props.pending ?? false}
+      changed={name !== ""}
       error={props.error}
       onSubmit={() => props.onSubmit(name)}
       onClose={props.onClose}
@@ -158,6 +160,29 @@ test("Cancel, Escape and the close button close a short form without sending it,
   }
 });
 
+test("a click beside a short form closes it while nothing in it has changed, the focus going back, but not once it has or while its call runs", async () => {
+  const opener = await renderOpener((close) => <RenameDialog onSubmit={() => {}} onClose={close} />);
+  await screen.findByRole("dialog", { name: "Rename web1" });
+  await clickOutside();
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(opener));
+
+  fireEvent.click(opener);
+  const dialog = await screen.findByRole("dialog", { name: "Rename web1" });
+  const field = within(dialog).getByRole("textbox", { name: "New name" });
+  fireEvent.change(field, { target: { value: "db1" } });
+  await clickOutside();
+  expect(screen.getByRole("dialog", { name: "Rename web1" })).toBe(dialog);
+  expect((field as HTMLInputElement).value).toBe("db1");
+  cleanup();
+
+  const onClose = vi.fn();
+  await renderOpener(() => <RenameDialog onSubmit={() => {}} onClose={onClose} pending />);
+  await screen.findByRole("dialog", { name: "Rename web1" });
+  await clickOutside();
+  expect(onClose).not.toHaveBeenCalled();
+});
+
 // A side panel.
 
 test("a side panel comes from the right on a desktop and from the bottom on a phone, named by its title", async () => {
@@ -193,6 +218,8 @@ test("a side panel with onSubmit is a form that validates on submit, sent by the
         title="Add Service"
         onClose={onClose}
         onSubmit={() => onSubmit(name)}
+        changed={name !== ""}
+        pending={false}
         footer={<Button type="submit">Add</Button>}
       >
         <Field label="Name" value={name} onChange={setName} validate={(v) => (v === "" ? "Give a name." : undefined)} />
@@ -208,6 +235,20 @@ test("a side panel with onSubmit is a form that validates on submit, sent by the
   fireEvent.click(within(panel).getByRole("button", { name: "Add" }));
 
   expect(onSubmit).toHaveBeenCalledWith("db");
+});
+
+test("a click beside a side panel's form does not close it while its call runs", async () => {
+  const onClose = vi.fn();
+  render(
+    <Providers>
+      <SidePanel title="Add Service" onClose={onClose} onSubmit={() => {}} changed={false} pending>
+        <p>The Service's fields.</p>
+      </SidePanel>
+    </Providers>,
+  );
+  await screen.findByRole("dialog", { name: "Add Service" });
+  await clickOutside();
+  expect(onClose).not.toHaveBeenCalled();
 });
 
 // A confirmation.

@@ -5,7 +5,7 @@ import { SpaceAdd, SpaceList, SpaceMemberAdd, SpaceMemberRemove, SpaceRemove, Sp
 import { type User, UserList } from "../../api/user";
 import { navigate } from "../../shell/router";
 import { expectAccessible } from "../../test/axe";
-import { searchAndChoose } from "../../test/controls";
+import { clickOutside, searchAndChoose } from "../../test/controls";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { setViewportWidth } from "../../test/media";
 import { actAs, alerts, renderAt } from "../../test/pages";
@@ -286,6 +286,22 @@ test("closing a Space's panel goes back to Access in place of its history entry,
   expect(window.location.pathname + window.location.search).toBe("/access?all=1");
   expect(window.history.length).toBe(entries);
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("link", { name: /^ops/ })));
+});
+
+test("a click beside a Space's panel closes it, but not while a User is picked in Add a Member and not yet added", async () => {
+  const api = await at("/access?all=1");
+  fireEvent.click(await screen.findByRole("link", { name: /^ops/ }));
+  await screen.findByRole("dialog", { name: "ops" });
+  await clickOutside();
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(window.location.pathname).toBe("/access");
+
+  fireEvent.click(screen.getByRole("link", { name: /^ops/ }));
+  const shown = await screen.findByRole("dialog", { name: "ops" });
+  await searchAndChoose(await within(shown).findByRole("combobox", { name: "Add a Member" }), "", "carol");
+  await clickOutside();
+  expect(screen.getByRole("dialog", { name: "ops" })).toBe(shown);
+  expect(api.requests(SpaceMemberAdd)).toEqual([]);
 });
 
 test("the Owner adds a Member, chosen among the Users who are not one, and takes one out", async () => {

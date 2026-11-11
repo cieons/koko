@@ -14,6 +14,7 @@ import {
   ServiceShow,
 } from "../../api/service";
 import { useRead, useWrite } from "../../shell/data";
+import { differs } from "../../shell/form";
 import { useT } from "../../shell/i18n";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Field } from "../../ui/fields";
@@ -169,6 +170,8 @@ export function AddService({ host, onClose, onAdded }: PanelProps & { onAdded: (
       title={t("service.add")}
       subtitle={t("service.on", { host: host.name })}
       onSubmit={submit}
+      changed={differs(values, blank)}
+      pending={add.pending}
       onClose={onClose}
       footer={
         <>
@@ -270,6 +273,8 @@ export function OpenService({ host, name, onClose, onChanged }: OpenServiceProps
       title={editing.service.name}
       subtitle={t("service.on", { host: host.name })}
       onSubmit={() => void submit(editing.service, from, typed)}
+      changed={differs(typed, from)}
+      pending={set.pending || rename.pending}
       onClose={onClose}
       footer={
         <>

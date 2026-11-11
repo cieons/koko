@@ -449,6 +449,7 @@ function RenameHost({ host, onClose }: { host: Host; onClose: () => void }) {
       lead={t("host.rename.lead")}
       submit={t("host.rename")}
       pending={rename.pending}
+      changed={name !== host.name}
       error={rename.error}
       onSubmit={() =>
         void rename.submit({ host: host.id, new_name: name.trim() }).then((renamed) => {
@@ -497,6 +498,7 @@ function MoveHost({
       lead={t("host.move.lead", { space: host.space })}
       submit={t("host.move.submit")}
       pending={move.pending}
+      changed={space !== null}
       error={move.error ?? spaces.error}
       onSubmit={() =>
         void move.submit({ host: host.id, space: space ?? "" }).then((moved) => {

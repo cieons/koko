@@ -22,7 +22,7 @@ import { SpaceList } from "../../api/space";
 import { navigate } from "../../shell/router";
 import { expectAccessible } from "../../test/axe";
 import { clipboard } from "../../test/clipboard";
-import { chooseRowAction, searchAndChoose } from "../../test/controls";
+import { chooseRowAction, clickOutside, searchAndChoose } from "../../test/controls";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { setViewportWidth } from "../../test/media";
 import { actAs, alerts, renderAt } from "../../test/pages";
@@ -583,6 +583,21 @@ test("on a phone the page stacks its panels, and Edit comes up from the bottom",
   const panel = await openEdit("web1");
   expect(panel.closest("[data-placement]")?.getAttribute("data-placement")).toBe("bottom");
   await expectAccessible();
+});
+
+test("a click beside Edit closes it while nothing in it has changed, sending nothing, and gives the focus back to Edit", async () => {
+  const api = fakeApi();
+  actAs(api, alice);
+  served(api, { hosts: [web1] });
+
+  await openHost("/hosts/web1", "web1");
+  const edit = screen.getByRole("button", { name: "Edit" });
+  act(() => edit.focus());
+  await openEdit("web1");
+  await clickOutside();
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(edit));
+  expect(writes(api)).toEqual([]);
 });
 
 test("Escape closes Edit, sending nothing, and gives the focus back to Edit", async () => {
