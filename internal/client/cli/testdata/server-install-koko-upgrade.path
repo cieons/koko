@@ -1,0 +1,14 @@
+# The koko server's upgrade request. kokod install writes this file and
+# koko-upgrade.service at every run. kokod run, which runs as the koko user
+# and cannot replace itself, asks for an upgrade by writing the request
+# below; this unit then starts the helper, which runs as root.
+[Unit]
+Description=koko server upgrade request
+Documentation=https://github.com/cieons/koko
+
+[Path]
+PathExists=/run/koko/upgrade.request
+Unit=koko-upgrade.service
+
+[Install]
+WantedBy=paths.target

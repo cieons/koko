@@ -3,17 +3,22 @@ package installer
 import (
 	"bytes"
 	"context"
+	"debug/buildinfo"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"net"
 	"net/netip"
 	"os"
 	"os/exec"
 	"os/user"
+	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/cieons/koko/internal/server/filesystem"
+	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/portowner"
 )
 
@@ -142,6 +147,49 @@ func (System) ServiceShow(ctx context.Context, property string) (string, error) 
 		return "", fmt.Errorf("systemctl show %s %s: %w", UnitName, property, err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// Platform is the platform this kokod was built for, which is the
+// machine's.
+func (System) Platform() string {
+	return runtime.GOOS + "/" + runtime.GOARCH
+}
+
+// Build reads file's Go build information.
+func (System) Build(file string) (build.Info, error) {
+	bi, err := buildinfo.ReadFile(file)
+	if err != nil {
+		return build.Info{}, err
+	}
+	return build.Of(bi), nil
+}
+
+// Run runs file as a child process with args and stdin empty, and returns
+// its exit status.
+func (System) Run(ctx context.Context, file string, args []string, stdout, stderr io.Writer) (int, error) {
+	cmd := exec.CommandContext(ctx, file, args...)
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	err := cmd.Run()
+	if exit, ok := errors.AsType[*exec.ExitError](err); ok && exit.Exited() {
+		return exit.ExitCode(), nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return 0, nil
+}
+
+// FileOwner names the user whose uid owns the file info describes.
+func (System) FileOwner(_ string, info fs.FileInfo) (string, error) {
+	uid, err := fileUID(info)
+	if err != nil {
+		return "", err
+	}
+	u, err := user.LookupId(strconv.FormatUint(uint64(uid), 10))
+	if err != nil {
+		return "", err
+	}
+	return u.Username, nil
 }
 
 // run runs a command, giving what it printed when it fails.

@@ -34,8 +34,10 @@ import (
 	"github.com/cieons/koko/internal/server/filesystem"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/store"
+	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/install"
 	"github.com/cieons/koko/internal/shared/portowner"
+	"github.com/cieons/koko/internal/shared/release"
 	"github.com/cieons/koko/internal/shared/serveraddr"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
@@ -99,6 +101,19 @@ type Machine interface {
 	Chown(path, name string) error
 	// Systemctl runs systemctl with args.
 	Systemctl(ctx context.Context, args ...string) error
+	// Platform is the machine's OS and architecture, as GOOS/GOARCH, such
+	// as linux/amd64: the kokod the upgrade helper downloads is for it.
+	Platform() string
+	// Build reads the build of the file at the real path file, without
+	// running it.
+	Build(file string) (build.Info, error)
+	// Run runs the kokod file at the real path file with args, stdin empty,
+	// as root, and returns its exit status; an error when it did not run at
+	// all. The upgrade helper runs the new kokod's install with it.
+	Run(ctx context.Context, file string, args []string, stdout, stderr io.Writer) (status int, err error)
+	// FileOwner names the user who owns the file at the real path path, whose
+	// FileInfo, read from the file open, is info.
+	FileOwner(path string, info fs.FileInfo) (string, error)
 	// ServiceShow returns the koko service's property as systemd has its
 	// unit loaded, drop-ins included, as systemctl show --value prints it:
 	// "MainPID" is its main process's ID, 0 when it does not run, and
@@ -115,6 +130,12 @@ type Installer struct {
 	// Timings is the timing-constants hook, for tests only: its zero value
 	// is the product's timings.
 	Timings timing.Timings
+	// Releases is where the upgrade helper downloads the kokod it installs:
+	// the zero Source is GitHub's; only tests move it (ADR 0041).
+	Releases release.Source
+	// Stderr, when set, takes what the kokod files the upgrade helper runs
+	// print on stderr beside their refusal.
+	Stderr io.Writer
 }
 
 // Install installs and starts the koko server, waits for its Unix socket,
@@ -603,7 +624,24 @@ func (in *Installer) write(ctx context.Context, p plan) (*seal.RootKey, error) {
 	if err := in.writeFile(UnitPath, 0o644, "root", strings.NewReader(unit)); err != nil {
 		return nil, err
 	}
+	if err := in.upgradeHelper(); err != nil {
+		return nil, err
+	}
 	return key, nil
+}
+
+// upgradeHelper writes the upgrade helper's units and makes its directory,
+// root's (ADR 0048), so that an installed v0.3.x koko server gains them at
+// its next upgrade by the install line.
+func (in *Installer) upgradeHelper() error {
+	if err := in.dir(UpgradeDir, 0o755, "root"); err != nil {
+		return err
+	}
+	path, service := UpgradeUnits()
+	if err := in.writeFile(UpgradeServiceUnit, 0o644, "root", strings.NewReader(service)); err != nil {
+		return err
+	}
+	return in.writeFile(UpgradePathUnit, 0o644, "root", strings.NewReader(path))
 }
 
 // dataDir makes the data directory, 0700 and the koko user's, when it is
@@ -752,11 +790,12 @@ func syncDir(dir string) error {
 	return errors.Join(d.Sync(), d.Close())
 }
 
-// start makes systemd load the unit, enables the service and restarts it, so
-// that a koko service an earlier run left running takes the new unit and
-// kokod, then waits for its Unix socket.
+// start makes systemd load the units, enables and starts the upgrade
+// helper's path unit, enables the koko service and restarts it, so that a
+// koko service an earlier run left running takes the new unit and kokod,
+// then waits for its Unix socket.
 func (in *Installer) start(ctx context.Context) error {
-	for _, args := range [][]string{{"daemon-reload"}, {"enable", UnitName}, {"restart", UnitName}} {
+	for _, args := range [][]string{{"daemon-reload"}, {"enable", "--now", UpgradePathName}, {"enable", UnitName}, {"restart", UnitName}} {
 		if err := in.systemctl(ctx, args...); err != nil {
 			return err
 		}

@@ -44,15 +44,16 @@ func TestServerUninstall(t *testing.T) {
 	if err := json.Unmarshal([]byte(r.Stdout), &out); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(out.Removed, []string{"/etc/systemd/system/koko.service", "/usr/local/bin/kokod"}) ||
+	removed := []string{"/etc/systemd/system/koko.service", "/etc/systemd/system/koko-upgrade.path", "/etc/systemd/system/koko-upgrade.service", "/usr/local/bin/kokod", "/var/lib/koko-upgrade"}
+	if !slices.Equal(out.Removed, removed) ||
 		out.DataDir != "/var/lib/koko" || out.RootKeyFile != "/etc/koko/root.key" || out.SystemUser != "koko" || out.ListenPort != 7822 {
 		t.Errorf("uninstall printed %+v", out)
 	}
 
-	if m.Running() || m.Enabled() {
-		t.Errorf("the koko service runs %v and is enabled %v, want neither", m.Running(), m.Enabled())
+	if m.Running() || m.Enabled() || m.HelperEnabled() {
+		t.Errorf("the koko service runs %v and is enabled %v, and the upgrade helper's path unit is enabled %v; want none", m.Running(), m.Enabled(), m.HelperEnabled())
 	}
-	for _, path := range []string{"/etc/systemd/system/koko.service", "/usr/local/bin/kokod"} {
+	for _, path := range removed {
 		if _, err := os.Stat(m.Path(path)); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("uninstall left %s: %v", path, err)
 		}
@@ -77,18 +78,22 @@ func TestServerUninstall(t *testing.T) {
 		t.Errorf("the users are %v after uninstall, want koko", users)
 	}
 
-	// The service stops while its unit is there, and systemd forgets the
-	// unit once it is gone; nothing removes the koko user.
+	// The helper's path unit and the service stop while their units are
+	// there, and systemd forgets the units once they are gone; nothing
+	// removes the koko user.
 	after := m.Calls()[calls:]
 	whats := callNames(after)
-	if want := []string{"show koko.service Environment", "systemctl stop koko.service", "systemctl disable koko.service", "systemctl daemon-reload"}; !slices.Equal(whats, want) {
+	if want := []string{"systemctl disable --now koko-upgrade.path", "show koko.service Environment", "systemctl stop koko.service", "systemctl disable koko.service", "systemctl daemon-reload"}; !slices.Equal(whats, want) {
 		t.Fatalf("uninstall asked the machine %v, want %v", whats, want)
 	}
-	if c := after[1]; !slices.Contains(c.Files, "/etc/systemd/system/koko.service") {
+	if c := after[0]; !slices.Contains(c.Files, "/etc/systemd/system/koko-upgrade.path") {
+		t.Error("uninstall removed the helper's path unit before it stopped it")
+	}
+	if c := after[2]; !slices.Contains(c.Files, "/etc/systemd/system/koko.service") {
 		t.Error("uninstall removed the unit before it stopped the service")
 	}
-	if c := after[3]; slices.Contains(c.Files, "/etc/systemd/system/koko.service") {
-		t.Error("uninstall reloaded systemd before it removed the unit")
+	if c := after[4]; slices.ContainsFunc(c.Files, func(f string) bool { return strings.HasPrefix(f, "/etc/systemd/system/koko") }) {
+		t.Errorf("uninstall reloaded systemd before it removed the units: %v", c.Files)
 	}
 }
 

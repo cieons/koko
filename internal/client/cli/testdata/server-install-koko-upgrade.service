@@ -1,0 +1,27 @@
+# The koko server's upgrade helper, which koko-upgrade.path starts when the
+# koko server asks for an upgrade. kokod install writes this file at every
+# run. It takes from the request nothing but the version of a release newer
+# than the kokod installed, downloads and checks that release itself,
+# installs it, and puts the previous kokod back when the new one does not
+# start. Its outcome is in /var/lib/koko-upgrade/outcome.json.
+[Unit]
+Description=koko server upgrade helper
+Documentation=https://github.com/cieons/koko
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/kokod upgrade
+# It runs as root, which replacing kokod and restarting the koko service
+# need, with nothing it does not need: no home directories, a /tmp of its
+# own, no devices, and no kernel settings, modules, logs or control groups.
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictRealtime=yes
+LockPersonality=yes

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/server/installer"
 	"github.com/cieons/koko/internal/server/kokod"
 	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/joincode"
@@ -66,6 +67,27 @@ func wantMode(t *testing.T, m *harness.Machine, path string, mode fs.FileMode) {
 	}
 	if got := info.Mode() & (fs.ModePerm | fs.ModeDir); got != mode {
 		t.Errorf("%s has mode %v, want %v", path, got, mode)
+	}
+}
+
+// wantUpgradeHelper wants the upgrade helper installed on m (ADR 0048): its
+// path unit and service, root's, 0644, as their golden files hold them, its
+// directory, root's, 0755, and the path unit enabled and started.
+func wantUpgradeHelper(t *testing.T, m *harness.Machine) {
+	t.Helper()
+	for _, unit := range []string{installer.UpgradePathUnit, installer.UpgradeServiceUnit} {
+		wantMode(t, m, unit, 0o644)
+		if got := m.Owner(unit); got != "root" {
+			t.Errorf("%s is owned by %q, want root", unit, got)
+		}
+		harness.Golden(t, "server-install-"+filepath.Base(unit), readFile(t, m, unit))
+	}
+	wantMode(t, m, installer.UpgradeDir, fs.ModeDir|0o755)
+	if got := m.Owner(installer.UpgradeDir); got != "root" {
+		t.Errorf("%s is owned by %q, want root", installer.UpgradeDir, got)
+	}
+	if !m.HelperEnabled() {
+		t.Error("the upgrade helper's path unit is not enabled")
 	}
 }
 
@@ -170,6 +192,7 @@ func TestServerInstallOnAFreshMachine(t *testing.T) {
 		t.Errorf("the koko service is enabled %v and running %v, want both", m.Enabled(), m.Running())
 	}
 	wantInitialised(t, m, "alice")
+	wantUpgradeHelper(t, m)
 
 	// What install printed.
 	if out.Address != harness.SourceIP || out.RootKeyFile != "/etc/koko/root.key" || out.ListenPort != 7822 ||
@@ -216,8 +239,11 @@ func TestServerInstallChecksFirstAndWaitsForTheSocket(t *testing.T) {
 			t.Errorf("install asked %q after writing: %v", check, calls[i].Files)
 		}
 	}
-	if got, want := whats[len(whats)-3:], []string{"systemctl daemon-reload", "systemctl enable koko.service", "systemctl restart koko.service"}; !slices.Equal(got, want) {
+	if got, want := whats[len(whats)-4:], []string{"systemctl daemon-reload", "systemctl enable --now koko-upgrade.path", "systemctl enable koko.service", "systemctl restart koko.service"}; !slices.Equal(got, want) {
 		t.Errorf("install ended with %v, want %v", got, want)
+	}
+	if reload := calls[len(calls)-4]; !slices.Contains(reload.Files, installer.UpgradePathUnit) || !slices.Contains(reload.Files, installer.UpgradeServiceUnit) {
+		t.Error("install reloaded systemd before writing the upgrade helper's units")
 	}
 	start := calls[len(calls)-1]
 	for _, file := range []string{"/etc/koko/root.key", "/usr/local/bin/kokod", "/etc/systemd/system/koko.service", "/var/lib/koko"} {

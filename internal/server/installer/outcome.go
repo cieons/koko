@@ -15,12 +15,25 @@ const (
 	// UpgradePathUnit is the helper's path unit, which kokod install writes
 	// with the koko unit; while it is there, the koko server upgrades
 	// through the helper.
-	UpgradePathUnit = "/etc/systemd/system/koko-upgrade.path"
+	UpgradePathUnit = "/etc/systemd/system/" + UpgradePathName
+	// UpgradeServiceUnit is the helper's oneshot unit, which runs kokod
+	// upgrade as root.
+	UpgradeServiceUnit = "/etc/systemd/system/" + UpgradeServiceName
+	// UpgradePathName and UpgradeServiceName are the helper's units' names.
+	UpgradePathName    = "koko-upgrade.path"
+	UpgradeServiceName = "koko-upgrade.service"
+	// RequestFile is the koko server's request for an upgrade, which it
+	// writes in its runtime directory, beside its socket, and whose
+	// presence starts the helper.
+	RequestFile = "/run/koko/upgrade.request"
 	// UpgradeDir is root's directory of the helper's files, mode 0755.
 	UpgradeDir = "/var/lib/koko-upgrade"
 	// OutcomeFile is the outcome of the last upgrade, mode 0644, which the
 	// helper writes, a temporary file renamed into place, and kokod reads.
 	OutcomeFile = UpgradeDir + "/outcome.json"
+	// previousFile is the kokod the helper replaced, which it installs again
+	// when the new one does not start.
+	previousFile = UpgradeDir + "/kokod.previous"
 )
 
 // The states of an upgrade, as Outcome.State names them.

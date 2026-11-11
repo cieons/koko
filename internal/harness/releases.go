@@ -221,27 +221,53 @@ func (r *Releases) Requests() []string {
 }
 
 // Publish adds the release version to the fake GitHub r is a release of,
-// and returns it: a koko-<os>-<arch> for each of KokoPlatforms, of koko's
-// main package at that version and of another commit, files the machine
-// states the build of, and SHA256SUMS listing them. The releases/latest
-// redirect names it from now on.
+// and returns it: a koko-<os>-<arch> for each of KokoPlatforms and a
+// kokod-linux-<arch> for each platform kokod is built for, of their main
+// packages at that version and of another commit, files the machine states
+// the build of, and SHA256SUMS listing them. The releases/latest redirect
+// names it from now on. Its kokod runs as a kokod does.
 func (r *Releases) Publish(version string) *Releases {
+	r.gh.m.t.Helper()
+	return r.publish(version, behaviour{})
+}
+
+// PublishFailing publishes the release version as Publish does, with a
+// kokod whose koko service starts but never opens its socket, so that
+// installing it fails; when migrates, it first migrates koko.db one schema
+// version beyond this koko's, snapshot first, as a newer kokod does.
+func (r *Releases) PublishFailing(version string, migrates bool) *Releases {
+	r.gh.m.t.Helper()
+	return r.publish(version, behaviour{noSocket: true, migrates: migrates})
+}
+
+// publish publishes the release version, whose kokod files run as b says.
+func (r *Releases) publish(version string, b behaviour) *Releases {
 	m := r.gh.m
 	m.t.Helper()
 	p := &Releases{gh: r.gh, version: version}
 	assets := map[string][]byte{}
 	var names []string
-	for _, platform := range KokoPlatforms {
-		b := m.kokodBuild()
-		b.Path, b.Version, b.Platform = release.KokoPackage, version, platform
-		b.Revision = fmt.Sprintf("%x", sha256.Sum256([]byte(version)))[:40]
-		content, err := os.ReadFile(m.NewKokod(b))
+	add := func(pkg, platform, name string) {
+		bi := m.kokodBuild()
+		bi.Path, bi.Version, bi.Platform = pkg, version, platform
+		bi.Revision = fmt.Sprintf("%x", sha256.Sum256([]byte(version)))[:40]
+		content, err := os.ReadFile(m.NewKokod(bi))
 		if err != nil {
 			m.t.Fatal(err)
 		}
-		name := release.KokoAsset(platform)
+		if pkg == install.KokodPackage && b != (behaviour{}) {
+			m.mu.Lock()
+			m.behaviours[string(content)] = b
+			m.mu.Unlock()
+		}
 		assets[name] = content
 		names = append(names, name)
+	}
+	for _, platform := range KokoPlatforms {
+		add(release.KokoPackage, platform, release.KokoAsset(platform))
+	}
+	for _, platform := range install.KokodPlatforms {
+		add(install.KokodPackage, platform, install.KokodAsset(platform))
 	}
 	for name, content := range assets {
 		p.Put(name, content)

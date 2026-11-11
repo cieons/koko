@@ -671,19 +671,13 @@ func TestServerShowSaysHowTheKokoServerUpgrades(t *testing.T) {
 
 // On a machine where install wrote the upgrade helper's path unit, kokod
 // run finds it, and the helper's outcome.json, where the helper keeps
-// them.
+// them. A machine without the path unit is TestServerShowSaysHowTheKokoServerUpgrades's.
 func TestServerShowFindsTheUpgradeHelperInstallWrote(t *testing.T) {
 	t.Parallel()
 	m := harness.NewMachine(t)
 	install(t, m, "--owner", "alice")
-	if s := parseServer(t, m.Koko("server", "show", "--json")); s.UpgradeWay != "none" || s.LastUpgrade != nil {
-		t.Errorf("without the helper, server show names the upgrade way %q and the last upgrade %+v; want none and null", s.UpgradeWay, s.LastUpgrade)
-	}
-	if err := os.WriteFile(m.Path(installer.UpgradePathUnit), []byte("[Path]\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(m.Path(installer.UpgradeDir), 0o755); err != nil {
-		t.Fatal(err)
+	if s := parseServer(t, m.Koko("server", "show", "--json")); s.UpgradeWay != "systemd" || s.LastUpgrade != nil {
+		t.Errorf("before any upgrade, server show names the upgrade way %q and the last upgrade %+v; want systemd and null", s.UpgradeWay, s.LastUpgrade)
 	}
 	if err := os.WriteFile(m.Path(installer.OutcomeFile), []byte(`{"state": "running", "from": "v0.4.0", "to": "v0.5.0", "started_at": "2026-11-11T09:00:00Z"}`), 0o644); err != nil {
 		t.Fatal(err)

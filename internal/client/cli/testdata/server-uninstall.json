@@ -1,7 +1,10 @@
 {
   "removed": [
     "/etc/systemd/system/koko.service",
-    "/usr/local/bin/kokod"
+    "/etc/systemd/system/koko-upgrade.path",
+    "/etc/systemd/system/koko-upgrade.service",
+    "/usr/local/bin/kokod",
+    "/var/lib/koko-upgrade"
   ],
   "data_dir": "/var/lib/koko",
   "root_key_file": "/etc/koko/root.key",

@@ -25,6 +25,7 @@ import (
 	"github.com/cieons/koko/internal/server/installer"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/install"
+	"github.com/cieons/koko/internal/shared/release"
 	"github.com/cieons/koko/internal/shared/timing"
 )
 
@@ -49,6 +50,11 @@ type Program struct {
 	// is the product's timings, which kokod install waits for the koko
 	// server's socket by.
 	Timings timing.Timings
+
+	// Releases is the releases hook, for tests only: where kokod upgrade
+	// downloads the kokod it installs. The zero Source is GitHub's (ADR
+	// 0041). No flag or environment variable sets it.
+	Releases release.Source
 }
 
 // Invocation is one command line with its streams and environment.

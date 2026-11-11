@@ -148,6 +148,10 @@ the real one, rooted at `/`:
 | `Chown` | `os.Chown` to the user and its primary group |
 | `Systemctl` | `systemctl` with the arguments |
 | `ServiceShow` | `systemctl show --property=<property> --value koko.service`, as systemd has the unit loaded: `MainPID` (0 while it does not run) and `Environment` (its assignments, each quoted as systemd quotes one a shell would take) |
+| `Platform` | the platform this `kokod` was built for, `GOOS/GOARCH` |
+| `Build` | a file's Go build information, read without running it |
+| `Run` | a `kokod` file as a child process, stdin empty, and its exit status |
+| `FileOwner` | the user whose uid owns a file, from the `stat` of the file open |
 
 ## The steps
 
@@ -218,10 +222,13 @@ the real one, rooted at `/`:
    `/etc/systemd/system/koko.service` (0644, root). Every file is written
    through a temporary file beside it, given its mode and owner and synced,
    then renamed into place, so none is seen half-written and a running binary
-   is replaced, never changed.
-5. **`systemctl daemon-reload`, `enable koko.service`, `restart
-   koko.service`.** Restart, not start, so that a koko service an earlier run
-   left running takes the new unit and `kokod`.
+   is replaced, never changed. With them, **the upgrade helper**:
+   `/etc/systemd/system/koko-upgrade.path` and `koko-upgrade.service` (0644,
+   root), and its directory, `/var/lib/koko-upgrade` (0755, root)
+   ([the upgrade helper](#the-upgrade-helper)).
+5. **`systemctl daemon-reload`, `enable --now koko-upgrade.path`, `enable
+   koko.service`, `restart koko.service`.** Restart, not start, so that a
+   koko service an earlier run left running takes the new unit and `kokod`.
 6. **The socket.** Install waits until the koko server accepts a connection
    on `/run/koko/koko.sock`, for up to `timing.InstallSocketWait` (30 s). It
    connects rather than looks for the file, which is there a moment before
@@ -337,6 +344,79 @@ installer's own:
   needs install run again, which reads the drop-in's port and grants it
   ([ADR 0036](../adr/0036-the-koko-server-listens-on-7822-by-default.md)).
 
+## The upgrade helper
+
+kokod runs as `koko` with no capability and a read-only system, so it can
+neither replace `/usr/local/bin/kokod` nor restart its unit. It asks a
+root-run helper instead, which takes nothing from it but the version of a
+newer release ([ADR 0048](../adr/0048-the-koko-server-upgrades-itself-through-a-root-helper-that-takes-only-a-newer-releases-version.md)).
+Install writes the helper's two units at every run, from templates embedded
+in `kokod` ([`UpgradeUnits`](../../internal/server/installer/unit.go)),
+whose golden files are
+[`server-install-koko-upgrade.path`](../../internal/client/cli/testdata/server-install-koko-upgrade.path)
+and
+[`server-install-koko-upgrade.service`](../../internal/client/cli/testdata/server-install-koko-upgrade.service),
+so a v0.3.x koko server gains them at its next upgrade by the install line:
+
+- **`koko-upgrade.path`** has `PathExists=/run/koko/upgrade.request`: the
+  koko server's request, which it writes in its runtime directory, beside
+  its socket, starts `koko-upgrade.service`. Install enables and starts it.
+- **`koko-upgrade.service`** is `Type=oneshot`, `ExecStart=/usr/local/bin/kokod
+  upgrade`, as root, with `ProtectHome=yes` and `PrivateTmp=yes`, as the
+  spec asks, and what else root needs none of to replace kokod and restart
+  the koko service: `PrivateDevices=`, `ProtectKernelTunables=`,
+  `ProtectKernelModules=`, `ProtectKernelLogs=`, `ProtectControlGroups=`,
+  `ProtectClock=`, `ProtectHostname=`, `RestrictRealtime=` and
+  `LockPersonality=`. It has no `ProtectSystem=`, since it writes
+  `/usr/local/bin`, `/etc` and `/var/lib`, and no start timeout: its own
+  steps are bounded, the download by 10 minutes and each install by its wait
+  for the socket.
+- **`/var/lib/koko-upgrade/`** holds `kokod.previous`, the kokod it replaced
+  last, and `outcome.json` (0644), which kokod reads for `server.show`'s
+  `last_upgrade`.
+
+[`Installer.Upgrade`](../../internal/server/installer/upgrade.go), `kokod
+upgrade`, the helper, in this order:
+
+1. **The request.** It opens `/run/koko/upgrade.request` without following a
+   link and without waiting, as it would for a named pipe, and removes
+   whatever is there at once, so that the path unit starts it only once. It
+   takes the request only when it is a regular file owned by `koko`
+   (`FileOwner`) of at most 256 bytes, holding `{"version": "vX.Y.Z"}` and
+   no other field, the version a release's tag strictly newer than the
+   build of the `kokod` installed. No request at all, as when it is run by
+   hand, is an error and recorded nowhere; any other refusal is recorded as
+   `failed`, with nothing downloaded.
+2. **The outcome** `running`, with `from`, `to` and `started_at`, written to
+   `outcome.json` through a temporary file renamed into place, as every file
+   install writes.
+3. **The download** of that tag's `SHA256SUMS` and `kokod-linux-<arch>`,
+   through [the shared module](release.md), into a new 0700 directory under
+   `/var/lib/koko-upgrade`, removed at the end; the checks are the SHA-256,
+   then the main package `cmd/kokod`, the tag's version and the machine's
+   platform. A failure ends here with nothing changed.
+4. **The previous kokod** is copied to `kokod.previous`.
+5. **The upgrade:** the new file's `kokod install --json`, [the
+   upgrade](#the-upgrade), which replaces kokod, writes the units again,
+   restarts the koko service and waits for its socket. The new kokod
+   migrates the schema at its start, snapshot first.
+6. **Putting it back,** when that install fails: `systemctl stop
+   koko.service`, so that `Restart=on-failure` cannot bring the new kokod up
+   meanwhile; then, when `koko.db` is at a schema newer than the helper's
+   own, which is the previous kokod's, it moves `koko.db`, with its `-wal`
+   and `-shm`, aside as `koko.db.failed-<to>` and renames the snapshot that
+   migration took, `koko.db.before-<n>`, into its place
+   ([`store.PutBack`](../../internal/server/store/putback.go)), by rename
+   only. That is safe because a kokod whose socket never opened served
+   nothing. Then it runs `kokod.previous install --json`.
+7. **The outcome** becomes `succeeded`; `failed`, the previous kokod running
+   again, with the message of what failed and of what was put back; or
+   `failed_not_restored` when the previous kokod did not install either,
+   whose message names `journalctl -u koko -u koko-upgrade`. `finished_at`
+   is set. `kokod upgrade` prints the outcome as JSON, and exits 1 with
+   `upgrade_failed` unless it succeeded, so that systemd marks the run
+   failed.
+
 ## What it prints
 
 The Server Address with its port, the host key's fingerprint, the Root Key's
@@ -383,12 +463,15 @@ when devices must take the new address.
 
 ## Uninstall
 
-[`Installer.Uninstall`](../../internal/server/installer/uninstall.go), when
-the unit is there, reads the port the koko service listens on from systemd
+[`Installer.Uninstall`](../../internal/server/installer/uninstall.go) first
+stops and disables the upgrade helper's path unit when it is there
+(`disable --now koko-upgrade.path`). Then, when
+the unit is there, it reads the port the koko service listens on from systemd
 and the web listener's address from the unit's `KOKO_WEB_LISTEN`, runs
 `systemctl stop` and `disable koko.service` while systemd still knows the
-unit, removes the unit and runs `daemon-reload`; it then removes
-`/usr/local/bin/kokod`. It never removes `/usr/local/bin/koko`, the CLI,
+unit, removes the unit and the helper's two units and runs `daemon-reload`;
+it then removes `/usr/local/bin/kokod` and `/var/lib/koko-upgrade`, so that
+nothing of koko is left running as root. It never removes `/usr/local/bin/koko`, the CLI,
 which `install.sh` put there, so on a machine as v0.1.0 or v0.2.0 left it,
 whose unit ran that file, it removes only the unit. It keeps
 `/var/lib/koko`, `/etc/koko/root.key` and the `koko` user, and prints their
@@ -410,7 +493,8 @@ left out when the unit set none or could not be read):
 
 ```json
 {
-  "removed": ["/etc/systemd/system/koko.service", "/usr/local/bin/kokod"],
+  "removed": ["/etc/systemd/system/koko.service", "/etc/systemd/system/koko-upgrade.path",
+              "/etc/systemd/system/koko-upgrade.service", "/usr/local/bin/kokod", "/var/lib/koko-upgrade"],
   "data_dir": "/var/lib/koko",
   "root_key_file": "/etc/koko/root.key",
   "system_user": "koko",
@@ -445,7 +529,7 @@ which took the same flags) with its `Environment=` lines and
 server under the root,
 listening on a loopback port, which its Join Codes therefore name in place
 of the unit's port. So initialisation and the printout run for real. The tests cover a fresh install (files, modes, owners, the unit's
-golden file, the `--json` golden, the koko server initialised), the order
+and the upgrade helper's golden files, the path unit enabled, the `--json` golden, the koko server initialised), the order
 (checks before any write, the Root Key and the binary before the start, a
 late socket waited for), a socket file there before the koko server accepts
 on it (`ListenDelay`), the printout for people, `--port` (and
@@ -467,6 +551,29 @@ never opens its socket (`NoSocket`) has install wait less than the product's
 fails no slower machine, and every socket that does open is waited for as
 on a real machine. `WaitLog` waits for a line the koko server logs after
 its socket accepts, such as its start.
+Its `systemctl` acts on the upgrade helper's units too: `daemon-reload`
+loads them, and while `enable --now koko-upgrade.path` has started the path
+unit, a goroutine looks for the file its `PathExists=` names every 10 ms, as
+systemd's watch would see it, and runs the service's `ExecStart`, `kokod
+upgrade`, through the machine, one run at a time, until `disable --now` or
+the test's end; `m.WaitHelper(n)` waits for the n-th run to end. A file
+under the koko service's runtime directory that no one gave an owner is the
+koko service's user's, and any other root's, as koko and kokod run as root
+there. A kokod file the machine made may run otherwise than a kokod does:
+`rel.PublishFailing` publishes a release whose kokod's service never opens
+its socket, after migrating `koko.db` one schema version on (a snapshot
+first, then `user_version`) when asked, and `m.Fail(content)` makes the
+kokod of those bytes do the same from then on.
+[`upgrade_test.go`](../../internal/server/kokod/upgrade_test.go) tests the
+helper through its path unit on that machine, with the releases hook: a
+newer release installed, the units written again and `succeeded`; a link,
+a file over 256 bytes, one owned by another user, an older or the same
+version, a URL and an unknown field each refused with nothing downloaded; a
+wrong SHA-256 and a missing kokod leaving everything as it was; a new kokod
+that never opens its socket across a migration stopped, its database kept
+as `koko.db.failed-<to>`, the snapshot put back and the previous kokod
+running, `failed`; and a previous kokod that cannot start either,
+`failed_not_restored`.
 [`server_upgrade_test.go`](../../internal/client/cli/server_upgrade_test.go)
 tests the upgrade on an initialised koko server: the new release's `kokod`,
 the unit written again, the restart, the record kept, the `--json` goldens;
@@ -479,7 +586,7 @@ after uninstall; no unit after
 uninstall, and a unit changed by hand; the P0 restore of a copy onto a fresh
 machine; data at a newer schema refused; and a machine as v0.2.0 left it,
 whose unit is written again to run `kokod run`, its port and drop-in kept
-and `/usr/local/bin/koko` untouched; and the web listener kept without
+and `/usr/local/bin/koko` untouched, and which gains the upgrade helper; and the web listener kept without
 `--web-listen`, replaced with it, removed by `off` and kept off, its port
 checked and a taken one refused, and a drop-in's web listener below 1024
 granted the bind.

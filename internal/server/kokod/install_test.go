@@ -56,7 +56,7 @@ func TestKokodInstallAndUninstallPrintTheSharedReports(t *testing.T) {
 	if err := json.Unmarshal([]byte(r.Stdout), &removed, json.RejectUnknownMembers(true)); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(removed.Removed, " ") != "/etc/systemd/system/koko.service /usr/local/bin/kokod" || removed.ListenPort != 7822 {
+	if strings.Join(removed.Removed, " ") != "/etc/systemd/system/koko.service /etc/systemd/system/koko-upgrade.path /etc/systemd/system/koko-upgrade.service /usr/local/bin/kokod /var/lib/koko-upgrade" || removed.ListenPort != 7822 {
 		t.Errorf("kokod uninstall printed %s", r.Stdout)
 	}
 }

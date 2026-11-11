@@ -1,7 +1,9 @@
 package harness
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +23,7 @@ import (
 	"github.com/cieons/koko/internal/server"
 	"github.com/cieons/koko/internal/server/installer"
 	"github.com/cieons/koko/internal/server/kokod"
+	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/install"
 	"github.com/cieons/koko/internal/shared/portowner"
@@ -123,6 +126,46 @@ type Machine struct {
 	// running is the unit the koko service runs, as loaded when it started.
 	running *unitFile
 	runs    []*Process
+	// behaviours are how the koko service runs each kokod file the
+	// machine made that is not as a kokod runs, by the file's bytes.
+	behaviours map[string]behaviour
+	// helper is the upgrade helper's units as loaded, nil while systemd
+	// has none.
+	helper *helperUnits
+	// helperEnabled tells whether the helper's path unit is enabled, and
+	// watch, while it is started, stops it.
+	helperEnabled bool
+	watch         *pathWatch
+	// helperLog is what every run of the upgrade helper printed, and
+	// helperRuns how many runs have ended.
+	helperLog  strings.Builder
+	helperRuns int
+}
+
+// behaviour is how the koko service runs a kokod file that does not run as
+// a kokod does.
+type behaviour struct {
+	// noSocket: the service starts, and never opens its socket.
+	noSocket bool
+	// migrates: before that, it migrates koko.db one schema version beyond
+	// this koko's, snapshot first, as a newer kokod does at its start.
+	migrates bool
+}
+
+// helperUnits is what the fake systemd reads of the upgrade helper's path
+// unit and service.
+type helperUnits struct {
+	// pathExists is the file whose presence starts the service.
+	pathExists string
+	// execStart is the service's command line.
+	execStart []string
+}
+
+// pathWatch is the upgrade helper's path unit while it is started: it runs
+// the helper's service each time its file is there.
+type pathWatch struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 // Call is one thing install asked of the machine, with the files under its
@@ -175,11 +218,12 @@ func NewMachine(t testing.TB) *Machine {
 		Listening: map[int]portowner.Process{},
 		t:         t,
 		// The socket under the root must fit macOS's 104 bytes.
-		root:   ShortTempDir(t),
-		home:   t.TempDir(),
-		tmp:    t.TempDir(),
-		builds: map[string]build.Info{},
-		self:   build.Read(),
+		root:       ShortTempDir(t),
+		home:       t.TempDir(),
+		tmp:        t.TempDir(),
+		builds:     map[string]build.Info{},
+		behaviours: map[string]behaviour{},
+		self:       build.Read(),
 	}
 	m.kokod = m.NewKokod(m.kokodBuild())
 	for _, dir := range skeleton {
@@ -368,12 +412,39 @@ func (m *Machine) Run(ctx context.Context, file string, args []string, stdout, s
 	}
 	m.mu.Lock()
 	m.ran = append(m.ran, strings.Join(args, " "))
+	broken := m.NoSocket || m.behaviourOf(file).noSocket
 	m.mu.Unlock()
 	p := kokod.Program{Machine: m, Binary: func() (string, error) { return file, nil }}
-	if m.NoSocket {
+	if broken {
 		p.Timings = timing.Timings{InstallSocketWait: NoSocketWait}
 	}
+	if m.releases != nil {
+		p.Releases = m.releases.source()
+		p.Releases.Build = m.Build
+	}
 	return p.Run(ctx, kokod.Invocation{Args: args, Stdout: stdout, Stderr: stderr}), nil
+}
+
+// Fail makes the koko service, from now on, start and never open its socket
+// when it runs the kokod file whose bytes are content, such as a release's
+// kokod (Releases.Content), as one whose start-up refuses does.
+func (m *Machine) Fail(content []byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	b := m.behaviours[string(content)]
+	b.noSocket = true
+	m.behaviours[string(content)] = b
+}
+
+// behaviourOf is how the koko service runs the kokod file at the real path
+// file, with m.mu held: as a kokod runs, unless the machine made it to run
+// otherwise.
+func (m *Machine) behaviourOf(file string) behaviour {
+	text, err := os.ReadFile(file)
+	if err != nil {
+		return behaviour{}
+	}
+	return m.behaviours[string(text)]
 }
 
 // Calls returns what install asked of the machine so far, in order.
@@ -620,6 +691,29 @@ func (m *Machine) chown(path, name string) error {
 	return nil
 }
 
+// FileOwner names the owner the machine was last asked to give the file
+// info describes, at the real path path. A file it was never asked about is
+// the koko service's user's in the koko service's runtime directory, where
+// only the koko service writes, and root's anywhere else, as koko and kokod
+// run as root on the machine.
+func (m *Machine) FileOwner(path string, info fs.FileInfo) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, o := range m.owners {
+		if os.SameFile(o.info, info) {
+			return o.owner, nil
+		}
+	}
+	if m.loaded != nil {
+		for _, d := range m.loaded.runtimeDirs {
+			if filepath.Dir(path) == m.Path("/run/"+d) {
+				return m.loaded.user, nil
+			}
+		}
+	}
+	return "root", nil
+}
+
 // ownerOf returns the owner recorded for the file at the real path, or ""
 // when there is none, with m.mu held.
 func (m *Machine) ownerOf(path string) string {
@@ -642,6 +736,9 @@ func (m *Machine) ownerOf(path string) string {
 // the koko server opens its socket.
 func (m *Machine) Systemctl(_ context.Context, args ...string) error {
 	m.record("systemctl " + strings.Join(args, " "))
+	if len(args) == 3 && args[1] == "--now" && args[2] == installer.UpgradePathName {
+		return m.helperPath(args[0])
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if len(args) == 1 && args[0] == "daemon-reload" {
@@ -675,10 +772,139 @@ func (m *Machine) Systemctl(_ context.Context, args ...string) error {
 	return fmt.Errorf("the fake systemctl does not know %q", args)
 }
 
-// reload loads the unit file as it is now, then its drop-ins in the order
-// of their names, whose Environment= lines come after the unit's and so
-// override them, or forgets the unit when it is gone.
+// helperPath does what systemctl enable --now and disable --now do with the
+// upgrade helper's path unit: enable and start it, or stop and disable it.
+// While it is started, its file being there runs the helper's service.
+func (m *Machine) helperPath(verb string) error {
+	m.mu.Lock()
+	switch {
+	case m.helper == nil:
+		m.mu.Unlock()
+		return fmt.Errorf("unit %s not found", installer.UpgradePathName)
+	case verb == "enable":
+		m.helperEnabled = true
+		if m.watch == nil {
+			m.watch = m.startWatch()
+		}
+		m.mu.Unlock()
+		return nil
+	case verb == "disable":
+		w := m.watch
+		m.helperEnabled, m.watch = false, nil
+		m.mu.Unlock()
+		w.stop()
+		return nil
+	}
+	m.mu.Unlock()
+	return fmt.Errorf("the fake systemctl does not know %s --now %s", verb, installer.UpgradePathName)
+}
+
+// HelperEnabled tells whether the upgrade helper's path unit is enabled.
+func (m *Machine) HelperEnabled() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.helperEnabled
+}
+
+// pathPoll is how often the fake systemd looks for the path unit's file,
+// which systemd watches with inotify.
+const pathPoll = 10 * time.Millisecond
+
+// startWatch starts the helper's path unit, with m.mu held: each time the
+// file its loaded unit names is there, it runs the helper's service, as
+// PathExists= does, one run at a time.
+func (m *Machine) startWatch() *pathWatch {
+	ctx, cancel := context.WithCancel(context.Background())
+	w := &pathWatch{cancel: cancel, done: make(chan struct{})}
+	go func() {
+		defer close(w.done)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(pathPoll):
+			}
+			m.mu.Lock()
+			h := m.helper
+			m.mu.Unlock()
+			if h == nil {
+				continue
+			}
+			if _, err := os.Lstat(m.Path(h.pathExists)); err != nil {
+				continue
+			}
+			m.runHelper(ctx, h)
+		}
+	}()
+	return w
+}
+
+// stop stops the path unit, and waits for a run of the helper's service it
+// started to end, which ctx ending cuts short.
+func (w *pathWatch) stop() {
+	if w == nil {
+		return
+	}
+	w.cancel()
+	<-w.done
+}
+
+// runHelper runs the helper's service once, as root, and notes what it
+// printed and that it ran.
+func (m *Machine) runHelper(ctx context.Context, h *helperUnits) {
+	var out bytes.Buffer
+	if len(h.execStart) == 0 {
+		out.WriteString("the unit has no ExecStart\n")
+	} else if status, err := m.Run(ctx, m.Path(h.execStart[0]), h.execStart[1:], &out, &out); err != nil {
+		fmt.Fprintf(&out, "%s did not run: %v\n", h.execStart[0], err)
+	} else {
+		fmt.Fprintf(&out, "%s exited with status %d\n", installer.UpgradeServiceName, status)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.helperLog.Write(out.Bytes())
+	m.helperRuns++
+}
+
+// HelperRuns returns how many runs of the upgrade helper have ended.
+func (m *Machine) HelperRuns() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.helperRuns
+}
+
+// helperWait bounds WaitHelper: a run installs one or two kokod files,
+// each waiting for the koko service's socket.
+const helperWait = time.Minute
+
+// WaitHelper waits until n runs of the upgrade helper, which its path unit
+// starts, have ended, and returns what every run printed. It fails the
+// test when helperWait passes first.
+func (m *Machine) WaitHelper(n int) string {
+	m.t.Helper()
+	deadline := time.Now().Add(helperWait)
+	for {
+		m.mu.Lock()
+		runs, log := m.helperRuns, m.helperLog.String()
+		m.mu.Unlock()
+		if runs >= n {
+			return log
+		}
+		if time.Now().After(deadline) {
+			m.t.Fatalf("the upgrade helper did not end %d runs within %v:\n%s", n, helperWait, log)
+		}
+		time.Sleep(pathPoll)
+	}
+}
+
+// reload loads the koko unit file as it is now, then its drop-ins in the
+// order of their names, whose Environment= lines come after the unit's and
+// so override them, or forgets the unit when it is gone; and the upgrade
+// helper's units, or forgets them.
 func (m *Machine) reload() error {
+	if err := m.reloadHelper(); err != nil {
+		return err
+	}
 	text, err := os.ReadFile(m.Path(installer.UnitPath))
 	if errors.Is(err, fs.ErrNotExist) {
 		m.loaded = nil
@@ -722,6 +948,43 @@ func (m *Machine) reload() error {
 		}
 	}
 	m.loaded = u
+	return nil
+}
+
+// reloadHelper loads the upgrade helper's path unit and service as they are
+// now, or forgets them when either is gone.
+func (m *Machine) reloadHelper() error {
+	path, err := os.ReadFile(m.Path(installer.UpgradePathUnit))
+	if errors.Is(err, fs.ErrNotExist) {
+		m.helper = nil
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	service, err := os.ReadFile(m.Path(installer.UpgradeServiceUnit))
+	if errors.Is(err, fs.ErrNotExist) {
+		m.helper = nil
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	h := &helperUnits{}
+	for line := range strings.Lines(string(path) + "\n" + string(service)) {
+		key, value, _ := strings.Cut(strings.TrimSpace(line), "=")
+		switch key {
+		case "PathExists":
+			h.pathExists = value
+		case "Unit":
+			if value != installer.UpgradeServiceName {
+				return fmt.Errorf("the fake systemd starts only %s from %s, not %s", installer.UpgradeServiceName, installer.UpgradePathName, value)
+			}
+		case "ExecStart":
+			h.execStart = strings.Fields(value)
+		}
+	}
+	m.helper = h
 	return nil
 }
 
@@ -790,12 +1053,20 @@ func (m *Machine) startService() error {
 	if slices.ContainsFunc(u.env, func(kv string) bool { return strings.HasPrefix(kv, "KOKO_WEB_LISTEN=") }) {
 		env = append(env, "KOKO_WEB_LISTEN=127.0.0.1:0")
 	}
-	noSocket, delay, listenDelay := m.NoSocket, m.StartDelay, m.ListenDelay
+	b := m.behaviourOf(m.Path(u.execStart[0]))
+	noSocket, delay, listenDelay := m.NoSocket || b.noSocket, m.StartDelay, m.ListenDelay
 	releases := noReleases
 	if m.releases != nil {
 		releases = m.releases.source()
 	}
 	serve := func(ctx context.Context, c server.Config) error {
+		// A kokod migrates at its start, before its socket opens, so a stop
+		// waits for the migration: the process does not end within it.
+		if b.migrates {
+			if err := migrateBeyond(context.WithoutCancel(ctx), m.Path(c.DataDir)); err != nil {
+				return err
+			}
+		}
 		if noSocket {
 			<-ctx.Done()
 			return nil
@@ -826,6 +1097,36 @@ func (m *Machine) startService() error {
 	m.running = u
 	m.runs = append(m.runs, m.service)
 	return nil
+}
+
+// migrateBeyond migrates koko.db in dataDir one schema version beyond this
+// koko's, as a newer kokod does at its start: it snapshots it first, as
+// koko.db.before-<n>, mode 0600, keeping no other snapshot, as the store
+// does, then records the new version.
+func migrateBeyond(ctx context.Context, dataDir string) error {
+	next := store.SchemaVersion() + 1
+	older, err := filepath.Glob(filepath.Join(dataDir, store.FileName+".before-*"))
+	if err != nil {
+		return err
+	}
+	for _, file := range older {
+		if err := os.Remove(file); err != nil {
+			return err
+		}
+	}
+	db, err := sql.Open("sqlite", filepath.Join(dataDir, store.FileName))
+	if err != nil {
+		return err
+	}
+	snapshot := filepath.Join(dataDir, fmt.Sprintf("%s.before-%d", store.FileName, next))
+	_, err = db.ExecContext(ctx, "VACUUM INTO ?", snapshot)
+	if err == nil {
+		_, err = db.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", next))
+	}
+	if err := errors.Join(err, db.Close()); err != nil {
+		return fmt.Errorf("migrate %s beyond this koko's schema: %w", store.FileName, err)
+	}
+	return os.Chmod(snapshot, 0o600)
 }
 
 // holdUnlistenedSocket keeps a socket file at path that accepts no
@@ -866,8 +1167,14 @@ func (m *Machine) stopService() {
 	m.service, m.running = nil, nil
 }
 
-// stop stops the koko service when the test ends.
+// stop stops the upgrade helper's path unit, and a run of the helper it
+// started, then the koko service, when the test ends.
 func (m *Machine) stop() {
+	m.mu.Lock()
+	w := m.watch
+	m.watch = nil
+	m.mu.Unlock()
+	w.stop()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.stopService()

@@ -9,6 +9,7 @@ import (
 
 	"github.com/cieons/koko/internal/server"
 	"github.com/cieons/koko/internal/server/installer"
+	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/install"
 )
@@ -52,6 +53,12 @@ var commands = []*command{
 		summary: "Stop the koko server here and remove its unit and kokod, as root; its data, Root Key and system user stay",
 		json:    "Print a refusal as JSON; the report is JSON always",
 		run:     uninstallCmd,
+	},
+	{
+		name:    "upgrade",
+		summary: "Upgrade kokod here to the release the koko server asked for, as root, and put the previous one back when the new one does not start; koko-upgrade.service runs it",
+		json:    "Print a refusal as JSON; the outcome is JSON always",
+		run:     upgradeCmd,
 	},
 	{
 		name:    "version",
@@ -117,6 +124,28 @@ func uninstallCmd(ctx context.Context, p *Program, inv *Invocation, _ *parsed) e
 	return writeJSON(inv.Stdout, report)
 }
 
+// upgradeCmd is kokod upgrade, the upgrade helper: the installer's upgrade,
+// then its outcome as JSON. An upgrade that did not succeed fails with
+// upgrade_failed and the outcome's message.
+func upgradeCmd(ctx context.Context, p *Program, inv *Invocation, _ *parsed) error {
+	in := &installer.Installer{Machine: p.Machine, Timings: p.Timings, Releases: p.Releases, Stderr: inv.Stderr}
+	o, err := in.Upgrade(ctx)
+	if err != nil {
+		return err
+	}
+	if err := writeJSON(inv.Stdout, o); err != nil {
+		return err
+	}
+	if o.State != installer.UpgradeSucceeded {
+		return &api.Error{Code: CodeUpgradeFailed, Message: o.Message}
+	}
+	return nil
+}
+
+// CodeUpgradeFailed: the koko server's upgrade failed; the message says
+// why, and whether the previous kokod runs again.
+const CodeUpgradeFailed = "upgrade_failed"
+
 // writeJSON writes v to w as JSON, as koko's --json does.
 func writeJSON(w io.Writer, v any) error {
 	var out strings.Builder
@@ -168,7 +197,9 @@ func writeHelp(w io.Writer) {
 	_, _ = fmt.Fprintf(tw, "  kokod help [<command>]\tPrint this help, or a command's, as <command> --help does\n")
 	_, _ = fmt.Fprintln(tw, "\nkokod install and kokod uninstall are the machine's part of koko server install\n"+
 		"and koko server uninstall, which run them: to install, upgrade or uninstall the\n"+
-		"koko server on this machine, run those as root.")
+		"koko server on this machine, run those as root. kokod upgrade is the upgrade\n"+
+		"helper, which koko-upgrade.service runs when koko server upgrade or the web UI\n"+
+		"asks for an upgrade.")
 	_ = tw.Flush()
 }
 

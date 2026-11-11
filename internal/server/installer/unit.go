@@ -22,6 +22,33 @@ var unitTemplate string
 
 var unit = template.Must(template.New("koko.service").Option("missingkey=error").Parse(unitTemplate))
 
+// The upgrade helper's units (ADR 0048), which install writes with the koko
+// unit at every run.
+var (
+	//go:embed koko-upgrade.path.tmpl
+	upgradePathTemplate string
+	//go:embed koko-upgrade.service.tmpl
+	upgradeServiceTemplate string
+
+	upgradePath    = template.Must(template.New(UpgradePathName).Option("missingkey=error").Parse(upgradePathTemplate))
+	upgradeService = template.Must(template.New(UpgradeServiceName).Option("missingkey=error").Parse(upgradeServiceTemplate))
+)
+
+// UpgradeUnits renders the upgrade helper's path unit and its service.
+func UpgradeUnits() (path, service string) {
+	return render(upgradePath, map[string]any{"Request": RequestFile, "Service": UpgradeServiceName}),
+		render(upgradeService, map[string]any{"Binary": BinaryPath, "Outcome": OutcomeFile})
+}
+
+// render renders the unit template t with data.
+func render(t *template.Template, data map[string]any) string {
+	var b strings.Builder
+	if err := t.Execute(&b, data); err != nil {
+		panic("installer: the unit template " + t.Name() + " does not render: " + err.Error())
+	}
+	return b.String()
+}
+
 // rootKeyCredential is the name systemd gives the Root Key's file in the
 // service's $CREDENTIALS_DIRECTORY, where `kokod run` reads it by
 // default.
@@ -48,8 +75,7 @@ func Unit(s UnitSettings) string {
 			low = append(low, strconv.Itoa(port))
 		}
 	}
-	var b strings.Builder
-	err := unit.Execute(&b, map[string]any{
+	return render(unit, map[string]any{
 		"Binary":      BinaryPath,
 		"DataDir":     DataDir,
 		"Port":        s.Port,
@@ -63,10 +89,6 @@ func Unit(s UnitSettings) string {
 		"StateDirectory":   strings.TrimPrefix(DataDir, "/var/lib/"),
 		"RuntimeDirectory": strings.TrimPrefix(filepath.Dir(wire.SocketPath), "/run/"),
 	})
-	if err != nil {
-		panic("installer: the unit template does not render: " + err.Error())
-	}
-	return b.String()
 }
 
 // listenEnv is the variable the unit sets the koko server's listen address

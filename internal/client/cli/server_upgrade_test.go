@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/server/installer"
 	"github.com/cieons/koko/internal/shared/portowner"
 )
 
@@ -88,7 +89,7 @@ func TestServerInstallUpgradesAnInitialisedServer(t *testing.T) {
 		t.Error("the upgrade changed the Root Key file")
 	}
 	whats := callNames(m.Calls()[calls:])
-	if got, want := whats[len(whats)-3:], []string{"systemctl daemon-reload", "systemctl enable koko.service", "systemctl restart koko.service"}; !slices.Equal(got, want) {
+	if got, want := whats[len(whats)-4:], []string{"systemctl daemon-reload", "systemctl enable --now koko-upgrade.path", "systemctl enable koko.service", "systemctl restart koko.service"}; !slices.Equal(got, want) {
 		t.Errorf("the upgrade ended with %v, want %v", got, want)
 	}
 	if starts := strings.Count(m.WaitLog("koko server started", 2), "koko server started"); starts != 2 || !m.Running() {
@@ -613,6 +614,15 @@ func asOldRelease(t *testing.T, m *harness.Machine) string {
 	if err := os.Remove(m.Path("/usr/local/bin/kokod")); err != nil {
 		t.Fatal(err)
 	}
+	// No release before v0.4.0 had the upgrade helper.
+	if err := m.Systemctl(context.Background(), "disable", "--now", installer.UpgradePathName); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{installer.UpgradePathUnit, installer.UpgradeServiceUnit, installer.UpgradeDir} {
+		if err := os.RemoveAll(m.Path(path)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, args := range [][]string{{"daemon-reload"}, {"restart", "koko.service"}} {
 		if err := m.Systemctl(context.Background(), args...); err != nil {
 			t.Fatal(err)
@@ -659,6 +669,8 @@ func TestServerInstallUpgradesAMachineAsAnOldReleaseLeftIt(t *testing.T) {
 	if got := readFile(t, m, "/etc/systemd/system/koko.service.d/log.conf"); got != dropIn {
 		t.Errorf("the upgrade changed the drop-in to %q", got)
 	}
+	// The release before the helper's gains it with this upgrade.
+	wantUpgradeHelper(t, m)
 	m.WaitLog("koko server started", 3)
 	wantInitialised(t, m, "alice")
 }

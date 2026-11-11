@@ -242,9 +242,9 @@ func TestKokodRefusesACommandLineItDoesNotTake(t *testing.T) {
 		args    []string
 		message string
 	}{
-		{"no command", nil, "give a command: kokod run, kokod install, kokod uninstall, kokod version or kokod help; kokod help lists them"},
-		{"unknown command", []string{"serve", "--json"}, "kokod serve is not a command; kokod takes kokod run, kokod install, kokod uninstall, kokod version or kokod help"},
-		{"flags first", []string{"--json", "run"}, "give a command before its flags: kokod run, kokod install, kokod uninstall, kokod version or kokod help"},
+		{"no command", nil, "give a command: kokod run, kokod install, kokod uninstall, kokod upgrade, kokod version or kokod help; kokod help lists them"},
+		{"unknown command", []string{"serve", "--json"}, "kokod serve is not a command; kokod takes kokod run, kokod install, kokod uninstall, kokod upgrade, kokod version or kokod help"},
+		{"flags first", []string{"--json", "run"}, "give a command before its flags: kokod run, kokod install, kokod uninstall, kokod upgrade, kokod version or kokod help"},
 		{"help for an unknown command", []string{"help", "serve", "--json"}, "kokod serve is not a command"},
 		{"version with a flag it does not take", []string{"version", "--data-dir", "/srv/koko", "--json"}, "unknown flag --data-dir for kokod version"},
 	} {
