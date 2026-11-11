@@ -1,9 +1,11 @@
-// Package release downloads one of a koko release's assets and checks it,
-// for every program that installs one: so far `koko server install`, which
-// downloads the kokod of its own release (ADR 0026, ADR 0041). It
-// downloads over HTTPS only, within bounds of size and time, and checks an
-// asset against the release's SHA256SUMS and its Go build information
-// before anyone runs it.
+// Package release finds a koko release, downloads one of its assets and
+// checks it, for every program that installs one: `koko server install`,
+// which downloads the kokod of its own release, and `koko update`, which
+// downloads the koko of the latest release or of the one it is given (ADR
+// 0026, ADR 0041, ADR 0047). It reads the `releases/latest` redirect as
+// install.sh does, downloads over HTTPS only, within bounds of size and
+// time, and checks an asset against the release's SHA256SUMS and its Go
+// build information before anyone runs it.
 package release
 
 import (
@@ -28,9 +30,22 @@ import (
 	"github.com/cieons/koko/internal/shared/build"
 )
 
-// GitHub is where koko's releases are (ADR 0026): each release's assets at
+// GitHub is where koko's releases are (ADR 0026): the latest's tag at
+// <GitHub>/latest, and each release's assets at
 // <GitHub>/download/<tag>/<name>.
 const GitHub = "https://github.com/cieons/koko/releases"
+
+// KokoPackage is koko's main package, which a koko file's Go build
+// information names, so that koko update tells koko from another program,
+// such as kokod, before it installs it.
+const KokoPackage = "github.com/cieons/koko/cmd/koko"
+
+// KokoAsset is the name of a release's asset that holds the koko for
+// platform, such as koko-linux-amd64, which koko update downloads (ADR
+// 0047).
+func KokoAsset(platform string) string {
+	return "koko-" + strings.ReplaceAll(platform, "/", "-")
+}
 
 // The bounds of a download: a koko or kokod is about 40 MiB, SHA256SUMS a
 // few lines.
@@ -38,6 +53,8 @@ const (
 	// fetchTime bounds a whole download, SHA256SUMS and the asset: 10
 	// minutes takes 40 MiB over a link of about 0.6 Mbit/s.
 	fetchTime = 10 * time.Minute
+	// latestTime bounds finding the latest release, one request.
+	latestTime = time.Minute
 	// sumsLimit and assetLimit bound the size of each file.
 	sumsLimit  = 1 << 20
 	assetLimit = 512 << 20
@@ -60,7 +77,8 @@ type Source struct {
 	Build func(file string) (build.Info, error)
 }
 
-// Error is an asset koko could not download, or one that failed a check: never a failure of this machine, such as a full
+// Error is a release koko could not find, an asset it could not download, or
+// one that failed a check: never a failure of this machine, such as a full
 // disk. Its message names the URL.
 type Error struct {
 	message string
@@ -70,6 +88,42 @@ func (e *Error) Error() string { return e.message }
 
 func failf(format string, args ...any) *Error {
 	return &Error{message: fmt.Sprintf(format, args...)}
+}
+
+// Latest returns the tag of koko's latest release: the one the
+// `releases/latest` redirect names, read as install.sh reads it, with one
+// request whose redirect it does not follow. A pre-release is never the
+// latest.
+func (s Source) Latest(ctx context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, latestTime)
+	defer cancel()
+	latest := s.url() + "/latest"
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, latest, nil)
+	if err != nil {
+		return "", fmt.Errorf("find the latest release at %s: %w", latest, err)
+	}
+	if err := httpsOnly(req.URL); err != nil {
+		return "", failf("koko could not find its latest release: head %s: %v", latest, err)
+	}
+	client := s.client()
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Do(req)
+	if err != nil {
+		if ue, ok := errors.AsType[*url.Error](err); ok {
+			err = ue.Err
+		}
+		return "", failf("koko could not find its latest release: head %s: %v", latest, err)
+	}
+	_ = resp.Body.Close()
+	where, err := resp.Location()
+	if resp.StatusCode/100 != 3 || err != nil {
+		return "", failf("koko could not find its latest release: %s answers %s, not a redirect to the release", latest, resp.Status)
+	}
+	dir, tag := path.Split(where.Path)
+	if !strings.HasSuffix(dir, "/releases/tag/") || !(build.Info{Version: tag}).Release() {
+		return "", failf("koko could not find its latest release: %s redirects to %s, which names no release", latest, where.Redacted())
+	}
+	return tag, nil
 }
 
 // Want is the build a file must be: its main package, version and

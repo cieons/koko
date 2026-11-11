@@ -201,6 +201,50 @@ func RefreshSSHConfig(home string, names []string) (wrote bool, err error) {
 	return replaceChanged(path, b)
 }
 
+// PointProxyCommand makes the ProxyCommand of koko's ssh_config, for the OS
+// user whose home directory is home, run the koko binary at koko, for a
+// command run from the user's shell by the koko koko update replaces (ADR
+// 0047): when it runs another file, it rewrites that file's path, and
+// leaves every other byte, the bare names among them, as it was. A file
+// that is not there, or whose ProxyCommand koko did not write, or that
+// names koko or the same file already, or that is another user's, as a
+// user's is to root run with that user's HOME, it leaves alone. It tells
+// whether it wrote.
+func PointProxyCommand(home, koko string) (wrote bool, err error) {
+	if err := checkHome(home); err != nil {
+		return false, err
+	}
+	path := SSHConfigPath(home)
+	switch fi, err := os.Lstat(path); {
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("read koko's ssh_config: %w", err)
+	case !ownedByMe(fi):
+		return false, nil
+	}
+	old, err := os.ReadFile(path)
+	if err != nil {
+		return false, fmt.Errorf("read koko's ssh_config: %w", err)
+	}
+	was, ok := proxyKoko(old)
+	if !ok || was == koko {
+		return false, nil
+	}
+	if a, err := os.Stat(was); err == nil {
+		if b, err := os.Stat(koko); err == nil && os.SameFile(a, b) {
+			return false, nil
+		}
+	}
+	wasArg, _ := quotePath(was)
+	kokoArg, err := quotePath(koko)
+	if err != nil {
+		return false, fmt.Errorf("write koko's ssh_config: %w", err)
+	}
+	line := func(arg string) []byte { return []byte("  " + proxyCommand + arg + proxyTunnel + "\n") }
+	return replaceChanged(path, bytes.ReplaceAll(old, line(wasArg), line(kokoArg)))
+}
+
 // replaceChanged writes b as koko's ssh_config at path, as replace does,
 // unless path is a regular file of mode 0600 that holds b already, and
 // tells whether it wrote. A file it cannot read counts as changed.

@@ -187,7 +187,11 @@ status. A command reaches the koko server only on its first `in.Call`, so
   only, the koko server answered without a field the command needs, which
   names it), `download_failed` (`koko server install` or `uninstall` could
   not download the `kokod` of its release, or got a file it does not run;
-  the message names the URL and `--kokod`, [the download](installer.md#the-download)),
+  the message names the URL and `--kokod`, [the download](installer.md#the-download);
+  or `koko update` could not find or download the release it installs, or
+  got a file it does not install, [`koko update`](#koko-update)),
+  `update_unsupported` (`koko update` of a koko it did not install, naming
+  how to upgrade that one),
   and `internal_error` for a failure it did not expect. `kokod` reports `invalid_usage`, `unsupported_platform`
   and `port_taken` too, so those three live in the shared
   [`install`](../../internal/shared/install/install.go) package, beside
@@ -332,6 +336,52 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
   `--name=`. A shell is one entry of `shellScripts`, its head and driver.
   Its tests run the script in bash, and in zsh where it is installed.
 
+## `koko update`
+
+[`koko update`](../../internal/client/cli/update.go) upgrades the CLI where
+install.sh puts it, with no root and no restart ([ADR
+0047](../adr/0047-koko-updates-itself-in-its-users-own-directory.md)). It
+needs no join, never contacts the koko server and never prompts. In this
+order, each refusal with nothing changed:
+
+1. `--version` must be a release's tag (`build.Info.Release`), or the
+   command line is refused with exit 2.
+2. The running koko must be one it may replace: its file
+   (`cli.Runner.Executable`, which `cmd/koko` sets to `os.Executable`,
+   symlinks resolved) is `$HOME/.local/bin/koko` run by a user other than
+   root, or `/usr/local/bin/koko` run by root. A development build,
+   `KOKO_IMAGE` set (the image sets it), `/usr/local/bin/koko` run by
+   another user and any other path are refused with `update_unsupported`,
+   each naming how that koko is upgraded.
+3. The target is `--version`'s, or the tag the `releases/latest` redirect
+   names (`release.Source.Latest`). When it is this build, it says so and
+   exits 0, having asked only for the redirect. `--check` stops here and
+   says what it would do.
+4. It downloads `SHA256SUMS` and `koko-<os>-<arch>` into a new 0700
+   `.koko-update-*` directory beside the file, so the rename stays on one
+   filesystem, and checks the SHA-256 and the build: `cmd/koko`, the
+   target's version, this platform (`release.Source.Fetch`). A failure is
+   `download_failed`, naming the URL, and removes the directory.
+5. It sets mode 0755 and renames the file over the old one. A running koko
+   keeps its file: open SSH Sessions, `koko web` and the old build's Device
+   Mux carry on, and the Device Mux idles out.
+6. It points koko's ssh_config's ProxyCommand at the file (below), and
+   prints what it did. Going back to a release from before `koko update`
+   names the install line as the way back up.
+
+**ssh's ProxyCommand.** koko's ssh_config names its ProxyCommand's koko by
+full path, which on a v0.3.x device is `/usr/local/bin/koko`. Every command
+run from the user's shell, every one but `koko tunnel` and `koko
+device-mux`, by a release build that `koko update` would replace, points
+the ProxyCommand at its own file when it runs another
+([`devicefiles.PointProxyCommand`](../../internal/client/devicefiles/ssh.go)):
+it rewrites that path alone, keeping the bare names, and leaves a file
+another user owns, as a user's is to root run with that user's HOME.
+That costs one file read per command. `koko update` itself does it only
+once it has replaced its file, so a refusal or a failure changes nothing.
+The Device Mux's refresh still keeps the path there
+([the bare-name refresh](device-mux.md#the-bare-name-refresh)).
+
 ## The commands so far
 
 | Command | Tier | Calls | `--json` |
@@ -367,6 +417,7 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
 | `koko leave` | irreversible | none: it never contacts the koko server | `{"server_address", "device_session"}`: the koko server the device left and its Device Session there, left behind, as `koko status` names one ([`koko leave`](device-connection.md#on-the-device)) |
 | `koko status` | read | none: the koko server's version comes from its report | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_error", "device_mux", "revocation", "include_warning", "names_read_as_addresses"}`, below |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
+| `koko update [--check] [--version <vX.Y.Z>]` | reversible | none: it never contacts the koko server | `{"path", "from", "to", "updated"}`, or with `--check` `{"path", "installed", "target", "update_available"}` ([`koko update`](#koko-update)) |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
 | `koko server install [--owner <user>] [--address <host[:port]>] [--port <port>] [--web-listen <host:port\|off>] [--kokod <file>]` | irreversible | `server.init`, after it runs `kokod install` | `{"upgraded", "address", "host_key_fingerprint", "root_key_file", "root_key_id", "listen_port", "join_code"}`, the Join Code as `device add` prints it; an upgrade has no `join_code`, and may have `devices_must_connect` ([the installer](installer.md#what-it-prints)). Without `--kokod` it runs the `kokod` installed of its build, or else downloads its release's ([the download](installer.md#the-download)) |
 | `koko server uninstall [--kokod <file>]` | irreversible | none: it runs `kokod uninstall` | `{"removed", "data_dir", "root_key_file", "system_user", "listen_port", "web_listen"}` ([the installer](installer.md#uninstall)). It gets `kokod` as install does, downloading it when none of its build is installed |

@@ -78,11 +78,20 @@ type Runner struct {
 	// counts from. No flag or environment variable sets it.
 	Clock func() time.Time
 
-	// Releases is the releases hook, for tests only: where koko server
-	// install and uninstall download the kokod of koko's release from. The
-	// zero Releases is GitHub's. No flag or environment variable sets it,
+	// Releases is the releases hook, for tests only: where koko update
+	// finds koko's releases and downloads its koko from, and koko server
+	// install and uninstall the kokod of koko's release. The zero Releases
+	// is GitHub's. No flag or environment variable sets it,
 	// and cmd/koko never does (ADR 0041).
 	Releases Releases
+
+	// Executable returns the path of the running koko's file, which koko
+	// update replaces, a command run from the user's shell points ssh's
+	// ProxyCommand at, and a Device Mux spawn would start. cmd/koko sets it
+	// to os.Executable; the S1 harness to a file under the test's HOME or
+	// the fake machine's root. Where it is nil, koko update refuses, and
+	// neither a command nor a Device Mux spawn reads a file's build.
+	Executable func() (string, error)
 }
 
 // Invocation is one command line with its streams and environment.
@@ -132,6 +141,11 @@ func (r *Runner) Run(ctx context.Context, inv Invocation) int {
 	}
 	in := &Input{inv: &inv, runner: r, line: p, log: log, tree: tree}
 	defer in.close()
+	// koko tunnel runs in the background of ssh; koko update moves ssh
+	// only once it has replaced its file.
+	if !p.cmd.Stdio && p.cmd.Path() != "update" {
+		in.pointSSHAtSelf()
+	}
 	res, err := p.cmd.Run.run(ctx, in)
 	if err != nil {
 		return writeError(inv.Stderr, err, p.json)

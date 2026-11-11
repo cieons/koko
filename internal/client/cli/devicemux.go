@@ -44,7 +44,7 @@ func (in *Input) viaDeviceMux(ctx context.Context) (conn serverconn.Conn, err er
 	if !errors.Is(err, devicemux.ErrNotRunning) {
 		return conn, err
 	}
-	exited, err := in.runner.StartDeviceMux(ctx, socket, in.inv.Env)
+	exited, err := in.spawnDeviceMux(ctx, socket)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errDirect, err)
 	}
@@ -89,6 +89,27 @@ func (in *Input) deviceMuxSocket() (string, error) {
 	return socket, nil
 }
 
+// spawnDeviceMux starts this build's Device Mux at socket, unless the file
+// a spawn would start is now another build, as after koko update replaced
+// it: that one would listen on its own build's socket, never this one, so
+// the command goes direct at once rather than wait for it.
+func (in *Input) spawnDeviceMux(ctx context.Context, socket string) (exited <-chan struct{}, err error) {
+	if k, exe := in.runner.Kokod, in.runner.Executable; k != nil && exe != nil {
+		file, err := exe()
+		if err != nil {
+			return nil, fmt.Errorf("find this koko's own file: %w", err)
+		}
+		self := k.Self()
+		switch b, err := k.Build(file); {
+		case err != nil:
+			return nil, fmt.Errorf("read the build of %s, which a Device Mux would start: %w", file, err)
+		case b.Path != self.Path || !b.Same(self):
+			return nil, fmt.Errorf("%s is now koko %s, and this koko is %s, so its Device Mux would not answer this one", file, b, self)
+		}
+	}
+	return in.runner.StartDeviceMux(ctx, socket, in.inv.Env)
+}
+
 // dialDeviceMuxAt connects to the Device Mux at socket, waits for the
 // report it sends at once, and notes the state it answered in, for koko
 // status. One of another home fails wrapping errDirect.
@@ -125,7 +146,7 @@ func (m *deviceMuxSeen) json() *deviceMuxJSON {
 func (in *Input) startDeviceMux(ctx context.Context) {
 	socket, err := in.deviceMuxSocket()
 	if err == nil {
-		_, err = in.runner.StartDeviceMux(ctx, socket, in.inv.Env)
+		_, err = in.spawnDeviceMux(ctx, socket)
 	}
 	if err != nil {
 		in.log.Debug("koko join started no Device Mux", "reason", err)

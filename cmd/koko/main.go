@@ -28,6 +28,7 @@ func main() {
 		StartDeviceMux: devicemux.Spawn,
 		Signals:        notify,
 		SocketPath:     socketPath,
+		Executable:     os.Executable,
 	}
 	status := r.Run(ctx, cli.Invocation{
 		Args:   os.Args[1:],

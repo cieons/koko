@@ -15,9 +15,9 @@ import (
 // Releases is where koko finds its releases and downloads their assets
 // from: the releases hook (Runner.Releases).
 type Releases struct {
-	// URL is the HTTPS URL of koko's releases, below which are each
-	// release's assets, as download/<version>/<name>; empty means GitHub's,
-	// release.GitHub.
+	// URL is the HTTPS URL of koko's releases, below which are latest and
+	// each release's assets, as download/<version>/<name>; empty means
+	// GitHub's, release.GitHub.
 	URL string
 	// Client makes the requests, under koko's own rules for redirects and
 	// time; nil means one with Go's default transport.

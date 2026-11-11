@@ -16,7 +16,7 @@ no row, or when either depends (directly or not) on a group it may not use.
 
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
-| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the Web URL's form (`weburl`), the wire constants, the version and operations report, the channel adapter, how a join carries its secret and what a Tunnel's two ends agree on (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the liveness watch of an SSH connection, which both ends of a Device Connection run (`liveness`), the SSH connection every channel koko opens goes through, whose opens fail once it has ended (`sshconn`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and `kokod install`, and `kokod run` and the start-up, agree on: the request, the reports as the JSON `kokod` prints, the koko server's paths and platforms, and the error codes koko and kokod both report (`install`), the record's value rules: a Host's fields, a Service's ports, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`), downloading one of a koko release's assets and checking it against `SHA256SUMS` and its build, for `koko server install` (`release`) | server, client |
+| shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the Web URL's form (`weburl`), the wire constants, the version and operations report, the channel adapter, how a join carries its secret and what a Tunnel's two ends agree on (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the liveness watch of an SSH connection, which both ends of a Device Connection run (`liveness`), the SSH connection every channel koko opens goes through, whose opens fail once it has ended (`sshconn`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and `kokod install`, and `kokod run` and the start-up, agree on: the request, the reports as the JSON `kokod` prints, the koko server's paths and platforms, and the error codes koko and kokod both report (`install`), the record's value rules: a Host's fields, a Service's ports, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`), finding a koko release, downloading one of its assets and checking it against `SHA256SUMS` and its build, for `koko update` and `koko server install` (`release`) | server, client |
 | server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), the mount table and the network-filesystem check, which the installer and start-up share (`filesystem`), one package per area (`space`, `user`, `device`, `host`, `service`, `attr`, `secret`, `web`: the web front, `signin`: Passwords, Password Links and Sign-ins), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`), the Gateway (`gateway`), `kokod`'s command line, with `kokod run`'s flags and the settings they make (`kokod`) | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join, koko's ssh_config and known_hosts, and the Include line (`devicefiles`), the Device Mux and the client of its local protocol (`devicemux`), the device end of a Tunnel (`tunnel`) | server |
 
@@ -68,6 +68,12 @@ command line in process. The two agree on the shared
 the reports as the JSON `kokod` prints, and `install.Refusal`, whose code
 `Refusal.Code` names, which the start-up's refusals use too. Every other
 command is a client command that reaches the koko server over the socket.
+`koko update` reads its own build and the downloaded file's through
+`cli.Runner.Kokod` too, and `cli.Runner.Executable` is the running koko's
+file, which `koko update` replaces and a Device Mux spawn would start:
+`os.Executable` in `cmd/koko`, and in the harness a file under the test's
+HOME or the fake machine's root (`m.KokoAt(file)`), or one a device's
+`d.RunsFrom(machine, file)` names.
 
 ## Where an area adds its parts
 
@@ -221,7 +227,7 @@ variables keep parallel tests apart.
 | The fake terminal | `cli.Runner.Terminal` | #28 |
 | The P0 timing constants | `hostconn.Connector.Timings`, `installer.Installer.Timings`, `kokod.Program.Timings`, `server.Config.Timings` (the harness's `harness.Timings(timings)`), `cli.Runner.Timings` and `devicemux.Config.Timings` (the harness's `harness.NewMuxDevice(t, timings)` and `d.UseTimings(timings)`), each a [`timing.Timings`](../../internal/shared/timing/timing.go), where a ticket that uses a new timing adds its constant and field; it also carries the wake and route-change signals the Device Mux probes on (`Timings.Wake`, `Timings.RouteChange`) | #32 |
 | The clock | `server.Config.Clock`, which every operation reads once per call through `op.Now`, and `cli.Runner.Clock`, which a relative date counts from; the harness's `h.Now()`, `h.Advance(d)` and `h.SetNow(t)` | #36, the CLI's side #51 |
-| The releases | `cli.Runner.Releases`, a [`cli.Releases`](../../internal/client/cli/download.go): the URL of koko's releases and the HTTP client [`release.Source`](../../internal/shared/release/release.go) downloads with, for `koko server install` and `uninstall`, which download the `kokod` of koko's release, under koko's own rules for redirects and time; its zero value is GitHub's ([ADR 0041](../adr/0041-koko-installs-the-koko-server-of-its-own-version.md) rejects a variable or flag for it). The harness's `m.Release(version)` states that koko on the fake machine is that release and points the hook at a fake GitHub, an `httptest` TLS server that serves the release's `kokod-linux-<arch>` and `SHA256SUMS` and logs every request (`harness.Releases`) | #104 |
+| The releases | `cli.Runner.Releases`, a [`cli.Releases`](../../internal/client/cli/download.go): the URL of koko's releases and the HTTP client [`release.Source`](../../internal/shared/release/release.go) finds the latest with and downloads from, for `koko update` and for `koko server install` and `uninstall`, under koko's own rules for redirects and time; its zero value is GitHub's ([ADR 0041](../adr/0041-koko-installs-the-koko-server-of-its-own-version.md) rejects a variable or flag for it). The harness's `m.Release(version)` states that koko on the fake machine is that release and points the hook at a fake GitHub, an `httptest` TLS server that serves the release's `kokod-linux-<arch>` and `SHA256SUMS` and logs every request (`harness.Releases`); `rel.Publish(version)` adds a release of `koko-<os>-<arch>` files and makes it the one the `releases/latest` redirect names | #104, #138 |
 
 ## The S1 harness
 
@@ -288,9 +294,11 @@ line in process with one, as `harness.Run` runs a `koko` one. The start-up
 tests are `kokod run`'s, in `internal/server/kokod`.
 [`harness.NewMachine`](../../internal/harness/machine.go) is the fake machine
 of `koko server install`'s system seam ([the installer](installer.md#verifying)):
-the `cli.Runner.Kokod` its `m.Koko(args...)` runs on, whose kokod files
-(`m.Kokod()`, `m.NewRelease()`, `m.NewKokod(build)`) it states the build of
-and runs as `kokod`'s command line in process.
+the `cli.Runner.Kokod` its `m.Koko(args...)` and `m.KokoEnv(env,
+args...)` run on, whose kokod files (`m.Kokod()`, `m.NewRelease()`,
+`m.NewKokod(build)`) it states the build of and runs as `kokod`'s command
+line in process, and whose own koko `m.KokoAt(file)` writes, under
+`m.Home()` or its root, for `koko update`.
 
 Devices: `harness.NewDevice(t)` is a device that has not joined, with a HOME
 of its own and nothing at its socket path, so it reaches a koko server only

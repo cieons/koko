@@ -21,6 +21,11 @@ then, on a joined device, this build's Device Mux
    and polls for its socket, or the socket of the one that won the race to
    start, for at most `timing.DeviceMuxStart`, or until the Device Mux it
    started exits.
+   It first reads the build of the file it would start, its own
+   (`cli.Runner.Executable`), and goes direct at once when that file is now
+   another build, as after [`koko update`](cli.md#koko-update) replaced
+   it: that Device Mux would listen on its own build's socket, never this
+   one ([`Input.spawnDeviceMux`](../../internal/client/cli/devicemux.go)).
 3. A Device Mux that answers decides the outcome: the command goes through
    it, or fails with the error it answered, mapped as a direct connection's
    would be (`not_joined`, `revoked`, `server_unreachable`,

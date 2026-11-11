@@ -531,6 +531,14 @@ func (h *Harness) Join(user string) *Device {
 	return d
 }
 
+// RunsFrom makes the device's koko run from the file exe, whose build k
+// reads as it reads its own, as cmd/koko does from os.Executable: a Device
+// Mux spawn reads that file's build first.
+func (d *Device) RunsFrom(k cli.Kokod, exe string) {
+	d.runner.Kokod = k
+	d.runner.Executable = func() (string, error) { return exe, nil }
+}
+
 // UseTimings makes the device's commands run with t as their
 // timing-constants hook, such as a short wait for a koko server that does
 // not answer.

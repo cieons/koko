@@ -17,3 +17,10 @@ func restrict(string, fs.FileMode) error {
 func writable(string, fs.FileInfo) bool {
 	return false
 }
+
+// ownedByMe would tell whether this process's user owns the file fi
+// describes. Windows keeps that in ACLs, which the Windows CLI (P1) will
+// read; until then koko leaves such a file alone.
+func ownedByMe(fs.FileInfo) bool {
+	return false
+}

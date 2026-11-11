@@ -366,7 +366,8 @@ func (s skillJSON) Human(w io.Writer) error {
 	p("- A command the koko server lacks fails with `%s`, naming the koko server's version and\n", codeServerTooOld)
 	p("  the command; nothing was sent.\n")
 	p("- systemd and the image run the koko server as `kokod run`, a program of its own beside koko,\n")
-	p("  which an agent does not run itself; `koko server install` and `uninstall` put it on a machine.\n\n")
+	p("  which an agent does not run itself; `koko server install` and `uninstall` put it on a machine.\n")
+	p("- `koko update` replaces this koko, the CLI, alone: it never contacts or changes the koko server.\n\n")
 
 	p("## Commands by risk tier\n\n")
 	p("Each command shows how it is written, what it does, its flags and the shape of its `--json`, written\n")

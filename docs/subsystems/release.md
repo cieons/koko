@@ -22,6 +22,15 @@ Each binary is self-contained, built with `CGO_ENABLED=0`, `-trimpath` and
 `-ldflags='-s -w'`. Every asset in `SHA256SUMS` has a GitHub artifact
 attestation, which `gh attestation verify <file> --repo cieons/koko` checks.
 
+The names, the `releases/latest` redirect and `SHA256SUMS` are read by
+install.sh, by `koko server install`, which downloads `kokod-linux-<arch>`
+of its own release, and by every `koko`'s `koko update`, which reads the
+redirect and downloads `koko-<os>-<arch>`
+([`internal/shared/release`](../../internal/shared/release/release.go),
+[ADR 0047](../adr/0047-koko-updates-itself-in-its-users-own-directory.md)).
+The image sets `KOKO_IMAGE=ghcr.io/cieons/koko`, so that `koko update` in
+it refuses and names a new image instead.
+
 Beside the Release, each release pushes [the image](#the-image).
 
 ## The image

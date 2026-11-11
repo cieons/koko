@@ -49,9 +49,10 @@ const (
 	// server.show's host_key.
 	codeServerTooOld = "server_too_old"
 	// codeDownloadFailed: koko server install or uninstall could not
-	// download the kokod of koko's release, or the file it got is not the
-	// one the release's SHA256SUMS lists, or not koko's build; nothing ran,
-	// and nothing was written.
+	// download the kokod of koko's release, or koko update could not find
+	// or download the koko of the release it installs, or the file it got
+	// is not the one the release's SHA256SUMS lists, or not the build
+	// wanted; nothing ran, and nothing was written.
 	codeDownloadFailed = "download_failed"
 )
 
@@ -68,6 +69,7 @@ var cliCodes = []string{
 	codePortTaken,
 	codeServerTooOld,
 	codeDownloadFailed,
+	codeUpdateUnsupported,
 }
 
 // The exit statuses, part of the CLI's contract: new ones may be added, and

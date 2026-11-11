@@ -36,8 +36,11 @@ COPY --chmod=0755 koko-linux-$TARGETARCH /usr/local/bin/koko
 COPY --from=empty --chown=65532:65532 --chmod=0700 / /koko
 COPY --from=empty --chown=65532:65532 --chmod=0755 / /run/koko
 
+# KOKO_IMAGE tells koko update that this koko is the image's, which a new
+# image upgrades (ADR 0047).
 ENV KOKO_DATA_DIR=/koko/data \
-    KOKO_ROOT_KEY_FILE=/koko/root.key
+    KOKO_ROOT_KEY_FILE=/koko/root.key \
+    KOKO_IMAGE=ghcr.io/cieons/koko
 # A container without a mount keeps /koko in an anonymous volume, which
 # outlives docker rm, rather than in its own layer.
 VOLUME /koko

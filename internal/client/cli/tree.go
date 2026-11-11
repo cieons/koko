@@ -236,6 +236,7 @@ var commands = [][]Command{
 	serverCommands,
 	spaceCommands,
 	versionCommands,
+	updateCommands,
 	deviceCommands,
 	userCommands,
 	signinCommands,

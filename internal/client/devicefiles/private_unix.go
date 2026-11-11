@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"syscall"
 )
 
 // restrict sets path's permission bits to mode, such as 0700 for koko's own
@@ -31,4 +32,10 @@ func writable(path string, fi fs.FileInfo) bool {
 	}
 	_ = f.Close()
 	return true
+}
+
+// ownedByMe tells whether this process's user owns the file fi describes.
+func ownedByMe(fi fs.FileInfo) bool {
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	return ok && int(st.Uid) == os.Geteuid()
 }

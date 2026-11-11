@@ -1,0 +1,2 @@
+Updated koko from v0.4.0 to v0.5.0 at ~/.local/bin/koko.
+Commands from now on run v0.5.0. Open SSH Sessions, koko web and the v0.4.0 Device Mux carry on, and the Device Mux exits after 10 minutes idle.

@@ -24,6 +24,7 @@ import (
 	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/install"
 	"github.com/cieons/koko/internal/shared/portowner"
+	"github.com/cieons/koko/internal/shared/release"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -104,6 +105,9 @@ type Machine struct {
 	// releases is the fake GitHub koko downloads from, once Release made
 	// one.
 	releases *Releases
+	// exe is the real path of koko's own file on the machine, once KokoAt
+	// made one.
+	exe string
 	// ran are the kokod command lines run on the machine, in order.
 	ran []string
 
@@ -212,11 +216,48 @@ func (m *Machine) kokodBuild() build.Info {
 // every other command reaches the koko service's socket under its root.
 func (m *Machine) Koko(args ...string) Result {
 	m.t.Helper()
+	return m.KokoEnv(nil, args...)
+}
+
+// KokoEnv runs one koko command line on the machine, as Koko does, with the
+// variables env beside the machine's own, such as KOKO_IMAGE.
+func (m *Machine) KokoEnv(env []string, args ...string) Result {
+	m.t.Helper()
 	r := cli.Runner{Kokod: m, SocketPath: m.SocketPath()}
 	if m.releases != nil {
 		r.Releases = m.releases.hook()
 	}
-	return Run(m.t, r, []string{"HOME=" + m.home, "TMPDIR=" + m.tmp}, args...)
+	if exe := m.exe; exe != "" {
+		r.Executable = func() (string, error) { return exe, nil }
+	}
+	return Run(m.t, r, append([]string{"HOME=" + m.home, "TMPDIR=" + m.tmp}, env...), args...)
+}
+
+// Home is the HOME koko runs with on the machine, outside its root.
+func (m *Machine) Home() string {
+	return m.home
+}
+
+// KokoAt makes koko on the machine run from a file at the real path file,
+// such as one under Home, which it writes, making its directory: a koko of
+// the build of koko on the machine, for its platform, mode 0755. It returns
+// the file's bytes.
+func (m *Machine) KokoAt(file string) []byte {
+	m.t.Helper()
+	b := m.Self()
+	b.Path, b.Platform = release.KokoPackage, m.OSArch
+	content, err := os.ReadFile(m.NewKokod(b))
+	if err != nil {
+		m.t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		m.t.Fatal(err)
+	}
+	if err := os.WriteFile(file, content, 0o755); err != nil {
+		m.t.Fatal(err)
+	}
+	m.exe = file
+	return content
 }
 
 // TempDir is the TMPDIR koko runs with on the machine, outside its root.
