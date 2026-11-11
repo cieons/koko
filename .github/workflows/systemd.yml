@@ -4,7 +4,8 @@ name: systemd
 # install.sh, from releases built here as the release workflow builds them
 # and served by a fake GitHub over HTTPS: the install, a device joining, the
 # upgrade with its snapshot and its kokod download, the device's own CLI,
-# uninstall and the restore (release/systemd-check.sh,
+# koko server upgrade through the root helper and the helper putting a
+# failing kokod back, uninstall and the restore (release/systemd-check.sh,
 # docs/subsystems/release.md).
 on:
   push:
@@ -65,5 +66,56 @@ jobs:
           git tag "$OLDER_TAG" "$added^"
           git worktree add "$RUNNER_TEMP/older" "$added^"
           make -C "$RUNNER_TEMP/older" dist
-      - name: Install, join, upgrade, uninstall and restore
-        run: release/systemd-check.sh "$RUNNER_TEMP/older/dist" dist
+      # koko server upgrade asks the upgrade helper for a release newer than
+      # the one installed, so two more builds of this commit follow: one to
+      # upgrade to, and one whose kokod run exits at its start, which the
+      # helper must put back. Each is an empty commit of its own, never
+      # pushed, tagged a pre-release of the patch after this commit's
+      # build, so that no other tag on it wins and both stay newer than it.
+      # The second is built with an overlay whose main exits for kokod run
+      # and runs kokod's own main otherwise, so that its kokod install still
+      # works. Only the binaries the helper and koko download are built,
+      # with this commit's web UI.
+      - name: Build the releases koko server upgrade asks for
+        run: |
+          newer=$(dist/koko-linux-amd64 version --json | jq -r .version)
+          base=${newer%%-*}
+          next=${base%.*}.$((${base##*.} + 1))
+          sed 's/^func main() {$/func kokodMain() {/' cmd/kokod/main_linux.go >"$RUNNER_TEMP/main_linux.go"
+          grep -q '^func kokodMain() {$' "$RUNNER_TEMP/main_linux.go" || { echo "cmd/kokod/main_linux.go has no func main() to rename" >&2; exit 1; }
+          cat >"$RUNNER_TEMP/exits_linux.go" <<'EOF'
+          package main
+
+          import (
+          	"fmt"
+          	"os"
+          )
+
+          // main exits at once for kokod run, as a kokod whose start fails
+          // does, and is kokod otherwise.
+          func main() {
+          	if len(os.Args) > 1 && os.Args[1] == "run" {
+          		fmt.Fprintln(os.Stderr, "kokod: this build exits at its start, for the real-systemd check")
+          		os.Exit(1)
+          	}
+          	kokodMain()
+          }
+          EOF
+          build() { # <tag> <directory> [<overlay>]
+            git worktree add --detach "$2" HEAD
+            git -C "$2" -c user.name=systemd-check -c user.email=systemd-check@example.com commit -q --allow-empty -m "$1"
+            git -C "$2" tag "$1"
+            cp -R internal/server/webui/site/app "$2/internal/server/webui/site/app"
+            mkdir "$2/dist"
+            for prog in koko kokod; do
+              (cd "$2" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build ${3:+-overlay "$3"} -trimpath -ldflags='-s -w' -o "dist/$prog-linux-amd64" "./cmd/$prog")
+            done
+            (cd "$2/dist" && sha256sum koko-linux-amd64 kokod-linux-amd64 >SHA256SUMS)
+          }
+          build "$next-check.3" "$RUNNER_TEMP/upgrade"
+          printf '{"Replace": {"%s": "%s", "%s": "%s"}}\n' \
+            "$RUNNER_TEMP/failing/cmd/kokod/main_linux.go" "$RUNNER_TEMP/main_linux.go" \
+            "$RUNNER_TEMP/failing/cmd/kokod/exits_linux.go" "$RUNNER_TEMP/exits_linux.go" >"$RUNNER_TEMP/overlay.json"
+          build "$next-check.4" "$RUNNER_TEMP/failing" "$RUNNER_TEMP/overlay.json"
+      - name: Install, join, upgrade, upgrade through the helper, uninstall and restore
+        run: release/systemd-check.sh "$RUNNER_TEMP/older/dist" dist "$RUNNER_TEMP/upgrade/dist" "$RUNNER_TEMP/failing/dist"

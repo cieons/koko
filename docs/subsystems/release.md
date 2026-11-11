@@ -354,9 +354,18 @@ pre-releases of the patch after it, read from
 [`compat.go`](../../internal/shared/compat/compat.go): `v0.3.1-check.2`
 for the commit and `v0.3.1-check.1` for the older one while it is
 `v0.3.0`. On a release's tag from that patch on, the release's tag is the
-higher, and Go stamps it. Then
+higher, and Go stamps it. For `koko server upgrade` it then builds two
+releases newer than the commit's, of `koko-linux-amd64` and
+`kokod-linux-amd64` alone, with the commit's web UI and a `SHA256SUMS`:
+each in a worktree of its own, on an empty commit of its own tagged a
+pre-release of the patch after the commit's build (`-check.3` and
+`-check.4`), so that no other tag on it wins and both stay newer than it.
+The second is built with `go build -overlay`, which keeps Go's version
+stamp: its `main` exits at once for `kokod run` and is kokod's own
+otherwise, so that its `kokod install` still upgrades and its koko service
+fails at its start, with no test code in the repository. Then
 [`release/systemd-check.sh`](../../release/systemd-check.sh)
-`<older dist> <newer dist>` checks, in order:
+`<older dist> <newer dist> <upgrade dist> <failing dist>` checks, in order:
 
 1. install.sh refuses a release whose binary does not match its
    `SHA256SUMS`, runs nothing and writes nothing;
@@ -380,17 +389,36 @@ higher, and Go stamps it. Then
    `/usr/local/bin/kokod run`, the service runs `kokod` as `koko` under a new
    process on the port it kept, 8443, with no capability held or to be
    gained (`CapEff` and `CapBnd` in `/proc/<pid>/status`), a
-   `koko.db.before-<n>` snapshot is there, and the device still works. Then the device installs the
-   newer CLI, as **The device** below says;
-6. `koko server uninstall`, running the `kokod` installed and asking the
+   `koko.db.before-<n>` snapshot is there, the upgrade helper's path unit
+   is active and enabled, and the device still works. Then the device
+   installs the newer CLI, as **The device** below says;
+6. `sudo koko server upgrade --version <upgrade>` goes through the real
+   path unit and the root helper ([the installer](installer.md#the-upgrade-helper)):
+   its JSON says the koko server and root's koko went from the newer
+   release to the upgrade release, `outcome.json` says `succeeded`,
+   `koko-upgrade.service`'s result is `success` and its journal names the
+   release, the fake GitHub served that release's `kokod` and `koko` once
+   each, the request and the download are gone, `kokod.previous` is the
+   newer build's, and the service runs the new `kokod` as `koko` under a
+   new process, with no capability, and the device still works;
+7. `koko server upgrade --version <failing>` exits 1 with
+   `upgrade_failed`: `outcome.json` says `failed` and that the previous
+   kokod runs again, the helper downloaded that release's `kokod` once and
+   koko nothing, and the service runs the upgrade release's `kokod` again,
+   kept as `kokod.previous`, under a new process. The failing `kokod`
+   exited before it opened the database, so the earlier snapshot is still
+   there and nothing was set aside as `koko.db.failed-<to>`. The device
+   still works;
+8. `koko server uninstall`, running the `kokod` installed and asking the
    fake GitHub nothing, leaves nothing running or listening, removes the
-   unit and `kokod`, and keeps `/usr/local/bin/koko`, `koko.db`, the Root
-   Key and the `koko` user;
-7. with the drop-in removed, and after `chown -R root:root /var/lib/koko`,
+   unit, the helper's two units, `/var/lib/koko-upgrade` and `kokod`, and
+   keeps `/usr/local/bin/koko`, `koko.db`, the Root Key and the `koko`
+   user;
+9. with the drop-in removed, and after `chown -R root:root /var/lib/koko`,
    as a copy put back by root would be, `sudo koko server install` without
-   arguments downloads the newer `kokod` again, once, since uninstall
-   removed it, and starts the koko server again on the newer build's
-   default port, 7822, saying devices must connect to `localhost:7822`, as
+   arguments downloads the upgrade release's `kokod` again, once, since
+   uninstall removed it, and starts the koko server again on the default
+   port, 7822, saying devices must connect to `localhost:7822`, as
    it does for a port it cannot know was the same; systemd gives every file
    back to `koko`, and the device, moved there with `koko connect
    localhost:7822`, still works.
@@ -417,7 +445,7 @@ what runs as root on every koko server, for a test alone.
 **The device** is a Docker container (`ubuntu:24.04`) on the host's network,
 with the older build's binary copied in as its `/usr/local/bin/koko`. Its
 own filesystem has no `/run/koko/koko.sock`, so its commands go over TCP to
-`localhost:8443`, then `localhost:7822` from step 7 on, as a device's do,
+`localhost:8443`, then `localhost:7822` from step 9 on, as a device's do,
 through its Device Mux, and not through the Unix socket as the Local
 caller. It keeps the older CLI through the
 upgrade, as a device does when its koko server is upgraded. After step 5,
@@ -432,8 +460,9 @@ The script refuses a machine where koko was installed, or where something
 listens on 443, and leaves koko's data, Root Key and user behind: run it
 only on a throwaway machine with systemd, Docker, `jq`, `ss`, `python3`,
 `openssl`, `update-ca-certificates` and passwordless `sudo`. On a failure it
-prints the koko service's journal, the device's Device Mux log, and the
-fake GitHub's requests and log.
+prints the koko service's and the upgrade helper's journals and the
+helper's outcome, the device's Device Mux log, and the fake GitHub's
+requests and log.
 
 ## The container check
 

@@ -2,13 +2,17 @@
 # systemd-check.sh installs koko on this machine as its Owner would, through
 # install.sh, and checks each step on the machine's real systemd:
 #
-#   release/systemd-check.sh <older dist> <newer dist>
+#   release/systemd-check.sh <older dist> <newer dist> <upgrade dist> <failing dist>
 #
 # Each dist is a directory `make dist` wrote, at a tag, so that its version
 # is a release's: koko server install downloads only the kokod of its own
 # release. The older build must be at an older schema than the newer one, so
-# that the upgrade migrates and leaves a snapshot. The real-systemd workflow
-# (.github/workflows/systemd.yml) runs it on a fresh runner.
+# that the upgrade migrates and leaves a snapshot. The upgrade and failing
+# dists hold koko-linux-<arch>, kokod-linux-<arch> and SHA256SUMS of two
+# releases newer than the newer one, which koko server upgrade asks for
+# through the upgrade helper; the failing one's kokod exits as soon as kokod
+# run starts. The real-systemd workflow (.github/workflows/systemd.yml) runs
+# it on a fresh runner.
 #
 # In this order: a binary that does not match SHA256SUMS is never run; the
 # older build installs, listens on 8443 as the koko user with the Root Key
@@ -17,7 +21,12 @@
 # upgrades both programs, downloading kokod once, and the koko service
 # restarts as kokod on the port it kept, with no capability, leaving the
 # snapshot, and the device still works; the device installs the newer CLI
-# with install.sh, without kokod; uninstall keeps koko, the data directory,
+# with install.sh, without kokod; koko server upgrade goes through the real
+# path unit and the root helper to the upgrade release, whose kokod runs as
+# the koko user with no capability, and brings root's koko along; the
+# helper puts the upgrade release's kokod back when the failing release's
+# exits at its start; uninstall removes the helper's units with the koko
+# unit, and keeps koko, the data directory,
 # the Root Key and the koko user; and koko server install, run again on that
 # data directory put back by root, downloads kokod again and starts the koko
 # server with its record on the default port, 7822, where the device follows
@@ -54,12 +63,14 @@ step() {
 	printf '\n=== %s\n' "$1"
 }
 
-[ $# -eq 2 ] || {
-	echo 'usage: release/systemd-check.sh <older dist> <newer dist>' >&2
+[ $# -eq 4 ] || {
+	echo 'usage: release/systemd-check.sh <older dist> <newer dist> <upgrade dist> <failing dist>' >&2
 	exit 2
 }
 older=$(cd "$1" && pwd)
 newer=$(cd "$2" && pwd)
+upgrade=$(cd "$3" && pwd)
+failing=$(cd "$4" && pwd)
 
 case $(uname -m) in
 x86_64) arch=amd64 ;;
@@ -69,7 +80,8 @@ esac
 asset=koko-linux-$arch
 kokod_asset=kokod-linux-$arch
 
-for path in /etc/koko /var/lib/koko /etc/systemd/system/koko.service /usr/local/bin/koko /usr/local/bin/kokod; do
+for path in /etc/koko /var/lib/koko /etc/systemd/system/koko.service /etc/systemd/system/koko-upgrade.path \
+	/etc/systemd/system/koko-upgrade.service /var/lib/koko-upgrade /usr/local/bin/koko /usr/local/bin/kokod; do
 	[ ! -e "$path" ] || fail "$path is there: run this only on a machine koko was never installed on"
 done
 ! id koko >/dev/null 2>&1 || fail "the koko user is there: run this only on a machine koko was never installed on"
@@ -86,6 +98,12 @@ version() {
 older_tag=$(version "$older")
 newer_tag=$(version "$newer")
 [ "$older_tag" != "$newer_tag" ] || fail "the older and the newer build are both $older_tag"
+upgrade_tag=$(version "$upgrade")
+failing_tag=$(version "$failing")
+# running and running_tag are the build the machine's koko and kokod are
+# of, once the newer one is installed.
+running=$newer
+running_tag=$newer_tag
 damaged=v0.0.0-damaged
 
 work=$(mktemp -d)
@@ -106,9 +124,10 @@ docker pull -q "$image" >/dev/null
 on_exit() {
 	status=$?
 	if [ "$status" != 0 ]; then
-		step "after the failure: the koko service and its journal"
-		systemctl status --no-pager --lines=0 koko.service || :
-		sudo journalctl --no-pager -u koko.service || :
+		step "after the failure: the koko service, the upgrade helper and their journals"
+		systemctl status --no-pager --lines=0 koko.service koko-upgrade.path koko-upgrade.service || :
+		sudo journalctl --no-pager -u koko.service -u koko-upgrade.service || :
+		sudo cat /var/lib/koko-upgrade/outcome.json || :
 		step "after the failure: the device's Device Mux log"
 		docker exec "$device" sh -c 'cat /tmp/koko-0/*.log' || :
 		step "after the failure: the fake GitHub's requests and its log"
@@ -226,6 +245,8 @@ release() {
 release "$older_tag" "$older"
 release "$newer_tag" "$newer"
 release "$damaged" "$newer"
+release "$upgrade_tag" "$upgrade"
+release "$failing_tag" "$failing"
 ls -l "$github"/*
 
 # mark starts a count of the fake GitHub's requests; since_mark prints those
@@ -285,28 +306,38 @@ check_running() {
 	[ "$readable" = no ] || fail "the koko user can read /etc/koko/root.key"
 }
 
-# check_newer checks that /usr/local/bin/koko and /usr/local/bin/kokod are
-# the newer build's, and that the koko service runs kokod as the koko user on
-# $port.
-check_newer() {
+# check_runs checks that /usr/local/bin/koko and /usr/local/bin/kokod are
+# the build $running's, $running_tag, that the koko service runs kokod as the
+# koko user on $port, holding no capability, and that the upgrade helper's
+# path unit waits for a request.
+check_runs() {
 	for program in koko kokod; do
-		cmp -s "/usr/local/bin/$program" "$newer/$program-linux-$arch" ||
-			fail "/usr/local/bin/$program is not the newer build's $program-linux-$arch"
+		cmp -s "/usr/local/bin/$program" "$running/$program-linux-$arch" ||
+			fail "/usr/local/bin/$program is not $running_tag's $program-linux-$arch"
 		got=$("/usr/local/bin/$program" version --json | jq -r .version)
-		[ "$got" = "$newer_tag" ] || fail "$program version says $got, not the newer build, $newer_tag"
+		[ "$got" = "$running_tag" ] || fail "$program version says $got, not $running_tag"
 	done
 	grep -qx 'ExecStart=/usr/local/bin/kokod run' /etc/systemd/system/koko.service ||
 		fail "the unit does not run /usr/local/bin/kokod run: $(grep ExecStart= /etc/systemd/system/koko.service)"
 	check_running
 	[ "$(ps -o comm= -p "$pid")" = kokod ] || fail "the koko service's process is $(ps -o comm= -p "$pid"), not kokod"
+	# A port of 1024 or above needs no capability, so the unit leaves the
+	# koko server none, not even one it could gain.
+	for set in CapEff CapBnd; do
+		held=$(awk -v set="$set:" '$1 == set { print $2 }' "/proc/$pid/status")
+		[ "$held" = 0000000000000000 ] || fail "the koko server on $port holds the capabilities $held in $set"
+	done
+	systemctl is-active --quiet koko-upgrade.path || fail "the upgrade helper's path unit is not active"
+	systemctl is-enabled --quiet koko-upgrade.path || fail "the upgrade helper's path unit is not enabled"
 }
 
-# check_downloaded checks that, since mark, the fake GitHub served the newer
-# release's kokod exactly once, and that koko removed what it downloaded.
+# check_downloaded checks that, since mark, the fake GitHub served the
+# kokod of $running_tag exactly once, and that koko removed what it
+# downloaded.
 check_downloaded() {
 	since_mark
-	[ "$(served "$newer_tag/$kokod_asset")" = 1 ] ||
-		fail "the fake GitHub served $newer_tag/$kokod_asset $(served "$newer_tag/$kokod_asset") times, not once"
+	[ "$(served "$running_tag/$kokod_asset")" = 1 ] ||
+		fail "the fake GitHub served $running_tag/$kokod_asset $(served "$running_tag/$kokod_asset") times, not once"
 	left=$(sudo find /tmp -maxdepth 1 -name 'koko-kokod-*')
 	[ -z "$left" ] || fail "koko server install left its download behind: $left"
 }
@@ -368,14 +399,8 @@ jq . "$work/out"
 jq -e --argjson port "$port" '.upgraded and .listen_port == $port' "$work/out" >/dev/null ||
 	fail "install.sh did not upgrade on port $port"
 check_downloaded
-check_newer
+check_runs
 [ "$pid" != "$before" ] || fail "the koko service did not restart"
-# A port of 1024 or above needs no capability, so the newer unit leaves the
-# koko server none, not even one it could gain.
-for set in CapEff CapBnd; do
-	held=$(awk -v set="$set:" '$1 == set { print $2 }' "/proc/$pid/status")
-	[ "$held" = 0000000000000000 ] || fail "the koko server on $port holds the capabilities $held in $set"
-done
 sudo sh -c 'ls -l /var/lib/koko/koko.db.before-*' || fail "the upgrade left no snapshot"
 device_calls
 
@@ -395,7 +420,72 @@ got=$(docker exec "$device" koko version --json | jq -r .version)
 docker exec "$device" sh -c '! test -e /usr/local/bin/kokod' || fail "the device has /usr/local/bin/kokod"
 device_calls
 
-step "koko server uninstall removes the unit and kokod, and keeps koko, the data directory, the Root Key and the koko user"
+# outcome prints what the upgrade helper recorded of the last upgrade.
+outcome() {
+	sudo cat /var/lib/koko-upgrade/outcome.json
+}
+
+step "koko server upgrade to $upgrade_tag goes through the path unit and the root helper, then brings root's koko along"
+before=$pid
+mark
+status=0
+# The redirect is this script's own file.
+# shellcheck disable=SC2024
+sudo /usr/local/bin/koko server upgrade --version "$upgrade_tag" --json >"$work/out" 2>"$work/err" || status=$?
+cat "$work/err" >&2
+[ "$status" = 0 ] || fail "koko server upgrade exited $status"
+jq . "$work/out"
+jq -e --arg from "$running_tag" --arg to "$upgrade_tag" \
+	'.server == {"from": $from, "to": $to, "state": "succeeded", "message": null} and .cli.updated and .cli.to == $to' "$work/out" >/dev/null ||
+	fail "koko server upgrade did not upgrade the koko server and koko from $running_tag to $upgrade_tag"
+outcome | jq -e --arg to "$upgrade_tag" '.state == "succeeded" and .to == $to and .finished_at != null' >/dev/null ||
+	fail "the helper's outcome is not succeeded: $(outcome)"
+# Only the path unit starts the helper, which ran once and succeeded.
+[ "$(systemctl show --property=Result --value koko-upgrade.service)" = success ] ||
+	fail "koko-upgrade.service did not succeed: $(systemctl show --property=Result --value koko-upgrade.service)"
+sudo journalctl --no-pager -u koko-upgrade.service | grep -q "$upgrade_tag" ||
+	fail "koko-upgrade.service's journal does not name $upgrade_tag"
+since_mark
+[ "$(served "$upgrade_tag/$kokod_asset")" = 1 ] || fail "the helper did not download $upgrade_tag/$kokod_asset once"
+[ "$(served "$upgrade_tag/$asset")" = 1 ] || fail "koko server upgrade did not download $upgrade_tag/$asset once"
+[ ! -e /run/koko/upgrade.request ] || fail "the helper left the request"
+left=$(sudo find /var/lib/koko-upgrade -mindepth 1 -maxdepth 1 -name 'download-*')
+[ -z "$left" ] || fail "the helper left its download behind: $left"
+cmp -s /var/lib/koko-upgrade/kokod.previous "$running/$kokod_asset" || fail "the helper did not keep the previous kokod"
+running=$upgrade
+running_tag=$upgrade_tag
+check_runs
+[ "$pid" != "$before" ] || fail "the koko service did not restart"
+device_calls
+
+step "the helper puts $upgrade_tag's kokod back when $failing_tag's exits at its start"
+before=$pid
+snapshots=$(sudo sh -c 'ls /var/lib/koko/koko.db.before-*')
+mark
+status=0
+# The redirect is this script's own file.
+# shellcheck disable=SC2024
+sudo /usr/local/bin/koko server upgrade --version "$failing_tag" --json >"$work/out" 2>"$work/err" || status=$?
+cat "$work/err" >&2
+[ "$status" = 1 ] || fail "koko server upgrade to the failing release exited $status, not 1"
+jq -e '.error.code == "upgrade_failed"' "$work/err" >/dev/null || fail "koko server upgrade did not fail with upgrade_failed"
+outcome | jq -e --arg from "$upgrade_tag" --arg to "$failing_tag" \
+	'.state == "failed" and .from == $from and .to == $to and (.message | contains("the previous kokod runs again"))' >/dev/null ||
+	fail "the helper's outcome is not failed with the previous kokod running: $(outcome)"
+[ "$(served "$failing_tag/$kokod_asset")" = 1 ] || fail "the helper did not download $failing_tag/$kokod_asset once"
+[ "$(served "$failing_tag/$asset")" = 0 ] || fail "koko server upgrade updated koko after a failed upgrade"
+# kokod.previous is the kokod the helper put back.
+cmp -s /var/lib/koko-upgrade/kokod.previous "$upgrade/$kokod_asset" || fail "the helper did not keep $upgrade_tag's kokod"
+check_runs
+[ "$pid" != "$before" ] || fail "the koko service runs the process it ran before the upgrade, not the one put back"
+# The failing kokod exited before it opened the database, so the schema did
+# not move: the snapshot of the earlier upgrade stays, and nothing was set
+# aside.
+[ "$(sudo sh -c 'ls /var/lib/koko/koko.db.before-*')" = "$snapshots" ] || fail "the snapshots changed: $(sudo sh -c 'ls /var/lib/koko/koko.db*')"
+! sudo sh -c 'ls /var/lib/koko/koko.db.failed-*' 2>/dev/null || fail "the helper set a database aside though the schema did not move"
+device_calls
+
+step "koko server uninstall removes the unit, the upgrade helper and kokod, and keeps koko, the data directory, the Root Key and the koko user"
 mark
 # The redirect is this script's own file.
 # shellcheck disable=SC2024
@@ -403,10 +493,12 @@ sudo /usr/local/bin/koko server uninstall --json >"$work/out"
 jq . "$work/out"
 [ -z "$(since_mark)" ] || fail "koko server uninstall asked the fake GitHub for $(since_mark), though the kokod of its build was installed"
 ! systemctl is-active --quiet koko.service || fail "the koko service is still active"
-for path in /etc/systemd/system/koko.service /usr/local/bin/kokod; do
+! systemctl is-active --quiet koko-upgrade.path || fail "the upgrade helper's path unit is still active"
+for path in /etc/systemd/system/koko.service /etc/systemd/system/koko-upgrade.path \
+	/etc/systemd/system/koko-upgrade.service /usr/local/bin/kokod /var/lib/koko-upgrade; do
 	[ ! -e "$path" ] || fail "uninstall left $path"
 done
-cmp -s /usr/local/bin/koko "$newer/$asset" || fail "uninstall changed /usr/local/bin/koko"
+cmp -s /usr/local/bin/koko "$running/$asset" || fail "uninstall changed /usr/local/bin/koko"
 listening=$(sudo ss -Hltn "sport = :$port")
 [ -z "$listening" ] || fail "something still listens on $port: $listening"
 sudo test -f /var/lib/koko/koko.db || fail "uninstall removed /var/lib/koko/koko.db"
@@ -415,7 +507,7 @@ id koko >/dev/null || fail "uninstall removed the koko user"
 
 step "koko server install without arguments downloads kokod again and runs the data directory root put back, with its record, on the default port"
 # Without the unit or the drop-in, install cannot know the port the koko
-# server listened on, so it takes the newer build's default, and says so by
+# server listened on, so it takes the default, and says so by
 # naming the address devices must connect to, which the device then takes
 # with koko connect.
 sudo rm -f /etc/systemd/system/koko.service.d/listen.conf
@@ -429,7 +521,7 @@ jq -e --argjson port "$default_port" '.upgraded and .listen_port == $port and .d
 	fail "koko server install did not take the default port $default_port"
 port=$default_port
 check_downloaded
-check_newer
+check_runs
 not_koko=$(sudo find /var/lib/koko ! -user koko)
 [ -z "$not_koko" ] || fail "systemd left these in the data directory to another user than koko: $not_koko"
 docker exec "$device" koko connect "localhost:$port" || fail "the device's koko connect localhost:$port failed"
