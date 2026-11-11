@@ -88,6 +88,7 @@ func run(ctx context.Context, p *Program, inv *Invocation, line *parsed) error {
 		Upgrade: server.Upgrade{
 			HelperUnit:  installer.UpgradePathUnit,
 			OutcomeFile: installer.OutcomeFile,
+			RequestFile: installer.RequestFile,
 			Image:       inv.getenv("KOKO_IMAGE"),
 		},
 	})

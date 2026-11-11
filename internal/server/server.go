@@ -138,6 +138,10 @@ type Config struct {
 	// Timings is the product's, such as how long logging in to a Host may
 	// take. No flag or environment variable sets it.
 	Timings timing.Timings
+	// Version is the version hook, for tests only: the version the koko
+	// server reports and upgrades from; empty means this binary's build.
+	// No flag or environment variable sets it.
+	Version string
 	// Releases is the releases hook, for tests only: where the check for a
 	// new koko release finds the latest. The zero Source is GitHub's (ADR
 	// 0041). No flag or environment variable sets it.
@@ -153,6 +157,9 @@ type Upgrade struct {
 	// OutcomeFile is the helper's record of the last upgrade
 	// (installer.OutcomeFile); empty, there is none.
 	OutcomeFile string
+	// RequestFile is where the koko server asks the helper for an upgrade
+	// (installer.RequestFile), in its runtime directory.
+	RequestFile string
 	// Image is the container image KOKO_IMAGE names, which a new image
 	// upgrades; empty outside the image.
 	Image string
@@ -286,7 +293,7 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	// The web area's front holds the runs of koko web, so it registers its
 	// operation itself, below.
 	front := web.New(a, signins, st, key, clock, log)
-	version := build.Read().Version
+	version := cmp.Or(cfg.Version, build.Read().Version)
 	// Each connection is reported every operation registered below, and
 	// the oldest koko this one works with, below which the transport
 	// refuses a CLI.
@@ -346,6 +353,7 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 		webListen:   srv.WebAddress(),
 		updates:     srv.updates,
 		upgrade:     cfg.Upgrade,
+		log:         log,
 	})
 	front.Register(a)
 	initialisedNow := keys == nil && initReq.Owner != ""

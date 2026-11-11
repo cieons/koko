@@ -390,12 +390,17 @@ func (m *Machine) RunsAsRoot() bool {
 // by its bytes; a file it did not make, such as one written by hand, is no
 // Go binary.
 func (m *Machine) Build(file string) (build.Info, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.buildLocked(file)
+}
+
+// buildLocked is Build, with m.mu held.
+func (m *Machine) buildLocked(file string) (build.Info, error) {
 	text, err := os.ReadFile(file)
 	if err != nil {
 		return build.Info{}, err
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	b, ok := m.builds[string(text)]
 	if !ok {
 		return build.Info{}, errors.New("unrecognized file format")
@@ -1054,6 +1059,10 @@ func (m *Machine) startService() error {
 		env = append(env, "KOKO_WEB_LISTEN=127.0.0.1:0")
 	}
 	b := m.behaviourOf(m.Path(u.execStart[0]))
+	version := ""
+	if bi, err := m.buildLocked(m.Path(u.execStart[0])); err == nil {
+		version = bi.Version
+	}
 	noSocket, delay, listenDelay := m.NoSocket || b.noSocket, m.StartDelay, m.ListenDelay
 	releases := noReleases
 	if m.releases != nil {
@@ -1090,6 +1099,10 @@ func (m *Machine) startService() error {
 		// so the requests a test counts on the fake GitHub are koko's own.
 		c.UpdateClock, c.Releases = StillClock{}, releases
 		c.Upgrade.HelperUnit, c.Upgrade.OutcomeFile = m.Path(c.Upgrade.HelperUnit), m.Path(c.Upgrade.OutcomeFile)
+		c.Upgrade.RequestFile = m.Path(c.Upgrade.RequestFile)
+		// It reports the version of the kokod file it runs, as a real one
+		// reports its own build's.
+		c.Version = version
 		return server.Run(ctx, c)
 	}
 	p := kokod.Program{Serve: serve}

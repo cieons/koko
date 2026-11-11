@@ -212,6 +212,30 @@ export interface ServerCheckUpdateResponse {
   version: string;
 }
 
+/** ServerUpgradeRequest asks the koko server to upgrade to a newer release. */
+export interface ServerUpgradeRequest {
+  /**
+   * Version is the tag of the release to upgrade to, such as v0.5.0;
+   * empty, the latest the koko server's check found, or one it makes now.
+   */
+  version?: string;
+}
+
+/**
+ * ServerUpgradeResponse is the upgrade the koko server asked its upgrade
+ * helper for.
+ */
+export interface ServerUpgradeResponse {
+  /** From is the koko server's version, and To the release it asked for. */
+  from: string;
+  to: string;
+  /**
+   * State is "requested": the helper takes the request, and server.show's
+   * last_upgrade follows it from there.
+   */
+  state: string;
+}
+
 /**
  * ServerInit initialises a fresh koko server: it makes the koko key and
  * the host key, sealed under the Root Key, creates the Owner with their
@@ -268,6 +292,22 @@ export const ServerCheckUpdate: Op<ServerCheckUpdateRequest, ServerCheckUpdateRe
 };
 
 /**
+ * ServerUpgrade asks the upgrade helper to upgrade the koko server to a
+ * newer release (ADR 0048): the one the request names, or the latest. It
+ * is for the Owner only, the Local caller included. A koko server not
+ * installed with systemd and the helper is refused with
+ * CodeUpgradeUnsupported, a version that is not a release newer than
+ * its own with CodeInvalidRequest, and a second upgrade while one runs
+ * with CodeUpgradeRunning. The upgrade restarts the koko server, which
+ * ends every open SSH Session.
+ */
+export const ServerUpgrade: Op<ServerUpgradeRequest, ServerUpgradeResponse> = {
+  name: "server.upgrade",
+  path: "/v1/server.upgrade",
+  write: true,
+};
+
+/**
  * CodeAlreadyInitialised: the koko server is initialised already, so its
  * Owner and its keys stay as they are.
  */
@@ -287,3 +327,16 @@ export const CodeInvalidWebURL = "invalid_web_url";
  * release; the message names what failed.
  */
 export const CodeUpdateCheckFailed = "update_check_failed";
+
+/**
+ * CodeUpgradeUnsupported: the koko server does not upgrade itself, in
+ * the container image or run by hand; the message says how it is
+ * upgraded instead.
+ */
+export const CodeUpgradeUnsupported = "upgrade_unsupported";
+
+/**
+ * CodeUpgradeRunning: an upgrade of the koko server is asked for or
+ * runs already.
+ */
+export const CodeUpgradeRunning = "upgrade_running";

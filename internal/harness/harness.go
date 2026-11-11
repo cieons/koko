@@ -85,6 +85,7 @@ type options struct {
 	filesystems filesystem.Types
 	processUIDs func() (real, effective, saved int)
 	releases    *Releases
+	version     string
 	upgrade     server.Upgrade
 }
 
@@ -161,6 +162,12 @@ func UpdateCheck(r *Releases) Option {
 // (upgrade_way none). For kokod run, its KOKO_IMAGE names the image.
 func Upgrade(u server.Upgrade) Option {
 	return func(o *options) { o.upgrade = u }
+}
+
+// Version makes the koko server report v as its version, and upgrade from
+// it, in place of the test binary's build.
+func Version(v string) Option {
+	return func(o *options) { o.version = v }
 }
 
 // noReleases is where a koko server a test starts finds koko's releases
@@ -327,6 +334,7 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		UpdateClock: updateClock,
 		Releases:    releases,
 		Upgrade:     o.upgrade,
+		Version:     o.version,
 	})
 	if err != nil {
 		t.Fatalf("start the koko server: %v", err)
@@ -405,7 +413,7 @@ func startConfig(t testing.TB, opts []Option) func(server.Config) server.Config 
 		c.SocketPath = socket
 		c.UpdateClock, c.Releases = StillClock{}, noReleases
 		// Never the machine's own /etc and /var/lib.
-		c.Upgrade.HelperUnit, c.Upgrade.OutcomeFile = upgrade.HelperUnit, upgrade.OutcomeFile
+		c.Upgrade.HelperUnit, c.Upgrade.OutcomeFile, c.Upgrade.RequestFile = upgrade.HelperUnit, upgrade.OutcomeFile, upgrade.RequestFile
 		c.Upgrade.Image = cmp.Or(upgrade.Image, c.Upgrade.Image)
 		return c
 	}

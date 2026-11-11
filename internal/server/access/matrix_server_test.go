@@ -39,4 +39,15 @@ var serverRows = []row{
 			ownerSignIn: allowedBut(api.CodeUpdateCheckFailed), memberSignIn: ownerOnly,
 		},
 	},
+	{
+		op:      api.ServerUpgrade,
+		request: func(string) any { return api.ServerUpgradeRequest{Version: "v99.0.0"} },
+		// The Owner is let through, and refused, since the fixture's koko
+		// server runs without the upgrade helper.
+		want: map[caller]answer{
+			ownerDevice: allowedBut(api.CodeUpgradeUnsupported), local: allowedBut(api.CodeUpgradeUnsupported),
+			member: ownerOnly, personal: ownerOnly, outsider: ownerOnly,
+			ownerSignIn: allowedBut(api.CodeUpgradeUnsupported), memberSignIn: ownerOnly,
+		},
+	},
 }

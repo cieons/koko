@@ -291,14 +291,44 @@ finds on its machine (`server.Config.Upgrade`), read at each call:
   state `running`, `succeeded`, `failed` or `failed_not_restored`,
   `finished_at` and `message` `null` while unset. It is `null` while the
   file is not there; a file that does not read or parse fails the call,
-  since what it says is unknown. The helper and `koko server upgrade`
-  come with #141.
+  since what it says is unknown. The helper writes it
+  ([the installer](installer.md#the-upgrade-helper)).
 
 `koko server show` prints `Upgrade:` by the way: `koko server upgrade, or
 the web UI`; `pull the new image: set KOKO_VERSION=v0.5.0 in the Compose
 file, then docker compose pull && docker compose up -d`, naming the newer
 release the check found, or `KOKO_VERSION to the new release's tag`
 before it found one; or `replace kokod and restart it`.
+
+### Asking for an upgrade
+
+**`server.upgrade`** (a write, Owner only, the Local caller and the Owner's
+Sign-in included; [`settings.upgradeTo`](../../internal/server/settings.go))
+asks the upgrade helper to upgrade the koko server
+([ADR 0048](../adr/0048-the-koko-server-upgrades-itself-through-a-root-helper-that-takes-only-a-newer-releases-version.md)).
+Its request is `{"version": "vX.Y.Z"}`, the version optional. In this
+order:
+
+1. `upgrade_way` must be `systemd`; otherwise `upgrade_unsupported`, naming
+   for `image` the Compose lines, with `KOKO_VERSION` set to the release
+   without its `v`, as the image's tag is, and for `none` replacing kokod and
+   restarting it. Nothing is checked before, so the refusal needs no
+   request to GitHub.
+2. The version: the one given, else the latest the update check found,
+   else what a check made now finds (`update_check_failed` when it fails).
+   It must be a release's tag (`build.Info.Release`) newer than the koko
+   server's own version, as [`compat`](../../internal/shared/compat/compat.go)
+   compares them; otherwise `invalid_request`, which for a version given
+   names going back, the install line as root with `KOKO_VERSION`, and for
+   the latest says there is no newer release.
+3. No upgrade may be asked for or running: the request file there, or
+   `outcome.json` saying `running`; otherwise `upgrade_running`.
+4. kokod writes `{"version":"vX.Y.Z"}` to `/run/koko/upgrade.request`, its
+   runtime directory (`server.Upgrade.RequestFile`), through a temporary
+   file beside it renamed into place, logs who asked (`asked the upgrade
+   helper to upgrade the koko server`, with `from`, `to`, `user` and
+   `asked_by`), and answers `{"from", "to", "state": "requested"}`. The
+   helper's path unit takes it from there, and `last_upgrade` follows it.
 
 ## Verifying
 
@@ -350,7 +380,15 @@ before it found one; or `replace kokod and restart it`.
   machine; [`run_upgrade_test.go`](../../internal/server/kokod/run_upgrade_test.go)
   `kokod run` naming `image` under `KOKO_IMAGE` and `none` without it.
   The access matrix has
-  `server.check_update` for the Owner alone.
+  `server.check_update` and `server.upgrade` for the Owner alone.
+  [`upgrade_test.go`](../../internal/server/upgrade_test.go) tests
+  `server.upgrade` on a koko server whose version the harness states
+  (`harness.Version`): exactly the request file written for the version
+  given and for the latest, a check made at once when none found it, and
+  who asked logged; `upgrade_unsupported` for `image` and `none`;
+  `invalid_request` for an older, the same and a version that is no
+  release's tag, and for a latest no newer; and `upgrade_running` while a
+  request is there or the outcome says `running`.
 - [`compat_test.go`](../../internal/shared/compat/compat_test.go): the
   order of releases, pre-releases, pseudo-versions and `(devel)`.
 - [`weburl_test.go`](../../internal/shared/weburl/weburl_test.go): the Web

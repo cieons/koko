@@ -163,6 +163,28 @@ type ServerCheckUpdateResponse struct {
 	Version string `json:"version"`
 }
 
+// ServerUpgradeRequest asks the koko server to upgrade to a newer release.
+type ServerUpgradeRequest struct {
+	// Version is the tag of the release to upgrade to, such as v0.5.0;
+	// empty, the latest the koko server's check found, or one it makes now.
+	Version string `json:"version,omitempty"`
+}
+
+// ServerUpgradeResponse is the upgrade the koko server asked its upgrade
+// helper for.
+type ServerUpgradeResponse struct {
+	// From is the koko server's version, and To the release it asked for.
+	From string `json:"from"`
+	To   string `json:"to"`
+	// State is "requested": the helper takes the request, and server.show's
+	// last_upgrade follows it from there.
+	State string `json:"state"`
+}
+
+// UpgradeRequested is ServerUpgradeResponse.State: the koko server asked
+// its upgrade helper for the upgrade.
+const UpgradeRequested = "requested"
+
 // The server operations.
 var (
 	// ServerInit initialises a fresh koko server: it makes the koko key and
@@ -192,6 +214,15 @@ var (
 	// record. A check that fails is refused with CodeUpdateCheckFailed, and
 	// server.show's update_check names it too.
 	ServerCheckUpdate = Op[ServerCheckUpdateRequest, ServerCheckUpdateResponse]{Name: "server.check_update"}
+	// ServerUpgrade asks the upgrade helper to upgrade the koko server to a
+	// newer release (ADR 0048): the one the request names, or the latest. It
+	// is for the Owner only, the Local caller included. A koko server not
+	// installed with systemd and the helper is refused with
+	// CodeUpgradeUnsupported, a version that is not a release newer than
+	// its own with CodeInvalidRequest, and a second upgrade while one runs
+	// with CodeUpgradeRunning. The upgrade restarts the koko server, which
+	// ends every open SSH Session.
+	ServerUpgrade = Op[ServerUpgradeRequest, ServerUpgradeResponse]{Name: "server.upgrade", Write: true}
 )
 
 var serverOperations = []Operation{
@@ -199,6 +230,7 @@ var serverOperations = []Operation{
 	ServerShow,
 	ServerSet,
 	ServerCheckUpdate,
+	ServerUpgrade,
 }
 
 // The server area's codes.
@@ -214,6 +246,13 @@ var (
 	// CodeUpdateCheckFailed: the koko server could not find koko's latest
 	// release; the message names what failed.
 	CodeUpdateCheckFailed = Code{"update_check_failed", http.StatusBadGateway}
+	// CodeUpgradeUnsupported: the koko server does not upgrade itself, in
+	// the container image or run by hand; the message says how it is
+	// upgraded instead.
+	CodeUpgradeUnsupported = Code{"upgrade_unsupported", http.StatusConflict}
+	// CodeUpgradeRunning: an upgrade of the koko server is asked for or
+	// runs already.
+	CodeUpgradeRunning = Code{"upgrade_running", http.StatusConflict}
 )
 
 var serverCodes = []Code{
@@ -221,4 +260,6 @@ var serverCodes = []Code{
 	CodeInvalidAddress,
 	CodeInvalidWebURL,
 	CodeUpdateCheckFailed,
+	CodeUpgradeUnsupported,
+	CodeUpgradeRunning,
 }
