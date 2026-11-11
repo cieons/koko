@@ -3,7 +3,9 @@
 // revision. A section, once written, never changes, since a koko server
 // goes on speaking a revision while some koko in the window speaks it: a
 // change to what a revision takes or carries fails until it comes with a
-// raise, whose new section -update then adds.
+// raise, whose new section -update then adds. Deleting the file lets
+// -update write every section anew, which only a deliberate change does,
+// and its diff shows.
 package frozen
 
 import (

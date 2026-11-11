@@ -1,8 +1,29 @@
 // Package wire holds what both ends of a connection to the koko server agree
 // on: where the Unix socket is, the SSH version string, the version and
 // operations report, the channel types, how an HTTP/1.1 exchange runs inside
-// a channel (ADR 0015), how a join carries a Join Code's secret, and how a
-// Revoked device is told so.
+// a channel (ADR 0015), how a join carries a Join Code's secret, how a
+// Revoked device is told so, and the channels' revisions.
+//
+// # Revisions
+//
+// A channel's revision (ADR 0049) covers what its two ends send each other
+// beyond HTTP: tunnel@koko's covers its open and resume payloads and the
+// resumable stream's frames, and web@koko's its payload. Revision 1 is
+// what every koko before revisions sends. A CLI speaks the lower of its own
+// revision and the koko server's (Report.ChannelRevision), and keeps it
+// for what it opened: a Tunnel Resumes at the revision it opened at.
+//
+// The first raise of a channel follows three rules. From revision 2 a
+// payload ends with its revision as a uint32 (TunnelOpen, TunnelResume and
+// WebPayload append it), and a revision 1 payload carries none, since
+// x/crypto's ssh.Unmarshal refuses bytes left over, so a koko server from
+// before the raise would refuse a payload with them. The koko server reads
+// every revision that some koko in the window (compat.Oldest) speaks: its
+// parser takes a payload without the trailer as revision 1, and one with
+// it as the revision it names, up to its own. And the raise adds the new
+// revision's section to the goldens of the channel's payloads
+// (testdata/channels.golden) and, for tunnel@koko, of the stream's frames
+// (package resumable), whose existing sections stay as they are.
 package wire
 
 import (
@@ -105,6 +126,35 @@ func ParseReport(b []byte) (Report, error) {
 	return r, nil
 }
 
+// The revisions of the channels this build speaks, reported when above 1
+// (Report.Revisions).
+const (
+	TunnelRevision = 1
+	WebRevision    = 1
+)
+
+// ChannelRevisions returns the revision of each channel this build speaks,
+// by channel type.
+func ChannelRevisions() map[string]int {
+	return map[string]int{ChannelTunnel: TunnelRevision, ChannelWeb: WebRevision}
+}
+
+// ChannelRevision returns the revision of channel a CLI whose own revision
+// of it is own speaks to the koko server that sent the report: the lower
+// of the two.
+func (r Report) ChannelRevision(channel string, own int) int {
+	return min(own, r.Revision(channel))
+}
+
+// revised ends payload, a channel's open payload of the revision rev, with
+// rev as a uint32 from revision 2; a revision 1 payload ends as it is.
+func revised(payload []byte, rev int) []byte {
+	if rev < 2 {
+		return payload
+	}
+	return binary.BigEndian.AppendUint32(payload, uint32(rev))
+}
+
 // ChannelAPI is the channel type that carries API calls: HTTP/1.1 requests in
 // turn, kept alive between calls, so one channel serves a command's calls.
 const ChannelAPI = "api@koko"
@@ -114,15 +164,16 @@ const ChannelAPI = "api@koko"
 // cookie. Its open payload is WebPayload.
 const ChannelWeb = "web@koko"
 
-// WebPayload is the open payload of a web@koko channel: the port koko web
-// listens on, on 127.0.0.1, as an SSH uint32 (4 bytes, big-endian). The web
-// front answers only a Host header that names it.
-func WebPayload(port int) []byte {
-	return binary.BigEndian.AppendUint32(nil, uint32(port))
+// WebPayload is the open payload of a web@koko channel of the revision rev,
+// at most WebRevision: the port koko web listens on, on 127.0.0.1, as an
+// SSH uint32 (4 bytes, big-endian). The web front answers only a Host
+// header that names it.
+func WebPayload(rev, port int) []byte {
+	return revised(binary.BigEndian.AppendUint32(nil, uint32(port)), rev)
 }
 
-// ParseWebPayload returns the port a web@koko channel's open payload names,
-// refusing anything but a TCP port in exactly 4 bytes.
+// ParseWebPayload returns the port a web@koko channel's open payload of
+// revision 1 names, refusing anything but a TCP port in exactly 4 bytes.
 func ParseWebPayload(b []byte) (int, error) {
 	if len(b) != 4 {
 		return 0, errors.New("a web@koko channel names the port koko web listens on, in 4 bytes")

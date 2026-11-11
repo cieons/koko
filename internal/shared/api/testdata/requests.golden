@@ -1,212 +1,212 @@
 == space.add 1
-name 1
+name 1 string
 
 == space.list 1
 
 == space.show 1
-name 1
+name 1 string
 
 == space.rename 1
-name 1
-new_name 1
+name 1 string
+new_name 1 string
 
 == space.remove 1
-name 1
+name 1 string
 
 == space.member.add 1
-space 1
-users 1
+space 1 string
+users 1 list of string
 
 == space.member.remove 1
-space 1
-users 1
+space 1 string
+users 1 list of string
 
 == server.init 1
-owner 1
-address 1
+owner 1 string
+address 1 string
 
 == server.show 1
 
 == server.set 1
-address 1
-web_url 1
-update_check 1
-unset 1
+address 1 string
+web_url 1 string
+update_check 1 boolean
+unset 1 list of string
 
 == server.check_update 1
 
 == server.upgrade 1
-version 1
+version 1 string
 
 == device.add 1
-device 1
-user 1
-valid_for 1
+device 1 string
+user 1 string
+valid_for 1 number
 
 == device.list 1
-user 1
-all 1
+user 1 string
+all 1 boolean
 
 == device.revoke 1
-user 1
-device 1
-last 1
+user 1 string
+device 1 string
+last 1 boolean
 
 == user.invite 1
-name 1
-valid_for 1
-web 1
+name 1 string
+valid_for 1 number
+web 1 boolean
 
 == user.current 1
 
 == user.list 1
-all 1
+all 1 boolean
 
 == user.remove 1
-name 1
+name 1 string
 
 == web.start 1
 
 == host.add 1
-hosts 1
-hosts[].name 1
-hosts[].space 1
-hosts[].address 1
-hosts[].port 1
-hosts[].account 1
-hosts[].relay 1
-hosts[].attributes 1
-hosts[].note 1
+hosts 1 list of object
+hosts[].name 1 string
+hosts[].space 1 string
+hosts[].address 1 string
+hosts[].port 1 number
+hosts[].account 1 string
+hosts[].relay 1 string
+hosts[].attributes 1 object of record.Value
+hosts[].note 1 string
 
 == host.list 1
-filters 1
-filters[].key 1
-filters[].op 1
-filters[].value 1
-sort 1
-sort[].key 1
-sort[].desc 1
-with_note 1
-all 1
+filters 1 list of object
+filters[].key 1 string
+filters[].op 1 string
+filters[].value 1 record.Value
+sort 1 list of object
+sort[].key 1 string
+sort[].desc 1 boolean
+with_note 1 boolean
+all 1 boolean
 
 == host.show 1
-host 1
+host 1 string
 
 == host.set 1
-host 1
-address 1
-port 1
-account 1
-relay 1
-attributes 1
-note 1
-unset 1
+host 1 string
+address 1 string
+port 1 number
+account 1 string
+relay 1 string
+attributes 1 object of record.Value
+note 1 string
+unset 1 list of string
 
 == host.rename 1
-host 1
-new_name 1
+host 1 string
+new_name 1 string
 
 == host.move 1
-host 1
-space 1
+host 1 string
+space 1 string
 
 == host.retire 1
-host 1
+host 1 string
 
 == host.remove 1
-host 1
+host 1 string
 
 == secret.list 1
-space 1
+space 1 string
 
 == secret.show 1
-space 1
-name 1
+space 1 string
+name 1 string
 
 == secret.add 1
-space 1
-name 1
-value_base64 1
+space 1 string
+name 1 string
+value_base64 1 list of number
 
 == secret.set 1
-space 1
-name 1
-value_base64 1
+space 1 string
+name 1 string
+value_base64 1 list of number
 
 == secret.rename 1
-space 1
-name 1
-new_name 1
+space 1 string
+name 1 string
+new_name 1 string
 
 == secret.move 1
-space 1
-name 1
-new_space 1
+space 1 string
+name 1 string
+new_space 1 string
 
 == secret.remove 1
-space 1
-name 1
+space 1 string
+name 1 string
 
 == attr.list 1
 
 == host.enroll 1
-host 1
-password_base64 1
-private_key_base64 1
-secret 1
-secret.space 1
-secret.name 1
-host_key 1
-replace_host_key 1
+host 1 string
+password_base64 1 list of number
+private_key_base64 1 list of number
+secret 1 object
+secret.space 1 string
+secret.name 1 string
+host_key 1 string
+replace_host_key 1 boolean
 
 == service.add 1
-host 1
-name 1
-ports 1
-attributes 1
-note 1
+host 1 string
+name 1 string
+ports 1 list of string
+attributes 1 object of record.Value
+note 1 string
 
 == service.list 1
-filters 1
-filters[].key 1
-filters[].op 1
-filters[].value 1
-sort 1
-sort[].key 1
-sort[].desc 1
-with_note 1
+filters 1 list of object
+filters[].key 1 string
+filters[].op 1 string
+filters[].value 1 record.Value
+sort 1 list of object
+sort[].key 1 string
+sort[].desc 1 boolean
+with_note 1 boolean
 
 == service.show 1
-host 1
-name 1
+host 1 string
+name 1 string
 
 == service.set 1
-host 1
-name 1
-ports 1
-attributes 1
-note 1
-unset 1
+host 1 string
+name 1 string
+ports 1 list of string
+attributes 1 object of record.Value
+note 1 string
+unset 1 list of string
 
 == service.rename 1
-host 1
-name 1
-new_name 1
+host 1 string
+name 1 string
+new_name 1 string
 
 == service.remove 1
-host 1
-name 1
+host 1 string
+name 1 string
 
 == password.link 1
-user 1
-valid_for 1
+user 1 string
+valid_for 1 number
 
 == password.remove 1
-user 1
+user 1 string
 
 == signin.list 1
-user 1
-all 1
+user 1 string
+all 1 boolean
 
 == signin.revoke 1
-id 1
+id 1 string

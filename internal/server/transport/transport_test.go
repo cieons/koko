@@ -334,7 +334,7 @@ func whereFrom(name string, conns chan<- *transport.Connection) http.Handler {
 // openWeb opens a web@koko channel naming port as koko web's.
 func openWeb(t *testing.T, c *ssh.Client, port int) (ssh.Channel, *bufio.Reader) {
 	t.Helper()
-	ch, reqs, err := c.OpenChannel(wire.ChannelWeb, wire.WebPayload(port))
+	ch, reqs, err := c.OpenChannel(wire.ChannelWeb, wire.WebPayload(1, port))
 	if err != nil {
 		t.Fatalf("open %s: %v", wire.ChannelWeb, err)
 	}
@@ -391,8 +391,8 @@ func TestWebChannelWithoutItsPortIsRefused(t *testing.T) {
 	for name, payload := range map[string][]byte{
 		"none":       nil,
 		"short":      {0, 0, 0x16},
-		"long":       append(wire.WebPayload(5656), 0),
-		"port 0":     wire.WebPayload(0),
+		"long":       append(wire.WebPayload(1, 5656), 0),
+		"port 0":     wire.WebPayload(1, 0),
 		"port 65536": {0, 1, 0, 0},
 	} {
 		_, _, err := c.OpenChannel(wire.ChannelWeb, payload)

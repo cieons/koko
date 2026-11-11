@@ -61,6 +61,12 @@ func appendClose(buf []byte, ack uint64, reason string) []byte {
 	return append(buf, reason...)
 }
 
+// appendOffset appends a received offset, the Gateway's answer to a
+// resume, which comes before any frame, to buf.
+func appendOffset(buf []byte, offset uint64) []byte {
+	return binary.AppendUvarint(buf, offset)
+}
+
 // readFrame reads one frame from r into scratch, which holds MaxData bytes.
 // The channel's errors come back as they are, a broken frame as ErrMalformed.
 func readFrame(r *byteReader, scratch []byte) (frame, error) {

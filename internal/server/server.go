@@ -294,11 +294,11 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	// operation itself, below.
 	front := web.New(a, signins, st, key, clock, log)
 	version := cmp.Or(cfg.Version, build.Read().Version)
-	// Each connection is reported every operation registered below, with
-	// those above revision 1, and the oldest koko this one works with,
-	// below which the transport refuses a CLI.
+	// Each connection is reported every operation registered below, the
+	// operations and channels above revision 1, and the oldest koko this
+	// one works with, below which the transport refuses a CLI.
 	report := func() wire.Report {
-		return wire.Report{Version: version, Operations: a.Names(), Oldest: compat.Oldest, Revisions: a.Revisions()}
+		return wire.Report{Version: version, Operations: a.Names(), Oldest: compat.Oldest, Revisions: revisions(a)}
 	}
 	t := transport.New(a, front, report, log)
 	t.UseTimings(cfg.Timings)
@@ -416,6 +416,18 @@ func (s *Server) serveWeb(ctx context.Context, front *web.Front, webListen strin
 			"listen", s.web.address())
 	}
 	return nil
+}
+
+// revisions returns the revisions the report lists: those of the
+// operations registered with a, and of the channels, above revision 1.
+func revisions(a *op.API) map[string]int {
+	revs := a.Revisions()
+	for channel, rev := range wire.ChannelRevisions() {
+		if rev > 1 {
+			revs[channel] = rev
+		}
+	}
+	return revs
 }
 
 // WebAddress is the web listener's bound address, such as 127.0.0.1:7823,

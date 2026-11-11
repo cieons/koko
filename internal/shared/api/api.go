@@ -66,14 +66,10 @@ type Op[Req, Resp any] struct {
 	// sends no field that a koko server's revision lacks.
 	Revision int
 	// Added names each request field added after revision 1, by its path,
-	// with the revision that added it. A path joins JSON names with ".",
-	// a list's name followed by "[]" for the fields of its items, such as
-	// "hosts[].ttl". Each is left out of a request when unset (omitzero or
-	// omitempty), so that a CLI sends it only when an option sets it. A
-	// type that several operations take, such as Filter, gains a field in
-	// each of them, at each one's own next revision. A new value of an
-	// existing field has no entry: a command checks the koko server's
-	// revision itself before it sends one.
+	// such as "hosts[].ttl" (JSON names joined by ".", "[]" after a list),
+	// with the revision that added it. Each is omitzero or omitempty, so a
+	// CLI sends it only when an option sets it, and is a pointer when its
+	// zero value means something. docs/subsystems/api.md has the rules.
 	Added map[string]int
 }
 

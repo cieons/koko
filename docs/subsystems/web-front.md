@@ -69,7 +69,10 @@ irreversible tier: it prints a credential, its token.
 
 A channel type of its own, so that the cookie is required there and never on
 `api@koko` (P0 spec: reach). Its open payload is the port `koko web` listens
-on, an SSH `uint32` ([`wire.WebPayload`](../../internal/shared/wire/wire.go)).
+on, an SSH `uint32` ([`wire.WebPayload`](../../internal/shared/wire/wire.go)):
+revision 1 of `web@koko` (`wire.WebRevision`). `koko web` sends the lower of
+its own revision and the one the koko server reports, and from revision 2
+the payload ends with its revision as a `uint32` ([API](api.md#revisions)).
 The transport refuses a `web@koko` channel whose payload is not exactly a
 port from 1 to 65535, and hands every other one to the web front with the
 caller, the port and the SSH connection it came on

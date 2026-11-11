@@ -5,7 +5,6 @@ package resumable
 
 import (
 	"bufio"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -157,7 +156,7 @@ func (s *Stream) Resume(ch io.ReadWriteCloser, received uint64) error {
 // frame, and resends from the device's. attach says how it fails.
 func (s *Stream) AcceptResume(ch io.ReadWriteCloser, peerReceived uint64) error {
 	return s.attach(ch, func(_ *byteReader, own uint64) (uint64, error) {
-		if _, err := ch.Write(binary.AppendUvarint(nil, own)); err != nil {
+		if _, err := ch.Write(appendOffset(nil, own)); err != nil {
 			return 0, fmt.Errorf("answer with this end's received offset: %w", err)
 		}
 		return peerReceived, nil

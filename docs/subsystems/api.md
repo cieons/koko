@@ -208,7 +208,9 @@ counted ([ADR 0049](../adr/0049-the-cli-and-the-koko-server-work-together-within
 - **A field added after revision 1** is named in its operation's
   `api.Op.Added`, by its path, such as `hosts[].ttl`, with the revision
   that added it, and is tagged `omitzero` or `omitempty`, so a request
-  holds it only when an option sets it. The table is per operation, not a
+  holds it only when an option sets it; one whose zero value means
+  something, such as `false`, is a pointer, so that setting it to zero
+  sends it. The table is per operation, not a
   struct tag, because a request type such as `api.Filter` serves several
   operations, each at its own revision: a field added to it is added to
   each of them, at each one's next revision.
@@ -216,14 +218,36 @@ counted ([ADR 0049](../adr/0049-the-cli-and-the-koko-server-work-together-within
   command that sends it checks the koko server's revision
   (`wire.Report.Revision`) itself, and fails with `server_too_old` below
   it.
+- **A channel's revision** covers what its two ends send each other
+  beyond HTTP: `tunnel@koko`'s (`wire.TunnelRevision`) its open and resume
+  payloads and the [resumable stream](resumable-stream.md)'s frames,
+  `web@koko`'s (`wire.WebRevision`) its payload. Revision 1 is what every
+  koko before revisions sends. A CLI speaks the lower of its own revision
+  and the koko server's (`wire.Report.ChannelRevision`), and a Tunnel
+  Resumes at the revision it opened at. The koko server reports each
+  channel above revision 1.
+- **The first raise of a channel** follows the rules in the wire
+  package's comment: from revision 2 a payload ends with its revision as a
+  `uint32`, and a revision 1 payload carries none, since x/crypto's
+  `ssh.Unmarshal` refuses bytes left over, so a koko server from before the
+  raise refuses them; and a koko server reads every revision that some
+  koko in the window speaks.
 - **The golden of requests,** `internal/shared/api/testdata/requests.golden`,
   records each revision of each operation with the request fields it
-  takes, each with the revision that added it. A recorded revision never
+  takes, each with the revision that added it and the JSON it is
+  (`string`, `number`, `list of object`, `record.Value`). A recorded revision never
   changes, since a koko server takes every revision some koko in the
   window sends: a field added, removed or renamed without a raise fails
   `TestEveryOperationsRequestFieldsAreRecordedByRevision`, and
   `go test -update` adds only a new revision's section
   ([`internal/harness/frozen`](../../internal/harness/frozen/frozen.go)).
+- **The goldens of channels,** `internal/shared/wire/testdata/channels.golden`
+  for the payloads and `internal/shared/resumable/testdata/frames.golden`
+  for the frames and the resume answer, record each revision of each
+  channel in the same way, with what the koko server's parser and the
+  stream's decoder read of them: a change to a payload's encoding, a
+  frame's or a new frame type without a raise fails them, and so does a
+  raise without its new section.
 
 ## The operation framework
 
@@ -386,6 +410,11 @@ over the table `idempotency_keys`; the design is P0 spec: reach and
   no revisions or with the operation at 1 reads it as, failing with
   `server_too_old` naming the option, with nothing sent; the call sent at
   the field's revision, and with the field unset.
+- [`internal/shared/wire/revision_test.go`](../../internal/shared/wire/revision_test.go):
+  the lower of the CLI's revision of a channel and the koko server's, the
+  revision at the end of a payload from revision 2, and the golden of the
+  channels' payloads; [`internal/shared/resumable/revision_test.go`](../../internal/shared/resumable/revision_test.go)
+  the golden of the frames.
 - [`internal/client/cli/skew_test.go`](../../internal/client/cli/skew_test.go):
   `server_too_old` from a koko server that lacks the command's operation,
   with nothing sent, an older CLI working against a newer koko server, and
@@ -393,7 +422,9 @@ over the table `idempotency_keys`; the design is P0 spec: reach and
   v0.3.0, unstated, with `cli_too_old` on a call and on a `tunnel@koko` and
   `web@koko` open, and serving one at it and a build from a clone without
   tags; a CLI that reads an oldest above itself failing every command with
-  `cli_too_old`, `koko tunnel` included, with nothing sent.
+  `cli_too_old`, `koko tunnel` included, with nothing sent; `koko tunnel`
+  opening at its own revision of `tunnel@koko` against a koko server that
+  reports a higher one.
 - [`internal/client/cli/retry_test.go`](../../internal/client/cli/retry_test.go):
   a write and a read cut mid-flight on a direct Device Connection retried
   once on a new one, the write applied once.

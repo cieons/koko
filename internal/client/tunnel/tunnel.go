@@ -50,9 +50,13 @@ var ErrGaveUp = fmt.Errorf("koko could not reach the koko server for %d minutes"
 type Tunnel struct {
 	stream *resumable.Stream
 	// id is the Tunnel id the Gateway picked, which a resume names.
-	id      [wire.TunnelIDSize]byte
-	redial  Dial
-	timings timing.Timings
+	id [wire.TunnelIDSize]byte
+	// revision is the revision of tunnel@koko the Tunnel opened at, the
+	// lower of this build's and the koko server's, which every resume
+	// keeps: the stream's frames do not change under it.
+	revision int
+	redial   Dial
+	timings  timing.Timings
 	// ctx ends once the Tunnel is closed, which stops a Resume; resumerDone
 	// is closed once resumeAcrossDrops has returned.
 	ctx         context.Context
@@ -123,17 +127,20 @@ func (e *RefusedError) Error() string {
 }
 
 // Open opens a Tunnel over conn to the Host sshName names, alone or followed
-// by .koko, and reads its id. It gives up when ctx ends first. The Tunnel
-// Resumes on conn, and once conn has ended, on the connections redial
-// reaches, which it closes when it is done with them; timings is the
-// timing-constants hook, the zero Timings the product's.
-func Open(ctx context.Context, conn serverconn.Conn, sshName string, redial Dial, timings timing.Timings) (*Tunnel, error) {
-	ch, err := conn.OpenChannel(ctx, wire.ChannelTunnel, wire.TunnelOpen(sshName))
+// by .koko, at the revision of tunnel@koko the koko server's report gives
+// a CLI of this build (wire.Report.ChannelRevision), and reads its id. It
+// gives up when ctx ends first. The Tunnel Resumes on conn, and once conn
+// has ended, on the connections redial reaches, which it closes when it is
+// done with them; timings is the timing-constants hook, the zero Timings
+// the product's.
+func Open(ctx context.Context, conn serverconn.Conn, report wire.Report, sshName string, redial Dial, timings timing.Timings) (*Tunnel, error) {
+	revision := report.ChannelRevision(wire.ChannelTunnel, wire.TunnelRevision)
+	ch, err := conn.OpenChannel(ctx, wire.ChannelTunnel, wire.TunnelOpen(revision, sshName))
 	if err != nil {
 		return nil, err
 	}
 	t := &Tunnel{
-		stream: resumable.New(ch), redial: redial, timings: timings.Resolve(),
+		stream: resumable.New(ch), revision: revision, redial: redial, timings: timings.Resolve(),
 		conn: watchConn(conn, false), resumerDone: make(chan struct{}),
 	}
 	t.ctx, t.stop = context.WithCancel(context.Background())
@@ -315,7 +322,7 @@ func (t *Tunnel) endOnDisconnect(c *connection) {
 // should ctx end meanwhile. The koko server's refusal, which a Device Mux
 // passes back as it is, is a *RefusedError.
 func (t *Tunnel) resumeOn(ctx context.Context, c *connection, received uint64) error {
-	ch, err := c.OpenChannel(ctx, wire.ChannelTunnel, wire.TunnelResume(t.id, received))
+	ch, err := c.OpenChannel(ctx, wire.ChannelTunnel, wire.TunnelResume(t.revision, t.id, received))
 	if e, ok := errors.AsType[*ssh.OpenChannelError](err); ok && e.Reason == ssh.Prohibited {
 		return &RefusedError{Reason: e.Message}
 	}

@@ -12,7 +12,7 @@ import (
 // Name, as every CLI that ever opens a Tunnel writes it, byte for byte.
 func TestATunnelOpenPayloadIsTwoSSHStrings(t *testing.T) {
 	want := []byte("\x00\x00\x00\x04open\x00\x00\x00\x09web1.koko")
-	if got := wire.TunnelOpen("web1.koko"); !bytes.Equal(got, want) {
+	if got := wire.TunnelOpen(1, "web1.koko"); !bytes.Equal(got, want) {
 		t.Fatalf("TunnelOpen(web1.koko) = %q, want %q", got, want)
 	}
 	p, err := wire.ParseTunnelPayload(want)
@@ -29,7 +29,7 @@ func TestATunnelResumePayloadIsTheKindTheIDAndTheOffset(t *testing.T) {
 	want := []byte("\x00\x00\x00\x06resume" +
 		"\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff" +
 		"\x00\x00\x00\x01\x00\x00\x00\x10")
-	if got := wire.TunnelResume(id, 1<<32+16); !bytes.Equal(got, want) {
+	if got := wire.TunnelResume(1, id, 1<<32+16); !bytes.Equal(got, want) {
 		t.Fatalf("TunnelResume = %q, want %q", got, want)
 	}
 	p, err := wire.ParseTunnelPayload(want)

@@ -1,0 +1,8 @@
+== tunnel@koko 1
+data, ack 70000, "hi": f0 a2 04 02 68 69
+eof, ack 70000: f0 a2 04 81 80 02
+close, ack 70000, "bye": f0 a2 04 82 80 02 03 62 79 65
+resume answer, offset 70000: f0 a2 04
+reads size 32769 as: eof
+reads size 32770 as: close
+reads size 32771 as: malformed

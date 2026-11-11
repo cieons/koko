@@ -30,6 +30,14 @@ is P0 spec: reach, "The Tunnel on the wire", "The Gateway" and "`koko exec`".
   big-endian. A payload that is no kind, an `open` with anything but one
   SSH Name, a `resume` with anything but an id and an offset, and any other
   kind are refused at the channel open, with reason `connect failed`.
+- **The revision.** This is revision 1 of `tunnel@koko`
+  (`wire.TunnelRevision`), which also covers the
+  [resumable stream](resumable-stream.md)'s frames. The device opens a
+  Tunnel at the lower of its own revision and the one the koko server
+  reports (`wire.Report.ChannelRevision`), and Resumes it at the revision
+  it opened at. From revision 2 a payload ends with its revision as a
+  `uint32`; revision 1 carries none, which every koko server takes
+  ([API](api.md#revisions)).
 - **The Tunnel id.** The Gateway picks 128 random bits for each Tunnel it
   accepts and sends them as the first 16 bytes of the stream
   (`wire.TunnelIDSize`), so in its first frame, before the SSH Session's

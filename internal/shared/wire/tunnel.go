@@ -41,26 +41,27 @@ const TunnelUser = "koko"
 // per byte relayed (P0 spec: reach, "The Gateway").
 var TunnelCiphers = []string{"aes128-gcm@openssh.com", "aes256-gcm@openssh.com"}
 
-// TunnelOpen is the open payload of a tunnel@koko channel that opens a new
-// Tunnel to the Host sshName names: in SSH's wire encoding, the string
-// "open", then the string sshName, as typed (the Gateway drops a trailing
-// ".koko").
-func TunnelOpen(sshName string) []byte {
-	return ssh.Marshal(struct{ Kind, Name string }{TunnelKindOpen, sshName})
+// TunnelOpen is the open payload of a tunnel@koko channel of the revision
+// rev, at most TunnelRevision, that opens a new Tunnel to the Host sshName
+// names: in SSH's wire encoding, the string "open", then the string
+// sshName, as typed (the Gateway drops a trailing ".koko").
+func TunnelOpen(rev int, sshName string) []byte {
+	return revised(ssh.Marshal(struct{ Kind, Name string }{TunnelKindOpen, sshName}), rev)
 }
 
-// TunnelResume is the open payload of a tunnel@koko channel that Resumes
-// the Tunnel whose id is id, the device having received received bytes of
-// its stream, the Tunnel id's included: in SSH's wire encoding, the string
-// "resume", the id's TunnelIDSize bytes as they are, then received as a
-// uint64. The koko server answers on the channel with its own received
-// offset (package resumable).
-func TunnelResume(id [TunnelIDSize]byte, received uint64) []byte {
-	return ssh.Marshal(struct {
+// TunnelResume is the open payload of a tunnel@koko channel of the revision
+// rev, at most TunnelRevision, that Resumes the Tunnel whose id is id, the
+// device having received received bytes of its stream, the Tunnel id's
+// included: in SSH's wire encoding, the string "resume", the id's
+// TunnelIDSize bytes as they are, then received as a uint64. The koko
+// server answers on the channel with its own received offset (package
+// resumable).
+func TunnelResume(rev int, id [TunnelIDSize]byte, received uint64) []byte {
+	return revised(ssh.Marshal(struct {
 		Kind     string
 		ID       [TunnelIDSize]byte
 		Received uint64
-	}{TunnelKindResume, id, received})
+	}{TunnelKindResume, id, received}), rev)
 }
 
 // TunnelPayload is a tunnel@koko channel's open payload, as
@@ -74,11 +75,12 @@ type TunnelPayload struct {
 	Received uint64
 }
 
-// ParseTunnelPayload reads a tunnel@koko channel's open payload: its kind,
-// and what an "open" or a "resume" carries. It refuses a payload that is no
-// kind, an "open" with anything but one SSH Name after it, and a "resume"
-// with anything but an id and an offset after it; another kind comes back
-// with its payload unread, for the Gateway to refuse.
+// ParseTunnelPayload reads a tunnel@koko channel's open payload of revision
+// 1: its kind, and what an "open" or a "resume" carries. It refuses a
+// payload that is no kind, an "open" with anything but one SSH Name after
+// it, and a "resume" with anything but an id and an offset after it;
+// another kind comes back with its payload unread, for the Gateway to
+// refuse.
 func ParseTunnelPayload(b []byte) (TunnelPayload, error) {
 	var p struct {
 		Kind string

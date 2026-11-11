@@ -18,6 +18,8 @@ import (
 // api.Op.Added names it, and its JSON tag's options.
 type requestField struct {
 	path string
+	// kind is the JSON its value is, as jsonKind names it.
+	kind string
 	// omitted says the field is left out of a request when unset.
 	omitted bool
 }
@@ -42,7 +44,7 @@ func requestFields(t *testing.T, typ reflect.Type) []requestField {
 			}
 			path := prefix + cmp.Or(name, f.Name)
 			omitted := slices.ContainsFunc(strings.Split(opts, ","), func(o string) bool { return o == "omitzero" || o == "omitempty" })
-			fields = append(fields, requestField{path: path, omitted: omitted})
+			fields = append(fields, requestField{path: path, kind: jsonKind(f.Type), omitted: omitted})
 			inner, list := nested(f.Type)
 			switch {
 			case inner == nil:
@@ -81,6 +83,35 @@ func nested(typ reflect.Type) (inner reflect.Type, list bool) {
 	return typ, false
 }
 
+// jsonKind names the JSON a value of typ is: string, number, boolean,
+// object, a list or an object of another kind, or, for a type that encodes
+// itself, the type, such as record.Value.
+func jsonKind(typ reflect.Type) string {
+	for typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	if encodesItself(typ) {
+		return typ.String()
+	}
+	switch typ.Kind() {
+	case reflect.String:
+		return "string"
+	case reflect.Bool:
+		return "boolean"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return "number"
+	case reflect.Slice, reflect.Array:
+		return "list of " + jsonKind(typ.Elem())
+	case reflect.Map:
+		return "object of " + jsonKind(typ.Elem())
+	case reflect.Struct:
+		return "object"
+	}
+	return typ.String()
+}
+
 // encodesItself tells whether values of typ encode themselves in JSON.
 func encodesItself(typ reflect.Type) bool {
 	for _, i := range []reflect.Type{
@@ -96,8 +127,9 @@ func encodesItself(typ reflect.Type) bool {
 }
 
 // Every revision of every operation is recorded with the request fields
-// it takes and the revision that added each, and a recorded revision never
-// changes: a field added, removed or renamed without a raise of the
+// it takes, the revision that added each and the JSON each is, and a
+// recorded revision never changes: a field added, removed, renamed or
+// given another kind of value without a raise of the
 // operation's revision fails here, and -update records only a new
 // revision (ADR 0049).
 func TestEveryOperationsRequestFieldsAreRecordedByRevision(t *testing.T) {
@@ -109,7 +141,7 @@ func TestEveryOperationsRequestFieldsAreRecordedByRevision(t *testing.T) {
 			var lines []string
 			for _, f := range fields {
 				if added := max(info.Added[f.path], 1); added <= rev {
-					lines = append(lines, fmt.Sprintf("%s %d", f.path, added))
+					lines = append(lines, fmt.Sprintf("%s %d %s", f.path, added, f.kind))
 				}
 			}
 			sections = append(sections, frozen.Section{Name: fmt.Sprintf("%s %d", info.Name, rev), Text: strings.Join(lines, "\n")})

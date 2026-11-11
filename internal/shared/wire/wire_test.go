@@ -115,3 +115,13 @@ func TestAReportWithoutARevisionReadsAsRevisionOne(t *testing.T) {
 		}
 	}
 }
+
+// A report with nothing above revision 1 carries no revisions, as the
+// report of a koko server from before revisions does.
+func TestAReportWithEveryRevisionAtOneCarriesNone(t *testing.T) {
+	t.Parallel()
+	got := string(wire.Report{Version: "v0.5.0", Operations: []string{"host.add"}, Revisions: map[string]int{}}.Marshal())
+	if want := `{"version":"v0.5.0","operations":["host.add"]}`; got != want {
+		t.Errorf("the report is %s, want %s", got, want)
+	}
+}

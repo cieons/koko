@@ -99,6 +99,13 @@ func web(ctx context.Context, in *Input, ready func(webJSON) error) error {
 	if err != nil {
 		return err
 	}
+	// Every browser connection goes at the lower of this build's revision
+	// of web@koko and the koko server's.
+	report, err := in.report(ctx)
+	if err != nil {
+		return err
+	}
+	payload := wire.WebPayload(report.ChannelRevision(wire.ChannelWeb, wire.WebRevision), port)
 	res := webJSON{Address: fmt.Sprintf("http://localhost:%d/?t=%s", port, start.Token), opening: !in.Bool("no-open")}
 	if err := ready(res); err != nil {
 		return err
@@ -107,7 +114,7 @@ func web(ctx context.Context, in *Input, ready func(webJSON) error) error {
 		waitForOpener := openBrowser(ctx, in.inv, res.Address)
 		defer waitForOpener()
 	}
-	f := forwarder{conn: conn, payload: wire.WebPayload(port), stderr: in.inv.Stderr, passOn: in.runner.Timings.Resolve().PassOn}
+	f := forwarder{conn: conn, payload: payload, stderr: in.inv.Stderr, passOn: in.runner.Timings.Resolve().PassOn}
 	err = f.serve(ctx, ln)
 	if lost, ok := errors.AsType[*connectionEnded](err); ok {
 		return webEnded(in, lost.err)

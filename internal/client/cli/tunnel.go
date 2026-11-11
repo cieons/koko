@@ -52,13 +52,17 @@ func proxySSH(ctx context.Context, in *Input) error {
 	}
 
 	conn, err := in.server(ctx)
+	var report wire.Report
+	if err == nil {
+		report, err = in.report(ctx)
+	}
 	switch {
 	case ctx.Err() != nil:
 		return nil
 	case err != nil:
 		return err
 	}
-	t, err := tunnel.Open(ctx, conn, sshName, in.redial, in.runner.Timings)
+	t, err := tunnel.Open(ctx, conn, report, sshName, in.redial, in.runner.Timings)
 	switch {
 	case err != nil && ctx.Err() != nil:
 		return nil

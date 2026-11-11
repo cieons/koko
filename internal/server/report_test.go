@@ -12,10 +12,11 @@ import (
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/compat"
+	"github.com/cieons/koko/internal/shared/wire"
 )
 
-// The koko server reports its build's version, every API operation with
-// those above revision 1, and the oldest koko it works with, the same
+// The koko server reports its build's version, every API operation, the
+// operations and channels above revision 1, and the oldest koko it works with, the same
 // before and after initialisation, so a CLI can tell which commands and
 // fields this koko server lacks, and whether it is too old for it.
 func TestTheReportListsEveryOperation(t *testing.T) {
@@ -25,6 +26,11 @@ func TestTheReportListsEveryOperation(t *testing.T) {
 		want = append(want, o.Info().Name)
 		if rev := o.Info().Revision; rev > 1 {
 			revisions[o.Info().Name] = rev
+		}
+	}
+	for channel, rev := range wire.ChannelRevisions() {
+		if rev > 1 {
+			revisions[channel] = rev
 		}
 	}
 	slices.Sort(want)

@@ -45,7 +45,11 @@ func execute(ctx context.Context, in *Input) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	t, err := tunnel.Open(ctx, conn, sshName, in.redial, in.runner.Timings)
+	report, err := in.report(ctx)
+	if err != nil {
+		return 0, err
+	}
+	t, err := tunnel.Open(ctx, conn, report, sshName, in.redial, in.runner.Timings)
 	switch {
 	case err != nil && ctx.Err() != nil:
 		return 0, interrupted(hostName)

@@ -65,7 +65,7 @@ func serveForwarder(t *testing.T, conn serverconn.Conn, passOn time.Duration) (<
 	}
 	ctx, stop := context.WithCancel(t.Context())
 	served, done := make(chan error, 1), make(chan struct{})
-	f := forwarder{conn: conn, payload: wire.WebPayload(1), stderr: io.Discard, passOn: passOn}
+	f := forwarder{conn: conn, payload: wire.WebPayload(1, 1), stderr: io.Discard, passOn: passOn}
 	go func() {
 		defer close(done)
 		served <- f.serve(ctx, ln)

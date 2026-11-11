@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json/v2"
 	"errors"
 	"io"
@@ -130,7 +131,7 @@ func TestTheServerRefusesACLIBelowTheWindow(t *testing.T) {
 					}
 				}
 				for _, kind := range []string{wire.ChannelTunnel, wire.ChannelWeb} {
-					_, _, err := c.OpenChannel(kind, wire.WebPayload(8080))
+					_, _, err := c.OpenChannel(kind, wire.WebPayload(1, 8080))
 					oe, ok := errors.AsType[*ssh.OpenChannelError](err)
 					if !ok || oe.Reason != ssh.Prohibited || oe.Message != e.Message {
 						t.Errorf("opening %s failed with %v, want administratively prohibited with %q", kind, err, e.Message)
@@ -157,7 +158,7 @@ func TestTheServerServesACLIAtTheWindow(t *testing.T) {
 			if status, e := callAs(t, c); status != http.StatusOK {
 				t.Errorf("a call answered %d %+v, want 200", status, e)
 			}
-			ch, reqs, err := c.OpenChannel(wire.ChannelWeb, wire.WebPayload(8080))
+			ch, reqs, err := c.OpenChannel(wire.ChannelWeb, wire.WebPayload(1, 8080))
 			if err != nil {
 				t.Fatalf("open %s: %v", wire.ChannelWeb, err)
 			}
@@ -250,5 +251,41 @@ func TestACLIOlderThanTheServerKeepsWorking(t *testing.T) {
 	r.WantSuccess(t)
 	if !strings.Contains(r.Stdout, `"name": "alice"`) || strings.Contains(r.Stdout, "colour") {
 		t.Errorf("space ls printed %s, want the Space alice without the field this CLI does not know", r.Stdout)
+	}
+}
+
+// keptTunnels keeps the open payload of each tunnel@koko channel a koko
+// server is asked for, and refuses the channel.
+type keptTunnels chan []byte
+
+func (k keptTunnels) Open(_ *transport.Connection, nch ssh.NewChannel) {
+	k <- nch.ExtraData()
+	_ = nch.Reject(ssh.Prohibited, "no Tunnel here")
+}
+
+// A CLI opens a Tunnel at the lower of its own revision of tunnel@koko and
+// the koko server's: against a koko server that reports a revision above
+// this CLI's, at this CLI's, whose payload that koko server takes.
+func TestACLIOpensATunnelAtTheLowerRevision(t *testing.T) {
+	t.Parallel()
+	h := http.NotFoundHandler()
+	path := filepath.Join(harness.ShortTempDir(t), "koko.sock")
+	report := wire.Report{Version: "v0.9.0", Revisions: map[string]int{wire.ChannelTunnel: wire.TunnelRevision + 1}}
+	s := transport.New(h, h, func() wire.Report { return report }, slog.New(slog.DiscardHandler))
+	opens := make(keptTunnels, 1)
+	s.HandleTunnels(opens)
+	if err := s.ListenSocket(t.Context(), path); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	harness.Run(t, cli.Runner{SocketPath: path}, nil, "tunnel", "web1.koko")
+	select {
+	case got := <-opens:
+		if want := wire.TunnelOpen(wire.TunnelRevision, "web1.koko"); !bytes.Equal(got, want) {
+			t.Errorf("koko tunnel opened with % x, want this CLI's revision %d: % x", got, wire.TunnelRevision, want)
+		}
+	default:
+		t.Fatal("koko tunnel opened no Tunnel")
 	}
 }

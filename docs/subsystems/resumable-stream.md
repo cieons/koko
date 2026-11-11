@@ -47,6 +47,12 @@ payload. The Gateway answers with its own as one uvarint, the first bytes it
 writes on the new channel, and both ends then resend from the offset the
 other gave.
 
+The frames and the resume answer are covered by `tunnel@koko`'s revision
+([API](api.md#revisions), [ADR 0049](../adr/0049-the-cli-and-the-koko-server-work-together-within-a-window-of-versions.md)):
+revision 1 is the layout above. A change to it, or a new frame type, comes
+with a raise of `wire.TunnelRevision`; the stream then speaks the revision
+its Tunnel opened at, any that some koko in the window speaks.
+
 ## Acknowledgements and the replay buffer
 
 - **What an end acknowledges** is what its `Read` has returned, not what has
@@ -78,4 +84,7 @@ in `testing/synctest` bubbles. It moves a few MiB each way over channels cut
 at random bytes, mid-frame and mid-exchange, through overlapping attaches, and
 logs the seed it used. Other tests pin the frame bytes above, and check that a
 full buffer blocks without loss, that a half-close survives a resume, and each
-failure in the table.
+failure in the table. `TestTheFramesAreRecordedByRevision` records the
+frames and the resume answer of each revision of `tunnel@koko` in
+`testdata/frames.golden`, a section a revision, which never changes once
+written ([`internal/harness/frozen`](../../internal/harness/frozen/frozen.go)).
