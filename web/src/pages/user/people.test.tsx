@@ -71,7 +71,7 @@ test("a person's panel shows their role and date, their Spaces as switches, thei
   await expectAccessible();
 });
 
-test("a switch in a person's panel changes their membership at once, and the table shows it", async () => {
+test("a switch in a person's panel changes their membership at once, and the People list shows it", async () => {
   const api = await asOwner("/access");
   fireEvent.click(await screen.findByRole("link", { name: /^carol/ }));
   const panel = await openPanel("carol");
@@ -82,10 +82,12 @@ test("a switch in a person's panel changes their membership at once, and the tab
   expect(api.requests(SpaceMemberAdd)).toEqual([{ space: "web", users: ["carol"] }]);
   fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(screen.getByRole("checkbox", { name: "carol is a Member of web" })).toHaveProperty("checked", true);
+  await waitFor(() =>
+    expect(screen.getByRole("link", { name: /^carol/ }).textContent).toBe("carol1 Space · Invited, not yet in"),
+  );
 });
 
-test("a membership change refused in a person's panel says why there, and not above the table once it closes", async () => {
+test("a membership change refused in a person's panel says why there, and not on the page once it closes", async () => {
   const api = await asOwner("/access");
   fireEvent.click(await screen.findByRole("link", { name: /^carol/ }));
   const panel = await openPanel("carol");
@@ -190,7 +192,7 @@ test("Invite takes a name and the Spaces, then shows the Join Code once, with Do
   stopClock();
   const writeText = clipboard();
   const api = await asOwner("/access");
-  await screen.findByRole("table");
+  await screen.findByRole("link", { name: /^bob/ });
 
   fireEvent.click(screen.getByRole("button", { name: "Invite" }));
   const dialog = await screen.findByRole("dialog", { name: "Invite" });
@@ -231,7 +233,7 @@ test("Invite takes a name and the Spaces, then shows the Join Code once, with Do
 
 test("Invite still shows the Join Code when a membership call fails, and names the Space not added", async () => {
   const api = await asOwner("/access");
-  await screen.findByRole("table");
+  await screen.findByRole("link", { name: /^bob/ });
   api.on(SpaceMemberAdd, ({ space }) => {
     if (space === "ops") {
       throw refusal("internal_error", 500);
@@ -260,7 +262,7 @@ test("Invite still shows the Join Code when a membership call fails, and names t
 
 test("a refused Invite says why on its first step, the name kept as typed", async () => {
   const api = await asOwner("/access");
-  await screen.findByRole("table");
+  await screen.findByRole("link", { name: /^bob/ });
   api.on(UserInvite, () => {
     throw refusal("name_taken", 409);
   });
@@ -278,7 +280,7 @@ test("a refused Invite says why on its first step, the name kept as typed", asyn
 
 /** invite invites erin and waits for her Join Code to show. */
 async function invite(): Promise<HTMLElement> {
-  await screen.findByRole("table");
+  await screen.findByRole("link", { name: /^bob/ });
   fireEvent.click(screen.getByRole("button", { name: "Invite" }));
   const dialog = await screen.findByRole("dialog", { name: "Invite" });
   fireEvent.change(within(dialog).getByRole("textbox", { name: "Name" }), { target: { value: "erin" } });

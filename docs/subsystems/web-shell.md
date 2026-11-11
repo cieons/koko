@@ -127,7 +127,7 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   [`useRememberedView`](../../web/src/shell/rememberedView.tsx), which
   keeps the last view each list showed in `localStorage`, under the User's
   id and the list's name (`koko.view.<user id>.<list>`): the Hosts view,
-  the Services view and Secrets, each on its own. A URL with a view shows
+  the Services view, Secrets and the Owner's Access, each on its own. A URL with a view shows
   it and is remembered; a URL with none, from the top bar, a new tab, a
   link or Sign in, shows the view remembered and is replaced by it, so the
   URL still shows what is on screen. A history entry the page has shown as
@@ -476,7 +476,7 @@ HeroUI (#121) took the pages out; each came back with its ticket (#122 to
 | Move to another Space | `secret.move` | in both Spaces |
 | Delete, asking first | `secret.remove` | in the Space |
 
-**Access** (`/access`, which `/spaces` and `/people` go to; `all=1` in the
+**Access** (`/access`, which `/spaces` and `/people` go to; `view=spaces`, `q=` and `all=1` in the
 query) and **a Space's panel** (`/access/spaces/<name>`, which
 `/spaces/<name>` goes to):
 
@@ -484,12 +484,13 @@ query) and **a Space's panel** (`/access/spaces/<name>`, which
 | --- | --- | --- |
 | List the Spaces, a Personal Space marked so, each with its Members and its counts of Hosts and Secrets | `space.list`, one call | anyone: the Spaces they can act in |
 | See a Space's Members and its counts of Hosts, Retired Hosts and Secrets, in its panel | `space.show` | in the Space |
-| List the Users against the shared Spaces, the Removed ones when asked for | `user.list` (and `space.list`, `device.list`) | the Owner |
+| List the People and the shared Spaces under two tabs, searched by name, the Removed Users when asked for | `user.list` (and `space.list`, `device.list`) | the Owner |
+| Reset view: the People with no search and without the Removed Users, the view the browser remembers forgotten | none | the Owner |
 | Add a Space | `space.add` | the Owner |
 | Rename a Space | `space.rename` | the Owner, on a shared Space |
 | Remove a Space, asking first | `space.remove` | the Owner, on a shared Space |
-| Make a User a Member: a cell, or Add a Member chosen among the Users who are not one | `space.member.add` (and `user.list`) | the Owner, on a shared Space |
-| Take a Member out: a cell, or Take out | `space.member.remove` | the Owner, on a shared Space |
+| Make a User a Member: a switch in a person's panel, or Add a Member chosen among the Users who are not one | `space.member.add` (and `user.list`) | the Owner, on a shared Space |
+| Take a Member out: a switch in a person's panel, or Take out | `space.member.remove` | the Owner, on a shared Space |
 | Invite a User, to the Spaces chosen, in a terminal or in a browser, valid for the time chosen, their Join Code or Password Link shown once, with Copy and its countdown | `user.invite` (and `server.show` for the Web URL), then `space.member.add` | the Owner |
 
 **A person's panel** (`/access/people/<name>`, the Owner alone):

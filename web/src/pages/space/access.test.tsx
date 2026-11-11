@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { SpaceAdd, SpaceList, SpaceMemberAdd, SpaceMemberRemove, SpaceRemove, SpaceRename, SpaceShow } from "../../api/space";
@@ -11,12 +11,10 @@ import { setViewportWidth } from "../../test/media";
 import { actAs, alerts, renderAt } from "../../test/pages";
 import { alice, bob, serve, space, type World, world } from "./access.fixture";
 
-// Access, against a fake koko server: for the Owner, the Users against the
-// shared Spaces in one table, two lists on a phone, Add Space, and a Space's
-// panel; for a Member, their Spaces, each panel read-only. The person's
-// panel and Invite are in user/people.test.tsx.
-
-const table = "Users and shared Spaces";
+// Access, against a fake koko server: for the Owner, the People and the
+// shared Spaces as two lists under tabs, searched by name, Add Space, and a
+// Space's panel; for a Member, their Spaces, each panel read-only. The
+// person's panel and Invite are in user/people.test.tsx.
 
 /** at renders path as caller, on their laptop, against w, and waits for Access. */
 async function at(path: string, w: World = world(), caller: User = alice): Promise<FakeApi> {
@@ -28,33 +26,28 @@ async function at(path: string, w: World = world(), caller: User = alice): Promi
   return api;
 }
 
-/** rows are the table's rows: the person's cell, then each Space's, a ticked checkbox as ✓, an unticked one as ·, the lock as 🔒. */
-async function rows(): Promise<string[][]> {
-  const shown = await screen.findByRole("table", { name: table });
-  return within(shown)
-    .getAllByRole("row")
-    .slice(1)
-    .map((row) => [
-      within(row).getByRole("rowheader").textContent ?? "",
-      ...within(row)
-        .getAllByRole("cell")
-        .slice(0, -1)
-        .map((cell) => {
-          const box = within(cell).queryByRole("checkbox");
-          if (box) {
-            return (box as HTMLInputElement).checked ? "✓" : "·";
-          }
-          return within(cell).queryByRole("img") ? "🔒" : (cell.textContent ?? "");
-        }),
-    ]);
+/** rows are the text of each row of the list the tab named shows, once it shows one. */
+async function rows(tab: "People" | "Spaces" = "People"): Promise<string[]> {
+  const panel = await screen.findByRole("tabpanel", { name: new RegExp(`^${tab}`), hidden: true });
+  return (await within(panel).findAllByRole("link", { hidden: true })).map((l) => l.textContent ?? "");
 }
 
-/** cell is the checkbox of user's membership of space. */
-function cell(user: string, space: string): HTMLInputElement {
-  return screen.getByRole("checkbox", { name: `${user} is a Member of ${space}` });
+/** tab is the tab of the list named. */
+function tab(name: "People" | "Spaces"): HTMLElement {
+  return screen.getByRole("tab", { name: new RegExp(`^${name}`) });
 }
 
-// The Owner's table.
+/** where is the page's path and query. */
+function where(): string {
+  return window.location.pathname + window.location.search;
+}
+
+/** search types text in the search field of the list shown. */
+function search(label: string, text: string): void {
+  fireEvent.change(screen.getByRole("searchbox", { name: label }), { target: { value: text } });
+}
+
+// The Owner's lists.
 
 test("Access reads the Spaces, their Members and counts in one space.list, with no space.show per Space", async () => {
   const api = await at("/access");
@@ -62,27 +55,31 @@ test("Access reads the Spaces, their Members and counts in one space.list, with 
   expect(api.requests(SpaceList)).toHaveLength(1);
   expect(api.requests(SpaceShow)).toEqual([]);
 
-  fireEvent.click(cell("carol", "web"));
-  await waitFor(() => expect(cell("carol", "web").checked).toBe(true));
-  await waitFor(() => expect(api.requests(SpaceList)).toHaveLength(2));
-  expect(api.requests(SpaceShow)).toEqual([]);
+  fireEvent.click(screen.getByRole("link", { name: /^carol/ }));
+  const panel = await screen.findByRole("dialog", { name: "carol" });
+  const toggle = await within(panel).findByRole("switch", { name: "carol is a Member of web" });
+  // Opening the panel is a visit, which reads the Spaces again too.
+  const reads = api.requests(SpaceList).length;
+  fireEvent.click(toggle);
+  expect(await screen.findByText("carol is now a Member of web.")).toBeDefined();
+  await waitFor(() => expect(api.requests(SpaceList)).toHaveLength(reads + 1));
+  // Her panel reads her own Personal Space; no shared Space is read on its own.
+  expect(api.requests(SpaceShow)).toEqual([{ name: "carol" }]);
 });
 
-test("the Owner sees the Users against the shared Spaces, each cell a membership and the Owner's cells locked", async () => {
+test("the Owner sees the People, each a link to their panel with how many Spaces they are in and how they get in", async () => {
   await at("/access");
-  await rows();
 
-  const headers = within(screen.getByRole("table", { name: table })).getAllByRole("columnheader");
-  expect(headers.map((h) => h.textContent)).toEqual(["3 Users", "ops3 Hosts · 3 Secrets", "web1 Host · 2 Secrets"]);
-  expect(within(headers[1] as HTMLElement).getByRole("link").getAttribute("href")).toBe("/access/spaces/ops");
   expect(await rows()).toEqual([
-    ["aliceOwner1 device", "🔒", "🔒"],
-    ["bob2 devices · Password set", "✓", "·"],
-    ["carolInvited, not yet in", "·", "·"],
+    "aliceOwnerEvery Space · 1 device",
+    "bob1 Space · 2 devices · Password set",
+    "carolNo Space · Invited, not yet in",
   ]);
-  expect(screen.getByRole("img", { name: "The Owner sees ops" })).toBeDefined();
-  expect(screen.getByText("The Owner sees every Space.")).toBeDefined();
+  expect(tab("People").textContent).toBe("People3");
+  expect(tab("Spaces").textContent).toBe("Spaces2");
+  expect(tab("People").getAttribute("aria-selected")).toBe("true");
   expect(screen.getByRole("link", { name: /^bob/ }).getAttribute("href")).toBe("/access/people/bob");
+  expect(screen.queryByRole("table")).toBeNull();
   expect(screen.getByRole("button", { name: "Invite" })).toBeDefined();
   expect(screen.getByRole("button", { name: "Add Space" })).toBeDefined();
   expect(
@@ -92,38 +89,77 @@ test("the Owner sees the Users against the shared Spaces, each cell a membership
   await expectAccessible();
 });
 
-test("ticking a cell makes the User a Member at once, with a notice, and unticking takes them out", async () => {
-  const api = await at("/access");
+test("the Spaces tab lists the shared Spaces, each with its Members, Hosts and Secrets, as view=spaces in the URL", async () => {
+  await at("/access");
   await rows();
 
-  fireEvent.click(cell("carol", "web"));
-  expect(await screen.findByText("carol is now a Member of web.")).toBeDefined();
-  expect(cell("carol", "web").checked).toBe(true);
-  expect(api.requests(SpaceMemberAdd)).toEqual([{ space: "web", users: ["carol"] }]);
+  fireEvent.click(tab("Spaces"));
 
-  fireEvent.click(cell("bob", "ops"));
-  expect(await screen.findByText("bob is no longer a Member of ops.")).toBeDefined();
-  expect(cell("bob", "ops").checked).toBe(false);
-  expect(api.requests(SpaceMemberRemove)).toEqual([{ space: "ops", users: ["bob"] }]);
-  await waitFor(async () => expect(await rows()).toEqual([
-    ["aliceOwner1 device", "🔒", "🔒"],
-    ["bob2 devices · Password set", "·", "·"],
-    ["carolInvited, not yet in", "·", "✓"],
-  ]));
+  await waitFor(() => expect(where()).toBe("/access?view=spaces"));
+  expect(await rows("Spaces")).toEqual(["ops1 Member · 3 Hosts · 3 Secrets", "webNo Member · 1 Host · 2 Secrets"]);
+  expect(tab("Spaces").getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByRole("link", { name: /^ops/ }).getAttribute("href")).toBe("/access/spaces/ops?view=spaces");
+  // Show Removed Users is for the People.
+  expect(screen.queryByRole("switch", { name: "Show Removed Users" })).toBeNull();
+  await expectAccessible();
+
+  fireEvent.click(tab("People"));
+  await waitFor(() => expect(where()).toBe("/access"));
+  expect(await rows()).toHaveLength(3);
 });
 
-test("a refused membership change says why, and the cell shows what the koko server holds", async () => {
-  const api = await at("/access");
+test("the search narrows the list shown by name, as q in the URL, and says so when nothing matches", async () => {
+  await at("/access");
   await rows();
-  api.on(SpaceMemberAdd, () => {
-    throw refusal("user_removed", 409);
-  });
 
-  fireEvent.click(cell("carol", "ops"));
+  search("Search people", "BO");
+  await waitFor(() => expect(where()).toBe("/access?q=BO"));
+  expect(await rows()).toEqual(["bob1 Space · 2 devices · Password set"]);
 
-  await waitFor(() => expect(alerts()).toEqual(["That User was Removed."]));
-  expect(cell("carol", "ops").checked).toBe(false);
+  // One search field: it narrows the Spaces too.
+  fireEvent.click(tab("Spaces"));
+  await waitFor(() => expect(where()).toBe("/access?q=BO&view=spaces"));
+  expect(await screen.findByText("No Space matches this search.")).toBeDefined();
   await expectAccessible();
+  search("Search Spaces", "we");
+  expect(await rows("Spaces")).toEqual(["webNo Member · 1 Host · 2 Secrets"]);
+
+  search("Search Spaces", "zz");
+  const empty = await screen.findByRole("tabpanel", { name: /^Spaces/ });
+  fireEvent.click(await within(empty).findByRole("button", { name: "Clear the search" }));
+  await waitFor(() => expect(where()).toBe("/access?view=spaces"));
+  expect(await rows("Spaces")).toHaveLength(2);
+});
+
+test("Access opens as it was left, from a link with no view, and Reset view goes back to the People with no search", async () => {
+  await at("/access?view=spaces&q=op");
+  expect(await rows("Spaces")).toEqual(["ops1 Member · 3 Hosts · 3 Secrets"]);
+  cleanup();
+
+  await at("/access");
+  await waitFor(() => expect(where()).toBe("/access?view=spaces&q=op"));
+  expect(await rows("Spaces")).toEqual(["ops1 Member · 3 Hosts · 3 Secrets"]);
+
+  fireEvent.click(screen.getByRole("button", { name: "Reset view" }));
+  await waitFor(() => expect(where()).toBe("/access"));
+  expect(await rows()).toHaveLength(3);
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "Reset view" }).disabled).toBe(true);
+  cleanup();
+
+  await at("/access");
+  expect(await rows()).toHaveLength(3);
+  expect(where()).toBe("/access");
+});
+
+test("a panel's link with no query opens over the view Access was left in", async () => {
+  await at("/access?view=spaces&q=op");
+  expect(await rows("Spaces")).toEqual(["ops1 Member · 3 Hosts · 3 Secrets"]);
+  cleanup();
+
+  await at("/access/spaces/web");
+
+  await waitFor(() => expect(where()).toBe("/access/spaces/web?view=spaces&q=op"));
+  expect(await screen.findByRole("dialog", { name: "web" })).toBeDefined();
 });
 
 test("Show Removed Users adds them, struck through, as all=1 in the URL, and a bookmark opens with them", async () => {
@@ -134,38 +170,40 @@ test("Show Removed Users adds them, struck through, as all=1 in the URL, and a b
   fireEvent.click(screen.getByRole("switch", { name: "Show Removed Users" }));
 
   await waitFor(() => expect(screen.getByText("dave").className).toContain("line-through"));
-  expect(window.location.search).toBe("?all=1");
+  expect(where()).toBe("/access?all=1");
   expect(api.requests(UserList)).toEqual([{}, { all: true }]);
-  expect((await rows())[3]).toEqual(["daveRemoved", "–", "–"]);
-  expect(screen.getByRole("columnheader", { name: "3 Users" })).toBeDefined();
+  expect((await rows())[3]).toBe("daveRemoved");
+  // The count is of the Users who are not Removed.
+  expect(tab("People").textContent).toBe("People3");
 });
 
-test("the table lists the Owner first and the Removed Users last", async () => {
+test("the People list the Owner first and the Removed Users last", async () => {
   const w = world();
   w.users = [...w.users].reverse();
   await at("/access?all=1", w);
 
-  expect((await rows()).map(([person]) => person)).toEqual([
-    "aliceOwner1 device",
-    "carolInvited, not yet in",
-    "bob2 devices · Password set",
-    "daveRemoved",
+  expect((await rows()).map((r) => /^[a-z]+/.exec(r)?.[0])).toEqual([
+    "alice",
+    "carol",
+    "bob",
+    "dave",
   ]);
 });
 
 test("a bookmark of Access with all=1 shows the Removed Users", async () => {
   const api = await at("/access?all=1");
 
-  expect((await rows()).map(([person]) => person)).toContain("daveRemoved");
+  expect(await rows()).toContain("daveRemoved");
   expect(api.requests(UserList)).toEqual([{ all: true }]);
   expect((screen.getByRole("switch", { name: "Show Removed Users" }) as HTMLInputElement).checked).toBe(true);
 });
 
-test("with no shared Space the table says so, and Add Space adds one", async () => {
+test("with no shared Space the Spaces tab says so, and Add Space adds one", async () => {
   const w = world();
   w.spaces = w.spaces.filter((s) => s.personal);
-  const api = await at("/access", w);
+  const api = await at("/access?view=spaces", w);
   expect(await screen.findByText(/^There is no shared Space yet\./)).toBeDefined();
+  expect(tab("Spaces").textContent).toBe("Spaces0");
 
   fireEvent.click(screen.getByRole("button", { name: "Add Space" }));
   const dialog = await screen.findByRole("dialog", { name: "Add Space" });
@@ -179,7 +217,7 @@ test("with no shared Space the table says so, and Add Space adds one", async () 
 
   expect(await screen.findByText("The Space db is added.")).toBeDefined();
   expect(api.requests(SpaceAdd)).toEqual([{ name: "db" }]);
-  expect(await screen.findByRole("columnheader", { name: /^db/ })).toBeDefined();
+  expect(await rows("Spaces")).toEqual(["dbNo Member · 0 Hosts · 0 Secrets"]);
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
@@ -220,26 +258,20 @@ test("Access that does not load says why, and Try again loads it", async () => {
 
 // On a phone.
 
-test("on a phone the table is two lists, People then Spaces, and membership changes in either panel", async () => {
+test("on a phone the lists are the same, and membership changes in either panel", async () => {
   setViewportWidth(390);
   const api = await at("/access");
 
-  const people = await screen.findByRole("region", { name: "3 Users" });
-  expect(within(people).getAllByRole("link").map((l) => l.textContent)).toEqual([
-    "aliceOwner1 device",
-    "bob2 devices · Password set",
-    "carolInvited, not yet in",
-  ]);
-  const spaces = screen.getByRole("region", { name: "Spaces" });
-  expect(within(spaces).getAllByRole("link").map((l) => l.textContent)).toEqual([
-    "ops3 Hosts · 3 Secrets · bob",
-    "web1 Host · 2 Secrets · No Member",
+  expect(await rows()).toEqual([
+    "aliceOwnerEvery Space · 1 device",
+    "bob1 Space · 2 devices · Password set",
+    "carolNo Space · Invited, not yet in",
   ]);
   expect(screen.queryByRole("table")).toBeNull();
   await expectAccessible();
 
   // From the People: bob's panel, its Spaces as switches.
-  fireEvent.click(within(people).getByRole("link", { name: /^bob/ }));
+  fireEvent.click(screen.getByRole("link", { name: /^bob/ }));
   const bobs = await screen.findByRole("dialog", { name: "bob" });
   fireEvent.click(await within(bobs).findByRole("switch", { name: "bob is a Member of web" }));
   expect(await screen.findByText("bob is now a Member of web.")).toBeDefined();
@@ -248,7 +280,8 @@ test("on a phone the table is two lists, People then Spaces, and membership chan
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
   // From the Spaces: ops's panel, its Members with Take out.
-  fireEvent.click(within(screen.getByRole("region", { name: "Spaces" })).getByRole("link", { name: /^ops/ }));
+  fireEvent.click(tab("Spaces"));
+  fireEvent.click(await screen.findByRole("link", { name: /^ops/ }));
   const ops = await screen.findByRole("dialog", { name: "ops" });
   fireEvent.click(await within(ops).findByRole("button", { name: "Take bob out of ops" }));
   expect(await screen.findByText("bob is no longer a Member of ops.")).toBeDefined();
@@ -278,30 +311,30 @@ test("a Space's panel shows its three counts, each a link to its list narrowed t
   expect(within(shown).getAllByRole("listitem").map((i) => i.textContent)).toEqual(["bobTake out"]);
   expect(within(shown).getByRole("button", { name: "Rename" })).toBeDefined();
   expect(within(shown).getByRole("button", { name: "Remove Space" })).toBeDefined();
-  // The table stays beneath it.
-  expect(screen.getByRole("table", { name: table, hidden: true })).toBeDefined();
+  // The lists stay beneath it.
+  expect(screen.getByRole("tab", { name: /^People/, hidden: true })).toBeDefined();
   await expectAccessible();
 });
 
 test("closing a Space's panel goes back to Access in place of its history entry, keeping its query, the focus back on its link", async () => {
-  await at("/access?all=1");
+  await at("/access?view=spaces");
   const link = await screen.findByRole("link", { name: /^ops/ });
   act(() => link.focus());
   fireEvent.click(link);
   const shown = await screen.findByRole("dialog", { name: "ops" });
-  expect(window.location.pathname + window.location.search).toBe("/access/spaces/ops?all=1");
+  expect(where()).toBe("/access/spaces/ops?view=spaces");
   const entries = window.history.length;
 
   fireEvent.keyDown(shown, { key: "Escape" });
 
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(window.location.pathname + window.location.search).toBe("/access?all=1");
+  expect(where()).toBe("/access?view=spaces");
   expect(window.history.length).toBe(entries);
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("link", { name: /^ops/ })));
 });
 
 test("a click beside a Space's panel closes it, but not while a User is picked in Add a Member and not yet added", async () => {
-  const api = await at("/access?all=1");
+  const api = await at("/access?view=spaces");
   fireEvent.click(await screen.findByRole("link", { name: /^ops/ }));
   await screen.findByRole("dialog", { name: "ops" });
   await clickOutside();
@@ -351,7 +384,7 @@ test("Add a Member with no User chosen says so and sends nothing", async () => {
 });
 
 test("Rename moves the panel to the new name in place of its history entry", async () => {
-  const api = await at("/access");
+  const api = await at("/access?view=spaces");
   fireEvent.click(await screen.findByRole("link", { name: /^web/ }));
   const shown = await screen.findByRole("dialog", { name: "web" });
   const entries = window.history.length;
@@ -370,13 +403,13 @@ test("Rename moves the panel to the new name in place of its history entry", asy
   expect(window.history.length).toBe(entries);
   expect(await screen.findByRole("dialog", { name: "www" })).toBeDefined();
   expect(screen.queryByRole("dialog", { name: "Rename web" })).toBeNull();
-  expect(await screen.findByRole("columnheader", { name: /^www/, hidden: true })).toBeDefined();
+  await waitFor(async () => expect(await rows("Spaces")).toContain("wwwNo Member · 1 Host · 2 Secrets"));
 });
 
 test("Remove Space asks first, shows space_not_empty in place, and closes the panel once removed", async () => {
   const w = world();
   w.spaces.push(space("old"));
-  const api = await at("/access/spaces/ops", w);
+  const api = await at("/access/spaces/ops?view=spaces", w);
   const ops = await screen.findByRole("dialog", { name: "ops" });
 
   fireEvent.click(within(ops).getByRole("button", { name: "Remove Space" }));
@@ -393,7 +426,7 @@ test("Remove Space asks first, shows space_not_empty in place, and closes the pa
   );
   fireEvent.click(within(asking).getByRole("button", { name: "Cancel" }));
 
-  navigate("/access/spaces/old");
+  navigate("/access/spaces/old?view=spaces");
   const old = await screen.findByRole("dialog", { name: "old" });
   fireEvent.click(await within(old).findByRole("button", { name: "Remove Space" }));
   fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Remove old" })).getByRole("button", { name: "Remove" }));
@@ -402,7 +435,7 @@ test("Remove Space asks first, shows space_not_empty in place, and closes the pa
   expect(api.requests(SpaceRemove)).toEqual([{ name: "ops" }, { name: "old" }]);
   expect(window.location.pathname).toBe("/access");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  await waitFor(() => expect(screen.queryByRole("columnheader", { name: /^old/ })).toBeNull());
+  await waitFor(async () => expect(await rows("Spaces")).not.toContain("oldNo Member · 0 Hosts · 0 Secrets"));
 });
 
 test("a Personal Space's panel shows its counts, says it takes no Members, and offers the Owner nothing", async () => {
@@ -426,7 +459,7 @@ test("a Member's Access lists their Spaces, each opening its panel read-only, wi
 
   await screen.findByRole("link", { name: /^ops/ });
   const links = within(screen.getByRole("main")).getAllByRole("link", { name: /Secrets/ });
-  expect(links.map((l) => l.textContent)).toEqual(["bobPersonal Space1 Host · 0 Secrets", "ops3 Hosts · 3 Secrets · bob"]);
+  expect(links.map((l) => l.textContent)).toEqual(["bobPersonal Space1 Host · 0 Secrets", "ops1 Member · 3 Hosts · 3 Secrets"]);
   expect(screen.getByText("The Spaces bob can act in, with their Members.")).toBeDefined();
   expect(
     screen.getByRole("link", { name: "The devices of bob are listed on the Account page." }).getAttribute("href"),

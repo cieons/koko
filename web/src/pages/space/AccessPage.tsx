@@ -1,21 +1,21 @@
-import { Button, Checkbox, Chip, Link, Switch } from "@heroui/react";
-import { ChevronRight, Lock, Plus, UserPlus } from "lucide-react";
-import { type ReactNode, useId, useState } from "react";
+import { Button, Chip, Link, SearchField, Switch, Tabs } from "@heroui/react";
+import { ChevronRight, Plus, UserPlus } from "lucide-react";
+import { type ReactNode, useState } from "react";
 
 import { DeviceList, type DeviceSession } from "../../api/device";
 import { SpaceAdd, type SpaceDetail, SpaceList } from "../../api/space";
 import { type User, UserList } from "../../api/user";
 import { useCaller } from "../../shell/caller";
 import { useRead, useWrite } from "../../shell/data";
-import { type Count, type Translate, useCount, useLanguage, useT } from "../../shell/i18n";
-import { accountPage, navigate, type PageProps, useLocation, useQueryFlag } from "../../shell/router";
+import { type Count, type Translate, useCount, useT } from "../../shell/i18n";
+import { type RememberedList, ResetView, useRememberedView } from "../../shell/rememberedView";
+import { accountPage, navigate, type PageProps, useLocation } from "../../shell/router";
 import { Initial } from "../../shell/TopBar";
 import { Field } from "../../ui/fields";
 import { FormDialog } from "../../ui/FormDialog";
 import { notify } from "../../ui/notify";
 import { Page, Sheet } from "../../ui/Page";
-import { usePhone } from "../../ui/phone";
-import { LoadFailed, Loading, Refusal } from "../../ui/states";
+import { LoadFailed, Loading, NoMatch } from "../../ui/states";
 import { Invite } from "../user/Invite";
 import { PersonPanel } from "../user/PersonPanel";
 import { type Membership, useMembership } from "./membership";
@@ -24,10 +24,11 @@ import { SpacePanel } from "./SpacePanel";
 
 /**
  * AccessPage is Access (docs/web-design.md, "Access"): for the Owner, the
- * Users against the shared Spaces in one table; for a Member, the Spaces
- * they can act in. A Space's panel (/access/spaces/<name>) and, for the
- * Owner alone, a person's (/access/people/<name>) open over it, each a path
- * of its own, so the page keeps its state beneath them.
+ * People and the shared Spaces as two lists, one at a time, each searched
+ * by name; for a Member, the Spaces they can act in. A Space's panel
+ * (/access/spaces/<name>) and, for the Owner alone, a person's
+ * (/access/people/<name>) open over it, each a path of its own, so the page
+ * keeps its state beneath them; membership is changed in either panel.
  */
 export function AccessPage({ params }: PageProps) {
   const caller = useCaller();
@@ -48,18 +49,49 @@ interface Panel {
   name: string;
 }
 
-/** OwnerAccess is the Owner's Access: the table of Users against shared Spaces, Add Space and Invite. */
+/** View is which of the Owner's two lists Access shows. */
+type View = "people" | "spaces";
+
+/**
+ * accessList is the list Access's view is of: one, whose default view, the
+ * People with no search, has no query. The view (view=spaces), the search
+ * (q) and Show Removed Users (all=1) are remembered together.
+ */
+function accessList(): RememberedList {
+  return { list: "access", base: "" };
+}
+
+/** OwnerAccess is the Owner's Access: the People and the shared Spaces as two lists, Add Space and Invite. */
 function OwnerAccess({ panel, close: closePanel }: { panel?: Panel; close: () => void }) {
   const t = useT();
-  const phone = usePhone();
-  const [all, setAll] = useQueryFlag("all");
+  const remembered = useRememberedView(accessList);
+  const { params, setParams } = remembered;
+  const view: View = params.get("view") === "spaces" ? "spaces" : "people";
+  const q = params.get("q") ?? "";
+  const all = params.get("all") === "1";
+  // Each keystroke, tab and switch refines the view in place, the search as
+  // it is typed, a tab or the switch as a visit of its own.
+  const refine = (changes: Readonly<Partial<Record<"view" | "q" | "all", string>>>, replace = false) => {
+    const next = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === "") {
+        next.delete(key);
+      } else {
+        next.set(key, value);
+      }
+    }
+    setParams(next, { replace });
+  };
   const users = useRead(UserList, all ? { all: true } : {});
   const devices = useRead(DeviceList, { all: true });
   const spaces = useRead(SpaceList, {});
+  // useRead keeps the last answer while the Spaces are read again after a
+  // change, so the page keeps its rows, and the links an open panel gives the
+  // focus back to.
   const shared = spaces.data?.spaces.filter((s) => !s.personal);
   const membership = useMembership(spaces.data?.spaces, spaces.reload);
   const [dialog, setDialog] = useState<"space" | "invite">();
-  // A refusal a panel showed goes with it, rather than showing above the table after.
+  // A refusal a panel showed goes with it.
   const close = () => {
     membership.dismiss();
     closePanel();
@@ -69,11 +101,10 @@ function OwnerAccess({ panel, close: closePanel }: { panel?: Panel; close: () =>
     devices.reload();
     spaces.reload();
   };
-  const reads = [users, devices, spaces];
-  const failed = reads.find((r) => r.error !== undefined);
+  const failed = [users, devices, spaces].find((r) => r.error !== undefined);
   const ready =
     users.data && devices.data && shared
-      ? { users: byRole(users.data.users), devices: devices.data.device_sessions, spaces: shared }
+      ? { users: byRole(users.data.users), devices: devices.data.device_sessions, spaces: shared, membership }
       : undefined;
 
   return (
@@ -99,14 +130,14 @@ function OwnerAccess({ panel, close: closePanel }: { panel?: Panel; close: () =>
         </Sheet>
       )}
       {ready ? (
-        <>
-          <Refusal error={panel === undefined ? membership.error : undefined} />
-          {phone ? (
-            <PhoneLists {...ready} />
-          ) : (
-            <AccessTable {...ready} membership={membership} />
-          )}
-        </>
+        <Lists
+          listed={ready}
+          view={view}
+          onView={(next) => refine({ view: next === "spaces" ? "spaces" : "" })}
+          q={q}
+          onSearch={(text) => refine({ q: text }, true)}
+          reset={<ResetView view={remembered} />}
+        />
       ) : (
         failed === undefined && (
           <Sheet list>
@@ -114,24 +145,20 @@ function OwnerAccess({ panel, close: closePanel }: { panel?: Panel; close: () =>
           </Sheet>
         )
       )}
-      <div className="mt-6">
-        <Switch isSelected={all} onChange={setAll} size="sm">
-          <Switch.Content>
-            <Switch.Control>
-              <Switch.Thumb />
-            </Switch.Control>
-            {t("user.showRemoved")}
-          </Switch.Content>
-        </Switch>
-      </div>
+      {view === "people" && (
+        <div className="mt-6">
+          <Switch isSelected={all} onChange={(on) => refine({ all: on ? "1" : "" })} size="sm">
+            <Switch.Content>
+              <Switch.Control>
+                <Switch.Thumb />
+              </Switch.Control>
+              {t("user.showRemoved")}
+            </Switch.Content>
+          </Switch>
+        </div>
+      )}
       {panel?.kind === "person" && (
-        <PersonPanel
-          name={panel.name}
-          shared={shared}
-          membership={membership}
-          onChanged={reload}
-          onClose={close}
-        />
+        <PersonPanel name={panel.name} shared={shared} membership={membership} onChanged={reload} onClose={close} />
       )}
       {panel?.kind === "space" && (
         <SpacePanel name={panel.name} membership={membership} onChanged={reload} onClose={close} />
@@ -145,11 +172,19 @@ function OwnerAccess({ panel, close: closePanel }: { panel?: Panel; close: () =>
           onCancel={() => setDialog(undefined)}
         />
       )}
-      {dialog === "invite" && (
-        <Invite shared={shared ?? []} onInvited={reload} onClose={() => setDialog(undefined)} />
-      )}
+      {dialog === "invite" && <Invite shared={shared ?? []} onInvited={reload} onClose={() => setDialog(undefined)} />}
     </Page>
   );
+}
+
+/** Listed is what the Owner's lists are drawn from. */
+interface Listed {
+  /** users are the Users, the Owner first and the Removed ones, when shown, last. */
+  users: readonly User[];
+  devices: readonly DeviceSession[];
+  /** spaces are the shared Spaces. */
+  spaces: readonly SpaceDetail[];
+  membership: Membership;
 }
 
 /** byRole orders the Users as Access lists them: the Owner first and the Removed Users last, each group as user.list answered it. */
@@ -158,9 +193,89 @@ function byRole(users: readonly User[]): User[] {
   return [...users].sort((a, b) => rank(a) - rank(b));
 }
 
-/** liveCount counts the Users who are not Removed, as the table's and the list's heading say. */
-function liveCount(users: readonly User[]): number {
-  return users.filter((u) => u.removed_at === undefined).length;
+/** matches tells whether name holds q, whatever its case; an empty q matches every name. */
+function matches(name: string, q: string): boolean {
+  return name.toLocaleLowerCase().includes(q.trim().toLocaleLowerCase());
+}
+
+/**
+ * Lists is the Owner's row of controls, the People and Spaces tabs with
+ * their counts, the one search field and Reset view, over the list of the
+ * tab chosen, narrowed by the search.
+ */
+function Lists({
+  listed,
+  view,
+  onView,
+  q,
+  onSearch,
+  reset,
+}: {
+  listed: Listed;
+  view: View;
+  onView: (view: View) => void;
+  q: string;
+  onSearch: (q: string) => void;
+  reset: ReactNode;
+}) {
+  const t = useT();
+  const { users, spaces } = listed;
+  const people = users.filter((u) => matches(u.name, q));
+  const found = spaces.filter((s) => matches(s.name, q));
+  const clear = () => onSearch("");
+  return (
+    <Tabs selectedKey={view} onSelectionChange={(k) => onView(k === "spaces" ? "spaces" : "people")} className="gap-0">
+      <div className="mb-5 flex flex-wrap items-center gap-2.5">
+        {/* The tabs keep their width in the row, which wraps instead. */}
+        <Tabs.ListContainer className="shrink-0">
+          <Tabs.List aria-label={t("space.access.views")}>
+            <Tabs.Tab id="people" className="w-auto whitespace-nowrap">
+              {t("space.access.people")}
+              <span className="t-num ml-1.5 text-muted">{users.filter((u) => u.removed_at === undefined).length}</span>
+              <Tabs.Indicator />
+            </Tabs.Tab>
+            <Tabs.Tab id="spaces" className="w-auto whitespace-nowrap">
+              {t("space.access.spaces")}
+              <span className="t-num ml-1.5 text-muted">{spaces.length}</span>
+              <Tabs.Indicator />
+            </Tabs.Tab>
+          </Tabs.List>
+        </Tabs.ListContainer>
+        <SearchField
+          aria-label={t(view === "people" ? "space.access.search.people" : "space.access.search.spaces")}
+          value={q}
+          onChange={onSearch}
+          className="min-w-56 flex-1"
+          fullWidth
+        >
+          <SearchField.Group>
+            <SearchField.SearchIcon />
+            <SearchField.Input placeholder={t("space.access.search.hint")} autoComplete="off" spellCheck="false" />
+            <SearchField.ClearButton aria-label={t("space.access.search.clear")} />
+          </SearchField.Group>
+        </SearchField>
+        {reset}
+      </div>
+      <Tabs.Panel id="people" className="p-0">
+        {people.length === 0 ? (
+          <NoMatch message={t("space.access.noPerson")} clear={t("space.access.search.clear")} onClear={clear} />
+        ) : (
+          <PeopleRows people={people} listed={listed} />
+        )}
+      </Tabs.Panel>
+      <Tabs.Panel id="spaces" className="p-0">
+        {spaces.length === 0 ? (
+          <Sheet>
+            <p className="max-w-[60ch] text-muted">{t("space.access.noSharedLead")}</p>
+          </Sheet>
+        ) : found.length === 0 ? (
+          <NoMatch message={t("space.access.noSpace")} clear={t("space.access.search.clear")} onClear={clear} />
+        ) : (
+          <SpaceRows spaces={found} />
+        )}
+      </Tabs.Panel>
+    </Tabs>
+  );
 }
 
 /**
@@ -184,227 +299,110 @@ function waysIn(t: Translate, count: Count, user: User, devices: readonly Device
   return t(own.length === 0 ? "user.notYetIn" : "user.noLiveDevice");
 }
 
-/** Person is a User's link to their panel: the initial, the name, "Owner" where so, and how they get in. */
-function Person({ user, line }: { user: User; line: string }) {
-  const t = useT();
-  const { search } = useLocation();
-  const removed = user.removed_at !== undefined;
-  return (
-    <Link
-      href={personPath(user.name) + search}
-      className="row-link -mx-2 flex w-[calc(100%+1rem)] items-center gap-3 px-2 py-2 text-foreground no-underline"
-    >
-      <Initial name={user.name} className="size-8 text-sm" />
-      <span className="min-w-0">
-        <span className="flex items-center gap-2">
-          <span className={`t-name truncate ${removed ? "text-muted line-through" : ""}`}>{user.name}</span>
-          {user.role === "owner" && <span className="t-label">{t("shell.role.owner")}</span>}
-        </span>
-        <span className="block truncate text-sm text-muted">{line}</span>
-      </span>
-    </Link>
-  );
+/**
+ * personLine is a person's one-line summary: the shared Spaces they are a
+ * Member of, "Every Space" for the Owner, then how they get in; a Removed
+ * User's is "Removed" alone.
+ */
+function personLine(t: Translate, count: Count, user: User, { devices, spaces, membership }: Listed): string {
+  const ways = waysIn(t, count, user, devices);
+  if (user.removed_at !== undefined) {
+    return ways;
+  }
+  if (user.role === "owner") {
+    return `${t("space.access.everySpace")} · ${ways}`;
+  }
+  const member = spaces.filter((s) => membership.isMember(s.name, user.name)).length;
+  return `${member === 0 ? t("space.access.inNoSpace") : count("space.access.inSpaces", member)} · ${ways}`;
 }
 
-/** countsOf says what a Space holds: its Hosts and Secrets. */
-function countsOf(t: Translate, count: Count, detail: SpaceDetail): string {
-  return t("space.counts", {
-    hosts: count("host.count.hosts", detail.counts.hosts),
-    secrets: count("secret.count", detail.counts.secrets),
+/** spaceLine is a Space's one-line summary: its Members, Hosts and Secrets; a Personal Space's has no Members. */
+function spaceLine(t: Translate, count: Count, space: SpaceDetail): string {
+  const hosts = count("host.count.hosts", space.counts.hosts);
+  const secrets = count("secret.count", space.counts.secrets);
+  if (space.personal) {
+    return t("space.counts", { hosts, secrets });
+  }
+  const members = space.members.length;
+  return t("space.access.spaceLine", {
+    members: members === 0 ? t("space.members.noneShort") : count("space.members.count", members),
+    hosts,
+    secrets,
   });
 }
 
+const rowClass = "row-link -mx-2 grid w-[calc(100%+1rem)] items-center gap-x-3 px-2 py-2 text-foreground no-underline";
+
+/** personRow lays a person's row out: initial, name, summary and chevron, the summary under the name on a phone. */
+const personRow = `${rowClass} grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[auto_minmax(0,18rem)_minmax(0,1fr)_auto]`;
+
 /**
- * AccessTable is the Owner's table on a desktop: a row per User, a column
- * per shared Space, and in each cell a checkbox of the User's membership,
- * which changes at once. The Owner's cells show a lock, since the Owner sees
- * every Space, and a Removed User's none.
+ * spaceRow lays a Space's row out as a person's, without the initial, its
+ * summary in line with theirs: 20.75rem is a person's 18rem name column,
+ * their 2rem initial and the 0.75rem gap between.
  */
-function AccessTable({
-  users,
-  devices,
-  spaces,
-  membership,
-}: {
-  users: readonly User[];
-  devices: readonly DeviceSession[];
-  spaces: readonly SpaceDetail[];
-  membership: Membership;
-}) {
+const spaceRow = `${rowClass} grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,20.75rem)_minmax(0,1fr)_auto]`;
+
+/**
+ * PeopleRows is the People as a list on one panel: a row per person, a link
+ * to their panel, with the initial, the name, "Owner" where so, and the
+ * one-line summary, beside the name on a desktop and under it on a phone.
+ */
+function PeopleRows({ people, listed }: { people: readonly User[]; listed: Listed }) {
   const t = useT();
   const count = useCount();
   const { search } = useLocation();
-  const live = liveCount(users);
   return (
-    // scroll-pl-72 keeps a focused cell clear of the sticky Users column, w-72 (WCAG 2.4.11).
-    <div className="sheet scroll-pl-72 overflow-x-auto px-5 pt-4 pb-2">
-      <table aria-label={t("space.access.table")} className="w-full border-separate border-spacing-0">
-        <thead>
-          <tr>
-            <th
-              scope="col"
-              className="sticky left-0 z-10 w-72 min-w-64 bg-surface pr-4 pb-3 text-left align-bottom font-normal"
-            >
-              <span className="t-label">{count("space.access.users", live)}</span>
-            </th>
-            {spaces.map((space) => (
-              <th key={space.id} scope="col" className="min-w-40 px-2 pb-3 text-center align-bottom font-normal">
-                <Link
-                  href={spacePath(space.name) + search}
-                  className="row-link inline-flex flex-col items-center px-3 py-1.5 text-foreground no-underline"
-                >
-                  <span className="t-name">{space.name}</span>
-                  <span className="t-num text-[0.8125rem] whitespace-nowrap text-muted">{countsOf(t, count, space)}</span>
-                </Link>
-              </th>
-            ))}
-            <td className="w-full" />
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((u) => (
-            <tr key={u.id}>
-              <th scope="row" className="sticky left-0 z-10 border-t border-line bg-surface py-2 pr-4 text-left font-normal">
-                <Person user={u} line={waysIn(t, count, u, devices)} />
-              </th>
-              {spaces.map((space) => (
-                <td key={space.id} className="border-t border-line px-2 py-2 text-center">
-                  <Cell user={u} space={space.name} membership={membership} />
-                </td>
-              ))}
-              <td className="border-t border-line" />
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {spaces.length === 0 ? (
-        <p className="max-w-[60ch] border-t border-line py-4 text-muted">{t("space.access.noSharedLead")}</p>
-      ) : (
-        <p className="t-label flex items-center gap-2 border-t border-line py-3">
-          <Lock aria-hidden className="size-4" />
-          {t("space.access.ownerSeesAll")}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/** Cell is one User's membership of one Space: a checkbox, the Owner's lock, or nothing for a Removed User. */
-function Cell({ user, space, membership }: { user: User; space: string; membership: Membership }) {
-  const t = useT();
-  if (user.removed_at !== undefined) {
-    return <span aria-hidden className="text-muted">–</span>;
-  }
-  if (user.role === "owner") {
-    return (
-      <span
-        role="img"
-        aria-label={t("space.access.ownerCell", { space })}
-        className="inline-flex size-11 items-center justify-center text-muted"
-      >
-        <Lock aria-hidden className="size-4" />
-      </span>
-    );
-  }
-  return (
-    <Checkbox
-      aria-label={t("space.access.cell", { user: user.name, space })}
-      isSelected={membership.isMember(space, user.name)}
-      onChange={(on) => void membership.set(space, user.name, on)}
-      className="inline-flex p-2.5"
-    >
-      <Checkbox.Content>
-        <Checkbox.Control>
-          <Checkbox.Indicator />
-        </Checkbox.Control>
-      </Checkbox.Content>
-    </Checkbox>
+    <ul className="sheet overflow-hidden px-4 md:px-5">
+      {people.map((u) => (
+        <li key={u.id} className="border-b border-line py-0.5 last:border-0">
+          <Link href={personPath(u.name) + search} className={personRow}>
+            <Initial name={u.name} className="row-span-2 size-8 text-sm md:row-span-1" />
+            <span className="flex min-w-0 items-center gap-2">
+              <span className={`t-name truncate ${u.removed_at === undefined ? "" : "text-muted line-through"}`}>
+                {u.name}
+              </span>
+              {u.role === "owner" && <span className="t-label">{t("shell.role.owner")}</span>}
+            </span>
+            <span className="col-start-2 row-start-2 truncate text-sm text-muted md:col-start-3 md:row-start-1">
+              {personLine(t, count, u, listed)}
+            </span>
+            <ChevronRight
+              aria-hidden
+              className="col-start-3 row-span-2 row-start-1 size-5 text-muted md:col-start-4 md:row-span-1"
+            />
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 
 /**
- * PhoneLists is the Owner's table on a phone, read from either side: the
- * People, each opening their panel with the Spaces as switches, then the
- * Spaces, each opening its panel with its Members.
+ * SpaceRows is Spaces as a list on one panel: a row per Space, a link to its
+ * panel, with its name, "Personal Space" where so, and its one-line summary,
+ * beside the name on a desktop and under it on a phone.
  */
-function PhoneLists({
-  users,
-  devices,
-  spaces,
-}: {
-  users: readonly User[];
-  devices: readonly DeviceSession[];
-  spaces: readonly SpaceDetail[];
-}) {
-  const t = useT();
-  const count = useCount();
-  const live = liveCount(users);
-  return (
-    <div className="flex flex-col gap-6">
-      <Group title={count("space.access.users", live)}>
-        <ul className="sheet overflow-hidden px-3">
-          {users.map((u) => (
-            <li key={u.id} className="border-b border-line py-1.5 last:border-0">
-              <Person user={u} line={waysIn(t, count, u, devices)} />
-            </li>
-          ))}
-        </ul>
-      </Group>
-      <Group title={t("space.access.spaces")}>
-        {spaces.length === 0 ? (
-          <p className="text-muted">{t("space.access.noSharedLead")}</p>
-        ) : (
-          <SpaceRows spaces={spaces} />
-        )}
-      </Group>
-    </div>
-  );
-}
-
-/** Group is a heading over what it names, as a region. */
-function Group({ title, children }: { title: string; children: ReactNode }) {
-  const id = useId();
-  return (
-    <section aria-labelledby={id}>
-      <h2 id={id} className="t-heading mb-2 px-1">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
-/** SpaceRows lists Spaces, each a link to its panel: its name, "Personal Space" where so, its counts and Members. */
 function SpaceRows({ spaces }: { spaces: readonly SpaceDetail[] }) {
   const t = useT();
   const count = useCount();
-  const language = useLanguage();
   const { search } = useLocation();
-  const list = new Intl.ListFormat(language, { type: "conjunction" });
   return (
-    <ul className="sheet overflow-hidden px-3">
+    <ul className="sheet overflow-hidden px-4 md:px-5">
       {spaces.map((space) => (
-        <li key={space.id} className="border-b border-line last:border-0">
-          <Link
-            href={spacePath(space.name) + search}
-            className="row-link -mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-4 px-2 py-3.5 text-foreground no-underline"
-          >
-            <span className="min-w-0">
-              <span className="flex items-center gap-2">
-                <span className="t-name truncate">{space.name}</span>
-                {space.personal && <Chip variant="secondary">{t("space.personal")}</Chip>}
-              </span>
-              <span className="block truncate text-sm text-muted">
-                {countsOf(t, count, space)}
-                {!space.personal &&
-                  ` · ${
-                    space.members.length === 0
-                      ? t("space.members.noneShort")
-                      : list.format(space.members.map((m) => m.name))
-                  }`}
-              </span>
+        <li key={space.id} className="border-b border-line py-0.5 last:border-0">
+          <Link href={spacePath(space.name) + search} className={spaceRow}>
+            <span className="flex min-w-0 items-center gap-2 py-1.5 md:py-1">
+              <span className="t-name truncate">{space.name}</span>
+              {space.personal && <Chip variant="secondary">{t("space.personal")}</Chip>}
             </span>
-            <ChevronRight aria-hidden className="size-5 shrink-0 text-muted" />
+            <span className="t-num col-start-1 row-start-2 truncate text-sm text-muted md:col-start-2 md:row-start-1">
+              {spaceLine(t, count, space)}
+            </span>
+            <ChevronRight
+              aria-hidden
+              className="col-start-2 row-span-2 row-start-1 size-5 text-muted md:col-start-3 md:row-span-1"
+            />
           </Link>
         </li>
       ))}

@@ -182,7 +182,7 @@ export function PersonalSpace({ name }: { name: string }) {
  * RemoveUser removes a User, asking first, and then says from the call's
  * outcome whether they were deleted, having never used koko, or Removed.
  * A refusal with space_not_empty names their Personal Space, which still
- * holds records and which the Access table does not show.
+ * holds records and which the People list does not show.
  */
 function RemoveUser({ name, onRemoved, onCancel }: { name: string; onRemoved: () => void; onCancel: () => void }) {
   const t = useT();

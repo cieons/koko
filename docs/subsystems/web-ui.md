@@ -58,8 +58,7 @@ app sits in its providers is [the web UI shell](web-shell.md#providers).
   to `t-code`), the panel (`.sheet`) and koko's adjustments to HeroUI's
   parts. Two of its rules are for keyboard and contrast-theme users. The
   root's scroll padding keeps a focused control clear of the sticky top bar
-  and, under `ui/phone.ts`'s width, the phone's bar (Access's table does the
-  same for its sticky first column). Under `forced-colors: active`, where
+  and, under `ui/phone.ts`'s width, the phone's bar. Under `forced-colors: active`, where
   the browser drops shadows and paints fills in the page's colour, the
   focus ring is a `Highlight` outline; panels, overlays and a switch's track
   get a `CanvasText` edge; the current place, the chosen tab and the chosen

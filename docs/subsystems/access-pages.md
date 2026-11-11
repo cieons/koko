@@ -30,26 +30,41 @@ beside it, goes back to `/access` with that query in place of the panel's
 history entry, so the focus returns to the link that opened it. A Member
 gets no route for a person's panel, so its path shows "Page not found".
 
-**The Owner's Access** is one table on a desktop: a row per User, the
-Owner first and the Removed Users last, a link
-to their panel that says how they get in ("2 devices · Password set", or
-"Invited, not yet in" for one who never had a device or a Password, from
-`device.list` with `all`), and a column per shared Space, whose header links
-to its panel with its counts. A cell is a checkbox named "<user> is a Member
-of <space>": ticking it calls `space.member.add`, unticking
-`space.member.remove`, for that one User, at once, with a notice; the cell
-shows what it asked while the call runs, then the Space's Members as the
-call answered them, until the Spaces are read again
-([`useMembership`](../../web/src/pages/space/membership.ts)). The Owner's
-cells show a lock, and a Removed User's none. On a phone the table is two
-lists, the People and the Spaces, each row a link to its panel, where the
-membership is changed: a person's Spaces as switches, a Space's Members
-with Take out and Add a Member. "Show Removed Users" is `all=1`. While the
-Spaces are read again after a change, the page keeps the rows it showed, so
-a panel's close still finds the link that opened it.
+**The Owner's Access** is two lists, one at a time, on a phone as on a
+desktop: the People and the shared Spaces, under the tabs **People** and
+**Spaces**, each with its count (the Users who are not Removed, and the
+shared Spaces), beside one search field that narrows the list shown by
+name, whatever its case, and Reset view. A person's row is a link to their
+panel: the initial, the name, "Owner" where so, and a one-line summary of
+the shared Spaces they are a Member of and how they get in ("16 Spaces ·
+2 devices · Password set", "No Space · Invited, not yet in" for one who
+never had a device or a Password, from `device.list` with `all`; "Every
+Space · …" for the Owner; "Removed" for a Removed User). The Owner comes
+first and the Removed Users last. A Space's row is a link to its panel:
+its name and "30 Members · 40 Hosts · 0 Secrets". The summary sits beside
+the name on a desktop and under it on a phone. Nothing that matches the
+search shows "No User matches this search." or "No Space matches this
+search." with Clear the search; with no shared Space, the Spaces tab says
+so, and what a Space is for. The Spaces tab is `view=spaces` in the URL,
+the search `q=`, replaced as it is typed, and "Show Removed Users", shown
+under the People, is `all=1`; the browser remembers them together as
+Access's view, as it remembers a list's
+([`useRememberedView`](../../web/src/shell/rememberedView.tsx)), so Access
+opened with no query, a panel's path among them, shows the view it was
+left in, and Reset view goes back to the People with no search and without
+the Removed Users. `all=1` stays in the view while the Spaces show, for
+the return to the People. Membership is changed in the panels:
+a person's Spaces as switches, a Space's Members with Take out and Add a
+Member; a change shows what it asked while the call runs, then the Space's
+Members as the call answered them, until the Spaces are read again
+([`useMembership`](../../web/src/pages/space/membership.ts)). While the
+Spaces are read again after a change, the page keeps the rows it showed,
+so a panel's close still finds the link that opened it.
 
 **A Member's Access** lists their Personal Space and the Spaces they belong
-to, each with its counts and Members, a link to its panel read-only, and
+to, each with its summary ("Personal Space" and its counts, or "3 Members
+· 4 Hosts · 1 Secret"), a link to its panel read-only, which names the
+Members, and
 says their devices are on Account.
 
 **A Space's panel** shows its counts of Hosts, Retired Hosts and Secrets,
@@ -96,8 +111,8 @@ and replacing the history entry ([`movedTo`](../../web/src/shell/router.tsx)).
 | Add a Space (`space.add`), a short form | the Owner | no |
 | Rename a Space (`space.rename`), and the panel moves to the new name, replacing its history entry | the Owner, on a shared Space | no |
 | Remove a Space (`space.remove`), then the panel closes | the Owner, on a shared Space | yes |
-| Make a User a Member (`space.member.add`): a cell, a switch, or Add a Member, chosen in a searchable choice among the Users who are neither the Owner, a Removed User nor a Member already (`user.list`) | the Owner, on a shared Space | no |
-| Take a Member out (`space.member.remove`): a cell, a switch, or Take out | the Owner, on a shared Space | no |
+| Make a User a Member (`space.member.add`): a switch in a person's panel, or Add a Member in a Space's, chosen in a searchable choice among the Users who are neither the Owner, a Removed User nor a Member already (`user.list`) | the Owner, on a shared Space | no |
+| Take a Member out (`space.member.remove`): a switch in a person's panel, or Take out in a Space's | the Owner, on a shared Space | no |
 | Invite a User (`user.invite`, with `web` for In a browser and `valid_for` unless 15 minutes, then `space.member.add` once per Space chosen) | the Owner | no |
 | Issue a Password Link (`password.link`, with `valid_for` unless 15 minutes), in a person's panel; disabled, saying why, while the Web URL is unset (`server.show`) | the Owner, for a User not Removed | no |
 | Remove a Password (`password.remove`), in a person's panel | the Owner, for a User with one | yes |
@@ -106,13 +121,14 @@ and replacing the history entry ([`movedTo`](../../web/src/shell/router.tsx)).
 | Add a device (`device.add`), with an optional name: on Account for oneself, with no `user`; in a person's panel for that User, named | anyone for themselves; the Owner for any User who is not Removed | no |
 | Revoke a live Device Session (`device.revoke`, naming its User) | anyone for their own; the Owner for anyone's | yes; for the Owner's own last live one, only once its name is typed, and the call carries `last` |
 
-A Member sees none of the Owner's buttons, cells, switches or panels, and a
+A Member sees none of the Owner's buttons, switches or panels, and a
 Personal Space shows the Owner none of the Space actions, since the koko
 server refuses them while its User exists. A refusal shows its code's
 message where the action was: in its dialog or confirmation, in the panel
-for a change of membership made there, or above the table for a cell. Two
+for a change of membership made there. Two
 say more than their code's message: removing a User refused with
-`space_not_empty` names their Personal Space, which the table does not show;
+`space_not_empty` names their Personal Space, which the People list does
+not show;
 and a refused revoke reloads the list, so a list that was out of date, such
 as one still showing a second device of the Owner's, is put right and the
 confirmation then asks for the name. The revoke confirmation states the
@@ -171,12 +187,14 @@ koko server whose writes change what it answers
 
 - [`access.test.tsx`](../../web/src/pages/space/access.test.tsx): the
   Spaces read in one `space.list`, with no `space.show` per Space, on load
-  and after a change; the Owner's table with its counts, memberships and
-  locked cells; a cell
-  ticked and unticked, with its notice and request, and a refused one;
-  "Show Removed Users" as `all=1` and from a bookmark; no shared Space, Add
-  Space and its refusal; a failed load with Try again; on a phone the two
-  lists, membership changed from a person's panel and a Space's; a Space's
+  and after a change; the People with their summaries and the Spaces with
+  theirs, each tab as `view=` in the URL; the search narrowing the list
+  shown as `q=`, across both tabs, with no match and Clear the search;
+  Access, and a panel's path, opened with no query showing the view it was
+  left in, and Reset view; "Show Removed Users" as `all=1` and from a bookmark, the Owner
+  first and the Removed Users last; no shared Space, Add Space and its
+  refusal; a failed load with Try again; on a phone the same lists,
+  membership changed from a person's panel and a Space's; a Space's
   panel with its counts' links; closing a panel in place of its history
   entry, its query kept and the focus back on its link; Add a Member among
   those who are not one, and Take out with the focus on the Members'
@@ -188,7 +206,7 @@ koko server whose writes change what it answers
   `/people`, keeping its query.
 - [`people.test.tsx`](../../web/src/pages/user/people.test.tsx): a person's
   panel with its role, switches, Personal Space and devices; a switch
-  changing the membership and the table showing it; the Owner's own panel;
+  changing the membership and the People list showing it; the Owner's own panel;
   a Removed User's; Remove User asking first, then Removed or deleted, and
   `space_not_empty` naming the Personal Space; Add device for that User;
   Invite with its Spaces, the Join Code shown once with Done focused, its

@@ -1,4 +1,4 @@
-/** accessPath is the path of Access, where the panels of a Space and a person open over the table. */
+/** accessPath is the path of Access, where the panels of a Space and a person open over its lists. */
 export const accessPath = "/access";
 
 /** spacePath is the path of a Space's panel, over Access. */

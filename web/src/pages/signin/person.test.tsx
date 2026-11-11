@@ -205,7 +205,7 @@ test("the Owner revokes another User's Sign-in from their panel, which says that
 
 test("Invite in a browser, valid for the time chosen, shows the Password Link once", async () => {
   const api = await asOwner("/access");
-  await screen.findByRole("table");
+  await screen.findByRole("link", { name: /^bob/ });
 
   fireEvent.click(screen.getByRole("button", { name: "Invite" }));
   const dialog = await screen.findByRole("dialog", { name: "Invite" });
@@ -229,7 +229,7 @@ test("Invite in a browser, valid for the time chosen, shows the Password Link on
 
 test("Invite in a terminal for 1 day counts down the day it was issued for", async () => {
   const api = await asOwner("/access");
-  await screen.findByRole("table");
+  await screen.findByRole("link", { name: /^bob/ });
 
   fireEvent.click(screen.getByRole("button", { name: "Invite" }));
   const dialog = await screen.findByRole("dialog", { name: "Invite" });
@@ -246,7 +246,7 @@ test("without a Web URL Invite's In a browser is disabled, and says why", async 
   const w = world();
   w.webURL = null;
   await asOwner("/access", w);
-  await screen.findByRole("table");
+  await screen.findByRole("link", { name: /^bob/ });
 
   fireEvent.click(screen.getByRole("button", { name: "Invite" }));
   const dialog = await screen.findByRole("dialog", { name: "Invite" });

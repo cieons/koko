@@ -285,7 +285,7 @@ The preview's mock answers at once, so these are specified here:
 | `/hosts/<name or id>` | `/hosts/<name or id>` | |
 | `/hosts/<host>/services/<service>` | `/services/<host>/<service>` | A side panel over the Host's page |
 | `/secrets` | `/secrets` | |
-| `/access` | `/people`, `/spaces` | People and Spaces in one table |
+| `/access` | `/people`, `/spaces` | People and Spaces as two lists, `view=spaces` for the Spaces |
 | `/access/people/<name>` | none | A side panel over Access: the Owner alone |
 | `/access/spaces/<name>` | `/spaces/<name>` | A side panel over Access |
 | `/account` | `/devices` | One's own devices and Sign-ins live here |
@@ -346,7 +346,7 @@ released, so it needs no redirect.
   rank. The columns button ticks which columns show, any Attribute key
   among them. The view lives in the URL.
 - **A list remembers its view** in the browser, for each User: the Hosts
-  view, the Services view and Secrets, each on its own. Opened with no
+  view, the Services view, Secrets and Access, each on its own. Opened with no
   view in its URL (from the top bar, a new tab, a link or after signing
   in), a list shows the view it was left in, and its URL is replaced by
   it, so the URL and a bookmark keep exactly the view on screen; a URL
@@ -497,18 +497,25 @@ Retired is reached through the Host's id, and its panel offers no action.
 For the Owner:
 
 - Title, one line, actions **Add Space** and **Invite** (primary).
-- One panel holding a table: a row per User (initial, name, "Owner" where
-  so, and under it how they get in: "3 devices · Password set", or
-  "Invited, not yet in"), a column per shared Space (its name and
-  "3 Hosts · 3 Secrets", a link to the Space's panel).
-- A cell is a checkbox named "<user> is a Member of <space>". Ticking it
-  calls `space.member.add`, unticking `space.member.remove`, at once, with
-  a notice. The Owner's cells show a lock; a line under the table says the
-  Owner sees every Space.
-- "Show Removed Users" under the panel adds them, struck through; it is
+- One row of controls: the tabs **People** and **Spaces**, each with its
+  count; one search field that grows and narrows the list shown by name;
+  **Reset view**. The tab is `view=spaces` in the URL for the Spaces, the
+  search `q=<text>`, replacing the history entry as it is typed, and the
+  browser remembers them, with "Show Removed Users", as it remembers a
+  list's view.
+- Under it, one panel holding the list of the tab chosen, a row per person
+  or Space, each a link to its panel. A person's row: initial, name,
+  "Owner" where so, and a one-line summary, "16 Spaces · 2 devices ·
+  Password set", "No Space · Invited, not yet in", "Every Space · 1
+  device" for the Owner. A Space's row: name and "30 Members · 40 Hosts ·
+  0 Secrets". The summary is beside the name on a desktop and under it on
+  a phone. The Owner is first and the Removed Users last.
+- Nothing matching the search: one panel with "No User matches this
+  search." or "No Space matches this search." and **Clear the search**.
+  No shared Space: the Spaces tab says so, and what a Space is for.
+- "Show Removed Users" under the People adds them, struck through; it is
   `all=1` in the URL.
-- On a phone the table becomes two lists, People then Spaces; membership
-  is changed in either panel.
+- Membership is changed in the panels, never in the lists.
 - **A person's panel**: role and date; Spaces as switches, and the
   Personal Space's counts; Devices with Add device and Revoke, and "Show
   Revoked devices"; Password ("set on <date>" or none) with Issue Password
@@ -532,7 +539,9 @@ For the Owner:
 - **Add Space**: a short form.
 
 For a Member: their Personal Space and the Spaces they belong to as one
-list (counts and Members), each opening its panel read-only, and a line
+list, each with its summary ("Personal Space" and its counts, or "3
+Members · 4 Hosts · 1 Secret"), each opening its panel read-only, which
+names the Members, and a line
 that their own devices and Sign-ins are on the Account page. A Member gets
 no person's panel: `/access/people/<name>` shows "Page not found" to them.
 
@@ -592,9 +601,8 @@ The frame, a title, one sentence and a link to Hosts.
   focus to what opened it. Every icon button has a name. A row that is a
   link is one Tab stop.
 - No horizontal scroll at 320px.
-- A focused control is never left under the sticky top bar, the phone's
-  bar or Access's sticky column; the root and that table carry scroll
-  padding for it.
+- A focused control is never left under the sticky top bar or the
+  phone's bar; the root carries scroll padding for it.
 - In forced colours (such as Windows' contrast themes) the focus ring is
   an outline, and the chosen place, tab, segment, checked box, switch and
   radio and the edges of panels and overlays are drawn in the system's
