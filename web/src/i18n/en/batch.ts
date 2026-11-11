@@ -72,4 +72,23 @@ export default {
   "batch.host.remove.none": "No Host was deleted",
   "batch.host.remove.rest.one": "Delete the other Host",
   "batch.host.remove.rest.other": "Delete the other {count} Hosts",
+  "batch.secret.bar": "Actions on the selected Secrets",
+  "batch.secret.move.title": "Move {things}",
+  "batch.secret.move.lead":
+    "Each Secret moves under its name. After the move, only the Members of the Space it moves to and the Owner can show it.",
+  "batch.secret.move.staying.one": "{count} Secret is in {space} already and stays there.",
+  "batch.secret.move.staying.other": "{count} Secrets are in {space} already and stay there.",
+  "batch.secret.move.done.one": "{count} Secret is now in {space}.",
+  "batch.secret.move.done.other": "{count} Secrets are now in {space}.",
+  "batch.secret.move.none": "No Secret was moved",
+  "batch.secret.move.rest.one": "Move the other Secret",
+  "batch.secret.move.rest.other": "Move the other {count} Secrets",
+  "batch.secret.remove.title": "Delete {things}",
+  "batch.secret.remove.lead":
+    "Each Secret and its value are deleted permanently. koko keeps no earlier value, so a deleted Secret cannot be restored.",
+  "batch.secret.remove.done.one": "{count} Secret is deleted.",
+  "batch.secret.remove.done.other": "{count} Secrets are deleted.",
+  "batch.secret.remove.none": "No Secret was deleted",
+  "batch.secret.remove.rest.one": "Delete the other Secret",
+  "batch.secret.remove.rest.other": "Delete the other {count} Secrets",
 };

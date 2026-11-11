@@ -556,6 +556,9 @@ HeroUI (#121) took the pages out; each came back with its ticket (#122 to
 | Rename | `secret.rename` | in the Space |
 | Move to another Space | `secret.move` | in both Spaces |
 | Delete, asking first | `secret.remove` | in the Space |
+| Select several Secrets: a row, a range, a Space's, all the view shows, kept while the view changes | none | anyone |
+| Move the Secrets selected to a Space, in one batch | `secret.move` with `secrets` | in each Secret's Space and the one moved to |
+| Delete the Secrets selected, asking first, in one batch | `secret.remove` with `secrets` | in each Secret's Space |
 
 **Access** (`/access`, which `/spaces` and `/people` go to; `view=spaces`, `q=` and `all=1` in the
 query) and **a Space's panel** (`/access/spaces/<name>`, which

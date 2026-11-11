@@ -1,6 +1,6 @@
 import { Button, SearchField } from "@heroui/react";
 import { Plus } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { type Secret, SecretAdd, SecretList } from "../../api/secret";
 import { type Space, SpaceList } from "../../api/space";
@@ -13,6 +13,10 @@ import { FormDialog } from "../../ui/FormDialog";
 import { notify } from "../../ui/notify";
 import { Page, Sheet } from "../../ui/Page";
 import { EmptyState, LoadFailed, Loading, NoMatch } from "../../ui/states";
+import { tickedOf } from "../batch/selection";
+import { Tick } from "../batch/Tick";
+import type { SelectMode } from "../batch/useSelectMode";
+import { useSecretSelectMode } from "./SecretBatch";
 import { qualified, SecretRow, useSpaceOptions, ValueField } from "./SecretRow";
 import { encodeValue } from "./value";
 
@@ -26,7 +30,8 @@ const allSpaces = "*";
  * Space select (space) live in the URL, refined in place, so a bookmark
  * opens the page narrowed, and the browser remembers them
  * (useRememberedView), with Reset view. Each row copies, shows and
- * changes its Secret (SecretRow); Add Secret adds one.
+ * changes its Secret (SecretRow); Add Secret adds one; Select starts the
+ * Select mode (useSecretSelectMode), which moves or deletes several.
  */
 export function SecretsPage() {
   const t = useT();
@@ -58,6 +63,7 @@ export function SecretsPage() {
     </Button>
   );
   const secrets = list.data?.secrets;
+  const { mode, select, overlays } = useSecretSelectMode({ secrets: secrets ?? [], spaces: spaces.data?.spaces ?? [] });
   // With no Secret yet, the empty state offers Add Secret, once.
   return (
     <Page title={t("secret.title")} lead={t("secret.lead")} actions={secrets?.length === 0 ? undefined : add}>
@@ -97,9 +103,11 @@ export function SecretsPage() {
                 onChange={(chosen) => refine({ space: chosen })}
               />
             )}
+            {select}
             <ResetView view={view} />
           </div>
           <Listing
+            mode={mode}
             secrets={secrets}
             query={query}
             space={space}
@@ -107,6 +115,7 @@ export function SecretsPage() {
             onChanged={list.reload}
             onClear={() => refine({ q: "", space: "" })}
           />
+          {overlays}
         </>
       )}
       {adding && (
@@ -158,9 +167,11 @@ function SpaceSelect({
 /**
  * Listing is the Secrets the search and the Space select leave, one panel
  * per Space, in the order secret.list answers them: by Space, then name.
- * The search matches <space>/<name>, whatever its case.
+ * The search matches <space>/<name>, whatever its case. It tells the
+ * Select mode which Secrets it shows, in its order.
  */
 function Listing({
+  mode,
   secrets,
   query,
   space,
@@ -168,6 +179,8 @@ function Listing({
   onChanged,
   onClear,
 }: {
+  /** mode is the page's Select mode (#134). */
+  mode: SelectMode;
   secrets: readonly Secret[];
   query: string;
   space: string;
@@ -180,6 +193,14 @@ function Listing({
   const shown = secrets.filter(
     (s) => (space === "" || s.space === space) && qualified(s).toLowerCase().includes(term),
   );
+  const narrowed = term !== "" || space !== "";
+  // The Secrets in the order the page shows them, which a Shift-click's range and "Select all" follow.
+  const order = shown.map((s) => s.id);
+  const orderKey = order.join(",");
+  const { report } = mode;
+  useEffect(() => {
+    report(orderKey === "" ? [] : orderKey.split(","), narrowed);
+  }, [report, orderKey, narrowed]);
   if (shown.length === 0) {
     return <NoMatch message={t("secret.noMatch")} clear={t("secret.clear")} onClear={onClear} />;
   }
@@ -192,6 +213,8 @@ function Listing({
       {[...groups].map(([name, items]) => (
         <SpacePanel
           key={name}
+          mode={mode}
+          order={order}
           name={name}
           personal={spaces?.find((s) => s.name === name)?.personal === true}
           secrets={items}
@@ -203,14 +226,23 @@ function Listing({
   );
 }
 
-/** SpacePanel is one Space's Secrets: a heading with its name and count, over a panel of rows. */
+/**
+ * SpacePanel is one Space's Secrets: a heading with its name and count,
+ * over a panel of rows. In the Select mode the heading has a checkbox for
+ * its rows, and each row is for ticking alone.
+ */
 function SpacePanel({
+  mode,
+  order,
   name,
   personal,
   secrets,
   spaces,
   onChanged,
 }: {
+  mode: SelectMode;
+  /** order are the ids of every Secret shown, in the page's order. */
+  order: readonly string[];
   name: string;
   personal: boolean;
   secrets: readonly Secret[];
@@ -220,15 +252,39 @@ function SpacePanel({
   const t = useT();
   const id = useId();
   const count = t(secrets.length === 1 ? "secret.count.one" : "secret.count.other", { count: secrets.length });
+  const { selecting, selection } = mode;
+  const ids = secrets.map((s) => s.id);
   return (
     <section aria-labelledby={id}>
-      <h2 className="t-heading mb-2 flex flex-wrap items-baseline gap-x-2 px-1">
+      <h2 className="t-heading mb-2 flex min-h-6 flex-wrap items-center gap-x-2 px-1">
+        {selecting && (
+          <Tick
+            label={t("batch.tickGroup", { things: count, group: name })}
+            ticked={tickedOf(selection, ids)}
+            onChange={(on) => selection.setMany(ids, on)}
+            // In line with the rows' checkboxes.
+            className="-my-3 ml-1"
+          />
+        )}
         <span id={id}>{name}</span>
         <span className="t-label font-normal">{personal ? t("secret.personalCount", { count }) : count}</span>
       </h2>
       <ul className="sheet overflow-hidden">
         {secrets.map((s) => (
-          <SecretRow key={s.id} secret={s} spaces={spaces} onChanged={onChanged} />
+          <SecretRow
+            key={s.id}
+            secret={s}
+            spaces={spaces}
+            onChanged={onChanged}
+            tick={
+              selecting
+                ? {
+                    ticked: selection.has(s.id),
+                    onTick: (on, shift) => selection.toggle(s.id, on, shift ? order : undefined),
+                  }
+                : undefined
+            }
+          />
         ))}
       </ul>
     </section>

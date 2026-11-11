@@ -514,23 +514,27 @@ Retired is reached through the Host's id, and its panel offers no action.
   page](subsystems/secrets.md#the-web-uis-secrets-page)).
 - Add Secret: Name, Space, Value (several lines). Set a new value: one
   field. Delete asks first.
+- **Select**, after the Space select, starts [the Select
+  mode](#the-select-mode): Move and Delete on several Secrets at once.
 
 ### The Select mode
 
 Acting on several records at once, the Owner's choice of three designs on
 a live preview (#134): a mode, the same on a phone and a desktop, over a
 checkbox column with a bar and over actions on the whole view. It is on
-the Hosts list.
+the Hosts list and the Secrets page.
 
 - **Select** (secondary, a list with ticks) sits in the controls row.
   Pressed, it becomes **Done** (primary) and the mode is on: rows are no
   longer links; each shows a checkbox before its name, and a click or tap
   anywhere on a row toggles it. A ticked row takes the soft accent fill.
-  Shift-click ticks a range on a desktop.
+  Shift-click ticks a range on a desktop. On Secrets, Copy, Show and the
+  row's menu hide in the mode, so a tap only toggles.
 - **Groups.** Each table's header row has a checkbox for its rows. With
   Group by, the Space's heading has one for the whole Space; on a phone,
-  where a panel is a list, each heading and subheading has one. A group
-  with some rows ticked shows the mixed state.
+  where a panel is a list, each heading and subheading has one. On
+  Secrets each Space's heading has one. A group with some rows ticked
+  shows the mixed state.
 - **The bar** floats at the foot from the start of the mode, an island
   like the phone's bar of places, which it covers on a phone: the count
   ("12 selected"), how many of those the view does not show ("3 not in
@@ -544,7 +548,7 @@ the Hosts list.
   by and sorting keep working in the mode, so a selection can be gathered
   across several searches.
 - **Actions on Hosts:** Move (to a Space), Attribute (set or remove one),
-  Retire, Delete.
+  Retire, Delete. **On Secrets:** Move, Delete.
 - **One dialog per batch.** Its title and its button name the action and
   the count ("Retire 12 Hosts"), and it lists the records, two columns in
   an inset block that scrolls in place. Move and Attribute are a short

@@ -73,6 +73,23 @@ const messages: Record<keyof typeof en, string> = {
   "batch.host.remove.none": "未删除任何主机",
   "batch.host.remove.rest.one": "删除其余 {count} 台主机",
   "batch.host.remove.rest.other": "删除其余 {count} 台主机",
+  "batch.secret.bar": "对所选机密的操作",
+  "batch.secret.move.title": "移动 {things}",
+  "batch.secret.move.lead": "每项机密将以原名称移至目标空间。移动后，仅目标空间的成员与所有者可查看。",
+  "batch.secret.move.staying.one": "{count} 项机密已位于 {space}，无需移动。",
+  "batch.secret.move.staying.other": "{count} 项机密已位于 {space}，无需移动。",
+  "batch.secret.move.done.one": "{count} 项机密已移至 {space}。",
+  "batch.secret.move.done.other": "{count} 项机密已移至 {space}。",
+  "batch.secret.move.none": "未移动任何机密",
+  "batch.secret.move.rest.one": "移动其余 {count} 项机密",
+  "batch.secret.move.rest.other": "移动其余 {count} 项机密",
+  "batch.secret.remove.title": "删除 {things}",
+  "batch.secret.remove.lead": "每项机密及其值将被永久删除。koko 不保留历史值，删除后无法恢复。",
+  "batch.secret.remove.done.one": "已删除 {count} 项机密。",
+  "batch.secret.remove.done.other": "已删除 {count} 项机密。",
+  "batch.secret.remove.none": "未删除任何机密",
+  "batch.secret.remove.rest.one": "删除其余 {count} 项机密",
+  "batch.secret.remove.rest.other": "删除其余 {count} 项机密",
 };
 
 export default messages;

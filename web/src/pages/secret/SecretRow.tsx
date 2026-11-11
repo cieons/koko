@@ -16,6 +16,7 @@ import { FormDialog } from "../../ui/FormDialog";
 import { notify } from "../../ui/notify";
 import { RowMenu } from "../../ui/RowMenu";
 import { Refusal } from "../../ui/states";
+import { Tick } from "../batch/Tick";
 import { encodeValue, type ShownValue, showValue } from "./value";
 
 /** revealFor is how long a value shown stays on the page: 30 seconds. */
@@ -117,6 +118,12 @@ export interface SecretRowProps {
   onChanged: () => void;
   /** compact is the row in a panel's list on a Host's page: its name alone, without when it changed. */
   compact?: boolean;
+  /**
+   * tick, in the Secrets page's Select mode (#134), puts a checkbox before
+   * the name and makes a click anywhere on the row toggle it: the row then
+   * shows no Copy, Show or menu, and no value.
+   */
+  tick?: { ticked: boolean; onTick: (on: boolean, shift: boolean) => void };
 }
 
 /**
@@ -128,7 +135,7 @@ export interface SecretRowProps {
  * as its base64. The menu sets a new value, renames, moves and deletes the
  * Secret, each in a dialog of its own; only Delete asks first.
  */
-export function SecretRow({ secret, spaces, onChanged, compact = false }: SecretRowProps) {
+export function SecretRow({ secret, spaces, onChanged, compact = false, tick }: SecretRowProps) {
   const t = useT();
   const language = useLanguage();
   const name = qualified(secret);
@@ -158,15 +165,28 @@ export function SecretRow({ secret, spaces, onChanged, compact = false }: Secret
     onChanged();
   };
 
+  const title = (
+    <div className={`min-w-0 flex-1 ${compact ? "basis-32" : "basis-48"}`}>
+      <p className={`${compact ? "font-medium" : "t-name"} truncate`}>{secret.name}</p>
+      {!compact && <p className="t-label">{t("secret.changed", { ago: formatAgo(secret.updated_at, language) })}</p>}
+    </div>
+  );
+  if (tick) {
+    return (
+      <li
+        onClick={(event) => tick.onTick(!tick.ticked, event.shiftKey)}
+        className={`flex cursor-pointer items-center gap-1.5 border-b border-line py-3 pr-5 pl-2 select-none last:border-0 ${tick.ticked ? "bg-accent-soft" : ""}`}
+      >
+        <Tick label={t("batch.tick", { name })} ticked={tick.ticked} onChange={tick.onTick} className="-my-2" />
+        {title}
+      </li>
+    );
+  }
+
   return (
     <li className={compact ? "border-t border-line py-2" : "border-b border-line px-5 py-3 last:border-0"}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div className={`min-w-0 flex-1 ${compact ? "basis-32" : "basis-48"}`}>
-          <p className={`${compact ? "font-medium" : "t-name"} truncate`}>{secret.name}</p>
-          {!compact && (
-            <p className="t-label">{t("secret.changed", { ago: formatAgo(secret.updated_at, language) })}</p>
-          )}
-        </div>
+        {title}
         <div className="flex flex-wrap items-center gap-2">
           <CopyButton
             variant="tertiary"

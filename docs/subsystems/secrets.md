@@ -235,6 +235,27 @@ of the shell's [dialogs](web-shell.md#parts).
   permanently. A refusal shows its code's message in the dialog that made
   the call, the form kept as typed; a write that succeeded says so in a
   toast, and the list loads again.
+- **The Select mode** ([the design](../web-design.md#the-select-mode);
+  the parts every list page shares are in [the record's
+  pages](record-pages.md#the-select-mode)). **Select**, after the Space
+  select, starts it
+  ([`useSecretSelectMode`](../../web/src/pages/secret/SecretBatch.tsx)):
+  a row shows a checkbox and its name alone, without Copy, Show, its menu
+  or a value shown, and a click or tap anywhere on it toggles it; a
+  Shift-click ticks a range, across Spaces, and each Space's heading has a
+  checkbox for its rows. The bar at the foot holds the count, how many of
+  the Secrets selected the view does not show, Select all N (matching),
+  Move, Delete and Done. The selection is kept, by the Secrets' ids,
+  while the search and the Space select change. **Move** asks for the
+  Space and leaves out, saying so, the Secrets in it already; **Delete**
+  states that each Secret and its value are deleted permanently and, for
+  more than one, asks for their number to be typed. Each is one call,
+  `secret.move` or `secret.remove` with `secrets`, all or none ([the
+  API](api.md#batches)). Applied, a notice says so, the list loads again
+  and the mode ends. Refused, the dialog stays, names each Secret at
+  fault with its reason, as two Secrets of one name bound for one Space
+  are each `name_taken`, and offers to send the rest; Cancel leaves the
+  selection as it was.
 - **On a Host's page.** A row is
   [`SecretRow`](../../web/src/pages/secret/SecretRow.tsx), which holds its
   value, its Copy, Show and menu and their dialogs, so the Secrets of a
@@ -267,6 +288,15 @@ of the shell's [dialogs](web-shell.md#parts).
   storage; Rename and Move never asking, Move offering the caller's other
   Spaces; a refusal shown in its dialog; Delete asking first and deleting
   only once confirmed.
+- [`select.test.tsx`](../../web/src/pages/secret/select.test.tsx): the
+  Select mode entered and left, its rows without Copy, Show and menu; a
+  row, a Shift-click's range across Spaces and a Space's heading ticked;
+  Select all and Select all matching; the selection kept across a search
+  and the Space select, with the count of those not shown, and sent whole;
+  Move's dialog with its count, its list, the Secrets it leaves out and
+  its one call; Delete's typed count and its one call; a refused batch
+  naming the Secrets at fault, Cancel keeping the selection, and the rest
+  sent.
 - [`secret_web_test.go`](../../internal/client/cli/secret_web_test.go) (S1,
   against `koko web`): `secret.show` over `web@koko`, answered or refused,
   carries `Cache-Control: no-store`.
