@@ -16,6 +16,8 @@ import (
 
 	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/server"
+	"github.com/cieons/koko/internal/server/installer"
 	"github.com/cieons/koko/internal/server/transport"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/wire"
@@ -24,16 +26,29 @@ import (
 // serverOut is the koko server's settings, as koko server show --json and
 // koko server set --json print them.
 type serverOut struct {
-	Address            string         `json:"address"`
-	ListenPort         int            `json:"listen_port"`
-	HostKeyFingerprint string         `json:"host_key_fingerprint"`
-	Version            string         `json:"version"`
-	RootKeyFile        string         `json:"root_key_file"`
-	RootKeyID          string         `json:"root_key_id"`
-	DataDir            string         `json:"data_dir"`
-	WebURL             *string        `json:"web_url"`
-	WebListen          *string        `json:"web_listen"`
-	UpdateCheck        updateCheckOut `json:"update_check"`
+	Address            string          `json:"address"`
+	ListenPort         int             `json:"listen_port"`
+	HostKeyFingerprint string          `json:"host_key_fingerprint"`
+	Version            string          `json:"version"`
+	RootKeyFile        string          `json:"root_key_file"`
+	RootKeyID          string          `json:"root_key_id"`
+	DataDir            string          `json:"data_dir"`
+	WebURL             *string         `json:"web_url"`
+	WebListen          *string         `json:"web_listen"`
+	UpdateCheck        updateCheckOut  `json:"update_check"`
+	UpgradeWay         string          `json:"upgrade_way"`
+	LastUpgrade        *lastUpgradeOut `json:"last_upgrade"`
+}
+
+// lastUpgradeOut is the outcome of the last upgrade, as koko server show
+// --json prints it.
+type lastUpgradeOut struct {
+	State      string  `json:"state"`
+	From       string  `json:"from"`
+	To         string  `json:"to"`
+	StartedAt  string  `json:"started_at"`
+	FinishedAt *string `json:"finished_at"`
+	Message    *string `json:"message"`
 }
 
 // updateCheckOut is the koko server's check for a new release, as koko
@@ -67,12 +82,12 @@ type knownServer struct {
 	key []byte
 }
 
-func startKnownServer(t *testing.T) knownServer {
+func startKnownServer(t *testing.T, opts ...harness.Option) knownServer {
 	t.Helper()
 	k := knownServer{dataDir: t.TempDir(), keyFile: harness.NewRootKeyFile(t)}
 	listen := harness.FreeAddr(t)
 	_, k.port, _ = net.SplitHostPort(listen)
-	k.Harness = harness.Start(t, harness.DataDir(k.dataDir), harness.RootKeyFile(k.keyFile), harness.Listen(listen))
+	k.Harness = harness.Start(t, append([]harness.Option{harness.DataDir(k.dataDir), harness.RootKeyFile(k.keyFile), harness.Listen(listen)}, opts...)...)
 	var err error
 	if k.key, err = os.ReadFile(k.keyFile); err != nil {
 		t.Fatal(err)
@@ -112,6 +127,21 @@ func (k knownServer) golden(t *testing.T, name, out string) {
 	).Replace(out))
 }
 
+// goldenText checks what server show printed for people against
+// testdata/name, with the paths, the port, the Root Key's id and the
+// version, which depend on the test, replaced.
+func (k knownServer) goldenText(t *testing.T, name, out string) {
+	t.Helper()
+	harness.Golden(t, name, strings.NewReplacer(
+		k.dataDir, "<data-dir>",
+		k.keyFile, "<root-key-file>",
+		rootKeyID(t, k.key), "rootkey_<1>",
+		harness.Address+":"+k.port, harness.Address+":<port>",
+		"Listen port:     "+k.port, "Listen port:     <port>",
+		"Version:         "+k.version(t), "Version:         <version>",
+	).Replace(out))
+}
+
 // rootKeyID returns the id a Root Key file's content names, before its key.
 func rootKeyID(t *testing.T, file []byte) string {
 	t.Helper()
@@ -141,6 +171,7 @@ func TestServerShowPrintsTheSettings(t *testing.T) {
 		RootKeyID:          rootKeyID(t, k.key),
 		DataDir:            k.dataDir,
 		UpdateCheck:        updateCheckOut{Enabled: true},
+		UpgradeWay:         "none",
 	}
 	if s != want {
 		t.Errorf("server show --json = %+v, want %+v", s, want)
@@ -161,6 +192,7 @@ func TestServerShowPrintsTheSettings(t *testing.T) {
 		"Root Key:        " + k.keyFile + " (" + want.RootKeyID + ")",
 		"Data directory:  " + k.dataDir,
 		"Update check:    on, not checked yet",
+		"Upgrade:         replace kokod and restart it",
 	} {
 		if !strings.Contains(r.Stdout, line+"\n") {
 			t.Errorf("server show printed %q, want the line %q", r.Stdout, line)
@@ -590,5 +622,103 @@ func TestServerShowSaysWhatTheKokoServersCheckFound(t *testing.T) {
 	}
 	if got, want := line(), "on, last at 2026-11-11 09:00 UTC: v0.5.0 is the latest release"; got != want {
 		t.Errorf("server show printed the update check %q, want %q", got, want)
+	}
+}
+
+// koko server show names how the koko server is upgraded, in its JSON
+// and in its Upgrade line: in place where the upgrade helper's path unit
+// is (systemd), by a new image where KOKO_IMAGE names one (image), and by
+// hand otherwise (none); and the outcome of the last upgrade, null without
+// one.
+func TestServerShowSaysHowTheKokoServerUpgrades(t *testing.T) {
+	t.Parallel()
+	helperDir := t.TempDir()
+	helper := filepath.Join(helperDir, "koko-upgrade.path")
+	if err := os.WriteFile(helper, []byte("[Path]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outcome := filepath.Join(helperDir, "outcome.json")
+	if err := os.WriteFile(outcome, []byte(`{"state": "failed", "from": "v0.4.0", "to": "v0.5.0", "started_at": "2026-11-11T09:00:00Z", "finished_at": "2026-11-11T09:01:30Z", "message": "the new kokod did not start: the previous kokod runs again"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		way     string
+		upgrade server.Upgrade
+	}{
+		{"systemd", server.Upgrade{HelperUnit: helper, OutcomeFile: outcome}},
+		{"image", server.Upgrade{HelperUnit: filepath.Join(helperDir, "none.path"), Image: "ghcr.io/cieons/koko"}},
+		{"none", server.Upgrade{HelperUnit: filepath.Join(helperDir, "none.path"), OutcomeFile: filepath.Join(helperDir, "none.json")}},
+	} {
+		t.Run(tc.way, func(t *testing.T) {
+			t.Parallel()
+			k := startKnownServer(t, harness.Upgrade(tc.upgrade))
+			r := k.Koko("server", "show", "--json")
+			if s := parseServer(t, r); s.UpgradeWay != tc.way {
+				t.Errorf("server show names the upgrade way %q, want %q", s.UpgradeWay, tc.way)
+			}
+			// A koko server run by hand is server-show.json's.
+			name := "server-show-" + tc.way
+			if tc.way == "none" {
+				name = "server-show"
+			}
+			k.golden(t, name+".json", r.Stdout)
+			r = k.Koko("server", "show")
+			r.WantSuccess(t)
+			k.goldenText(t, name+".txt", r.Stdout)
+		})
+	}
+}
+
+// On a machine where install wrote the upgrade helper's path unit, kokod
+// run finds it, and the helper's outcome.json, where the helper keeps
+// them.
+func TestServerShowFindsTheUpgradeHelperInstallWrote(t *testing.T) {
+	t.Parallel()
+	m := harness.NewMachine(t)
+	install(t, m, "--owner", "alice")
+	if s := parseServer(t, m.Koko("server", "show", "--json")); s.UpgradeWay != "none" || s.LastUpgrade != nil {
+		t.Errorf("without the helper, server show names the upgrade way %q and the last upgrade %+v; want none and null", s.UpgradeWay, s.LastUpgrade)
+	}
+	if err := os.WriteFile(m.Path(installer.UpgradePathUnit), []byte("[Path]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(m.Path(installer.UpgradeDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(m.Path(installer.OutcomeFile), []byte(`{"state": "running", "from": "v0.4.0", "to": "v0.5.0", "started_at": "2026-11-11T09:00:00Z"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := parseServer(t, m.Koko("server", "show", "--json"))
+	want := lastUpgradeOut{State: "running", From: "v0.4.0", To: "v0.5.0", StartedAt: "2026-11-11T09:00:00Z"}
+	if s.UpgradeWay != "systemd" || s.LastUpgrade == nil || *s.LastUpgrade != want {
+		t.Errorf("server show names the upgrade way %q and the last upgrade %+v; want systemd and %+v", s.UpgradeWay, s.LastUpgrade, want)
+	}
+}
+
+// In the image, the Upgrade line names the release to set KOKO_VERSION to
+// once the koko server's check has found a newer one.
+func TestServerShowNamesTheImageToPull(t *testing.T) {
+	t.Parallel()
+	socket := cannedServer(t, `{"address": "koko.example.com", "listen_port": 7822, "version": "v0.4.0", "upgrade_way": "image",
+		"update_check": {"enabled": true, "checked_at": "2026-11-11T09:00:30Z", "latest": "v0.5.0", "error": null}}`)
+	r := harness.Run(t, cli.Runner{SocketPath: socket}, nil, "server", "show")
+	r.WantSuccess(t)
+	if want := "Upgrade:         pull the new image: set KOKO_VERSION=v0.5.0 in the Compose file, then docker compose pull && docker compose up -d\n"; !strings.Contains(r.Stdout, want) {
+		t.Errorf("server show printed %q, want the line %q", r.Stdout, want)
+	}
+}
+
+// An outcome.json that does not parse is unknown, not "no upgrade ran": server
+// show fails rather than answer a null last upgrade.
+func TestServerShowFailsOnAnOutcomeItCannotRead(t *testing.T) {
+	t.Parallel()
+	outcome := filepath.Join(t.TempDir(), "outcome.json")
+	if err := os.WriteFile(outcome, []byte(`{"state": "succ`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := harness.Start(t, harness.Upgrade(server.Upgrade{OutcomeFile: outcome}))
+	h.Koko("server", "show", "--json").WantError(t, 1, "internal_error")
+	if !strings.Contains(h.Log(), outcome) {
+		t.Errorf("the koko server's log does not name %s:\n%s", outcome, h.Log())
 	}
 }

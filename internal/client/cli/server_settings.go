@@ -39,6 +39,42 @@ type serverJSON struct {
 	// UpdateCheck is the koko server's check for a new koko release: its
 	// setting and what the checks found.
 	UpdateCheck updateCheckJSON `json:"update_check"`
+	// UpgradeWay is how the koko server is upgraded: "systemd", "image" or
+	// "none".
+	UpgradeWay string `json:"upgrade_way"`
+	// LastUpgrade is the outcome of its last upgrade through the upgrade
+	// helper, null while there is none.
+	LastUpgrade *lastUpgradeJSON `json:"last_upgrade"`
+}
+
+// lastUpgradeJSON is the outcome of the koko server's last upgrade through
+// the upgrade helper.
+type lastUpgradeJSON struct {
+	State      string  `json:"state"`
+	From       string  `json:"from"`
+	To         string  `json:"to"`
+	StartedAt  string  `json:"started_at"`
+	FinishedAt *string `json:"finished_at"`
+	Message    *string `json:"message"`
+}
+
+// upgradeLine says how the koko server is upgraded, as koko server show
+// prints it, by its upgrade_way.
+func (s serverJSON) upgradeLine() string {
+	switch s.UpgradeWay {
+	case api.UpgradeWaySystemd:
+		return "koko server upgrade, or the web UI"
+	case api.UpgradeWayImage:
+		version := " to the new release's tag"
+		if l := s.UpdateCheck.Latest; l != nil && compat.Newer(*l, s.Version) {
+			version = "=" + *l
+		}
+		return "pull the new image: set KOKO_VERSION" + version + " in the Compose file, then docker compose pull && docker compose up -d"
+	case api.UpgradeWayNone:
+		return "replace kokod and restart it"
+	}
+	// A way a newer koko server names, which this CLI does not know.
+	return s.UpgradeWay
 }
 
 // updateCheckJSON is the koko server's check for a new koko release.
@@ -81,7 +117,7 @@ func (u updateCheckJSON) line(version string) string {
 }
 
 func serverFromAPI(s api.Server) serverJSON {
-	return serverJSON{
+	j := serverJSON{
 		Address:            s.Address,
 		ListenPort:         s.ListenPort,
 		HostKeyFingerprint: s.HostKeyFingerprint,
@@ -97,7 +133,14 @@ func serverFromAPI(s api.Server) serverJSON {
 			Latest:    s.UpdateCheck.Latest,
 			Error:     s.UpdateCheck.Error,
 		},
+		UpgradeWay: s.UpgradeWay,
 	}
+	if l := s.LastUpgrade; l != nil {
+		j.LastUpgrade = &lastUpgradeJSON{
+			State: l.State, From: l.From, To: l.To, StartedAt: l.StartedAt, FinishedAt: l.FinishedAt, Message: l.Message,
+		}
+	}
+	return j
 }
 
 func (s serverJSON) Human(w io.Writer) error {
@@ -110,8 +153,9 @@ Version:         %s
 Root Key:        %s (%s)
 Data directory:  %s
 Update check:    %s
+Upgrade:         %s
 `, serveraddr.WithPort(s.Address, s.ListenPort), s.ListenPort, orNone(s.WebListen, "off"), orNone(s.WebURL, "not set"),
-		s.HostKeyFingerprint, s.Version, s.RootKeyFile, s.RootKeyID, s.DataDir, s.UpdateCheck.line(s.Version))
+		s.HostKeyFingerprint, s.Version, s.RootKeyFile, s.RootKeyID, s.DataDir, s.UpdateCheck.line(s.Version), s.upgradeLine())
 	return err
 }
 

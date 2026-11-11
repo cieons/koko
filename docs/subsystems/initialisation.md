@@ -170,6 +170,8 @@ loaded and runs with. Each returns `{"server": {...}}`
 | `web_url` | the Web URL, as stored: lowercased, without the default port 443; `null` while it is not set |
 | `web_listen` | the web listener's bound address, such as `127.0.0.1:7823`; `null` while it is off |
 | `update_check` | the check for a new koko release: `{"enabled", "checked_at", "latest", "error"}`, the setting and what the checks found, each `null` while unknown ([the update check](#the-update-check)) |
+| `upgrade_way` | how the koko server is upgraded: `systemd`, `image` or `none` ([how it upgrades](#how-it-upgrades)) |
+| `last_upgrade` | the outcome of the last upgrade through the upgrade helper, `{"state", "from", "to", "started_at", "finished_at", "message"}`; `null` while there is none ([how it upgrades](#how-it-upgrades)) |
 
 - **`server.show`** ([`koko server show`](cli.md#the-commands-so-far), read
   tier) answers every caller, a Member's Device Session included: the
@@ -265,11 +267,38 @@ instead, which `h.Advance` and `h.SetNow` move and whose `h.Waits()` says
 when the next check comes, and the koko server finds releases at `rel`'s
 fake GitHub (the releases hook, `server.Config.Releases`).
 
-`koko server show` prints it as `Update check:    on, last at 2026-11-11
+`koko server show` prints the update check as `Update check:    on, last at 2026-11-11
 09:00 UTC: v0.5.0 is available`, or `not checked yet`, `… is the latest
 release`, or `…, which failed: <error>`, comparing versions as
 [`compat`](../../internal/shared/compat/compat.go) does: a pseudo-version
 just before its next release, `(devel)` the newest.
+
+### How it upgrades
+
+`server.show` names how the koko server is upgraded, from what `kokod run`
+finds on its machine (`server.Config.Upgrade`), read at each call:
+
+- **`upgrade_way`** is `systemd` while the upgrade helper's path unit,
+  `/etc/systemd/system/koko-upgrade.path`, is there (kokod reads it under
+  `ProtectSystem=strict`); `image` when `KOKO_IMAGE` is set, as the image
+  sets it ([the release](release.md)); and `none` otherwise, for `kokod
+  run` started by hand. A path unit kokod cannot look for fails the call,
+  rather than answering `none`.
+- **`last_upgrade`** is `/var/lib/koko-upgrade/outcome.json`, which the
+  helper writes as root, a temporary file renamed into place
+  ([`installer.Outcome`](../../internal/server/installer/outcome.go)):
+  `{"state", "from", "to", "started_at", "finished_at", "message"}`, the
+  state `running`, `succeeded`, `failed` or `failed_not_restored`,
+  `finished_at` and `message` `null` while unset. It is `null` while the
+  file is not there; a file that does not read or parse fails the call,
+  since what it says is unknown. The helper and `koko server upgrade`
+  come with #141.
+
+`koko server show` prints `Upgrade:` by the way: `koko server upgrade, or
+the web UI`; `pull the new image: set KOKO_VERSION=v0.5.0 in the Compose
+file, then docker compose pull && docker compose up -d`, naming the newer
+release the check found, or `KOKO_VERSION to the new release's tag`
+before it found one; or `replace kokod and restart it`.
 
 ## Verifying
 
@@ -314,7 +343,13 @@ just before its next release, `(devel)` the newest.
   and forgetting what it found, a check at once still answered, and on
   again a few minutes later; a failure shown in `server.show`, logged once
   while it repeats and not tried sooner; two checks at once sharing one
-  request; and `update_check_failed`. The access matrix has
+  request; and `update_check_failed`. `server_settings_test.go` also has
+  `server show`'s golden files, text and JSON, for each `upgrade_way`, the
+  last upgrade read from an `outcome.json` and `null` without one, and the
+  helper's path unit and outcome found where install keeps them on the fake
+  machine; [`run_upgrade_test.go`](../../internal/server/kokod/run_upgrade_test.go)
+  `kokod run` naming `image` under `KOKO_IMAGE` and `none` without it.
+  The access matrix has
   `server.check_update` for the Owner alone.
 - [`compat_test.go`](../../internal/shared/compat/compat_test.go): the
   order of releases, pre-releases, pseudo-versions and `(devel)`.

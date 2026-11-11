@@ -94,6 +94,39 @@ export interface Server {
    * 0048): its setting and what the checks found.
    */
   update_check: UpdateCheck;
+  /**
+   * UpgradeWay is how the koko server is upgraded: UpgradeWaySystemd,
+   * UpgradeWayImage or UpgradeWayNone.
+   */
+  upgrade_way: string;
+  /**
+   * LastUpgrade is the outcome of the last upgrade through the upgrade
+   * helper; null while there is none.
+   */
+  last_upgrade: LastUpgrade | null;
+}
+
+/**
+ * LastUpgrade is the outcome of the last upgrade through the upgrade
+ * helper, as it recorded it.
+ */
+export interface LastUpgrade {
+  /**
+   * State is "running", "succeeded", "failed" (the previous kokod runs
+   * again) or "failed_not_restored" (it did not start either).
+   */
+  state: string;
+  /** From and To are the version kokod was and the one asked for. */
+  from: string;
+  to: string;
+  /**
+   * StartedAt is when the helper took the request, RFC 3339 in UTC, and
+   * FinishedAt when it finished, null while it runs.
+   */
+  started_at: string;
+  finished_at: string | null;
+  /** Message says why the upgrade failed; null when it did not. */
+  message: string | null;
 }
 
 /**
@@ -195,8 +228,9 @@ export const ServerInit: Op<ServerInitRequest, ServerInitResponse> = {
 
 /**
  * ServerShow returns the koko server's deployment: its Server Address,
- * listen port, host key, version, Root Key's file and id, and data
- * directory.
+ * listen port, host key, version, Root Key's file and id, data
+ * directory, Web URL and web listener, its check for a new release, how
+ * it is upgraded and the outcome of its last upgrade.
  */
 export const ServerShow: Op<ServerShowRequest, ServerShowResponse> = {
   name: "server.show",

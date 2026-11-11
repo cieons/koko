@@ -3,6 +3,9 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io/fs"
+	"os"
 	"strings"
 	"time"
 
@@ -10,6 +13,7 @@ import (
 
 	"github.com/cieons/koko/internal/server/access"
 	"github.com/cieons/koko/internal/server/deployment"
+	"github.com/cieons/koko/internal/server/installer"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/store"
@@ -41,6 +45,8 @@ type settings struct {
 	webListen string
 	// updates checks for a new koko release.
 	updates *updatecheck.Checker
+	// upgrade is where it learns how it is upgraded.
+	upgrade Upgrade
 }
 
 // registerSettings registers server.show, for every caller, server.set,
@@ -204,6 +210,14 @@ func (s *settings) read(ctx context.Context, tx store.Tx) (api.Server, error) {
 	if err != nil {
 		return api.Server{}, err
 	}
+	way, err := s.upgrade.way()
+	if err != nil {
+		return api.Server{}, err
+	}
+	last, err := s.upgrade.last()
+	if err != nil {
+		return api.Server{}, err
+	}
 	return api.Server{
 		Address:            address,
 		ListenPort:         s.listenPort(),
@@ -216,6 +230,43 @@ func (s *settings) read(ctx context.Context, tx store.Tx) (api.Server, error) {
 		WebURL:             nonEmpty(webURL),
 		WebListen:          nonEmpty(s.webListen),
 		UpdateCheck:        updateCheckJSON(updateCheck, s.updates.Result()),
+		UpgradeWay:         way,
+		LastUpgrade:        last,
+	}, nil
+}
+
+// way says how the koko server is upgraded: in place through the upgrade
+// helper while its path unit is there, by a new image in the container
+// image, and by hand otherwise.
+func (u Upgrade) way() (string, error) {
+	if u.HelperUnit != "" {
+		_, err := os.Stat(u.HelperUnit)
+		switch {
+		case err == nil:
+			return api.UpgradeWaySystemd, nil
+		case !errors.Is(err, fs.ErrNotExist):
+			return "", fmt.Errorf("look for the upgrade helper: %w", err)
+		}
+	}
+	if u.Image != "" {
+		return api.UpgradeWayImage, nil
+	}
+	return api.UpgradeWayNone, nil
+}
+
+// last is the outcome of the last upgrade through the helper, nil while
+// there is none.
+func (u Upgrade) last() (*api.LastUpgrade, error) {
+	if u.OutcomeFile == "" {
+		return nil, nil
+	}
+	o, err := installer.ReadOutcome(u.OutcomeFile)
+	if o == nil || err != nil {
+		return nil, err
+	}
+	return &api.LastUpgrade{
+		State: o.State, From: o.From, To: o.To, StartedAt: o.StartedAt,
+		FinishedAt: nonEmpty(o.FinishedAt), Message: nonEmpty(o.Message),
 	}, nil
 }
 

@@ -17,16 +17,29 @@ import (
 // serverOut is the koko server's settings, as koko server show --json
 // prints them.
 type serverOut struct {
-	Address            string         `json:"address"`
-	ListenPort         int            `json:"listen_port"`
-	HostKeyFingerprint string         `json:"host_key_fingerprint"`
-	Version            string         `json:"version"`
-	RootKeyFile        string         `json:"root_key_file"`
-	RootKeyID          string         `json:"root_key_id"`
-	DataDir            string         `json:"data_dir"`
-	WebURL             *string        `json:"web_url"`
-	WebListen          *string        `json:"web_listen"`
-	UpdateCheck        updateCheckOut `json:"update_check"`
+	Address            string          `json:"address"`
+	ListenPort         int             `json:"listen_port"`
+	HostKeyFingerprint string          `json:"host_key_fingerprint"`
+	Version            string          `json:"version"`
+	RootKeyFile        string          `json:"root_key_file"`
+	RootKeyID          string          `json:"root_key_id"`
+	DataDir            string          `json:"data_dir"`
+	WebURL             *string         `json:"web_url"`
+	WebListen          *string         `json:"web_listen"`
+	UpdateCheck        updateCheckOut  `json:"update_check"`
+	UpgradeWay         string          `json:"upgrade_way"`
+	LastUpgrade        *lastUpgradeOut `json:"last_upgrade"`
+}
+
+// lastUpgradeOut is the outcome of the last upgrade, as koko server show
+// --json prints it.
+type lastUpgradeOut struct {
+	State      string  `json:"state"`
+	From       string  `json:"from"`
+	To         string  `json:"to"`
+	StartedAt  string  `json:"started_at"`
+	FinishedAt *string `json:"finished_at"`
+	Message    *string `json:"message"`
 }
 
 // updateCheckOut is the koko server's check for a new release, as koko

@@ -85,6 +85,7 @@ type options struct {
 	filesystems filesystem.Types
 	processUIDs func() (real, effective, saved int)
 	releases    *Releases
+	upgrade     server.Upgrade
 }
 
 // Mountinfo makes the koko server read the machine's mounts from path, a
@@ -151,6 +152,15 @@ func Timings(t timing.Timings) Option {
 // koko server checks only when asked, and finds no release (noReleases).
 func UpdateCheck(r *Releases) Option {
 	return func(o *options) { o.releases = r }
+}
+
+// Upgrade tells the koko server how it is upgraded: where to look for the
+// upgrade helper's path unit and its outcome file, such as files the test
+// writes, and the container image's name. Without it, the koko server
+// looks for neither and is no image's, so it is upgraded by hand
+// (upgrade_way none). For kokod run, its KOKO_IMAGE names the image.
+func Upgrade(u server.Upgrade) Option {
+	return func(o *options) { o.upgrade = u }
 }
 
 // noReleases is where a koko server a test starts finds koko's releases
@@ -316,6 +326,7 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		Timings:     o.timings,
 		UpdateClock: updateClock,
 		Releases:    releases,
+		Upgrade:     o.upgrade,
 	})
 	if err != nil {
 		t.Fatalf("start the koko server: %v", err)
@@ -386,13 +397,16 @@ func startConfig(t testing.TB, opts []Option) func(server.Config) server.Config 
 		opt(&o)
 	}
 	socket := cmp.Or(o.socket, filepath.Join(ShortTempDir(t), "koko.sock"))
-	filesystems, uids := o.filesystemsOrLocalDisk(), o.processUIDsOrNotRoot()
+	filesystems, uids, upgrade := o.filesystemsOrLocalDisk(), o.processUIDsOrNotRoot(), o.upgrade
 	return func(c server.Config) server.Config {
 		c.Listen = listenAddr
 		c.Filesystems = filesystems
 		c.ProcessUIDs = uids
 		c.SocketPath = socket
 		c.UpdateClock, c.Releases = StillClock{}, noReleases
+		// Never the machine's own /etc and /var/lib.
+		c.Upgrade.HelperUnit, c.Upgrade.OutcomeFile = upgrade.HelperUnit, upgrade.OutcomeFile
+		c.Upgrade.Image = cmp.Or(upgrade.Image, c.Upgrade.Image)
 		return c
 	}
 }

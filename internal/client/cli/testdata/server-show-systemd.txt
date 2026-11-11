@@ -1,0 +1,10 @@
+Server Address:  127.0.0.1:<port>
+Listen port:     <port>
+Web listener:    off
+Web URL:         not set
+Host key:        SHA256:<fingerprint>
+Version:         <version>
+Root Key:        <root-key-file> (rootkey_<1>)
+Data directory:  <data-dir>
+Update check:    on, not checked yet
+Upgrade:         koko server upgrade, or the web UI

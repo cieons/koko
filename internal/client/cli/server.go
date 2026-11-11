@@ -60,7 +60,7 @@ var serverCommands = []Command{
 	{
 		Noun:    "server",
 		Verb:    "show",
-		Summary: "Show the koko server's Server Address, port, web listener, Web URL, host key, version, Root Key file, data directory and update check",
+		Summary: "Show the koko server's Server Address, port, web listener, Web URL, host key, version, Root Key file, data directory, update check and how it upgrades",
 		Tier:    Read,
 		Op:      api.ServerShow,
 		Run:     action(serverShow),
@@ -96,6 +96,7 @@ var serverMappings = []mapping{
 		},
 	},
 	{api: reflect.TypeFor[api.UpdateCheck](), cli: reflect.TypeFor[updateCheckJSON]()},
+	{api: reflect.TypeFor[api.LastUpgrade](), cli: reflect.TypeFor[lastUpgradeJSON]()},
 }
 
 // installedJSON is what koko server install prints once the koko server

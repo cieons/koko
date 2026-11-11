@@ -818,6 +818,7 @@ func (m *Machine) startService() error {
 		// Its check for a new release waits on a clock that never moves,
 		// so the requests a test counts on the fake GitHub are koko's own.
 		c.UpdateClock, c.Releases = StillClock{}, releases
+		c.Upgrade.HelperUnit, c.Upgrade.OutcomeFile = m.Path(c.Upgrade.HelperUnit), m.Path(c.Upgrade.OutcomeFile)
 		return server.Run(ctx, c)
 	}
 	p := kokod.Program{Serve: serve}

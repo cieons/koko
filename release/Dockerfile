@@ -37,7 +37,8 @@ COPY --from=empty --chown=65532:65532 --chmod=0700 / /koko
 COPY --from=empty --chown=65532:65532 --chmod=0755 / /run/koko
 
 # KOKO_IMAGE tells koko update that this koko is the image's, which a new
-# image upgrades (ADR 0047).
+# image upgrades (ADR 0047), and kokod that it is upgraded by a new image,
+# which koko server show names (ADR 0048).
 ENV KOKO_DATA_DIR=/koko/data \
     KOKO_ROOT_KEY_FILE=/koko/root.key \
     KOKO_IMAGE=ghcr.io/cieons/koko

@@ -63,6 +63,43 @@ type Server struct {
 	// UpdateCheck is the koko server's check for a new koko release (ADR
 	// 0048): its setting and what the checks found.
 	UpdateCheck UpdateCheck `json:"update_check"`
+	// UpgradeWay is how the koko server is upgraded: UpgradeWaySystemd,
+	// UpgradeWayImage or UpgradeWayNone.
+	UpgradeWay string `json:"upgrade_way"`
+	// LastUpgrade is the outcome of the last upgrade through the upgrade
+	// helper; null while there is none.
+	LastUpgrade *LastUpgrade `json:"last_upgrade"`
+}
+
+// The ways a koko server is upgraded, as Server.UpgradeWay names them (ADR
+// 0048).
+const (
+	// UpgradeWaySystemd: installed with systemd and the upgrade helper's
+	// units, it upgrades in place, through koko server upgrade or the web
+	// UI.
+	UpgradeWaySystemd = "systemd"
+	// UpgradeWayImage: the container image, which a new image upgrades.
+	UpgradeWayImage = "image"
+	// UpgradeWayNone: kokod run by hand, which the Owner replaces and
+	// restarts.
+	UpgradeWayNone = "none"
+)
+
+// LastUpgrade is the outcome of the last upgrade through the upgrade
+// helper, as it recorded it.
+type LastUpgrade struct {
+	// State is "running", "succeeded", "failed" (the previous kokod runs
+	// again) or "failed_not_restored" (it did not start either).
+	State string `json:"state"`
+	// From and To are the version kokod was and the one asked for.
+	From string `json:"from"`
+	To   string `json:"to"`
+	// StartedAt is when the helper took the request, RFC 3339 in UTC, and
+	// FinishedAt when it finished, null while it runs.
+	StartedAt  string  `json:"started_at"`
+	FinishedAt *string `json:"finished_at"`
+	// Message says why the upgrade failed; null when it did not.
+	Message *string `json:"message"`
 }
 
 // UpdateCheck is the koko server's check for a new koko release: a random
@@ -136,8 +173,9 @@ var (
 	// initialised it is refused with CodeAlreadyInitialised.
 	ServerInit = Op[ServerInitRequest, ServerInitResponse]{Name: "server.init", Write: true}
 	// ServerShow returns the koko server's deployment: its Server Address,
-	// listen port, host key, version, Root Key's file and id, and data
-	// directory.
+	// listen port, host key, version, Root Key's file and id, data
+	// directory, Web URL and web listener, its check for a new release, how
+	// it is upgraded and the outcome of its last upgrade.
 	ServerShow = Op[ServerShowRequest, ServerShowResponse]{Name: "server.show"}
 	// ServerSet changes the deployment settings the request names: the
 	// Server Address, for the Join Codes issued afterwards, and the Web URL,

@@ -32,7 +32,8 @@ and by every `kokod run`, whose check for a new release reads the redirect
 ([the update check](initialisation.md#the-update-check),
 [ADR 0048](../adr/0048-the-koko-server-upgrades-itself-through-a-root-helper-that-takes-only-a-newer-releases-version.md)).
 The image sets `KOKO_IMAGE=ghcr.io/cieons/koko`, so that `koko update` in
-it refuses and names a new image instead.
+it refuses and names a new image instead, and so that `kokod run` names
+its `upgrade_way` `image` ([the update check](initialisation.md#the-update-check)).
 
 Beside the Release, each release pushes [the image](#the-image).
 

@@ -117,6 +117,9 @@ type Config struct {
 	// in tests, so that they run alike as root and as any other user. It
 	// must be set.
 	ProcessUIDs func() (real, effective, saved int)
+	// Upgrade is how the koko server is upgraded, which server.show names
+	// (ADR 0048): kokod run fills it in from the machine.
+	Upgrade Upgrade
 	// UpdateClock is the clock the check for a new koko release waits on
 	// (ADR 0048): updatecheck.System on a machine, a fake in tests, which
 	// moves only as the test moves it, so that no test's koko server asks
@@ -138,6 +141,20 @@ type Config struct {
 	// new koko release finds the latest. The zero Source is GitHub's (ADR
 	// 0041). No flag or environment variable sets it.
 	Releases release.Source
+}
+
+// Upgrade is where the koko server learns how it is upgraded.
+type Upgrade struct {
+	// HelperUnit is the upgrade helper's path unit
+	// (installer.UpgradePathUnit): while it is there, the koko server
+	// upgrades in place through the helper. Empty, it never does.
+	HelperUnit string
+	// OutcomeFile is the helper's record of the last upgrade
+	// (installer.OutcomeFile); empty, there is none.
+	OutcomeFile string
+	// Image is the container image KOKO_IMAGE names, which a new image
+	// upgrades; empty outside the image.
+	Image string
 }
 
 // Server is a running koko server.
@@ -323,6 +340,7 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 		listenPort:  tcp.port,
 		webListen:   srv.WebAddress(),
 		updates:     srv.updates,
+		upgrade:     cfg.Upgrade,
 	})
 	front.Register(a)
 	initialisedNow := keys == nil && initReq.Owner != ""

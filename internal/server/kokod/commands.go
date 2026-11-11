@@ -78,6 +78,11 @@ func run(ctx context.Context, p *Program, inv *Invocation, line *parsed) error {
 		WebListen:     s.WebListen,
 		LogLevel:      s.LogLevel,
 		Log:           inv.Stderr,
+		Upgrade: server.Upgrade{
+			HelperUnit:  installer.UpgradePathUnit,
+			OutcomeFile: installer.OutcomeFile,
+			Image:       inv.getenv("KOKO_IMAGE"),
+		},
 	})
 }
 

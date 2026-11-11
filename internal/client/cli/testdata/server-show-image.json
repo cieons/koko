@@ -1,0 +1,19 @@
+{
+  "address": "127.0.0.1",
+  "listen_port": <port>,
+  "host_key_fingerprint": "SHA256:<fingerprint>",
+  "version": "<version>",
+  "root_key_file": "<root-key-file>",
+  "root_key_id": "rootkey_<1>",
+  "data_dir": "<data-dir>",
+  "web_url": null,
+  "web_listen": null,
+  "update_check": {
+    "enabled": true,
+    "checked_at": null,
+    "latest": null,
+    "error": null
+  },
+  "upgrade_way": "image",
+  "last_upgrade": null
+}

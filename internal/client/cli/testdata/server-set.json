@@ -13,5 +13,7 @@
     "checked_at": null,
     "latest": null,
     "error": null
-  }
+  },
+  "upgrade_way": "none",
+  "last_upgrade": null
 }
