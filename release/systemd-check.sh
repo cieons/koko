@@ -113,7 +113,11 @@ work=$(mktemp -d)
 port=8443
 default_port=7822
 device=koko-systemd-check-device
-image=ubuntu:24.04
+# The device's image is Ubuntu 24.04 with curl and a trust store already in
+# it (Docker's official buildpack-deps, its curl variant), pinned by digest
+# and pulled before the koko server starts, so that no step needs Ubuntu's
+# archive, or its name resolved, once the check is under way.
+image=buildpack-deps:24.04-curl@sha256:a115b80bacdfad86050664accdf7e2d7be45edb87d98a3ba78b78f0f9a089c1a
 github=$work/github
 requests=$work/requests
 ca=/usr/local/share/ca-certificates/koko-systemd-check.crt
@@ -405,11 +409,29 @@ sudo sh -c 'ls -l /var/lib/koko/koko.db.before-*' || fail "the upgrade left no s
 device_calls
 
 step "the device installs the newer CLI with install.sh without arguments, and no kokod"
-# Its image has neither curl nor a trust store, and it trusts the test CA
-# as this machine does, through its own store.
-docker exec "$device" sh -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -qq -y --no-install-recommends ca-certificates curl >/dev/null'
+# Its image brings curl and a trust store, and it trusts the test CA as
+# this machine does, through its own store.
 docker cp -q "$work/ca.crt" "$device:/usr/local/share/ca-certificates/koko-systemd-check.crt"
 docker exec "$device" update-ca-certificates >/dev/null
+# DIAG (branch only, #159)
+{
+	echo "--- diag: docker"; docker version --format '{{.Server.Version}} {{.Client.Version}}'
+	docker image inspect --format '{{.RepoDigests}}' ubuntu:24.04 || docker pull -q ubuntu:24.04
+	echo "--- host resolv.conf"; ls -l /etc/resolv.conf; cat /etc/resolv.conf
+	echo "--- host hosts"; cat /etc/hosts
+	echo "--- resolvectl"; resolvectl status 2>&1 | head -40
+	echo "--- systemd-resolved"; systemctl is-active systemd-resolved; sudo ss -Hlnup 'sport = :53'; sudo ss -Hlntp 'sport = :53'
+	echo "--- host getent"; getent hosts archive.ubuntu.com; echo "rc=$?"
+	echo "--- device resolv.conf"; docker exec "$device" cat /etc/resolv.conf
+	echo "--- device hosts"; docker exec "$device" cat /etc/hosts
+	echo "--- device nsswitch"; docker exec "$device" grep hosts /etc/nsswitch.conf
+	echo "--- device getent"; docker exec "$device" getent hosts archive.ubuntu.com; echo "rc=$?"
+	echo "--- fresh host-network ubuntu:24.04"; docker run --rm --network host ubuntu:24.04 sh -c 'cat /etc/resolv.conf; getent hosts archive.ubuntu.com; echo rc=$?'
+	echo "--- fresh bridge ubuntu:24.04"; docker run --rm ubuntu:24.04 sh -c 'cat /etc/resolv.conf; getent hosts archive.ubuntu.com; echo rc=$?'
+	echo "--- fresh host-network + add-host"; docker run --rm --network host --add-host github.com:127.0.0.1 ubuntu:24.04 sh -c 'getent hosts archive.ubuntu.com; echo rc=$?; apt-get update -qq 2>&1 | tail -3'
+	echo "--- nft/iptables"; sudo iptables -S 2>&1 | head -30
+	echo "--- journal resolved"; sudo journalctl --no-pager -u systemd-resolved -n 20
+} || :
 mark
 docker exec -i "$device" sh -s <"$newer/install.sh" || fail "the device's install.sh failed"
 since_mark
