@@ -1,4 +1,5 @@
-import { Button, Link, Switch } from "@heroui/react";
+import { Button, Link } from "@heroui/react";
+import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 
 import { CodeSpaceNotEmpty, type Space, SpaceShow } from "../../api/space";
@@ -7,7 +8,11 @@ import { ApiError } from "../../client";
 import { useRead, useWrite } from "../../shell/data";
 import { formatDate } from "../../shell/format";
 import { useCount, useT } from "../../shell/i18n";
+import { useLocation } from "../../shell/router";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
+import { SearchChoice } from "../../ui/fields";
+import { useFocusFallback, useRowFocus } from "../../ui/focus";
+import { Form } from "../../ui/Form";
 import { notify } from "../../ui/notify";
 import { SidePanel } from "../../ui/SidePanel";
 import { AlertLine, Loaded, Refusal } from "../../ui/states";
@@ -15,12 +20,12 @@ import { Devices } from "../device/Devices";
 import { PersonPassword } from "../signin/PersonPassword";
 import { SignIns } from "../signin/SignIns";
 import type { Membership } from "../space/membership";
-import { spaceHostsPath } from "../space/path";
+import { spaceHostsPath, spacePath } from "../space/path";
 
 /** PersonPanelProps are whose panel it is, and what it changes. */
 export interface PersonPanelProps {
   name: string;
-  /** shared are the shared Spaces, each a switch of the person's membership. */
+  /** shared are the shared Spaces, which the person is made a Member of or taken out of. */
   shared: readonly Space[] | undefined;
   membership: Membership;
   /** onChanged hears a change the panel made to the Users, so Access shows it. */
@@ -32,8 +37,8 @@ export interface PersonPanelProps {
 /**
  * PersonPanel is a person's panel over Access, the Owner's alone
  * (docs/web-design.md, "Access"): their role and the date they were added;
- * the shared Spaces as switches of their membership, and their Personal
- * Space's counts; their devices (Devices), with Add device for them and
+ * the shared Spaces they are a Member of, each with Take out, under Add to
+ * a Space, and their Personal Space's counts; their devices (Devices), with Add device for them and
  * Revoke; their Password, with Issue Password Link and Remove Password, and
  * their Browser Sign-ins with Revoke; and Remove User, which asks first and
  * then says whether the User was deleted or Removed. A Removed User's panel
@@ -43,6 +48,8 @@ export interface PersonPanelProps {
  */
 export function PersonPanel({ name, shared, membership, onChanged, onClose }: PersonPanelProps) {
   const t = useT();
+  // The Space picked in Add to a Space and not yet added, which a click beside the panel would lose.
+  const [space, setSpace] = useState<string | null>(null);
   const users = useRead(UserList, { all: true });
   const user = users.data?.users.find((u) => u.name === name);
   const role = user && t(user.role === "owner" ? "shell.role.owner" : "shell.role.member");
@@ -52,7 +59,7 @@ export function PersonPanel({ name, shared, membership, onChanged, onClose }: Pe
       ? t("user.added", { date: formatDate(user.created_at) })
       : t("user.removedOn", { date: formatDate(user.removed_at) }));
   return (
-    <SidePanel title={name} subtitle={user && `${role} · ${since}`} onClose={onClose}>
+    <SidePanel title={name} subtitle={user && `${role} · ${since}`} changed={space !== null} onClose={onClose}>
       <Loaded read={users}>
         {() =>
           user === undefined ? (
@@ -64,6 +71,8 @@ export function PersonPanel({ name, shared, membership, onChanged, onClose }: Pe
               user={user}
               shared={shared}
               membership={membership}
+              space={space}
+              onSpace={setSpace}
               onPassword={() => {
                 users.reload();
                 onChanged();
@@ -85,12 +94,17 @@ function Person({
   user,
   shared,
   membership,
+  space,
+  onSpace,
   onPassword,
   onRemoved,
 }: {
   user: User;
   shared: readonly Space[] | undefined;
   membership: Membership;
+  /** space is the Space picked in Add to a Space, which the panel holds. */
+  space: string | null;
+  onSpace: (space: string | null) => void;
   /** onPassword hears the User's Password removed, so the panel and Access show it. */
   onPassword: () => void;
   onRemoved: () => void;
@@ -110,27 +124,8 @@ function Person({
         ) : shared === undefined ? null : shared.length === 0 ? (
           <p className="text-muted">{t("space.access.noShared")}</p>
         ) : (
-          <ul className="flex flex-col">
-            {shared.map((s) => (
-              <li key={s.id} className="border-t border-line py-3">
-                <Switch
-                  aria-label={t("space.access.cell", { user: user.name, space: s.name })}
-                  isSelected={membership.isMember(s.name, user.name)}
-                  onChange={(on) => void membership.set(s.name, user.name, on)}
-                  className="w-full"
-                >
-                  <Switch.Content className="t-name w-full justify-between">
-                    {s.name}
-                    <Switch.Control>
-                      <Switch.Thumb />
-                    </Switch.Control>
-                  </Switch.Content>
-                </Switch>
-              </li>
-            ))}
-          </ul>
+          <PersonSpaces user={user.name} shared={shared} membership={membership} space={space} onSpace={onSpace} />
         )}
-        <Refusal error={membership.error} />
         <PersonalSpace name={user.name} />
       </section>
       <Devices user={user.name} owner={owner} all={all} onAll={setAll} level={3} />
@@ -151,6 +146,118 @@ function Person({
         </section>
       )}
       {removing && <RemoveUser name={user.name} onRemoved={onRemoved} onCancel={() => setRemoving(false)} />}
+    </>
+  );
+}
+
+/**
+ * PersonSpaces are the shared Spaces a person is a Member of: how many of
+ * the shared Spaces, a searchable Add to a Space among the others, and the
+ * Spaces they are in, each a link to its panel with Take out beside it.
+ * After Take out the focus stays in the list: the next Space's Take out, or
+ * Add to a Space once none is left.
+ */
+function PersonSpaces({
+  user,
+  shared,
+  membership,
+  space,
+  onSpace: setSpace,
+}: {
+  user: string;
+  shared: readonly Space[];
+  membership: Membership;
+  space: string | null;
+  onSpace: (space: string | null) => void;
+}) {
+  const t = useT();
+  const count = useCount();
+  const { search } = useLocation();
+  // A Space is listed once the koko server answers that they are in it, and
+  // a Space being taken out keeps its row, its Take out pending, until it
+  // answers: isMember answers what a pending change asked for, so a pending
+  // add is not listed yet and a pending Take out still is.
+  const listed = (s: Space) => membership.isMember(s.name, user) !== membership.pending(s.name, user);
+  const member = shared.filter(listed);
+  const others = shared.filter((s) => !listed(s));
+  const names = member.map((s) => s.name);
+  const focus = useRowFocus<HTMLDivElement>(names.join("\n"));
+  // Adding them to the last Space takes the form away: the line saying so then takes the focus.
+  const [done, armDone] = useFocusFallback<HTMLParagraphElement>(others.length === 0);
+  return (
+    <>
+      <p className="t-label t-num">
+        {member.length === 0
+          ? t("user.spaces.none")
+          : count("user.spaces.count", shared.length, { member: member.length, total: shared.length })}
+      </p>
+      <div ref={focus.fallback}>
+        {others.length === 0 ? (
+          <p ref={done} tabIndex={-1} className="t-label outline-none">
+            {t("user.spaces.every", { name: user })}
+          </p>
+        ) : (
+          <Form
+            label={t("user.spaces.add")}
+            className="flex items-start gap-3"
+            onSubmit={() => {
+              if (space === null) {
+                return;
+              }
+              // Adding them to the last Space takes the form away, as soon as the koko server answers.
+              if (others.length === 1) {
+                armDone();
+              }
+              void membership.set(space, user, true).then((ok) => ok && setSpace(null));
+            }}
+          >
+            <SearchChoice
+              label={t("user.spaces.add")}
+              value={space}
+              onChange={setSpace}
+              options={others.map((s) => ({ id: s.name, label: s.name }))}
+              validate={(v) => (v === null ? t("user.spaces.choose") : undefined)}
+              className="flex-1"
+            />
+            <Button
+              type="submit"
+              variant="secondary"
+              className="mt-6 shrink-0"
+              isPending={space !== null && membership.pending(space, user)}
+            >
+              {t("space.member.addSubmit")}
+            </Button>
+          </Form>
+        )}
+      </div>
+      <Refusal error={membership.error} />
+      {member.length > 0 && (
+        <ul className="flex flex-col">
+          {member.map((s) => (
+            <li key={s.id} className="flex items-center justify-between gap-3 border-t border-line py-2">
+              <Link
+                href={spacePath(s.name) + search}
+                className="row-link -mx-2 flex min-w-0 flex-1 items-center gap-1 px-2 py-1.5 text-foreground no-underline"
+              >
+                <span className="t-name truncate">{s.name}</span>
+                <ChevronRight aria-hidden className="size-4 shrink-0 text-muted" />
+              </Link>
+              <Button
+                ref={focus.row(s.name)}
+                variant="tertiary"
+                aria-label={t("space.member.takeOutLabel", { user, space: s.name })}
+                isPending={membership.pending(s.name, user)}
+                onPress={() => {
+                  focus.arm(names, s.name);
+                  void membership.set(s.name, user, false).then((ok) => ok || focus.disarm());
+                }}
+              >
+                {t("space.member.takeOut")}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   );
 }

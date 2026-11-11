@@ -71,4 +71,7 @@ export default {
   "shell.shownOnce.timeLeft": "剩余 {time}",
   "shell.shownOnce.notAgain": "此内容仅在此处显示，离开此页面即被丢弃。",
   "shell.openCalendar": "打开日历",
+  "shell.choices.picked": "已选的{label}",
+  "shell.choices.remove": "移除 {item}",
+  "shell.choices.clearSearch": "清除搜索",
 } satisfies Record<keyof typeof en, string>;

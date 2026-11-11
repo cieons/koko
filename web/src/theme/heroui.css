@@ -32,6 +32,8 @@
 @import "@heroui/styles/components/menu-item.css" layer(components);
 @import "@heroui/styles/components/menu-section.css" layer(components);
 @import "@heroui/styles/components/menu.css" layer(components);
+@import "@heroui/styles/components/tag-group.css" layer(components);
+@import "@heroui/styles/components/tag.css" layer(components);
 
 /* Controls and data display. */
 @import "@heroui/styles/components/switch.css" layer(components);
@@ -71,6 +73,7 @@
 /* Pickers. */
 @import "@heroui/styles/components/combo-box.css" layer(components);
 @import "@heroui/styles/components/select.css" layer(components);
+@import "@heroui/styles/components/autocomplete.css" layer(components);
 
 @import "@heroui/styles/themes/default";
 @import "@heroui/styles/utilities";

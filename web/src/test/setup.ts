@@ -86,6 +86,10 @@ afterEach(async () => {
   // inert as it loads, so it must load after the stand-in above.
   const { toast } = await import("@heroui/react");
   withoutMotion(() => toast.clear());
+  // React Aria's live announcer outlives a test, and what it announced, such
+  // as a choice of several's "carol selected", names elements now gone.
+  const { destroyAnnouncer } = await import("react-aria/private/live-announcer/LiveAnnouncer");
+  destroyAnnouncer();
   const violations = takeCspViolations();
   window.history.replaceState(null, "", "/");
   localStorage.clear();

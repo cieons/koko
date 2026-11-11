@@ -182,8 +182,8 @@ requests as a dropped connection does, and `api.drop()` every one, as when
 `koko web` stopped, until `api.drop(0)`. So a page test runs the web UI's own
 client ([the shell](web-shell.md#calls)), with its retry and
 `Idempotency-Key`. The setup ([`test/setup.ts`](../../web/src/test/setup.ts))
-puts each test back at `/` with no toast left from the one before, an
-empty `localStorage`, the system in light mode, a desktop's viewport and
+puts each test back at `/` with no toast and nothing React Aria's live
+announcer announced left from the one before, an empty `localStorage`, the system in light mode, a desktop's viewport and
 `<html>` without a mode; gives the
 document `index.html`'s title and its pressable `<meta>`; and stands in for
 what jsdom lacks: `matchMedia`, whose colour scheme
@@ -222,7 +222,10 @@ controls as a person does, each checking with axe while its list is open:
 option, offered?)` a select, each the whole page, and
 `searchAndChoose(choice, typed, option, offered?)` a searchable choice,
 named or given, which it focuses and types in, as the combobox opens only
-on real focus. That one checks its list alone: while the list is open,
+on real focus, and `searchAndChooseSeveral(choice, typed, options,
+{holder, offered})` a searchable choice of several, which it opens with a
+press on its field, types in the search over its list and closes with
+Escape. Those two check their list alone: while the list is open,
 React Aria hides the rest of the page from assistive technology, and axe
 would fault every control there as focusable yet hidden, though the focus
 stays in the field and Tab closes the list before it moves;

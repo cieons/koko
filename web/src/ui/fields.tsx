@@ -1,11 +1,15 @@
 import {
+  Autocomplete,
   ComboBox,
   Description,
   FieldError,
   Input,
   Label,
   ListBox,
+  SearchField,
   Select,
+  Tag,
+  TagGroup,
   TextArea,
   TextField,
   ToggleButton,
@@ -14,6 +18,8 @@ import {
 } from "@heroui/react";
 import { type ReactNode, use, useId } from "react";
 import { ComboBoxStateContext } from "react-aria-components";
+
+import { useT } from "../shell/i18n";
 
 // The fields of koko's forms (docs/web-design.md, "Components"): a label
 // above, help under it, and the error in place. A form checks them when it
@@ -241,6 +247,98 @@ function SearchInput({ placeholder }: { placeholder?: string }) {
       spellCheck="false"
       onClick={() => state?.open(null, "manual")}
     />
+  );
+}
+
+/** SearchChoicesProps are a searchable choice of several items. */
+export interface SearchChoicesProps {
+  label: string;
+  /** values are the ids of the items picked, in the order they were picked. */
+  values: readonly string[];
+  onChange: (values: string[]) => void;
+  options: readonly Option[];
+  /** placeholder is what the field says while nothing is picked. */
+  placeholder: string;
+  /** searchLabel names the search field over the list. */
+  searchLabel: string;
+  /** noMatch is what the list says when no item holds what is searched for. */
+  noMatch: string;
+  description?: ReactNode;
+  /** required, when given, is the message under the field when the form is submitted with nothing picked. */
+  required?: string;
+  autoFocus?: boolean;
+  className?: string;
+}
+
+/**
+ * SearchChoices picks several items from a list that can grow, such as the
+ * Users to make Members of a Space: HeroUI's Autocomplete, whose list is
+ * narrowed by a search field over it, matching anywhere in an item's label
+ * whatever its case, and ticks each item picked. The field shows the items
+ * picked as tags, each with its remove button.
+ */
+export function SearchChoices(props: SearchChoicesProps) {
+  const t = useT();
+  const { contains } = useFilter({ sensitivity: "base" });
+  const { label, values, onChange, options, required } = props;
+  const labelOf = (id: string) => options.find((o) => o.id === id)?.label ?? id;
+  return (
+    <Autocomplete
+      selectionMode="multiple"
+      value={[...values]}
+      onChange={(keys) => onChange(Array.isArray(keys) ? keys.map(String) : [])}
+      isRequired={required !== undefined}
+      placeholder={props.placeholder}
+      autoFocus={props.autoFocus}
+      className={props.className}
+      fullWidth
+    >
+      <Label>{label}</Label>
+      <Autocomplete.Trigger className="h-auto min-h-10 py-1.5">
+        <Autocomplete.Value>
+          {({ defaultChildren, isPlaceholder }) =>
+            isPlaceholder || values.length === 0 ? (
+              defaultChildren
+            ) : (
+              <TagGroup
+                size="sm"
+                aria-label={t("shell.choices.picked", { label })}
+                onRemove={(keys) => onChange(values.filter((id) => !keys.has(id)))}
+              >
+                <TagGroup.List>
+                  {values.map((id) => (
+                    <Tag key={id} id={id} textValue={labelOf(id)}>
+                      {labelOf(id)}
+                      <Tag.RemoveButton aria-label={t("shell.choices.remove", { item: labelOf(id) })} />
+                    </Tag>
+                  ))}
+                </TagGroup.List>
+              </TagGroup>
+            )
+          }
+        </Autocomplete.Value>
+        <Autocomplete.Indicator />
+      </Autocomplete.Trigger>
+      {props.description !== undefined && <Description>{props.description}</Description>}
+      <FieldError>{(v) => (v.validationDetails.valueMissing ? required : v.validationErrors.join(" "))}</FieldError>
+      <Autocomplete.Popover>
+        <Autocomplete.Filter filter={contains}>
+          <SearchField autoFocus aria-label={props.searchLabel} variant="secondary">
+            <SearchField.Group>
+              <SearchField.SearchIcon />
+              <SearchField.Input placeholder={props.searchLabel} autoComplete="off" spellCheck="false" />
+              <SearchField.ClearButton aria-label={t("shell.choices.clearSearch")} />
+            </SearchField.Group>
+          </SearchField>
+          <ListBox
+            className="max-h-60 overflow-y-auto"
+            renderEmptyState={() => <p className="px-3 py-2 text-sm text-muted">{props.noMatch}</p>}
+          >
+            {optionItems(options)}
+          </ListBox>
+        </Autocomplete.Filter>
+      </Autocomplete.Popover>
+    </Autocomplete>
   );
 }
 

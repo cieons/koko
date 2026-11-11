@@ -300,6 +300,7 @@ logic:
 | `Field` | `fields.tsx` | a text field or area, its label above, help under it and its error in place; `code` sets a machine value in the code face, with no spelling or capital corrected |
 | `Choice` | `fields.tsx` | HeroUI's `Select`, for one item of a short fixed list |
 | `SearchChoice` | `fields.tsx` | HeroUI's `ComboBox`, for one item of a list that can grow (the Owner's rule): its whole list opens when its field is pressed, never on the focus alone ([Searchable choices](../web-design.md#components)), and narrows to the items holding what is typed, whatever its case; it takes an item of its list alone, unless `newValues`, as an Attribute key does; `inlineLabel` shows its hidden label in the field before the value, as Group by does |
+| `SearchChoices` | `fields.tsx` | HeroUI's `Autocomplete` with several chosen, for several items of a list that can grow: each item picked a tag with its remove button, its list ticking them under a search field that narrows it as `SearchChoice` does; `required` is the message for none picked |
 | `Segments` | `fields.tsx` | HeroUI's `ToggleButtonGroup`, a choice among two to four, all in view |
 | `DateInput` | `DateInput.tsx` | HeroUI's `DatePicker`, a calendar date as `YYYY-MM-DD`; a module the forms that use it import alone, so the calendar is not in the first load |
 | `RowMenu` | `RowMenu.tsx` | HeroUI's `Dropdown` behind an icon button named for it, its danger actions last after a separator |
@@ -310,6 +311,7 @@ logic:
 | `notify` | `notify.ts` | a toast saying what a call that changed something did ([Notices](#notices)) |
 | `Loading`, `LoadFailed`, `Loaded`, `EmptyState`, `NoMatch`, `Refusal` | `states.tsx` | the states every screen has |
 | `useFocusFallback` | `focus.ts` | the focus kept in place when an action takes away the control that had it, as Revoke does with its row: the list's heading takes it |
+| `useRowFocus` | `focus.ts` | the focus kept in a list when an action takes its row away, as Take out does: the next row's control takes it, the one before for the last row, or the list's add field once it is empty |
 
 A dialog or panel takes the focus as it opens, closes on Escape, and on a
 click beside it as [Closing an overlay](../web-design.md#components) says,
@@ -489,8 +491,8 @@ query) and **a Space's panel** (`/access/spaces/<name>`, which
 | Add a Space | `space.add` | the Owner |
 | Rename a Space | `space.rename` | the Owner, on a shared Space |
 | Remove a Space, asking first | `space.remove` | the Owner, on a shared Space |
-| Make a User a Member: a switch in a person's panel, or Add a Member chosen among the Users who are not one | `space.member.add` (and `user.list`) | the Owner, on a shared Space |
-| Take a Member out: a switch in a person's panel, or Take out | `space.member.remove` | the Owner, on a shared Space |
+| Make Users Members: Add Members, several chosen among the Users who are not one, in one call | `space.member.add` (and `user.list`) | the Owner, on a shared Space |
+| Take a Member out: Take out | `space.member.remove` | the Owner, on a shared Space |
 | Invite a User, to the Spaces chosen, in a terminal or in a browser, valid for the time chosen, their Join Code or Password Link shown once, with Copy and its countdown | `user.invite` (and `server.show` for the Web URL), then `space.member.add` | the Owner |
 
 **A person's panel** (`/access/people/<name>`, the Owner alone):
@@ -498,7 +500,7 @@ query) and **a Space's panel** (`/access/spaces/<name>`, which
 | Action | Call | Who |
 | --- | --- | --- |
 | See a User's role, Spaces, Personal Space and devices, the Revoked ones when asked for | `user.list`, `space.show`, `device.list` | the Owner |
-| Make them a Member of a shared Space, or take them out, by its switch | `space.member.add`, `space.member.remove` | the Owner |
+| Make them a Member of a shared Space they are not in, chosen in Add to a Space, or take them out of one with Take out | `space.member.add`, `space.member.remove` | the Owner |
 | Add a device for them, with an optional name, valid for the time chosen, its Join Code shown once | `device.add` | the Owner, for a User not Removed |
 | Revoke a live Device Session of theirs, asking first; the Owner's own last only once its name is typed, with `last` | `device.revoke` | the Owner |
 | See when their Password was set, or that they have none | `user.list` | the Owner |

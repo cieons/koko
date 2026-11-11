@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { type SpaceDetail, SpaceMemberAdd, SpaceMemberRemove } from "../../api/space";
 import { call } from "../../client";
-import { useT } from "../../shell/i18n";
+import { useCount, useT } from "../../shell/i18n";
 import { notify } from "../../ui/notify";
 
 /** Membership is who is a Member of which shared Space, as Access shows it, and the change of one. */
@@ -17,6 +17,14 @@ export interface Membership {
    * same membership while one runs is not sent.
    */
   set: (space: string, user: string, on: boolean) => Promise<boolean>;
+  /**
+   * add makes several Users Members of space in one space.member.add, with
+   * one notice; it answers whether the koko server did. A second add to the
+   * same Space while one runs is not sent.
+   */
+  add: (space: string, users: readonly string[]) => Promise<boolean>;
+  /** adding tells whether an add of several Users to space runs. */
+  adding: (space: string) => boolean;
   /** error is why the last change was refused, if it was. */
   error?: unknown;
   /** dismiss forgets error, as when the panel that showed it closes. */
@@ -26,8 +34,8 @@ export interface Membership {
 /**
  * useMembership is the membership of the Spaces given, as space.list
  * answered them, and its change: space.member.add or space.member.remove
- * for one User, whose answer, the Space's Members after it, shows until the
- * Spaces are read again. onChanged hears each change made, to read again
+ * for one User, or space.member.add for several, whose answer, the Space's
+ * Members after it, shows until the Spaces are read again. onChanged hears each change made, to read again
  * what shows it.
  */
 export function useMembership(
@@ -35,9 +43,11 @@ export function useMembership(
   onChanged: () => void,
 ): Membership {
   const t = useT();
+  const count = useCount();
   // changed holds each Space as a change answered it, until the Spaces are read again.
   const [changed, setChanged] = useState<Readonly<Record<string, SpaceDetail>>>({});
-  // asked holds each change that runs, by space and user, and what it asked for.
+  // asked holds each change that runs, by space and user, and what it asked
+  // for; an add of several Users, by space alone.
   const [asked, setAsked] = useState<Readonly<Record<string, boolean>>>({});
   // running holds the same keys at once, so a second change sent before a render is refused too.
   const running = useRef(new Set<string>());
@@ -76,7 +86,36 @@ export function useMembership(
       setAsked(({ [k]: _, ...rest }) => rest);
     }
   };
+  const add = async (space: string, users: readonly string[]) => {
+    const k = JSON.stringify([space]);
+    if (users.length === 0 || running.current.has(k)) {
+      return false;
+    }
+    running.current.add(k);
+    setAsked((a) => ({ ...a, [k]: true }));
+    setError(undefined);
+    try {
+      const answer = await call(SpaceMemberAdd, { space, users: [...users] });
+      setChanged((c) => ({ ...c, [space]: answer.space }));
+      const [only] = users;
+      notify(
+        users.length === 1 && only !== undefined
+          ? t("space.member.added", { user: only, space })
+          : count("space.member.addedMany", users.length, { space }),
+      );
+      onChanged();
+      return true;
+    } catch (failure) {
+      setError(failure);
+      return false;
+    } finally {
+      running.current.delete(k);
+      setAsked(({ [k]: _, ...rest }) => rest);
+    }
+  };
   return {
+    add,
+    adding: (space) => JSON.stringify([space]) in asked,
     isMember,
     pending: (space, user) => key(space, user) in asked,
     set,

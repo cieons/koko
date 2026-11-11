@@ -2,14 +2,15 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { expect, type MockInstance, onTestFinished, test, vi } from "vitest";
 
 import { DeviceAdd } from "../../api/device";
-import { SpaceMemberAdd } from "../../api/space";
+import { SpaceMemberAdd, SpaceMemberRemove } from "../../api/space";
 import { UserInvite, UserRemove } from "../../api/user";
 import { navigate } from "../../shell/router";
 import { expectAccessible } from "../../test/axe";
 import { clipboard } from "../../test/clipboard";
+import { searchAndChoose } from "../../test/controls";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { actAs, alerts, renderAt } from "../../test/pages";
-import { alice, joinCode, serve, type World, world } from "../space/access.fixture";
+import { alice, joinCode, serve, space, type World, world } from "../space/access.fixture";
 
 // A person's panel over Access, the Owner's alone, and Invite, against a
 // fake koko server. Access itself is in space/access.test.tsx; the devices
@@ -51,16 +52,15 @@ async function advance(ms: number): Promise<void> {
 
 // A person's panel.
 
-test("a person's panel shows their role and date, their Spaces as switches, their Personal Space and devices", async () => {
-  await asOwner("/access/people/bob");
+test("a person's panel shows their role and date, their Spaces under Add to a Space, their Personal Space and devices", async () => {
+  await asOwner("/access/people/bob?view=spaces");
 
   const panel = await openPanel("bob");
   expect(within(panel).getByText("Member · Added 2026-11-02")).toBeDefined();
-  const switches = within(panel).getAllByRole("switch", { name: /is a Member of/ }) as HTMLInputElement[];
-  expect(switches.map((s) => [s.getAttribute("aria-label"), s.checked])).toEqual([
-    ["bob is a Member of ops", true],
-    ["bob is a Member of web", false],
-  ]);
+  expect(within(panel).getByText("A Member of 1 of 2 shared Spaces.")).toBeDefined();
+  expect(within(panel).getByRole("combobox", { name: "Add to a Space" })).toBeDefined();
+  expect(within(panel).getByRole("link", { name: "ops" }).getAttribute("href")).toBe("/access/spaces/ops?view=spaces");
+  expect(within(panel).getByRole("button", { name: "Take bob out of ops" })).toBeDefined();
   expect(await within(panel).findByText(/^The Personal Space bob holds 1 Host and 0 Secrets\./)).toBeDefined();
   expect(within(panel).getByRole("link", { name: "View its Hosts" }).getAttribute("href")).toBe(
     "/hosts?filter=space%3Dbob",
@@ -71,20 +71,87 @@ test("a person's panel shows their role and date, their Spaces as switches, thei
   await expectAccessible();
 });
 
-test("a switch in a person's panel changes their membership at once, and the People list shows it", async () => {
+test("Add to a Space offers only the Spaces the person is not in, and the People list shows the change", async () => {
   const api = await asOwner("/access");
   fireEvent.click(await screen.findByRole("link", { name: /^carol/ }));
   const panel = await openPanel("carol");
+  expect(within(panel).getByText("Not a Member of any shared Space yet.")).toBeDefined();
 
-  fireEvent.click(within(panel).getByRole("switch", { name: "carol is a Member of web" }));
+  await searchAndChoose(within(panel).getByRole("combobox", { name: "Add to a Space" }), "", "web", ["ops", "web"]);
+  fireEvent.click(within(panel).getByRole("button", { name: "Add" }));
 
   expect(await screen.findByText("carol is now a Member of web.")).toBeDefined();
   expect(api.requests(SpaceMemberAdd)).toEqual([{ space: "web", users: ["carol"] }]);
+  expect(await within(panel).findByRole("button", { name: "Take carol out of web" })).toBeDefined();
+  await searchAndChoose(within(panel).getByRole("combobox", { name: "Add to a Space" }), "", "ops", ["ops"]);
+  fireEvent.click(within(panel).getByRole("button", { name: "Add" }));
+  expect(await within(panel).findByText("carol is a Member of every shared Space already.")).toBeDefined();
+  expect(within(panel).getByText("A Member of 2 of 2 shared Spaces.")).toBeDefined();
+  await expectAccessible();
+
   fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await waitFor(() =>
-    expect(screen.getByRole("link", { name: /^carol/ }).textContent).toBe("carol1 Space · Invited, not yet in"),
+    expect(screen.getByRole("link", { name: /^carol/ }).textContent).toBe("carol2 Spaces · Invited, not yet in"),
   );
+});
+
+test("a Space being added is listed only once the koko server answers", async () => {
+  const api = await asOwner("/access/people/carol");
+  const panel = await openPanel("carol");
+  let answer: (() => void) | undefined;
+  const w = world();
+  api.on(SpaceMemberAdd, ({ space: name }) =>
+    new Promise((resolve) => {
+      answer = () => resolve({ space: { ...space(name, { members: ["carol"] }), id: `space_${name}` } });
+    }),
+  );
+  void w;
+
+  await searchAndChoose(within(panel).getByRole("combobox", { name: "Add to a Space" }), "", "web");
+  fireEvent.click(within(panel).getByRole("button", { name: "Add" }));
+  await waitFor(() => expect(answer).toBeDefined());
+  expect(within(panel).queryByRole("button", { name: "Take carol out of web" })).toBeNull();
+  expect(within(panel).getByText("Not a Member of any shared Space yet.")).toBeDefined();
+
+  act(() => answer?.());
+  expect(await within(panel).findByRole("button", { name: "Take carol out of web" })).toBeDefined();
+});
+
+test("Add to a Space with no Space chosen says so and sends nothing", async () => {
+  const api = await asOwner("/access/people/carol");
+  const panel = await openPanel("carol");
+
+  fireEvent.click(within(panel).getByRole("button", { name: "Add" }));
+
+  expect(await within(panel).findByText("Choose a Space.")).toBeDefined();
+  expect(api.requests(SpaceMemberAdd)).toEqual([]);
+});
+
+test("Take out in a person's panel keeps the focus in their Spaces: the next one, then Add to a Space", async () => {
+  const w = world();
+  w.spaces = w.spaces.map((s) => (s.name === "web" ? space("web", { members: ["bob"] }) : s));
+  const api = await asOwner("/access/people/bob", w);
+  const panel = await openPanel("bob");
+
+  const ops = within(panel).getByRole("button", { name: "Take bob out of ops" });
+  act(() => ops.focus());
+  fireEvent.click(ops);
+  expect(await screen.findByText("bob is no longer a Member of ops.")).toBeDefined();
+  await waitFor(() =>
+    expect(document.activeElement).toBe(within(panel).getByRole("button", { name: "Take bob out of web" })),
+  );
+
+  fireEvent.click(within(panel).getByRole("button", { name: "Take bob out of web" }));
+  expect(await screen.findByText("bob is no longer a Member of web.")).toBeDefined();
+  await waitFor(() =>
+    expect(document.activeElement).toBe(within(panel).getByRole("combobox", { name: "Add to a Space" })),
+  );
+  expect(within(panel).getByText("Not a Member of any shared Space yet.")).toBeDefined();
+  expect(api.requests(SpaceMemberRemove)).toEqual([
+    { space: "ops", users: ["bob"] },
+    { space: "web", users: ["bob"] },
+  ]);
 });
 
 test("a membership change refused in a person's panel says why there, and not on the page once it closes", async () => {
@@ -95,7 +162,8 @@ test("a membership change refused in a person's panel says why there, and not on
     throw refusal("user_removed", 409);
   });
 
-  fireEvent.click(within(panel).getByRole("switch", { name: "carol is a Member of web" }));
+  await searchAndChoose(within(panel).getByRole("combobox", { name: "Add to a Space" }), "", "web");
+  fireEvent.click(within(panel).getByRole("button", { name: "Add" }));
   expect(await within(panel).findByRole("alert")).toHaveProperty("textContent", "That User was Removed.");
   fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
 
@@ -109,7 +177,7 @@ test("the Owner's own panel says the Owner sees every Space and offers no Remove
   const panel = await openPanel("alice");
   expect(within(panel).getByText("Owner · Added 2026-11-01")).toBeDefined();
   expect(within(panel).getByText("The Owner sees every Space.")).toBeDefined();
-  expect(within(panel).queryByRole("switch", { name: /is a Member of/ })).toBeNull();
+  expect(within(panel).queryByRole("combobox", { name: "Add to a Space" })).toBeNull();
   expect(within(panel).queryByRole("button", { name: /^Remove/ })).toBeNull();
 });
 

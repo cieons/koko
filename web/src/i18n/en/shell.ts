@@ -49,4 +49,7 @@ export default {
   "shell.shownOnce.timeLeft": "{time} left",
   "shell.shownOnce.notAgain": "It is shown only here, and leaving this page discards it.",
   "shell.openCalendar": "Open the calendar",
+  "shell.choices.picked": "{label}, chosen",
+  "shell.choices.remove": "Remove {item}",
+  "shell.choices.clearSearch": "Clear the search",
 };

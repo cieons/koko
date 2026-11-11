@@ -103,6 +103,42 @@ export async function searchAndChoose(
 }
 
 /**
+ * searchAndChooseSeveral opens the searchable choice of several named
+ * choice, within holder when given, types typed in the search field over its
+ * list, unless it is empty, checks the list open with axe, checks the
+ * options it offers, when offered is given, picks each of options, then
+ * closes the list with Escape.
+ */
+export async function searchAndChooseSeveral(
+  choice: string,
+  typed: string,
+  options: readonly string[],
+  { holder = document.body, offered }: { holder?: HTMLElement; offered?: string[] } = {},
+): Promise<void> {
+  // The field, which a press anywhere on opens, holds the button named by
+  // what is picked, then the label.
+  const button = within(holder).getByRole("button", { name: new RegExp(`${choice}$`) });
+  const field = button.closest<HTMLElement>("[data-slot=autocomplete-trigger]");
+  expect(field).not.toBeNull();
+  fireEvent.click(field as HTMLElement);
+  const listbox = await screen.findByRole("listbox");
+  if (typed !== "") {
+    const popover = listbox.closest<HTMLElement>("[data-slot=autocomplete-popover]");
+    expect(popover).not.toBeNull();
+    fireEvent.change(within(popover as HTMLElement).getByRole("searchbox"), { target: { value: typed } });
+  }
+  await expectAccessible(listbox);
+  if (offered) {
+    await waitFor(() => expect(offeredOptions()).toEqual(offered));
+  }
+  for (const option of options) {
+    fireEvent.click(within(listbox).getByRole("option", { name: option }));
+  }
+  fireEvent.keyDown(listbox, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+}
+
+/**
  * expectChosen waits for the searchable choice, by its name or itself, to
  * show text: it first shows with its field empty, and React Aria fills in
  * the item chosen a render later.

@@ -216,7 +216,7 @@ cycle, Valid for). The places:
 | Add Host, Edit | the Relay; the Space (Add Host) |
 | Add Secret | the Space |
 | Move a Host, Move a Secret | the Space to move it to |
-| A Space's panel: Add a Member | a User who is not a Member |
+| A person's panel: Add to a Space | a shared Space the person is not in |
 | Add device, where it asks whose device it is | a User who is not Removed |
 | Filter (Hosts and Services) | the field or Attribute key; the value of an enum with many values, such as `currency` |
 | The Attribute rows of the Host and Service forms | the key, which may also be a new one |
@@ -226,6 +226,12 @@ cycle, Valid for). The places:
 
 Only the Attribute key of a form takes a value the list does not hold; the
 others take an item of their list alone.
+
+Where a person picks several items from a list that can grow, the control
+is HeroUI's `Autocomplete` with several chosen: a field showing each item
+picked as a tag with its remove button, whose list has a search field over
+it and ticks each item picked. The places: a Space's panel, Add Members
+(the Users who are not Members).
 
 The list opens when the field is pressed or typed in, or on its button or
 the up or down arrow. It does not open when the field only takes the focus,
@@ -240,10 +246,10 @@ closes it, unless closing would lose something.
 | Overlay | A click beside it |
 | --- | --- |
 | A popover or menu: Filter, Columns, a select's or searchable choice's list, a row menu, the top bar's menus, the account panel | Closes it, always |
-| A short form or a side panel with a form: Add Host, Edit, Add Service, a Service's panel, Rename, Move, Add Secret, Set value, Add Space, the first step of Invite, Add device and a Password Link; a Space's panel, for its Add a Member field | Closes it while nothing in it has changed; once something has been typed or chosen, does nothing |
+| A short form or a side panel with a form: Add Host, Edit, Add Service, a Service's panel, Rename, Move, Add Secret, Set value, Add Space, the first step of Invite, Add device and a Password Link; a Space's panel, for its Add Members field; a person's panel, for its Add to a Space field | Closes it while nothing in it has changed; once something has been typed or chosen, does nothing |
 | A confirmation | Cancels it, as Cancel does, unless its call runs; a name typed in it to confirm is not kept |
 | A value shown once: a Join Code or a Password Link | Does nothing, since the value cannot be shown again; Done, the close button and Escape close it |
-| A side panel without a form: a person's, whose switches act at once, and a Service on a Retired Host | Closes it, always |
+| A side panel without a form: a Service on a Retired Host | Closes it, always |
 
 A form that has changed is not closed by a click beside it, rather than
 asking whether to discard what was typed: a stray click loses nothing and
@@ -516,8 +522,10 @@ For the Owner:
 - "Show Removed Users" under the People adds them, struck through; it is
   `all=1` in the URL.
 - Membership is changed in the panels, never in the lists.
-- **A person's panel**: role and date; Spaces as switches, and the
-  Personal Space's counts; Devices with Add device and Revoke, and "Show
+- **A person's panel**: role and date; their Spaces, "A Member of 3 of 25
+  shared Spaces.", under **Add to a Space**, a searchable choice of the
+  shared Spaces they are not in, each Space a link to its panel with
+  **Take out**; and the Personal Space's counts; Devices with Add device and Revoke, and "Show
   Revoked devices"; Password ("set on <date>" or none) with Issue Password
   Link and Remove Password; Browser Sign-ins with Revoke; Remove User at
   the foot, which asks first and then says whether the User was deleted
@@ -531,11 +539,15 @@ For the Owner:
   device's name must be typed (the call carries `last`). A refused revoke
   reloads the list.
 - **A Space's panel**: three counts (Hosts, Retired Hosts, Secrets) that
-  link to the lists filtered; Members with "Take out"; Add a Member (a
-  select of those who are not one); Rename, and Remove Space, which asks
+  link to the lists filtered; **Add Members**, a searchable choice of
+  several among those who are not Members, which adds them in one call
+  ("Add 3 Members"), above the Members, each with **Take out**; Rename, and Remove Space, which asks
   first and shows `space_not_empty` in place. After Rename the panel moves
   to the new name, replacing the history entry; after Remove Space it
   closes. A Personal Space shows its counts and says it takes no Members.
+- **After Take out** the focus stays in the list: on the next row's Take
+  out, the one before for the last row, or the add field once the list is
+  empty.
 - **Add Space**: a short form.
 
 For a Member: their Personal Space and the Spaces they belong to as one

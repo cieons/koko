@@ -5,7 +5,7 @@ import { SpaceAdd, SpaceList, SpaceMemberAdd, SpaceMemberRemove, SpaceRemove, Sp
 import { type User, UserList } from "../../api/user";
 import { navigate } from "../../shell/router";
 import { expectAccessible } from "../../test/axe";
-import { clickOutside, searchAndChoose } from "../../test/controls";
+import { clickOutside, searchAndChoose, searchAndChooseSeveral } from "../../test/controls";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { setViewportWidth } from "../../test/media";
 import { actAs, alerts, renderAt } from "../../test/pages";
@@ -57,10 +57,10 @@ test("Access reads the Spaces, their Members and counts in one space.list, with 
 
   fireEvent.click(screen.getByRole("link", { name: /^carol/ }));
   const panel = await screen.findByRole("dialog", { name: "carol" });
-  const toggle = await within(panel).findByRole("switch", { name: "carol is a Member of web" });
+  await searchAndChoose(await within(panel).findByRole("combobox", { name: "Add to a Space" }), "", "web");
   // Opening the panel is a visit, which reads the Spaces again too.
   const reads = api.requests(SpaceList).length;
-  fireEvent.click(toggle);
+  fireEvent.click(within(panel).getByRole("button", { name: "Add" }));
   expect(await screen.findByText("carol is now a Member of web.")).toBeDefined();
   await waitFor(() => expect(api.requests(SpaceList)).toHaveLength(reads + 1));
   // Her panel reads her own Personal Space; no shared Space is read on its own.
@@ -270,10 +270,11 @@ test("on a phone the lists are the same, and membership changes in either panel"
   expect(screen.queryByRole("table")).toBeNull();
   await expectAccessible();
 
-  // From the People: bob's panel, its Spaces as switches.
+  // From the People: bob's panel, his Spaces under Add to a Space.
   fireEvent.click(screen.getByRole("link", { name: /^bob/ }));
   const bobs = await screen.findByRole("dialog", { name: "bob" });
-  fireEvent.click(await within(bobs).findByRole("switch", { name: "bob is a Member of web" }));
+  await searchAndChoose(await within(bobs).findByRole("combobox", { name: "Add to a Space" }), "", "web");
+  fireEvent.click(within(bobs).getByRole("button", { name: "Add" }));
   expect(await screen.findByText("bob is now a Member of web.")).toBeDefined();
   expect(api.requests(SpaceMemberAdd)).toEqual([{ space: "web", users: ["bob"] }]);
   fireEvent.click(within(bobs).getByRole("button", { name: "Close" }));
@@ -333,7 +334,7 @@ test("closing a Space's panel goes back to Access in place of its history entry,
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("link", { name: /^ops/ })));
 });
 
-test("a click beside a Space's panel closes it, but not while a User is picked in Add a Member and not yet added", async () => {
+test("a click beside a Space's panel closes it, but not while a User is picked in Add Members and not yet added", async () => {
   const api = await at("/access?view=spaces");
   fireEvent.click(await screen.findByRole("link", { name: /^ops/ }));
   await screen.findByRole("dialog", { name: "ops" });
@@ -343,43 +344,155 @@ test("a click beside a Space's panel closes it, but not while a User is picked i
 
   fireEvent.click(screen.getByRole("link", { name: /^ops/ }));
   const shown = await screen.findByRole("dialog", { name: "ops" });
-  await searchAndChoose(await within(shown).findByRole("combobox", { name: "Add a Member" }), "", "carol");
+  await within(shown).findByRole("button", { name: "Take bob out of ops" });
+  await searchAndChooseSeveral("Add Members", "", ["carol"], { holder: shown });
   await clickOutside();
   expect(screen.getByRole("dialog", { name: "ops" })).toBe(shown);
   expect(api.requests(SpaceMemberAdd)).toEqual([]);
 });
 
-test("the Owner adds a Member, chosen among the Users who are not one, and takes one out", async () => {
-  const api = await at("/access/spaces/ops");
+/** withMore is world() with erin and frank, Members of no Space. */
+function withMore(): World {
+  const w = world();
+  w.users.push(
+    { id: "user_5", name: "erin", role: "member", created_at: "2026-11-06T09:00:00Z" },
+    { id: "user_6", name: "frank", role: "member", created_at: "2026-11-06T10:00:00Z" },
+  );
+  w.spaces.push(space("erin", { personal: true }), space("frank", { personal: true }));
+  return w;
+}
+
+test("Add Members makes the Users picked, among those who are not one, Members in one call", async () => {
+  const api = await at("/access/spaces/ops", withMore());
   const shown = await screen.findByRole("dialog", { name: "ops" });
   await within(shown).findByRole("button", { name: "Take bob out of ops" });
 
-  await searchAndChoose("Add a Member", "", "carol", ["carol"]);
-  fireEvent.click(within(shown).getByRole("button", { name: "Add" }));
+  await searchAndChooseSeveral("Add Members", "", ["carol", "erin", "frank"], {
+    holder: shown,
+    offered: ["carol", "erin", "frank"],
+  });
+  expect(within(shown).getByRole("button", { name: "Add 3 Members" })).toBeDefined();
+  await expectAccessible();
+  fireEvent.click(within(shown).getByRole("button", { name: "Add 3 Members" }));
 
-  expect(await screen.findByText("carol is now a Member of ops.")).toBeDefined();
-  expect(api.requests(SpaceMemberAdd)).toEqual([{ space: "ops", users: ["carol"] }]);
+  expect(await screen.findByText("3 Users are now Members of ops.")).toBeDefined();
+  expect(api.requests(SpaceMemberAdd)).toEqual([{ space: "ops", users: ["carol", "erin", "frank"] }]);
   await waitFor(() =>
-    expect(within(shown).getAllByRole("listitem").map((i) => i.textContent)).toEqual(["bobTake out", "carolTake out"]),
+    expect(within(shown).getAllByRole("listitem").map((i) => i.textContent)).toEqual([
+      "bobTake out",
+      "carolTake out",
+      "erinTake out",
+      "frankTake out",
+    ]),
   );
   expect(await within(shown).findByText("Every User is a Member of this Space already.")).toBeDefined();
-
-  fireEvent.click(within(shown).getByRole("button", { name: "Take bob out of ops" }));
-  expect(await screen.findByText("bob is no longer a Member of ops.")).toBeDefined();
-  expect(api.requests(SpaceMemberRemove)).toEqual([{ space: "ops", users: ["bob"] }]);
-  await waitFor(() => expect(within(shown).getAllByRole("listitem").map((i) => i.textContent)).toEqual(["carolTake out"]));
-  // Its Take out button went with it, so the focus moves to the Members' heading.
-  await waitFor(() => expect(document.activeElement).toBe(within(shown).getByRole("heading", { name: "Members" })));
 });
 
-test("Add a Member with no User chosen says so and sends nothing", async () => {
+test("a refused Add Members says why under the field, keeps the Users picked and adds nobody", async () => {
+  const api = await at("/access/spaces/web", withMore());
+  const shown = await screen.findByRole("dialog", { name: "web" });
+  await within(shown).findByRole("button", { name: /Add Members$/ });
+  api.on(SpaceMemberAdd, () => {
+    throw refusal("user_removed", 409);
+  });
+
+  await searchAndChooseSeveral("Add Members", "", ["erin", "frank"], { holder: shown });
+  fireEvent.click(within(shown).getByRole("button", { name: "Add 2 Members" }));
+
+  const alert = await within(shown).findByRole("alert");
+  expect(alert.textContent).toBe("That User was Removed.");
+  // In place: right under the field, above the Members.
+  expect(alert.compareDocumentPosition(within(shown).getByText("No Member yet. Only the Owner sees what this Space holds.")))
+    .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  expect(within(shown).getAllByRole("row").map((r) => r.textContent)).toEqual(["erin", "frank"]);
+  expect(api.requests(SpaceMemberAdd)).toEqual([{ space: "web", users: ["erin", "frank"] }]);
+});
+
+test("adding the last Users who are not Members moves the focus to the line saying every User is one", async () => {
+  await at("/access/spaces/web");
+  const shown = await screen.findByRole("dialog", { name: "web" });
+  await within(shown).findByRole("button", { name: /Add Members$/ });
+
+  await searchAndChooseSeveral("Add Members", "", ["bob", "carol"], { holder: shown });
+  const add = within(shown).getByRole("button", { name: "Add 2 Members" });
+  act(() => add.focus());
+  fireEvent.click(add);
+
+  const line = await within(shown).findByText("Every User is a Member of this Space already.");
+  await waitFor(() => expect(document.activeElement).toBe(line));
+});
+
+test("a refused Take out says why and keeps the focus on its button", async () => {
+  const api = await at("/access/spaces/ops");
+  const shown = await screen.findByRole("dialog", { name: "ops" });
+  const takeOut = await within(shown).findByRole("button", { name: "Take bob out of ops" });
+  api.on(SpaceMemberRemove, () => {
+    throw refusal("internal_error", 500);
+  });
+
+  act(() => takeOut.focus());
+  fireEvent.click(takeOut);
+
+  expect(await within(shown).findByRole("alert")).toHaveProperty(
+    "textContent",
+    "The koko server failed unexpectedly. Its log records the cause.",
+  );
+  expect(within(shown).getByRole("button", { name: "Take bob out of ops" })).toBe(takeOut);
+  await waitFor(() => expect(document.activeElement).toBe(takeOut));
+});
+
+test("Add Members searches the Users by name and narrows the list", async () => {
+  await at("/access/spaces/web", withMore());
+  const shown = await screen.findByRole("dialog", { name: "web" });
+  await within(shown).findByRole("button", { name: /Add Members$/ });
+
+  await searchAndChooseSeveral("Add Members", "R", ["erin"], { holder: shown, offered: ["carol", "erin", "frank"] });
+  await searchAndChooseSeveral("Add Members", "fr", ["frank"], { holder: shown, offered: ["frank"] });
+
+  expect(within(shown).getByRole("button", { name: "Add 2 Members" })).toBeDefined();
+  expect(within(shown).getAllByRole("row").map((r) => r.textContent)).toEqual(["erin", "frank"]);
+});
+
+test("Take out keeps the focus in the Members: on the next one, the one before for the last, then Add Members", async () => {
+  const w = withMore();
+  w.spaces = w.spaces.map((s) => (s.name === "ops" ? space("ops", { members: ["bob", "carol", "erin"] }) : s));
+  const api = await at("/access/spaces/ops", w);
+  const shown = await screen.findByRole("dialog", { name: "ops" });
+  const takeOut = (user: string) => within(shown).getByRole("button", { name: `Take ${user} out of ops` });
+
+  const first = await within(shown).findByRole("button", { name: "Take bob out of ops" });
+  act(() => first.focus());
+  fireEvent.click(first);
+  expect(await screen.findByText("bob is no longer a Member of ops.")).toBeDefined();
+  await waitFor(() => expect(document.activeElement).toBe(takeOut("carol")));
+
+  act(() => takeOut("erin").focus());
+  fireEvent.click(takeOut("erin"));
+  expect(await screen.findByText("erin is no longer a Member of ops.")).toBeDefined();
+  await waitFor(() => expect(document.activeElement).toBe(takeOut("carol")));
+
+  fireEvent.click(takeOut("carol"));
+  expect(await screen.findByText("carol is no longer a Member of ops.")).toBeDefined();
+  await waitFor(() =>
+    expect(document.activeElement).toBe(within(shown).getByRole("button", { name: /Add Members$/ })),
+  );
+  expect(within(shown).getByText("No Member yet. Only the Owner sees what this Space holds.")).toBeDefined();
+  expect(api.requests(SpaceMemberRemove)).toEqual([
+    { space: "ops", users: ["bob"] },
+    { space: "ops", users: ["erin"] },
+    { space: "ops", users: ["carol"] },
+  ]);
+});
+
+test("Add Members with no User picked says so and sends nothing", async () => {
   const api = await at("/access/spaces/web");
   const shown = await screen.findByRole("dialog", { name: "web" });
-  await within(shown).findByRole("combobox", { name: "Add a Member" });
+  await within(shown).findByRole("button", { name: /Add Members$/ });
 
   fireEvent.click(within(shown).getByRole("button", { name: "Add" }));
 
-  expect(await within(shown).findByText("Choose a User.")).toBeDefined();
+  expect(await within(shown).findByText("Choose at least one User.")).toBeDefined();
+  await waitFor(() => expect(document.activeElement).toBe(within(shown).getByRole("button", { name: /Add Members$/ })));
   expect(api.requests(SpaceMemberAdd)).toEqual([]);
 });
 

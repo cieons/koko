@@ -5,12 +5,12 @@ import { type SpaceDetail, SpaceRemove, SpaceRename, SpaceShow } from "../../api
 import { UserList } from "../../api/user";
 import { useCaller } from "../../shell/caller";
 import { useRead, useWrite } from "../../shell/data";
-import { useT } from "../../shell/i18n";
+import { useCount, useT } from "../../shell/i18n";
 import { navigate, useLocation } from "../../shell/router";
 import { Initial } from "../../shell/TopBar";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
-import { Field, SearchChoice } from "../../ui/fields";
-import { useFocusFallback } from "../../ui/focus";
+import { Field, SearchChoices } from "../../ui/fields";
+import { useFocusFallback, useRowFocus } from "../../ui/focus";
 import { Form } from "../../ui/Form";
 import { FormDialog } from "../../ui/FormDialog";
 import { notify } from "../../ui/notify";
@@ -46,9 +46,10 @@ export function SpacePanel({ name, membership, onChanged, onClose }: SpacePanelP
   const detail = read.data?.space;
   const editable = caller.owner && detail !== undefined && !detail.personal;
   const [dialog, setDialog] = useState<"rename" | "remove">();
-  const [members, refocus] = useFocusFallback<HTMLHeadingElement>(read.data);
-  // The User picked in Add a Member and not yet added, which a click beside the panel would lose.
-  const [member, setMember] = useState<string | null>(null);
+  // After Take out the focus stays in the Members: the next one's Take out, or Add Members once none is left.
+  const focus = useRowFocus<HTMLDivElement>(read.data);
+  // The Users picked in Add Members and not yet added, which a click beside the panel would lose.
+  const [picked, setPicked] = useState<string[]>([]);
   const changed = () => {
     read.reload();
     onChanged();
@@ -57,7 +58,7 @@ export function SpacePanel({ name, membership, onChanged, onClose }: SpacePanelP
     <SidePanel
       title={name}
       subtitle={detail && (detail.personal ? t("space.personalOf", { name }) : t("space.shared"))}
-      changed={member !== null}
+      changed={picked.length > 0}
       onClose={onClose}
       footer={
         editable ? (
@@ -77,52 +78,62 @@ export function SpacePanel({ name, membership, onChanged, onClose }: SpacePanelP
           <>
             <Counts space={space} />
             <section className="flex flex-col gap-3">
-              <h3 ref={members} tabIndex={-1} className="t-heading outline-none">
-                {t("space.members")}
-              </h3>
+              <h3 className="t-heading">{t("space.members")}</h3>
               {space.personal ? (
                 <p className="text-muted">{t("space.personalLead", { name: space.name })}</p>
-              ) : space.members.length === 0 ? (
-                <p className="text-muted">{t("space.members.none")}</p>
               ) : (
-                <ul className="flex flex-col">
-                  {space.members.map((m) => (
-                    <li key={m.id} className="flex items-center justify-between gap-3 border-t border-line py-3">
-                      <span className="flex min-w-0 items-center gap-3">
-                        <Initial name={m.name} className="size-8 text-sm" />
-                        <span className="t-name truncate">{m.name}</span>
-                      </span>
-                      {editable && membership && (
-                        <Button
-                          variant="tertiary"
-                          aria-label={t("space.member.takeOutLabel", { user: m.name, space: space.name })}
-                          isPending={membership.pending(space.name, m.name)}
-                          onPress={() =>
-                            void membership.set(space.name, m.name, false).then((ok) => {
-                              if (ok) {
-                                refocus();
-                                read.reload();
-                              }
-                            })
-                          }
-                        >
-                          {t("space.member.takeOut")}
-                        </Button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {!space.personal && <p className="t-label">{t("space.members.ownerNote")}</p>}
-              {editable && membership && <Refusal error={membership.error} />}
-              {editable && membership && (
-                <AddMember
-                  space={space}
-                  membership={membership}
-                  user={member}
-                  onUser={setMember}
-                  onAdded={read.reload}
-                />
+                <>
+                  {editable && membership && (
+                    <div ref={focus.fallback}>
+                      <AddMembers
+                        space={space}
+                        membership={membership}
+                        users={picked}
+                        onUsers={setPicked}
+                        onAdded={read.reload}
+                      />
+                    </div>
+                  )}
+                  {editable && membership && <Refusal error={membership.error} />}
+                  {space.members.length === 0 ? (
+                    <p className="text-muted">{t("space.members.none")}</p>
+                  ) : (
+                    <ul className="flex flex-col">
+                      {space.members.map((m) => (
+                        <li key={m.id} className="flex items-center justify-between gap-3 border-t border-line py-3">
+                          <span className="flex min-w-0 items-center gap-3">
+                            <Initial name={m.name} className="size-8 text-sm" />
+                            <span className="t-name truncate">{m.name}</span>
+                          </span>
+                          {editable && membership && (
+                            <Button
+                              ref={focus.row(m.name)}
+                              variant="tertiary"
+                              aria-label={t("space.member.takeOutLabel", { user: m.name, space: space.name })}
+                              isPending={membership.pending(space.name, m.name)}
+                              onPress={() => {
+                                focus.arm(
+                                  space.members.map((n) => n.name),
+                                  m.name,
+                                );
+                                void membership.set(space.name, m.name, false).then((ok) => {
+                                  if (ok) {
+                                    read.reload();
+                                  } else {
+                                    focus.disarm();
+                                  }
+                                });
+                              }}
+                            >
+                              {t("space.member.takeOut")}
+                            </Button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="t-label">{t("space.members.ownerNote")}</p>
+                </>
               )}
             </section>
           </>
@@ -178,59 +189,79 @@ function Counts({ space }: { space: SpaceDetail }) {
 }
 
 /**
- * AddMember makes a User a Member of the Space, chosen in a searchable
- * choice among those who are not one (user.list): neither the Owner, who
- * sees every Space, nor a Removed User. The panel holds the User picked
- * (user), so a click beside it does not lose the pick.
+ * AddMembers makes several Users Members of the Space at once, in one
+ * space.member.add, chosen in a searchable choice of several among those
+ * who are not one (user.list): neither the Owner, who sees every Space, nor
+ * a Removed User. The panel holds the Users picked (users), so a click
+ * beside it does not lose them.
  */
-function AddMember({
+function AddMembers({
   space,
   membership,
-  user,
-  onUser: setUser,
+  users: picked,
+  onUsers: setPicked,
   onAdded,
 }: {
   space: SpaceDetail;
   membership: Membership;
-  user: string | null;
-  onUser: (user: string | null) => void;
+  users: readonly string[];
+  onUsers: (users: string[]) => void;
   onAdded: () => void;
 }) {
   const t = useT();
+  const count = useCount();
   const users = useRead(UserList, {});
+  // Those just added leave the list as the koko server answers, before the panel reads the Space again.
   const candidates = (users.data?.users ?? []).filter(
-    (u) => u.role !== "owner" && u.removed_at === undefined && !space.members.some((m) => m.name === u.name),
+    (u) =>
+      u.role !== "owner" &&
+      u.removed_at === undefined &&
+      !space.members.some((m) => m.name === u.name) &&
+      !membership.isMember(space.name, u.name),
   );
+  const everyone = users.data !== undefined && candidates.length === 0;
+  // Adding the last of them takes the form away: the line saying so then takes the focus.
+  const [done, armDone] = useFocusFallback<HTMLParagraphElement>(everyone);
   if (users.error !== undefined) {
     return <Refusal error={users.error} />;
   }
-  if (users.data !== undefined && candidates.length === 0) {
-    return <p className="t-label">{t("space.member.everyone")}</p>;
+  if (everyone) {
+    return (
+      <p ref={done} tabIndex={-1} className="t-label outline-none">
+        {t("space.member.everyone")}
+      </p>
+    );
   }
   return (
     <Form
       label={t("space.member.add")}
       className="flex items-start gap-3"
-      onSubmit={() =>
-        user !== null &&
-        void membership.set(space.name, user, true).then((ok) => {
+      onSubmit={() => {
+        // Adding every one left takes the form away, as soon as the koko server answers.
+        if (picked.length === candidates.length) {
+          armDone();
+        }
+        void membership.add(space.name, picked).then((ok) => {
           if (ok) {
-            setUser(null);
+            setPicked([]);
             onAdded();
           }
-        })
-      }
+        });
+      }}
     >
-      <SearchChoice
+      <SearchChoices
         label={t("space.member.add")}
-        value={user}
-        onChange={setUser}
+        values={picked}
+        onChange={setPicked}
         options={candidates.map((u) => ({ id: u.name, label: u.name }))}
-        validate={(v) => (v === null ? t("space.member.choose") : undefined)}
-        className="flex-1"
+        placeholder={t("space.member.placeholder")}
+        searchLabel={t("space.member.search")}
+        noMatch={t("space.access.noPerson")}
+        required={t("space.member.choose")}
+        className="min-w-0 flex-1"
       />
-      <Button type="submit" variant="secondary" className="mt-6" isPending={user !== null && membership.pending(space.name, user)}>
-        {t("space.member.addSubmit")}
+      <Button type="submit" variant="secondary" className="mt-6 shrink-0" isPending={membership.adding(space.name)}>
+        {picked.length === 0 ? t("space.member.addSubmit") : count("space.member.addMany", picked.length)}
       </Button>
     </Form>
   );
