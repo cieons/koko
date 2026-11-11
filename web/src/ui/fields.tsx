@@ -159,6 +159,12 @@ export interface SearchChoiceProps {
   newValues?: boolean;
   description?: ReactNode;
   hideLabel?: boolean;
+  /**
+   * inlineLabel shows the label in the field before its value, in place of
+   * above it, where the value alone does not say what it is, such as Group
+   * by's key in the Hosts page's row of controls.
+   */
+  inlineLabel?: boolean;
   placeholder?: string;
   validate?: (value: string | null) => string | undefined;
   isDisabled?: boolean;
@@ -182,6 +188,7 @@ export interface SearchChoiceProps {
 export function SearchChoice(props: SearchChoiceProps) {
   const { contains } = useFilter({ sensitivity: "base" });
   const { label, value, onChange, options, newValues = false, validate } = props;
+  const labelAbove = props.hideLabel !== true && props.inlineLabel !== true;
   const selection = newValues
     ? {
         allowsCustomValue: true,
@@ -193,7 +200,7 @@ export function SearchChoice(props: SearchChoiceProps) {
     : { value, onChange: (id: unknown) => onChange(id === null ? null : String(id)) };
   return (
     <ComboBox
-      aria-label={props.hideLabel === true ? label : undefined}
+      aria-label={labelAbove ? undefined : label}
       {...selection}
       validate={validate && (() => validate(value))}
       defaultFilter={contains}
@@ -202,8 +209,14 @@ export function SearchChoice(props: SearchChoiceProps) {
       className={props.className}
       fullWidth
     >
-      {props.hideLabel !== true && <Label>{label}</Label>}
+      {labelAbove && <Label>{label}</Label>}
       <ComboBox.InputGroup>
+        {/* The field is named by its aria-label already, so the label shown in it is not read twice. */}
+        {props.inlineLabel === true && (
+          <span aria-hidden className="t-label shrink-0 ps-3 whitespace-nowrap">
+            {label}
+          </span>
+        )}
         <SearchInput placeholder={props.placeholder} />
         <ComboBox.Trigger />
       </ComboBox.InputGroup>

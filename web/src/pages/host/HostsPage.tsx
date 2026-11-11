@@ -42,10 +42,10 @@ const AddHost = lazy(() => import("./HostForm").then((m) => ({ default: m.AddHos
  * HostsPage is /hosts (docs/web-design.md, "Hosts"): the Hosts the caller
  * can see, as `koko host ls` lists them, grouped by Space, or, with
  * view=services, their Services, as `koko service ls` lists them; a search,
- * the Space and state selects, Filter, sorting by a header and the columns
- * button over them, each kept in the URL in koko's grammar, which the
- * browser remembers for each view (useRememberedView), with Reset view;
- * and Add Host.
+ * the Space and state selects, Filter, Group by, sorting by a header and
+ * the columns button over them, each kept in the URL in koko's grammar,
+ * which the browser remembers for each view (useRememberedView), with
+ * Reset view; and Add Host.
  */
 export function HostsPage() {
   const t = useT();
@@ -281,6 +281,23 @@ function ListArea({
           clock={clock}
           onAdd={(term) => setView({ ...view, filters: [...view.filters, term] })}
         />
+        {tab === "hosts" && (
+          <SearchChoice
+            label={t("host.group")}
+            inlineLabel
+            value={page.group === "" ? "*" : page.group}
+            onChange={(chosen) => setPage({ ...page, group: chosen === null || chosen === "*" ? "" : chosen })}
+            options={[
+              { id: "*", label: t("host.group.none") },
+              // The keys as Filter offers them, and a key the URL holds that attr.list does not answer.
+              ...[...new Set([...attrs.map((a) => a.key), page.group].filter((k) => k !== ""))].map((k) => ({
+                id: k,
+                label: k,
+              })),
+            ]}
+            className="min-w-48 flex-1 md:w-56 md:flex-none"
+          />
+        )}
         {!phone && (
           <ColumnsButton keys={columnKeys} shown={view.columns} labelOf={(k) => keyLabel(t, k)} onChange={showColumn} />
         )}

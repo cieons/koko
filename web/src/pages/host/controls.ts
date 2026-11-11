@@ -2,10 +2,11 @@ import { readTerm, readView, type View, writeTerm, writeView } from "./view";
 
 // The Hosts page's view as its URL holds it, in koko's grammar (filter,
 // sort, columns, all=1) and the page's own parameters: the search (q), the
-// Services view (view=services) and, in that view, its Space (space=), since
-// service.list takes no space key. The Space and state selects read and
-// write filter terms, as docs/web-design.md's table under "The URL keeps
-// koko's grammar" gives them.
+// Hosts view's Group by (group=), the Services view (view=services) and, in
+// that view, its Space (space=), since service.list takes no space key.
+// The Space and state selects read and write filter terms, as
+// docs/web-design.md's table under "The URL keeps koko's grammar" gives
+// them.
 
 /** Tab is the view the page lists: its Hosts, or their Services. */
 export type Tab = "hosts" | "services";
@@ -17,6 +18,8 @@ export interface ListPage {
   q: string;
   /** space is the Services view's Space, by name, or "" for every Space. */
   space: string;
+  /** group is the Attribute key the Hosts view groups each Space's Hosts by, or "" for none. */
+  group: string;
   /** list is the list's view: its terms, sort keys, columns and all=1. */
   list: View;
 }
@@ -31,6 +34,7 @@ export function readListPage(params: URLSearchParams, defaults: Defaults): ListP
     tab,
     q: params.get("q") ?? "",
     space: tab === "services" ? (params.get("space") ?? "") : "",
+    group: tab === "hosts" ? (params.get("group") ?? "") : "",
     list: readView(params, defaults[tab]),
   };
 }
@@ -38,10 +42,13 @@ export function readListPage(params: URLSearchParams, defaults: Defaults): ListP
 /**
  * writeListPage writes the page's view as its URL's query, leaving out what
  * is as by default: the list's view as koko's grammar writes it, then the
- * Services view's Space, the search and the view.
+ * Hosts view's Group by, the Services view's Space, the search and the view.
  */
 export function writeListPage(page: ListPage, defaults: Defaults): URLSearchParams {
   const params = writeView(page.list, defaults[page.tab]);
+  if (page.tab === "hosts" && page.group !== "") {
+    params.set("group", page.group);
+  }
   if (page.tab === "services" && page.space !== "") {
     params.set("space", page.space);
   }
@@ -62,21 +69,21 @@ function emptyView(columns: readonly string[]): View {
 /**
  * switchTab is the page's view after its other tab is chosen: the search
  * stays, and so does the Space, as a space term in the Hosts view and as
- * space= in the Services view; the other view's terms, sort keys and
- * columns are dropped.
+ * space= in the Services view; the other view's terms, sort keys, columns
+ * and Group by are dropped.
  */
 export function switchTab(page: ListPage, tab: Tab, defaults: Defaults, hostsSpace: string | undefined): ListPage {
   if (tab === page.tab) {
     return page;
   }
   if (tab === "services") {
-    return { tab, q: page.q, space: hostsSpace ?? "", list: emptyView(defaults.services) };
+    return { tab, q: page.q, space: hostsSpace ?? "", group: "", list: emptyView(defaults.services) };
   }
   const list = emptyView(defaults.hosts);
   if (page.space !== "") {
     list.filters.push(writeTerm("space", "eq", page.space));
   }
-  return { tab, q: page.q, space: "", list };
+  return { tab, q: page.q, space: "", group: "", list };
 }
 
 /** SelectedTerm is the term a select shows: its value, and its index among the view's terms. */

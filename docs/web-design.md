@@ -134,7 +134,7 @@ Sans CJK SC, Microsoft YaHei). The root is 16px; body text is 15px at 1.5.
 | `t-heading` | 14px, 600 | A panel's title, a group's name |
 | `t-name` | 15px, 600, -0.01em | A record's name in a row |
 | body | 15px, 400 | |
-| `t-label` | 13px, muted | A fact's label, help, counts |
+| `t-label` | 13px, muted | A fact's label, help, counts, a Group by subheading (in the secondary text colour) |
 | `t-figure` | 24px, 600, -0.02em, tabular numerals | A count that stands alone, such as a Space's in its panel |
 | `t-code` | Geist Mono 13px, no contextual ligatures | Machine values |
 
@@ -221,6 +221,7 @@ cycle, Valid for). The places:
 | Filter (Hosts and Services) | the field or Attribute key; the value of an enum with many values, such as `currency` |
 | The Attribute rows of the Host and Service forms | the key, which may also be a new one |
 | The Hosts list and the Secrets page | the Space the view is narrowed to ("All Spaces" first) |
+| The Hosts list: Group by | the Attribute key each Space's Hosts are grouped by ("None" first) |
 | The Host and Service forms | the value of an enum with many values, such as `currency` |
 
 Only the Attribute key of a form takes a value the list does not hold; the
@@ -309,9 +310,9 @@ released, so it needs no redirect.
   search field that grows; a Space select ("All Spaces" first), shown when
   there are two Spaces or more; then, in the Hosts view, a state select
   (In use, Managed, Registered, Retired, "All, with Retired"), **Filter**,
-  the columns button (desktop only) and **Reset view**. Each control keeps
-  its label on one line, a tab as wide as its label and count; when room
-  runs out the row wraps onto a second line.
+  **Group by**, the columns button (desktop only) and **Reset view**. Each
+  control keeps its label on one line, a tab as wide as its label and
+  count; when room runs out the row wraps onto a second line.
 - **Filter** opens a popover: field or Attribute, comparison, value (a
   select for an enum, a date field for a date). Each term becomes a chip
   under the controls with a remove button named for it.
@@ -324,6 +325,18 @@ released, so it needs no redirect.
 - **Hosts are grouped by Space**, the Owner's choice: a heading (the
   Space's name, its count, "Personal Space" where it is one) over one
   panel per Space. Sorting orders the Hosts within each Space.
+- **Group by**, the Owner's choice (#137), adds a second level under each
+  Space: a searchable choice, "Group by" shown in the field before the key,
+  of None (the default) or any Attribute key in use or Preset, such as
+  `role` or `region`. With a key, a Space's section holds a subheading per
+  value (the value as stored in 13px `t-label`, the secondary text colour,
+  its count muted) over a panel of those Hosts, in the order the list
+  sorts the values in by the key's type, and a last one, "No role", for
+  the Hosts without the key; a value the search and Filter leave no Host
+  of has none. Within a subheading the Hosts keep the sort. A phone shows
+  the same subheadings over its lists. The Owner chose an Attribute over a
+  Preset `group` key or Spaces as groups: a Space is an access boundary,
+  and the useful groupings differ (`role`, `region`, `provider`).
 - A panel is a table with a header row. Columns by default: Name with the
   Host's Service names after it in muted text; Provider and region;
   Address in the code face, with `:port` when it is not 22; Price with its
@@ -356,7 +369,8 @@ released, so it needs no redirect.
   | Filter | one `filter` per term, as the CLI writes it |
   | A header | `sort`, once per key, in turn |
   | The columns button | `columns`, left out for the default columns |
-  | The Services tab | `view=services`; the other view's `filter`, `sort` and `columns` are dropped |
+  | Group by | `group=<key>`, left out for None |
+  | The Services tab | `view=services`; the other view's `filter`, `sort`, `columns` and `group` are dropped |
 
   A `space` or `state` term built in Filter shows in its select, and a
   term the select cannot show (another comparison than `=`, or a second

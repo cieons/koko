@@ -6,15 +6,17 @@ import { useRead } from "../../shell/data";
 import { type Translate, useCount, useT } from "../../shell/i18n";
 import { NoMatch } from "../../ui/states";
 import { StateMark } from "../../ui/StateMark";
+import { groupBy } from "./group";
 import { keyLabel } from "./keys";
 import { columnsOf, InPanel, type ListProps, Missing, ShownCount, sorter, ViewFault } from "./ListParts";
 import { hostFields, hostPath } from "./record";
 import { type Column, linkClass, RecordTable } from "./RecordTable";
 import { byHost, hostValues, matches } from "./search";
-import { type ListQuery, readQuery, type ReadTerm } from "./view";
+import { type ListQuery, readQuery, type ReadTerm, validAttrKey } from "./view";
 
 // The Hosts view: the Hosts host.list answers for the view's terms and sort
-// keys, the search applied, grouped by Space, a panel each.
+// keys, the search applied, grouped by Space, a panel each, or, with Group
+// by, a panel per value of an Attribute key within each Space.
 
 /**
  * asksForRetired tells whether a term keeps only Retired Hosts, which
@@ -35,6 +37,11 @@ export function HostsList(props: ListProps) {
   if (terms.some(asksForRetired)) {
     query.all = true;
   }
+  // Group by takes an Attribute key alone, not a field such as state.
+  const { group } = props.page;
+  if (group !== "" && !validAttrKey(group)) {
+    faults.push(group);
+  }
   if (faults.length > 0) {
     return <ViewFault message={t("host.view.invalid", { parts: faults.join(", ") })} reset={props.clear} />;
   }
@@ -47,11 +54,13 @@ function HostGroups(props: ListProps & { query: ListQuery }) {
 }
 
 /**
- * Groups are the Hosts listed that match the search, a panel per Space, in
- * the order of the Spaces' names; within a Space they keep the order
- * host.list answered them in, the view's sort or else by name.
+ * Groups are the Hosts listed that match the search, a section per Space,
+ * in the order of the Spaces' names, and in it a panel, or, with Group by,
+ * a subheading and a panel per value of its key (byValue); within a panel
+ * the Hosts keep the order host.list answered them in, the view's sort or
+ * else by name.
  */
-function Groups({ page, setView, q, spaces, services, clear, listed }: ListProps & { listed: readonly Host[] }) {
+function Groups({ page, setView, types, q, spaces, services, clear, listed }: ListProps & { listed: readonly Host[] }) {
   const t = useT();
   const count = useCount();
   const ofHost = byHost(services);
@@ -64,6 +73,9 @@ function Groups({ page, setView, q, spaces, services, clear, listed }: ListProps
   const personal = new Set(spaces.filter((s) => s.personal).map((s) => s.name));
   const groups = [...new Set(shown.map((h) => h.space))].sort();
   const columns = page.list.columns.map((key) => hostColumn(t, key, page.list.columns));
+  // Group by's subheadings: a Space's Hosts by their value of its key, in the order host.list sorts its type in.
+  const byValue = (hosts: readonly Host[]) =>
+    groupBy(hosts, (h) => h.attributes[page.group], types(page.group) ?? { type: "text" });
   const first: Column<Host> = {
     key: "name",
     label: t("host.key.name"),
@@ -77,6 +89,20 @@ function Groups({ page, setView, q, spaces, services, clear, listed }: ListProps
         {groups.map((space) => {
           const hosts = shown.filter((h) => h.space === space);
           const id = `space-${space}`;
+          const panel = (label: string, records: readonly Host[]) => (
+            <div className="sheet overflow-hidden">
+              <RecordTable
+                label={label}
+                records={records}
+                idOf={(h) => h.id}
+                first={first}
+                columns={columns}
+                sort={page.list.sort}
+                onSort={sorter(page.list, setView)}
+                phoneRow={(h) => <PhoneRow host={h} />}
+              />
+            </div>
+          );
           return (
             <section key={space} aria-labelledby={id}>
               <h2 id={id} className="t-heading mb-2 flex items-baseline gap-2 px-1">
@@ -84,18 +110,24 @@ function Groups({ page, setView, q, spaces, services, clear, listed }: ListProps
                 <span className="t-num font-normal text-muted">{hosts.length}</span>
                 {personal.has(space) && <span className="t-label font-normal">{t("host.list.personal")}</span>}
               </h2>
-              <div className="sheet overflow-hidden">
-                <RecordTable
-                  label={space}
-                  records={hosts}
-                  idOf={(h) => h.id}
-                  first={first}
-                  columns={columns}
-                  sort={page.list.sort}
-                  onSort={sorter(page.list, setView)}
-                  phoneRow={(h) => <PhoneRow host={h} />}
-                />
-              </div>
+              {page.group === "" ? (
+                panel(space, hosts)
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {byValue(hosts).map(({ value, records }) => {
+                    const name = value === undefined ? t("host.group.lacks", { key: page.group }) : String(value);
+                    return (
+                      <div key={value === undefined ? "" : String(value)}>
+                        <h3 className="t-label mb-1.5 flex items-baseline gap-2 px-1 text-ink-2">
+                          {name}
+                          <span className="t-num text-muted">{records.length}</span>
+                        </h3>
+                        {panel(t("host.group.table", { space, group: name }), records)}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </section>
           );
         })}

@@ -301,7 +301,7 @@ logic:
 | `ConfirmDialog` | `ConfirmDialog.tsx` | the confirmation ([Confirmations](#confirmations)) |
 | `Field` | `fields.tsx` | a text field or area, its label above, help under it and its error in place; `code` sets a machine value in the code face, with no spelling or capital corrected |
 | `Choice` | `fields.tsx` | HeroUI's `Select`, for one item of a short fixed list |
-| `SearchChoice` | `fields.tsx` | HeroUI's `ComboBox`, for one item of a list that can grow (the Owner's rule): its whole list opens when its field is pressed, never on the focus alone ([Searchable choices](../web-design.md#components)), and narrows to the items holding what is typed, whatever its case; it takes an item of its list alone, unless `newValues`, as an Attribute key does |
+| `SearchChoice` | `fields.tsx` | HeroUI's `ComboBox`, for one item of a list that can grow (the Owner's rule): its whole list opens when its field is pressed, never on the focus alone ([Searchable choices](../web-design.md#components)), and narrows to the items holding what is typed, whatever its case; it takes an item of its list alone, unless `newValues`, as an Attribute key does; `inlineLabel` shows its hidden label in the field before the value, as Group by does |
 | `Segments` | `fields.tsx` | HeroUI's `ToggleButtonGroup`, a choice among two to four, all in view |
 | `DateInput` | `DateInput.tsx` | HeroUI's `DatePicker`, a calendar date as `YYYY-MM-DD`; a module the forms that use it import alone, so the calendar is not in the first load |
 | `RowMenu` | `RowMenu.tsx` | HeroUI's `Dropdown` behind an icon button named for it, its danger actions last after a separator |
@@ -416,7 +416,7 @@ HeroUI (#121) took the pages out; each came back with its ticket (#122 to
 | Choose the language, which the browser keeps | none | anyone |
 | Choose Light, Dark or System, which the browser keeps | none | anyone |
 
-**Hosts** (`/hosts`; the view in the query: `filter`, `sort`, `columns`, `all=1`, and `q`, `view=services` and `space`):
+**Hosts** (`/hosts`; the view in the query: `filter`, `sort`, `columns`, `all=1`, and `q`, `group`, `view=services` and `space`):
 
 | Action | Call | Who |
 | --- | --- | --- |
@@ -424,6 +424,7 @@ HeroUI (#121) took the pages out; each came back with its ticket (#122 to
 | Build a filter term: a key, a comparison, a value; take one away | none (the URL) | anyone |
 | Sort by a header; Shift-click for a further key | none (the URL) | anyone |
 | Show or hide a column | none (the URL) | anyone |
+| Group each Space's Hosts by an Attribute key | none (the URL) | anyone |
 | Show the Retired Hosts, through the state select, and while a `state=retired` term is there | none (`all=1`) | anyone |
 | Go back to the default view from a URL the list does not take, which says which term | none | anyone |
 | Reset view: the default view, the view the browser remembers forgotten | none | anyone |

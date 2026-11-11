@@ -26,8 +26,9 @@ Spaces alone, as `koko host ls` shows them.
   counts; the search; the Space select, a searchable choice with "All
   Spaces" first, shown when `space.list` answers two Spaces or more; in
   the Hosts view the state select (In use, Managed, Registered, Retired,
-  "All, with Retired"); **Filter**; from 768 pixels wide, the columns
-  button; and **Reset view** ([the view remembered](#the-view-in-the-url)).
+  "All, with Retired"); **Filter**; in the Hosts view **Group by**
+  ([below](#group-by)); from 768 pixels wide, the columns button; and
+  **Reset view** ([the view remembered](#the-view-in-the-url)).
   The view's terms that no select shows are chips under them, each with a
   button, "Remove the filter <term>", that takes it away.
 - **The list** ([`HostsList`](../../web/src/pages/host/HostsList.tsx)) is
@@ -35,7 +36,8 @@ Spaces alone, as `koko host ls` shows them.
   applied: a heading per Space (its name, its count, "Personal Space" for
   one), in the order of the Spaces' names, over one panel each. Within a
   Space the Hosts keep `host.list`'s order: the view's sort, or else by
-  name. A panel is a table
+  name. With [Group by](#group-by), a Space's Hosts are under a
+  subheading per value instead, a panel each. A panel is a table
   ([`RecordTable`](../../web/src/pages/host/RecordTable.tsx)), named by its
   Space, whose first cell is the Host's name, a link that covers the row,
   so the row is one Tab stop, with its Services' names after it. A Host
@@ -53,6 +55,27 @@ Spaces alone, as `koko host ls` shows them.
   this view." with "Clear the search and filters", which goes to `/hosts`.
 - **Add Host** opens the Host form ([below](#add-host)).
 
+## Group by
+
+**Group by**, in the Hosts view alone, is a searchable choice of "None",
+the default, then every Attribute key `attr.list` answers, each by its
+key, as Filter offers them; the field shows "Group by" before the key
+chosen. With a key, each Space's section holds one subheading per value of
+it, as stored, with its count, over a panel of its Hosts, and a last one,
+"No <key>", for the Hosts without it
+([`groupBy`](../../web/src/pages/host/group.ts)). The subheadings come in
+the order `host.list` sorts the values in, by the key's type
+([`compareValues`](../../web/src/pages/host/group.ts), the koko server's
+`record.Type.Compare`): numbers by value, dates by the calendar, an enum's
+values in their declared order and text in natural order. Only the Hosts
+the search and the terms leave are grouped, so a value none of them holds
+has no subheading, and within a subheading the Hosts keep the list's sort.
+A panel's table, or its list on a phone, is named by its Space and value
+("ops, node").
+
+The Services view lists its Services on one panel, not by Space, so it
+has no Group by, and choosing it drops the Hosts view's.
+
 ## The view in the URL
 
 The page's whole view is its URL's query, so a bookmark is a saved view and
@@ -68,6 +91,7 @@ own parameters ([`controls.ts`](../../web/src/pages/host/controls.ts)):
 | `columns` | the columns after the fixed ones, in order, separated by commas | keys; left out for the default columns |
 | `all=1` | the Retired Hosts too | `--all` |
 | `q` | the search | as typed |
+| `group` | the Hosts view's Group by | its Attribute key; left out for none |
 | `view=services` | the Services view | left out for the Hosts view |
 | `space` | the Services view's Space | its name; left out for every Space |
 
@@ -89,8 +113,8 @@ grammar" says:
   Hosts too, since without `all` it would match nothing.
 - **The tabs**: choosing the other view keeps the search and the Space (a
   `space` term in the Hosts view, `space=` in the Services view) and drops
-  the other view's terms, sort keys and columns. With neither to keep, the
-  other view opens as the browser remembers it.
+  the other view's terms, sort keys, columns and Group by. With neither to
+  keep, the other view opens as the browser remembers it.
 
 **The view remembered.** The browser keeps the last view of the Hosts
 view and of the Services view, each on its own, for each User
@@ -108,9 +132,10 @@ does ([`readQuery`](../../web/src/pages/host/view.ts)): a field of
 `api.HostListFields` (carried as `hostFields`, since the Go map is not
 generated) or an Attribute key, of its Preset's type from `attr.list`, or
 text. A URL holding one the list does not take, such as a hand-edited
-`note=x`, a key sorted by twice, or a column that is the name or shown
-twice, shows one panel naming each, in place of the list, and calls
-nothing for it, with "Go to the default view".
+`note=x`, a key sorted by twice, a column that is the name or shown
+twice, or a Group by that is no Attribute key, such as `group=state`,
+shows one panel naming each, in place of the list, and calls nothing for
+it, with "Go to the default view".
 
 ## The filter
 
@@ -369,6 +394,14 @@ axe on each page, dialog and pane state it renders.
   button, a column hidden dropping its sort key, and the `relay` column; a
   URL the list does not take; a bookmark from before the redesign; the
   `/services` redirect; a phone's rows.
+- [`groupby.test.tsx`](../../web/src/pages/host/groupby.test.tsx): Group by
+  chosen into the URL, each Host under its value within its Space and
+  those without it last, keeping the sort; a subheading the search or a
+  term empties hidden; a number's and an enum's subheadings by their type
+  and a date's by the calendar; the choice remembered and cleared by Reset
+  view; the Services tab dropping it; a field refused; a phone's lists.
+  [`group.test.ts`](../../web/src/pages/host/group.test.ts) holds the order
+  of each type, natural text order as the koko server's.
 - [`filter.test.tsx`](../../web/src/pages/host/filter.test.tsx): every
   comparison of every type built in Filter into the URL's term and back
   from it as the same chip and filter, relative dates kept as written and
