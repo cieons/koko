@@ -12,19 +12,21 @@ koko 是一个自托管系统。它记录在各家云服务商租用的服务器
 
 koko 由两个程序组成：`koko` 为 CLI，支持 Linux 和 macOS；`kokod` 为 koko 服务器，仅支持 Linux。
 
-安装 CLI，适用于 Linux（amd64 或 arm64）和 macOS（Apple Silicon）：
+安装 CLI，适用于 Linux（amd64 或 arm64）和 macOS（Apple Silicon）。CLI 安装在运行该命令的用户的 `~/.local/bin` 中，无需 `sudo`：
 
 ```sh
 curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh
 ```
 
-在由 systemd 管理的 Linux 机器上同时安装 koko 服务器，并指定所有者以及设备访问它所用的地址：
+`~/.local/bin` 不在 `PATH` 中时，该命令会输出将其加入 `PATH` 的命令。此后可使用 `koko update` 升级 CLI。
+
+在由 systemd 管理的 Linux 机器上以 root 同时安装 koko 服务器，并指定所有者以及设备访问它所用的地址：
 
 ```sh
-curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh -s -- --owner alice --address koko.example.com
+curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sudo sh -s -- --owner alice --address koko.example.com
 ```
 
-非 root 用户请将任一行命令中管道后的 `sh` 改为 `sudo sh`。
+以 root 用户运行时，请去掉 `sudo`。
 
 [安装 koko](docs/install.zh-CN.md) 介绍各行命令的作用，以及升级、回退和恢复。没有 systemd 的环境中，可使用 Docker 运行镜像 `ghcr.io/cieons/koko`（见[在容器中运行](docs/install.zh-CN.md#在容器中运行)）。
 

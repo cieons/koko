@@ -16,10 +16,10 @@ koko 的每个发布版本包含两个程序：CLI `koko`，支持 Linux 和 mac
 在这台机器上以 root 运行以下命令，指定所有者以及设备访问 koko 服务器所用的地址：
 
 ```sh
-curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh -s -- --owner alice --address koko.example.com
+curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sudo sh -s -- --owner alice --address koko.example.com
 ```
 
-非 root 用户请将管道后的 `sh` 改为 `sudo sh`。
+以 root 用户运行时，请去掉 `sudo`。
 
 - **`--address`**：建议使用 DNS 名称。它是每个加入码携带的服务器地址；机器的 IP 变更后，设备仍可通过它访问 koko 服务器。未指定 `--address` 时，安装程序使用机器的公网 IP，并拒绝私有 IP（10.x、192.168.x、100.64.x 等），因为设备无法访问这类地址。如果机器位于 NAT 之后且映射到其他端口，请在地址中写明该端口，例如 `--address koko.example.com:8443`。
 - **`--port`**：koko 服务器监听的端口，默认为 7822。安装程序不会自行改用其他端口：端口被占用时，会指出占用该端口的进程并停止。仅允许网页流量（80 和 443 端口）出站的网络无法访问 7822 端口：如果设备位于此类网络之后，且这台机器上没有其他程序占用 443 端口，请指定 `--port 443`。
@@ -37,13 +37,23 @@ install.sh 下载适用于本机的 `koko`，使用发布版本的 `SHA256SUMS` 
 
 ### 仅安装 CLI
 
-不带参数运行同一行命令，即只安装 CLI，适用于 Linux（amd64 或 arm64）和 macOS（Apple Silicon）：
+不带参数运行同一行命令，即只安装 CLI，适用于 Linux（amd64 或 arm64）和 macOS（Apple Silicon）。该命令为运行它的用户安装 CLI，无需 `sudo`：
 
 ```sh
 curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh
 ```
 
-该命令下载适用于本机的 `koko`，使用发布版本的 `SHA256SUMS` 校验后安装为 `/usr/local/bin/koko`。写入该位置需要 root 权限：以 root 用户运行，或由 `sudo` 免密码授权的用户运行；否则，请将管道后的 `sh` 改为 `sudo sh`。该命令不依赖 systemd，因此也可在容器中使用。运行时无需交互输入，并且只向 stderr 输出。
+该命令下载适用于本机的 `koko`，使用发布版本的 `SHA256SUMS` 校验后安装为 `~/.local/bin/koko`；`~/.local/bin` 不存在时会先创建该目录。该命令既不需要 root 权限，也不依赖 systemd，因此也可在容器中使用。运行时无需交互输入，只向 stderr 输出，并且不修改 `~/.local/bin` 之外的任何文件。此后可使用 `koko update` 升级（见[升级](#升级)）。
+
+多数 Linux 发行版会在 `~/.local/bin` 存在时将其加入 `PATH`，macOS 则不会。`~/.local/bin` 不在 `PATH` 中时，install.sh 会针对 `SHELL` 所指的 shell 输出将其加入 `PATH` 的命令，以及在新 shell 启动之前运行 `koko` 所用的完整路径。zsh 所用的命令如下：
+
+```sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile
+```
+
+bash 使用同一行命令，但在 Linux 上写入 `~/.bashrc`，在 macOS 上写入 `~/.bash_profile`；fish 使用 `fish_add_path ~/.local/bin`；其他 shell 使用其中的 `export` 行，写入该 shell 的 profile 文件。`PATH` 中排在前面的是另一个 `koko` 时（例如早期版本安装的 `/usr/local/bin/koko`），install.sh 会指出该文件（见[从 v0.3.x 升级](#从-v03x-升级)）。
+
+以 root 运行同一行命令时，CLI 安装为 `/usr/local/bin/koko`，供本机所有未自行安装 CLI 的用户使用，并使用 `sudo koko update` 升级。有 `sudo` 权限的用户可使用 `curl … | sudo sh` 安装该文件。以 root 运行的智能体使用该文件；以其他用户运行的智能体使用其自身的 `~/.local/bin/koko`，install.sh 会输出该文件的完整路径，供不读取登录 shell 的 `PATH` 的运行环境使用。
 
 不使用 install.sh 时，请下载适用于本机的文件并校验、安装：Mac 使用 `koko-darwin-arm64`，Linux 使用 `koko-linux-amd64` 或 `koko-linux-arm64`。Mac 的操作如下：
 
@@ -51,7 +61,8 @@ curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | 
 base=https://github.com/cieons/koko/releases/latest/download
 curl -fsSL -O "$base/koko-darwin-arm64" -O "$base/SHA256SUMS"
 grep ' koko-darwin-arm64$' SHA256SUMS | shasum -a 256 -c
-sudo install -m 0755 koko-darwin-arm64 /usr/local/bin/koko
+mkdir -p ~/.local/bin
+install -m 0755 koko-darwin-arm64 ~/.local/bin/koko
 ```
 
 Linux（amd64）的操作如下：
@@ -60,7 +71,8 @@ Linux（amd64）的操作如下：
 base=https://github.com/cieons/koko/releases/latest/download
 curl -fsSL -O "$base/koko-linux-amd64" -O "$base/SHA256SUMS"
 grep ' koko-linux-amd64$' SHA256SUMS | sha256sum -c
-sudo install -m 0755 koko-linux-amd64 /usr/local/bin/koko
+mkdir -p ~/.local/bin
+install -m 0755 koko-linux-amd64 ~/.local/bin/koko
 ```
 
 ### 离线安装
@@ -95,13 +107,23 @@ gh attestation verify kokod-linux-amd64 --repo cieons/koko
 
 ## 升级
 
-不带参数再次运行安装命令：
+CLI 可自行升级，无需 root 权限：
+
+```sh
+koko update
+```
+
+该命令下载最新发布版本中适用于本机的 `koko`，使用发布版本的 `SHA256SUMS` 及其构建信息校验，然后替换当前运行的文件。已打开的 SSH 会话、`koko web` 和正在运行的命令均不受影响。`koko update --check` 只说明将执行的操作，不做任何更改。root 的 `/usr/local/bin/koko` 使用 `sudo koko update` 升级。
+
+koko 服务器的升级方式是以 root 不带参数再次运行安装命令：
 
 ```sh
 curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sudo sh
 ```
 
-在 koko 服务器所在的机器上，该命令先升级 koko 服务器，再升级 CLI。`koko server install` 将 `kokod` 替换为新发布版本中的文件，重新写入 systemd unit 并重启 koko 服务器；服务器的记录、所有者、服务器地址和密钥均保持不变。所有已打开的 SSH 会话都会结束，并显示一行提示，说明 koko 服务器正在重启。此后 install.sh 才替换 `koko`。如果 koko 服务器升级失败，install.sh 会就此停止，CLI 保持不变，因此 CLI 的版本不会领先于同一机器上的 koko 服务器。在其他机器上，同一行命令只升级 CLI。如果两者仍出现不一致（例如手动安装 CLI 之后），在 koko 服务器所在的机器上运行 `koko status`，会提示该机器上的 koko 服务器属于另一构建，并给出 `sudo koko server install`，运行该命令即可使 koko 服务器与 CLI 的构建一致。
+该命令先升级 koko 服务器，再升级 root 的 CLI。`koko server install` 将 `kokod` 替换为新发布版本中的文件，重新写入 systemd unit 并重启 koko 服务器；服务器的记录、所有者、服务器地址和密钥均保持不变。所有已打开的 SSH 会话都会结束，并显示一行提示，说明 koko 服务器正在重启。此后 install.sh 才替换 `koko`。如果 koko 服务器升级失败，install.sh 会就此停止，CLI 保持不变，因此 CLI 的版本不会领先于同一机器上的 koko 服务器。如果两者仍出现不一致（例如手动安装 CLI 之后），在 koko 服务器所在的机器上运行 `koko status`，会提示该机器上的 koko 服务器属于另一构建，并给出 `sudo koko server install`，运行该命令即可使 koko 服务器与 CLI 的构建一致。
+
+在 koko 服务器所在的机器上不使用 `sudo` 运行安装命令时，CLI 会安装到运行者自身的 `~/.local/bin` 中，root 的 `/usr/local/bin/koko` 保持不变：在该机器上请使用 `| sudo sh` 运行。可免密码使用 `sudo` 的用户仍会通过 `sudo` 升级 koko 服务器。对于两者均不满足的用户，不带参数的安装命令会使 koko 服务器保持不变，并给出相应提示，指出 `koko server upgrade`；带参数时则会拒绝，且不写入任何内容。
 
 由 v0.1.0 或 v0.2.0 安装的 koko 服务器（当时 `koko` 和 `kokod` 尚未拆分为两个程序）同样按此方式升级：升级后其 unit 运行 `/usr/local/bin/kokod run`，`/usr/local/bin/koko` 则为 CLI。
 
@@ -111,9 +133,34 @@ curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | 
 
 新版本的 koko 更改数据库 schema 时，koko 服务器会先将原数据库复制为 `/var/lib/koko/koko.db.before-<n>`，即快照，并且只保留最新的一份。
 
+### 从 v0.3.x 升级
+
+v0.3.x 及更早版本的 CLI 安装命令以 root 安装 `/usr/local/bin/koko`。在存在该文件的设备上，请依次执行以下步骤：
+
+1. 不使用 `sudo` 运行 CLI 安装命令（见[仅安装 CLI](#仅安装-cli)）。该命令安装 `~/.local/bin/koko`，随后指出 `/usr/local/bin/koko`（保留在原处），并给出删除该文件的命令。
+2. 如果在新 shell 中 `command -v koko` 仍指向 `/usr/local/bin/koko`，请在 `PATH` 中将 `~/.local/bin` 置于 `/usr/local/bin` 之前；`~/.local/bin` 不在 `PATH` 中时，install.sh 会输出所需的命令。
+3. 使用新的 `koko` 运行任一 `koko` 命令，例如 `koko status`。该命令会将 koko 的 ssh_config 指向其自身，使 `ssh <host>.koko` 同样使用新的 `koko`。
+4. 本机不再有其他用户使用旧文件后，将其删除：
+
+   ```sh
+   sudo rm /usr/local/bin/koko
+   ```
+
+如需为本机所有用户保留同一个 `koko`，请改用 `| sudo sh` 运行安装命令：该命令与以往一样替换 `/usr/local/bin/koko`，此后使用 `sudo koko update` 升级。
+
+对于由 systemd 管理的 v0.3.x koko 服务器，请按上文以 root 运行安装命令。该机器上的 CLI 仍为 root 的 `/usr/local/bin/koko`。
+
 ## 回退
 
-如需回退到升级前运行的发布版本，请使用最新的 install.sh 安装该版本，并在 `KOKO_VERSION` 中指定。在这台机器上以 root 运行：
+如需回退 CLI，请指定发布版本：
+
+```sh
+koko update --version v0.3.0
+```
+
+将 `v0.3.0` 替换为要回退到的版本。早于 `koko update` 的发布版本（例如 v0.3.0）不包含 `koko update`：如需从该版本重新升级，请再次运行安装命令（见[仅安装 CLI](#仅安装-cli)）。
+
+如需在 koko 服务器所在的机器上回退到升级前运行的发布版本，请使用最新的 install.sh 安装该版本，并在 `KOKO_VERSION` 中指定。在这台机器上以 root 运行：
 
 ```sh
 curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | env KOKO_VERSION=v0.3.0 sh
@@ -161,7 +208,7 @@ koko 目前没有备份命令。在 koko 服务器停止时复制的数据目录
 
 1. 在旧机器上：运行 `systemctl stop koko`，将 `/var/lib/koko` 作为整个目录复制出来，并与根密钥的副本一同保存：恢复时两者缺一不可。
 2. 在新机器上以 root 将两者放回：目录放到 `/var/lib/koko`，根密钥放到 `/etc/koko/root.key`，属主为 root，权限为 0600，所在目录 `/etc/koko` 的权限为 0700。
-3. 使用不带参数的安装命令安装 CLI（见[仅安装 CLI](#仅安装-cli)），然后运行不带 `--owner` 的 `sudo koko server install`；如果旧的 koko 服务器监听的不是 7822 端口，请加上 `--port <port>`。该命令会找到 koko 服务器的记录，安装与自身同一版本的 `kokod` 并启动 koko 服务器。
+3. 以 root 安装 CLI，即将不带参数的安装命令通过管道交给 `sudo sh`（见[仅安装 CLI](#仅安装-cli)），然后运行不带 `--owner` 的 `sudo koko server install`；如果旧的 koko 服务器监听的不是 7822 端口，请加上 `--port <port>`。该命令会找到 koko 服务器的记录，安装与自身同一版本的 `kokod` 并启动 koko 服务器。
 
 主机密钥随数据目录一同迁移，因此设备仍然信任 koko 服务器。如果地址发生变化，请使用 `koko server set address=<host[:port]>` 设置新地址，并在每台设备上运行 `koko connect <host:port>`。
 

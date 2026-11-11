@@ -17,21 +17,24 @@ features listed below and is still at an early stage.
 koko is two programs: `koko` is the CLI, on Linux and macOS, and `kokod`
 is the koko server, on Linux.
 
-The CLI, on Linux (amd64 or arm64) or macOS (Apple Silicon):
+The CLI, on Linux (amd64 or arm64) or macOS (Apple Silicon), for the user
+who runs it, in `~/.local/bin`, without `sudo`:
 
 ```sh
 curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh
 ```
 
-The koko server as well, on a Linux machine with systemd, naming the Owner
-and the address devices will use to reach it:
+It prints the line that puts `~/.local/bin` on `PATH` when it is not
+there. `koko update` upgrades the CLI later.
+
+The koko server as well, on a Linux machine with systemd, as root, naming
+the Owner and the address devices will use to reach it:
 
 ```sh
-curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh -s -- --owner alice --address koko.example.com
+curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sudo sh -s -- --owner alice --address koko.example.com
 ```
 
-When not running as root, change the `sh` after the pipe to `sudo sh` in
-either line.
+As the root user, drop the `sudo`.
 
 [Installing koko](docs/install.md) describes what each line does, and covers
 upgrading, going back and restoring. Without systemd, run the image

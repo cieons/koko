@@ -33,10 +33,10 @@ On the machine, run the following as root, naming the Owner and the
 address devices will use to reach the koko server:
 
 ```sh
-curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh -s -- --owner alice --address koko.example.com
+curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sudo sh -s -- --owner alice --address koko.example.com
 ```
 
-When not running as root, change the `sh` after the pipe to `sudo sh`.
+As the root user, drop the `sudo`.
 
 - **`--address`**: a DNS name is recommended. It is the Server Address every Join
   Code carries, and devices keep reaching the koko server through it when
@@ -82,18 +82,42 @@ expired, `koko device add` on the machine prints a new one.
 ### The CLI alone
 
 The same line without arguments installs the CLI alone, on Linux (amd64 or
-arm64) and macOS (Apple Silicon):
+arm64) and macOS (Apple Silicon), for the user who runs it, without
+`sudo`:
 
 ```sh
 curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh
 ```
 
 It downloads `koko` for the machine, checks it against the release's
-`SHA256SUMS`, and installs it as `/usr/local/bin/koko`. It needs root to
-write there: as the root user, or as a user with passwordless `sudo`.
-Otherwise, change the `sh` after the pipe to `sudo sh`. It needs no
-systemd, so it also works in a container. It never prompts, and writes
-only to stderr.
+`SHA256SUMS`, and installs it as `~/.local/bin/koko`, making
+`~/.local/bin` when it is missing. It needs neither root nor systemd, so
+it also works in a container. It never prompts, writes only to stderr, and
+edits no file outside `~/.local/bin`. `koko update` upgrades it later
+([Upgrading](#upgrading)).
+
+Most Linux distributions put `~/.local/bin` on `PATH` when it exists;
+macOS does not. When it is not on `PATH`, install.sh prints the line that
+puts it there for the shell that `SHELL` names, and the full path to run
+`koko` by until a new shell starts. For zsh, the line is:
+
+```sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile
+```
+
+For bash, it is the same line with `~/.bashrc` on Linux and
+`~/.bash_profile` on macOS; for fish, `fish_add_path ~/.local/bin`; for
+any other shell, the `export` line, for the shell's profile. When another
+`koko` comes first on `PATH`, such as a `/usr/local/bin/koko` an earlier
+release installed, install.sh names it ([From v0.3.x](#from-v03x)).
+
+Run as root, the same line installs the CLI as `/usr/local/bin/koko`, for
+every user of the machine who has none of their own, and
+`sudo koko update` upgrades it. A user with `sudo` gets it with
+`curl … | sudo sh`. An agent running as root gets this one; an agent
+running as another user gets its own `~/.local/bin/koko`, whose full path
+install.sh prints for a harness that does not read a login shell's
+`PATH`.
 
 Without install.sh, download the file for the machine, `koko-darwin-arm64`
 for a Mac, and `koko-linux-amd64` or `koko-linux-arm64` for Linux, check it
@@ -103,7 +127,8 @@ and install it. For a Mac:
 base=https://github.com/cieons/koko/releases/latest/download
 curl -fsSL -O "$base/koko-darwin-arm64" -O "$base/SHA256SUMS"
 grep ' koko-darwin-arm64$' SHA256SUMS | shasum -a 256 -c
-sudo install -m 0755 koko-darwin-arm64 /usr/local/bin/koko
+mkdir -p ~/.local/bin
+install -m 0755 koko-darwin-arm64 ~/.local/bin/koko
 ```
 
 For Linux on amd64:
@@ -112,7 +137,8 @@ For Linux on amd64:
 base=https://github.com/cieons/koko/releases/latest/download
 curl -fsSL -O "$base/koko-linux-amd64" -O "$base/SHA256SUMS"
 grep ' koko-linux-amd64$' SHA256SUMS | sha256sum -c
-sudo install -m 0755 koko-linux-amd64 /usr/local/bin/koko
+mkdir -p ~/.local/bin
+install -m 0755 koko-linux-amd64 ~/.local/bin/koko
 ```
 
 ### Offline
@@ -161,24 +187,44 @@ This works for every file `SHA256SUMS` lists: `koko-<os>-<arch>`,
 
 ## Upgrading
 
-Run the install line again, without arguments:
+The CLI upgrades itself, without root:
+
+```sh
+koko update
+```
+
+It downloads the latest release's `koko` for the machine, checks it
+against the release's `SHA256SUMS` and its build, and replaces the file it
+runs from. Open SSH Sessions, `koko web` and running commands carry on.
+`koko update --check` says what it would do and changes nothing. Root's
+`/usr/local/bin/koko` upgrades with `sudo koko update`.
+
+The koko server upgrades with the install line run again as root, without
+arguments:
 
 ```sh
 curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sudo sh
 ```
 
-On the koko server's machine, it upgrades the koko server first, then the
-CLI. `koko server install` replaces `kokod` with the new release's, writes
-the systemd unit again and restarts the koko server, which keeps its
-record, its Owner, its Server Address and its keys. Every open SSH Session
-ends, with a line saying the koko server is restarting. Only then does
-install.sh replace `koko`. When the koko server's upgrade fails, install.sh
-stops there and leaves the CLI as it was, so the CLI never runs ahead of
-the koko server beside it. On every other machine, the same line upgrades
-the CLI alone. If the two diverge nonetheless, for example after the CLI
-is installed by hand, `koko status` on the koko server's machine reports
-that the koko server there is another build and names
-`sudo koko server install`, which brings it to the CLI's build.
+It upgrades the koko server first, then root's CLI. `koko server install`
+replaces `kokod` with the new release's, writes the systemd unit again and
+restarts the koko server, which keeps its record, its Owner, its Server
+Address and its keys. Every open SSH Session ends, with a line saying the
+koko server is restarting. Only then does install.sh replace `koko`. When
+the koko server's upgrade fails, install.sh stops there and leaves the CLI
+as it was, so the CLI never runs ahead of the koko server beside it. If the
+two diverge nonetheless, for example after the CLI is installed by hand,
+`koko status` on the koko server's machine reports that the koko server
+there is another build and names `sudo koko server install`, which brings
+it to the CLI's build.
+
+Run on the koko server's machine without `sudo`, the line installs the
+CLI of the user who runs it, in `~/.local/bin`, and leaves root's
+`/usr/local/bin/koko` as it was: run it with `| sudo sh` there. A user who
+can use `sudo` without a password still upgrades the koko server, through
+`sudo`. For a user who can do neither, the line without arguments leaves
+the koko server as it is and says so, naming `koko server upgrade`; with
+arguments, it is refused, and nothing is written.
 
 A koko server installed by v0.1.0 or v0.2.0, from before `koko` and `kokod`
 were two programs, takes the same upgrade: its unit then runs
@@ -198,11 +244,48 @@ When the new koko changes the database's schema, the koko server first
 copies the database as it was to `/var/lib/koko/koko.db.before-<n>`, the
 snapshot, and keeps only the latest one.
 
+### From v0.3.x
+
+Up to v0.3.x, the CLI line installed `/usr/local/bin/koko`, as root. On a
+device with that file, in this order:
+
+1. Run the CLI line without `sudo` ([The CLI alone](#the-cli-alone)). It
+   installs `~/.local/bin/koko`, then names `/usr/local/bin/koko`, which it
+   leaves where it is, and gives the line that removes it.
+2. When `command -v koko` in a new shell still names
+   `/usr/local/bin/koko`, put `~/.local/bin` before `/usr/local/bin` on
+   `PATH`, with the line install.sh prints when `~/.local/bin` is missing
+   from it.
+3. Run any `koko` command, such as `koko status`, with the new `koko`. It
+   points koko's ssh_config at itself, so `ssh <host>.koko` runs it too.
+4. Once no other user of the machine runs it, remove the old file:
+
+   ```sh
+   sudo rm /usr/local/bin/koko
+   ```
+
+To keep one `koko` for every user of the machine instead, run the line
+with `| sudo sh`: it replaces `/usr/local/bin/koko`, as before, and
+`sudo koko update` upgrades it from then on.
+
+On a v0.3.x koko server with systemd, run the line as root, as above. The
+CLI there stays root's `/usr/local/bin/koko`.
+
 ## Going back
 
-To go back to the release that ran before the upgrade, install it with
-the newest install.sh, naming the release in `KOKO_VERSION`. On the machine, as
-root:
+To go back with the CLI, name the release:
+
+```sh
+koko update --version v0.3.0
+```
+
+with that release in place of `v0.3.0`. A release from before
+`koko update`, such as v0.3.0, has no `koko update`: to come back up from
+it, run the install line again ([The CLI alone](#the-cli-alone)).
+
+To go back on the koko server's machine to the release that ran before the
+upgrade, install it with the newest install.sh, naming the release in
+`KOKO_VERSION`. On the machine, as root:
 
 ```sh
 curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | env KOKO_VERSION=v0.3.0 sh
@@ -272,8 +355,8 @@ koko server is stopped, kept with the Root Key, restores it:
 2. On the new machine, as root, put both back: the directory at
    `/var/lib/koko`, and the Root Key at `/etc/koko/root.key`, owned by root
    with mode 0600, in `/etc/koko`, mode 0700.
-3. Install the CLI with the line without arguments
-   ([The CLI alone](#the-cli-alone)), then run
+3. Install the CLI as root, with the line without arguments piped to
+   `sudo sh` ([The CLI alone](#the-cli-alone)), then run
    `sudo koko server install` without `--owner`, adding `--port <port>` if
    the old koko server listened on another port than 7822. It finds the
    koko server's record, installs the `kokod` of its own version and
