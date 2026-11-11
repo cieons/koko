@@ -220,7 +220,13 @@ previous `kokod` again. `koko server upgrade` waits for the outcome, then
 brings the CLI that ran it to the same release when `koko update` can
 replace it, or says how to. On failure it exits with `upgrade_failed` and
 the reason, and leaves the CLI as it was. The web UI offers the Owner the
-same upgrade. `koko server show` shows the outcome of the last upgrade, and
+same upgrade: a notice above every page says when a newer release is out,
+and its Upgrade button, after a confirmation, asks for the upgrade and
+follows it until the koko server runs the new release, then reloads the
+page, or says why it failed and which version runs. Check now, in the
+notice and in the account panel, checks for a release at once, as
+`koko server upgrade --check` does. `koko server show` shows the outcome
+of the last upgrade, and
 `journalctl -u koko -u koko-upgrade` on the machine shows the details.
 
 The install line, run again as root without arguments, also upgrades the

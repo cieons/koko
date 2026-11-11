@@ -79,8 +79,12 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
   const phone = usePhone();
   const userCurrent = useRead(UserCurrent, {});
   const caller = userCurrent.data && callerOf(userCurrent.data);
-  const notice = useNotice(caller?.deviceSession?.id);
   const release = useReleaseState(caller?.owner === true);
+  // While the koko server restarts for an upgrade, calls through koko web
+  // drop as it reconnects; that koko web stopped is not to be said then.
+  const restarting = release.upgrade.state === "running" || release.upgrade.state === "succeeded";
+  const called = useNotice(caller?.deviceSession?.id);
+  const notice = restarting && called === "stopped" ? undefined : called;
   const visible = routes.filter((r) => !r.ownerOnly || caller?.owner);
   const places = caller ? visible.filter((r) => r.nav) : [];
   const main = useRef<HTMLElement>(null);

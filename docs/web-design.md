@@ -178,7 +178,10 @@ a hairline under it. Three zones on a `1fr auto 1fr` grid, in a column
   the release notes' link; at its end, Check now and Later as ghost
   buttons and the way to upgrade as a secondary button, since a page's one
   primary button stays the page's. The actions wrap under the text on a
-  phone. How to upgrade opens its two lines inside the panel. The account
+  phone. How to upgrade opens its two lines inside the panel. Once the
+  Owner confirms an upgrade, the same panel shows its progress, a spinner
+  in the circle, then a check mark or, on a failure, a cross in the danger
+  colour with the outcome's message in the code face. The account
   panel shows the Owner a koko server line above Account: the version,
   when it last checked, and Check now.
 

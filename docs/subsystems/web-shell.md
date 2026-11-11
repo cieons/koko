@@ -419,6 +419,7 @@ What the shell tells the Owner, and only the Owner, of koko's releases
     skips, and `docker compose pull && docker compose up -d`. kokod cannot
     see the tag it was started from, so both show, and the pull serves
     either case.
+  - `systemd`: Upgrade, which asks first ([The upgrade](#the-upgrade)).
   - `none`: the line that says to replace kokod and start it again.
 - **The account panel's koko server line**, for the Owner: the koko
   server's version; when it last checked ("Checked 2 hours ago",
@@ -431,6 +432,31 @@ What the shell tells the Owner, and only the Owner, of koko's releases
   checks, its button is pending and a status says so; in the panel, a
   status then says "v0.4.2 is the newest release." or "koko v0.5.0 is
   available."; a refusal, such as `update_check_failed`, shows in place.
+
+### The upgrade
+
+- **The confirmation**, a `ConfirmDialog`: "Upgrade the koko server to
+  v0.5.0?", that it restarts, that every open SSH Session through it ends
+  and connections through koko web reconnect, and that devices keep
+  working and a CLI can be brought to v0.5.0 with `koko update`; Cancel
+  and Upgrade and restart. Upgrade and restart reads `server.show`'s
+  `last_upgrade`, then calls `server.upgrade` with the release the notice
+  names; a refusal, such as `upgrade_running`, shows in the dialog.
+- **The progress** stands in the notice's place and takes the focus:
+  "Upgrading the koko server to v0.5.0…", a status. The page asks
+  `server.show` every 2 seconds (`upgradePoll`) until `last_upgrade` holds
+  an outcome other than the one read before, for that release, that no
+  longer runs, as `koko server upgrade` waits. A call that fails meanwhile,
+  a 502 from the reverse proxy or a dropped call through a koko web that
+  reconnects, is asked again, and the frame does not say koko web stopped
+  while the upgrade runs.
+  - `succeeded`: "The koko server runs v0.5.0. This page reloads.", and
+    the page reloads after 2 seconds (`reloadPage`), since the web UI's
+    own files changed with kokod.
+  - `failed` or `failed_not_restored`: an alert with the outcome's message
+    and the version that runs, and Close, which brings the notice back.
+  - No outcome within 15 minutes (`upgradeWait`): an alert naming
+    `journalctl -u koko -u koko-upgrade` as a `CommandLine`, and Close.
 
 ## The page inventory
 
@@ -460,6 +486,7 @@ HeroUI (#121) took the pages out; each came back with its ticket (#122 to
 | See the koko server's version and when it last checked for a release, in the account panel | `server.show` | the Owner |
 | Check for a new release at once (Check now), in the account panel and the notice | `server.check_update` | the Owner |
 | See and copy how a koko server in the container image upgrades | none | the Owner |
+| Upgrade a koko server installed with systemd, asking first, and follow it to its outcome | `server.upgrade`, then `server.show` | the Owner |
 
 **Hosts** (`/hosts`; the view in the query: `filter`, `sort`, `columns`, `all=1`, and `q`, `group`, `view=services` and `space`):
 
@@ -611,7 +638,14 @@ alone ([Sign-ins](signin.md#the-web-uis-pages)):
   for a koko server run by hand; the account panel's line: checked, not
   checked, the last check's error, and axe; Check now in the panel
   checking, then the newest release, or the notice appearing; Check now
-  in the notice; a failed check in place in both.
+  in the notice; a failed check in place in both; Upgrade for systemd;
+  the confirmation's text, actions, focus and axe, Cancel asking nothing
+  and a refusal in it; with a faked clock, the progress through a dropped
+  call, a 502 and a running outcome to the new version and the reload, a
+  failure's message and the version that runs with Close and axe, an
+  earlier outcome not taken for this one, the 15-minute timeout and its
+  `journalctl` line, and no stopped notice while the koko server
+  restarts.
 - [`version.test.ts`](../../web/src/shell/version.test.ts): releases by
   number, pre-releases and pseudo-versions before their release, a
   development build above every release, an unknown version below.

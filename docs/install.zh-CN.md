@@ -122,7 +122,7 @@ koko server upgrade            # 升级到最新发布版本
 koko server upgrade --check    # 说明将升级到的版本，不做任何更改
 ```
 
-`koko server upgrade` 请求 koko 服务器升级，koko 服务器再请求以 root 运行的升级助手 `koko-upgrade.service`。升级助手从 koko 服务器处只接收一个比已安装版本更新的发布版本号。它自行下载该发布版本的 `kokod`，使用发布版本的 `SHA256SUMS` 及其构建信息校验，将已安装的 `kokod` 保留为 `/var/lib/koko-upgrade/kokod.previous`，然后安装新的 `kokod`，koko 服务器随之重启。所有经由 koko 服务器的 SSH 会话都会结束。新的 `kokod` 无法启动时，升级助手会将其停止；如果它已更改数据库 schema，则放回数据库快照，然后重新安装原先的 `kokod`。`koko server upgrade` 等待升级结果，随后在 `koko update` 可替换运行该命令的 CLI 时，将其升级到同一版本，否则说明升级方法。升级失败时，该命令以 `upgrade_failed` 退出并给出原因，CLI 保持不变。Web 界面为所有者提供同样的升级。`koko server show` 显示上一次升级的结果，在该机器上运行 `journalctl -u koko -u koko-upgrade` 可查看详细信息。
+`koko server upgrade` 请求 koko 服务器升级，koko 服务器再请求以 root 运行的升级助手 `koko-upgrade.service`。升级助手从 koko 服务器处只接收一个比已安装版本更新的发布版本号。它自行下载该发布版本的 `kokod`，使用发布版本的 `SHA256SUMS` 及其构建信息校验，将已安装的 `kokod` 保留为 `/var/lib/koko-upgrade/kokod.previous`，然后安装新的 `kokod`，koko 服务器随之重启。所有经由 koko 服务器的 SSH 会话都会结束。新的 `kokod` 无法启动时，升级助手会将其停止；如果它已更改数据库 schema，则放回数据库快照，然后重新安装原先的 `kokod`。`koko server upgrade` 等待升级结果，随后在 `koko update` 可替换运行该命令的 CLI 时，将其升级到同一版本，否则说明升级方法。升级失败时，该命令以 `upgrade_failed` 退出并给出原因，CLI 保持不变。Web 界面为所有者提供同样的升级：有更新的发布版本时，每个页面上方都会显示通知；确认后，通知中的“升级”按钮会请求升级，并持续跟进，直至 koko 服务器运行新版本后重新加载页面，或在升级失败时说明原因及当前运行的版本。通知和账户面板中的“立即检查”会立即检查新版本，与 `koko server upgrade --check` 相同。`koko server show` 显示上一次升级的结果，在该机器上运行 `journalctl -u koko -u koko-upgrade` 可查看详细信息。
 
 以 root 不带参数再次运行安装命令同样可以升级 koko 服务器，并为尚无升级助手的 koko 服务器安装升级助手：
 

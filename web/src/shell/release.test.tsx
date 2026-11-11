@@ -1,15 +1,32 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { expect, onTestFinished, test } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { expect, onTestFinished, test, vi } from "vitest";
 
-import { type Server, ServerCheckUpdate, type ServerCheckUpdateResponse, ServerShow } from "../api/server";
+import {
+  type LastUpgrade,
+  type Server,
+  ServerCheckUpdate,
+  type ServerCheckUpdateResponse,
+  ServerShow,
+  ServerUpgrade,
+} from "../api/server";
 import { type User, UserCurrent } from "../api/user";
 import { expectAccessible } from "../test/axe";
 import { clipboard } from "../test/clipboard";
 import { type FakeApi, fakeApi, refusal } from "../test/fakeApi";
 import { alerts, topBarButton } from "../test/pages";
 import { Page as PageHead } from "../ui/Page";
+import { reloadAfter } from "./release";
+import { reloadPage } from "./reloadPage";
 import type { Route } from "./router";
 import { Shell } from "./Shell";
+
+vi.mock("./reloadPage", () => ({ reloadPage: vi.fn() }));
+
+/** upgradePoll is how often the page asks server.show while the koko server upgrades. */
+const upgradePoll = 2000;
+
+/** upgradeWait is how long the page follows an upgrade before it says where to look. */
+const upgradeWait = 15 * 60 * 1000;
 
 // What the shell tells the Owner of koko's releases: the notice above every
 // page, the koko server's line in the account panel, and Check now in both,
@@ -218,6 +235,16 @@ test("run by hand, the notice says to replace kokod and start it again, with no 
   expect(within(notice).queryByRole("button", { name: "How to upgrade" })).toBeNull();
 });
 
+test("installed with systemd, the notice offers Upgrade", async () => {
+  const api = fakeApi();
+  serve(api, alice, { server: server({ update_check: found("v0.5.0") }) });
+  renderShell();
+  const notice = await findNotice();
+
+  expect(within(notice).getByRole("button", { name: "Upgrade" })).toBeDefined();
+  expect(within(notice).queryByRole("button", { name: "How to upgrade" })).toBeNull();
+});
+
 // The account panel's koko server line, and Check now.
 
 test("the account panel's koko server line says when the koko server last checked, or that it has not", async () => {
@@ -324,4 +351,239 @@ test("a failed Check now shows the refusal in place, in the account panel and in
     "The koko server could not find the latest koko release.",
   );
   expect(alerts()).toHaveLength(2);
+});
+
+// The upgrade: the confirmation, then the progress to its outcome.
+
+/** previous is an upgrade that failed before this one was asked for. */
+const previous: LastUpgrade = {
+  state: "failed",
+  from: "v0.4.2",
+  to: "v0.5.0",
+  started_at: "2026-11-10T09:00:00Z",
+  finished_at: "2026-11-10T09:01:00Z",
+  message: "an earlier failure",
+};
+
+/** outcome is the helper's outcome of the upgrade from v0.4.2 to v0.5.0 asked for in the test. */
+function outcome(state: string, message: string | null = null): LastUpgrade {
+  return {
+    state,
+    from: "v0.4.2",
+    to: "v0.5.0",
+    started_at: "2026-11-11T09:00:00Z",
+    finished_at: state === "running" ? null : "2026-11-11T09:02:00Z",
+    message,
+  };
+}
+
+/** upgradeServer is a systemd koko server at v0.4.2 that knows of v0.5.0, whose server.upgrade asks for it. */
+function upgradeServer(api: FakeApi): { server: Server } {
+  const current = { server: server({ update_check: found("v0.5.0"), last_upgrade: previous }) };
+  serve(api, alice, current);
+  api.on(ServerUpgrade, ({ version }) => ({ from: "v0.4.2", to: version ?? "v0.5.0", state: "requested" }));
+  return current;
+}
+
+/** fakeTimers fakes setTimeout for the rest of the test, which advance moves on. */
+function fakeTimers(): void {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+}
+
+/**
+ * confirmUpgrade presses Upgrade, then, with setTimeout faked from there on,
+ * Upgrade and restart, and waits for the progress.
+ */
+async function confirmUpgrade(api: FakeApi): Promise<void> {
+  fireEvent.click(within(await findNotice()).getByRole("button", { name: "Upgrade" }));
+  const dialog = await screen.findByRole("alertdialog");
+  fakeTimers();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Upgrade and restart" }));
+  await until(() => screen.getByRole("region", { name: "Upgrading the koko server to v0.5.0…" }));
+  expect(api.requests(ServerUpgrade)).toEqual([{ version: "v0.5.0" }]);
+}
+
+/** advance moves the faked clock on by ms, and lets what it set off settle. */
+async function advance(ms: number): Promise<void> {
+  await act(() => vi.advanceTimersByTimeAsync(ms));
+}
+
+/** setImmediate is Node's, which the DOM's types the tests compile against do not declare. */
+const { setImmediate } = globalThis as unknown as { setImmediate: (callback: () => void) => void };
+
+/**
+ * until waits for check to pass while setTimeout is faked, yielding to the
+ * fake API's answers with setImmediate, which stays real. vi.waitFor would
+ * move the faked clock on at each try, and Testing Library's waitFor waits
+ * on setTimeout itself.
+ */
+async function until(check: () => void): Promise<void> {
+  for (let tries = 0; ; tries++) {
+    try {
+      check();
+      return;
+    } catch (error) {
+      if (tries === 500) {
+        throw error;
+      }
+    }
+    await act(() => new Promise<void>((resolve) => setImmediate(resolve)));
+  }
+}
+
+/** shows waits, while setTimeout is faked, until the page shows text. */
+async function shows(text: string): Promise<void> {
+  await until(() => expect(screen.getByText(text)).toBeDefined());
+}
+
+test("Upgrade asks first, saying the koko server restarts and SSH Sessions end; Cancel asks nothing", async () => {
+  const api = fakeApi();
+  upgradeServer(api);
+  renderShell();
+  const upgrade = within(await findNotice()).getByRole("button", { name: "Upgrade" });
+
+  upgrade.focus();
+  fireEvent.click(upgrade);
+
+  const dialog = await screen.findByRole("alertdialog", { name: "Upgrade the koko server to v0.5.0?" });
+  expect(dialog.getAttribute("aria-describedby")).not.toBeNull();
+  expect(within(dialog).getByText(/^It restarts\./).textContent).toBe(
+    "It restarts. Every open SSH Session through it ends, and connections through koko web reconnect. Devices keep working; a CLI can be brought to v0.5.0 with koko update.",
+  );
+  expect(within(dialog).getAllByRole("button").map((b) => b.textContent)).toEqual(["Cancel", "Upgrade and restart"]);
+  await waitFor(() => expect(document.activeElement?.textContent).toBe("Cancel"));
+  await expectAccessible();
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  expect(api.requests(ServerUpgrade)).toEqual([]);
+  await waitFor(() => expect(document.activeElement).toBe(upgrade));
+});
+
+test("a refused upgrade shows why in the confirmation", async () => {
+  const api = fakeApi();
+  upgradeServer(api);
+  api.on(ServerUpgrade, () => {
+    throw refusal("upgrade_running", 409);
+  });
+  renderShell();
+  fireEvent.click(within(await findNotice()).getByRole("button", { name: "Upgrade" }));
+  const dialog = await screen.findByRole("alertdialog");
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "Upgrade and restart" }));
+
+  expect(await within(dialog).findByRole("alert")).toHaveProperty(
+    "textContent",
+    "An upgrade of the koko server is already in progress.",
+  );
+  expect(screen.queryByText("Upgrading the koko server to v0.5.0…")).toBeNull();
+});
+
+test("the page follows the upgrade through the restart's failed calls to the new version, then reloads", async () => {
+  const api = fakeApi();
+  const current = upgradeServer(api);
+  renderShell();
+  await confirmUpgrade(api);
+  const asked = api.requests(ServerShow).length;
+  expect(screen.getByRole("status").textContent).toBe("Upgrading the koko server to v0.5.0…");
+
+  // The koko server stops: the call drops, twice with its retry.
+  api.drop(2);
+  await advance(upgradePoll);
+  await until(() => expect(api.requests(ServerShow)).toHaveLength(asked + 2));
+  // The reverse proxy answers 502 while nothing listens.
+  api.on(ServerShow, () => {
+    throw refusal("bad_gateway", 502);
+  });
+  await advance(upgradePoll);
+  await until(() => expect(api.requests(ServerShow)).toHaveLength(asked + 3));
+  // The helper still runs the upgrade.
+  serve(api, alice, current);
+  current.server = server({ update_check: found("v0.5.0"), last_upgrade: outcome("running") });
+  await advance(upgradePoll);
+  await until(() => expect(api.requests(ServerShow)).toHaveLength(asked + 4));
+  expect(screen.getByText("Upgrading the koko server to v0.5.0…")).toBeDefined();
+  expect(alerts()).toEqual([]);
+
+  current.server = server({ version: "v0.5.0", update_check: found("v0.5.0"), last_upgrade: outcome("succeeded") });
+  await advance(upgradePoll);
+  await shows("The koko server runs v0.5.0. This page reloads.");
+  expect(reloadPage).not.toHaveBeenCalled();
+  await advance(reloadAfter);
+  expect(reloadPage).toHaveBeenCalledOnce();
+});
+
+test("a failed upgrade says why, which version runs, and Close brings the notice back", async () => {
+  const api = fakeApi();
+  const current = upgradeServer(api);
+  renderShell();
+  await confirmUpgrade(api);
+
+  current.server = server({
+    update_check: found("v0.5.0"),
+    last_upgrade: outcome("failed", "the new kokod did not start; the previous kokod runs again"),
+  });
+  await advance(upgradePoll);
+
+  await shows("The upgrade to v0.5.0 failed. The koko server runs v0.4.2.");
+  expect(alerts()).toEqual([
+    "The upgrade to v0.5.0 failed. The koko server runs v0.4.2.the new kokod did not start; the previous kokod runs again",
+  ]);
+  vi.useRealTimers();
+  await expectAccessible();
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(await findNotice()).toBeDefined();
+  expect(reloadPage).not.toHaveBeenCalled();
+});
+
+test("an outcome from before the upgrade asked for is not taken for its own", async () => {
+  const api = fakeApi();
+  upgradeServer(api);
+  renderShell();
+  await confirmUpgrade(api);
+  const asked = api.requests(ServerShow).length;
+
+  await advance(upgradePoll);
+  await until(() => expect(api.requests(ServerShow)).toHaveLength(asked + 1));
+
+  expect(screen.getByText("Upgrading the koko server to v0.5.0…")).toBeDefined();
+});
+
+test("after 15 minutes with no outcome the page says where to look on the koko server's machine", async () => {
+  const api = fakeApi();
+  upgradeServer(api);
+  renderShell();
+  await confirmUpgrade(api);
+  api.drop();
+
+  await advance(upgradeWait - 1);
+  expect(screen.getByText("Upgrading the koko server to v0.5.0…")).toBeDefined();
+  await advance(1);
+
+  await shows("The upgrade to v0.5.0 has not ended after 15 minutes. On the koko server's machine, this command shows why.");
+  const log = screen.getByRole("group", { name: "Command that shows the upgrade's log" });
+  expect(within(log).getByRole("code").textContent).toBe("$journalctl -u koko -u koko-upgrade");
+  const polls = api.calls.length;
+  await advance(upgradePoll * 3);
+  expect(api.calls).toHaveLength(polls);
+});
+
+test("while the koko server restarts, a call through koko web that drops does not say koko web stopped", async () => {
+  const api = fakeApi();
+  upgradeServer(api);
+  renderShell();
+  await confirmUpgrade(api);
+  api.drop();
+
+  await advance(upgradePoll);
+  await until(() => expect(api.calls.at(-1)?.path).toBe(ServerShow.path));
+  fireEvent.focus(window);
+  await advance(upgradePoll);
+
+  expect(alerts()).toEqual([]);
+  expect(screen.getByText("Upgrading the koko server to v0.5.0…")).toBeDefined();
 });
