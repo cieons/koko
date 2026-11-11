@@ -36,7 +36,7 @@ export function HostsList(props: ListProps) {
     query.all = true;
   }
   if (faults.length > 0) {
-    return <ViewFault message={t("host.view.invalid", { parts: faults.join(", ") })} reset="/hosts" />;
+    return <ViewFault message={t("host.view.invalid", { parts: faults.join(", ") })} reset={props.clear} />;
   }
   return <HostGroups {...props} query={query} />;
 }

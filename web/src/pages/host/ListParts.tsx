@@ -6,7 +6,6 @@ import type { Service } from "../../api/service";
 import type { Space } from "../../api/space";
 import type { Read } from "../../shell/data";
 import { useT } from "../../shell/i18n";
-import { navigate } from "../../shell/router";
 import { Sheet } from "../../ui/Page";
 import { AlertLine, Loaded } from "../../ui/states";
 import type { Defaults, ListPage, Tab } from "./controls";
@@ -55,7 +54,7 @@ export interface ListProps {
   hosts: readonly Host[];
   /** services are every Service, as service.list answers with no term. */
   services: readonly Service[];
-  /** clear goes to the view's default, clearing the search and filters. */
+  /** clear goes to the view's default, clearing the search and filters, and forgets the view remembered. */
   clear: () => void;
 }
 
@@ -68,12 +67,12 @@ export function sorter(view: View, setView: (view: View) => void): (key: string,
  * ViewFault is the panel shown in place of a list whose URL holds a part
  * the list does not take: it names each, and offers the default view.
  */
-export function ViewFault({ message, reset }: { message: string; reset: string }) {
+export function ViewFault({ message, reset }: { message: string; reset: () => void }) {
   const t = useT();
   return (
     <Sheet className="flex flex-col items-start gap-3">
       <AlertLine>{message}</AlertLine>
-      <Button variant="secondary" onPress={() => navigate(reset)}>
+      <Button variant="secondary" onPress={reset}>
         {t("host.view.reset")}
       </Button>
     </Sheet>

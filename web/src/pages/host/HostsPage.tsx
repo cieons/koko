@@ -8,7 +8,7 @@ import { type Service, ServiceList, type ServiceListResponse } from "../../api/s
 import { type Space, SpaceList, type SpaceListResponse } from "../../api/space";
 import { type Read, useRead } from "../../shell/data";
 import { useCount, useT } from "../../shell/i18n";
-import { navigate, useSearchParams } from "../../shell/router";
+import { type RememberedList, ResetView, type RememberedView, useRememberedView } from "../../shell/rememberedView";
 import { Choice, SearchChoice } from "../../ui/fields";
 import { Page } from "../../ui/Page";
 import { usePhone } from "../../ui/phone";
@@ -43,14 +43,16 @@ const AddHost = lazy(() => import("./HostForm").then((m) => ({ default: m.AddHos
  * can see, as `koko host ls` lists them, grouped by Space, or, with
  * view=services, their Services, as `koko service ls` lists them; a search,
  * the Space and state selects, Filter, sorting by a header and the columns
- * button over them, each kept in the URL in koko's grammar; and Add Host.
+ * button over them, each kept in the URL in koko's grammar, which the
+ * browser remembers for each view (useRememberedView), with Reset view;
+ * and Add Host.
  */
 export function HostsPage() {
   const t = useT();
   const count = useCount();
-  const [params, setParams] = useSearchParams();
-  const page = readListPage(params, defaults);
-  const setPage = (next: ListPage, replace = false) => setParams(writeListPage(next, defaults), { replace });
+  const view = useRememberedView(listOf);
+  const page = readListPage(view.params, defaults);
+  const setPage = (next: ListPage, replace = false) => view.setParams(writeListPage(next, defaults), { replace });
   const attrs = useRead(AttrList, {});
   const spaces = useRead(SpaceList, {});
   // Every Host recorded, Retired ones too: the page is empty only with none, and counts those in use.
@@ -84,6 +86,7 @@ export function HostsPage() {
             <ListArea
               page={page}
               setPage={setPage}
+              remembered={view}
               attrs={a.attributes}
               spaces={s.spaces}
               hosts={h.hosts.filter((host) => host.state !== "retired")}
@@ -104,6 +107,17 @@ export function HostsPage() {
       )}
     </Page>
   );
+}
+
+/**
+ * listOf names the list a query is a view of: the Services view with
+ * view=services, which the browser remembers on its own, and otherwise the
+ * Hosts view.
+ */
+function listOf(params: URLSearchParams): RememberedList {
+  return params.get("view") === "services"
+    ? { list: "services", base: "view=services" }
+    : { list: "hosts", base: "" };
 }
 
 type Answers = [AttrListResponse, SpaceListResponse, HostListResponse, ServiceListResponse];
@@ -135,6 +149,7 @@ const viewTabClass = "w-auto whitespace-nowrap";
 function ListArea({
   page,
   setPage,
+  remembered,
   attrs,
   spaces,
   hosts,
@@ -142,6 +157,7 @@ function ListArea({
 }: {
   page: ListPage;
   setPage: (next: ListPage, replace?: boolean) => void;
+  remembered: RememberedView;
   attrs: readonly AttrKey[];
   spaces: readonly Space[];
   hosts: readonly Host[];
@@ -187,7 +203,7 @@ function ListArea({
     spaces,
     hosts,
     services,
-    clear: () => navigate(tab === "services" ? "/hosts?view=services" : "/hosts"),
+    clear: remembered.reset,
   };
   return (
     <Tabs
@@ -268,6 +284,7 @@ function ListArea({
         {!phone && (
           <ColumnsButton keys={columnKeys} shown={view.columns} labelOf={(k) => keyLabel(t, k)} onChange={showColumn} />
         )}
+        <ResetView view={remembered} />
       </div>
       <TermChips
         terms={chips}

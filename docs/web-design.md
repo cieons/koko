@@ -308,10 +308,10 @@ released, so it needs no redirect.
 - One row of controls: the Hosts / Services tabs with their counts; a
   search field that grows; a Space select ("All Spaces" first), shown when
   there are two Spaces or more; then, in the Hosts view, a state select
-  (In use, Managed, Registered, Retired, "All, with Retired"), **Filter**
-  and the columns button (desktop only). Each control keeps its label on
-  one line, a tab as wide as its label and count; when room runs out the
-  row wraps onto a second line.
+  (In use, Managed, Registered, Retired, "All, with Retired"), **Filter**,
+  the columns button (desktop only) and **Reset view**. Each control keeps
+  its label on one line, a tab as wide as its label and count; when room
+  runs out the row wraps onto a second line.
 - **Filter** opens a popover: field or Attribute, comparison, value (a
   select for an enum, a date field for a date). Each term becomes a chip
   under the controls with a remove button named for it.
@@ -332,6 +332,15 @@ released, so it needs no redirect.
 - A header sorts by its column; Shift adds a further key, which shows its
   rank. The columns button ticks which columns show, any Attribute key
   among them. The view lives in the URL.
+- **A list remembers its view** in the browser, for each User: the Hosts
+  view, the Services view and Secrets, each on its own. Opened with no
+  view in its URL (from the top bar, a new tab, a link or after signing
+  in), a list shows the view it was left in, and its URL is replaced by
+  it, so the URL and a bookmark keep exactly the view on screen; a URL
+  with a view wins and is remembered. **Reset view** (secondary, with a
+  turning-back arrow, unavailable at the default view, so the row keeps
+  its layout) shows the default view and forgets the one remembered. Only
+  what the URL holds is kept.
 - **The URL keeps koko's grammar** ([the view in the
   URL](subsystems/record-pages.md#the-view-in-the-url)), so a bookmark
   from before opens the same view, and each control writes it:
@@ -373,7 +382,8 @@ matches Service, Host and port; the Space select applies.
 The preview stops there. The build also gives this view what the Hosts
 view has, over a Service's own fields (name, host) and Attributes:
 **Filter**, sorting by a header with Shift for a further key, the columns
-button, and the panel for a URL the list does not take. With columns, the
+button, Reset view, a view of its own remembered, and the panel for a URL
+the list does not take. With columns, the
 panel becomes a table as a Space's panel of Hosts is.
 
 ### Add Host and Edit (side panel, wide)
@@ -455,7 +465,8 @@ Retired is reached through the Host's id, and its panel offers no action.
 - The search and the Space select live in the URL (`q=<text>`, as today,
   and `space=<name>`), replacing the history entry as they change, so a
   bookmark opens the page narrowed and a Host's page links to it narrowed
-  to its Space.
+  to its Space. The browser remembers them as it remembers a list's view
+  (Hosts above), with **Reset view** after the Space select.
 - Copy calls `secret.show` and copies without showing. Show opens the
   value in the row, in an inset block in the code face with its own Copy,
   and becomes Hide. The value leaves the page after Hide, after 30

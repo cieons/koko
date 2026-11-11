@@ -27,6 +27,7 @@ export default {
   "shell.browser.unknown": "Browser",
   "shell.loading": "Loading",
   "shell.pageNotLoaded": "This page could not be loaded. Reload the browser page to try again.",
+  "shell.view.reset": "Reset view",
   "shell.notFound.title": "Page not found",
   "shell.notFound.description": "This address leads to no page of this koko server.",
   "shell.notFound.home": "Go to {page}",

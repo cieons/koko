@@ -50,6 +50,7 @@ export default {
   "shell.browser.unknown": "浏览器",
   "shell.loading": "正在加载",
   "shell.pageNotLoaded": "无法加载此页面，请刷新浏览器页面后重试。",
+  "shell.view.reset": "重置视图",
   "shell.notFound.title": "页面不存在",
   "shell.notFound.description": "此地址不对应本 koko 服务器的任何页面。",
   "shell.notFound.home": "前往{page}",

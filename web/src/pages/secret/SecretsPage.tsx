@@ -7,7 +7,7 @@ import { type Space, SpaceList } from "../../api/space";
 import { useCaller } from "../../shell/caller";
 import { useRead, useWrite } from "../../shell/data";
 import { useT } from "../../shell/i18n";
-import { useSearchParams } from "../../shell/router";
+import { type RememberedList, ResetView, useRememberedView } from "../../shell/rememberedView";
 import { Field, SearchChoice } from "../../ui/fields";
 import { FormDialog } from "../../ui/FormDialog";
 import { notify } from "../../ui/notify";
@@ -24,14 +24,16 @@ const allSpaces = "*";
  * `koko secret ls` does, one panel per Space, and never a value until one
  * is asked for (docs/web-design.md, "Secrets"). The search (q) and the
  * Space select (space) live in the URL, refined in place, so a bookmark
- * opens the page narrowed. Each row copies, shows and changes its Secret
- * (SecretRow); Add Secret adds one.
+ * opens the page narrowed, and the browser remembers them
+ * (useRememberedView), with Reset view. Each row copies, shows and
+ * changes its Secret (SecretRow); Add Secret adds one.
  */
 export function SecretsPage() {
   const t = useT();
   const list = useRead(SecretList, {});
   const spaces = useRead(SpaceList, {});
-  const [params, setParams] = useSearchParams();
+  const view = useRememberedView(secretsList);
+  const { params, setParams } = view;
   const [adding, setAdding] = useState(false);
   const query = params.get("q") ?? "";
   const space = params.get("space") ?? "";
@@ -95,6 +97,7 @@ export function SecretsPage() {
                 onChange={(chosen) => refine({ space: chosen })}
               />
             )}
+            <ResetView view={view} />
           </div>
           <Listing
             secrets={secrets}
@@ -121,6 +124,11 @@ export function SecretsPage() {
       )}
     </Page>
   );
+}
+
+/** secretsList is the list the Secrets page's view is of, whose default view has no query. */
+function secretsList(): RememberedList {
+  return { list: "secrets", base: "" };
 }
 
 /** SpaceSelect narrows the page to one Space, "All Spaces" first: a searchable choice, since Spaces can grow. */

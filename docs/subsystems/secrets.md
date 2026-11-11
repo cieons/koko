@@ -182,8 +182,13 @@ of the shell's [dialogs](web-shell.md#parts).
   caller has two Spaces or more, narrows them to one Space. Both stay in
   the URL's query (`?q=`, `?space=`), refined in place rather than as a new
   visit, so a bookmark opens the page narrowed and a Host's page can link
-  to it narrowed to its Space. Nothing matching says so, with a button that
-  clears both; no Secret at all says what a Secret is for, with Add Secret.
+  to it narrowed to its Space. The browser remembers them for the User
+  ([a list remembers its view](web-shell.md#pages-and-routing)), so
+  `/secrets` opens narrowed as it was left, and Reset view clears both and
+  forgets them; only the query is kept, never a value. A Host's page's
+  link, which narrows the page to its Space, is remembered in its turn. Nothing matching
+  says so, with a button that clears both; no Secret at all says what a
+  Secret is for, with Add Secret.
 - **A value.** No value is fetched until a row's Copy or Show is clicked,
   each of which calls `secret.show` and never asks first. Copy copies the
   value and puts nothing on the page. Show opens the value in its row, in
@@ -238,8 +243,9 @@ of the shell's [dialogs](web-shell.md#parts).
   each Secret's name and when it changed, an empty list saying so, and a
   list that does not load, with Try again; the search by Space or name and
   the Space select, kept in the URL in place, from a bookmark too, and
-  nothing matching saying so; no `secret.show` until a click; Copy calling
-  `secret.show` and copying without putting the value on the page; Show
+  nothing matching saying so; the view remembered and Reset view
+  (`shell/rememberedView.test.tsx`); no `secret.show` until a click; Copy
+  calling `secret.show` and copying without putting the value on the page; Show
   opening the value in its row, never asking, its own Copy, and Hide; the
   value gone after 30 seconds on a faked clock, with the focus back on
   Show; a refused Show and Copy; a value answered too late, after the

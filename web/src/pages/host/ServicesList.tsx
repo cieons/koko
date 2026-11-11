@@ -27,7 +27,7 @@ export function ServicesList(props: ListProps) {
   const { query, faults } = readQuery({ ...props.page.list, all: false }, props.types, props.clock, columnsOf.services);
   if (faults.length > 0) {
     return (
-      <ViewFault message={t("host.services.view.invalid", { parts: faults.join(", ") })} reset="/hosts?view=services" />
+      <ViewFault message={t("host.services.view.invalid", { parts: faults.join(", ") })} reset={props.clear} />
     );
   }
   return <ServicesPanel {...props} query={query} />;

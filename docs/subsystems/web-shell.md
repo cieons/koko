@@ -123,6 +123,22 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   is a saved view and Back returns to the earlier state. The router uses the
   browser's history alone; the web front serves `index.html` for every path
   outside `/v1/`.
+- **A list remembers its view.** A list page reads its query through
+  [`useRememberedView`](../../web/src/shell/rememberedView.tsx), which
+  keeps the last view each list showed in `localStorage`, under the User's
+  id and the list's name (`koko.view.<user id>.<list>`): the Hosts view,
+  the Services view and Secrets, each on its own. A URL with a view shows
+  it and is remembered; a URL with none, from the top bar, a new tab, a
+  link or Sign in, shows the view remembered and is replaced by it, so the
+  URL still shows what is on screen. A history entry the page has shown as
+  the default view is marked in its state, so Back to it, or its reload,
+  shows the default again and leaves the view remembered as it is. A
+  default view the page itself writes forgets the list's view first, and a
+  tab that carries nothing to the other list shows that list's own view.
+  **Reset view** ([`ResetView`](../../web/src/shell/rememberedView.tsx)),
+  unavailable at the default, shows the default view and forgets the one
+  remembered. Only the query is kept: no value of a Secret, nothing from a
+  Note; signing out leaves it.
 - **Outside the frame.** Sign in and Set a Password
   ([Sign-ins](signin.md#the-web-uis-pages)), which a browser opens before it
   is signed in on the web listener, are `outside` routes: the shell renders
@@ -410,6 +426,7 @@ HeroUI (#121) took the pages out; each came back with its ticket (#122 to
 | Show or hide a column | none (the URL) | anyone |
 | Show the Retired Hosts, through the state select, and while a `state=retired` term is there | none (`all=1`) | anyone |
 | Go back to the default view from a URL the list does not take, which says which term | none | anyone |
+| Reset view: the default view, the view the browser remembers forgotten | none | anyone |
 | Open a Host, a Retired one by its id | none | anyone |
 | Add a Host: `name`, `space`, `address`, `port`, `account`, `relay`, its Attributes and Note | `host.add` (and `space.list` for the Spaces) | anyone, in a Space they can act in |
 
@@ -434,6 +451,7 @@ HeroUI (#121) took the pages out; each came back with its ticket (#122 to
 | List the Services, filtered, sorted, in the columns chosen | `service.list` (and `attr.list`) | anyone: the Services of their Spaces |
 | Build a filter term, sort, show or hide a column | none (the URL) | anyone |
 | Go back to the default view from a URL the list does not take, which says which term | none | anyone |
+| Reset view: the default view, the view the browser remembers forgotten | none | anyone |
 | Open a Service or its Host: a Service opens on its Host's page | none | anyone |
 
 **A Service** (`/hosts/<host>/services/<service>`, a panel over its Host's page, which `/services/<host>/<service>` goes to):
@@ -450,6 +468,7 @@ HeroUI (#121) took the pages out; each came back with its ticket (#122 to
 | Action | Call | Who |
 | --- | --- | --- |
 | List the Secrets by Space | `secret.list` (and `space.list`) | anyone: the Secrets of their Spaces |
+| Search and narrow to a Space; Reset view, which the browser then forgets | none (the URL) | anyone |
 | Show a value, then copy it or hide it | `secret.show` | in the Space |
 | Copy a value without showing it | `secret.show` | in the Space |
 | Add: `space`, `name`, a value of several lines | `secret.add` | in the Space |

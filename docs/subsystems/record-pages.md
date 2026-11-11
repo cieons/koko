@@ -26,9 +26,10 @@ Spaces alone, as `koko host ls` shows them.
   counts; the search; the Space select, a searchable choice with "All
   Spaces" first, shown when `space.list` answers two Spaces or more; in
   the Hosts view the state select (In use, Managed, Registered, Retired,
-  "All, with Retired"); **Filter**; and, from 768 pixels wide, the columns
-  button. The view's terms that no select shows are chips under them, each
-  with a button, "Remove the filter <term>", that takes it away.
+  "All, with Retired"); **Filter**; from 768 pixels wide, the columns
+  button; and **Reset view** ([the view remembered](#the-view-in-the-url)).
+  The view's terms that no select shows are chips under them, each with a
+  button, "Remove the filter <term>", that takes it away.
 - **The list** ([`HostsList`](../../web/src/pages/host/HostsList.tsx)) is
   what `host.list` answers for the view, with `with_note`, the search
   applied: a heading per Space (its name, its count, "Personal Space" for
@@ -88,7 +89,19 @@ grammar" says:
   Hosts too, since without `all` it would match nothing.
 - **The tabs**: choosing the other view keeps the search and the Space (a
   `space` term in the Hosts view, `space=` in the Services view) and drops
-  the other view's terms, sort keys and columns.
+  the other view's terms, sort keys and columns. With neither to keep, the
+  other view opens as the browser remembers it.
+
+**The view remembered.** The browser keeps the last view of the Hosts
+view and of the Services view, each on its own, for each User
+([a list remembers its view](web-shell.md#pages-and-routing)): `/hosts`
+with no query, from the top bar, a new tab, a link or Sign in, is replaced
+by the Hosts view remembered, and `/hosts?view=services` alone, which
+`/services` goes to, by the Services view remembered. A URL with a view
+wins and is remembered in its place. **Reset view**, at the end of the row
+of controls and unavailable at the default view, goes to the view's
+default and forgets the one remembered, as "Clear the search and filters"
+and "Go to the default view" do.
 
 Before any call the page reads each term, sort key and column as the CLI
 does ([`readQuery`](../../web/src/pages/host/view.ts)): a field of
