@@ -39,11 +39,22 @@ jobs:
           cache-dependency-path: web/package-lock.json
       # koko server install downloads only the kokod of a release's build,
       # and Go stamps a release's version only at a tag, so each build is
-      # tagged first, here and never pushed: v0.0.2 this commit and v0.0.1
-      # the older one. A release's own tag there wins, being the higher.
+      # tagged first, here and never pushed. The CLI and the koko server
+      # turn away each other below compat.Oldest (ADR 0049), so the tags
+      # are pre-releases of the patch after it, within the window: .2 this
+      # commit and .1 the older one, such as v0.3.1-check.2 and
+      # v0.3.1-check.1. A release's own tag there wins when it is the
+      # higher.
+      - name: Choose the builds' tags within the window
+        run: |
+          oldest=$(sed -n 's/^const Oldest = "\(v[0-9]*\.[0-9]*\.[0-9]*\)"$/\1/p' internal/shared/compat/compat.go)
+          [ -n "$oldest" ] || { echo "found no compat.Oldest in internal/shared/compat/compat.go" >&2; exit 1; }
+          next=${oldest%.*}.$((${oldest##*.} + 1))
+          echo "NEWER_TAG=$next-check.2" >>"$GITHUB_ENV"
+          echo "OLDER_TAG=$next-check.1" >>"$GITHUB_ENV"
       - name: Build this commit's release
         run: |
-          git tag v0.0.2
+          git tag "$NEWER_TAG"
           make dist
       # The upgrade must migrate to leave a snapshot, so the older build is
       # the commit just before the one that added the latest migration step.
@@ -51,7 +62,7 @@ jobs:
         run: |
           added=$(git log -1 --format=%H --diff-filter=A -- internal/server/store/migrations)
           [ -n "$added" ] || { echo "no commit added a migration step, so no older build to upgrade from" >&2; exit 1; }
-          git tag v0.0.1 "$added^"
+          git tag "$OLDER_TAG" "$added^"
           git worktree add "$RUNNER_TEMP/older" "$added^"
           make -C "$RUNNER_TEMP/older" dist
       - name: Install, join, upgrade, uninstall and restore
