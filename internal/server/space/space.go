@@ -49,7 +49,7 @@ type area struct {
 func Register(a *op.API, user UserFunc, holdings []Holding, changes *access.Signal) {
 	s := &area{user: user, holdings: holdings, changes: changes}
 	a.Handle(api.SpaceAdd, add)
-	a.Handle(api.SpaceList, list)
+	a.Handle(api.SpaceList, s.list)
 	a.Handle(api.SpaceShow, s.show)
 	a.Handle(api.SpaceRename, rename)
 	a.Handle(api.SpaceRemove, s.remove)
@@ -176,7 +176,9 @@ func AddPersonal(ctx context.Context, tx store.Tx, userID, name string) error {
 	return nil
 }
 
-func list(ctx context.Context, tx store.Tx, caller op.Caller, _ api.SpaceListRequest) (api.SpaceListResponse, error) {
+// list is space.list: every Space the caller can act in, by name, each with
+// its Members and counts as space.show answers it.
+func (s *area) list(ctx context.Context, tx store.Tx, caller op.Caller, _ api.SpaceListRequest) (api.SpaceListResponse, error) {
 	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
 		return api.SpaceListResponse{}, err
@@ -185,25 +187,44 @@ func list(ctx context.Context, tx store.Tx, caller op.Caller, _ api.SpaceListReq
 	if err != nil {
 		return api.SpaceListResponse{}, err
 	}
-	rows, err := tx.QueryContext(ctx, "SELECT id, name, user_id IS NOT NULL FROM spaces ORDER BY name")
+	spaces, err := allSpaces(ctx, tx)
 	if err != nil {
-		return api.SpaceListResponse{}, fmt.Errorf("list the Spaces: %w", err)
+		return api.SpaceListResponse{}, err
 	}
-	defer func() { _ = rows.Close() }()
-	var resp api.SpaceListResponse
-	for rows.Next() {
-		var s api.Space
-		if err := rows.Scan(&s.ID, &s.Name, &s.Personal); err != nil {
-			return api.SpaceListResponse{}, fmt.Errorf("list the Spaces: %w", err)
+	resp := api.SpaceListResponse{Spaces: []api.SpaceDetail{}}
+	for _, sp := range spaces {
+		if !scope.Has(sp.ID) {
+			continue
 		}
-		if scope.Has(s.ID) {
-			resp.Spaces = append(resp.Spaces, s)
+		d, err := s.detail(ctx, tx, sp)
+		if err != nil {
+			return api.SpaceListResponse{}, err
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return api.SpaceListResponse{}, fmt.Errorf("list the Spaces: %w", err)
+		resp.Spaces = append(resp.Spaces, d)
 	}
 	return resp, nil
+}
+
+// allSpaces returns every Space, by name, read before any is detailed, since
+// a transaction reads one query's rows at a time.
+func allSpaces(ctx context.Context, tx store.Tx) ([]api.Space, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT id, name, user_id IS NOT NULL FROM spaces ORDER BY name")
+	if err != nil {
+		return nil, fmt.Errorf("list the Spaces: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var spaces []api.Space
+	for rows.Next() {
+		var sp api.Space
+		if err := rows.Scan(&sp.ID, &sp.Name, &sp.Personal); err != nil {
+			return nil, fmt.Errorf("list the Spaces: %w", err)
+		}
+		spaces = append(spaces, sp)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list the Spaces: %w", err)
+	}
+	return spaces, nil
 }
 
 func (s *area) show(ctx context.Context, tx store.Tx, caller op.Caller, req api.SpaceShowRequest) (api.SpaceShowResponse, error) {

@@ -119,9 +119,7 @@ export function serve(api: FakeApi, w: World, caller: User = alice): void {
   // No browser is signed in, unless a test serves Sign-ins (signins.fixture.ts).
   api.on(SignInList, () => ({ signins: [] }));
   api.on(UserList, ({ all }) => ({ users: w.users.filter((u) => all === true || u.removed_at === undefined) }));
-  api.on(SpaceList, () => ({
-    spaces: w.spaces.filter(sees).map(({ id, name, personal }) => ({ id, name, personal })),
-  }));
+  api.on(SpaceList, () => ({ spaces: w.spaces.filter(sees) }));
   api.on(SpaceShow, ({ name }) => ({ space: find(name) }));
   api.on(SpaceAdd, ({ name }) => {
     const added = space(name);

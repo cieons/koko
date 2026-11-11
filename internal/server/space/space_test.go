@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -65,10 +67,10 @@ func call(t *testing.T, a *op.API, path, body string) (int, string) {
 	return rec.Code, rec.Body.String()
 }
 
-// space show counts what each area holds in the Space, through the
-// Holdings it was given, and space rm refuses a Space while any area holds
-// a record in it, naming what is left; once nothing is left, it removes it.
-func TestASpaceThatHoldsRecordsIsNotRemoved(t *testing.T) {
+// newSpaces serves the space operations over a new store, with the Owner,
+// alice, recorded, and returns the stand-in Holdings it counts through.
+func newSpaces(t *testing.T) (*op.API, *holdings) {
+	t.Helper()
 	st, err := store.Open(t.Context(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -88,15 +90,18 @@ func TestASpaceThatHoldsRecordsIsNotRemoved(t *testing.T) {
 	if status, body := call(t, a, addOwner.Path(), `{}`); status != http.StatusOK {
 		t.Fatalf("record the Owner: %d %s", status, body)
 	}
-	status, body := call(t, a, api.SpaceAdd.Path(), `{"name": "ops"}`)
-	var added api.SpaceAddResponse
-	if err := json.Unmarshal([]byte(body), &added); status != http.StatusOK || err != nil {
-		t.Fatalf("space.add ops: %d %s", status, body)
-	}
-	id := added.Space.ID
+	return a, h
+}
+
+// space show counts what each area holds in the Space, through the
+// Holdings it was given, and space rm refuses a Space while any area holds
+// a record in it, naming what is left; once nothing is left, it removes it.
+func TestASpaceThatHoldsRecordsIsNotRemoved(t *testing.T) {
+	a, h := newSpaces(t)
+	id := addSpace(t, a, "ops")
 
 	h.set(id, 2, 1, 1)
-	status, body = call(t, a, api.SpaceShow.Path(), `{"name": "ops"}`)
+	status, body := call(t, a, api.SpaceShow.Path(), `{"name": "ops"}`)
 	var shown api.SpaceShowResponse
 	if err := json.Unmarshal([]byte(body), &shown); status != http.StatusOK || err != nil {
 		t.Fatalf("space.show ops: %d %s", status, body)
@@ -132,5 +137,89 @@ func TestASpaceThatHoldsRecordsIsNotRemoved(t *testing.T) {
 	}
 	if status, _ := call(t, a, api.SpaceShow.Path(), `{"name": "ops"}`); status != api.CodeUnknownSpace.Status {
 		t.Errorf("space.show ops after space.remove = %d, want unknown_space", status)
+	}
+}
+
+// addSpace adds the shared Space name and returns its id.
+func addSpace(t *testing.T, a *op.API, name string) string {
+	t.Helper()
+	status, body := call(t, a, api.SpaceAdd.Path(), `{"name": "`+name+`"}`)
+	var added api.SpaceAddResponse
+	if err := json.Unmarshal([]byte(body), &added); status != http.StatusOK || err != nil {
+		t.Fatalf("space.add %s: %d %s", name, status, body)
+	}
+	return added.Space.ID
+}
+
+// space.list answers each Space with its Members and counts, as space.show
+// answers one, so a page of the Spaces and their Members takes one call.
+func TestSpaceListAnswersEachSpaceWithItsMembersAndCounts(t *testing.T) {
+	a, h := newSpaces(t)
+	h.set(addSpace(t, a, "ops"), 3, 1, 2)
+	h.set(addSpace(t, a, "data"), 0, 0, 5)
+
+	status, listBody := call(t, a, api.SpaceList.Path(), `{}`)
+	var listed api.SpaceListResponse
+	if err := json.Unmarshal([]byte(listBody), &listed); status != http.StatusOK || err != nil {
+		t.Fatalf("space.list: %d %s", status, listBody)
+	}
+	want := map[string]api.SpaceCounts{
+		"alice": {},
+		"data":  {Secrets: 5},
+		"ops":   {Hosts: 3, RetiredHosts: 1, Secrets: 2},
+	}
+	var names []string
+	for _, sp := range listed.Spaces {
+		names = append(names, sp.Name)
+		if sp.Counts != want[sp.Name] {
+			t.Errorf("space.list counts %s as %+v, want %+v", sp.Name, sp.Counts, want[sp.Name])
+		}
+		status, showBody := call(t, a, api.SpaceShow.Path(), `{"name": "`+sp.Name+`"}`)
+		var shown api.SpaceShowResponse
+		if err := json.Unmarshal([]byte(showBody), &shown); status != http.StatusOK || err != nil {
+			t.Fatalf("space.show %s: %d %s", sp.Name, status, showBody)
+		}
+		if !reflect.DeepEqual(sp, shown.Space) {
+			t.Errorf("space.list answers %s as %+v, space.show as %+v; want the same", sp.Name, sp, shown.Space)
+		}
+	}
+	if !slices.Equal(names, []string{"alice", "data", "ops"}) {
+		t.Errorf("space.list lists %q, want the Owner's Personal Space, data and ops, by name", names)
+	}
+	if !strings.Contains(listBody, `"members":[]`) {
+		t.Errorf("space.list answered %s, want a Space with no Members to list them as []", listBody)
+	}
+}
+
+// A Member's space.list, over their own Device Connection, answers their
+// Personal Space and the Spaces they are a Member of, each with all its
+// Members, and nothing of a Space they are not in, nor of its Members.
+func TestSpaceListAnswersAMemberTheirOwnSpacesWithTheirMembers(t *testing.T) {
+	t.Parallel()
+	h := harness.Start(t)
+	for _, u := range []string{"bob", "carol", "dave"} {
+		h.Koko("user", "invite", u).WantSuccess(t)
+	}
+	for _, s := range []string{"ops", "data"} {
+		h.Koko("space", "add", s).WantSuccess(t)
+	}
+	h.Koko("space", "member", "add", "ops", "bob", "carol").WantSuccess(t)
+	h.Koko("space", "member", "add", "data", "dave").WantSuccess(t)
+
+	status, body := h.Join("bob").Send(api.SpaceList, []byte(`{}`))
+	var listed api.SpaceListResponse
+	if err := json.Unmarshal(body, &listed); status != http.StatusOK || err != nil {
+		t.Fatalf("bob's space.list: %d %s", status, body)
+	}
+	var got []string
+	for _, sp := range listed.Spaces {
+		var members []string
+		for _, m := range sp.Members {
+			members = append(members, m.Name)
+		}
+		got = append(got, sp.Name+":"+strings.Join(members, ","))
+	}
+	if want := []string{"bob:", "ops:bob,carol"}; !slices.Equal(got, want) {
+		t.Errorf("bob's space.list answers %q, want %q: his Personal Space, and ops with both its Members", got, want)
 	}
 }

@@ -161,7 +161,10 @@ func spaceAdd(ctx context.Context, in *Input) (addedSpace, error) {
 	return addedSpace(spaceFromAPI(resp.Space)), nil
 }
 
-// spaceList is what space ls prints: every Space, as a bare array.
+// spaceList is what space ls prints: every Space, as a bare array. It leaves
+// out the Members and counts space.list answers with each Space, since an
+// older koko server answers without them and the CLI could not tell that from
+// a Space with no Members; space show prints them.
 type spaceList []spaceJSON
 
 func (l spaceList) Human(w io.Writer) error {
@@ -282,7 +285,7 @@ func spaceLs(ctx context.Context, in *Input) (spaceList, error) {
 	}
 	l := make(spaceList, 0, len(resp.Spaces))
 	for _, s := range resp.Spaces {
-		l = append(l, spaceFromAPI(s))
+		l = append(l, spaceFromAPI(api.Space{ID: s.ID, Name: s.Name, Personal: s.Personal}))
 	}
 	return l, nil
 }

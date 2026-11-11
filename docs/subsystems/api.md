@@ -96,7 +96,10 @@ first call, through the dial it was given, and for each call:
   ignored. See [Idempotency-Key](#idempotency-key).
 - The server refuses a request field it does not know (`unknown_field`, naming
   it), so a newer CLI's option is never silently dropped. Clients ignore
-  response fields they do not know.
+  response fields they do not know, so within `/v1` a response only gains
+  fields, and an older client reads it as before: `space.list` gained each
+  Space's `members` and `counts`, in `space.show`'s shape, so that Access
+  reads the Spaces and their Members in one call (#146).
 - A response is always a JSON object: a record is wrapped
   (`{"space": {...}}`), and so is a list (`{"spaces": [...]}`), which holds
   every item and is `[]`, never `null`, when empty.

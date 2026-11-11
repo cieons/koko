@@ -56,9 +56,11 @@ type SpaceAddResponse struct {
 // SpaceListRequest asks for every Space the caller can act in.
 type SpaceListRequest struct{}
 
-// SpaceListResponse holds every Space the caller can act in, by name.
+// SpaceListResponse holds every Space the caller can act in, by name, each
+// with its Members and counts as space.show answers it, so a list of the
+// Spaces and their Members takes one call.
 type SpaceListResponse struct {
-	Spaces []Space `json:"spaces"`
+	Spaces []SpaceDetail `json:"spaces"`
 }
 
 // SpaceShowRequest names a Space to show.
@@ -127,7 +129,8 @@ var (
 	// SpaceAdd records a shared Space. Only the Owner adds one; a name
 	// another Space holds is refused with CodeNameTaken.
 	SpaceAdd = Op[SpaceAddRequest, SpaceAddResponse]{Name: "space.add", Write: true}
-	// SpaceList lists the Spaces the caller can act in.
+	// SpaceList lists the Spaces the caller can act in, each with its
+	// Members and counts, as SpaceShow shows one.
 	SpaceList = Op[SpaceListRequest, SpaceListResponse]{Name: "space.list"}
 	// SpaceShow shows a Space the caller can act in, with its Members and
 	// counts. A Space the caller cannot act in is refused exactly as one

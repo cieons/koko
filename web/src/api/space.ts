@@ -64,9 +64,13 @@ export interface SpaceAddResponse {
 /** SpaceListRequest asks for every Space the caller can act in. */
 export type SpaceListRequest = Record<string, never>;
 
-/** SpaceListResponse holds every Space the caller can act in, by name. */
+/**
+ * SpaceListResponse holds every Space the caller can act in, by name, each
+ * with its Members and counts as space.show answers it, so a list of the
+ * Spaces and their Members takes one call.
+ */
 export interface SpaceListResponse {
-  spaces: Space[];
+  spaces: SpaceDetail[];
 }
 
 /** SpaceShowRequest names a Space to show. */
@@ -146,7 +150,10 @@ export const SpaceAdd: Op<SpaceAddRequest, SpaceAddResponse> = {
   write: true,
 };
 
-/** SpaceList lists the Spaces the caller can act in. */
+/**
+ * SpaceList lists the Spaces the caller can act in, each with its
+ * Members and counts, as SpaceShow shows one.
+ */
 export const SpaceList: Op<SpaceListRequest, SpaceListResponse> = {
   name: "space.list",
   path: "/v1/space.list",

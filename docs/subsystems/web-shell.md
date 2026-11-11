@@ -239,9 +239,7 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   window regains focus. The web UI holds no connection open and never polls.
   An answer to an earlier request never shows as the current one's; a failed
   reload keeps the last answer to the same request beside the error. `reload`
-  shows what a write changed. `useReads` calls one read once per request, as
-  Access calls `space.show` for each Space, and holds the answers in order
-  once all have come; one that fails fails them all. The one read a person asks for by a click,
+  shows what a write changed. The one read a person asks for by a click,
   showing or copying a Secret's value (`secret.show`), calls `call` on the
   click instead, and its page shows only the latest answer
   ([the Secrets page](secrets.md#the-web-uis-secrets-page)).
@@ -484,9 +482,9 @@ query) and **a Space's panel** (`/access/spaces/<name>`, which
 
 | Action | Call | Who |
 | --- | --- | --- |
-| List the Spaces, a Personal Space marked so | `space.list` | anyone: the Spaces they can act in |
-| See a Space's Members and its counts of Hosts, Retired Hosts and Secrets | `space.show` | in the Space |
-| List the Users against the shared Spaces, the Removed ones when asked for | `user.list` (and `space.show`, `device.list`) | the Owner |
+| List the Spaces, a Personal Space marked so, each with its Members and its counts of Hosts and Secrets | `space.list`, one call | anyone: the Spaces they can act in |
+| See a Space's Members and its counts of Hosts, Retired Hosts and Secrets, in its panel | `space.show` | in the Space |
+| List the Users against the shared Spaces, the Removed ones when asked for | `user.list` (and `space.list`, `device.list`) | the Owner |
 | Add a Space | `space.add` | the Owner |
 | Rename a Space | `space.rename` | the Owner, on a shared Space |
 | Remove a Space, asking first | `space.remove` | the Owner, on a shared Space |

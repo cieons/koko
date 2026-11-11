@@ -75,6 +75,10 @@ membership.
   An invited User who has not joined can be made a Member. Taking a User out
   ends their live SSH Sessions to the Space's Hosts
   ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
+- **Listing.** `space.list` answers every Space the caller can act in, by
+  name, each in `space.show`'s shape, with its Members and counts: a Member
+  sees the Members of the Spaces they can act in and nothing of any other,
+  as `space.show` shows them.
 - **Removing.** `space.remove` refuses a Space that holds any record, with
   `space_not_empty` naming what is left, and otherwise removes it with its
   memberships, answering the Space as it was.
@@ -150,8 +154,11 @@ states.
   its ended Sign-in in
   [`revoked_test.go`](../../internal/server/revoked_test.go).
 - [`internal/client/cli/space_test.go`](../../internal/client/cli/space_test.go):
-  every `space` command over the CLI, with its goldens; what a Member lists
-  and shows over their own Device Connection; a membership change holding
+  every `space` command over the CLI, with its goldens; what a Member lists,
+  with each Space's Members and counts, and shows over their own Device
+  Connection; a membership change holding
   from the next call; unseen equals unknown; the Owner-only refusals.
 - [`internal/server/space/space_test.go`](../../internal/server/space/space_test.go):
-  counts and the `space_not_empty` refusal through stand-in Holdings.
+  counts and the `space_not_empty` refusal through stand-in Holdings;
+  `space.list` answering each Space as `space.show` does, and a Member's
+  answering only their own Spaces, with their Members.

@@ -56,6 +56,18 @@ function cell(user: string, space: string): HTMLInputElement {
 
 // The Owner's table.
 
+test("Access reads the Spaces, their Members and counts in one space.list, with no space.show per Space", async () => {
+  const api = await at("/access");
+  await rows();
+  expect(api.requests(SpaceList)).toHaveLength(1);
+  expect(api.requests(SpaceShow)).toEqual([]);
+
+  fireEvent.click(cell("carol", "web"));
+  await waitFor(() => expect(cell("carol", "web").checked).toBe(true));
+  await waitFor(() => expect(api.requests(SpaceList)).toHaveLength(2));
+  expect(api.requests(SpaceShow)).toEqual([]);
+});
+
 test("the Owner sees the Users against the shared Spaces, each cell a membership and the Owner's cells locked", async () => {
   await at("/access");
   await rows();

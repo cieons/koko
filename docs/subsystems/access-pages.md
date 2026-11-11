@@ -17,7 +17,7 @@ Owner, anyone's in their panel ([Sign-ins](signin.md#the-web-uis-pages)).
 
 | Page | Path | Who | Source |
 | --- | --- | --- | --- |
-| Access | `/access` | the Owner: the Users (`user.list`) against the shared Spaces (`space.list`, then `space.show` for each); a Member: the Spaces they can act in | [`AccessPage`](../../web/src/pages/space/AccessPage.tsx) |
+| Access | `/access` | the Owner: the Users (`user.list`) against the shared Spaces, each with its Members and counts (`space.list`, one call); a Member: the Spaces they can act in | [`AccessPage`](../../web/src/pages/space/AccessPage.tsx) |
 | A Space's panel | `/access/spaces/<name>` | anyone who can act in it: its counts and Members (`space.show`) | [`SpacePanel`](../../web/src/pages/space/SpacePanel.tsx) |
 | A person's panel | `/access/people/<name>` | the Owner alone (`ownerOnly`): a User's role, Spaces, Personal Space and devices | [`PersonPanel`](../../web/src/pages/user/PersonPanel.tsx) |
 | Account | `/account` | anyone: who the web UI acts as, the choices this browser keeps, their own devices (`device.list` naming them) and their Personal Space | [`AccountPage`](../../web/src/pages/user/AccountPage.tsx) |
@@ -170,7 +170,9 @@ koko server whose writes change what it answers
 ([`access.fixture.ts`](../../web/src/pages/space/access.fixture.ts)).
 
 - [`access.test.tsx`](../../web/src/pages/space/access.test.tsx): the
-  Owner's table with its counts, memberships and locked cells; a cell
+  Spaces read in one `space.list`, with no `space.show` per Space, on load
+  and after a change; the Owner's table with its counts, memberships and
+  locked cells; a cell
   ticked and unticked, with its notice and request, and a refused one;
   "Show Removed Users" as `all=1` and from a bookmark; no shared Space, Add
   Space and its refusal; a failed load with Try again; on a phone the two

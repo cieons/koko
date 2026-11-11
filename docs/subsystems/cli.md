@@ -387,7 +387,7 @@ The Device Mux's refresh still keeps the path there
 | Command | Tier | Calls | `--json` |
 | --- | --- | --- | --- |
 | `koko space add <space>` (Owner) | reversible | `space.add` | the Space: `{"id", "name", "personal"}` |
-| `koko space ls` | read | `space.list` | an array of the Spaces the caller can act in |
+| `koko space ls` | read | `space.list` | an array of the Spaces the caller can act in, `{"id", "name", "personal"}`: not the Members and counts `space.list` also answers, since an older koko server answers without them and the CLI could not tell that from none; `space show` prints them |
 | `koko space show <space>` | read | `space.show` | the Space with its Members and counts: `{"id", "name", "personal", "members": [{"id", "name"}], "counts": {"hosts", "retired_hosts", "secrets"}}`; a member's `id` is the User's |
 | `koko space rename <space> <new-name>` (Owner) | reversible | `space.rename` | the Space under its new name |
 | `koko space rm <space>` (Owner) | irreversible | `space.remove` | the Space it removed, as it was |

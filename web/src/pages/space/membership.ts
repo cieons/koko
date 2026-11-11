@@ -24,25 +24,25 @@ export interface Membership {
 }
 
 /**
- * useMembership is the membership of the shared Spaces details holds, the
- * answers of space.show for each as useReads holds them, and its change:
- * space.member.add or space.member.remove for one User, whose answer, the
- * Space's Members after it, shows until details is read again. onChanged
- * hears each change made, to read again what shows it.
+ * useMembership is the membership of the Spaces given, as space.list
+ * answered them, and its change: space.member.add or space.member.remove
+ * for one User, whose answer, the Space's Members after it, shows until the
+ * Spaces are read again. onChanged hears each change made, to read again
+ * what shows it.
  */
 export function useMembership(
-  details: readonly { space: SpaceDetail }[] | undefined,
+  spaces: readonly SpaceDetail[] | undefined,
   onChanged: () => void,
 ): Membership {
   const t = useT();
-  // changed holds each Space as a change answered it, until details is read again.
+  // changed holds each Space as a change answered it, until the Spaces are read again.
   const [changed, setChanged] = useState<Readonly<Record<string, SpaceDetail>>>({});
   // asked holds each change that runs, by space and user, and what it asked for.
   const [asked, setAsked] = useState<Readonly<Record<string, boolean>>>({});
   // running holds the same keys at once, so a second change sent before a render is refused too.
   const running = useRef(new Set<string>());
   const [error, setError] = useState<unknown>();
-  useEffect(() => setChanged({}), [details]);
+  useEffect(() => setChanged({}), [spaces]);
 
   const key = (space: string, user: string) => JSON.stringify([space, user]);
   const isMember = (space: string, user: string) => {
@@ -50,7 +50,7 @@ export function useMembership(
     if (wanted !== undefined) {
       return wanted;
     }
-    const detail = changed[space] ?? details?.find((d) => d.space.name === space)?.space;
+    const detail = changed[space] ?? spaces?.find((s) => s.name === space);
     return detail?.members.some((m) => m.name === user) === true;
   };
   const set = async (space: string, user: string, on: boolean) => {

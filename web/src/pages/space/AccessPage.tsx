@@ -1,12 +1,12 @@
 import { Button, Checkbox, Chip, Link, Switch } from "@heroui/react";
 import { ChevronRight, Lock, Plus, UserPlus } from "lucide-react";
-import { type ReactNode, useId, useRef, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 
 import { DeviceList, type DeviceSession } from "../../api/device";
-import { type Space, SpaceAdd, type SpaceDetail, SpaceList, SpaceShow } from "../../api/space";
+import { SpaceAdd, type SpaceDetail, SpaceList } from "../../api/space";
 import { type User, UserList } from "../../api/user";
 import { useCaller } from "../../shell/caller";
-import { type Read, useRead, useReads, useWrite } from "../../shell/data";
+import { useRead, useWrite } from "../../shell/data";
 import { type Count, type Translate, useCount, useLanguage, useT } from "../../shell/i18n";
 import { accountPage, navigate, type PageProps, useLocation, useQueryFlag } from "../../shell/router";
 import { Initial } from "../../shell/TopBar";
@@ -48,47 +48,6 @@ interface Panel {
   name: string;
 }
 
-/** SpaceShown is a Space, with its detail as space.show answered it. */
-interface SpaceShown {
-  space: Space;
-  detail: SpaceDetail;
-}
-
-/** SpaceRead is the Spaces a caller sees, and each one's detail as space.show answers it. */
-interface SpaceRead {
-  spaces: Read<{ spaces: Space[] }>;
-  details: Read<{ space: SpaceDetail }[]>;
-  /**
-   * shown are the Spaces read, each with its detail, once both are in; while
-   * they are read again after a change, the last ones shown, so the page
-   * keeps its rows, and the links an open panel gives the focus back to.
-   */
-  shown?: SpaceShown[];
-}
-
-/** useSpaces reads the Spaces the caller sees that keep pass, then space.show for each. */
-function useSpaces(keep: (s: Space) => boolean): SpaceRead {
-  const spaces = useRead(SpaceList, {});
-  const kept = spaces.data?.spaces.filter(keep);
-  const details = useReads(
-    SpaceShow,
-    (kept ?? []).map((s) => ({ name: s.name })),
-  );
-  const fresh =
-    kept && details.data?.length === kept.length
-      ? kept.flatMap((space, i) => {
-          const detail = details.data?.[i]?.space;
-          return detail ? [{ space, detail }] : [];
-        })
-      : undefined;
-  const last = useRef(fresh);
-  if (fresh) {
-    last.current = fresh;
-  }
-  const failed = spaces.error !== undefined || details.error !== undefined;
-  return { spaces, details, shown: fresh ?? (failed ? undefined : last.current) };
-}
-
 /** OwnerAccess is the Owner's Access: the table of Users against shared Spaces, Add Space and Invite. */
 function OwnerAccess({ panel, close: closePanel }: { panel?: Panel; close: () => void }) {
   const t = useT();
@@ -96,8 +55,9 @@ function OwnerAccess({ panel, close: closePanel }: { panel?: Panel; close: () =>
   const [all, setAll] = useQueryFlag("all");
   const users = useRead(UserList, all ? { all: true } : {});
   const devices = useRead(DeviceList, { all: true });
-  const { spaces, details, shown } = useSpaces((s) => !s.personal);
-  const membership = useMembership(details.data, details.reload);
+  const spaces = useRead(SpaceList, {});
+  const shared = spaces.data?.spaces.filter((s) => !s.personal);
+  const membership = useMembership(spaces.data?.spaces, spaces.reload);
   const [dialog, setDialog] = useState<"space" | "invite">();
   // A refusal a panel showed goes with it, rather than showing above the table after.
   const close = () => {
@@ -108,14 +68,12 @@ function OwnerAccess({ panel, close: closePanel }: { panel?: Panel; close: () =>
     users.reload();
     devices.reload();
     spaces.reload();
-    details.reload();
   };
-  const reads = [users, devices, spaces, details];
+  const reads = [users, devices, spaces];
   const failed = reads.find((r) => r.error !== undefined);
-  const shared = shown?.map((s) => s.space);
   const ready =
-    users.data && devices.data && shown
-      ? { users: byRole(users.data.users), devices: devices.data.device_sessions, spaces: shown }
+    users.data && devices.data && shared
+      ? { users: byRole(users.data.users), devices: devices.data.device_sessions, spaces: shared }
       : undefined;
 
   return (
@@ -270,7 +228,7 @@ function AccessTable({
 }: {
   users: readonly User[];
   devices: readonly DeviceSession[];
-  spaces: readonly SpaceShown[];
+  spaces: readonly SpaceDetail[];
   membership: Membership;
 }) {
   const t = useT();
@@ -289,14 +247,14 @@ function AccessTable({
             >
               <span className="t-label">{count("space.access.users", live)}</span>
             </th>
-            {spaces.map(({ space, detail }) => (
+            {spaces.map((space) => (
               <th key={space.id} scope="col" className="min-w-40 px-2 pb-3 text-center align-bottom font-normal">
                 <Link
                   href={spacePath(space.name) + search}
                   className="row-link inline-flex flex-col items-center px-3 py-1.5 text-foreground no-underline"
                 >
                   <span className="t-name">{space.name}</span>
-                  <span className="t-num text-[0.8125rem] whitespace-nowrap text-muted">{countsOf(t, count, detail)}</span>
+                  <span className="t-num text-[0.8125rem] whitespace-nowrap text-muted">{countsOf(t, count, space)}</span>
                 </Link>
               </th>
             ))}
@@ -309,7 +267,7 @@ function AccessTable({
               <th scope="row" className="sticky left-0 z-10 border-t border-line bg-surface py-2 pr-4 text-left font-normal">
                 <Person user={u} line={waysIn(t, count, u, devices)} />
               </th>
-              {spaces.map(({ space }) => (
+              {spaces.map((space) => (
                 <td key={space.id} className="border-t border-line px-2 py-2 text-center">
                   <Cell user={u} space={space.name} membership={membership} />
                 </td>
@@ -376,7 +334,7 @@ function PhoneLists({
 }: {
   users: readonly User[];
   devices: readonly DeviceSession[];
-  spaces: readonly SpaceShown[];
+  spaces: readonly SpaceDetail[];
 }) {
   const t = useT();
   const count = useCount();
@@ -417,7 +375,7 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /** SpaceRows lists Spaces, each a link to its panel: its name, "Personal Space" where so, its counts and Members. */
-function SpaceRows({ spaces }: { spaces: readonly SpaceShown[] }) {
+function SpaceRows({ spaces }: { spaces: readonly SpaceDetail[] }) {
   const t = useT();
   const count = useCount();
   const language = useLanguage();
@@ -425,7 +383,7 @@ function SpaceRows({ spaces }: { spaces: readonly SpaceShown[] }) {
   const list = new Intl.ListFormat(language, { type: "conjunction" });
   return (
     <ul className="sheet overflow-hidden px-3">
-      {spaces.map(({ space, detail }) => (
+      {spaces.map((space) => (
         <li key={space.id} className="border-b border-line last:border-0">
           <Link
             href={spacePath(space.name) + search}
@@ -437,12 +395,12 @@ function SpaceRows({ spaces }: { spaces: readonly SpaceShown[] }) {
                 {space.personal && <Chip variant="secondary">{t("space.personal")}</Chip>}
               </span>
               <span className="block truncate text-sm text-muted">
-                {countsOf(t, count, detail)}
+                {countsOf(t, count, space)}
                 {!space.personal &&
                   ` · ${
-                    detail.members.length === 0
+                    space.members.length === 0
                       ? t("space.members.noneShort")
-                      : list.format(detail.members.map((m) => m.name))
+                      : list.format(space.members.map((m) => m.name))
                   }`}
               </span>
             </span>
@@ -462,26 +420,19 @@ function SpaceRows({ spaces }: { spaces: readonly SpaceShown[] }) {
 function MemberAccess({ panel, close }: { panel?: Panel; close: () => void }) {
   const t = useT();
   const caller = useCaller();
-  const { spaces, details, shown } = useSpaces(() => true);
-  const failed = [spaces, details].find((r) => r.error !== undefined);
+  const spaces = useRead(SpaceList, {});
   const name = caller.user.name;
   return (
     <Page title={t("shell.place.access")} lead={t("space.access.memberLead", { name })}>
-      {failed !== undefined && (
+      {spaces.error !== undefined && (
         <Sheet list className="mb-6">
-          <LoadFailed
-            error={failed.error}
-            retry={() => {
-              spaces.reload();
-              details.reload();
-            }}
-          />
+          <LoadFailed error={spaces.error} retry={spaces.reload} />
         </Sheet>
       )}
-      {shown ? (
-        <SpaceRows spaces={shown} />
+      {spaces.data ? (
+        <SpaceRows spaces={spaces.data.spaces} />
       ) : (
-        failed === undefined && (
+        spaces.error === undefined && (
           <Sheet list>
             <Loading />
           </Sheet>
@@ -490,7 +441,7 @@ function MemberAccess({ panel, close }: { panel?: Panel; close: () => void }) {
       <p className="t-label mt-6 max-w-[60ch]">
         <Link href={accountPage}>{t("space.access.memberNote", { name })}</Link>
       </p>
-      {panel?.kind === "space" && <SpacePanel name={panel.name} onChanged={details.reload} onClose={close} />}
+      {panel?.kind === "space" && <SpacePanel name={panel.name} onChanged={spaces.reload} onClose={close} />}
     </Page>
   );
 }
