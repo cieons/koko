@@ -177,6 +177,20 @@ while that file exists or is held open.
 **Seen:** 1 (2026-11-11)
 **Evidence:** check run 43006445436; #150
 
+### Squash work in progress onto the branch's merge-base, never onto origin/main
+
+**Why:** #149's first slice was squashed with `git reset --soft
+origin/main`. Another worktree's fetch had moved `origin/main` on to
+c1f0138 (#150) since the branch was cut, so the squashed commit's tree
+still held the files as they were before #150, and it took #150's changes
+back out: its harness files, caught in `git show --stat` before the push,
+and its lesson in this file, which was pushed and restored a commit later.
+`git reset --soft $(git merge-base HEAD origin/main)` squashes only the
+branch's own commits; the rebase then brings in the rest. After a squash,
+`git show --stat HEAD` lists the ticket's files and nothing else.
+**Seen:** 1 (2026-11-11)
+**Evidence:** ff44d9e (#149); restored by 2a6135b
+
 ## Moved to the code standards
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128; check run 42951455550).
