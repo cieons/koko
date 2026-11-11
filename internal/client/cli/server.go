@@ -60,7 +60,7 @@ var serverCommands = []Command{
 	{
 		Noun:    "server",
 		Verb:    "show",
-		Summary: "Show the koko server's Server Address, port, web listener, Web URL, host key, version, Root Key file and data directory",
+		Summary: "Show the koko server's Server Address, port, web listener, Web URL, host key, version, Root Key file, data directory and update check",
 		Tier:    Read,
 		Op:      api.ServerShow,
 		Run:     action(serverShow),
@@ -68,7 +68,7 @@ var serverCommands = []Command{
 	{
 		Noun:    "server",
 		Verb:    "set",
-		Summary: "Change the Server Address that Join Codes issued from now on carry, or the Web URL the web listener answers at, on the koko server's machine",
+		Summary: "Change the Server Address that Join Codes issued from now on carry, the Web URL the web listener answers at, or whether the koko server checks for a new release, on the koko server's machine",
 		Pairs:   true,
 		Unset:   true,
 		Tier:    Reversible,
@@ -95,6 +95,7 @@ var serverMappings = []mapping{
 			"host_key": "koko server show names the host key by its fingerprint, as a Join Code pins it; koko ssh setup writes the key itself into koko's known_hosts",
 		},
 	},
+	{api: reflect.TypeFor[api.UpdateCheck](), cli: reflect.TypeFor[updateCheckJSON]()},
 }
 
 // installedJSON is what koko server install prints once the koko server

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/shared/api"
@@ -34,6 +35,7 @@ func TestTheServerServesExactlyTheDeclaredOperations(t *testing.T) {
 		Log:         io.Discard,
 		Filesystems: localDisk{},
 		ProcessUIDs: notRoot,
+		UpdateClock: stillClock{},
 		SocketPath:  filepath.Join(socketDir, "koko.sock"),
 	})
 	if err != nil {
@@ -70,4 +72,16 @@ func (localDisk) FilesystemType(path string) (string, error) {
 // harness imports this package.
 func notRoot() (real, effective, saved int) {
 	return 1000, 1000, 1000
+}
+
+// stillClock is a Config.UpdateClock whose waits never end, so that a koko
+// server a test starts checks for a new koko release only when asked. It is
+// harness.StillClock, which this package's tests cannot import, since the
+// harness imports this package.
+type stillClock struct{}
+
+func (stillClock) Now() time.Time { return time.Now() }
+
+func (stillClock) AfterFunc(time.Duration, func()) func() bool {
+	return func() bool { return false }
 }

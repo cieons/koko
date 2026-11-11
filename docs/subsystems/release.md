@@ -27,7 +27,10 @@ install.sh, by `koko server install`, which downloads `kokod-linux-<arch>`
 of its own release, and by every `koko`'s `koko update`, which reads the
 redirect and downloads `koko-<os>-<arch>`
 ([`internal/shared/release`](../../internal/shared/release/release.go),
-[ADR 0047](../adr/0047-koko-updates-itself-in-its-users-own-directory.md)).
+[ADR 0047](../adr/0047-koko-updates-itself-in-its-users-own-directory.md)),
+and by every `kokod run`, whose check for a new release reads the redirect
+([the update check](initialisation.md#the-update-check),
+[ADR 0048](../adr/0048-the-koko-server-upgrades-itself-through-a-root-helper-that-takes-only-a-newer-releases-version.md)).
 The image sets `KOKO_IMAGE=ghcr.io/cieons/koko`, so that `koko update` in
 it refuses and names a new image instead.
 

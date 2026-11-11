@@ -1,6 +1,6 @@
 // Package deployment is the koko server's own record, which initialisation
-// makes once: the Server Address, the Web URL once the Owner sets it, and
-// the koko server's own private keys,
+// makes once: the Server Address, the Web URL once the Owner sets it, the
+// update_check setting, and the koko server's own private keys,
 // the koko key and the host key, each sealed under the Root Key (ADR 0018).
 // The koko server is initialised once this record exists, and opens its keys
 // at every start after that.
@@ -176,6 +176,29 @@ func SetWebURL(ctx context.Context, tx store.Tx, webURL string) error {
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE deployment SET web_url = ?", stored); err != nil {
 		return fmt.Errorf("change the Web URL: %w", err)
+	}
+	return nil
+}
+
+// UpdateCheck returns the update_check setting: whether the koko server
+// checks for a new koko release by itself. It is on before
+// initialisation, as it is by default after.
+func UpdateCheck(ctx context.Context, tx store.Tx) (bool, error) {
+	var on bool
+	err := tx.QueryRowContext(ctx, "SELECT update_check FROM deployment").Scan(&on)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return true, nil
+	case err != nil:
+		return false, fmt.Errorf("read the update_check setting: %w", err)
+	}
+	return on, nil
+}
+
+// SetUpdateCheck turns the update_check setting on or off.
+func SetUpdateCheck(ctx context.Context, tx store.Tx, on bool) error {
+	if _, err := tx.ExecContext(ctx, "UPDATE deployment SET update_check = ?", on); err != nil {
+		return fmt.Errorf("change the update_check setting: %w", err)
 	}
 	return nil
 }

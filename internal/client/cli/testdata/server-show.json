@@ -7,5 +7,11 @@
   "root_key_id": "rootkey_<1>",
   "data_dir": "<data-dir>",
   "web_url": null,
-  "web_listen": null
+  "web_listen": null,
+  "update_check": {
+    "enabled": true,
+    "checked_at": null,
+    "latest": null,
+    "error": null
+  }
 }

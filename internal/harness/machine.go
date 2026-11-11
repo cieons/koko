@@ -791,6 +791,10 @@ func (m *Machine) startService() error {
 		env = append(env, "KOKO_WEB_LISTEN=127.0.0.1:0")
 	}
 	noSocket, delay, listenDelay := m.NoSocket, m.StartDelay, m.ListenDelay
+	releases := noReleases
+	if m.releases != nil {
+		releases = m.releases.source()
+	}
 	serve := func(ctx context.Context, c server.Config) error {
 		if noSocket {
 			<-ctx.Done()
@@ -811,6 +815,9 @@ func (m *Machine) startService() error {
 		}
 		c.DataDir = m.Path(c.DataDir)
 		c.Filesystems, c.ProcessUIDs, c.SocketPath = LocalDisk{}, NotRoot, m.SocketPath()
+		// Its check for a new release waits on a clock that never moves,
+		// so the requests a test counts on the fake GitHub are koko's own.
+		c.UpdateClock, c.Releases = StillClock{}, releases
 		return server.Run(ctx, c)
 	}
 	p := kokod.Program{Serve: serve}

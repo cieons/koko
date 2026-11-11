@@ -60,6 +60,28 @@ type Server struct {
 	// the reverse proxy alone; null while it is off, as it is unless kokod
 	// run is given --web-listen.
 	WebListen *string `json:"web_listen"`
+	// UpdateCheck is the koko server's check for a new koko release (ADR
+	// 0048): its setting and what the checks found.
+	UpdateCheck UpdateCheck `json:"update_check"`
+}
+
+// UpdateCheck is the koko server's check for a new koko release: a random
+// 2 to 5 minutes after it starts, then 6 hours after the last check of any
+// kind, while it is on, and at once when the Owner asks (server.check_update).
+// What it found is kept in memory, so it is null again after a restart.
+type UpdateCheck struct {
+	// Enabled is the update_check setting: on, the koko server checks by
+	// itself; off, only when the Owner asks.
+	Enabled bool `json:"enabled"`
+	// CheckedAt is when the last check ended, RFC 3339 in UTC; null before
+	// any, and once the setting is turned off, until the Owner checks.
+	CheckedAt *string `json:"checked_at"`
+	// Latest is the tag of koko's latest release, as the last check that
+	// succeeded found it, such as v0.5.0; null while unknown.
+	Latest *string `json:"latest"`
+	// Error is why the last check failed; null when it succeeded or none
+	// was made.
+	Error *string `json:"error"`
 }
 
 // ServerShowRequest asks for the koko server's deployment.
@@ -79,6 +101,9 @@ type ServerSetRequest struct {
 	// WebURL, when given, is the new Web URL, an https:// origin (package
 	// weburl), checked on the web listener's next request.
 	WebURL *string `json:"web_url,omitzero"`
+	// UpdateCheck, when given, turns the koko server's check for a new
+	// release on or off.
+	UpdateCheck *bool `json:"update_check,omitzero"`
 	// Unset clears these settings: only "web_url", which turns the web
 	// listener's answers into a page naming koko server set web_url=.
 	Unset []string `json:"unset,omitempty"`
@@ -87,6 +112,18 @@ type ServerSetRequest struct {
 // ServerSetResponse is the koko server's deployment as server.set left it.
 type ServerSetResponse struct {
 	Server Server `json:"server"`
+}
+
+// ServerCheckUpdateRequest asks the koko server to check for a new koko
+// release at once.
+type ServerCheckUpdateRequest struct{}
+
+// ServerCheckUpdateResponse is what the check found, and the koko server's
+// version to set it against.
+type ServerCheckUpdateResponse struct {
+	UpdateCheck UpdateCheck `json:"update_check"`
+	// Version is the koko server's version, as server.show names it.
+	Version string `json:"version"`
 }
 
 // The server operations.
@@ -111,12 +148,19 @@ var (
 	// with CodeInvalidAddress, and a Web URL that is not an https:// origin
 	// with CodeInvalidWebURL.
 	ServerSet = Op[ServerSetRequest, ServerSetResponse]{Name: "server.set", Write: true}
+	// ServerCheckUpdate checks for a new koko release at once, with the
+	// update_check setting on or off, sharing a check already in flight. It
+	// is for the Owner only, the Local caller included, and changes no
+	// record. A check that fails is refused with CodeUpdateCheckFailed, and
+	// server.show's update_check names it too.
+	ServerCheckUpdate = Op[ServerCheckUpdateRequest, ServerCheckUpdateResponse]{Name: "server.check_update"}
 )
 
 var serverOperations = []Operation{
 	ServerInit,
 	ServerShow,
 	ServerSet,
+	ServerCheckUpdate,
 }
 
 // The server area's codes.
@@ -129,10 +173,14 @@ var (
 	// CodeInvalidWebURL: a Web URL is not an https:// origin,
 	// https://<host>[:<port>] with no path.
 	CodeInvalidWebURL = Code{"invalid_web_url", http.StatusBadRequest}
+	// CodeUpdateCheckFailed: the koko server could not find koko's latest
+	// release; the message names what failed.
+	CodeUpdateCheckFailed = Code{"update_check_failed", http.StatusBadGateway}
 )
 
 var serverCodes = []Code{
 	CodeAlreadyInitialised,
 	CodeInvalidAddress,
 	CodeInvalidWebURL,
+	CodeUpdateCheckFailed,
 }

@@ -89,6 +89,40 @@ export interface Server {
    * run is given --web-listen.
    */
   web_listen: string | null;
+  /**
+   * UpdateCheck is the koko server's check for a new koko release (ADR
+   * 0048): its setting and what the checks found.
+   */
+  update_check: UpdateCheck;
+}
+
+/**
+ * UpdateCheck is the koko server's check for a new koko release: a random
+ * 2 to 5 minutes after it starts, then 6 hours after the last check of any
+ * kind, while it is on, and at once when the Owner asks (server.check_update).
+ * What it found is kept in memory, so it is null again after a restart.
+ */
+export interface UpdateCheck {
+  /**
+   * Enabled is the update_check setting: on, the koko server checks by
+   * itself; off, only when the Owner asks.
+   */
+  enabled: boolean;
+  /**
+   * CheckedAt is when the last check ended, RFC 3339 in UTC; null before
+   * any, and once the setting is turned off, until the Owner checks.
+   */
+  checked_at: string | null;
+  /**
+   * Latest is the tag of koko's latest release, as the last check that
+   * succeeded found it, such as v0.5.0; null while unknown.
+   */
+  latest: string | null;
+  /**
+   * Error is why the last check failed; null when it succeeded or none
+   * was made.
+   */
+  error: string | null;
 }
 
 /** ServerShowRequest asks for the koko server's deployment. */
@@ -113,6 +147,11 @@ export interface ServerSetRequest {
    */
   web_url?: string;
   /**
+   * UpdateCheck, when given, turns the koko server's check for a new
+   * release on or off.
+   */
+  update_check?: boolean;
+  /**
    * Unset clears these settings: only "web_url", which turns the web
    * listener's answers into a page naming koko server set web_url=.
    */
@@ -122,6 +161,22 @@ export interface ServerSetRequest {
 /** ServerSetResponse is the koko server's deployment as server.set left it. */
 export interface ServerSetResponse {
   server: Server;
+}
+
+/**
+ * ServerCheckUpdateRequest asks the koko server to check for a new koko
+ * release at once.
+ */
+export type ServerCheckUpdateRequest = Record<string, never>;
+
+/**
+ * ServerCheckUpdateResponse is what the check found, and the koko server's
+ * version to set it against.
+ */
+export interface ServerCheckUpdateResponse {
+  update_check: UpdateCheck;
+  /** Version is the koko server's version, as server.show names it. */
+  version: string;
 }
 
 /**
@@ -166,6 +221,19 @@ export const ServerSet: Op<ServerSetRequest, ServerSetResponse> = {
 };
 
 /**
+ * ServerCheckUpdate checks for a new koko release at once, with the
+ * update_check setting on or off, sharing a check already in flight. It
+ * is for the Owner only, the Local caller included, and changes no
+ * record. A check that fails is refused with CodeUpdateCheckFailed, and
+ * server.show's update_check names it too.
+ */
+export const ServerCheckUpdate: Op<ServerCheckUpdateRequest, ServerCheckUpdateResponse> = {
+  name: "server.check_update",
+  path: "/v1/server.check_update",
+  write: false,
+};
+
+/**
  * CodeAlreadyInitialised: the koko server is initialised already, so its
  * Owner and its keys stay as they are.
  */
@@ -179,3 +247,9 @@ export const CodeInvalidAddress = "invalid_address";
  * https://<host>[:<port>] with no path.
  */
 export const CodeInvalidWebURL = "invalid_web_url";
+
+/**
+ * CodeUpdateCheckFailed: the koko server could not find koko's latest
+ * release; the message names what failed.
+ */
+export const CodeUpdateCheckFailed = "update_check_failed";

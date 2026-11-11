@@ -112,6 +112,7 @@ func TestATakenListenAddressNamesItsHolder(t *testing.T) {
 		Log:         io.Discard,
 		Filesystems: harness.LocalDisk{},
 		ProcessUIDs: harness.NotRoot,
+		UpdateClock: harness.StillClock{},
 		SocketPath:  filepath.Join(harness.ShortTempDir(t), "koko.sock"),
 	})
 	if err == nil {

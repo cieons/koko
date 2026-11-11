@@ -36,11 +36,13 @@ import (
 	"github.com/cieons/koko/internal/server/space"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/server/transport"
+	"github.com/cieons/koko/internal/server/updatecheck"
 	"github.com/cieons/koko/internal/server/user"
 	"github.com/cieons/koko/internal/server/web"
 	"github.com/cieons/koko/internal/server/webui"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/build"
+	"github.com/cieons/koko/internal/shared/release"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -115,6 +117,11 @@ type Config struct {
 	// in tests, so that they run alike as root and as any other user. It
 	// must be set.
 	ProcessUIDs func() (real, effective, saved int)
+	// UpdateClock is the clock the check for a new koko release waits on
+	// (ADR 0048): updatecheck.System on a machine, a fake in tests, which
+	// moves only as the test moves it, so that no test's koko server asks
+	// for a release by itself. It must be set.
+	UpdateClock updatecheck.Clock
 
 	// SocketPath is the socket-path hook, for tests only: empty means the
 	// fixed wire.SocketPath. No flag or environment variable sets it.
@@ -127,6 +134,10 @@ type Config struct {
 	// Timings is the product's, such as how long logging in to a Host may
 	// take. No flag or environment variable sets it.
 	Timings timing.Timings
+	// Releases is the releases hook, for tests only: where the check for a
+	// new koko release finds the latest. The zero Source is GitHub's (ADR
+	// 0041). No flag or environment variable sets it.
+	Releases release.Source
 }
 
 // Server is a running koko server.
@@ -139,6 +150,8 @@ type Server struct {
 	web *webListener
 	// api serves every operation the areas registered.
 	api *op.API
+	// updates checks for a new koko release.
+	updates *updatecheck.Checker
 	// stopNotice bounds how long Close, and a revocation, wait for the
 	// Gateway's notices.
 	stopNotice time.Duration
@@ -191,6 +204,9 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	}
 	if cfg.Filesystems == nil {
 		return nil, errors.New("start the koko server: Config.Filesystems is not set")
+	}
+	if cfg.UpdateClock == nil {
+		return nil, errors.New("start the koko server: Config.UpdateClock is not set")
 	}
 	if err := checkDataDir(cfg.DataDir, cfg.Filesystems); err != nil {
 		return nil, err
@@ -264,6 +280,14 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	tcp := &tcpListener{addr: cfg.Listen, transport: t, devices: device.NewAuthenticator(st, clock, log)}
 	srv := &Server{store: st, transport: t, gateway: gw, tcp: tcp, web: webLn, api: a, stopNotice: cfg.Timings.Resolve().StopNotice}
 	webHeld = true
+	var updateCheck bool
+	if err := st.Read(ctx, func(tx store.Tx) (err error) {
+		updateCheck, err = deployment.UpdateCheck(ctx, tx)
+		return err
+	}); err != nil {
+		return nil, errors.Join(err, srv.Close())
+	}
+	srv.updates = updatecheck.Start(cfg.Releases, cfg.UpdateClock, updateCheck, log)
 	for _, register := range areas {
 		register(a)
 	}
@@ -295,9 +319,10 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 		rootKey:     key,
 		rootKeyFile: rootKeyFile,
 		dataDir:     cfg.DataDir,
-		version:     build.Read().Version,
+		version:     version,
 		listenPort:  tcp.port,
 		webListen:   srv.WebAddress(),
+		updates:     srv.updates,
 	})
 	front.Register(a)
 	initialisedNow := keys == nil && initReq.Owner != ""
@@ -319,7 +344,7 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 		return nil, errors.Join(err, srv.Close())
 	}
 	attrs := []any{
-		"version", build.Read().Version, "data_dir", cfg.DataDir, "root_key", key.ID(),
+		"version", version, "data_dir", cfg.DataDir, "root_key", key.ID(),
 		"socket", socket, "web_ui_built", webui.Built(), "initialised", keys != nil,
 	}
 	if keys != nil {
@@ -401,6 +426,9 @@ func (s *Server) Close() error {
 	s.mu.Unlock()
 	s.revoking.Wait()
 	s.tcp.unbind()
+	if s.updates != nil {
+		s.updates.Close()
+	}
 	return errors.Join(webErr, err, s.store.Close())
 }
 

@@ -3,6 +3,7 @@ package harness
 import (
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -47,6 +48,23 @@ type github struct {
 	// none.
 	latest string
 	log    []string
+	// received is every request, as Received returns them.
+	received []Request
+	// hold, while set, holds each request for releases/latest until it is
+	// closed.
+	hold chan struct{}
+	// held is told of each request hold holds.
+	held chan struct{}
+}
+
+// Request is a request the fake GitHub received, as it arrived.
+type Request struct {
+	Method string
+	// Path and Query are the URL's path and raw query.
+	Path, Query string
+	Header      http.Header
+	// Body is how many bytes of body it carried.
+	Body int
 }
 
 // startReleases starts a fake GitHub serving the release version with the
@@ -65,8 +83,25 @@ func startReleases(m *Machine, version string, assets map[string][]byte) *Releas
 // serve answers a HEAD or GET of releases/latest with GitHub's redirect to
 // the latest release's tag page, and a GET of an asset with the asset.
 func (gh *github) serve(w http.ResponseWriter, req *http.Request) {
+	body, _ := io.ReadAll(req.Body)
 	gh.mu.Lock()
 	gh.log = append(gh.log, req.URL.Path)
+	gh.received = append(gh.received, Request{
+		Method: req.Method, Path: req.URL.Path, Query: req.URL.RawQuery, Header: req.Header.Clone(), Body: len(body),
+	})
+	hold, held := gh.hold, gh.held
+	if req.URL.Path != releasesPath+"/latest" {
+		hold = nil
+	}
+	gh.mu.Unlock()
+	if hold != nil {
+		select {
+		case held <- struct{}{}:
+		case <-hold:
+		}
+		<-hold
+	}
+	gh.mu.Lock()
 	latest := gh.latest
 	var h http.Handler
 	if rest, ok := strings.CutPrefix(req.URL.Path, releasesPath+"/download/"); ok && req.Method == http.MethodGet {
@@ -85,9 +120,43 @@ func (gh *github) serve(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+// source is the releases hook that points a koko server's check for a new
+// release at r's fake GitHub.
+func (r *Releases) source() release.Source {
+	return release.Source{URL: r.gh.srv.URL + releasesPath, Client: r.gh.srv.Client()}
+}
+
+// Received returns every request made to the fake GitHub so far, for any
+// release, in order, as it arrived.
+func (r *Releases) Received() []Request {
+	r.gh.mu.Lock()
+	defer r.gh.mu.Unlock()
+	return slices.Clone(r.gh.received)
+}
+
+// HoldLatest holds every request for the releases/latest redirect from now
+// on, until the test calls the release it returns, which answers them all
+// and holds no more. Each request held is sent on held as it arrives.
+func (r *Releases) HoldLatest() (held <-chan struct{}, release func()) {
+	gh := r.gh
+	hold, h := make(chan struct{}), make(chan struct{}, 16)
+	gh.mu.Lock()
+	gh.hold, gh.held = hold, h
+	gh.mu.Unlock()
+	once := sync.OnceFunc(func() {
+		gh.mu.Lock()
+		gh.hold = nil
+		gh.mu.Unlock()
+		close(hold)
+	})
+	r.gh.m.t.Cleanup(once)
+	return h, once
+}
+
 // hook is the releases hook that points koko at r.
 func (r *Releases) hook() cli.Releases {
-	return cli.Releases{URL: r.gh.srv.URL + releasesPath, Client: r.gh.srv.Client()}
+	s := r.source()
+	return cli.Releases{URL: s.URL, Client: s.Client}
 }
 
 // URL is the HTTPS URL of the release's asset name, as koko names it.

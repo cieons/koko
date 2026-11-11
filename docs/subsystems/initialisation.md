@@ -129,7 +129,7 @@ for devices; the web listener, when it is on, answers every request with a
 
 | Table | What it holds |
 | --- | --- |
-| `deployment` | One row: the Server Address, and the Web URL (`web_url`), `NULL` until the Owner sets it. The koko server is initialised once it exists. |
+| `deployment` | One row: the Server Address, the Web URL (`web_url`), `NULL` until the Owner sets it, and the `update_check` setting, 1 (on) unless the Owner turns it off. The koko server is initialised once it exists. |
 | `own_keys` | One row per key the koko server makes for itself, sealed for the row's id: `koko` and `host`, each PKCS #8, made at initialisation; and `cookie`, the web front's 32-byte cookie key, made on first use ([`koko web` and the web front](web-front.md#runs-tokens-and-the-cookie)). |
 | `users` | The Owner, with the role `owner`; a partial unique index allows one. Invited Users have the role `member` ([Users](users.md#the-record)). |
 | `spaces.user_id` | The User a Personal Space belongs to, which is not a membership; empty for a shared Space. |
@@ -169,6 +169,7 @@ loaded and runs with. Each returns `{"server": {...}}`
 | `data_dir` | the data directory, as `kokod run` was given it |
 | `web_url` | the Web URL, as stored: lowercased, without the default port 443; `null` while it is not set |
 | `web_listen` | the web listener's bound address, such as `127.0.0.1:7823`; `null` while it is off |
+| `update_check` | the check for a new koko release: `{"enabled", "checked_at", "latest", "error"}`, the setting and what the checks found, each `null` while unknown ([the update check](#the-update-check)) |
 
 - **`server.show`** ([`koko server show`](cli.md#the-commands-so-far), read
   tier) answers every caller, a Member's Device Session included: the
@@ -181,7 +182,8 @@ loaded and runs with. Each returns `{"server": {...}}`
   another file leaves it naming `/etc/koko/root.key`, since the service is
   never told where its credential came from.
 - **`server.set`** (`koko server set address=<host[:port]>`,
-  `web_url=<https://host[:port]>` and `--unset web_url`, reversible tier)
+  `web_url=<https://host[:port]>`, `update_check=on|off` and `--unset
+  web_url`, reversible tier)
   answers only the Local caller (`op.LocalOnly`): over a Device Connection,
   the Owner's own Device Session included, it is refused with `local_only`,
   so no device can move where devices connect. A browser tab of `koko web`
@@ -189,7 +191,8 @@ loaded and runs with. Each returns `{"server": {...}}`
   Local caller, is refused with `local_only` too (a `web@koko` channel,
   `transport.WebPortFrom`), so no browser tab can either. It changes only
   what the request names, `{"address": "<host[:port]>", "web_url": "<url>",
-  "unset": ["web_url"]}`; naming nothing, it changes nothing. The address is checked as at initialisation, and refused
+  "update_check": true|false, "unset": ["web_url"]}`; naming nothing, it
+  changes nothing. The address is checked as at initialisation, and refused
   with `invalid_address` when it is not a Server Address or, with the listen
   port written, is longer than a Join Code carries
   ([`joincode.CheckAddress`](../../internal/shared/joincode/joincode.go),
@@ -209,13 +212,64 @@ loaded and runs with. Each returns `{"server": {...}}`
   takes effect on the web listener's next request
   ([the web listener](web-front.md#the-web-listener)).
 
-The CLI refuses a `key=value` other than `address=` and `web_url=`, an
-address that is not a Server Address, a Web URL that is not one, an
-`--unset` of anything but `web_url`, and a `server set` naming nothing, with
-exit 2, before any call. `koko server show` prints the web listener's
+The CLI refuses a `key=value` other than `address=`, `web_url=` and
+`update_check=`, an address that is not a Server Address, a Web URL that is
+not one, an `update_check=` other than `on` or `off`, an `--unset` of
+anything but `web_url`, and a `server set` naming nothing, with exit 2,
+before any call. `koko server show` prints the web listener's
 address, or `off`, and the Web URL, or `not set`; `koko server set
 web_url=` says what changed, and how to turn the web listener on while it
 is off.
+
+## The update check
+
+The koko server learns of new koko releases by itself
+([`updatecheck`](../../internal/server/updatecheck/updatecheck.go),
+[ADR 0048](../adr/0048-the-koko-server-upgrades-itself-through-a-root-helper-that-takes-only-a-newer-releases-version.md)):
+
+- **What it sends.** One HTTPS `HEAD` of `releases/latest`, through
+  [`release.Source.Latest`](../../internal/shared/release/release.go), which
+  reads the tag the redirect names without following it: no query, cookie
+  or body, and Go's default User-Agent, so nothing about the deployment.
+- **When.** A random 2 to 5 minutes after the koko server starts, so that
+  restarts and many koko servers do not come at once, then 6 hours after the
+  last check of any kind, one the Owner asked for included, while
+  `update_check` is on. A check that fails is not tried sooner. The result
+  is kept in memory: a restart checks again.
+- **`update_check`,** a deployment setting in the record, on by default:
+  `koko server set update_check=off` stops the checks by itself, and the
+  koko server forgets what they found, so `update_check`'s `checked_at`,
+  `latest` and `error` are `null` until the Owner checks at once.
+  `update_check=on` starts them again, the first a random 2 to 5 minutes
+  later, as at a start.
+- **`server.check_update`** (Owner only, the Local caller and the Owner's
+  Sign-in included; a read, as it changes no record) checks at once, with
+  `update_check` on or off, since the Owner asked. Callers who come while a
+  check is in flight share it, and one request goes out. It answers
+  `{"update_check": {...}, "version": "<the koko server's>"}`, or a check
+  that failed with `update_check_failed` (502), whose message names what
+  failed and which `update_check.error` keeps. `koko server upgrade
+  --check` and the web UI's Check now are to call it (#141, #142).
+- **The log.** A failed check is logged at `info` once per run of failures
+  (`the update check could not find koko's latest release; …`, with the
+  error), and the first check that succeeds after one says so (`the update
+  check found koko's latest release again`).
+
+Its clock is `server.Config.UpdateClock`, which must be set, as
+`Filesystems` and `ProcessUIDs` must: `updatecheck.System` in `cmd/kokod`,
+and in tests `harness.StillClock`, whose waits never end, for every koko
+server a test starts, the fake machine's included, so that none asks for a
+release by itself and the requests a test counts on the fake GitHub are
+koko's own. With `harness.UpdateCheck(rel)` it is the harness's clock
+instead, which `h.Advance` and `h.SetNow` move and whose `h.Waits()` says
+when the next check comes, and the koko server finds releases at `rel`'s
+fake GitHub (the releases hook, `server.Config.Releases`).
+
+`koko server show` prints it as `Update check:    on, last at 2026-11-11
+09:00 UTC: v0.5.0 is available`, or `not checked yet`, `… is the latest
+release`, or `…, which failed: <error>`, comparing versions as
+[`compat`](../../internal/shared/compat/compat.go) does: a pseudo-version
+just before its next release, `(devel)` the newest.
 
 ## Verifying
 
@@ -248,7 +302,22 @@ is off.
   `server show` answered from the Owner's and a Member's devices and from a
   browser tab of `koko web`, and the two commands' tiers; the Web URL set
   as stored and cleared, `server show` naming it and the web listener, and
-  its refusals in the CLI (exit 2) and in `server.set` (`invalid_web_url`).
+  its refusals in the CLI (exit 2) and in `server.set` (`invalid_web_url`);
+  `update_check=off` and `=on` round-tripping, its bad values refused with
+  exit 2, and `server show`'s `Update check` line for a failed check, a
+  newer release, the release it runs and the check off.
+- [`updatecheck_test.go`](../../internal/server/updatecheck_test.go), with
+  the harness's clock and fake GitHub (`harness.UpdateCheck`): the first
+  check between 2 and 5 minutes after start and the next 6 hours after the
+  last, one at once included; each a `HEAD` of `releases/latest` with no
+  query, cookie or body and Go's default User-Agent; off sending nothing
+  and forgetting what it found, a check at once still answered, and on
+  again a few minutes later; a failure shown in `server.show`, logged once
+  while it repeats and not tried sooner; two checks at once sharing one
+  request; and `update_check_failed`. The access matrix has
+  `server.check_update` for the Owner alone.
+- [`compat_test.go`](../../internal/shared/compat/compat_test.go): the
+  order of releases, pre-releases, pseudo-versions and `(devel)`.
 - [`weburl_test.go`](../../internal/shared/weburl/weburl_test.go): the Web
   URL's forms and refusals.
 - [`listen_test.go`](../../internal/server/listen_test.go): nothing on TCP

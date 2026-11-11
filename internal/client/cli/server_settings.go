@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/compat"
 	"github.com/cieons/koko/internal/shared/serveraddr"
 	"github.com/cieons/koko/internal/shared/weburl"
 )
@@ -34,6 +36,48 @@ type serverJSON struct {
 	WebURL *string `json:"web_url"`
 	// WebListen is the web listener's address, null while it is off.
 	WebListen *string `json:"web_listen"`
+	// UpdateCheck is the koko server's check for a new koko release: its
+	// setting and what the checks found.
+	UpdateCheck updateCheckJSON `json:"update_check"`
+}
+
+// updateCheckJSON is the koko server's check for a new koko release.
+type updateCheckJSON struct {
+	// Enabled is the update_check setting.
+	Enabled bool `json:"enabled"`
+	// CheckedAt is when the last check ended, null before any.
+	CheckedAt *string `json:"checked_at"`
+	// Latest is koko's latest release, as the last check that succeeded
+	// found it, null while unknown.
+	Latest *string `json:"latest"`
+	// Error is why the last check failed, null when it succeeded.
+	Error *string `json:"error"`
+}
+
+// line is the update check as koko server show prints it, set against the
+// koko server's version: on or off, then when it last checked and what it
+// found.
+func (u updateCheckJSON) line(version string) string {
+	state := "off"
+	if u.Enabled {
+		state = "on"
+	}
+	if u.CheckedAt == nil {
+		return state + ", not checked yet"
+	}
+	at := *u.CheckedAt
+	if t, err := time.Parse(time.RFC3339, at); err == nil {
+		at = t.UTC().Format("2006-01-02 15:04 UTC")
+	}
+	switch {
+	case u.Error != nil:
+		return fmt.Sprintf("%s, last at %s, which failed: %s", state, at, *u.Error)
+	case u.Latest == nil:
+		return fmt.Sprintf("%s, last at %s", state, at)
+	case compat.Newer(*u.Latest, version):
+		return fmt.Sprintf("%s, last at %s: %s is available", state, at, *u.Latest)
+	}
+	return fmt.Sprintf("%s, last at %s: %s is the latest release", state, at, *u.Latest)
 }
 
 func serverFromAPI(s api.Server) serverJSON {
@@ -47,6 +91,12 @@ func serverFromAPI(s api.Server) serverJSON {
 		DataDir:            s.DataDir,
 		WebURL:             s.WebURL,
 		WebListen:          s.WebListen,
+		UpdateCheck: updateCheckJSON{
+			Enabled:   s.UpdateCheck.Enabled,
+			CheckedAt: s.UpdateCheck.CheckedAt,
+			Latest:    s.UpdateCheck.Latest,
+			Error:     s.UpdateCheck.Error,
+		},
 	}
 }
 
@@ -59,8 +109,9 @@ Host key:        %s
 Version:         %s
 Root Key:        %s (%s)
 Data directory:  %s
+Update check:    %s
 `, serveraddr.WithPort(s.Address, s.ListenPort), s.ListenPort, orNone(s.WebListen, "off"), orNone(s.WebURL, "not set"),
-		s.HostKeyFingerprint, s.Version, s.RootKeyFile, s.RootKeyID, s.DataDir)
+		s.HostKeyFingerprint, s.Version, s.RootKeyFile, s.RootKeyID, s.DataDir, s.UpdateCheck.line(s.Version))
 	return err
 }
 
@@ -77,8 +128,8 @@ func orNone(s *string, none string) string {
 type serverChanged struct {
 	serverJSON
 	// address and webURL tell that the Server Address, or the Web URL,
-	// changed.
-	address, webURL bool
+	// changed, and updateCheck that the update_check setting was set.
+	address, webURL, updateCheck bool
 }
 
 func (s serverChanged) Human(w io.Writer) error {
@@ -101,14 +152,21 @@ koko connect %s
 	if s.webURL && s.WebListen == nil {
 		b.WriteString("The web listener is off: turn it on with koko server install --web-listen 127.0.0.1:7823, or with KOKO_WEB_LISTEN in a container.\n")
 	}
+	switch {
+	case !s.updateCheck:
+	case s.UpdateCheck.Enabled:
+		b.WriteString("Turned the update check on. The koko server checks for a new koko release a few minutes from now, then every 6 hours.\n")
+	default:
+		b.WriteString("Turned the update check off. The koko server no longer checks for a new koko release by itself; the Owner can still check at once.\n")
+	}
 	_, err := io.WriteString(w, b.String())
 	return err
 }
 
-// serverSet is koko server set address=<host[:port]> web_url=<url> and
-// --unset web_url. It refuses a key it does not know, a value that is not
-// a Server Address or a Web URL, and an unset of the Server Address,
-// before any call.
+// serverSet is koko server set address=<host[:port]> web_url=<url>
+// update_check=on|off and --unset web_url. It refuses a key it does not
+// know, a value that is not a Server Address, a Web URL, on or off, and an
+// unset of the Server Address, before any call.
 func serverSet(ctx context.Context, in *Input) (serverChanged, error) {
 	var req api.ServerSetRequest
 	for _, p := range in.Pairs() {
@@ -123,8 +181,15 @@ func serverSet(ctx context.Context, in *Input) (serverChanged, error) {
 				return serverChanged{}, usagef("web_url= takes the Web URL, https://<host>[:<port>]: %v", err)
 			}
 			req.WebURL = new(p.Value)
+		case "update_check":
+			switch p.Value {
+			case "on", "off":
+				req.UpdateCheck = new(p.Value == "on")
+			default:
+				return serverChanged{}, usagef("update_check= takes on or off, not %q", p.Value)
+			}
 		default:
-			return serverChanged{}, usagef("koko server set changes address=<host[:port]> and web_url=<https://host[:port]>; it has no setting %q", p.Key)
+			return serverChanged{}, usagef("koko server set changes address=<host[:port]>, web_url=<https://host[:port]> and update_check=on|off; it has no setting %q", p.Key)
 		}
 	}
 	for _, k := range in.Unset() {
@@ -132,19 +197,24 @@ func serverSet(ctx context.Context, in *Input) (serverChanged, error) {
 		case "web_url":
 		case "address":
 			return serverChanged{}, usagef("the Server Address cannot be cleared: a koko server always has one; change it with address=<host[:port]>")
+		case "update_check":
+			return serverChanged{}, usagef("the update check is not cleared but turned off: koko server set update_check=off")
 		default:
 			return serverChanged{}, usagef("koko server set clears web_url alone; it has no setting %q", k)
 		}
 	}
 	req.Unset = in.Unset()
-	if req.Address == nil && req.WebURL == nil && len(req.Unset) == 0 {
-		return serverChanged{}, usagef("name the setting to change: koko server set address=<host[:port]>, web_url=<https://host[:port]> or --unset web_url")
+	if req.Address == nil && req.WebURL == nil && req.UpdateCheck == nil && len(req.Unset) == 0 {
+		return serverChanged{}, usagef("name the setting to change: koko server set address=<host[:port]>, web_url=<https://host[:port]>, update_check=on|off or --unset web_url")
 	}
 	resp, err := in.Call(ctx, api.ServerSet, req)
 	if err != nil {
 		return serverChanged{}, err
 	}
-	return serverChanged{serverJSON: serverFromAPI(resp.Server), address: req.Address != nil, webURL: req.WebURL != nil || len(req.Unset) > 0}, nil
+	return serverChanged{
+		serverJSON: serverFromAPI(resp.Server), address: req.Address != nil,
+		webURL: req.WebURL != nil || len(req.Unset) > 0, updateCheck: req.UpdateCheck != nil,
+	}, nil
 }
 
 // serverShow is koko server show: the koko server's deployment.

@@ -35,7 +35,9 @@ import (
 	"github.com/cieons/koko/internal/server"
 	"github.com/cieons/koko/internal/server/filesystem"
 	"github.com/cieons/koko/internal/server/seal"
+	"github.com/cieons/koko/internal/server/updatecheck"
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/release"
 	"github.com/cieons/koko/internal/shared/timing"
 )
 
@@ -82,6 +84,7 @@ type options struct {
 	timings     timing.Timings
 	filesystems filesystem.Types
 	processUIDs func() (real, effective, saved int)
+	releases    *Releases
 }
 
 // Mountinfo makes the koko server read the machine's mounts from path, a
@@ -140,6 +143,38 @@ func (o *options) processUIDsOrNotRoot() func() (int, int, int) {
 // between attempts to connect to a Host.
 func Timings(t timing.Timings) Option {
 	return func(o *options) { o.timings = t }
+}
+
+// UpdateCheck makes the koko server's check for a new koko release find
+// releases at r's fake GitHub, and wait on the koko server's clock, which
+// Advance moves, so that a test sees it check by itself. Without it, the
+// koko server checks only when asked, and finds no release (noReleases).
+func UpdateCheck(r *Releases) Option {
+	return func(o *options) { o.releases = r }
+}
+
+// noReleases is where a koko server a test starts finds koko's releases
+// unless the test gives it a fake GitHub: a URL that is not HTTPS, which
+// the check refuses before it connects anywhere, so no test reaches the
+// network.
+var noReleases = release.Source{URL: "http://releases.invalid/cieons/koko/releases"}
+
+// StillClock is a server.Config.UpdateClock whose waits never end, so that
+// a koko server on it checks for a new koko release only when asked. Its
+// time is Time's, or the machine's when Time is nil.
+type StillClock struct {
+	Time func() time.Time
+}
+
+func (c StillClock) Now() time.Time {
+	if c.Time == nil {
+		return time.Now()
+	}
+	return c.Time()
+}
+
+func (StillClock) AfterFunc(time.Duration, func()) func() bool {
+	return func() bool { return false }
 }
 
 // NoInit leaves the koko server as Start finds it, without initialising it.
@@ -259,6 +294,14 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		log:    &syncBuffer{},
 		clock:  &clock{now: time.Now().UTC().Truncate(time.Second)},
 	}
+	var updateClock updatecheck.Clock = StillClock{Time: h.clock.Now}
+	releases := noReleases
+	if o.releases != nil {
+		updateClock, releases = h.clock, o.releases.source()
+		// After the koko server has stopped: a check its clock started
+		// ends with it.
+		t.Cleanup(h.clock.fired.Wait)
+	}
 	srv, err := server.Start(t.Context(), server.Config{
 		DataDir:     o.dataDir,
 		RootKeyPath: o.rootKeyFile,
@@ -271,6 +314,8 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		SocketPath:  h.socket,
 		Clock:       h.clock.Now,
 		Timings:     o.timings,
+		UpdateClock: updateClock,
+		Releases:    releases,
 	})
 	if err != nil {
 		t.Fatalf("start the koko server: %v", err)
@@ -347,6 +392,7 @@ func startConfig(t testing.TB, opts []Option) func(server.Config) server.Config 
 		c.Filesystems = filesystems
 		c.ProcessUIDs = uids
 		c.SocketPath = socket
+		c.UpdateClock, c.Releases = StillClock{}, noReleases
 		return c
 	}
 }
@@ -425,11 +471,28 @@ func (h *Harness) SetNow(now time.Time) {
 	h.clock.set(now)
 }
 
+// Waits returns the times the koko server waits for on its clock, in
+// order: with UpdateCheck, when its check for a new koko release comes
+// next, if it is to come by itself.
+func (h *Harness) Waits() []time.Time {
+	return h.clock.waiting()
+}
+
 // clock is the koko server's clock in a test, which stands still until the
-// test moves it.
+// test moves it. A wait on it ends once the test moves it past the wait's
+// end.
 type clock struct {
-	mu  sync.Mutex
-	now time.Time
+	mu    sync.Mutex
+	now   time.Time
+	waits []*wait
+	// fired holds the calls of the waits that have ended.
+	fired sync.WaitGroup
+}
+
+// wait is f, to call once the clock reaches at.
+type wait struct {
+	at time.Time
+	f  func()
 }
 
 func (c *clock) Now() time.Time {
@@ -438,16 +501,60 @@ func (c *clock) Now() time.Time {
 	return c.now
 }
 
+// AfterFunc calls f in its own goroutine once the clock has moved d on, and
+// returns what stops that call, as time.AfterFunc does.
+func (c *clock) AfterFunc(d time.Duration, f func()) func() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	w := &wait{at: c.now.Add(d), f: f}
+	c.waits = append(c.waits, w)
+	return func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		i := slices.Index(c.waits, w)
+		if i < 0 {
+			return false
+		}
+		c.waits = slices.Delete(c.waits, i, i+1)
+		return true
+	}
+}
+
 func (c *clock) advance(d time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.now = c.now.Add(d)
+	c.fire()
 }
 
 func (c *clock) set(now time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.now = now
+	c.fire()
+}
+
+// fire calls each wait that has ended. The caller holds mu.
+func (c *clock) fire() {
+	c.waits = slices.DeleteFunc(c.waits, func(w *wait) bool {
+		if w.at.After(c.now) {
+			return false
+		}
+		c.fired.Go(w.f)
+		return true
+	})
+}
+
+// waiting returns the ends of the waits on the clock, in order.
+func (c *clock) waiting() []time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ends := make([]time.Time, 0, len(c.waits))
+	for _, w := range c.waits {
+		ends = append(ends, w.at)
+	}
+	slices.SortFunc(ends, time.Time.Compare)
+	return ends
 }
 
 // Background starts one koko command line in process, as Koko does but with

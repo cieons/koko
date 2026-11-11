@@ -161,6 +161,7 @@ func startBeneathTransport(t *testing.T) *beneathTransport {
 		Log:         io.Discard,
 		Filesystems: localDisk{},
 		ProcessUIDs: notRoot,
+		UpdateClock: stillClock{},
 		SocketPath:  filepath.Join(socketDir, "koko.sock"),
 		WebListen:   "127.0.0.1:0",
 	})

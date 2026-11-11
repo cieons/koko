@@ -143,6 +143,7 @@ first call, through the dial it was given, and for each call:
 | `host_retired` | 409 | A Retired Host was asked for a change it does not take, or to be Enrolled or retired again ([retiring a Host](record.md#retiring-a-host)). |
 | `invalid_relay` | 409 | The Host named as a Relay cannot be one: the Host itself, not Managed, or with a Relay of its own; or the Host given a Relay is the Relay of a Host that is not Retired; or Enroll of a Host whose Relay is not Managed ([a Relay](record.md#a-relay)). |
 | `relay_in_use` | 409 | `host.retire` of the Relay of a Host that is not Retired; the message names no Host ([a Relay](record.md#a-relay)). |
+| `update_check_failed` | 502 | `server.check_update` could not find koko's latest release; the message names what failed ([the update check](initialisation.md#the-update-check)). |
 | `internal_error` | 500 | Anything the server did not expect; the message says to read the log, which holds the cause. |
 
 An area adds its codes beside its types (see

@@ -31,6 +31,7 @@ var steps = []string{
 	"deployment_web_url.sql",
 	"signins.sql",
 	"signins_browser_system.sql",
+	"deployment_update_check.sql",
 }
 
 //go:embed migrations/*.sql

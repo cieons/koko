@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -12,16 +14,18 @@ import (
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/server/transport"
+	"github.com/cieons/koko/internal/server/updatecheck"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/joincode"
 	"github.com/cieons/koko/internal/shared/serveraddr"
 )
 
 // settings serves the server area's operations on the koko server's
-// deployment (P0 spec: install and run): server.show reads it, and
-// server.set changes the Server Address and the Web URL. They act on what
-// the process
-// loaded and runs with, so the process registers them.
+// deployment (P0 spec: install and run): server.show reads it, server.set
+// changes the Server Address, the Web URL and the update_check setting, and
+// server.check_update checks for a new koko release at once (ADR 0048).
+// They act on what the process loaded and runs with, so the process
+// registers them.
 type settings struct {
 	// rootKey is the Root Key the process loaded; only its id is shown.
 	rootKey *seal.RootKey
@@ -35,14 +39,17 @@ type settings struct {
 	// webListen is the address the web listener listens on, "" while it
 	// is off.
 	webListen string
+	// updates checks for a new koko release.
+	updates *updatecheck.Checker
 }
 
-// registerSettings registers server.show, for every caller, and
-// server.set, for the Local caller only: no device, the Owner's own
-// included, can move where devices connect.
+// registerSettings registers server.show, for every caller, server.set,
+// for the Local caller only: no device, the Owner's own included, can move
+// where devices connect, and server.check_update, for the Owner.
 func registerSettings(a *op.API, s *settings) {
 	a.Handle(api.ServerShow, s.show)
 	a.Handle(api.ServerSet, s.set, op.LocalOnly)
+	a.Handle(api.ServerCheckUpdate, s.checkUpdate)
 }
 
 func (s *settings) show(ctx context.Context, tx store.Tx, caller op.Caller, _ api.ServerShowRequest) (api.ServerShowResponse, error) {
@@ -82,11 +89,66 @@ func (s *settings) set(ctx context.Context, tx store.Tx, _ op.Caller, req api.Se
 	if err := setWebURL(ctx, tx, req); err != nil {
 		return api.ServerSetResponse{}, err
 	}
+	turnedOff := false
+	if on := req.UpdateCheck; on != nil {
+		was, err := deployment.UpdateCheck(ctx, tx)
+		if err != nil {
+			return api.ServerSetResponse{}, err
+		}
+		turnedOff = was && !*on
+		if err := deployment.SetUpdateCheck(ctx, tx, *on); err != nil {
+			return api.ServerSetResponse{}, err
+		}
+		// The checker follows the setting once it is stored.
+		op.AfterTx(ctx, func(committed bool) {
+			if committed {
+				s.updates.SetOn(*on)
+			}
+		})
+	}
 	srv, err := s.read(ctx, tx)
 	if err != nil {
 		return api.ServerSetResponse{}, err
 	}
+	if turnedOff {
+		// As the checker is once it follows the setting: turned off, it
+		// forgets what it found.
+		srv.UpdateCheck = updateCheckJSON(false, updatecheck.Result{})
+	}
 	return api.ServerSetResponse{Server: srv}, nil
+}
+
+// checkUpdate checks for a new koko release at once, for the Owner, with
+// the update_check setting on or off, since the Owner asked. A check that
+// fails is refused with update_check_failed, naming what failed.
+func (s *settings) checkUpdate(ctx context.Context, tx store.Tx, caller op.Caller, _ api.ServerCheckUpdateRequest) (api.ServerCheckUpdateResponse, error) {
+	if _, err := access.OwnerOnly(ctx, tx, caller, "checks for a new koko release"); err != nil {
+		return api.ServerCheckUpdateResponse{}, err
+	}
+	on, err := deployment.UpdateCheck(ctx, tx)
+	if err != nil {
+		return api.ServerCheckUpdateResponse{}, err
+	}
+	r, err := s.updates.Check(ctx)
+	switch {
+	case ctx.Err() != nil, errors.Is(err, updatecheck.ErrClosed):
+		// The caller has gone, or the koko server is stopping: no check
+		// failed.
+		return api.ServerCheckUpdateResponse{}, errors.Join(err, ctx.Err())
+	case err != nil:
+		return api.ServerCheckUpdateResponse{}, api.CodeUpdateCheckFailed.Errorf("%v", err)
+	}
+	return api.ServerCheckUpdateResponse{UpdateCheck: updateCheckJSON(on, r), Version: s.version}, nil
+}
+
+// updateCheckJSON is the update check as the API answers it: the setting
+// on, and what the checks found, r.
+func updateCheckJSON(on bool, r updatecheck.Result) api.UpdateCheck {
+	u := api.UpdateCheck{Enabled: on, Latest: nonEmpty(r.Latest), Error: nonEmpty(r.Error)}
+	if !r.CheckedAt.IsZero() {
+		u.CheckedAt = new(r.CheckedAt.UTC().Format(time.RFC3339))
+	}
+	return u
 }
 
 // setWebURL sets or clears the Web URL as req names it: web_url is the one
@@ -138,6 +200,10 @@ func (s *settings) read(ctx context.Context, tx store.Tx) (api.Server, error) {
 	if err != nil {
 		return api.Server{}, err
 	}
+	updateCheck, err := deployment.UpdateCheck(ctx, tx)
+	if err != nil {
+		return api.Server{}, err
+	}
 	return api.Server{
 		Address:            address,
 		ListenPort:         s.listenPort(),
@@ -149,6 +215,7 @@ func (s *settings) read(ctx context.Context, tx store.Tx) (api.Server, error) {
 		DataDir:            s.dataDir,
 		WebURL:             nonEmpty(webURL),
 		WebListen:          nonEmpty(s.webListen),
+		UpdateCheck:        updateCheckJSON(updateCheck, s.updates.Result()),
 	}, nil
 }
 

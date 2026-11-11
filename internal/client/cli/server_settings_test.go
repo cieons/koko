@@ -3,30 +3,46 @@ package cli_test
 import (
 	"encoding/json/v2"
 	"errors"
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/server/transport"
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/wire"
 )
 
 // serverOut is the koko server's settings, as koko server show --json and
 // koko server set --json print them.
 type serverOut struct {
-	Address            string  `json:"address"`
-	ListenPort         int     `json:"listen_port"`
-	HostKeyFingerprint string  `json:"host_key_fingerprint"`
-	Version            string  `json:"version"`
-	RootKeyFile        string  `json:"root_key_file"`
-	RootKeyID          string  `json:"root_key_id"`
-	DataDir            string  `json:"data_dir"`
-	WebURL             *string `json:"web_url"`
-	WebListen          *string `json:"web_listen"`
+	Address            string         `json:"address"`
+	ListenPort         int            `json:"listen_port"`
+	HostKeyFingerprint string         `json:"host_key_fingerprint"`
+	Version            string         `json:"version"`
+	RootKeyFile        string         `json:"root_key_file"`
+	RootKeyID          string         `json:"root_key_id"`
+	DataDir            string         `json:"data_dir"`
+	WebURL             *string        `json:"web_url"`
+	WebListen          *string        `json:"web_listen"`
+	UpdateCheck        updateCheckOut `json:"update_check"`
+}
+
+// updateCheckOut is the koko server's check for a new release, as koko
+// server show --json prints it.
+type updateCheckOut struct {
+	Enabled   bool    `json:"enabled"`
+	CheckedAt *string `json:"checked_at"`
+	Latest    *string `json:"latest"`
+	Error     *string `json:"error"`
 }
 
 // parseServer wants r, a koko server show or set with --json, to have
@@ -124,6 +140,7 @@ func TestServerShowPrintsTheSettings(t *testing.T) {
 		RootKeyFile:        k.keyFile,
 		RootKeyID:          rootKeyID(t, k.key),
 		DataDir:            k.dataDir,
+		UpdateCheck:        updateCheckOut{Enabled: true},
 	}
 	if s != want {
 		t.Errorf("server show --json = %+v, want %+v", s, want)
@@ -143,6 +160,7 @@ func TestServerShowPrintsTheSettings(t *testing.T) {
 		"Version:         " + want.Version,
 		"Root Key:        " + k.keyFile + " (" + want.RootKeyID + ")",
 		"Data directory:  " + k.dataDir,
+		"Update check:    on, not checked yet",
 	} {
 		if !strings.Contains(r.Stdout, line+"\n") {
 			t.Errorf("server show printed %q, want the line %q", r.Stdout, line)
@@ -288,6 +306,9 @@ func TestServerSetRefusesAnythingButAServerAddress(t *testing.T) {
 		"the address twice":      {"address=a.example.com", "address=b.example.com"},
 		"an address to unset":    {"--unset", "address"},
 		"an argument, not a key": {"koko.example.com"},
+		"update_check not on":    {"update_check=yes"},
+		"update_check empty":     {"update_check="},
+		"update_check to unset":  {"--unset", "update_check"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			h.Koko(append([]string{"server", "set", "--json"}, args...)...).WantError(t, 2, "invalid_usage")
@@ -462,4 +483,112 @@ func mustAtoi(t *testing.T, s string) int {
 		t.Fatal(err)
 	}
 	return n
+}
+
+// koko server set update_check=off turns the koko server's check for a new
+// release off, and update_check=on back on; server show shows each.
+func TestServerSetUpdateCheckOffAndOn(t *testing.T) {
+	t.Parallel()
+	h := harness.Start(t)
+	off := parseServer(t, h.Koko("server", "set", "update_check=off", "--json"))
+	if off.UpdateCheck != (updateCheckOut{}) {
+		t.Errorf("server set update_check=off printed %+v, want it off with nothing found", off.UpdateCheck)
+	}
+	if shown := parseServer(t, h.Koko("server", "show", "--json")); shown != off {
+		t.Errorf("server show = %+v after server set printed %+v", shown, off)
+	}
+	r := h.Koko("server", "show")
+	r.WantSuccess(t)
+	if !strings.Contains(r.Stdout, "Update check:    off, not checked yet\n") {
+		t.Errorf("server show printed %q, want the update check off", r.Stdout)
+	}
+	r = h.Koko("server", "set", "update_check=on")
+	r.WantSuccess(t)
+	if want := "Turned the update check on. The koko server checks for a new koko release a few minutes from now, then every 6 hours.\n"; r.Stdout != want {
+		t.Errorf("server set update_check=on printed %q, want %q", r.Stdout, want)
+	}
+	if on := parseServer(t, h.Koko("server", "show", "--json")); on.UpdateCheck != (updateCheckOut{Enabled: true}) {
+		t.Errorf("server show printed %+v, want the update check on", on.UpdateCheck)
+	}
+}
+
+// cannedServer serves on a socket of its own a koko server that answers
+// server.show with show, a server.show answer's "server" object, through
+// the real transport, and returns the socket's path.
+func cannedServer(t *testing.T, show string) string {
+	t.Helper()
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/server.show" {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"error": {"code": "unknown_operation", "message": "no operation here"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"server": `+show+`}`)
+	})
+	path := filepath.Join(harness.ShortTempDir(t), "koko.sock")
+	report := wire.Report{Version: "v0.4.0", Operations: []string{"server.show"}}
+	s := transport.New(h, h, func() wire.Report { return report }, slog.New(slog.DiscardHandler))
+	if err := s.ListenSocket(t.Context(), path); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return path
+}
+
+// koko server show says when the koko server last checked for a new
+// release and what it found, set against the version it runs: a newer
+// release, the release it runs, or why the check failed.
+func TestServerShowSaysWhatTheUpdateCheckFound(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, updateCheck, want string
+	}{
+		{"not checked", `{"enabled": true, "checked_at": null, "latest": null, "error": null}`, "on, not checked yet"},
+		{"a newer release", `{"enabled": true, "checked_at": "2026-11-11T09:00:30Z", "latest": "v0.5.0", "error": null}`, "on, last at 2026-11-11 09:00 UTC: v0.5.0 is available"},
+		{"the release it runs", `{"enabled": true, "checked_at": "2026-11-11T09:00:30Z", "latest": "v0.4.0", "error": null}`, "on, last at 2026-11-11 09:00 UTC: v0.4.0 is the latest release"},
+		{"a failure", `{"enabled": true, "checked_at": "2026-11-11T09:00:30Z", "latest": "v0.5.0", "error": "koko could not find its latest release: …"}`, "on, last at 2026-11-11 09:00 UTC, which failed: koko could not find its latest release: …"},
+		{"the check off", `{"enabled": false, "checked_at": "2026-11-11T15:04:00Z", "latest": "v0.5.0", "error": null}`, "off, last at 2026-11-11 15:04 UTC: v0.5.0 is available"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			socket := cannedServer(t, `{"address": "koko.example.com", "listen_port": 7822, "version": "v0.4.0", "update_check": `+tc.updateCheck+`}`)
+			r := harness.Run(t, cli.Runner{SocketPath: socket}, nil, "server", "show")
+			r.WantSuccess(t)
+			if want := "Update check:    " + tc.want + "\n"; !strings.Contains(r.Stdout, want) {
+				t.Errorf("server show printed %q, want the line %q", r.Stdout, want)
+			}
+		})
+	}
+}
+
+// What the real koko server's check found reaches koko server show: here,
+// a failure, then the latest release, which this test's build, (devel),
+// is no older than.
+func TestServerShowSaysWhatTheKokoServersCheckFound(t *testing.T) {
+	t.Parallel()
+	rel := harness.NewMachine(t).Release("v0.5.0")
+	h := harness.Start(t, harness.UpdateCheck(rel))
+	h.SetNow(time.Date(2026, 11, 11, 9, 0, 30, 0, time.UTC))
+	line := func() string {
+		t.Helper()
+		r := h.Koko("server", "show")
+		r.WantSuccess(t)
+		_, line, _ := strings.Cut(r.Stdout, "Update check:    ")
+		line, _, _ = strings.Cut(line, "\n")
+		return line
+	}
+	if _, err := h.Call(api.ServerCheckUpdate, api.ServerCheckUpdateRequest{}); err == nil {
+		t.Fatal("server.check_update succeeded with no latest release")
+	}
+	if got, want := line(), "on, last at 2026-11-11 09:00 UTC, which failed: koko could not find its latest release: "; !strings.HasPrefix(got, want) || !strings.Contains(got, harness.LatestPath()) {
+		t.Errorf("after a failed check, server show printed the update check %q, want it to begin %q and name %s", got, want, harness.LatestPath())
+	}
+	rel.Latest()
+	if _, err := h.Call(api.ServerCheckUpdate, api.ServerCheckUpdateRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := line(), "on, last at 2026-11-11 09:00 UTC: v0.5.0 is the latest release"; got != want {
+		t.Errorf("server show printed the update check %q, want %q", got, want)
+	}
 }

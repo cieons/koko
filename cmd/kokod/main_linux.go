@@ -12,6 +12,7 @@ import (
 	"github.com/cieons/koko/internal/server/filesystem"
 	"github.com/cieons/koko/internal/server/installer"
 	"github.com/cieons/koko/internal/server/kokod"
+	"github.com/cieons/koko/internal/server/updatecheck"
 )
 
 func main() {
@@ -27,12 +28,13 @@ func main() {
 	os.Exit(status)
 }
 
-// serve runs the koko server in this process on this machine's mounts and
-// process uids, telling it whether it runs in a container.
+// serve runs the koko server in this process on this machine's mounts,
+// process uids and clock, telling it whether it runs in a container.
 func serve(ctx context.Context, config server.Config) error {
 	config.Filesystems = filesystem.System
 	config.ProcessUIDs = unix.Getresuid
 	config.InContainer = inContainer()
+	config.UpdateClock = updatecheck.System
 	return server.Run(ctx, config)
 }
 

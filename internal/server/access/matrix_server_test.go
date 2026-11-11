@@ -28,4 +28,15 @@ var serverRows = []row{
 			ownerSignIn: localOnly, memberSignIn: localOnly,
 		},
 	},
+	{
+		op:      api.ServerCheckUpdate,
+		request: func(string) any { return api.ServerCheckUpdateRequest{} },
+		// The Owner is let through, and the check fails, since the
+		// fixture's koko server finds no release.
+		want: map[caller]answer{
+			ownerDevice: allowedBut(api.CodeUpdateCheckFailed), local: allowedBut(api.CodeUpdateCheckFailed),
+			member: ownerOnly, personal: ownerOnly, outsider: ownerOnly,
+			ownerSignIn: allowedBut(api.CodeUpdateCheckFailed), memberSignIn: ownerOnly,
+		},
+	},
 }
