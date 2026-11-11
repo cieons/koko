@@ -17,7 +17,7 @@ import (
 // keyword would break every ssh the user runs, so a keyword is added here
 // only once checked against 7.3's readconf.c.
 var openSSH73 = []string{
-	"Host", "ProxyCommand", "HostKeyAlias", "UserKnownHostsFile",
+	"Host", "HostName", "ProxyCommand", "HostKeyAlias", "UserKnownHostsFile",
 	"StrictHostKeyChecking", "UpdateHostKeys", "PreferredAuthentications",
 	"ForwardAgent", "User", "ServerAliveInterval", "ServerAliveCountMax",
 }

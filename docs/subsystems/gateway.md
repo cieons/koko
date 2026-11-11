@@ -544,8 +544,9 @@ socket) with `-F` pointed at koko's ssh_config under a temporary HOME,
 through a koko binary built for the test, its `koko tunnel` and its real
 Device Mux process, against the S1 koko server and in-process Hosts serving
 sftp through the system's `sftp-server`: checksums both ways, exit statuses,
-stdin and stderr, bare names, the banners for an unknown name, an unseen
-Host and a Host that is down, which Host requests scp made, that ssh
+stdin and stderr, bare names, a bare name another block after koko's
+Include gives a HostName and a Port, the banners for an unknown name, an
+unseen Host and a Host that is down, which Host requests scp made, that ssh
 authenticates with one `none` request, offers the user's own key to nothing,
 never connects to their agent and names nothing in the real `~/.ssh` in its
 `-v` output, and that `koko disconnect` with an SSH Session open finds the

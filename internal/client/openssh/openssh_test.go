@@ -447,6 +447,26 @@ func onAJoinedDevice(t *testing.T, koko string, ts tools) {
 			}
 		})
 
+		// Another block after koko's Include that gives a bare name a
+		// HostName and a Port changes neither the SSH Name koko tunnel is
+		// given nor the Host it reaches. The test puts it in the file that
+		// holds the Include; ssh takes the first value across files too,
+		// so the same holds for one in /etc/ssh/ssh_config.d.
+		t.Run("a bare name another block also names", func(t *testing.T) {
+			t.Parallel()
+			u := bob.in(t)
+			config := filepath.Join(t.TempDir(), "config")
+			other := "Include " + filepath.Join(u.home, ".ssh", "koko", "ssh_config") + "\n" +
+				"Host web1\n  HostName 192.0.2.10\n  Port 2222\n"
+			if err := os.WriteFile(config, []byte(other), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			r := u.run(nil, u.tools.ssh, "-F", config, "-o", "IdentityFile="+u.key, "web1", "echo", "through koko")
+			if r.status != 0 || r.stdout != "through koko\n" || r.stderr != "" {
+				t.Errorf("ssh web1 with another block giving it a HostName: %v; want it to reach web1 through koko", r)
+			}
+		})
+
 		t.Run("one none request and no key", func(t *testing.T) {
 			t.Parallel()
 			u := bob.in(t)

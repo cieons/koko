@@ -235,12 +235,15 @@ func sshConfig(koko, knownHosts string, names []string) ([]byte, error) {
 			return nil, fmt.Errorf("a Host's name: %w", err)
 		}
 	}
-	// %h is single-quoted: ssh lowercases it and drops the user and -p, and
-	// clients before 9.6 pass shell metacharacters in it to the shell.
+	// HostName %h keeps %h the SSH Name whatever HostName a later block
+	// for the same name sets (docs/subsystems/device-connection.md, "ssh").
+	// %h is single-quoted: ssh lowercases it and drops the user and -p,
+	// and clients before 9.6 pass shell metacharacters in it to the shell.
 	// The keepalives make ssh wait 150 s, longer than the 1-minute grace, so
 	// ssh never ends an SSH Session that could still Resume; they move with
 	// the grace.
 	body := []string{
+		"HostName %h",
 		proxyCommand + kokoArg + proxyTunnel,
 		"HostKeyAlias " + hostKeyAlias,
 		"UserKnownHostsFile " + knownHostsArg,

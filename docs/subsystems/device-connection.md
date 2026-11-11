@@ -170,6 +170,16 @@ ssh integration (P0 spec: reach, "Device files and ssh integration").
   order, then the block, as [a join of a User who sees no Host writes it](../../internal/client/cli/testdata/join-ssh_config).
   It is written only when it would change: a regular file of mode 0600
   that holds the same bytes is left alone.
+  The block sets `HostName %h`, so `%h`, which the ProxyCommand passes
+  single-quoted to `koko tunnel`, stays the SSH Name: ssh takes each option
+  from the first block that sets it, and koko's comes first, so another
+  block for the same name, later in `~/.ssh/config` or in the system's
+  ssh_config (such as one generated into `/etc/ssh/ssh_config.d`), cannot
+  give it a HostName that `koko tunnel` would be passed instead. A `Port`
+  from such a block still reaches ssh but not the Tunnel, which does not use
+  it. A Host whose name is digits alone, such as `201`, is the one name
+  this does not cover: ssh reads it as an IPv4 address (`0.0.0.201`), even
+  from `HostName`, so it is reached as `201.koko`.
   The ProxyCommand runs the binary that wrote the file: by the path a PATH
   lookup of `koko` finds when that is the same file, such as a package
   manager's link that outlives an upgrade, and otherwise by the path the OS
@@ -478,7 +488,9 @@ Device Session, the address, `reason=dead` and the error, `no answer for
   joined device with no call made, and `not_joined` with no koko server.
 - [`openssh_test.go`](../../internal/client/openssh/openssh_test.go): the
   system's OpenSSH through koko's ssh_config, on a joined device and on the
-  koko server's own machine ([the Gateway](gateway.md#verifying)).
+  koko server's own machine, and bare `ssh web1` with another block after
+  koko's Include giving `web1` a HostName and a Port
+  ([the Gateway](gateway.md#verifying)).
 - [`status_test.go`](../../internal/client/cli/status_test.go): `koko
   status` joined, over the socket, not joined, revoked and unreachable, and
   its Include warnings.

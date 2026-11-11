@@ -1,5 +1,6 @@
 # Written by koko; it rewrites this file. Your own entries go in ~/.ssh/config.
 Host *.koko
+  HostName %h
   ProxyCommand "<koko>" tunnel '%h'
   HostKeyAlias koko
   UserKnownHostsFile "<home>/.ssh/koko/known_hosts"
