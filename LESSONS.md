@@ -50,8 +50,16 @@ machine's socket wait to 200 ms for a koko service that never opens its
 socket, and the setting stayed for the test's next run, whose real koko
 server then had to open its socket within 200 ms. Under CI load it took
 longer, and `main` went red at 68c9ad8, which touched nothing near the test.
-**Seen:** 1 (2026-11-06)
-**Evidence:** 3cae7b1 (#38); check run 42081318152 on 68c9ad8; #77
+Four `TestRealTime` subtests gave their Device Mux a 300 ms idle time from
+the join on, and it idled out before its first command connected or its
+first Device Connection opened; a fifth gave it 200 ms for each try to
+connect, its first to the real koko server included, and with nothing
+waiting it tried no more. Each then failed a 10 s wait in a local
+`make check` under load. A wait that counts from a start, such as the idle
+time, cannot be kept from what comes after that start: the test starts
+again when it ends early, and counts from what it then finds.
+**Seen:** 2 (2026-11-06, 2026-11-11)
+**Evidence:** 3cae7b1 (#38); check run 42081318152 on 68c9ad8; #77; #147
 
 ### A command a test runs on the in-process Host ends when its SSH Session does
 
@@ -193,5 +201,5 @@ branch's own commits; the rebase then brings in the rest. After a squash,
 
 ## Moved to the code standards
 
-- Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128; check run 42951455550).
+- Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128, #147; check run 42951455550).
 - A channel or connection closes only once every request on it has its answer: [What a change contains](docs/code-standards.md#what-a-change-contains) (seen 2026-11-06, 2026-11-08, 2026-11-10; #49, #59, #64, #81, #127).

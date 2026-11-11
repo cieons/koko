@@ -325,7 +325,10 @@ test ends; `d.KillMux()` stops those running as a crash would, as their
 commands and the koko server see it, their connections closed with
 nothing sent first. `d.KokoEnv(env, args...)` runs a command line with more
 variables, such as `KOKO_DIRECT=1`, and `d.DialMux()` connects to the
-Device Mux as a command does and holds the connection.
+Device Mux as a command does and holds the connection; `d.HoldMux()` does
+the same and starts a Device Mux first when none runs, for a test that
+shortens the idle time, whose Device Mux may idle out before its first
+command connects.
 `harness.NewMuxDeviceBeside(t, d)` is another home of `d`'s OS user: a
 HOME of its own, sharing `d`'s runtime directory.
 `h.Join(user)` issues a Join Code for the User over the socket and returns a

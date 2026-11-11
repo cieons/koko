@@ -314,7 +314,13 @@ func aWakeWhileTheDeviceMuxReconnectsTriesAgainAtOnce(t *testing.T) {
 	r := recordTries(t)
 	fwd.To(r.addr())
 	h.Stop()
-	eventually(t, "the Device Mux tries to reconnect at once", func() bool { return len(r.times()) >= 1 })
+	// The try at once after the drop has ended, not only reached the
+	// listener: a command that came while it ran would wait on it, and on
+	// its failure the Device Mux would wait ReconnectFirst, not try at once.
+	waitLogs(t, d, `msg="cannot open a Device Connection"`, 1)
+	if n := len(r.times()); n != 1 {
+		t.Fatalf("with nothing waiting, the Device Mux tried %d times after the drop, want once, at once", n)
+	}
 
 	var result harness.Result
 	var command sync.WaitGroup
@@ -370,14 +376,19 @@ func silent(t *testing.T) (addr string, conns func() int) {
 // address that never answers holds up no try after it.
 func aTryToReconnectEndsSoTheNextCanFollow(t *testing.T) {
 	never := make(chan struct{})
-	h, fwd, d := muxDevice(t, timing.Timings{
-		DeviceConnectAttempt: 200 * time.Millisecond, CommandWait: 2 * time.Second,
-		ReconnectFirst: 20 * time.Millisecond, ReconnectMax: 40 * time.Millisecond, Wake: never, RouteChange: never,
-	})
-	waitLogs(t, d, `msg="device connection opened"`, 1)
+	h, fwd, d := muxDevice(t, timing.Timings{})
+	// A try is cut short only where none is ever answered: the Device Mux
+	// the command starts tries the silent address alone. One that ran with
+	// the short try from the join on would give up its first Device
+	// Connection on a loaded machine, and try no more with nothing waiting.
+	d.KillMux()
 	addr, conns := silent(t)
 	fwd.To(addr)
 	h.Stop()
+	d.UseTimings(timing.Timings{
+		DeviceConnectAttempt: 200 * time.Millisecond, CommandWait: 2 * time.Second,
+		ReconnectFirst: 20 * time.Millisecond, ReconnectMax: 40 * time.Millisecond, Wake: never, RouteChange: never,
+	})
 	d.Koko("space", "ls", "--json").WantError(t, 1, "server_unreachable")
 	if n := conns(); n < 4 {
 		t.Errorf("the Device Mux tried %d time(s) in 2 s against an address that never answers, want a try every 200 ms or so", n)

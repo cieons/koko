@@ -283,17 +283,19 @@ func TestKokoDisconnectEndsKokoWebAndCountsIt(t *testing.T) {
 // connection open, and the Device Mux idles out once it stops.
 func aRunningKokoWebKeepsTheDeviceMuxRunning(t *testing.T) {
 	const idle = 300 * time.Millisecond
-	_, fwd, d := muxDevice(t, timing.Timings{DeviceMuxIdle: idle})
+	_, fwd, d, held := idlingMuxDevice(t, timing.Timings{DeviceMuxIdle: idle})
+	conns, stops := fwd.Conns(), idleOuts(d)
 	w := startWebThrough(t, d.Background, freePort(t))
+	_ = held.Close()
 	time.Sleep(3 * idle)
-	if strings.Contains(d.MuxLog(), "device mux stopped") {
+	if idleOuts(d) != stops {
 		t.Fatalf("the Device Mux stopped under a running koko web; it logged:\n%s", d.MuxLog())
 	}
 	newBrowser(t, w.port).open(w)
-	if n := fwd.Conns(); n != 2 {
-		t.Errorf("the device made %d connections, want the 2 it had: the join's, and the Device Mux's", n)
+	if n := fwd.Conns(); n != conns {
+		t.Errorf("the device made %d connections, want the %d it had", n, conns)
 	}
 
 	w.Stop()
-	waitLog(t, d, `msg="device mux stopped" reason="nothing was connected to it for a while"`)
+	waitLogs(t, d, idledOut, stops+1)
 }

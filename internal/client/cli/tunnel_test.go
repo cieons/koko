@@ -381,27 +381,28 @@ func TestSSHReachesAHostThroughKokoTunnel(t *testing.T) {
 // since koko tunnel stays connected to it; once ssh is done, it idles out.
 func anOpenSSHSessionKeepsTheDeviceMuxRunning(t *testing.T) {
 	const idle = 300 * time.Millisecond
-	h, fwd, d := muxDevice(t, timing.Timings{DeviceMuxIdle: idle})
-	held := d.DialMux() // through the Enroll, however long it takes
+	// held keeps it through the Enroll, however long it takes.
+	h, fwd, d, held := idlingMuxDevice(t, timing.Timings{DeviceMuxIdle: idle})
+	conns, stops := fwd.Conns(), idleOuts(d)
 	tunnelHost(t, h, "web1")
 	p := d.Proxy(nil, "tunnel", "web1.koko")
 	c := sshOver(t, p, "web1.koko", gatewayHostKey(t, h))
 	_ = held.Close()
 
 	time.Sleep(3 * idle)
-	if strings.Contains(d.MuxLog(), "device mux stopped") {
+	if idleOuts(d) != stops {
 		t.Fatalf("the Device Mux stopped under an open SSH Session; it logged:\n%s", d.MuxLog())
 	}
 	if out, err := openSession(t, c).Output("echo still here"); err != nil || string(out) != "still here\n" {
 		t.Errorf("after the idle time the SSH Session printed %q (%v), want it to carry on", out, err)
 	}
-	if n := fwd.Conns(); n != 2 {
-		t.Errorf("the device made %d connections, want the 2 it had: the join's, and the Device Mux's", n)
+	if n := fwd.Conns(); n != conns {
+		t.Errorf("the device made %d connections, want the %d it had", n, conns)
 	}
 
 	_ = c.Close()
 	p.Wait()
-	waitLog(t, d, `msg="device mux stopped" reason="nothing was connected to it for a while"`)
+	waitLogs(t, d, idledOut, stops+1)
 }
 
 // At stdin's EOF koko tunnel half-closes the Tunnel and goes on relaying

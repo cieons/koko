@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"io"
 	"maps"
 	"strings"
@@ -167,6 +168,38 @@ func (d *Device) DialMux() serverconn.Conn {
 	}
 	d.t.Cleanup(func() { _ = conn.Close() })
 	return conn
+}
+
+// HoldMux connects to the device's Device Mux as DialMux does, starting one
+// first when none runs, as a command does, and again should that one exit
+// before it answers: one whose idle time a test shortened may idle out
+// between its start and the connection, on a loaded machine. It returns
+// once a Device Mux that holds its Device Connection has answered, which
+// then cannot idle out until the connection closes.
+func (d *Device) HoldMux() serverconn.Conn {
+	d.t.Helper()
+	env := d.environ()
+	socket, err := devicemux.Socket(func(key string) string { return lookup(env, key) })
+	if err != nil {
+		d.t.Fatalf("find the Device Mux socket: %v", err)
+	}
+	m := d.muxes
+	for deadline := time.Now().Add(waitFor); ; time.Sleep(5 * time.Millisecond) {
+		conn, _, err := devicemux.Dial(d.t.Context(), socket, d.home)
+		if err == nil {
+			d.t.Cleanup(func() { _ = conn.Close() })
+			return conn
+		}
+		if !errors.Is(err, devicemux.ErrNotRunning) || time.Now().After(deadline) {
+			d.t.Fatalf("connect to the Device Mux: %v; it logged:\n%s", err, m.log.String())
+		}
+		m.mu.Lock()
+		none := len(m.running) == 0
+		m.mu.Unlock()
+		if none {
+			_, _ = d.startMux(d.t.Context(), socket, env) // it never fails
+		}
+	}
 }
 
 // lookup returns the value of the last key=value in env.

@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/client/devicemux"
+	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/timing"
@@ -34,6 +35,32 @@ func muxDevice(t *testing.T, timings timing.Timings) (*harness.Harness, *harness
 	waitConns(t, fwd, 2, d)
 	waitLog(t, d, `msg="refreshed the bare names"`)
 	return h, fwd, d
+}
+
+// idledOut is what a Device Mux logs as it idles out.
+const idledOut = `msg="device mux stopped" reason="nothing was connected to it for a while"`
+
+// idlingMuxDevice joins a device as muxDevice does, whose Device Muxes idle
+// out after timings.DeviceMuxIdle, and returns with a command connected to
+// one that holds its Device Connection: held, which keeps it running until
+// the test closes it. A short idle time runs from a Device Mux's start, so
+// on a loaded machine one may idle out before its first command connects,
+// or before its first Device Connection opens; held starts another then.
+// The test therefore counts the Device Connections and the idle-outs from
+// what they are once this returns, not from none.
+func idlingMuxDevice(t *testing.T, timings timing.Timings) (h *harness.Harness, fwd *harness.Forwarder, d *harness.Device, held serverconn.Conn) {
+	t.Helper()
+	h, fwd, _, init := initThrough(t)
+	d = harness.NewMuxDevice(t, timings)
+	// The join starts no Device Mux, which could idle out before held
+	// connects.
+	d.KokoEnv([]string{"KOKO_DIRECT=1"}, "join", init.JoinCode.Code).WantSuccess(t)
+	return h, fwd, d, d.HoldMux()
+}
+
+// idleOuts counts the Device Muxes of the device that have idled out.
+func idleOuts(d *harness.Device) int {
+	return strings.Count(d.MuxLog(), idledOut)
 }
 
 // waitConns waits until the forwarder has carried n connections, at most 10
@@ -200,11 +227,11 @@ func TestAnUnknownLogLevelIsRefused(t *testing.T) {
 // open, as koko web between browser connections does.
 func theDeviceMuxIdlesOutWithNothingConnected(t *testing.T) {
 	const idle = 300 * time.Millisecond
-	_, fwd, d := muxDevice(t, timing.Timings{DeviceMuxIdle: idle})
+	_, fwd, d, held := idlingMuxDevice(t, timing.Timings{DeviceMuxIdle: idle})
+	conns, stops := fwd.Conns(), idleOuts(d)
 	d.Koko("space", "ls", "--json").WantSuccess(t)
-	held := d.DialMux()
 	time.Sleep(3 * idle)
-	if strings.Contains(d.MuxLog(), "device mux stopped") {
+	if idleOuts(d) != stops {
 		t.Fatalf("the Device Mux stopped with a command connected; it logged:\n%s", d.MuxLog())
 	}
 	ch, err := held.OpenChannel(t.Context(), wire.ChannelAPI, nil)
@@ -212,19 +239,19 @@ func theDeviceMuxIdlesOutWithNothingConnected(t *testing.T) {
 		t.Fatalf("the command held through the idle time opens no channel: %v", err)
 	}
 	_ = ch.Close()
-	if n := fwd.Conns(); n != 2 {
-		t.Errorf("the device made %d connections, want the 2 it had", n)
+	if n := fwd.Conns(); n != conns {
+		t.Errorf("the device made %d connections, want the %d it had", n, conns)
 	}
 
 	_ = held.Close()
-	waitLog(t, d, `msg="device mux stopped" reason="nothing was connected to it for a while"`)
+	waitLogs(t, d, idledOut, stops+1)
 	socket := filepath.Join(d.RuntimeDir(), "koko", devicemux.Name(build.Read())+".sock")
 	if _, err := os.Lstat(socket); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("the Device Mux left its socket %s behind (%v)", socket, err)
 	}
 	d.Koko("space", "ls", "--json").WantSuccess(t)
-	if n := fwd.Conns(); n != 3 {
-		t.Errorf("the device made %d connections in all, want 3: the next command's Device Mux opened one more", n)
+	if n := fwd.Conns(); n != conns+1 {
+		t.Errorf("the device made %d connections in all, want %d: the next command's Device Mux opened one more", n, conns+1)
 	}
 }
 

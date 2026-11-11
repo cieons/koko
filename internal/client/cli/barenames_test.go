@@ -228,12 +228,11 @@ func theDeviceMuxRefreshesTheBareNames(t *testing.T) {
 // leaves, it idles out, however often it refreshes.
 func theDeviceMuxIdlesOutThoughItRefreshesTheBareNames(t *testing.T) {
 	const idle = 300 * time.Millisecond
-	h, _, d := muxDevice(t, timing.Timings{DeviceMuxIdle: idle, BareNameRefresh: idle / 10})
-	held := d.DialMux()
-	lists := hostLists(h)
+	h, _, d, held := idlingMuxDevice(t, timing.Timings{DeviceMuxIdle: idle, BareNameRefresh: idle / 10})
+	lists, stops := hostLists(h), idleOuts(d)
 	eventually(t, "the Device Mux refreshes twice more", func() bool { return hostLists(h) >= lists+2 })
 	_ = held.Close()
-	waitLog(t, d, `msg="device mux stopped" reason="nothing was connected to it for a while"`)
+	waitLogs(t, d, idledOut, stops+1)
 }
 
 // The Device Mux refreshes the bare names at its start, and a refresh that a
