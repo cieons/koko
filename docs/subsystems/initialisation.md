@@ -297,10 +297,11 @@ finds on its machine (`server.Config.Upgrade`), read at each call:
   ([the installer](installer.md#the-upgrade-helper)).
 
 `koko server show` prints `Upgrade:` by the way: `koko server upgrade, or
-the web UI`; `pull the new image: set KOKO_VERSION=v0.5.0 in the Compose
-file, then docker compose pull && docker compose up -d`, naming the newer
-release the check found, or `KOKO_VERSION to the new release's tag`
-before it found one; or `replace kokod and restart it`.
+the web UI`; `pull the new image: set KOKO_VERSION=0.5.0 in .env, then
+docker compose pull && docker compose up -d`, naming the newer release the
+check found without its v, as the image's tag is, or `KOKO_VERSION to the
+new release without its v` before it found one; or `replace kokod and
+restart it`.
 
 ### Asking for an upgrade
 

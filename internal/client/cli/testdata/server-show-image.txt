@@ -7,4 +7,4 @@ Version:         <version>
 Root Key:        <root-key-file> (rootkey_<1>)
 Data directory:  <data-dir>
 Update check:    on, not checked yet
-Upgrade:         pull the new image: set KOKO_VERSION to the new release's tag in the Compose file, then docker compose pull && docker compose up -d
+Upgrade:         pull the new image: set KOKO_VERSION to the new release without its v in .env, then docker compose pull && docker compose up -d

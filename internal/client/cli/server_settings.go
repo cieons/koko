@@ -65,11 +65,13 @@ func (s serverJSON) upgradeLine() string {
 	case api.UpgradeWaySystemd:
 		return "koko server upgrade, or the web UI"
 	case api.UpgradeWayImage:
-		version := " to the new release's tag"
+		// An image's tag is the release without its v (0.5.0), as .env
+		// names it.
+		version := " to the new release without its v"
 		if l := s.UpdateCheck.Latest; l != nil && compat.Newer(*l, s.Version) {
-			version = "=" + *l
+			version = "=" + strings.TrimPrefix(*l, "v")
 		}
-		return "pull the new image: set KOKO_VERSION" + version + " in the Compose file, then docker compose pull && docker compose up -d"
+		return "pull the new image: set KOKO_VERSION" + version + " in .env, then docker compose pull && docker compose up -d"
 	case api.UpgradeWayNone:
 		return "replace kokod and restart it"
 	}

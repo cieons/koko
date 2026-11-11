@@ -697,7 +697,7 @@ func TestServerShowNamesTheImageToPull(t *testing.T) {
 		"update_check": {"enabled": true, "checked_at": "2026-11-11T09:00:30Z", "latest": "v0.5.0", "error": null}}`)
 	r := harness.Run(t, cli.Runner{SocketPath: socket}, nil, "server", "show")
 	r.WantSuccess(t)
-	if want := "Upgrade:         pull the new image: set KOKO_VERSION=v0.5.0 in the Compose file, then docker compose pull && docker compose up -d\n"; !strings.Contains(r.Stdout, want) {
+	if want := "Upgrade:         pull the new image: set KOKO_VERSION=0.5.0 in .env, then docker compose pull && docker compose up -d\n"; !strings.Contains(r.Stdout, want) {
 		t.Errorf("server show printed %q, want the line %q", r.Stdout, want)
 	}
 }
