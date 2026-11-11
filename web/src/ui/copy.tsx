@@ -105,9 +105,11 @@ export function CopyButton({ value, label, failed, onError, variant = "secondary
  * CommandLine is a command to copy and run elsewhere, such as ssh web1 or
  * koko host enroll web1 (docs/web-design.md, "Components"): a $, the command
  * in the code face, which one click selects whole, and Copy, in an inset
- * block. label names the command, such as "SSH command".
+ * block. label names the command, such as "SSH command". With prompt false
+ * it is a line to put in a file, such as KOKO_VERSION=0.5.0 in .env, with
+ * no $.
  */
-export function CommandLine({ command, label }: { command: string; label: string }) {
+export function CommandLine({ command, label, prompt = true }: { command: string; label: string; prompt?: boolean }) {
   return (
     <div
       role="group"
@@ -115,9 +117,11 @@ export function CommandLine({ command, label }: { command: string; label: string
       className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-background py-1.5 pr-1.5 pl-4"
     >
       <code className="t-code min-w-0 flex-1 py-1.5 text-sm select-all">
-        <span aria-hidden className="mr-2 text-muted select-none">
-          $
-        </span>
+        {prompt && (
+          <span aria-hidden className="mr-2 text-muted select-none">
+            $
+          </span>
+        )}
         {command}
       </code>
       <CopyButton value={command} />

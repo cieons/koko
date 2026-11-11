@@ -1,12 +1,19 @@
 # The koko server in a container: see docs/install.md, "In a container".
 # Keep this file in a folder of its own, such as /srv/koko, and there,
 # before the first start:
-#   echo KOKO_VERSION=0.2.0 > .env    # the release to run, without its v
+#   echo KOKO_VERSION=0.4.2 > .env    # the release to run, without its v
 #   sudo install -d -o 65532 -g 65532 -m 0700 state    # what koko keeps
 # After it: docker exec koko koko device add    # your first Join Code
+# To upgrade, set the new release in .env, then run
+#   docker compose pull && docker compose up -d
+# KOKO_VERSION=latest is allowed too: the pull and up alone then upgrade,
+# going back means pinning a version again, and a release that changes the
+# database migrates it at the first start after the pull that brings it.
+# up -d alone never pulls, so nothing upgrades by surprise. A pinned
+# version is the default, so that every upgrade is chosen.
 services:
   koko:
-    image: ghcr.io/cieons/koko:${KOKO_VERSION:?set KOKO_VERSION in .env, such as KOKO_VERSION=0.2.0}
+    image: ghcr.io/cieons/koko:${KOKO_VERSION:?set KOKO_VERSION in .env, such as KOKO_VERSION=0.4.2}
     container_name: koko
     restart: unless-stopped
     stop_grace_period: 30s

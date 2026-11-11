@@ -162,7 +162,8 @@ test("a read whose connection drops is retried once, without an Idempotency-Key"
   renderShell("/filter");
 
   await screen.findByText("filter: none");
-  expect(api.calls.map((c) => [c.method, c.path, c.request, c.headers["idempotency-key"]])).toEqual([
+  const reads = api.calls.filter((c) => c.path === UserCurrent.path);
+  expect(reads.map((c) => [c.method, c.path, c.request, c.headers["idempotency-key"]])).toEqual([
     ["POST", "/v1/user.current", {}, undefined],
     ["POST", "/v1/user.current", {}, undefined],
   ]);

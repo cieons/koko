@@ -174,6 +174,9 @@ export function serve(api: FakeApi, w: World, caller: User = alice): void {
       data_dir: "/var/lib/koko",
       web_url: w.webURL,
       web_listen: w.webURL === null ? null : "127.0.0.1:7823",
+      update_check: { enabled: true, checked_at: null, latest: null, error: null },
+      upgrade_way: "systemd",
+      last_upgrade: null,
     },
   }));
   api.on(PasswordLinkIssue, ({ user: name }) => {

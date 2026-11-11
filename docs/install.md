@@ -484,12 +484,19 @@ Save [`release/compose.yaml`](../release/compose.yaml) as `compose.yaml` in
 # The koko server in a container: see docs/install.md, "In a container".
 # Keep this file in a folder of its own, such as /srv/koko, and there,
 # before the first start:
-#   echo KOKO_VERSION=0.2.0 > .env    # the release to run, without its v
+#   echo KOKO_VERSION=0.4.2 > .env    # the release to run, without its v
 #   sudo install -d -o 65532 -g 65532 -m 0700 state    # what koko keeps
 # After it: docker exec koko koko device add    # your first Join Code
+# To upgrade, set the new release in .env, then run
+#   docker compose pull && docker compose up -d
+# KOKO_VERSION=latest is allowed too: the pull and up alone then upgrade,
+# going back means pinning a version again, and a release that changes the
+# database migrates it at the first start after the pull that brings it.
+# up -d alone never pulls, so nothing upgrades by surprise. A pinned
+# version is the default, so that every upgrade is chosen.
 services:
   koko:
-    image: ghcr.io/cieons/koko:${KOKO_VERSION:?set KOKO_VERSION in .env, such as KOKO_VERSION=0.2.0}
+    image: ghcr.io/cieons/koko:${KOKO_VERSION:?set KOKO_VERSION in .env, such as KOKO_VERSION=0.4.2}
     container_name: koko
     restart: unless-stopped
     stop_grace_period: 30s
@@ -512,14 +519,20 @@ address devices will use to reach the koko server: a DNS name is
 recommended, as for [`--address`](#installing). Then, beside the file:
 
 ```sh
-echo KOKO_VERSION=0.2.0 > .env     # the release to run, without its v
+echo KOKO_VERSION=0.4.2 > .env     # the release to run, without its v
 sudo install -d -o 65532 -g 65532 -m 0700 state   # once, unless a named volume is used
 docker compose up -d
 docker exec koko koko device add   # your first Join Code
 ```
 
 `KOKO_VERSION` is required, so the container always runs a release
-chosen explicitly. At its first start the koko server makes the Root Key,
+chosen explicitly. It may also be `latest`, the newest release: upgrading
+is then `docker compose pull && docker compose up -d` with nothing edited,
+and `docker compose up -d` alone never pulls, so nothing upgrades by
+surprise. Going back then means pinning a version again, and a release
+that changes the database's schema migrates it at the first start after
+the pull that brings it. A pinned version stays the default, so that every
+upgrade is chosen. At its first start the koko server makes the Root Key,
 `state/root.key`, and initialises itself. `docker logs koko` then says
 `koko server initialised`, with the host key's fingerprint, the listen
 address, the Root Key's path and id, and the `koko device add` line to run
@@ -539,7 +552,7 @@ docker run -d --name koko --restart unless-stopped --stop-timeout 30 \
   --cap-drop ALL --security-opt no-new-privileges:true \
   -p 7822:7822 -v "$PWD/state:/koko" \
   -e KOKO_OWNER=alice -e KOKO_ADDRESS=koko.example.com \
-  ghcr.io/cieons/koko:0.2.0
+  ghcr.io/cieons/koko:0.4.2
 ```
 
 ### Owner commands
@@ -619,8 +632,17 @@ start again.
 
 ### Upgrading the container
 
-Change `KOKO_VERSION` in `.env`, then run `docker compose up -d` again.
-Compose pulls the new image and replaces the container, which keeps its
+The web UI tells the Owner when a newer release is out, in a notice above
+every page, and its How to upgrade shows the two steps, each with Copy;
+`koko server show` names them too. Set the new release in `.env`, such as
+`KOKO_VERSION=0.5.0`, then, beside `compose.yaml`:
+
+```sh
+docker compose pull && docker compose up -d
+```
+
+With `KOKO_VERSION=latest`, that line alone upgrades. Compose pulls the
+new image and replaces the container, which keeps its
 record, its Owner, its Server Address and its keys in `state/`. Every
 open SSH Session ends, with a line saying the koko server is restarting.
 When the new koko changes the database's schema, the koko server first
@@ -703,7 +725,7 @@ Each image carries a GitHub artifact attestation, which the
 [GitHub CLI](https://cli.github.com) checks:
 
 ```sh
-gh attestation verify oci://ghcr.io/cieons/koko:0.2.0 --repo cieons/koko
+gh attestation verify oci://ghcr.io/cieons/koko:0.4.2 --repo cieons/koko
 ```
 
 The image's `/usr/local/bin/kokod` and `/usr/local/bin/koko` are the

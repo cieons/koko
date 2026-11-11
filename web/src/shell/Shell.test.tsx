@@ -6,6 +6,7 @@ import { expect, test } from "vitest";
 
 import { CodeRevoked, DeviceRevoke, type DeviceSession } from "../api/device";
 import { CodeNameTaken } from "../api/errors";
+import { ServerShow } from "../api/server";
 import { type User, UserCurrent } from "../api/user";
 import { CodeCookieRequired } from "../api/web";
 import { expectAccessible } from "../test/axe";
@@ -509,6 +510,10 @@ test("when the browser's cookie is no longer valid, the frame says to open koko 
       throw refusal(CodeCookieRequired, 401);
     }
     return { user: alice };
+  });
+  // koko web refuses every call without its cookie, the Owner's server.show too.
+  api.on(ServerShow, () => {
+    throw refusal(ended ? CodeCookieRequired : "internal_error", ended ? 401 : 500);
   });
   renderShell("/hosts");
   await screen.findByText("hosts page");

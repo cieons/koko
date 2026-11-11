@@ -170,6 +170,17 @@ a hairline under it. Three zones on a `1fr auto 1fr` grid, in a column
   announced as an alert, until what ends it. They are not toasts.
 - **A page whose chunk does not load**, as after an upgrade under an open
   tab, shows in place of the page that the browser page must be reloaded.
+- **The release notice**, the Owner's alone, while a newer koko release is
+  known: a panel at the head of the main region, above the page's title,
+  in the column every page uses, so it reads as part of the page rather
+  than as a warning. An upgrade icon in an accent-soft circle; "koko v0.5.0
+  is available." in `t-name`; under it, muted, the version that runs and
+  the release notes' link; at its end, Check now and Later as ghost
+  buttons and the way to upgrade as a secondary button, since a page's one
+  primary button stays the page's. The actions wrap under the text on a
+  phone. How to upgrade opens its two lines inside the panel. The account
+  panel shows the Owner a koko server line above Account: the version,
+  when it last checked, and Check now.
 
 **On a phone** (under 768px) the places move to a pill bar fixed at the
 foot, with icon and label, 44px targets, above the safe area. Pages leave
@@ -199,7 +210,7 @@ HeroUI parts, as the preview composes them:
 | Segments | `ToggleButtonGroup` | A choice among two to four, all in view; the chosen one inverts (text colour as fill) |
 | Row menu | `Dropdown` | The actions a row uses less |
 | Copy | `Button` | Becomes "Copied" for 1.6 s, announced politely |
-| Command line | a `<code>` in an inset block | A `$`, the command, Copy |
+| Command line | a `<code>` in an inset block | A `$`, the command, Copy; a line for a file has no `$` |
 | Shown once | an inset block with a dashed accent edge | A Join Code or Password Link, its time left counting down, Copy, and the line that it is not shown again |
 | State mark | a `<span>` | Managed: a filled green dot with a halo. Registered: a hollow dot. Retired: a short bar, muted. Always with its word |
 | Notice | `toast` | The outcome of a call that changed something, bottom end |

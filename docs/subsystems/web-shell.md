@@ -5,8 +5,8 @@ top bar with its places, its Language and Appearance menus and the account
 panel, routing and who the web UI acts as, the language, the mode and the
 catalogues, the API client, pages that load when first shown, the states
 every screen has, the dialogs and side panels, the confirmation, the
-fields, edit forms, reloading, what a page shows once, and the notices,
-toasts and refusals. What each looks like is [the web UI's
+fields, edit forms, reloading, what a page shows once, the notices,
+toasts and refusals, and what the Owner is told of koko's releases. What each looks like is [the web UI's
 design](../web-design.md). The pages themselves are their capabilities'; where an area adds its pages and its
 catalogue files is in [code layout](code-layout.md#where-an-area-adds-its-parts).
 How the app is built, embedded and typed is [the web UI build](web-ui.md); how
@@ -63,8 +63,10 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   browser signed in with a Password, Sign out (`useSignOut` in
   [`signOut.ts`](../../web/src/shell/signOut.ts)), which posts to
   `/auth/signout` and goes to Sign in, replacing the history entry, its
-  refusal shown in the panel.
-- **The main region** (`<main id="main">`) holds the page. After a visit
+  refusal shown in the panel. For the Owner, the koko server's line comes
+  between them ([Releases](#releases)).
+- **The main region** (`<main id="main">`) holds the page, under the
+  release notice for the Owner ([Releases](#releases)). After a visit
   that leaves the focus on nothing, as when the link followed went with the
   page it was on, the focus moves to it; a visit that leaves the focus
   where it was, such as on a place, keeps it there.
@@ -236,7 +238,9 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   same, so the koko server applies it once.
 - **Reads** go through `useRead` (in [`data.ts`](../../web/src/shell/data.ts)),
   which loads again when the request changes, on every visit and when the
-  window regains focus. The web UI holds no connection open and never polls.
+  window regains focus; with `enabled` false it calls nothing and holds
+  nothing, as the shell's `server.show` for a Member. The web UI holds no
+  connection open and never polls.
   An answer to an earlier request never shows as the current one's; a failed
   reload keeps the last answer to the same request beside the error. `reload`
   shows what a write changed. The one read a person asks for by a click,
@@ -305,7 +309,7 @@ logic:
 | `DateInput` | `DateInput.tsx` | HeroUI's `DatePicker`, a calendar date as `YYYY-MM-DD`; a module the forms that use it import alone, so the calendar is not in the first load |
 | `RowMenu` | `RowMenu.tsx` | HeroUI's `Dropdown` behind an icon button named for it, its danger actions last after a separator |
 | `CopyButton` | `copy.tsx` | Copy: "Copied" for 1.6 s, announced politely; a browser that does not allow it says to select the text. A value fetched on the click, as a Secret's row copies one, keeps the button pending until it comes and goes to the clipboard as a `ClipboardItem` at once (`writeClipboard`), since Safari refuses a copy made after a wait; a failure to fetch it goes to `onError` |
-| `CommandLine` | `copy.tsx` | a command to copy: a `$`, which Copy leaves out, the command in the code face, and Copy, in an inset block named for it |
+| `CommandLine` | `copy.tsx` | a command to copy: a `$`, which Copy leaves out, the command in the code face, and Copy, in an inset block named for it; with `prompt={false}`, a line to put in a file, with no `$` |
 | `ShownOnceLine` | `ShownOnceLine.tsx` | what a page shows once ([Shown once](#shown-once)) |
 | `StateMark` | `StateMark.tsx` | a Host's state as a mark of its own shape and its word |
 | `notify` | `notify.ts` | a toast saying what a call that changed something did ([Notices](#notices)) |
@@ -391,6 +395,43 @@ empty until it announces something, so a test reads the alerts that say
 something (`alerts()`, `findAlert()`, `statuses()` in
 [`web/src/test/pages.tsx`](../../web/src/test/pages.tsx)).
 
+## Releases
+
+What the shell tells the Owner, and only the Owner, of koko's releases
+(spec #136, ADR 0048), in [`release.tsx`](../../web/src/shell/release.tsx):
+
+- **What it reads.** The frame reads `server.show` for the Owner, as any
+  read is read, on each visit and on focus (`useReleaseState`); for a
+  Member it asks nothing. A release is newer by
+  [`version.ts`](../../web/src/shell/version.ts), the order of
+  `internal/shared/compat`: a development build, `(devel)` or a
+  pseudo-version that names no release, is newer than every release.
+- **The notice** heads the main region, above the page, while
+  `update_check.latest` is newer than the koko server's `version`: a panel
+  named "koko v0.5.0 is available.", saying which version runs, with a link
+  to the release's notes on GitHub (`releases/tag/<version>`, in a new
+  tab), Check now and Later. Later hides it for that release in this
+  browser (`localStorage`, `koko.release.later`); a newer release brings
+  it back. By `upgrade_way`:
+  - `image`: How to upgrade (`aria-expanded`) opens the two lines, each a
+    `CommandLine` with Copy: `KOKO_VERSION=0.5.0`, for `.env`, without a
+    `$` (`prompt={false}`), which a `.env` setting `KOKO_VERSION=latest`
+    skips, and `docker compose pull && docker compose up -d`. kokod cannot
+    see the tag it was started from, so both show, and the pull serves
+    either case.
+  - `none`: the line that says to replace kokod and start it again.
+- **The account panel's koko server line**, for the Owner: the koko
+  server's version; when it last checked ("Checked 2 hours ago",
+  `formatAgo`), "Not checked yet", or the last check's error as stored;
+  and Check now.
+- **Check now**, in the panel and in the notice, calls
+  `server.check_update`, which checks at once with the setting on or off
+  and changes nothing, then reads `server.show` again, so a newer release
+  found brings the notice. Each place keeps its own outcome: while it
+  checks, its button is pending and a status says so; in the panel, a
+  status then says "v0.4.2 is the newest release." or "koko v0.5.0 is
+  available."; a refusal, such as `update_check_failed`, shows in place.
+
 ## The page inventory
 
 Every action each page offered before its redesign, and each its
@@ -415,6 +456,10 @@ HeroUI (#121) took the pages out; each came back with its ticket (#122 to
 | Sign out, from the account panel | `/auth/signout` | a browser signed in with a Password |
 | Choose the language, which the browser keeps | none | anyone |
 | Choose Light, Dark or System, which the browser keeps | none | anyone |
+| See that a newer koko release is out, with a link to its notes, and hide it for that release (Later) | `server.show` | the Owner |
+| See the koko server's version and when it last checked for a release, in the account panel | `server.show` | the Owner |
+| Check for a new release at once (Check now), in the account panel and the notice | `server.check_update` | the Owner |
+| See and copy how a koko server in the container image upgrades | none | the Owner |
 
 **Hosts** (`/hosts`; the view in the query: `filter`, `sort`, `columns`, `all=1`, and `q`, `group`, `view=services` and `space`):
 
@@ -557,6 +602,19 @@ alone ([Sign-ins](signin.md#the-web-uis-pages)):
   desktop's and a phone's width; the three notices, revoking the web UI's
   own Device Session, a refusal ending the stopped notice; and
   `user.current` failing, with Try again.
+- [`release.test.tsx`](../../web/src/shell/release.test.tsx): the notice
+  for the Owner, with its notes' link, and axe; none for a Member, who
+  calls no `server.show` and has no koko server line, none with the check
+  off or nothing newer, a development build included; Later per release,
+  kept across a reload, and a newer release bringing it back; How to
+  upgrade's two lines and their Copy in the container, and axe; the line
+  for a koko server run by hand; the account panel's line: checked, not
+  checked, the last check's error, and axe; Check now in the panel
+  checking, then the newest release, or the notice appearing; Check now
+  in the notice; a failed check in place in both.
+- [`version.test.ts`](../../web/src/shell/version.test.ts): releases by
+  number, pre-releases and pseudo-versions before their release, a
+  development build above every release, an unknown version below.
 - [`calls.test.tsx`](../../web/src/shell/calls.test.tsx): a write and a
   read retried once, with and without the same key; a form resubmitted
   with its key, a new key after success or for another request, and

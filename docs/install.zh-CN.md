@@ -261,12 +261,19 @@ sudo install -d -o 65532 -g 65532 -m 0700 state
 # The koko server in a container: see docs/install.md, "In a container".
 # Keep this file in a folder of its own, such as /srv/koko, and there,
 # before the first start:
-#   echo KOKO_VERSION=0.2.0 > .env    # the release to run, without its v
+#   echo KOKO_VERSION=0.4.2 > .env    # the release to run, without its v
 #   sudo install -d -o 65532 -g 65532 -m 0700 state    # what koko keeps
 # After it: docker exec koko koko device add    # your first Join Code
+# To upgrade, set the new release in .env, then run
+#   docker compose pull && docker compose up -d
+# KOKO_VERSION=latest is allowed too: the pull and up alone then upgrade,
+# going back means pinning a version again, and a release that changes the
+# database migrates it at the first start after the pull that brings it.
+# up -d alone never pulls, so nothing upgrades by surprise. A pinned
+# version is the default, so that every upgrade is chosen.
 services:
   koko:
-    image: ghcr.io/cieons/koko:${KOKO_VERSION:?set KOKO_VERSION in .env, such as KOKO_VERSION=0.2.0}
+    image: ghcr.io/cieons/koko:${KOKO_VERSION:?set KOKO_VERSION in .env, such as KOKO_VERSION=0.4.2}
     container_name: koko
     restart: unless-stopped
     stop_grace_period: 30s
@@ -287,13 +294,13 @@ services:
 将 `KOKO_OWNER` 设为所有者的用户名，将 `KOKO_ADDRESS` 设为设备访问 koko 服务器所用的地址：与 [`--address`](#安装) 相同，建议使用 DNS 名称。然后在该文件所在目录中运行：
 
 ```sh
-echo KOKO_VERSION=0.2.0 > .env     # the release to run, without its v
+echo KOKO_VERSION=0.4.2 > .env     # the release to run, without its v
 sudo install -d -o 65532 -g 65532 -m 0700 state   # once, unless a named volume is used
 docker compose up -d
 docker exec koko koko device add   # your first Join Code
 ```
 
-`KOKO_VERSION` 为必填项，确保容器运行的始终是明确选定的发布版本。首次启动时，koko 服务器会生成根密钥 `state/root.key` 并完成初始化。此后 `docker logs koko` 会显示 `koko server initialised`，以及主机密钥的指纹、监听地址、根密钥的路径和 id，还有下一步要运行的 `koko device add` 命令。日志中不会出现根密钥或加入码。未设置 `KOKO_ADDRESS` 的全新 koko 服务器会拒绝启动并指出该设置：容器自身的 IP 是私有地址，设备无法访问。
+`KOKO_VERSION` 为必填项，确保容器运行的始终是明确选定的发布版本。该值也可以是 `latest`，即最新发布版本：此时升级只需运行 `docker compose pull && docker compose up -d`，无需修改任何文件；单独运行 `docker compose up -d` 不会拉取镜像，因此不会意外升级。此时如需回退，须重新指定具体版本；更改数据库 schema 的发布版本会在拉取后首次启动时迁移数据库。默认做法仍是指定具体版本，以确保每次升级均经过选择。首次启动时，koko 服务器会生成根密钥 `state/root.key` 并完成初始化。此后 `docker logs koko` 会显示 `koko server initialised`，以及主机密钥的指纹、监听地址、根密钥的路径和 id，还有下一步要运行的 `koko device add` 命令。日志中不会出现根密钥或加入码。未设置 `KOKO_ADDRESS` 的全新 koko 服务器会拒绝启动并指出该设置：容器自身的 IP 是私有地址，设备无法访问。
 
 `koko device add` 会输出第一个加入码（仅可使用一次，15 分钟内有效），以及在所有者的计算机上配合它使用的 `koko join` 命令（见[仅安装 CLI](#仅安装-cli)）。如果加入码遗失或已过期，请再次运行同一命令；所有设备均已丢失时，也按此操作。
 
@@ -304,7 +311,7 @@ docker run -d --name koko --restart unless-stopped --stop-timeout 30 \
   --cap-drop ALL --security-opt no-new-privileges:true \
   -p 7822:7822 -v "$PWD/state:/koko" \
   -e KOKO_OWNER=alice -e KOKO_ADDRESS=koko.example.com \
-  ghcr.io/cieons/koko:0.2.0
+  ghcr.io/cieons/koko:0.4.2
 ```
 
 ### 所有者命令
@@ -350,7 +357,13 @@ koko 服务器从不在已密封的数据上生成新的根密钥：缺失或不
 
 ### 升级容器
 
-修改 `.env` 中的 `KOKO_VERSION`，然后再次运行 `docker compose up -d`。Compose 会拉取新镜像并替换容器，容器的记录、所有者、服务器地址和密钥均保留在 `state/` 中。所有已打开的 SSH 会话都会结束，并显示一行提示，说明 koko 服务器正在重启。新版本的 koko 更改数据库 schema 时，koko 服务器会先将原数据库复制为 `state/data/koko.db.before-<n>`，并且只保留最新的一份快照。
+有更新的发布版本时，Web 界面会在每个页面上方向所有者显示通知，其中的“升级方法”列出两个步骤，每步均可复制；`koko server show` 也会给出这两个步骤。在 `.env` 中设置新的发布版本，例如 `KOKO_VERSION=0.5.0`，然后在 `compose.yaml` 所在目录中运行：
+
+```sh
+docker compose pull && docker compose up -d
+```
+
+若设置为 `KOKO_VERSION=latest`，只需运行这一行即可升级。Compose 会拉取新镜像并替换容器，容器的记录、所有者、服务器地址和密钥均保留在 `state/` 中。所有已打开的 SSH 会话都会结束，并显示一行提示，说明 koko 服务器正在重启。新版本的 koko 更改数据库 schema 时，koko 服务器会先将原数据库复制为 `state/data/koko.db.before-<n>`，并且只保留最新的一份快照。
 
 使用 `docker run` 时，先运行 `docker stop koko` 和 `docker rm koko`（两者都会保留 `state/`），再使用新版本运行 `docker run` 命令。
 
@@ -398,7 +411,7 @@ chown -R 65532:65532 state
 每个镜像都附有 GitHub 的制品证明（artifact attestation），可使用 [GitHub CLI](https://cli.github.com) 检查：
 
 ```sh
-gh attestation verify oci://ghcr.io/cieons/koko:0.2.0 --repo cieons/koko
+gh attestation verify oci://ghcr.io/cieons/koko:0.4.2 --repo cieons/koko
 ```
 
 镜像中的 `/usr/local/bin/kokod` 和 `/usr/local/bin/koko` 与发布版本的 `kokod-linux-<arch>` 和 `koko-linux-<arch>` 逐字节相同，即 `SHA256SUMS` 所列的文件。

@@ -9,6 +9,7 @@ import { browserName } from "./browserName";
 import type { Caller } from "./caller";
 import { type Translate, useLanguageChoice, useT } from "./i18n";
 import { type Mode, modes, useMode } from "./mode";
+import { ServerLine } from "./release";
 import { accountPage } from "./router";
 import { useSignOut } from "./signOut";
 
@@ -150,7 +151,9 @@ function SignOutItem() {
  * hidden on a phone) with a chevron, and the panel it opens: the initial,
  * the name and role, how this browser reaches koko, and a link to Account,
  * which closes the panel as it is followed; and, for a browser signed in
- * with a Password, Sign out, a refusal of which shows in the panel.
+ * with a Password, Sign out, a refusal of which shows in the panel. For the
+ * Owner, the koko server's line comes between them: its version, its last
+ * check for a release and Check now.
  */
 export function AccountPanel({ caller }: { caller: Caller }) {
   const t = useT();
@@ -176,6 +179,7 @@ export function AccountPanel({ caller }: { caller: Caller }) {
               <p className="t-label truncate">{viaText(t, caller)}</p>
             </div>
           </div>
+          {caller.owner && <ServerLine />}
           <div className="border-t border-line p-1.5">
             <Link
               href={accountPage}

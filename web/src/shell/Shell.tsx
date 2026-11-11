@@ -15,6 +15,7 @@ import { useRead } from "./data";
 import { useT } from "./i18n";
 import { type Notice, useNotice } from "./notice";
 import { Providers } from "./providers";
+import { ReleaseNotice, ReleaseProvider, useReleaseState } from "./release";
 import { matchRoute, navigate, type Route, signInPage, signInPath, useLocation } from "./router";
 import { AccountPanel, LanguageChoice, ModeChoice } from "./TopBar";
 
@@ -22,8 +23,9 @@ import { AccountPanel, LanguageChoice, ModeChoice } from "./TopBar";
  * Shell is the frame every page sits in, inside the Providers
  * (docs/web-design.md, "The frame"): a skip link; the sticky top bar with
  * koko's wordmark, the places the caller may see and, at its end, Language,
- * Appearance and the account; the shell's notice under it; the page the URL
- * names in the main region; and on a phone the places in a bar at the foot.
+ * Appearance and the account; the shell's notice under it; in the main
+ * region, for the Owner, the notice of a newer koko release, then the page
+ * the URL names; and on a phone the places in a bar at the foot.
  * It learns who the web UI acts as from user.current, reloaded as every
  * read is, and renders a page only once it knows, so a Member never sees an
  * Owner-only page or place.
@@ -78,6 +80,7 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
   const userCurrent = useRead(UserCurrent, {});
   const caller = userCurrent.data && callerOf(userCurrent.data);
   const notice = useNotice(caller?.deviceSession?.id);
+  const release = useReleaseState(caller?.owner === true);
   const visible = routes.filter((r) => !r.ownerOnly || caller?.owner);
   const places = caller ? visible.filter((r) => r.nav) : [];
   const main = useRef<HTMLElement>(null);
@@ -90,66 +93,69 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
 
   return (
     <CallerContext value={caller}>
-      <div className="flex min-h-dvh flex-col">
-        <a
-          href="#main"
-          onClick={skip}
-          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-4 focus:z-50 focus:rounded-full focus:bg-surface focus:px-4 focus:py-2 focus:font-medium focus:shadow-sheet"
-        >
-          {t("shell.skip")}
-        </a>
-        <header className="sticky top-0 z-20 border-b border-line bg-background/80 backdrop-blur-xl">
-          <div className="mx-auto grid h-16 max-w-[76rem] grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 md:px-8">
-            <div className="flex min-w-0 items-center">
-              <Link
-                href="/"
-                className="rounded-md text-xl leading-none font-semibold tracking-[-0.04em] text-foreground outline-none select-none data-[focus-visible]:ring-2 data-[focus-visible]:ring-focus"
-              >
-                {t("shell.brand")}
-              </Link>
+      <ReleaseProvider value={release}>
+        <div className="flex min-h-dvh flex-col">
+          <a
+            href="#main"
+            onClick={skip}
+            className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-4 focus:z-50 focus:rounded-full focus:bg-surface focus:px-4 focus:py-2 focus:font-medium focus:shadow-sheet"
+          >
+            {t("shell.skip")}
+          </a>
+          <header className="sticky top-0 z-20 border-b border-line bg-background/80 backdrop-blur-xl">
+            <div className="mx-auto grid h-16 max-w-[76rem] grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 md:px-8">
+              <div className="flex min-w-0 items-center">
+                <Link
+                  href="/"
+                  className="rounded-md text-xl leading-none font-semibold tracking-[-0.04em] text-foreground outline-none select-none data-[focus-visible]:ring-2 data-[focus-visible]:ring-focus"
+                >
+                  {t("shell.brand")}
+                </Link>
+              </div>
+              {!phone && places.length > 0 && (
+                <Places
+                  places={places}
+                  className="flex items-center gap-0.5 rounded-full bg-surface p-1 shadow-sheet"
+                  item="h-8 px-4"
+                />
+              )}
+              <div className="col-start-3 flex items-center justify-end gap-0.5">
+                <LanguageChoice />
+                <ModeChoice />
+                {caller && <AccountPanel caller={caller} />}
+              </div>
             </div>
-            {!phone && places.length > 0 && (
+          </header>
+          {notice && <NoticeBar notice={notice} />}
+          <main
+            id="main"
+            ref={main}
+            tabIndex={-1}
+            className="mx-auto w-full max-w-[76rem] flex-1 px-4 pb-28 outline-none md:px-8 md:pb-16"
+          >
+            {caller?.owner && <ReleaseNotice />}
+            {caller ? (
+              <Page routes={visible} places={places} />
+            ) : notice ? null : userCurrent.error !== undefined ? (
+              <div className="pt-6">
+                <LoadFailed error={userCurrent.error} retry={userCurrent.reload} />
+              </div>
+            ) : (
+              <Loading />
+            )}
+          </main>
+          {phone && places.length > 0 && (
+            <div className="fixed inset-x-0 bottom-0 z-30 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
               <Places
                 places={places}
-                className="flex items-center gap-0.5 rounded-full bg-surface p-1 shadow-sheet"
-                item="h-8 px-4"
+                className="flex w-full max-w-md items-stretch gap-1 rounded-full bg-surface p-1 shadow-sheet"
+                item="min-h-11 flex-1"
+                icons
               />
-            )}
-            <div className="col-start-3 flex items-center justify-end gap-0.5">
-              <LanguageChoice />
-              <ModeChoice />
-              {caller && <AccountPanel caller={caller} />}
             </div>
-          </div>
-        </header>
-        {notice && <NoticeBar notice={notice} />}
-        <main
-          id="main"
-          ref={main}
-          tabIndex={-1}
-          className="mx-auto w-full max-w-[76rem] flex-1 px-4 pb-28 outline-none md:px-8 md:pb-16"
-        >
-          {caller ? (
-            <Page routes={visible} places={places} />
-          ) : notice ? null : userCurrent.error !== undefined ? (
-            <div className="pt-6">
-              <LoadFailed error={userCurrent.error} retry={userCurrent.reload} />
-            </div>
-          ) : (
-            <Loading />
           )}
-        </main>
-        {phone && places.length > 0 && (
-          <div className="fixed inset-x-0 bottom-0 z-30 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-            <Places
-              places={places}
-              className="flex w-full max-w-md items-stretch gap-1 rounded-full bg-surface p-1 shadow-sheet"
-              item="min-h-11 flex-1"
-              icons
-            />
-          </div>
-        )}
-      </div>
+        </div>
+      </ReleaseProvider>
     </CallerContext>
   );
 }

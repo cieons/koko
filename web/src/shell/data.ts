@@ -22,9 +22,10 @@ export interface Read<Resp> {
  * useRead calls a read operation with request and holds its answer. It
  * loads again when the request changes, on every navigation and when the
  * window regains focus. An answer to an earlier request never shows as this
- * one's.
+ * one's. With enabled false it calls nothing and holds nothing, as for a
+ * read only the Owner may make, asked for a Member.
  */
-export function useRead<Req, Resp>(op: Op<Req, Resp>, request: NoInfer<Req>): Read<Resp> {
+export function useRead<Req, Resp>(op: Op<Req, Resp>, request: NoInfer<Req>, { enabled = true } = {}): Read<Resp> {
   const { visit } = useLocation();
   const [focus, setFocus] = useState(0);
   const [reloads, setReloads] = useState(0);
@@ -38,6 +39,9 @@ export function useRead<Req, Resp>(op: Op<Req, Resp>, request: NoInfer<Req>): Re
 
   const body = JSON.stringify(request);
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
     let latest = true;
     call(op, JSON.parse(body) as Req).then(
       (data) => {
@@ -54,9 +58,9 @@ export function useRead<Req, Resp>(op: Op<Req, Resp>, request: NoInfer<Req>): Re
     return () => {
       latest = false;
     };
-  }, [op, body, visit, focus, reloads]);
+  }, [op, body, visit, focus, reloads, enabled]);
 
-  const current = state.body === body ? state : undefined;
+  const current = enabled && state.body === body ? state : undefined;
   return { data: current?.data, error: current?.error, reload: () => setReloads((n) => n + 1) };
 }
 
