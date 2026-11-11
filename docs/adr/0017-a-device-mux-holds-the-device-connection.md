@@ -1,3 +1,7 @@
+---
+status: its same-user check on Windows, refined by ADR-0051
+---
+
 # A Device Mux holds each device's Device Connection
 
 On a device, every koko command and every `koko tunnel` reach the koko server

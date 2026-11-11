@@ -1,5 +1,5 @@
 ---
-status: its rejected compatibility rule, refined by ADR-0049
+status: its rejected compatibility rule, refined by ADR-0049; its compile-only Windows build, refined by ADR-0051
 ---
 
 # koko is the CLI and kokod the koko server

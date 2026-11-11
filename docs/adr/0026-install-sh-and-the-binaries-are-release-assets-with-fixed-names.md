@@ -1,5 +1,5 @@
 ---
-status: refined by ADR-0041; its readers of the URLs, refined by ADR-0047
+status: refined by ADR-0041; its readers of the URLs, refined by ADR-0047; its asset names on Windows, refined by ADR-0052
 ---
 
 # install.sh and the binaries are release assets with fixed names

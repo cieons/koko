@@ -1,3 +1,7 @@
+---
+status: its swap and its PATH rule on Windows, refined by ADR-0052
+---
+
 # koko updates itself in its user's own directory
 
 The CLI is installed per user, so that it upgrades without root, the
