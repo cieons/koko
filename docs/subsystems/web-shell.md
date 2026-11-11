@@ -283,7 +283,7 @@ logic:
 | `ConfirmDialog` | `ConfirmDialog.tsx` | the confirmation ([Confirmations](#confirmations)) |
 | `Field` | `fields.tsx` | a text field or area, its label above, help under it and its error in place; `code` sets a machine value in the code face, with no spelling or capital corrected |
 | `Choice` | `fields.tsx` | HeroUI's `Select`, for one item of a short fixed list |
-| `SearchChoice` | `fields.tsx` | HeroUI's `ComboBox`, for one item of a list that can grow (the Owner's rule): the list narrows to the items holding what is typed, whatever its case; it takes an item of its list alone, unless `newValues`, as an Attribute key does |
+| `SearchChoice` | `fields.tsx` | HeroUI's `ComboBox`, for one item of a list that can grow (the Owner's rule): its whole list opens when its field is pressed, never on the focus alone ([Searchable choices](../web-design.md#components)), and narrows to the items holding what is typed, whatever its case; it takes an item of its list alone, unless `newValues`, as an Attribute key does |
 | `Segments` | `fields.tsx` | HeroUI's `ToggleButtonGroup`, a choice among two to four, all in view |
 | `DateInput` | `DateInput.tsx` | HeroUI's `DatePicker`, a calendar date as `YYYY-MM-DD`; a module the forms that use it import alone, so the calendar is not in the first load |
 | `RowMenu` | `RowMenu.tsx` | HeroUI's `Dropdown` behind an icon button named for it, its danger actions last after a separator |

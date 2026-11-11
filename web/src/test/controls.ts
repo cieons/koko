@@ -19,6 +19,33 @@ export async function chooseRowAction(menu: string, action: string): Promise<voi
   await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
 }
 
+/**
+ * clickOutside clicks beside the overlay open now, as a browser does: the
+ * press takes the focus off the control that holds it, a frame passes, in
+ * which a modal overlay's focus scope gives that control the focus back,
+ * and the overlay hears the click as the press ends.
+ */
+export async function clickOutside(): Promise<void> {
+  const at = document.body;
+  const press = { pointerId: 1, pointerType: "mouse", button: 0 };
+  fireEvent.pointerDown(at, press);
+  fireEvent.mouseDown(at, press);
+  act(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  });
+  await nextFrame();
+  fireEvent.pointerUp(at, press);
+  fireEvent.mouseUp(at, press);
+  fireEvent.click(at, press);
+}
+
+/** nextFrame lets a frame pass, and what React Aria does in it, such as a focus scope taking the focus back. */
+export async function nextFrame(): Promise<void> {
+  await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+}
+
 /** offeredOptions are the names of the options of the list open now. */
 export function offeredOptions(): string[] {
   return within(screen.getByRole("listbox"))
@@ -43,8 +70,9 @@ export async function chooseOption(select: string, option: string, offered?: str
 }
 
 /**
- * searchAndChoose types typed in the searchable choice named choice, or the
- * one given, as a person narrows its list, checks the list open with axe,
+ * searchAndChoose presses the searchable choice named choice, or the one
+ * given, which opens its whole list, and types typed in it, unless it is
+ * empty, as a person narrows the list; then it checks the list open with axe,
  * checks the options it then offers, when offered is given, and chooses the
  * one named option.
  *
@@ -61,7 +89,10 @@ export async function searchAndChoose(
 ): Promise<void> {
   const input = typeof choice === "string" ? screen.getByRole("combobox", { name: choice }) : choice;
   act(() => input.focus());
-  fireEvent.change(input, { target: { value: typed } });
+  fireEvent.click(input);
+  if (typed !== "") {
+    fireEvent.change(input, { target: { value: typed } });
+  }
   const listbox = await screen.findByRole("listbox");
   await expectAccessible(listbox);
   if (offered) {

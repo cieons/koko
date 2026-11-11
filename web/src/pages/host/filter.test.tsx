@@ -1,9 +1,9 @@
-import { configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { expectAccessible } from "../../test/axe";
 import { fakeApi } from "../../test/fakeApi";
-import { offeredOptions, searchAndChoose } from "../../test/controls";
+import { clickOutside, offeredOptions, searchAndChoose } from "../../test/controls";
 import { actAs, renderAt } from "../../test/pages";
 import {
   alice,
@@ -238,4 +238,39 @@ test("a value its key does not take is refused in the popover, naming the term, 
 
   fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
   expect(query()).toEqual([["filter", "region=fsn1"]]);
+});
+
+test("an outside click closes Filter, after a key is chosen in it too, and a select's list, the focus going back to what opened each", async () => {
+  const api = fakeApi();
+  actAs(api, alice);
+  records(api, hosts);
+  renderAt("/hosts");
+  await screen.findByRole("table", { name: "ops" });
+  const filter = screen.getByRole("button", { name: "Filter" });
+
+  act(() => filter.focus());
+  fireEvent.click(filter);
+  await screen.findByRole("dialog", { name: "Add a filter" });
+  await clickOutside();
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a filter" })).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(filter));
+
+  // The focus stays in the field the key was chosen in, which the click
+  // takes it from and the popover gives it back to.
+  fireEvent.click(filter);
+  await screen.findByRole("dialog", { name: "Add a filter" });
+  await searchAndChoose("Field or Attribute", "price", "price");
+  await clickOutside();
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a filter" })).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(filter));
+  expect(query()).toEqual([]);
+
+  const state = selectButton("State");
+  act(() => state.focus());
+  fireEvent.click(state);
+  await screen.findByRole("listbox");
+  await clickOutside();
+  await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(state));
+  expect(state.textContent).toContain("In use");
 });

@@ -12,7 +12,8 @@ import {
   ToggleButtonGroup,
   useFilter,
 } from "@heroui/react";
-import { type ReactNode, useId } from "react";
+import { type ReactNode, use, useId } from "react";
+import { ComboBoxStateContext } from "react-aria-components";
 
 // The fields of koko's forms (docs/web-design.md, "Components"): a label
 // above, help under it, and the error in place. A form checks them when it
@@ -170,6 +171,13 @@ export interface SearchChoiceProps {
  * narrows the list as it is typed in, matching anywhere in an item's label
  * whatever its case (the Owner's rule, docs/web-design.md, "Searchable
  * choices"). It takes an item of its list alone, unless newValues.
+ *
+ * Its list opens as the field is typed in or pressed, or on its button or
+ * the up or down arrow. Unlike HeroUI's default, it does not open as the field
+ * merely takes the focus: a modal overlay gives the focus back to the field it was in when
+ * a click beside the overlay takes it, and a list opening then would take
+ * that click, so the overlay would never close (docs/web-design.md,
+ * "Searchable choices").
  */
 export function SearchChoice(props: SearchChoiceProps) {
   const { contains } = useFilter({ sensitivity: "base" });
@@ -189,13 +197,14 @@ export function SearchChoice(props: SearchChoiceProps) {
       {...selection}
       validate={validate && (() => validate(value))}
       defaultFilter={contains}
+      menuTrigger="input"
       isDisabled={props.isDisabled}
       className={props.className}
       fullWidth
     >
       {props.hideLabel !== true && <Label>{label}</Label>}
       <ComboBox.InputGroup>
-        <Input placeholder={props.placeholder} autoComplete="off" spellCheck="false" />
+        <SearchInput placeholder={props.placeholder} />
         <ComboBox.Trigger />
       </ComboBox.InputGroup>
       {props.description !== undefined && <Description>{props.description}</Description>}
@@ -206,6 +215,19 @@ export function SearchChoice(props: SearchChoiceProps) {
         </ListBox>
       </ComboBox.Popover>
     </ComboBox>
+  );
+}
+
+/** SearchInput is a SearchChoice's field, which opens the whole list when pressed. */
+function SearchInput({ placeholder }: { placeholder?: string }) {
+  const state = use(ComboBoxStateContext);
+  return (
+    <Input
+      placeholder={placeholder}
+      autoComplete="off"
+      spellCheck="false"
+      onClick={() => state?.open(null, "manual")}
+    />
   );
 }
 

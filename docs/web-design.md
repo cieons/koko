@@ -226,6 +226,13 @@ cycle, Valid for). The places:
 Only the Attribute key of a form takes a value the list does not hold; the
 others take an item of their list alone.
 
+The list opens when the field is pressed or typed in, or on its button or
+the up or down arrow. It does not open when the field only takes the focus,
+which HeroUI's `ComboBox` does by default: a modal overlay gives the focus
+back to the field it was in when a click beside the overlay takes it away,
+and a list that opened then would take that click, so the overlay would
+not close (#133).
+
 ## States every screen has
 
 The preview's mock answers at once, so these are specified here:

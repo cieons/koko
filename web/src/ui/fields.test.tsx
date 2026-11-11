@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 
 import { Providers } from "../shell/providers";
 import { expectAccessible } from "../test/axe";
-import { chooseOption, chooseRowAction, offeredOptions, searchAndChoose } from "../test/controls";
+import { chooseOption, chooseRowAction, nextFrame, offeredOptions, searchAndChoose } from "../test/controls";
 import { Choice, Field, type Option, SearchChoice, Segments } from "./fields";
 import { RowMenu } from "./RowMenu";
 
@@ -91,6 +91,28 @@ test("a SearchChoice narrows its list to the items holding what is typed, whatev
 
   expect(screen.getByText("picked: Operations")).toBeDefined();
   expect(screen.getByRole<HTMLInputElement>("combobox", { name: "Space" }).value).toBe("Operations");
+});
+
+test("a SearchChoice opens its whole list when its field is pressed, its chosen item among the rest, but not when the field takes the focus", async () => {
+  function Space() {
+    const [value, setValue] = useState<string | null>("dev");
+    return <SearchChoice label="Space" value={value} onChange={setValue} options={spaces} />;
+  }
+  render(
+    <Providers>
+      <Space />
+    </Providers>,
+  );
+  const input = screen.getByRole<HTMLInputElement>("combobox", { name: "Space" });
+
+  act(() => input.focus());
+  await nextFrame();
+  expect(screen.queryByRole("listbox")).toBeNull();
+  expect(input.getAttribute("aria-expanded")).toBe("false");
+
+  fireEvent.click(input);
+  await screen.findByRole("listbox");
+  expect(offeredOptions()).toEqual(["ops", "Operations", "dev", "staging"]);
 });
 
 test("a SearchChoice takes no value its list does not hold", async () => {
