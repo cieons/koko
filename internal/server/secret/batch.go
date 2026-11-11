@@ -55,27 +55,8 @@ func findNamed(ctx context.Context, tx store.Tx, who access.Identity, spaceName,
 	return n, nil
 }
 
-// each runs write on each Secret found, in the order named, inside the
-// call's transaction, and returns what write answered of each, or the
-// refusal of the batch, as the host area's does. done says what the write
-// does, such as "moved", for the refusal.
+// each runs write on each Secret found, as op.Each does; done says what
+// the write does, such as "moved", for the refusal.
 func (n *named) each(done string, write func(sec stored) (api.Secret, error)) ([]api.Secret, error) {
-	answered := make([]api.Secret, 0, len(n.secrets))
-	for i, sec := range n.secrets {
-		if n.batch.Faulted(i) {
-			continue
-		}
-		a, err := write(sec)
-		if err != nil {
-			if err := n.batch.Fault(i, err); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		answered = append(answered, a)
-	}
-	if err := n.batch.Err("Secrets", done); err != nil {
-		return nil, err
-	}
-	return answered, nil
+	return op.Each(n.batch, n.secrets, "Secrets", done, write)
 }

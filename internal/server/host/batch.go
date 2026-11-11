@@ -65,29 +65,8 @@ func (n *named) ids() []string {
 	return ids
 }
 
-// each runs write on each Host found, in the order named, inside the call's
-// transaction, and returns what write answered of each. A Host write
-// refuses is at fault in a batch of several, and every other Host is still
-// checked; then the batch is refused, listing each Host at fault, and
-// returning the error rolls back what the others wrote. done says what the
+// each runs write on each Host found, as op.Each does; done says what the
 // write does, such as "moved", for the refusal.
 func (n *named) each(done string, write func(h stored) (api.Host, error)) ([]api.Host, error) {
-	answered := make([]api.Host, 0, len(n.hosts))
-	for i, h := range n.hosts {
-		if n.batch.Faulted(i) {
-			continue
-		}
-		a, err := write(h)
-		if err != nil {
-			if err := n.batch.Fault(i, err); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		answered = append(answered, a)
-	}
-	if err := n.batch.Err("Hosts", done); err != nil {
-		return nil, err
-	}
-	return answered, nil
+	return op.Each(n.batch, n.hosts, "Hosts", done, write)
 }

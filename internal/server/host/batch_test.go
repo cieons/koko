@@ -109,7 +109,9 @@ func TestAHostBatchIsAppliedAllOrNone(t *testing.T) {
 			if status != http.StatusOK {
 				t.Fatalf("a batch of web2 and web1 = %d %s, want it applied", status, body)
 			}
-			var resp api.HostAddResponse
+			var resp struct {
+				Hosts []api.Host `json:"hosts"`
+			}
 			if err := json.Unmarshal([]byte(body), &resp); err != nil || len(resp.Hosts) != 2 || resp.Hosts[0].Name != "web2" || resp.Hosts[1].Name != "web1" {
 				t.Errorf("a batch of web2 and web1 answered %s (%v), want both Hosts in that order", body, err)
 			}
