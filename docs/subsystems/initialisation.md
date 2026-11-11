@@ -385,7 +385,8 @@ order:
   `server.check_update` and `server.upgrade` for the Owner alone.
   [`upgrade_test.go`](../../internal/server/upgrade_test.go) tests
   `server.upgrade` on a koko server whose version the harness states
-  (`harness.Version`): exactly the request file written for the version
+  (`harness.Version`, as `kokod run` fills `server.Config.Version` in from
+  the build of its own file): exactly the request file written for the version
   given and for the latest, a check made at once when none found it, and
   who asked logged; `upgrade_unsupported` for `image` and `none`;
   `invalid_request` for an older, the same and a version that is no

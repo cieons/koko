@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+
+	"github.com/cieons/koko/internal/shared/api"
 )
 
 // The upgrade helper's files (ADR 0048), as the machine names them, before
@@ -36,17 +38,12 @@ const (
 	previousFile = UpgradeDir + "/kokod.previous"
 )
 
-// The states of an upgrade, as Outcome.State names them.
+// The states of an upgrade, as Outcome.State names them: the API's.
 const (
-	// UpgradeRunning: the helper took the request and has not finished.
-	UpgradeRunning = "running"
-	// UpgradeSucceeded: the new kokod runs.
-	UpgradeSucceeded = "succeeded"
-	// UpgradeFailed: the upgrade failed, and the previous kokod runs again.
-	UpgradeFailed = "failed"
-	// UpgradeFailedNotRestored: the upgrade failed, and the previous kokod
-	// did not start either.
-	UpgradeFailedNotRestored = "failed_not_restored"
+	UpgradeRunning           = api.UpgradeRunning
+	UpgradeSucceeded         = api.UpgradeSucceeded
+	UpgradeFailed            = api.UpgradeFailed
+	UpgradeFailedNotRestored = api.UpgradeFailedNotRestored
 )
 
 // Outcome is the outcome of the last upgrade, as outcome.json holds it.

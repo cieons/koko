@@ -14,6 +14,7 @@ import (
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/compat"
+	"github.com/cieons/koko/internal/shared/install"
 )
 
 var serverUpgradeCommand = Command{
@@ -43,8 +44,9 @@ const (
 
 // codeUpgradeFailed: the koko server's upgrade failed, or did not end in
 // time; the message says why, and whether the previous kokod runs again.
-// The CLI was left as it was.
-const codeUpgradeFailed = "upgrade_failed"
+// The CLI was left as it was. kokod upgrade reports it too, so it is
+// install's.
+const codeUpgradeFailed = install.CodeUpgradeFailed
 
 // serverUpgrade is koko server upgrade: with --check, the koko server's
 // check at once; otherwise the upgrade, its outcome waited for, then this
@@ -79,21 +81,19 @@ func serverUpgrade(ctx context.Context, in *Input) (serverUpgradeJSON, error) {
 		return serverUpgradeJSON{}, err
 	}
 	out := serverUpgradeJSON{Server: serverUpgradeOutcome{From: o.From, To: o.To, State: o.State, Message: o.Message}}
-	if o.State != upgradeSucceeded {
+	if o.State != api.UpgradeSucceeded {
 		return serverUpgradeJSON{}, &cliError{code: codeUpgradeFailed, message: fmt.Sprintf(
 			"the koko server's upgrade from %s to %s failed (%s): %s; this koko was left as it was", o.From, o.To, o.State, orNone(o.Message, "no reason recorded"))}
 	}
 	var note string
 	out.CLI, note = in.followServer(ctx, o.To)
-	if note != "" && !in.line.json {
+	// On success stderr holds no error object, so the note goes there with
+	// --json too, for an agent to read why and the line.
+	if note != "" {
 		_, _ = fmt.Fprintln(in.inv.Stderr, note)
 	}
 	return out, nil
 }
-
-// upgradeSucceeded is the state of an upgrade that succeeded, as
-// last_upgrade names it.
-const upgradeSucceeded = "succeeded"
 
 // waitUpgrade reads server.show's last_upgrade until the upgrade to asked
 // for is final: an outcome other than before, the one there when it asked,
@@ -104,7 +104,7 @@ func (in *Input) waitUpgrade(ctx context.Context, before *api.LastUpgrade, to st
 	for {
 		resp, err := in.Call(ctx, api.ServerShow, api.ServerShowRequest{})
 		if err == nil {
-			if o := resp.Server.LastUpgrade; o != nil && !sameOutcome(o, before) && o.To == to && o.State != "running" {
+			if o := resp.Server.LastUpgrade; o != nil && !sameOutcome(o, before) && o.To == to && o.State != api.UpgradeRunning {
 				return *o, nil
 			}
 		} else {

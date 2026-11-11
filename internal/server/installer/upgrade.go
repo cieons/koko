@@ -42,23 +42,32 @@ func (in *Installer) Upgrade(ctx context.Context) (Outcome, error) {
 		return Outcome{}, install.Refuse(install.Unsupported, "kokod upgrade replaces kokod and restarts the koko service, so it runs as root, as koko-upgrade.service runs it: ask for an upgrade with koko server upgrade or the web UI")
 	}
 	o := Outcome{StartedAt: in.now()}
-	installed, err := in.Machine.Build(in.path(BinaryPath))
-	if err != nil {
-		return in.failed(o, fmt.Errorf("read the build of the kokod installed at %s: %w", BinaryPath, err))
-	}
-	o.From = installed.Version
-	o.To, err = in.takeRequest()
-	switch {
-	case errors.Is(err, ErrNoRequest):
+	to, err := in.readRequest()
+	if errors.Is(err, ErrNoRequest) {
 		return Outcome{}, err
+	}
+	o.To = to
+	installed, berr := in.Machine.Build(in.path(BinaryPath))
+	o.From = installed.Version
+	var refused error
+	switch {
+	case berr != nil:
+		refused = fmt.Errorf("read the build of the kokod installed at %s: %w; nothing was changed", BinaryPath, berr)
 	case err != nil:
-		return in.failed(o, fmt.Errorf("the upgrade request was refused: %w; nothing was changed", err))
+		refused = fmt.Errorf("the upgrade request was refused: %w; nothing was changed", err)
 	case !compat.Newer(o.To, o.From):
-		return in.failed(o, fmt.Errorf("the upgrade request was refused: %s is not newer than the kokod installed, %s, and the helper installs only a newer release; nothing was changed", o.To, o.From))
+		refused = fmt.Errorf("the upgrade request was refused: %s is not newer than the kokod installed, %s, and the helper installs only a newer release; nothing was changed", o.To, o.From)
 	}
 	o.State = UpgradeRunning
-	if err := in.writeOutcome(o); err != nil {
-		return Outcome{}, err
+	if refused != nil {
+		o.State, o.Message, o.FinishedAt = UpgradeFailed, refused.Error(), in.now()
+	}
+	// The request goes once the outcome says what became of it, whatever
+	// that is, so that it starts the helper only once, and server.upgrade,
+	// which refuses while either says an upgrade is on, never finds
+	// neither meanwhile.
+	if err := errors.Join(in.writeOutcome(o), in.removeRequest()); err != nil || refused != nil {
+		return o, err
 	}
 
 	dir, err := os.MkdirTemp(in.path(UpgradeDir), "download-") // mode 0700
@@ -80,7 +89,10 @@ func (in *Installer) Upgrade(ctx context.Context) (Outcome, error) {
 
 	if err := in.runInstall(ctx, file); err != nil {
 		failure := fmt.Sprintf("kokod %s did not install: %v", o.To, err)
-		restored, err := in.putBack(ctx, o.To)
+		// Putting the previous kokod back goes on when the helper is asked
+		// to stop, as when systemd stops it: a koko server left without
+		// its kokod is worse than a stop that waits.
+		restored, err := in.putBack(context.WithoutCancel(ctx), o.To)
 		if err != nil {
 			o.State, o.Message = UpgradeFailedNotRestored, fmt.Sprintf(
 				"%s; and putting kokod %s back failed: %v: see why with journalctl -u koko -u koko-upgrade", failure, o.From, err)
@@ -93,24 +105,17 @@ func (in *Installer) Upgrade(ctx context.Context) (Outcome, error) {
 	return in.finish(o)
 }
 
-// takeRequest takes the koko server's request, and returns the release it
-// names. Whatever is at RequestFile is removed at once, so that it starts
-// the helper only once. The request is taken only when it is a regular file,
-// not a link, owned by the koko user and at most requestLimit bytes, which
-// holds a release's tag and nothing else.
-func (in *Installer) takeRequest() (string, error) {
+// readRequest reads the koko server's request, and returns the release it
+// names. It takes the request only when it is a regular file, not a link,
+// owned by the koko user and at most requestLimit bytes, which holds a
+// release's tag and nothing else. Upgrade removes it, whatever it holds.
+func (in *Installer) readRequest() (string, error) {
 	path := in.path(RequestFile)
 	link, err := os.Lstat(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", ErrNoRequest
 	}
 	f, err := openRequest(path)
-	if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
-		if f != nil {
-			_ = f.Close()
-		}
-		return "", fmt.Errorf("remove %s: %w", RequestFile, rmErr)
-	}
 	switch {
 	case link != nil && link.Mode()&fs.ModeSymlink != 0:
 		if f != nil {
@@ -150,6 +155,15 @@ func (in *Installer) takeRequest() (string, error) {
 		return "", fmt.Errorf("%s names %q, which is not a release's tag", RequestFile, req.Version)
 	}
 	return req.Version, nil
+}
+
+// removeRequest removes whatever is at RequestFile, a link itself rather
+// than what it names.
+func (in *Installer) removeRequest() error {
+	if err := os.Remove(in.path(RequestFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("remove %s: %w", RequestFile, err)
+	}
+	return nil
 }
 
 // UpgradeRequest is the koko server's request for an upgrade, as it writes
@@ -194,7 +208,7 @@ func (in *Installer) runInstall(ctx context.Context, file string) error {
 
 // putBack puts the previous kokod back after the new one did not install:
 // it stops the koko service, so that Restart=on-failure cannot bring the new
-// kokod up meanwhile; puts the database's snapshot back when the new kokod
+// kokod up meanwhile, and resets its start limit; puts the database's snapshot back when the new kokod
 // migrated it, which is safe because a kokod that never opened its socket
 // served nothing; and installs the previous kokod again, which starts the
 // koko service. It says what it did.
@@ -202,8 +216,12 @@ func (in *Installer) putBack(ctx context.Context, to string) (string, error) {
 	if err := in.systemctl(ctx, "stop", UnitName); err != nil {
 		return "", err
 	}
-	aside := ".failed-" + to
-	snapshot, err := store.PutBack(ctx, in.path(DataDir), aside)
+	// A kokod that exits at its start is restarted until systemd's start
+	// limit refuses any further start, the previous kokod's included.
+	if err := in.systemctl(ctx, "reset-failed", UnitName); err != nil {
+		return "", err
+	}
+	snapshot, moved, err := store.PutBack(ctx, in.path(DataDir), ".failed-"+to)
 	if err != nil {
 		return "", fmt.Errorf("put the database back in %s: %w", DataDir, err)
 	}
@@ -213,8 +231,8 @@ func (in *Installer) putBack(ctx context.Context, to string) (string, error) {
 	if snapshot == "" {
 		return "the previous kokod runs again", nil
 	}
-	return fmt.Sprintf("the previous kokod runs again, on the database as it was before kokod %s migrated it (%s), which is kept as %s%s",
-		to, snapshot, store.FileName, aside), nil
+	return fmt.Sprintf("the previous kokod runs again, on the database as it was before kokod %s migrated it (%s), which is kept as %s",
+		to, snapshot, moved), nil
 }
 
 // failed records o as failed for err, before the upgrade began.

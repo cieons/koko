@@ -258,7 +258,8 @@ func TestTheUpgradeHelperChangesNothingWhenTheDownloadFails(t *testing.T) {
 // A new kokod whose service never opens its socket, after it migrated the
 // database, is stopped; the database it migrated is kept as
 // koko.db.failed-<to>, the snapshot is put in its place, and the previous
-// kokod runs again on the record as it was: failed.
+// kokod runs again on the record as it was: failed. A second failure of the
+// same release does the same, keeping its database apart.
 func TestTheUpgradeHelperPutsThePreviousKokodBack(t *testing.T) {
 	t.Parallel()
 	m, rel := upgradable(t)
@@ -281,10 +282,22 @@ func TestTheUpgradeHelperPutsThePreviousKokodBack(t *testing.T) {
 		t.Errorf("the machine ran kokod %q, want upgrade, the new one's install, then the previous one's", ran)
 	}
 	whats := callNames(m.Calls())
-	if i := slices.Index(whats, "systemctl stop koko.service"); i < 0 || !slices.Contains(whats[i:], "systemctl restart koko.service") {
-		t.Errorf("the helper did not stop the koko service before installing the previous kokod: %v", whats)
+	if i := slices.Index(whats, "systemctl stop koko.service"); i < 0 || i+1 >= len(whats) ||
+		whats[i+1] != "systemctl reset-failed koko.service" || !slices.Contains(whats[i:], "systemctl restart koko.service") {
+		t.Errorf("the helper did not stop the koko service and reset its start limit before installing the previous kokod: %v", whats)
 	}
 	wantNoRequest(t, m)
+
+	// Asked again for the same release, which fails again, it keeps the
+	// second migrated database under a name of its own, and puts the
+	// previous kokod back again.
+	ask(t, m, `{"version": "`+newerRelease+`"}`, "")
+	m.WaitHelper(2)
+	wantOutcome(t, m, installer.UpgradeFailed, newerRelease, "the previous kokod runs again", "koko.db.failed-"+newerRelease+".2")
+	wantInstalled(t, m, installed)
+	if got := schemaVersion(t, m.Path("/var/lib/koko/koko.db.failed-"+newerRelease+".2")); got != store.SchemaVersion()+1 {
+		t.Errorf("koko.db.failed-%s.2 is at schema version %d, want %d", newerRelease, got, store.SchemaVersion()+1)
+	}
 }
 
 // A previous kokod that does not start either leaves the outcome

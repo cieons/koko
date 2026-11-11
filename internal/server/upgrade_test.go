@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/server"
@@ -197,12 +198,34 @@ func TestServerUpgradeRefusesASecondUpgrade(t *testing.T) {
 	t.Run("running", func(t *testing.T) {
 		t.Parallel()
 		h, _, f := startUpgradable(t)
-		running := `{"state": "running", "from": "v0.4.0", "to": "v0.5.0", "started_at": "2026-11-11T09:00:00Z"}`
-		if err := os.WriteFile(f.OutcomeFile, []byte(running), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		writeRunning(t, f, h.Now())
+		h.Advance(30 * time.Minute)
 		_, err := h.Call(api.ServerUpgrade, api.ServerUpgradeRequest{Version: "v0.5.0"})
 		wantRefused(t, err, api.CodeUpgradeRunning, "from v0.4.0 to v0.5.0 runs already")
 		wantRequestFile(t, f, "")
 	})
+}
+
+// An outcome that still says running more than 30 minutes after it started
+// was abandoned, as by a helper killed or a machine rebooted mid-upgrade,
+// and refuses no new upgrade.
+func TestServerUpgradeTakesALongRunningOutcomeAsAbandoned(t *testing.T) {
+	t.Parallel()
+	h, _, f := startUpgradable(t)
+	writeRunning(t, f, h.Now())
+	h.Advance(30*time.Minute + time.Second)
+	if _, err := h.Call(api.ServerUpgrade, api.ServerUpgradeRequest{Version: "v0.5.0"}); err != nil {
+		t.Fatal(err)
+	}
+	wantRequestFile(t, f, "v0.5.0")
+}
+
+// writeRunning writes an outcome that says an upgrade from v0.4.0 to v0.5.0
+// runs, started at started.
+func writeRunning(t *testing.T, f upgradeFiles, started time.Time) {
+	t.Helper()
+	running := `{"state": "running", "from": "v0.4.0", "to": "v0.5.0", "started_at": "` + started.UTC().Format(time.RFC3339) + `"}`
+	if err := os.WriteFile(f.OutcomeFile, []byte(running), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }

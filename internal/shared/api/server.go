@@ -85,6 +85,20 @@ const (
 	UpgradeWayNone = "none"
 )
 
+// The states of an upgrade through the upgrade helper, as LastUpgrade.State
+// names them.
+const (
+	// UpgradeRunning: the helper took the request and has not finished.
+	UpgradeRunning = "running"
+	// UpgradeSucceeded: the new kokod runs.
+	UpgradeSucceeded = "succeeded"
+	// UpgradeFailed: the upgrade failed, and the previous kokod runs again.
+	UpgradeFailed = "failed"
+	// UpgradeFailedNotRestored: the upgrade failed, and the previous kokod
+	// did not start either.
+	UpgradeFailedNotRestored = "failed_not_restored"
+)
+
 // LastUpgrade is the outcome of the last upgrade through the upgrade
 // helper, as it recorded it.
 type LastUpgrade struct {

@@ -76,6 +76,7 @@ func run(ctx context.Context, p *Program, inv *Invocation, line *parsed) error {
 		return err
 	}
 	return p.Serve(ctx, server.Config{
+		Version:       p.ownVersion(),
 		DataDir:       s.DataDir,
 		RootKeyPath:   s.RootKeyPath,
 		RootKeySource: s.RootKeySource,
@@ -92,6 +93,24 @@ func run(ctx context.Context, p *Program, inv *Invocation, line *parsed) error {
 			Image:       inv.getenv("KOKO_IMAGE"),
 		},
 	})
+}
+
+// ownVersion is the version of this kokod's own file, as the machine reads
+// its build, which kokod run reports and upgrades from; "" when it cannot
+// be read, for the koko server to take its process's own build.
+func (p *Program) ownVersion() string {
+	if p.Machine == nil || p.Binary == nil {
+		return ""
+	}
+	file, err := p.Binary()
+	if err != nil {
+		return ""
+	}
+	b, err := p.Machine.Build(file)
+	if err != nil {
+		return ""
+	}
+	return b.Version
 }
 
 // installCmd is kokod install: the installer's steps up to the koko server's
@@ -138,14 +157,10 @@ func upgradeCmd(ctx context.Context, p *Program, inv *Invocation, _ *parsed) err
 		return err
 	}
 	if o.State != installer.UpgradeSucceeded {
-		return &api.Error{Code: CodeUpgradeFailed, Message: o.Message}
+		return &api.Error{Code: install.CodeUpgradeFailed, Message: o.Message}
 	}
 	return nil
 }
-
-// CodeUpgradeFailed: the koko server's upgrade failed; the message says
-// why, and whether the previous kokod runs again.
-const CodeUpgradeFailed = "upgrade_failed"
 
 // writeJSON writes v to w as JSON, as koko's --json does.
 func writeJSON(w io.Writer, v any) error {

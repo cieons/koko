@@ -204,8 +204,8 @@ status. A command reaches the koko server only on its first `in.Call`, so
   where the `kokod` installed is a newer release than this koko, before any
   download, naming both, `sudo koko update` and `KOKO_VERSION`,
   [the installer](installer.md#a-newer-kokod)),
-  and `internal_error` for a failure it did not expect. `kokod` reports `invalid_usage`, `unsupported_platform`
-  and `port_taken` too, so those three live in the shared
+  and `internal_error` for a failure it did not expect. `kokod` reports `invalid_usage`, `unsupported_platform`,
+  `port_taken` and `upgrade_failed` too, so those four live in the shared
   [`install`](../../internal/shared/install/install.go) package, beside
   `install.Refusal`, and the CLI reads them from there. A refusal `kokod
   install` or `uninstall` prints becomes `koko server install`'s or
@@ -437,8 +437,9 @@ SSH Session through it ends, and never prompts (ADR 0019).
      `sudo` for root's).
 
   Its JSON is `{"server": {"from", "to", "state", "message"}, "cli": <koko
-  update's JSON> | null}`. With `--json` stderr says nothing on success, so
-  that a failure's holds its error object alone.
+  update's JSON> | null}`. With `--json` stderr does not say what it asked
+  for, so that a failure's holds its error object alone; why the CLI was
+  left, said only after a success, goes there all the same.
 
 ## The commands so far
 

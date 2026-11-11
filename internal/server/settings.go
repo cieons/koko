@@ -65,7 +65,7 @@ func registerSettings(a *op.API, s *settings) {
 	a.Handle(api.ServerShow, s.show)
 	a.Handle(api.ServerSet, s.set, op.LocalOnly)
 	a.Handle(api.ServerCheckUpdate, s.checkUpdate)
-	a.Handle(api.ServerUpgrade, s.upgradeTo)
+	a.HandlePrepared(api.ServerUpgrade, s.prepareUpgrade, s.upgradeTo)
 }
 
 func (s *settings) show(ctx context.Context, tx store.Tx, caller op.Caller, _ api.ServerShowRequest) (api.ServerShowResponse, error) {
@@ -157,21 +157,22 @@ func (s *settings) checkUpdate(ctx context.Context, tx store.Tx, caller op.Calle
 	return api.ServerCheckUpdateResponse{UpdateCheck: updateCheckJSON(on, r), Version: s.version}, nil
 }
 
-// upgradeTo asks the upgrade helper to upgrade the koko server, for the
-// Owner (ADR 0048): to the release req names, or the latest the check
-// found, or one a check made now finds. It refuses a koko server the helper
-// does not upgrade, a version that is no release newer than this koko
-// server's, and a second upgrade while one is asked for or runs. Then it
-// writes the request the helper's path unit waits for, through a temporary
-// file renamed into place, and logs who asked.
-func (s *settings) upgradeTo(ctx context.Context, tx store.Tx, caller op.Caller, req api.ServerUpgradeRequest) (api.ServerUpgradeResponse, error) {
-	who, err := access.OwnerOnly(ctx, tx, caller, "upgrades the koko server")
+// prepareUpgrade decides, outside the write's transaction, what
+// server.upgrade asks the upgrade helper for (ADR 0048): the Owner only; a
+// koko server the helper upgrades; the release req names, or the latest
+// the check found, or one a check made now finds, which may take a request
+// to GitHub; and a release newer than this koko server's.
+func (s *settings) prepareUpgrade(ctx context.Context, read op.Read, caller op.Caller, req api.ServerUpgradeRequest) (string, error) {
+	err := read(func(tx store.Tx) error {
+		_, err := access.OwnerOnly(ctx, tx, caller, "upgrades the koko server")
+		return err
+	})
 	if err != nil {
-		return api.ServerUpgradeResponse{}, err
+		return "", err
 	}
 	way, err := s.upgrade.way()
 	if err != nil {
-		return api.ServerUpgradeResponse{}, err
+		return "", err
 	}
 	switch way {
 	case api.UpgradeWayImage:
@@ -180,22 +181,32 @@ func (s *settings) upgradeTo(ctx context.Context, tx store.Tx, caller op.Caller,
 		if v := cmp.Or(req.Version, s.updates.Result().Latest); v != "" {
 			version = strings.TrimPrefix(v, "v")
 		}
-		return api.ServerUpgradeResponse{}, api.CodeUpgradeUnsupported.Errorf(
+		return "", api.CodeUpgradeUnsupported.Errorf(
 			"this koko server runs in the container image, which a new image upgrades: set KOKO_VERSION=%s in .env beside its Compose file, then run docker compose pull && docker compose up -d", version)
 	case api.UpgradeWayNone:
-		return api.ServerUpgradeResponse{}, api.CodeUpgradeUnsupported.Errorf(
+		return "", api.CodeUpgradeUnsupported.Errorf(
 			"this koko server runs without the upgrade helper, which koko server install sets up with systemd: replace kokod and restart it")
 	}
 	to := req.Version
 	if to == "" {
 		if to, err = s.latest(ctx); err != nil {
-			return api.ServerUpgradeResponse{}, err
+			return "", err
 		}
 	}
-	if err := s.checkNewer(to, req.Version == ""); err != nil {
+	return to, s.checkNewer(to, req.Version == "")
+}
+
+// upgradeTo asks the upgrade helper to upgrade the koko server to the
+// release prepareUpgrade chose: it checks again who asks, refuses a second
+// upgrade while one is asked for or runs, then writes the request the
+// helper's path unit waits for, through a temporary file renamed into
+// place, and logs who asked.
+func (s *settings) upgradeTo(ctx context.Context, tx store.Tx, caller op.Caller, _ api.ServerUpgradeRequest, to string) (api.ServerUpgradeResponse, error) {
+	who, err := access.OwnerOnly(ctx, tx, caller, "upgrades the koko server")
+	if err != nil {
 		return api.ServerUpgradeResponse{}, err
 	}
-	if err := s.upgrade.checkIdle(); err != nil {
+	if err := s.upgrade.checkIdle(op.Now(ctx)); err != nil {
 		return api.ServerUpgradeResponse{}, err
 	}
 	if err := s.upgrade.request(to); err != nil {
@@ -245,9 +256,17 @@ func goBackLine(version string) string {
 	return "curl -fsSL " + release.GitHub + "/latest/download/install.sh | sudo env KOKO_VERSION=" + version + " sh"
 }
 
+// abandonedAfter is how long after it started an outcome that still says
+// running is taken as abandoned, as by a helper killed or a machine
+// rebooted mid-upgrade: the helper's own steps end well within it, the
+// download within 10 minutes and each install within its wait for the
+// socket.
+const abandonedAfter = 30 * time.Minute
+
 // checkIdle refuses a second upgrade while one is asked for, its request
-// still there, or runs, as its outcome says.
-func (u Upgrade) checkIdle() error {
+// still there, or runs, as its outcome says, unless that outcome is older
+// than abandonedAfter at now.
+func (u Upgrade) checkIdle(now time.Time) error {
 	switch _, err := os.Lstat(u.RequestFile); {
 	case err == nil:
 		return api.CodeUpgradeRunning.Errorf("an upgrade of the koko server is asked for already, and its helper has not taken it yet: koko server show says how it ends")
@@ -258,10 +277,13 @@ func (u Upgrade) checkIdle() error {
 	if err != nil {
 		return err
 	}
-	if last != nil && last.State == installer.UpgradeRunning {
-		return api.CodeUpgradeRunning.Errorf("the koko server's upgrade from %s to %s runs already: koko server show says how it ends", last.From, last.To)
+	if last == nil || last.State != api.UpgradeRunning {
+		return nil
 	}
-	return nil
+	if started, err := time.Parse(time.RFC3339, last.StartedAt); err == nil && now.Sub(started) > abandonedAfter {
+		return nil
+	}
+	return api.CodeUpgradeRunning.Errorf("the koko server's upgrade from %s to %s runs already: koko server show says how it ends", last.From, last.To)
 }
 
 // request writes the upgrade request for the release to, which starts the

@@ -165,7 +165,8 @@ func Upgrade(u server.Upgrade) Option {
 }
 
 // Version makes the koko server report v as its version, and upgrade from
-// it, in place of the test binary's build.
+// it, in place of the test binary's build, as kokod run fills it in from the
+// build of its own file.
 func Version(v string) Option {
 	return func(o *options) { o.version = v }
 }

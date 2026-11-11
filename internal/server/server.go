@@ -138,9 +138,9 @@ type Config struct {
 	// Timings is the product's, such as how long logging in to a Host may
 	// take. No flag or environment variable sets it.
 	Timings timing.Timings
-	// Version is the version hook, for tests only: the version the koko
-	// server reports and upgrades from; empty means this binary's build.
-	// No flag or environment variable sets it.
+	// Version is the version the koko server reports and upgrades from:
+	// kokod run fills it in from the build of its own file, which is this
+	// process's; empty means this binary's build.
 	Version string
 	// Releases is the releases hook, for tests only: where the check for a
 	// new koko release finds the latest. The zero Source is GitHub's (ADR

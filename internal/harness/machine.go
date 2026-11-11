@@ -773,6 +773,9 @@ func (m *Machine) Systemctl(_ context.Context, args ...string) error {
 	case "stop":
 		m.stopService()
 		return nil
+	case "reset-failed":
+		// The fake keeps no start limit to reset.
+		return nil
 	}
 	return fmt.Errorf("the fake systemctl does not know %q", args)
 }
@@ -1100,8 +1103,8 @@ func (m *Machine) startService() error {
 		c.UpdateClock, c.Releases = StillClock{}, releases
 		c.Upgrade.HelperUnit, c.Upgrade.OutcomeFile = m.Path(c.Upgrade.HelperUnit), m.Path(c.Upgrade.OutcomeFile)
 		c.Upgrade.RequestFile = m.Path(c.Upgrade.RequestFile)
-		// It reports the version of the kokod file it runs, as a real one
-		// reports its own build's.
+		// It reports the version of the kokod file it runs, as kokod run
+		// fills it in from the build of its own file.
 		c.Version = version
 		return server.Run(ctx, c)
 	}

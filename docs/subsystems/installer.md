@@ -396,17 +396,19 @@ so a v0.3.x koko server gains them at its next upgrade by the install line:
 upgrade`, the helper, in this order:
 
 1. **The request.** It opens `/run/koko/upgrade.request` without following a
-   link and without waiting, as it would for a named pipe, and removes
-   whatever is there at once, so that the path unit starts it only once. It
-   takes the request only when it is a regular file owned by `koko`
-   (`FileOwner`) of at most 256 bytes, holding `{"version": "vX.Y.Z"}` and
-   no other field, the version a release's tag strictly newer than the
-   build of the `kokod` installed. No request at all, as when it is run by
-   hand, is an error and recorded nowhere; any other refusal is recorded as
-   `failed`, with nothing downloaded.
-2. **The outcome** `running`, with `from`, `to` and `started_at`, written to
-   `outcome.json` through a temporary file renamed into place, as every file
-   install writes.
+   link and without waiting, as it would for a named pipe. It takes the
+   request only when it is a regular file owned by `koko` (`FileOwner`) of
+   at most 256 bytes, holding `{"version": "vX.Y.Z"}` and no other field,
+   the version a release's tag strictly newer than the build of the `kokod`
+   installed. No request at all, as when it is run by hand, is an error and
+   recorded nowhere; any other refusal is recorded as `failed`, with
+   nothing downloaded.
+2. **The outcome** `running`, with `from`, `to` and `started_at`, or the
+   refusal, written to `outcome.json` through a temporary file renamed into
+   place, as every file install writes. Only then does it remove whatever
+   is at the request's path, a link itself, so that the path unit starts it
+   only once and `server.upgrade`, which refuses while the request is there
+   or the outcome says `running`, never finds neither meanwhile.
 3. **The download** of that tag's `SHA256SUMS` and `kokod-linux-<arch>`,
    through [the shared module](release.md), into a new 0700 directory under
    `/var/lib/koko-upgrade`, removed at the end; the checks are the SHA-256,
@@ -419,13 +421,19 @@ upgrade`, the helper, in this order:
    migrates the schema at its start, snapshot first.
 6. **Putting it back,** when that install fails: `systemctl stop
    koko.service`, so that `Restart=on-failure` cannot bring the new kokod up
-   meanwhile; then, when `koko.db` is at a schema newer than the helper's
-   own, which is the previous kokod's, it moves `koko.db`, with its `-wal`
-   and `-shm`, aside as `koko.db.failed-<to>` and renames the snapshot that
-   migration took, `koko.db.before-<n>`, into its place
+   meanwhile, and `systemctl reset-failed koko.service`, since a kokod that
+   exits at its start is restarted until systemd's start limit refuses any
+   further start, the previous kokod's included; then, when `koko.db` is at a schema newer than the helper's
+   own, which is the previous kokod's, it moves `koko.db`, its `-wal` and
+   `-shm` first, aside as `koko.db.failed-<to>`, or `koko.db.failed-<to>.2`
+   and on when an earlier failure holds that name, and renames the snapshot
+   that migration took into its place: `koko.db.before-<n>`, named for the
+   version the migration went to, `n` at least `koko.db`'s, since one that
+   stopped part way left it short
    ([`store.PutBack`](../../internal/server/store/putback.go)), by rename
    only. That is safe because a kokod whose socket never opened served
-   nothing. Then it runs `kokod.previous install --json`.
+   nothing. Then it runs `kokod.previous install --json`. Putting back goes
+   on when systemd asks the helper to stop meanwhile.
 7. **The outcome** becomes `succeeded`; `failed`, the previous kokod running
    again, with the message of what failed and of what was put back; or
    `failed_not_restored` when the previous kokod did not install either,

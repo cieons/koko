@@ -33,3 +33,22 @@ func TestRunTakesItsUpgradeWayFromKokoImage(t *testing.T) {
 		})
 	}
 }
+
+// kokod run reports the version of its own file, as the machine reads its
+// build, and the koko server upgrades from it.
+func TestRunReportsTheVersionOfItsOwnFile(t *testing.T) {
+	t.Parallel()
+	m := harness.NewMachine(t)
+	b := harness.KokodBuild()
+	b.Version = "v0.4.0"
+	file := m.NewKokod(b)
+	socket := filepath.Join(harness.ShortTempDir(t), "koko.sock")
+	p := harness.KokodServing(t, harness.SocketPath(socket))
+	p.Machine, p.Binary = m, func() (string, error) { return file, nil }
+	run := harness.RunKokodBackground(t, p, nil,
+		"run", "--data-dir", filepath.Join(t.TempDir(), "data"), "--root-key-file", filepath.Join(t.TempDir(), "root.key"),
+		"--owner", "alice", "--address", "koko.example.com")
+	if s := waitServing(t, run, socket); s.Version != "v0.4.0" {
+		t.Errorf("server show names the version %q, want v0.4.0, its file's", s.Version)
+	}
+}

@@ -261,6 +261,10 @@ const (
 	// on, or, at the koko server's start-up, something answers on its
 	// socket.
 	CodePortTaken = "port_taken"
+	// CodeUpgradeFailed: the koko server's upgrade through the upgrade
+	// helper failed: kokod upgrade's, when it did not succeed, and koko
+	// server upgrade's, with the outcome's message.
+	CodeUpgradeFailed = "upgrade_failed"
 )
 
 // Code is the error code r is reported with: CodeInvalidUsage, which exits
