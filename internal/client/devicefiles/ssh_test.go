@@ -169,6 +169,42 @@ func TestKokosSSHConfigRefusesWhatSSHWouldMisread(t *testing.T) {
 	}
 }
 
+// AddressNames lists, in the file's order, the bare names in koko's
+// ssh_config that the C library reads as an IPv4 address: one number
+// within 32 bits, decimal, octal after a 0 or hex after 0x. No file holds
+// none, and one that is not a regular file is an error.
+func TestAddressNamesAreTheNamesSSHReadsAsAnIPv4Address(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".ssh", "koko"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := devicefiles.AddressNames(home); err != nil || got == nil || len(got) != 0 {
+		t.Errorf("with no ssh_config, AddressNames = %q (%v), want an empty list", got, err)
+	}
+	names := []string{
+		"web1", "0", "00", "0x", "0x0", "0xab", "0xg", "08", "09", "010", "1e5",
+		"201", "4294967295", "4294967296", "0x100000000",
+	}
+	if _, err := devicefiles.WriteSSHConfig(home, names); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"0", "00", "0x0", "0xab", "010", "201", "4294967295"}
+	if got, err := devicefiles.AddressNames(home); err != nil || !slices.Equal(got, want) {
+		t.Errorf("AddressNames of %q = %q (%v), want %q", names, got, err, want)
+	}
+
+	path := filepath.Join(home, ".ssh", "koko", "ssh_config")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := devicefiles.AddressNames(home); err == nil {
+		t.Errorf("with a directory for koko's ssh_config, AddressNames = %q, want an error", got)
+	}
+}
+
 // The Device Mux's refresh rewrites the bare names but runs koko by the path
 // the file names already, which a command run from the user's shell wrote:
 // a refresh whose own lookup finds another path, as one without the user's

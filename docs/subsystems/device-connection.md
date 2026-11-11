@@ -177,9 +177,13 @@ ssh integration (P0 spec: reach, "Device files and ssh integration").
   ssh_config (such as one generated into `/etc/ssh/ssh_config.d`), cannot
   give it a HostName that `koko tunnel` would be passed instead. A `Port`
   from such a block still reaches ssh but not the Tunnel, which does not use
-  it. A Host whose name is digits alone, such as `201`, is the one name
-  this does not cover: ssh reads it as an IPv4 address (`0.0.0.201`), even
-  from `HostName`, so it is reached as `201.koko`.
+  it. A Host whose name is an IPv4 address written as one number is the
+  one name this does not cover: ssh reads `201` as `0.0.0.201`, even from
+  `HostName`, and the C library's resolver reads octal after a `0`
+  (`010`) and hex after `0x` (`0xab`) too, within 32 bits, so such a Host
+  is reached as `<name>.koko`. koko records the name all the same, and
+  `koko status` names those bare names (`devicefiles.AddressNames`), with
+  `ssh <name>.koko` to use.
   The ProxyCommand runs the binary that wrote the file: by the path a PATH
   lookup of `koko` finds when that is the same file, such as a package
   manager's link that outlives an upgrade, and otherwise by the path the OS
@@ -471,7 +475,8 @@ Device Session, the address, `reason=dead` and the error, `no answer for
   misread refused before the code is spent, and the revocation cleanup of
   the bare names and known_hosts;
   [`devicefiles/ssh_test.go`](../../internal/client/devicefiles/ssh_test.go):
-  the 1 KiB split (golden), the keywords and paths, the ProxyCommand's path
+  the 1 KiB split (golden), the bare names ssh reads as an IPv4 address,
+  the keywords and paths, the ProxyCommand's path
   by PATH, the refusals, and the file written only when it would change.
 - [`barenames_test.go`](../../internal/client/cli/barenames_test.go): the
   bare names a join writes for a Member and for the Owner, Retired Hosts
@@ -492,8 +497,8 @@ Device Session, the address, `reason=dead` and the error, `no answer for
   koko's Include giving `web1` a HostName and a Port
   ([the Gateway](gateway.md#verifying)).
 - [`status_test.go`](../../internal/client/cli/status_test.go): `koko
-  status` joined, over the socket, not joined, revoked and unreachable, and
-  its Include warnings.
+  status` joined, over the socket, not joined, revoked and unreachable, its
+  Include warnings, and the bare names ssh reads as IP addresses.
 - [`retry_test.go`](../../internal/client/cli/retry_test.go)
   `TestAJoinWhoseCallIsCutStillJoins`: `user.current` cut mid-flight and sent
   again on a Device Connection of the new key.

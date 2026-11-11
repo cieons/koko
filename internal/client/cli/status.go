@@ -57,7 +57,16 @@ type statusJSON struct {
 	// host, and how to fix it; null when it does, or the device has not
 	// joined.
 	IncludeWarning *string `json:"include_warning"`
+	// NamesReadAsAddresses are the bare names in koko's ssh_config that ssh
+	// reads as an IPv4 address, such as 201, so that ssh <name> does not
+	// reach those Hosts through koko and only ssh <name>.koko does; empty
+	// when there are none, null when koko cannot read its ssh_config.
+	NamesReadAsAddresses *[]string `json:"names_read_as_addresses"`
 }
+
+// shownNamesReadAsAddresses is how many of NamesReadAsAddresses the human
+// form names before it counts the rest.
+const shownNamesReadAsAddresses = 3
 
 // errorJSON is an error as the CLI prints one inside a result.
 type errorJSON struct {
@@ -134,8 +143,29 @@ func (s statusJSON) Human(w io.Writer) error {
 	if s.IncludeWarning != nil {
 		fmt.Fprintf(&b, "\nWarning: %s.\n", *s.IncludeWarning)
 	}
+	switch names := s.NamesReadAsAddresses; {
+	case names == nil:
+		b.WriteString("\nWarning: koko cannot read its ssh_config, so it cannot tell which Hosts ssh reaches only as <name>.koko.\n")
+	case len(*names) > 0:
+		fmt.Fprintf(&b, "\nWarning: %s.\n", namesReadAsAddressesWarning(*names))
+	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// namesReadAsAddressesWarning says that ssh reads names, bare names in
+// koko's ssh_config, as IP addresses, naming the first
+// shownNamesReadAsAddresses and counting the rest, and what to run instead.
+func namesReadAsAddressesWarning(names []string) string {
+	if len(names) == 1 {
+		return fmt.Sprintf("ssh reads %s as an IP address, so ssh %s does not reach that Host through koko: use ssh %s.koko", names[0], names[0], names[0])
+	}
+	shown := names[:min(len(names), shownNamesReadAsAddresses)]
+	list := strings.Join(shown[:len(shown)-1], ", ") + " and " + shown[len(shown)-1]
+	if rest := len(names) - len(shown); rest > 0 {
+		list = strings.Join(shown, ", ") + fmt.Sprintf(" and %d more", rest)
+	}
+	return fmt.Sprintf("ssh reads %s as IP addresses, so ssh <name> does not reach those Hosts through koko: use ssh <name>.koko, such as ssh %s.koko", list, names[0])
 }
 
 // status shows what this device knows of its koko server. A koko server it
@@ -175,6 +205,11 @@ func status(ctx context.Context, in *Input) (statusJSON, error) {
 		}
 	case !errors.Is(err, devicefiles.ErrNotJoined):
 		return statusJSON{}, err
+	}
+	// Advice, so a koko ssh_config it cannot read leaves it unknown and
+	// fails nothing.
+	if names, err := devicefiles.AddressNames(home); err == nil {
+		s.NamesReadAsAddresses = &names
 	}
 	r, err := devicefiles.ReadRevocation(home)
 	switch {

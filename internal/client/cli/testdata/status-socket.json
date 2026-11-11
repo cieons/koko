@@ -7,5 +7,6 @@
   "server_error": null,
   "device_mux": null,
   "revocation": null,
-  "include_warning": null
+  "include_warning": null,
+  "names_read_as_addresses": []
 }

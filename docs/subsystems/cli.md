@@ -257,7 +257,7 @@ one `koko join koko_...` line to paste on the new device. `koko join` says
 which koko server it joined, as whose device, then any Include warning.
 `koko status` lists its
 fields one per line (`Server Address:`, `User:`, `Device:`, `Unix socket:`,
-`koko server:`, `Device Mux:`, `This CLI:`, `Revoked:`), then any Include warning. `koko device ls` names who
+`koko server:`, `Device Mux:`, `This CLI:`, `Revoked:`), then any Include warning, then any warning of bare names ssh reads as IP addresses, or that koko cannot tell. `koko device ls` names who
 added each device as `<user>/<device>` or `unix socket`, and adds a REVOKED
 column when it lists a Revoked one; `koko device revoke` says which device it
 revoked, and when it was this device, that koko deleted its files. `koko
@@ -365,7 +365,7 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
 | `koko disconnect` | reversible | none | `{"device_muxes": [{"socket", "commands_ended"}], "commands_ended"}`: each Device Mux it stopped, by socket, with how many commands were connected to it, which ended, and the sum ([`koko disconnect`](device-mux.md#state-and-exit)) |
 | `koko ssh setup` | reversible | `server.show`, then `host.list` | `{"ssh_config", "include_warning"}`: the path of koko's ssh_config it wrote for this OS user on the koko server's own machine, and `include_warning` as `koko status` prints it ([on the koko server's own machine](device-connection.md#on-the-koko-servers-own-machine)) |
 | `koko leave` | irreversible | none: it never contacts the koko server | `{"server_address", "device_session"}`: the koko server the device left and its Device Session there, left behind, as `koko status` names one ([`koko leave`](device-connection.md#on-the-device)) |
-| `koko status` | read | none: the koko server's version comes from its report | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_error", "device_mux", "revocation", "include_warning"}`, below |
+| `koko status` | read | none: the koko server's version comes from its report | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_error", "device_mux", "revocation", "include_warning", "names_read_as_addresses"}`, below |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
 | `koko server install [--owner <user>] [--address <host[:port]>] [--port <port>] [--web-listen <host:port\|off>] [--kokod <file>]` | irreversible | `server.init`, after it runs `kokod install` | `{"upgraded", "address", "host_key_fingerprint", "root_key_file", "root_key_id", "listen_port", "join_code"}`, the Join Code as `device add` prints it; an upgrade has no `join_code`, and may have `devices_must_connect` ([the installer](installer.md#what-it-prints)). Without `--kokod` it runs the `kokod` installed of its build, or else downloads its release's ([the download](installer.md#the-download)) |
@@ -443,7 +443,14 @@ in the same shape, or `null`; and `include_warning` says why ssh does not
 read koko's ssh_config for every host and how to fix it (the Include line
 missing or below a `Host` or `Match` line, or `~/.ssh/config` left alone or
 unreadable, [the device's ssh](device-connection.md#ssh)), or is `null`,
-also when the device has not joined. It exits 0 whether or not the koko
+also when the device has not joined; and `names_read_as_addresses` lists
+the bare names in koko's ssh_config that ssh reads as an IPv4 address,
+such as `201`, `010` or `0xab`, which `ssh <name>` does not reach through
+koko ([the device's ssh](device-connection.md#ssh)), in the file's order:
+`[]` when there are none, or no koko ssh_config for this `HOME`, and
+`null` when koko cannot read it. The human form names the first three,
+counts the rest and says to use `ssh <name>.koko`, or says that koko cannot
+tell. It exits 0 whether or not the koko
 server answered, and 1 only when the device's own files cannot be read.
 When it reached the koko server over the Unix socket, on its own machine,
 and `server_version` differs from `cli_version`, the human form adds one

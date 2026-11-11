@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -43,7 +44,8 @@ type statusOut struct {
 		DeviceSession deviceSessionRef `json:"device_session"`
 		LearnedAt     string           `json:"learned_at"`
 	} `json:"revocation"`
-	IncludeWarning *string `json:"include_warning"`
+	IncludeWarning       *string   `json:"include_warning"`
+	NamesReadAsAddresses *[]string `json:"names_read_as_addresses"`
 }
 
 // errorOut is an error object as koko status prints one inside its result.
@@ -284,5 +286,63 @@ func TestStatusWarnsWhenSSHDoesNotReadKokosSSHConfig(t *testing.T) {
 	r.WantSuccess(t)
 	if !strings.HasSuffix(r.Stdout, "\nWarning: "+notRegular+".\n") {
 		t.Errorf("status says\n%s\nwithout the warning", r.Stdout)
+	}
+}
+
+// koko status names the bare names in koko's ssh_config that ssh reads as
+// an IPv4 address, a number such as 201, 010 or 0xab, so that ssh <name>
+// does not reach them through koko, and says to use ssh <name>.koko: in
+// full in names_read_as_addresses, and the first three in its warning. A
+// name such as 09, which is no number ssh reads, it leaves out; with none
+// it says nothing; and a koko ssh_config it cannot read it shows as null,
+// with a warning that it cannot tell.
+func TestStatusNamesBareNamesSSHReadsAsAddresses(t *testing.T) {
+	t.Parallel()
+	h := harness.Start(t)
+	d := h.Join(harness.Owner)
+	add := func(names ...string) {
+		t.Helper()
+		for _, n := range names {
+			d.Koko("host", "add", n, "address=203.0.113.10", "account=deploy").WantSuccess(t)
+		}
+	}
+	want := func(names []string, warning string) {
+		t.Helper()
+		s, _ := status(t, d.Koko)
+		if s.NamesReadAsAddresses == nil || !slices.Equal(*s.NamesReadAsAddresses, names) {
+			t.Errorf("status lists names_read_as_addresses %v, want %q", deref(s.NamesReadAsAddresses), names)
+		}
+		r := d.Koko("status")
+		r.WantSuccess(t)
+		if warning == "" && strings.Contains(r.Stdout, "Warning") || warning != "" && !strings.HasSuffix(r.Stdout, "\nWarning: "+warning+".\n") {
+			t.Errorf("status says\n%s\nwant the warning %q", r.Stdout, warning)
+		}
+	}
+
+	add("web1", "09")
+	want([]string{}, "")
+	add("201")
+	want([]string{"201"}, "ssh reads 201 as an IP address, so ssh 201 does not reach that Host through koko: use ssh 201.koko")
+	add("0xab")
+	// In the order of koko's ssh_config, the bare names' natural order.
+	want([]string{"0xab", "201"}, "ssh reads 0xab and 201 as IP addresses, so ssh <name> does not reach those Hosts through koko: use ssh <name>.koko, such as ssh 0xab.koko")
+	add("010", "202", "203")
+	want([]string{"0xab", "010", "201", "202", "203"}, "ssh reads 0xab, 010, 201 and 2 more as IP addresses, so ssh <name> does not reach those Hosts through koko: use ssh <name>.koko, such as ssh 0xab.koko")
+
+	path := filepath.Join(kokoDir(d), "ssh_config")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := status(t, d.Koko)
+	if s.NamesReadAsAddresses != nil {
+		t.Errorf("with koko's ssh_config a directory, status lists names_read_as_addresses %v, want null", *s.NamesReadAsAddresses)
+	}
+	r := d.Koko("status")
+	r.WantSuccess(t)
+	if want := "\nWarning: koko cannot read its ssh_config, so it cannot tell which Hosts ssh reaches only as <name>.koko.\n"; !strings.HasSuffix(r.Stdout, want) {
+		t.Errorf("status says\n%s\nwithout the line %q", r.Stdout, want)
 	}
 }

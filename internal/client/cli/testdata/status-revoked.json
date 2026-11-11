@@ -18,5 +18,6 @@
     },
     "learned_at": "<time>"
   },
-  "include_warning": null
+  "include_warning": null,
+  "names_read_as_addresses": []
 }

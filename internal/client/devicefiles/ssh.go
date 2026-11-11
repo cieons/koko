@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
@@ -121,6 +122,56 @@ func HasSSHConfig(home string) bool {
 	}
 	_, err := os.Lstat(SSHConfigPath(home))
 	return !errors.Is(err, fs.ErrNotExist)
+}
+
+// AddressNames returns the bare names in koko's ssh_config, for the OS user
+// whose home directory is home, that ssh reads as an IPv4 address, in the
+// file's order: ssh <name> does not reach those Hosts through koko, since
+// ssh connects with the address, such as 0.0.0.201 for 201, whatever
+// HostName says, and only ssh <name>.koko does. A file that is not there,
+// or a HOME koko never writes under, holds none, an empty list; one koko
+// cannot read is an error, never none.
+func AddressNames(home string) ([]string, error) {
+	out := []string{}
+	if checkHome(home) != nil {
+		return out, nil
+	}
+	b, err := readRegular(SSHConfigPath(home), "koko's ssh_config")
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return out, nil
+	case err != nil:
+		return nil, err
+	}
+	for line := range strings.Lines(string(b)) {
+		names, ok := strings.CutPrefix(strings.TrimSuffix(line, "\n"), "Host ")
+		if !ok {
+			continue
+		}
+		for n := range strings.FieldsSeq(names) {
+			if readsAsIPv4(n) {
+				out = append(out, n)
+			}
+		}
+	}
+	return out, nil
+}
+
+// readsAsIPv4 tells whether the name n, a lowercase DNS label, is an IPv4
+// address written as one number, as the C library's inet_aton reads one,
+// and with it the getaddrinfo ssh asks: decimal, octal after a 0, or hex
+// after 0x, within 32 bits. A larger number is left out: glibc reads it as
+// no address, though macOS's C library reads it modulo 2^32.
+func readsAsIPv4(n string) bool {
+	digits, base := n, 10
+	switch {
+	case strings.HasPrefix(n, "0x"):
+		digits, base = n[2:], 16
+	case strings.HasPrefix(n, "0"):
+		base = 8
+	}
+	_, err := strconv.ParseUint(digits, base, 32)
+	return err == nil
 }
 
 // RefreshSSHConfig rewrites koko's ssh_config as WriteSSHConfig does, for
@@ -330,12 +381,12 @@ func AddInclude(home string) error {
 	}
 	if fi.Mode()&fs.ModeSymlink != 0 {
 		// The file it leads to may include koko's ssh_config already.
-		if b, err := readRegular(path); err == nil && scanConfig(b, home).include > 0 {
+		if b, err := readRegular(path, "~/"+userConfig); err == nil && scanConfig(b, home).include > 0 {
 			return nil
 		}
 		return leftAlone("~/" + userConfig + " is a symlink")
 	}
-	b, err := readRegular(path)
+	b, err := readRegular(path, "~/"+userConfig)
 	switch {
 	case err != nil:
 		return leftAlone(err.Error())
@@ -355,19 +406,20 @@ func leftAlone(why string) error {
 	return fmt.Errorf("%s, so koko left it as it is: add the line %q at its top, so that ssh reaches Hosts through koko", why, IncludeLine)
 }
 
-// readRegular reads the user's ssh configuration at path, through a
-// symlink, only when it is a regular file: a named pipe would never end.
-func readRegular(path string) ([]byte, error) {
+// readRegular reads the ssh configuration at path, which its errors call
+// what, through a symlink, only when it is a regular file: a named pipe
+// would never end.
+func readRegular(path, what string) ([]byte, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
-		return nil, fmt.Errorf("koko cannot read ~/%s (%w)", userConfig, err)
+		return nil, fmt.Errorf("koko cannot read %s (%w)", what, err)
 	}
 	if !fi.Mode().IsRegular() {
-		return nil, fmt.Errorf("~/%s is not a regular file", userConfig)
+		return nil, fmt.Errorf("%s is not a regular file", what)
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("koko cannot read ~/%s (%w)", userConfig, err)
+		return nil, fmt.Errorf("koko cannot read %s (%w)", what, err)
 	}
 	return b, nil
 }
@@ -381,7 +433,7 @@ func CheckInclude(home string) error {
 	if err := checkHome(home); err != nil {
 		return err
 	}
-	b, err := readRegular(filepath.Join(home, userConfig))
+	b, err := readRegular(filepath.Join(home, userConfig), "~/"+userConfig)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("%w, so koko cannot tell whether ssh reaches Hosts through koko", err)
 	}
