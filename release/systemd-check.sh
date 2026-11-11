@@ -113,7 +113,11 @@ work=$(mktemp -d)
 port=8443
 default_port=7822
 device=koko-systemd-check-device
-image=ubuntu:24.04
+# The device's image is Ubuntu 24.04 with curl and a trust store already in
+# it (Docker's official buildpack-deps, its curl variant), pinned by digest
+# and pulled before the koko server starts, so that no step needs Ubuntu's
+# archive, or its name resolved, once the check is under way.
+image=buildpack-deps:24.04-curl@sha256:a115b80bacdfad86050664accdf7e2d7be45edb87d98a3ba78b78f0f9a089c1a
 github=$work/github
 requests=$work/requests
 ca=/usr/local/share/ca-certificates/koko-systemd-check.crt
@@ -405,9 +409,8 @@ sudo sh -c 'ls -l /var/lib/koko/koko.db.before-*' || fail "the upgrade left no s
 device_calls
 
 step "the device installs the newer CLI with install.sh without arguments, and no kokod"
-# Its image has neither curl nor a trust store, and it trusts the test CA
-# as this machine does, through its own store.
-docker exec "$device" sh -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -qq -y --no-install-recommends ca-certificates curl >/dev/null'
+# Its image brings curl and a trust store, and it trusts the test CA as
+# this machine does, through its own store.
 docker cp -q "$work/ca.crt" "$device:/usr/local/share/ca-certificates/koko-systemd-check.crt"
 docker exec "$device" update-ca-certificates >/dev/null
 mark

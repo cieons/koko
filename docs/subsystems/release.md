@@ -451,15 +451,20 @@ the script puts `/etc/hosts` and the trust store back. A setting in
 install.sh or koko to download from elsewhere would be one more input to
 what runs as root on every koko server, for a test alone.
 
-**The device** is a Docker container (`ubuntu:24.04`) on the host's network,
-with the older build's binary copied in as its `/usr/local/bin/koko`. Its
-own filesystem has no `/run/koko/koko.sock`, so its commands go over TCP to
+**The device** is a Docker container on the host's network, of
+`buildpack-deps:24.04-curl`, Docker's official Ubuntu 24.04 image with
+`curl` and a trust store (`ca-certificates`) already in it. The script names
+it by digest and pulls it before the koko server starts, so no step installs
+a package or needs Ubuntu's archive once the check is under way; to move to
+a newer image, change the digest in the script. The device has the older
+build's binary copied in as its `/usr/local/bin/koko`. Its own filesystem
+has no `/run/koko/koko.sock`, so its commands go over TCP to
 `localhost:8443`, then `localhost:7822` from step 9 on, as a device's do,
 through its Device Mux, and not through the Unix socket as the Local
-caller. It keeps the older CLI through the
-upgrade, as a device does when its koko server is upgraded. After step 5,
-it installs the newer CLI as a device does: `curl` and `ca-certificates`
-from Ubuntu's archive, the test CA in its own trust store, `github.com`
+caller. It keeps the older CLI through the upgrade, as a device does when
+its koko server is upgraded. After step 5,
+it installs the newer CLI as a device does: with its image's `curl`, the
+test CA added to its own trust store (`update-ca-certificates`), `github.com`
 mapped by `--add-host`, and the newer install.sh run without arguments. It
 then has the newer `/usr/local/bin/koko`, downloaded once, and no
 `kokod`, and lists the Users with it, through a Device Mux of the newer
