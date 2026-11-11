@@ -142,22 +142,29 @@ func TestTheServerRefusesACLIBelowTheWindow(t *testing.T) {
 	}
 }
 
-// A CLI at the oldest koko the koko server works with keeps working.
+// A CLI at the oldest koko the koko server works with keeps working, and
+// so does a development build that names no release before it, as one
+// built from a clone without tags.
 func TestTheServerServesACLIAtTheWindow(t *testing.T) {
 	t.Parallel()
-	path, calls := otherServer(t, wire.Report{Version: "v0.5.0", Operations: []string{"space.list"}, Oldest: "v0.5.0"})
-	c := clientAs(t, path, compat.SSHVersion("v0.5.0"))
-	if status, e := callAs(t, c); status != http.StatusOK {
-		t.Errorf("a call answered %d %+v, want 200", status, e)
-	}
-	ch, reqs, err := c.OpenChannel(wire.ChannelWeb, wire.WebPayload(8080))
-	if err != nil {
-		t.Fatalf("open %s: %v", wire.ChannelWeb, err)
-	}
-	go ssh.DiscardRequests(reqs)
-	_ = ch.Close()
-	if n := calls.Load(); n != 1 {
-		t.Errorf("the koko server's API answered %d call(s), want 1", n)
+	for _, version := range []string{"v0.5.0", "v0.0.0-20261111074729-d6db4d8b9455+dirty"} {
+		t.Run(version, func(t *testing.T) {
+			t.Parallel()
+			path, calls := otherServer(t, wire.Report{Version: "v0.5.0", Operations: []string{"space.list"}, Oldest: "v0.5.0"})
+			c := clientAs(t, path, compat.SSHVersion(version))
+			if status, e := callAs(t, c); status != http.StatusOK {
+				t.Errorf("a call answered %d %+v, want 200", status, e)
+			}
+			ch, reqs, err := c.OpenChannel(wire.ChannelWeb, wire.WebPayload(8080))
+			if err != nil {
+				t.Fatalf("open %s: %v", wire.ChannelWeb, err)
+			}
+			go ssh.DiscardRequests(reqs)
+			_ = ch.Close()
+			if n := calls.Load(); n != 1 {
+				t.Errorf("the koko server's API answered %d call(s), want 1", n)
+			}
+		})
 	}
 }
 

@@ -7,8 +7,9 @@ import (
 )
 
 // Releases compare by their numbers, a pre-release before its release, a
-// pseudo-version just before the release that follows it, and (devel) as
-// the newest.
+// pseudo-version just before the release that follows it, a pseudo-version
+// that names no release before it after every release, and (devel) as the
+// newest.
 func TestCompareOrdersKokosVersions(t *testing.T) {
 	t.Parallel()
 	ordered := []string{
@@ -21,6 +22,9 @@ func TestCompareOrdersKokosVersions(t *testing.T) {
 		"v0.4.1-0.20261112090000-0123456789ab+dirty",
 		"v0.10.0",
 		"v1.0.0",
+		// A clone without tags names no release before the build.
+		"v0.0.0-20261111074729-d6db4d8b9455",
+		"v0.0.0-20261112090000-0123456789ab+dirty",
 		"(devel)",
 	}
 	for i, a := range ordered {
