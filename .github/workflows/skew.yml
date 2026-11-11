@@ -1,0 +1,88 @@
+name: skew
+
+# Runs this commit's CLI against the kokod of the previous release and of
+# compat.Oldest, and the CLI of each against this commit's kokod, real
+# binaries all: a device joins, makes a throwaway sshd container a Managed
+# Host and reaches it with ssh and koko exec, and a command that sends what
+# the older kokod lacks fails with server_too_old (ADR 0049,
+# release/skew-check.sh, docs/subsystems/release.md).
+on:
+  push:
+    branches: [main]
+  # The release workflow runs it on the tag before building a release.
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  # One build for every pair: this commit's CLI and image, as the release
+  # workflow builds them, and the pairs, from the tags and compat.Oldest.
+  build:
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: skew-${{ github.ref }}
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+    timeout-minutes: 15
+    outputs:
+      pairs: ${{ steps.pairs.outputs.pairs }}
+    steps:
+      # The whole history, with its tags, to find the previous release.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: List the pairs
+        id: pairs
+        run: |
+          pairs=$(release/skew-pairs.sh)
+          echo "pairs=$pairs" >>"$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: web/package.json
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: make dist
+      - run: make image
+      # The release workflow's own artifacts are dist and image.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: skew
+          path: |
+            dist/koko-linux-amd64
+            dist/koko-image.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  pair:
+    needs: build
+    # A commit with no release to pair with, as the first of a new window,
+    # has no pair.
+    if: ${{ needs.build.outputs.pairs != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.build.outputs.pairs) }}
+    name: koko ${{ matrix.cli }} with kokod ${{ matrix.kokod }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: skew
+          path: dist
+      # skopeo loads this commit's image from the archive into Docker.
+      - name: Install skopeo
+        if: ${{ matrix.kokod == 'this' }}
+        run: command -v skopeo >/dev/null || { sudo apt-get update && sudo apt-get install -y skopeo; }
+      - name: Join, enroll, ssh, exec and refuse
+        env:
+          CLI: ${{ matrix.cli == 'this' && 'dist/koko-linux-amd64' || matrix.cli }}
+          KOKOD: ${{ matrix.kokod == 'this' && 'dist/koko-image.tar' || matrix.kokod }}
+        run: release/skew-check.sh "$CLI" "$KOKOD"

@@ -17,13 +17,16 @@ permissions:
 jobs:
   # The release is built only from a commit that passes every check,
   # installs on a real systemd machine, runs as its image on each
-  # platform, and, for a patch release, keeps compat.Oldest.
+  # platform, works with the previous release and compat.Oldest's, both
+  # ways, and, for a patch release, keeps compat.Oldest.
   check:
     uses: ./.github/workflows/check.yml
   systemd:
     uses: ./.github/workflows/systemd.yml
   container:
     uses: ./.github/workflows/container.yml
+  skew:
+    uses: ./.github/workflows/skew.yml
   # A patch release never moves compat.Oldest, the oldest koko the CLI and
   # the koko server work with (ADR 0049); the whole history holds the
   # release before it.
@@ -39,7 +42,7 @@ jobs:
   # The build runs koko's and npm's code, so it holds no token that can
   # publish or sign.
   build:
-    needs: [check, systemd, container, window]
+    needs: [check, systemd, container, skew, window]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

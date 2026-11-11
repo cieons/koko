@@ -108,14 +108,15 @@ Windows included, which refuses with `kokod runs on Linux only`.
 The [release workflow](../../.github/workflows/release.yml) runs on a pushed
 `v*` tag, in these jobs:
 
-1. **check**, **systemd**, **container** and **window**: the
+1. **check**, **systemd**, **container**, **skew** and **window**: the
    [check workflow](../../.github/workflows/check.yml) on the tag, on Linux
    and macOS, [the real-systemd check](#the-real-systemd-check),
-   [the container check](#the-container-check), on each platform, and
+   [the container check](#the-container-check), on each platform,
+   [the skew check](#the-skew-check), for each pair of versions, and
    [`release/oldest-check.sh`](../../release/oldest-check.sh), which
    refuses a patch release whose `compat.Oldest` differs from the
    previous release's ([before tagging](#before-tagging)); nothing is
-   built unless all four pass;
+   built unless all five pass;
 2. **build**, with a read-only token and no credentials left in the
    checkout, since it runs koko's and npm's code: `make dist`, a check that
    `dist/koko-linux-amd64 version` and `dist/kokod-linux-amd64 version` are
@@ -329,8 +330,16 @@ that moves it, and a patch release after a release from before the
 window passing; the previous release found by version, `v0.10.0` after
 `v0.5.2`; a tag without `compat.Oldest`, a missing tag, and a previous
 release whose `Oldest` is in a form the script cannot read, refused. A
-test keeps `compat.Oldest` on the one line of `compat.go` that the script
-and the real-systemd workflow read. [The container check](#the-container-check) runs what
+test keeps `compat.Oldest` on the one line of `compat.go` that the script,
+`skew-pairs.sh` and the real-systemd workflow read.
+[`release/skew_pairs_test.go`](../../release/skew_pairs_test.go) runs
+`skew-pairs.sh` on such a repository too: the pairs of a commit after a
+release and of a release's own tag, one release that is both the previous
+one and `compat.Oldest`'s listed once, the previous release found by
+version and never a pre-release, and no pair for a release that is not
+there yet or is below `compat.Oldest`. No test runs `skew-check.sh`, which
+needs Docker and the network: [the skew check](#the-skew-check) is its
+run. [The container check](#the-container-check) runs what
 `make image` builds: its index's platforms and binaries, and, by running
 it, its user, entrypoint, command, environment, `/koko` and `/run/koko`.
 Its `EXPOSE` and labels are checked by hand.
@@ -571,3 +580,99 @@ nothing listens on 17822, 7823 or 18443; it removes the containers,
 networks, volumes, image and files it made. On a failure it prints `docker
 logs koko`, the device's Device Mux log and, once Caddy runs, `docker logs`
 of Caddy.
+
+## The skew check
+
+The CLI and the koko server work together within a window of versions
+([ADR 0049](../adr/0049-the-cli-and-the-koko-server-work-together-within-a-window-of-versions.md)),
+and the [skew workflow](../../.github/workflows/skew.yml) runs real
+binaries of different versions against each other, on every push to `main`
+and on a release's tag before the build job, which needs it.
+
+**The pairs.** [`release/skew-pairs.sh`](../../release/skew-pairs.sh)
+lists them for the commit checked out, as the JSON list the workflow takes
+as its matrix; a pair is a CLI and a kokod, each a release's tag or
+`this`, the commit's own build:
+
+- this CLI with the previous release's kokod, and with `compat.Oldest`'s;
+- the previous release's CLI with this kokod, and `compat.Oldest`'s.
+
+The previous release is the highest release tag, without a pre-release
+part, in the commit's history and not on the commit itself, so a release's
+tag is checked against the release before it. `compat.Oldest` is read from
+its one line in `compat.go`. When the two are one release, its pairs are
+listed once. A release that is not there yet has no pair, as
+`compat.Oldest`'s on the commits that lead to the minor release it names,
+and neither has a previous release below `compat.Oldest`, which the build
+turns away; the script says so on stderr, and a commit with no pair runs
+the build job alone.
+
+**The workflow.** Its **build** job runs `make dist` and `make image`
+once, as the release's build job does, lists the pairs, and uploads
+`koko-linux-amd64` and the image's archive as the artifact `skew`. Its
+**pair** jobs, one for each pair, run in parallel on `ubuntu-24.04`
+runners: each downloads the artifact and runs `release/skew-check.sh`
+with `dist/koko-linux-amd64` or `dist/koko-image.tar` for `this`. The
+build job takes about as long as the container check's build, and a pair
+under a minute.
+
+**One pair.** [`release/skew-check.sh`](../../release/skew-check.sh)
+`<cli> <kokod>` takes, for each, a release's tag or a path: the path of a
+`koko` binary for Linux and the machine's architecture, and of the image's
+archive. Every failure names the step it came in, and shows `docker logs`
+of the koko server and the device's Device Mux log. In order:
+
+1. **the CLI**: a release's `koko-linux-<arch>` is downloaded from its
+   GitHub Release and checked against that release's `SHA256SUMS`;
+2. **the kokod**: a release's image, `ghcr.io/cieons/koko:X.Y.Z`, is
+   pulled; an archive is loaded with `skopeo`, as the container check
+   loads it;
+3. the koko server starts from its image on a Docker network of the
+   check's own, with `KOKO_OWNER=alice` and its container's name as
+   `KOKO_ADDRESS`, and initialises at its first start; `docker exec`
+   `koko device add` issues a Join Code once it answers, and the image's
+   `kokod version` is the tag asked for;
+4. the CLI, copied into an `alpine` container as its `koko`, is the version
+   asked for and joins with the Join Code; `koko status` reports the koko
+   server reached, with its version and no error;
+5. `koko space add ops`, `koko host add web1` and `koko host enroll web1
+   --key` make the sshd container a Managed Host with a pinned host key;
+6. `ssh web1.koko true`, through koko's ssh_config, and `koko exec web1
+   true` both exit 0;
+7. a command that sends what the kokod lacks fails with `server_too_old`,
+   exit 1, and a message naming the kokod's version, the command and
+   `upgrade the koko server`, and changes nothing: `koko host set web1
+   web2 provider=acme`, several Hosts in one `host.set`, which a kokod
+   before v0.5.0 lacks ([ADR 0050](../adr/0050-a-write-of-several-records-is-applied-all-or-none.md)).
+
+**The Host and the device** are `alpine` containers on the check's
+network. The Host installs OpenSSH's server and runs `sshd`, with `root`
+as its Host Account. The device installs OpenSSH's client and makes a key
+of its own, which the check writes as the Host's `authorized_keys`, and
+supplies it to `koko host enroll --key`, as a User who already logs in to
+the Host with a key does.
+
+**What step 7 does not run.** It runs only for this CLI with a kokod
+before v0.5.0, the script's `batch_since`. A kokod from v0.5.0 on lacks
+nothing the script knows, and the step says so: when a later operation's
+revision rises, or `compat.Oldest` passes v0.5.0, the script names the
+next such command. With a released CLI and this kokod nothing is run
+either: a CLI within the window sends nothing this kokod lacks, and
+`cli_too_old` comes only to a CLI below `compat.Oldest`, which no pair
+holds; every release before v0.3.0 states no version and is taken as
+v0.3.0. The S1 tests cover `cli_too_old`
+([`internal/client/cli/skew_test.go`](../../internal/client/cli/skew_test.go)).
+
+**Running one pair locally** needs Docker, `curl`, `jq` and `sha256sum`,
+on Linux or macOS, and `skopeo` for an archive; it takes under a minute
+once the images are pulled, and removes the containers, the network and
+the loaded image it made:
+
+```sh
+make dist && make image
+release/skew-check.sh dist/koko-linux-arm64 v0.3.0   # this CLI, a release's kokod
+release/skew-check.sh v0.3.0 dist/koko-image.tar     # a release's CLI, this kokod
+```
+
+`dist/koko-linux-amd64` is the CLI on an x86-64 machine. Two releases
+pair as well: `release/skew-check.sh v0.5.0 v0.3.0`.

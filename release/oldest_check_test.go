@@ -62,24 +62,34 @@ func (h *history) release(tag, oldest string) {
 	h.git("tag", tag)
 }
 
+// run runs the script name of this directory at the top of the repository
+// and returns its exit status, its stdout and its stderr.
+func (h *history) run(name string, args ...string) (status int, stdout, stderr string) {
+	h.t.Helper()
+	script, err := filepath.Abs(name)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	cmd := exec.CommandContext(h.t.Context(), "sh", append([]string{script}, args...)...)
+	cmd.Dir = h.dir
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	var out, errs strings.Builder
+	cmd.Stdout, cmd.Stderr = &out, &errs
+	err = cmd.Run()
+	if exit, ok := errors.AsType[*exec.ExitError](err); ok {
+		return exit.ExitCode(), out.String(), errs.String()
+	} else if err != nil {
+		h.t.Fatal(err)
+	}
+	return 0, out.String(), errs.String()
+}
+
 // check runs oldest-check.sh for tag and returns its exit status and
 // output.
 func (h *history) check(tag string) (int, string) {
 	h.t.Helper()
-	script, err := filepath.Abs("oldest-check.sh")
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	cmd := exec.CommandContext(h.t.Context(), "sh", script, tag)
-	cmd.Dir = h.dir
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-	out, err := cmd.CombinedOutput()
-	if exit, ok := errors.AsType[*exec.ExitError](err); ok {
-		return exit.ExitCode(), string(out)
-	} else if err != nil {
-		h.t.Fatal(err)
-	}
-	return 0, string(out)
+	status, stdout, stderr := h.run("oldest-check.sh", tag)
+	return status, stdout + stderr
 }
 
 // oldest-check.sh and the real-systemd workflow read compat.Oldest from
