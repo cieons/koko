@@ -188,7 +188,10 @@ status. A command reaches the koko server only on its first `in.Call`, so
   on a network filesystem), `port_taken` (another process holds the port
   `koko web` or `koko server install` listens on), `server_too_old` (the koko server's report does not
   list the command's operation; the message names the koko server's version
-  and the command, and nothing was sent; or, so far for `koko ssh setup`
+  and the command, and nothing was sent; or its revision of the operation
+  does not take a request field an option sets, and the message names the
+  option too, the flag named as the field, or the `key=` word of a command
+  that takes them; or, so far for `koko ssh setup`
   only, the koko server answered without a field the command needs, which
   names it; or the koko server is below `compat.Oldest`, and every command
   fails with it, naming both versions, before sending anything), `download_failed` (`koko server install` or `uninstall` could

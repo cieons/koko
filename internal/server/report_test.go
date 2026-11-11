@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"testing"
 	"time"
@@ -13,14 +14,18 @@ import (
 	"github.com/cieons/koko/internal/shared/compat"
 )
 
-// The koko server reports its build's version, every API operation and
-// the oldest koko it works with, the same before and after
-// initialisation, so a CLI can tell which commands this koko server lacks,
-// and whether it is too old for it.
+// The koko server reports its build's version, every API operation with
+// those above revision 1, and the oldest koko it works with, the same
+// before and after initialisation, so a CLI can tell which commands and
+// fields this koko server lacks, and whether it is too old for it.
 func TestTheReportListsEveryOperation(t *testing.T) {
 	var want []string
+	revisions := map[string]int{}
 	for _, o := range api.Operations() {
 		want = append(want, o.Info().Name)
+		if rev := o.Info().Revision; rev > 1 {
+			revisions[o.Info().Name] = rev
+		}
 	}
 	slices.Sort(want)
 	for name, opts := range map[string][]harness.Option{
@@ -48,6 +53,9 @@ func TestTheReportListsEveryOperation(t *testing.T) {
 			}
 			if !slices.Equal(r.Operations, want) {
 				t.Errorf("reported operations %v, want every operation: %v", r.Operations, want)
+			}
+			if !maps.Equal(r.Revisions, revisions) {
+				t.Errorf("reported revisions %v, want those above 1: %v", r.Revisions, revisions)
 			}
 		})
 	}

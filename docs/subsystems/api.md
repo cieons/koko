@@ -74,10 +74,13 @@ UI's TypeScript types are generated from them
   authenticated, before any channel is served, the transport sends it the
   SSH global request [`wire.RequestReport`](../../internal/shared/wire/wire.go),
   `report@koko`, wanting no reply, whose payload is `wire.Report` in JSON:
-  `{"version", "operations", "oldest"}`, the build's version, the name of
-  every operation registered with the API (`op.API.Names`), the same before
-  and after initialisation, and `compat.Oldest`; a koko server from before
-  the window sends no `oldest`, and a CLI ignores fields it does not know. It reaches the client before the answer to its
+  `{"version", "operations", "oldest", "revisions"}`, the build's version,
+  the name of every operation registered with the API (`op.API.Names`), the
+  same before and after initialisation, `compat.Oldest`, and the revision of
+  each operation and channel above revision 1 ([Revisions](#revisions)); a
+  koko server from before the window sends no `oldest`, one from before
+  revisions no `revisions`, read as every one at 1, and a CLI ignores fields
+  it does not know. It reaches the client before the answer to its
   first channel open, so it costs no round trip
   ([ADR 0027](../adr/0027-the-koko-server-reports-its-version-in-an-ssh-global-request.md)).
   The client's connection keeps it (`serverconn.Conn.Report`).
@@ -101,6 +104,13 @@ first call, through the dial it was given, and for each call:
   `server_too_old`, naming the koko server's version and the command
   ([the CLI](cli.md#the-runner-and-the-output-layer)); within `/v1` a koko
   server only adds operations, so an older CLI always works;
+- sends nothing that sets a request field the koko server's revision of
+  the operation does not take (`api.OpInfo.FieldAfter`, against
+  `wire.Report.Revision`), failing with `apiclient.MissingFieldError`,
+  which the CLI reports as `server_too_old`, naming the option that set the
+  field, the command and the koko server's version, such as "the koko
+  server runs koko v0.4.0, which does not take relay= of koko host add:
+  upgrade the koko server";
 - gives a write a new `Idempotency-Key` (`api.NewIdempotencyKey`);
 - when the connection drops the call (no channel opened, or no answer
   came), closes that connection, dials a new one and sends the call once
@@ -123,7 +133,9 @@ first call, through the dial it was given, and for each call:
   one, or with another form, is refused with `invalid_request`; a read's is
   ignored. See [Idempotency-Key](#idempotency-key).
 - The server refuses a request field it does not know (`unknown_field`, naming
-  it), so a newer CLI's option is never silently dropped. Clients ignore
+  it), so a newer client's option is never silently dropped; koko's own CLI
+  checks the koko server's [revision](#revisions) first, so only other
+  clients meet it. Clients ignore
   response fields they do not know, so within `/v1` a response only gains
   fields, and an older client reads it as before: `space.list` gained each
   Space's `members` and `counts`, in `space.show`'s shape, so that Access
@@ -181,6 +193,37 @@ An area adds its codes beside its types (see
 [code layout](code-layout.md#where-an-area-adds-its-parts)). An operation
 returns `code.Errorf(...)`; a code that is not registered reaches the caller as
 `internal_error`, and the log names it.
+
+## Revisions
+
+Within the [window](#the-way-in), a CLI and a koko server of different
+versions work together, so each change to what an operation takes is
+counted ([ADR 0049](../adr/0049-the-cli-and-the-koko-server-work-together-within-a-window-of-versions.md)).
+
+- **An operation's revision** (`api.Op.Revision`, 1 when left out) rises
+  with each change to what it takes: a new request field, or a new value an
+  existing field takes. A response only gains fields, and raises nothing.
+  The koko server reports each registered operation above revision 1
+  (`op.API.Revisions`) in `report@koko`'s `revisions`.
+- **A field added after revision 1** is named in its operation's
+  `api.Op.Added`, by its path, such as `hosts[].ttl`, with the revision
+  that added it, and is tagged `omitzero` or `omitempty`, so a request
+  holds it only when an option sets it. The table is per operation, not a
+  struct tag, because a request type such as `api.Filter` serves several
+  operations, each at its own revision: a field added to it is added to
+  each of them, at each one's next revision.
+- **A new value of an existing field** has no entry in `Added`: the
+  command that sends it checks the koko server's revision
+  (`wire.Report.Revision`) itself, and fails with `server_too_old` below
+  it.
+- **The golden of requests,** `internal/shared/api/testdata/requests.golden`,
+  records each revision of each operation with the request fields it
+  takes, each with the revision that added it. A recorded revision never
+  changes, since a koko server takes every revision some koko in the
+  window sends: a field added, removed or renamed without a raise fails
+  `TestEveryOperationsRequestFieldsAreRecordedByRevision`, and
+  `go test -update` adds only a new revision's section
+  ([`internal/harness/frozen`](../../internal/harness/frozen/frozen.go)).
 
 ## The operation framework
 
@@ -332,8 +375,17 @@ over the table `idempotency_keys`; the design is P0 spec: reach and
   full the answer to its last call before a stop, and the answer to the
   call revoking its own Device Session with the revocation disconnect.
 - [`internal/server/report_test.go`](../../internal/server/report_test.go):
-  the koko server reports every operation, its build's version and
-  `compat.Oldest`.
+  the koko server reports every operation, its build's version,
+  `compat.Oldest` and the operations above revision 1.
+- [`internal/shared/api/revision_test.go`](../../internal/shared/api/revision_test.go):
+  the golden of every operation's request fields by revision, a field in
+  `Added` that the request has, at a revision from 2 to the operation's,
+  and left out unset, and which field a request sets.
+- [`internal/client/cli/revision_test.go`](../../internal/client/cli/revision_test.go):
+  a field added at a revision above the koko server's, which a report with
+  no revisions or with the operation at 1 reads it as, failing with
+  `server_too_old` naming the option, with nothing sent; the call sent at
+  the field's revision, and with the field unset.
 - [`internal/client/cli/skew_test.go`](../../internal/client/cli/skew_test.go):
   `server_too_old` from a koko server that lacks the command's operation,
   with nothing sent, an older CLI working against a newer koko server, and

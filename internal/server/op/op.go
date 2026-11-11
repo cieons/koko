@@ -132,6 +132,8 @@ type call struct {
 
 type operation struct {
 	write bool
+	// revision is the operation's revision (api.Op.Revision), at least 1.
+	revision int
 	// beforeInit lets the operation answer before initialisation.
 	beforeInit bool
 	// localOnly refuses every caller but the Local caller.
@@ -183,7 +185,7 @@ func New(s *store.Store, rootKey *seal.RootKey, log *slog.Logger, initialised fu
 // registers its operations from its own Register function; registering a
 // name twice panics.
 func (a *API) Handle[Req, Resp any](o api.Op[Req, Resp], fn Func[Req, Resp], opts ...Option) {
-	a.register(o.Name, o.Write, func(body []byte) (call, error) {
+	a.register(o.Info(), func(body []byte) (call, error) {
 		req, err := decode[Req](body)
 		if err != nil {
 			return call{}, err
@@ -201,7 +203,7 @@ func (a *API) HandlePrepared[Req, Prep, Resp any](o api.Op[Req, Resp], prepare P
 	if !o.Write {
 		panic(fmt.Sprintf("op: %s is a read, which needs no Prepare", o.Name))
 	}
-	a.register(o.Name, o.Write, func(body []byte) (call, error) {
+	a.register(o.Info(), func(body []byte) (call, error) {
 		req, err := decode[Req](body)
 		if err != nil {
 			return call{}, err
@@ -219,17 +221,17 @@ func (a *API) HandlePrepared[Req, Prep, Resp any](o api.Op[Req, Resp], prepare P
 	}, opts)
 }
 
-// register adds the operation name, whose request bodies bind decodes,
+// register adds the operation o, whose request bodies bind decodes,
 // changed by opts.
-func (a *API) register(name string, write bool, bind func(body []byte) (call, error), opts []Option) {
-	if _, ok := a.ops[name]; ok {
-		panic(fmt.Sprintf("op: operation %s registered twice", name))
+func (a *API) register(o api.OpInfo, bind func(body []byte) (call, error), opts []Option) {
+	if _, ok := a.ops[o.Name]; ok {
+		panic(fmt.Sprintf("op: operation %s registered twice", o.Name))
 	}
-	entry := operation{write: write, bind: bind}
+	entry := operation{write: o.Write, revision: o.Revision, bind: bind}
 	for _, opt := range opts {
 		opt(&entry)
 	}
-	a.ops[name] = entry
+	a.ops[o.Name] = entry
 }
 
 // decode reads a request body into its type, refusing a member the type
@@ -244,6 +246,19 @@ func decode[Req any](body []byte) (Req, error) {
 // koko server reports it serves (wire.Report).
 func (a *API) Names() []string {
 	return slices.Sorted(maps.Keys(a.ops))
+}
+
+// Revisions returns the revision of each registered operation above
+// revision 1, by name: what the koko server reports of them
+// (wire.Report.Revisions).
+func (a *API) Revisions() map[string]int {
+	revs := map[string]int{}
+	for name, o := range a.ops {
+		if o.revision > 1 {
+			revs[name] = o.revision
+		}
+	}
+	return revs
 }
 
 // ServeHTTP answers one call.

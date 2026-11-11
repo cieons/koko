@@ -258,7 +258,31 @@ func (in *Input) Call[Req, Resp any](ctx context.Context, op api.Op[Req, Resp], 
 		return resp, &cliError{code: codeServerTooOld, message: fmt.Sprintf(
 			"%v, so koko %s needs a newer koko server: upgrade the koko server", e, in.line.cmd.Path())}
 	}
+	if e, ok := errors.AsType[*apiclient.MissingFieldError](err); ok {
+		return resp, &cliError{code: codeServerTooOld, message: fmt.Sprintf(
+			"the koko server runs koko %s, which does not take %s of koko %s: upgrade the koko server",
+			e.ServerVersion, in.option(e.Field), in.line.cmd.Path())}
+	}
 	return resp, err
+}
+
+// option names the option of the command that sets the request field at
+// path, as api.Op.Added names it: the flag named as the field, with "-"
+// for "_", such as --with-note for with_note; otherwise, for a command
+// that takes key=value words, the word, such as relay=; otherwise the
+// field itself.
+func (in *Input) option(path string) string {
+	field := path
+	if _, last, ok := strings.CutLast(path, "."); ok {
+		field = last
+	}
+	switch flag := strings.ReplaceAll(field, "_", "-"); {
+	case in.line.cmd.flag(flag) != nil:
+		return "--" + flag
+	case in.line.cmd.Pairs:
+		return field + "="
+	}
+	return "the field " + path
 }
 
 // server returns the connection the command's calls go through, connecting

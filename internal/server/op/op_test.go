@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -491,5 +492,23 @@ func TestDoRunsAWriteOfTheKokoServersOwn(t *testing.T) {
 	status, body := f.post(t, noteList.Path(), `{}`)
 	if status != http.StatusOK || body != `{"notes":["kept"],"local":true}` {
 		t.Errorf("note.list = %d %s, want only the note the committed write added", status, body)
+	}
+}
+
+// The koko server reports the revision of each operation it serves above
+// revision 1, and none at 1, as a koko server from before revisions does.
+func TestRevisionsListsTheOperationsAboveRevisionOne(t *testing.T) {
+	t.Parallel()
+	a := op.New(nil, nil, slog.New(slog.DiscardHandler), nil, nil)
+	revised := noteAdd
+	revised.Revision, revised.Added = 2, map[string]int{"fail": 2}
+	a.Handle(revised, func(context.Context, store.Tx, op.Caller, noteAddRequest) (noteAddResponse, error) {
+		return noteAddResponse{}, nil
+	})
+	a.Handle(noteList, func(context.Context, store.Tx, op.Caller, noteListRequest) (noteListResponse, error) {
+		return noteListResponse{}, nil
+	})
+	if got, want := a.Revisions(), map[string]int{"note.add": 2}; !maps.Equal(got, want) {
+		t.Errorf("Revisions() = %v, want %v", got, want)
 	}
 }

@@ -91,3 +91,27 @@ func TestConnWritesReachTheChannelBeforeWriteReturns(t *testing.T) {
 		}
 	})
 }
+
+// A report reads every operation and channel it does not list at revision
+// 1, as it does every one of a report with no revisions, which every koko
+// server from before revisions sends.
+func TestAReportWithoutARevisionReadsAsRevisionOne(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		payload string
+		want    map[string]int
+	}{
+		{`{"version": "v0.3.2", "operations": ["host.add"]}`, map[string]int{"host.add": 1, wire.ChannelTunnel: 1, wire.ChannelWeb: 1}},
+		{`{"version": "v0.5.0", "operations": ["host.add"], "revisions": {"host.add": 2}}`, map[string]int{"host.add": 2, "host.list": 1, wire.ChannelTunnel: 1}},
+	} {
+		r, err := wire.ParseReport([]byte(tc.payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name, want := range tc.want {
+			if got := r.Revision(name); got != want {
+				t.Errorf("the report %s gives %s revision %d, want %d", tc.payload, name, got, want)
+			}
+		}
+	}
+}

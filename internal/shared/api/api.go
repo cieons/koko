@@ -15,8 +15,11 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json/v2"
+	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 )
 
 // PathPrefix comes before an operation's name in its URL path.
@@ -56,6 +59,22 @@ type Op[Req, Resp any] struct {
 	// Write says the operation may change the record, so it runs in an
 	// IMMEDIATE transaction; a read runs in a read-only one.
 	Write bool
+	// Revision is the operation's revision, 1 when left out (ADR 0049). It
+	// rises with each change to what the operation takes: a new request
+	// field, or a new value an existing field takes. A response only gains
+	// fields, and raises nothing. The koko server reports it, and a CLI
+	// sends no field that a koko server's revision lacks.
+	Revision int
+	// Added names each request field added after revision 1, by its path,
+	// with the revision that added it. A path joins JSON names with ".",
+	// a list's name followed by "[]" for the fields of its items, such as
+	// "hosts[].ttl". Each is left out of a request when unset (omitzero or
+	// omitempty), so that a CLI sends it only when an option sets it. A
+	// type that several operations take, such as Filter, gains a field in
+	// each of them, at each one's own next revision. A new value of an
+	// existing field has no entry: a command checks the koko server's
+	// revision itself before it sends one.
+	Added map[string]int
 }
 
 // Info describes the operation without its types' parameters.
@@ -63,6 +82,8 @@ func (o Op[Req, Resp]) Info() OpInfo {
 	return OpInfo{
 		Name:     o.Name,
 		Write:    o.Write,
+		Revision: max(o.Revision, 1),
+		Added:    o.Added,
 		Request:  reflect.TypeFor[Req](),
 		Response: reflect.TypeFor[Resp](),
 	}
@@ -80,10 +101,64 @@ type Operation interface {
 
 // OpInfo describes one operation.
 type OpInfo struct {
-	Name     string
-	Write    bool
+	Name  string
+	Write bool
+	// Revision is Op.Revision, at least 1.
+	Revision int
+	// Added is Op.Added.
+	Added    map[string]int
 	Request  reflect.Type
 	Response reflect.Type
+}
+
+// FieldAfter returns a request field that body, a request of the
+// operation in JSON, sets, and that was added after revision, a koko
+// server's revision of the operation; ok is false when body sets none. A
+// field is set when body holds its name, in any of its list's items for
+// one inside a list. Of several, it returns the first by path.
+func (o OpInfo) FieldAfter(body []byte, revision int) (field string, ok bool, err error) {
+	var later []string
+	for path, added := range o.Added {
+		if added > revision {
+			later = append(later, path)
+		}
+	}
+	if len(later) == 0 {
+		return "", false, nil
+	}
+	slices.Sort(later)
+	var v any
+	if err := json.Unmarshal(body, &v); err != nil {
+		return "", false, fmt.Errorf("read %s request: %w", o.Name, err)
+	}
+	for _, path := range later {
+		if sets(v, path) {
+			return path, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+// sets tells whether v, a request decoded from JSON, holds the field at
+// path, as Op.Added names fields.
+func sets(v any, path string) bool {
+	name, rest, nested := strings.Cut(path, ".")
+	name, each := strings.CutSuffix(name, "[]")
+	obj, ok := v.(map[string]any)
+	if !ok {
+		return false
+	}
+	x, ok := obj[name]
+	switch {
+	case !ok:
+		return false
+	case !nested:
+		return true
+	case each:
+		items, _ := x.([]any)
+		return slices.ContainsFunc(items, func(item any) bool { return sets(item, rest) })
+	}
+	return sets(x, rest)
 }
 
 // operations lists every area's operations; an area's first ticket adds its

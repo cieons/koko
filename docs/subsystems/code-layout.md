@@ -275,6 +275,11 @@ numbered placeholder (`"space_<1>"`), each Join Code with `koko_<code>`,
 each Password Link's secret with `/password#<secret>`,
 each SHA-256 fingerprint with `SHA256:<fingerprint>` and each time with
 `<time>`; `go test -update` rewrites the files.
+[`frozen.Check`](../../internal/harness/frozen/frozen.go) checks a golden
+of revisions, one section for each revision of an operation or a channel,
+which never changes once written: `go test -update` adds a new revision's
+section and changes none ([API](api.md#revisions)). It imports nothing of
+koko's, so a package's own tests use it without an import cycle.
 [`harness.Kokod(t, opts...)`](../../internal/harness/kokod.go) is a
 `kokod.Program` for S1 tests of `kokod run`: the real start-up on a
 temporary socket and, whatever `--listen` says, a loopback port, stopped at

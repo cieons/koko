@@ -56,7 +56,9 @@ const RequestDisconnected = "disconnected@koko"
 
 // Report is the koko server's version and operations report. Within /v1 a
 // koko server only adds operations, so a CLI calls an operation only when
-// the report lists it, and otherwise says the koko server is too old.
+// the report lists it, and otherwise says the koko server is too old; and
+// sends a request field only when the koko server's revision of the
+// operation takes it.
 type Report struct {
 	// Version is the koko server's build version, as koko version prints it.
 	Version string `json:"version"`
@@ -68,6 +70,17 @@ type Report struct {
 	// it, and a CLI that reads it fails every command itself. A koko
 	// server from before the window reports none.
 	Oldest string `json:"oldest,omitempty"`
+	// Revisions holds the revision of each operation and channel the koko
+	// server serves above revision 1 (ADR 0049), by name, such as
+	// "host.add" or "tunnel@koko". One it does not list is at revision 1,
+	// as is every one of a koko server from before revisions.
+	Revisions map[string]int `json:"revisions,omitempty"`
+}
+
+// Revision returns the koko server's revision of the operation or channel
+// name: 1 for one its report does not list.
+func (r Report) Revision(name string) int {
+	return max(r.Revisions[name], 1)
 }
 
 // Marshal encodes the report as RequestReport's payload.

@@ -21,7 +21,7 @@ import (
 // tsDir is where the generated files live, from this package's directory.
 const tsDir = "../../../web/src/api"
 
-var update = flag.Bool("update", false, "rewrite web/src/api from the API's Go types")
+var update = flag.Bool("update", false, "rewrite web/src/api from the API's Go types, and add new revisions to testdata/requests.golden")
 
 func TestTypeScriptTypes(t *testing.T) {
 	want, err := generateTypeScript(".")

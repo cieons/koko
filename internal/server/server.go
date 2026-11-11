@@ -294,11 +294,11 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	// operation itself, below.
 	front := web.New(a, signins, st, key, clock, log)
 	version := cmp.Or(cfg.Version, build.Read().Version)
-	// Each connection is reported every operation registered below, and
-	// the oldest koko this one works with, below which the transport
-	// refuses a CLI.
+	// Each connection is reported every operation registered below, with
+	// those above revision 1, and the oldest koko this one works with,
+	// below which the transport refuses a CLI.
 	report := func() wire.Report {
-		return wire.Report{Version: version, Operations: a.Names(), Oldest: compat.Oldest}
+		return wire.Report{Version: version, Operations: a.Names(), Oldest: compat.Oldest, Revisions: a.Revisions()}
 	}
 	t := transport.New(a, front, report, log)
 	t.UseTimings(cfg.Timings)

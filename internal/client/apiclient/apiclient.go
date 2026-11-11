@@ -3,7 +3,8 @@
 // turn; a call made while another is in flight opens one more channel.
 //
 // Before each call it checks the koko server's version and operations
-// report, and sends no operation the koko server lacks. Every write carries
+// report, and sends no operation the koko server lacks, and no request
+// field its revision of the operation lacks. Every write carries
 // an Idempotency-Key, and a call the connection drops is sent once more, on
 // a new connection, with the same key, so a write applies once and a
 // command never reports an unknown outcome (P0 spec: reach).
@@ -42,6 +43,23 @@ type MissingOperationError struct {
 
 func (e *MissingOperationError) Error() string {
 	return fmt.Sprintf("the koko server runs koko %s, which has no %s", e.ServerVersion, e.Operation)
+}
+
+// MissingFieldError says the koko server's revision of an operation does
+// not take a request field the call sets: it is older than the CLI.
+// Nothing was sent.
+type MissingFieldError struct {
+	// Operation is the operation's name, such as "host.add".
+	Operation string
+	// Field is the field's path, as api.Op.Added names it, such as
+	// "hosts[].ttl".
+	Field string
+	// ServerVersion is the koko server's version, as it reported it.
+	ServerVersion string
+}
+
+func (e *MissingFieldError) Error() string {
+	return fmt.Sprintf("the koko server runs koko %s, whose %s does not take %s", e.ServerVersion, e.Operation, e.Field)
 }
 
 // Dial opens a connection to the koko server. A Client dials on its first
@@ -126,7 +144,9 @@ func (cc *conn) close() {
 // Call calls op with req. A failure the koko server answered is an
 // *api.Error with its code; response fields this CLI does not know are
 // ignored. An operation the koko server does not report is not sent, and
-// fails with a *MissingOperationError. A call the connection drops is sent
+// fails with a *MissingOperationError; nor is a request that sets a field
+// the koko server's revision of the operation lacks, which fails with a
+// *MissingFieldError. A call the connection drops is sent
 // once more on a new connection, a write with the same Idempotency-Key, and
 // fails wrapping ErrUnreachable when that one drops too.
 func (c *Client) Call[Req, Resp any](ctx context.Context, op api.Op[Req, Resp], req Req) (Resp, error) {
@@ -139,9 +159,10 @@ func (c *Client) Call[Req, Resp any](ctx context.Context, op api.Op[Req, Resp], 
 	if op.Write {
 		key = api.NewIdempotencyKey()
 	}
-	b, err := c.send(ctx, op.Name, op.Path(), body, key)
+	info := op.Info()
+	b, err := c.send(ctx, info, body, key)
 	if errors.Is(err, ErrUnreachable) && ctx.Err() == nil {
-		b, err = c.send(ctx, op.Name, op.Path(), body, key)
+		b, err = c.send(ctx, info, body, key)
 	}
 	if err != nil {
 		return resp, err
@@ -152,10 +173,11 @@ func (c *Client) Call[Req, Resp any](ctx context.Context, op api.Op[Req, Resp], 
 	return resp, nil
 }
 
-// send makes one attempt at a call of the operation name, at path, with
-// body, carrying key when it is not "", and returns the response's body. It
-// drops the connection when the call fails wrapping ErrUnreachable.
-func (c *Client) send(ctx context.Context, name, path string, body []byte, key string) ([]byte, error) {
+// send makes one attempt at a call of the operation op with body, carrying
+// key when it is not "", and returns the response's body. It drops the
+// connection when the call fails wrapping ErrUnreachable.
+func (c *Client) send(ctx context.Context, op api.OpInfo, body []byte, key string) ([]byte, error) {
+	name := op.Name
 	cc, err := c.current(ctx)
 	if err != nil {
 		return nil, err
@@ -168,8 +190,15 @@ func (c *Client) send(ctx context.Context, name, path string, body []byte, key s
 	if !slices.Contains(report.Operations, name) {
 		return nil, &MissingOperationError{Operation: name, ServerVersion: report.Version}
 	}
+	field, later, err := op.FieldAfter(body, report.Revision(name))
+	if err != nil {
+		return nil, fmt.Errorf("call %s: %w", name, err)
+	}
+	if later {
+		return nil, &MissingFieldError{Operation: name, Field: field, ServerVersion: report.Version}
+	}
 	// The host is never dialled: every request goes into an api@koko channel.
-	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://koko"+path, bytes.NewReader(body))
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://koko"+api.PathPrefix+name, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("call %s: %w", name, err)
 	}
