@@ -62,9 +62,9 @@ var hostCommands = []Command{
 	{
 		Noun:    "host",
 		Verb:    "set",
-		Summary: "Change the fields, Attributes and Note of a Host that you name, and only those",
-		Args:    []Arg{{Name: "host"}},
-		Flags:   []Flag{noteFileFlag},
+		Summary: "Change the fields, Attributes and Note of the Hosts you name, or that --where matches, and only those, all or none",
+		Args:    []Arg{{Name: "host", Optional: true, Many: true}},
+		Flags:   []Flag{noteFileFlag, whereFlag},
 		Pairs:   true,
 		Unset:   true,
 		Tier:    Reversible,
@@ -83,17 +83,21 @@ var hostCommands = []Command{
 	{
 		Noun:    "host",
 		Verb:    "move",
-		Summary: "Move a Host to another Space; you must be able to act in both",
-		Args:    []Arg{{Name: "host"}, {Name: "space"}},
-		Tier:    Reversible,
-		Op:      api.HostMove,
-		Run:     action(hostMove),
+		Summary: "Move the Hosts you name, or that --where matches, to the Space --to names, all or none; you must be able to act in both. koko host move <host> <space> moves one",
+		Args:    []Arg{{Name: "host", Optional: true, Many: true}},
+		Flags: []Flag{
+			{Name: "to", Value: "space", Summary: "The Space to move the Hosts to"},
+			whereFlag,
+		},
+		Tier: Reversible,
+		Op:   api.HostMove,
+		Run:  action(hostMove),
 	},
 	{
 		Noun:    "host",
 		Verb:    "retire",
-		Summary: "Retire a Host that is gone: it leaves host ls and frees its name, and keeps its record, which its id names from then on",
-		Args:    []Arg{{Name: "host"}},
+		Summary: "Retire the Hosts you name, all or none, for Hosts that are gone: each leaves host ls and frees its name, and keeps its record, which its id names from then on",
+		Args:    []Arg{{Name: "host", Many: true}},
 		Tier:    Irreversible,
 		Op:      api.HostRetire,
 		Run:     action(hostRetire),
@@ -101,8 +105,8 @@ var hostCommands = []Command{
 	{
 		Noun:    "host",
 		Verb:    "rm",
-		Summary: "Delete a Host that was never Managed, with its Attributes, Note and Services",
-		Args:    []Arg{{Name: "host"}},
+		Summary: "Delete the Hosts you name, all or none, each never Managed, with its Attributes, Note and Services",
+		Args:    []Arg{{Name: "host", Many: true}},
 		Tier:    Irreversible,
 		Op:      api.HostRemove,
 		Run:     action(hostRm),
@@ -565,7 +569,8 @@ func hostShow(ctx context.Context, in *Input) (shownHost, error) {
 	return h, nil
 }
 
-// changedHost is what host set prints: the Host as it left it.
+// changedHost is what host set prints of each Host: the Host as it left
+// it.
 type changedHost hostJSON
 
 func (h changedHost) Human(w io.Writer) error {
@@ -573,34 +578,37 @@ func (h changedHost) Human(w io.Writer) error {
 	return err
 }
 
-func hostSet(ctx context.Context, in *Input) (changedHost, error) {
+func hostSet(ctx context.Context, in *Input) (several[changedHost], error) {
 	p, err := readHostPairs(in, "set")
 	if err != nil {
-		return changedHost{}, err
+		return several[changedHost]{}, err
 	}
 	for _, k := range in.Unset() {
 		switch {
 		case k == "note", k == "port", k == "relay":
 		case record.Reserved(k):
-			return changedHost{}, hostFieldRefusal("--unset "+k, k, "set")
+			return several[changedHost]{}, hostFieldRefusal("--unset "+k, k, "set")
 		default:
 			if err := record.CheckKey(k); err != nil {
-				return changedHost{}, usagef("--unset %s: %v", k, err)
+				return several[changedHost]{}, usagef("--unset %s: %v", k, err)
 			}
 		}
 	}
 	note, err := readNote(in)
 	if err != nil {
-		return changedHost{}, err
+		return several[changedHost]{}, err
 	}
 	if note != nil && slices.Contains(in.Unset(), "note") {
-		return changedHost{}, usagef("--note-file and --unset note are both given")
+		return several[changedHost]{}, usagef("--note-file and --unset note are both given")
 	}
 	if len(in.Pairs()) == 0 && len(in.Unset()) == 0 && note == nil {
-		return changedHost{}, usagef("name what to change: koko host set <host> key=value... [--unset key]... [--note-file <file>]")
+		return several[changedHost]{}, usagef("name what to change: koko host set <host>... key=value... [--unset key]... [--note-file <file>]")
 	}
-	resp, err := in.Call(ctx, api.HostSet, api.HostSetRequest{
-		Host:       in.Arg("host"),
+	t, err := hostTargets(ctx, in, in.Args("host"))
+	if err != nil {
+		return several[changedHost]{}, err
+	}
+	req := api.HostSetRequest{
 		Address:    p.address,
 		Port:       p.port,
 		Account:    p.account,
@@ -608,11 +616,13 @@ func hostSet(ctx context.Context, in *Input) (changedHost, error) {
 		Attributes: p.attributes,
 		Note:       note,
 		Unset:      in.Unset(),
-	})
-	if err != nil {
-		return changedHost{}, err
 	}
-	return changedHost(hostFromAPI(resp.Host)), nil
+	req.Host, req.Hosts = t.form()
+	resp, err := in.Call(ctx, api.HostSet, req)
+	if err != nil {
+		return several[changedHost]{}, err
+	}
+	return hostResult(t, resp.Host, resp.Hosts, func(h hostJSON) changedHost { return changedHost(h) })
 }
 
 // renamedHost is what host rename prints: the Host under its new name.
@@ -636,7 +646,8 @@ func hostRename(ctx context.Context, in *Input) (renamedHost, error) {
 	return renamedHost{hostJSON: hostFromAPI(resp.Host), from: in.Arg("host")}, nil
 }
 
-// movedHost is what host move prints: the Host in its new Space.
+// movedHost is what host move prints of each Host: the Host in its new
+// Space.
 type movedHost hostJSON
 
 func (h movedHost) Human(w io.Writer) error {
@@ -644,17 +655,33 @@ func (h movedHost) Human(w io.Writer) error {
 	return err
 }
 
-func hostMove(ctx context.Context, in *Input) (movedHost, error) {
-	resp, err := in.Call(ctx, api.HostMove, api.HostMoveRequest{Host: in.Arg("host"), Space: in.Arg("space")})
+// hostMove is koko host move <host>... --to <space>, or --where in place of
+// the Hosts; without --to, koko host move <host> <space> moves one Host, as
+// before batches.
+func hostMove(ctx context.Context, in *Input) (several[movedHost], error) {
+	names, to := in.Args("host"), in.Flag("to")
+	if to == "" && len(names) == 2 && len(in.Repeated(whereFlag.Name)) == 0 {
+		names, to = names[:1], names[1]
+	}
+	if to == "" {
+		return several[movedHost]{}, usagef("name the Space to move the Hosts to: koko host move <host>... --to <space>")
+	}
+	t, err := hostTargets(ctx, in, names)
 	if err != nil {
-		return movedHost{}, err
+		return several[movedHost]{}, err
+	}
+	req := api.HostMoveRequest{Space: to}
+	req.Host, req.Hosts = t.form()
+	resp, err := in.Call(ctx, api.HostMove, req)
+	if err != nil {
+		return several[movedHost]{}, err
 	}
 	in.rewriteBareNamesAfterHostChange(ctx)
-	return movedHost(hostFromAPI(resp.Host)), nil
+	return hostResult(t, resp.Host, resp.Hosts, func(h hostJSON) movedHost { return movedHost(h) })
 }
 
-// retiredHost is what host retire prints: the Host as it left it, Retired,
-// Note and all.
+// retiredHost is what host retire prints of each Host: the Host as it left
+// it, Retired, Note and all.
 type retiredHost hostJSON
 
 func (h retiredHost) Human(w io.Writer) error {
@@ -662,17 +689,23 @@ func (h retiredHost) Human(w io.Writer) error {
 	return err
 }
 
-func hostRetire(ctx context.Context, in *Input) (retiredHost, error) {
-	resp, err := in.Call(ctx, api.HostRetire, api.HostRetireRequest{Host: in.Arg("host")})
+func hostRetire(ctx context.Context, in *Input) (several[retiredHost], error) {
+	t, err := hostTargets(ctx, in, in.Args("host"))
 	if err != nil {
-		return retiredHost{}, err
+		return several[retiredHost]{}, err
+	}
+	var req api.HostRetireRequest
+	req.Host, req.Hosts = t.form()
+	resp, err := in.Call(ctx, api.HostRetire, req)
+	if err != nil {
+		return several[retiredHost]{}, err
 	}
 	in.rewriteBareNamesAfterHostChange(ctx)
-	return retiredHost(hostFromAPI(resp.Host)), nil
+	return hostResult(t, resp.Host, resp.Hosts, func(h hostJSON) retiredHost { return retiredHost(h) })
 }
 
-// removedHost is what host rm prints: the Host it deleted, as it was, Note
-// and all, so a script keeps what is gone.
+// removedHost is what host rm prints of each Host: the Host it deleted, as
+// it was, Note and all, so a script keeps what is gone.
 type removedHost hostJSON
 
 func (h removedHost) Human(w io.Writer) error {
@@ -680,11 +713,17 @@ func (h removedHost) Human(w io.Writer) error {
 	return err
 }
 
-func hostRm(ctx context.Context, in *Input) (removedHost, error) {
-	resp, err := in.Call(ctx, api.HostRemove, api.HostRemoveRequest{Host: in.Arg("host")})
+func hostRm(ctx context.Context, in *Input) (several[removedHost], error) {
+	t, err := hostTargets(ctx, in, in.Args("host"))
 	if err != nil {
-		return removedHost{}, err
+		return several[removedHost]{}, err
+	}
+	var req api.HostRemoveRequest
+	req.Host, req.Hosts = t.form()
+	resp, err := in.Call(ctx, api.HostRemove, req)
+	if err != nil {
+		return several[removedHost]{}, err
 	}
 	in.rewriteBareNamesAfterHostChange(ctx)
-	return removedHost(hostFromAPI(resp.Host)), nil
+	return hostResult(t, resp.Host, resp.Hosts, func(h hostJSON) removedHost { return removedHost(h) })
 }

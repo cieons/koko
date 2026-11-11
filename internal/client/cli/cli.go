@@ -215,6 +215,11 @@ func (in *Input) Qualified(arg string) (qualifier, name string) {
 	return q.qualifier, q.name
 }
 
+// Repeated returns the values of a Repeatable flag, in the order given.
+func (in *Input) Repeated(name string) []string {
+	return in.line.repeated[name]
+}
+
 // Flag returns a value flag: given, from its KOKO_* variable, or its default.
 func (in *Input) Flag(name string) string {
 	return in.line.flags[name]
@@ -267,16 +272,19 @@ func (in *Input) Call[Req, Resp any](ctx context.Context, op api.Op[Req, Resp], 
 }
 
 // option names the option of the command that sets the request field at
-// path, as api.Op.Added names it: the flag named as the field, with "-"
-// for "_", such as --with-note for with_note; otherwise, for a command
-// that takes key=value words, the word, such as relay=; otherwise the
-// field itself.
+// path, as api.Op.Added names it: for a batch's list, such as hosts, the
+// several records of the argument that takes many, such as "several
+// <host>"; the flag named as the field, with "-" for "_", such as
+// --with-note for with_note; otherwise, for a command that takes
+// key=value words, the word, such as relay=; otherwise the field itself.
 func (in *Input) option(path string) string {
 	field := path
 	if _, last, ok := strings.CutLast(path, "."); ok {
 		field = last
 	}
 	switch flag := strings.ReplaceAll(field, "_", "-"); {
+	case in.line.cmd.many() != nil && path == in.line.cmd.many().Name+"s":
+		return "several " + in.line.cmd.many().word()
 	case in.line.cmd.flag(flag) != nil:
 		return "--" + flag
 	case in.line.cmd.Pairs:

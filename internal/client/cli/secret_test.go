@@ -221,8 +221,8 @@ func TestSecretNamesFollowTheNameRule(t *testing.T) {
 }
 
 // A Secret is always named with its Space: a name without one, or with an
-// empty part, is refused with exit 2 before any call, as is a command line
-// missing an argument or holding one too many.
+// empty part, is refused with exit 2 before any call, in a batch too, as
+// is a command line missing an argument or holding one too many.
 func TestASecretNameWithoutItsSpaceIsRefused(t *testing.T) {
 	t.Parallel()
 	h := startWithOps(t)
@@ -241,7 +241,9 @@ func TestASecretNameWithoutItsSpaceIsRefused(t *testing.T) {
 		{"secret", "move", "db-password", "data"},
 		{"secret", "move", "ops/db-password"},
 		{"secret", "rm", "db-password"},
-		{"secret", "rm", "ops/db-password", "data/db-password"},
+		{"secret", "rm", "ops/db-password", "db-password"},
+		{"secret", "move", "ops/db-password", "db-password", "--to", "data"},
+		{"secret", "rename", "ops/db-password", "db-pass", "x"},
 	} {
 		h.KokoStdin("v", append(args, "--json")...).WantError(t, 2, "invalid_usage")
 	}

@@ -228,7 +228,7 @@ func commandOf(c *Command) commandJSON {
 			Env:        orNull(f.Env),
 			Default:    orNull(f.Default),
 			Choices:    orNull(f.Choices),
-			Repeatable: f.repeatable(),
+			Repeatable: f.Repeatable,
 		})
 	}
 	if c.Filters != nil {
@@ -279,11 +279,6 @@ func (c *Command) flags() []Flag {
 	return append(flags, c.Flags...)
 }
 
-// repeatable tells whether the flag may be given more than once.
-func (f *Flag) repeatable() bool {
-	return f.Name == unsetFlag.Name || f.Name == sortFlag.Name
-}
-
 // usage shows how the flag is written: --with-note, or --dir <dir>.
 func (f *Flag) usage() string {
 	if f.Bool {
@@ -307,7 +302,7 @@ func synopsis(c *Command) string {
 	}
 	for _, f := range c.flags() {
 		u := "[" + f.usage() + "]"
-		if f.repeatable() {
+		if f.Repeatable {
 			u += "..."
 		}
 		words = append(words, u)
@@ -361,6 +356,10 @@ func (s skillJSON) Human(w io.Writer) error {
 	p("  `{\"error\": {\"code\": ..., \"message\": ...}}`. A refused\n")
 	p("  batch, such as several Hosts on stdin, adds `\"items\"`, each `{\"index\", \"code\", \"message\"}`:\n")
 	p("  an item at fault, by its place in the batch.\n")
+	p("- A command that takes several names, such as `koko host retire <host>...`, applies them all or\n")
+	p("  none: a batch with one at fault changes nothing. It prints one record for one name, and an\n")
+	p("  array for several. `koko host set` and `koko host move` take `--where <term>`, `host ls`'s\n")
+	p("  terms, in place of names, and act on every Host it matches.\n")
 	p("- A list prints a bare JSON array of every item, a write the record it made or changed, and every\n")
 	p("  record carries an `id`. Within a major version fields are only added: ignore those you do not know.\n")
 	p("- A command the koko server lacks fails with `%s`, naming the koko server's version and\n", codeServerTooOld)

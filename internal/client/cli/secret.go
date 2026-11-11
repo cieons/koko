@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/cieons/koko/internal/shared/api"
@@ -71,8 +72,9 @@ var secretCommands = []Command{
 	{
 		Noun:    "secret",
 		Verb:    "move",
-		Summary: "Move a Secret to another Space under the same name; you must be able to act in both",
-		Args:    []Arg{{Name: "secret", Qualifier: "space"}, {Name: "space"}},
+		Summary: "Move the Secrets you name to the Space --to names, each under its name, all or none; you must be able to act in both. koko secret move <space>/<secret> <space> moves one",
+		Args:    []Arg{{Name: "secret", Qualifier: "space", Many: true}},
+		Flags:   []Flag{{Name: "to", Value: "space", Summary: "The Space to move the Secrets to"}},
 		Tier:    Reversible,
 		Op:      api.SecretMove,
 		Run:     action(secretMove),
@@ -80,8 +82,8 @@ var secretCommands = []Command{
 	{
 		Noun:    "secret",
 		Verb:    "rm",
-		Summary: "Delete a Secret and its value, for good",
-		Args:    []Arg{{Name: "secret", Qualifier: "space"}},
+		Summary: "Delete the Secrets you name and their values, all or none, for good",
+		Args:    []Arg{{Name: "secret", Qualifier: "space", Many: true}},
 		Tier:    Irreversible,
 		Op:      api.SecretRemove,
 		Run:     action(secretRm),
@@ -245,8 +247,8 @@ func secretRename(ctx context.Context, in *Input) (renamedSecret, error) {
 	return renamedSecret{secretJSON: secretFromAPI(resp.Secret), from: in.Arg("secret")}, nil
 }
 
-// movedSecret is what secret move prints: the Secret in its new Space,
-// without its value.
+// movedSecret is what secret move prints of each Secret: the Secret in its
+// new Space, without its value.
 type movedSecret struct {
 	secretJSON
 	// from is the name it was called by, <space>/<secret>, for people only.
@@ -258,18 +260,35 @@ func (s movedSecret) Human(w io.Writer) error {
 	return err
 }
 
-func secretMove(ctx context.Context, in *Input) (movedSecret, error) {
-	space, name := in.Qualified("secret")
-	resp, err := in.Call(ctx, api.SecretMove, api.SecretMoveRequest{Space: space, Name: name, NewSpace: in.Arg("space")})
-	if err != nil {
-		return movedSecret{}, err
+// secretMove is koko secret move <space>/<secret>... --to <space>; without
+// --to, koko secret move <space>/<secret> <space> moves one Secret, as
+// before batches.
+func secretMove(ctx context.Context, in *Input) (several[movedSecret], error) {
+	words, to := in.Args("secret"), in.Flag("to")
+	if to == "" && len(words) == 2 && !strings.Contains(words[1], "/") {
+		words, to = words[:1], words[1]
 	}
-	return movedSecret{secretJSON: secretFromAPI(resp.Secret), from: in.Arg("secret")}, nil
+	if to == "" {
+		return several[movedSecret]{}, usagef("name the Space to move the Secrets to: koko secret move <space>/<secret>... --to <space>")
+	}
+	refs, err := secretTargets(in, words, "moved")
+	if err != nil {
+		return several[movedSecret]{}, err
+	}
+	req := api.SecretMoveRequest{NewSpace: to}
+	req.Space, req.Name, req.Secrets = secretForm(refs)
+	resp, err := in.Call(ctx, api.SecretMove, req)
+	if err != nil {
+		return several[movedSecret]{}, err
+	}
+	return secretResult(words, resp.Secret, resp.Secrets, func(s secretJSON, from string) movedSecret {
+		return movedSecret{secretJSON: s, from: from}
+	})
 }
 
-// removedSecret is what secret rm prints: the Secret it deleted, as it was,
-// in secret ls's shape and without its value, so a script keeps the id of
-// what is gone.
+// removedSecret is what secret rm prints of each Secret: the Secret it
+// deleted, as it was, in secret ls's shape and without its value, so a
+// script keeps the id of what is gone.
 type removedSecret secretJSON
 
 func (s removedSecret) Human(w io.Writer) error {
@@ -277,11 +296,71 @@ func (s removedSecret) Human(w io.Writer) error {
 	return err
 }
 
-func secretRm(ctx context.Context, in *Input) (removedSecret, error) {
-	space, name := in.Qualified("secret")
-	resp, err := in.Call(ctx, api.SecretRemove, api.SecretRemoveRequest{Space: space, Name: name})
+func secretRm(ctx context.Context, in *Input) (several[removedSecret], error) {
+	words := in.Args("secret")
+	refs, err := secretTargets(in, words, "removed")
 	if err != nil {
-		return removedSecret{}, err
+		return several[removedSecret]{}, err
 	}
-	return removedSecret(secretFromAPI(resp.Secret)), nil
+	var req api.SecretRemoveRequest
+	req.Space, req.Name, req.Secrets = secretForm(refs)
+	resp, err := in.Call(ctx, api.SecretRemove, req)
+	if err != nil {
+		return several[removedSecret]{}, err
+	}
+	return secretResult(words, resp.Secret, resp.Secrets, func(s secretJSON, _ string) removedSecret { return removedSecret(s) })
+}
+
+// secretTargets reads words, each <space>/<secret>, into the Secrets a
+// request names, refusing before any call a word with a part missing; of
+// several, it checks each and lists every one at fault, as the koko server
+// refuses a batch (ADR 0030), done saying what the batch would have done.
+func secretTargets(in *Input, words []string, done string) ([]api.SecretRef, error) {
+	a := in.line.cmd.many()
+	refs := make([]api.SecretRef, 0, len(words))
+	var faults []api.ItemError
+	for i, w := range words {
+		q, err := a.split(w)
+		if err != nil {
+			faults = append(faults, api.ItemError{Index: i, Code: codeInvalidUsage, Message: err.Error()})
+			continue
+		}
+		refs = append(refs, api.SecretRef{Space: q.qualifier, Name: q.name})
+	}
+	switch {
+	case len(faults) == 0:
+		return refs, nil
+	case len(words) == 1:
+		return nil, &usageError{message: faults[0].Message}
+	}
+	e := api.BatchError(len(words), "Secrets", done, faults)
+	return nil, &usageError{message: e.Message, items: e.Items}
+}
+
+// secretForm returns a request's two ways of naming its Secrets: one, by
+// its Space and name, the form a koko server from before batches takes, or
+// several, a batch.
+func secretForm(refs []api.SecretRef) (space, name string, several []api.SecretRef) {
+	if len(refs) == 1 {
+		return refs[0].Space, refs[0].Name, nil
+	}
+	return "", "", refs
+}
+
+// secretResult is what a write of the Secrets words name prints, from its
+// answer: one, the one-record form's Secret, or batch, each Secret of a
+// batch, made into the command's type by as with the word that named it.
+func secretResult[R Result](words []string, one api.Secret, batch []api.Secret, as func(secretJSON, string) R) (several[R], error) {
+	secrets := batch
+	if len(words) == 1 {
+		secrets = []api.Secret{one}
+	}
+	if len(secrets) != len(words) {
+		return several[R]{}, fmt.Errorf("the koko server answered %d Secrets for %d", len(secrets), len(words))
+	}
+	s := several[R]{items: make([]R, 0, len(secrets)), one: len(words) == 1}
+	for i, sec := range secrets {
+		s.items = append(s.items, as(secretFromAPI(sec), words[i]))
+	}
+	return s, nil
 }

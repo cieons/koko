@@ -39,7 +39,8 @@ names both forms, or an empty list, is `invalid_request`, and a batch of
 one is refused with its record's own error and no `items`, as ADR 0030 has
 it. The new fields raise each operation's revision (ADR 0049), so a CLI
 sends a batch only to a koko server that takes one, and otherwise fails
-with `server_too_old` before sending anything.
+with `server_too_old` before sending it; `--where` has read its Hosts by
+then.
 
 The CLI takes several names where it took one: `koko host set web1 web2
 role=node`, `koko host move web1 web2 --to ops`, `koko host retire web1

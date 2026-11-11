@@ -20,7 +20,9 @@ type parsed struct {
 	// values of its --sort, each in order.
 	terms []string
 	sorts []string
-	json  bool
+	// repeated holds the values of each Repeatable flag, in order.
+	repeated map[string][]string
+	json     bool
 }
 
 // qualifiedName is a qualified argument's two parts: ops and db-password for
@@ -52,7 +54,7 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 		return nil, usagef("flags come after the command path: write %s", shellJoin(fixed))
 	}
 
-	p := &parsed{cmd: cmd, args: map[string]string{}, qualified: map[string]qualifiedName{}, flags: map[string]string{}}
+	p := &parsed{cmd: cmd, args: map[string]string{}, qualified: map[string]qualifiedName{}, flags: map[string]string{}, repeated: map[string][]string{}}
 	var positional []string
 	for i := 0; i < len(rest); i++ {
 		tok := rest[i]
@@ -124,6 +126,10 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 		}
 		if f == &sortFlag {
 			p.sorts = append(p.sorts, value)
+			continue
+		}
+		if f.Repeatable {
+			p.repeated[name] = append(p.repeated[name], value)
 			continue
 		}
 		p.flags[name] = value
@@ -363,11 +369,11 @@ func (c *Command) many() *Arg {
 }
 
 // unsetFlag is --unset <key>, which a command with Unset takes, repeatable.
-var unsetFlag = Flag{Name: "unset", Value: "key", Summary: "Clear a field or Attribute; repeatable"}
+var unsetFlag = Flag{Name: "unset", Value: "key", Repeatable: true, Summary: "Clear a field or Attribute; repeatable"}
 
 // sortFlag is --sort <key>[.desc], which a command with Filters takes,
 // repeatable: each sorts the ties of the one before.
-var sortFlag = Flag{Name: "sort", Value: "key[.desc]", Summary: "Sort by a field or Attribute, from the greatest value down with .desc; repeatable"}
+var sortFlag = Flag{Name: "sort", Value: "key[.desc]", Repeatable: true, Summary: "Sort by a field or Attribute, from the greatest value down with .desc; repeatable"}
 
 func (c *Command) flag(name string) *Flag {
 	if c.Unset && name == unsetFlag.Name {
@@ -406,30 +412,34 @@ func (a *Arg) split(v string) (qualifiedName, error) {
 	case !ok && a.Bare:
 		return qualifiedName{name: v}, nil
 	case !ok:
-		return qualifiedName{}, usagef("%q is not %s: the <%s> is missing", v, a.usage(), a.Qualifier)
+		return qualifiedName{}, usagef("%q is not %s: the <%s> is missing", v, a.word(), a.Qualifier)
 	case q == "":
-		return qualifiedName{}, usagef("%q is not %s: the <%s> is empty", v, a.usage(), a.Qualifier)
+		return qualifiedName{}, usagef("%q is not %s: the <%s> is empty", v, a.word(), a.Qualifier)
 	case n == "":
-		return qualifiedName{}, usagef("%q is not %s: the <%s> is empty", v, a.usage(), a.Name)
+		return qualifiedName{}, usagef("%q is not %s: the <%s> is empty", v, a.word(), a.Name)
 	case strings.Contains(n, "/"):
-		return qualifiedName{}, usagef("%q is not %s: a name cannot hold /", v, a.usage())
+		return qualifiedName{}, usagef("%q is not %s: a name cannot hold /", v, a.word())
 	}
 	return qualifiedName{qualifier: q, name: n}, nil
 }
 
-// usage shows how the argument is written: <space>, <space>/<secret>,
-// [<user>/]<device> for one that may be bare, <user>... for one that takes
-// many words, and in brackets for an optional one, such as [<device>].
-func (a *Arg) usage() string {
-	var u string
+// word shows how one word of the argument is written: <space>,
+// <space>/<secret>, or [<user>/]<device> for one that may be bare.
+func (a *Arg) word() string {
 	switch {
 	case a.Qualifier != "" && a.Bare:
-		u = "[<" + a.Qualifier + ">/]<" + a.Name + ">"
+		return "[<" + a.Qualifier + ">/]<" + a.Name + ">"
 	case a.Qualifier != "":
-		u = "<" + a.Qualifier + ">/<" + a.Name + ">"
-	default:
-		u = "<" + a.Name + ">"
+		return "<" + a.Qualifier + ">/<" + a.Name + ">"
 	}
+	return "<" + a.Name + ">"
+}
+
+// usage shows how the argument is written: its word, <user>... for one
+// that takes many words, and in brackets for an optional one, such as
+// [<device>].
+func (a *Arg) usage() string {
+	u := a.word()
 	if a.Many {
 		u += "..."
 	}

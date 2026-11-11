@@ -12,9 +12,10 @@ joined from each area's `<area>Commands`. An entry
 ([`cli.Command`](../../internal/client/cli/tree.go)) holds the noun and verb,
 the positional arguments (each plain, qualified, or qualified and allowed
 bare; each required, or optional after every required one, shown as
-`[<device>]`; the last, if plain, may take many words, one or more, shown as
-`<user>...`; each may list the only values it takes, its choices), the flags
-(each with its `KOKO_*` variable, default and choices), whether it takes
+`[<device>]`; the last may take many words, one or more, shown as
+`<user>...`, or none as well when it is optional, `[<host>...]`; each may
+list the only values it takes, its choices), the flags
+(each with its `KOKO_*` variable, default and choices, or repeatable), whether it takes
 `key=value` pairs and `--unset`, the fields a list filters and sorts on
 (`Filters`, with their types), whether it reads a secret input
 (`ReadsSecret`), the risk tier (required),
@@ -31,8 +32,8 @@ skill` are all generated from the tree
 it reaches all four; a command's `Run` gets the tree through its `Input`.
 [`tree_test.go`](../../internal/client/cli/tree_test.go) checks every entry: a
 tier, a summary, a unique path, sound arguments and flags (neither `--json`
-nor `--unset` listed, `--unset` only beside pairs, and many words only for
-the last argument, unqualified), an operation that `api.Operations` lists,
+nor `--unset` listed, `--unset` only beside pairs, many words only for
+the last argument, and a repeatable flag with no variable or default), an operation that `api.Operations` lists,
 and for `RemoteCommand` many words last, no flags, pairs, filters, secret
 input or shape, and a `remoteAction`; for `Stdio`, no many words, flags,
 pairs, filters, secret input, remote command or shape.
@@ -104,7 +105,51 @@ is mistaken for one. One with `Unset` also takes `--unset <key>`, repeatable.
 `Input.Pairs` and `Input.Unset` return them in the order given; checking a key
 against the field names and Attribute key rules is the command's.
 `Input.Args` returns the words of an argument that takes many, in order. A qualified
-argument keeps its text in `Input.Arg` and its parts in `Input.Qualified`.
+argument keeps its text in `Input.Arg` and its parts in `Input.Qualified`;
+one that takes many keeps its words as typed, and the command splits each
+with `Arg.split`, refusing one with a part missing with exit 2 before any
+call, as the parser refuses one word. A repeatable flag, such as
+`--where`, takes a value each time it is given, and `Input.Repeated`
+returns them in order.
+
+## Several records at once
+
+`koko host set`, `move`, `retire` and `rm`, and `koko secret move` and
+`rm`, take several names where they took one, and send them as one batch,
+all or none ([ADR 0050](../adr/0050-a-write-of-several-records-is-applied-all-or-none.md),
+[batches](api.md#batches)): one name goes in the one-record form, which
+every koko server takes, and several in the batch form, which a koko
+server from before batches does not take, so the CLI fails with
+`server_too_old` naming `several <host>` and sends no batch, though
+`--where` has listed its Hosts by then ([revisions](api.md#revisions)).
+Words the CLI refuses before any call, such as `<space>/<secret>` words
+with a part missing, are each listed, as the koko server lists a batch's
+faults.
+
+- **The Space** of a move is `--to <space>`. Without `--to`, two words
+  are the one-record form from before batches, `koko host move <host>
+  <space>` and `koko secret move <space>/<secret> <space>`; any other
+  count is refused with exit 2.
+- **`--where <term>`**, repeatable, on `host set` and `host move` only,
+  takes `host ls`'s filter terms in place of names
+  ([`hostTargets`](../../internal/client/cli/batch.go)): the CLI lists the
+  matching Hosts with one `host.list`, without the Retired ones, as `host
+  ls` does, then sends their ids as one batch, so the batch is what matched
+  when it ran. For people it says on stderr how many it matched, `--where
+  region=hk matched 12 Hosts.`; with `--json`, the array it prints says so.
+  None matching fails with `unknown_host`, naming the terms. Names and
+  `--where` together, neither, and a term `host ls` refuses are refused
+  with exit 2 before any call. `host retire` and `host rm` take names
+  only, so an irreversible command acts on what its command line names
+  ([ADR 0019](../adr/0019-the-command-path-carries-the-risk.md)).
+- **What it prints**: for one name, the record alone, as before; for
+  several or `--where`, an array of them in the order named, `--where`'s in
+  `host ls`'s order ([`several`](../../internal/client/cli/batch.go)); for
+  people, a line for each, as for one.
+- **A refused batch** changes nothing and exits 1; its message lists each
+  record at fault on a line of its own, `[3] ...`, by its index among the
+  names given, or among those `--where` matched, and with `--json` the
+  error object holds them in `items`.
 
 ## The secret-input reader
 
@@ -159,10 +204,11 @@ status. A command reaches the koko server only on its first `in.Call`, so
   when it ends; a failure after that still goes to stderr with its status.
   **stderr** gets every error: `koko: <message>`, or with `--json` (anywhere
   on the line, even where refused) the error object
-  `{"error": {"code": ..., "message": ...}}`. A refused batch, so far `koko
-  host add` of several Hosts on stdin, adds `items`, each Host at fault, by
-  the koko server or before any call alike
-  ([a refused batch](record.md#a-refused-batch)).
+  `{"error": {"code": ..., "message": ...}}`. A refused batch, a `koko
+  host add` of several Hosts on stdin or a write of several names, adds
+  `items`, each record at fault, by the koko server or before any call alike
+  ([a refused batch](record.md#a-refused-batch), [several records at
+  once](#several-records-at-once)).
 - **Codes:** the API's pass through; the CLI adds `invalid_usage` (exit 2),
   `not_joined` (no koko server joined and no socket on this machine, or the
   joined koko server holds no Device Session with this device's key),
@@ -471,8 +517,8 @@ SSH Session through it ends, and never prompts (ADR 0019).
 | `koko secret add <space>/<secret> [--from-file <file>]` | reversible | `secret.add` | the Secret it stored, without its value |
 | `koko secret set <space>/<secret> [--from-file <file>]` | reversible | `secret.set` | the Secret it changed, without its value |
 | `koko secret rename <space>/<secret> <new-name>` | reversible | `secret.rename` | the Secret under its new name |
-| `koko secret move <space>/<secret> <space>` | reversible | `secret.move` | the Secret in its new Space |
-| `koko secret rm <space>/<secret>` | irreversible | `secret.remove` | the Secret it deleted, as it was, without its value |
+| `koko secret move <space>/<secret>... --to <space>`, or `<space>/<secret> <space>` | reversible | `secret.move` | the Secret in its new Space; for several, an array of them ([several records at once](#several-records-at-once)) |
+| `koko secret rm <space>/<secret>...` | irreversible | `secret.remove` | the Secret it deleted, as it was, without its value; for several, an array of them |
 | `koko connect [<host:port>]` | reversible | none: the koko server's version comes from its report | `{"server_address", "previous_address", "host_keys", "server_version", "device_mux"}`: the Server Address the client config now holds, the one `<host:port>` replaced or `null`, the fingerprints of the pinned host keys, the koko server's version, and the Device Mux as `koko status` shows it, or `null` on the direct path ([`koko connect`](device-connection.md#koko-connect)) |
 | `koko disconnect` | reversible | none | `{"device_muxes": [{"socket", "commands_ended"}], "commands_ended"}`: each Device Mux it stopped, by socket, with how many commands were connected to it, which ended, and the sum ([`koko disconnect`](device-mux.md#state-and-exit)) |
 | `koko ssh setup` | reversible | `server.show`, then `host.list` | `{"ssh_config", "include_warning"}`: the path of koko's ssh_config it wrote for this OS user on the koko server's own machine, and `include_warning` as `koko status` prints it ([on the koko server's own machine](device-connection.md#on-the-koko-servers-own-machine)) |
@@ -490,11 +536,11 @@ SSH Session through it ends, and never prompts (ADR 0019).
 | `koko host add`, with Hosts as JSON on stdin | reversible | `host.add` | the Host, for one object on stdin, or an array of the Hosts, for an array, in the order given ([Hosts as JSON on stdin](record.md#hosts-as-json-on-stdin)) |
 | `koko host ls [<filter>...] [--sort <key>[.desc]]... [--with-note] [--all]` | read | `host.list` | an array of the Hosts the caller can see that match every filter term, by the sort keys and then by name, without `"note"` unless `--with-note`, and without the Retired Hosts unless `--all` ([filtering and sorting](record.md#filtering-and-sorting)) |
 | `koko host show <host>` | read | `host.show` | the Host; its Services print for people only |
-| `koko host set <host> [<key>=<value>...] [--unset <key>]... [--note-file <file\|->]` | reversible | `host.set` | the Host as the change left it |
+| `koko host set <host>... \| --where <term>... [<key>=<value>...] [--unset <key>]... [--note-file <file\|->]` | reversible | `host.set`, after `host.list` for `--where` | the Host as the change left it; for several or `--where`, an array of them ([several records at once](#several-records-at-once)) |
 | `koko host rename <host> <new-name>` | reversible | `host.rename` | the Host under its new name |
-| `koko host move <host> <space>` | reversible | `host.move` | the Host in its new Space |
-| `koko host retire <host>` | irreversible | `host.retire` | the Host as it left it, Retired, which only its id names from then on ([retiring a Host](record.md#retiring-a-host)) |
-| `koko host rm <host>` | irreversible | `host.remove` | the Host it deleted, as it was, its Services deleted with it |
+| `koko host move <host>... \| --where <term>... --to <space>`, or `<host> <space>` | reversible | `host.move`, after `host.list` for `--where` | the Host in its new Space; for several or `--where`, an array of them |
+| `koko host retire <host>...` | irreversible | `host.retire` | the Host as it left it, Retired, which only its id names from then on ([retiring a Host](record.md#retiring-a-host)); for several, an array of them |
+| `koko host rm <host>...` | irreversible | `host.remove` | the Host it deleted, as it was, its Services deleted with it; for several, an array of them |
 | `koko host enroll <host> [--password-stdin \| --key <file> \| --secret <space>/<secret>] [--host-key <fingerprint> \| --replace-host-key]` | irreversible | `host.enroll` | the Host, Managed, with its pinned `host_key` ([Enroll](enroll.md)) |
 | `koko exec <host> <command...>` | irreversible | none: it opens a `tunnel@koko` channel | none: the command's stdout, stderr and exit status ([`koko exec`](gateway.md#koko-exec)) |
 | `koko tunnel <ssh-name>` | irreversible | none: it opens a `tunnel@koko` channel | none: ssh's connection on its stdin and stdout, as its ProxyCommand ([`koko tunnel`](gateway.md#koko-tunnel)) |

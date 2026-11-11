@@ -103,7 +103,8 @@ type Arg struct {
 	Optional bool
 	// Many makes the last argument take every word left, one or more, shown
 	// as <Name>..., such as the Users of space member add; Input.Args
-	// returns them in order.
+	// returns them in order. A qualified one keeps its words as typed, for
+	// the command to split with Arg.split.
 	Many bool
 	// Choices, when set, are the only values accepted, such as the shells
 	// of koko completion.
@@ -131,6 +132,11 @@ type Flag struct {
 	Default string
 	// Choices, when set, are the only values accepted.
 	Choices []string
+	// Repeatable lets the flag be given more than once; Input.Repeated
+	// returns its values in order, except for --unset and --sort, which the
+	// parser reads itself, for Input.Unset and Input.Sorts. It takes no Env
+	// and no Default.
+	Repeatable bool
 	// Summary says in one line what the flag does.
 	Summary string
 }

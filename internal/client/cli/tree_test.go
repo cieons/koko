@@ -66,8 +66,6 @@ func TestCommandTreeEntries(t *testing.T) {
 				t.Errorf("%s <%s> may be bare but has no qualifier", path, a.Name)
 			case a.Many && i != len(c.Args)-1:
 				t.Errorf("%s <%s> takes many words but is not the last argument", path, a.Name)
-			case a.Many && a.Qualifier != "":
-				t.Errorf("%s %s takes many words and is qualified, which the parser does not take", path, a.usage())
 			}
 			names = append(names, a.Name)
 		}
@@ -88,6 +86,8 @@ func TestCommandTreeEntries(t *testing.T) {
 				t.Errorf("%s --%s is a boolean flag with a value, default, choices or variable", path, f.Name)
 			case !f.Bool && f.Value == "":
 				t.Errorf("%s --%s takes a value but does not name it", path, f.Name)
+			case f.Repeatable && (f.Bool || f.Env != "" || f.Default != ""):
+				t.Errorf("%s --%s is repeatable but boolean, or has a variable or default", path, f.Name)
 			case len(f.Choices) > 0 && f.Default != "" && !slices.Contains(f.Choices, f.Default):
 				t.Errorf("%s --%s defaults to %q, which is not one of its choices", path, f.Name, f.Default)
 			}

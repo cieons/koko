@@ -42,8 +42,8 @@ directory shows it.
 | `koko secret add <space>/<secret> [--from-file <file>]` | reversible | `secret.add` | the Secret it stored, without its value |
 | `koko secret set <space>/<secret> [--from-file <file>]` | reversible | `secret.set` | the Secret it changed, without its value |
 | `koko secret rename <space>/<secret> <new-name>` | reversible | `secret.rename` | the Secret under its new name |
-| `koko secret move <space>/<secret> <space>` | reversible | `secret.move` | the Secret in its new Space |
-| `koko secret rm <space>/<secret>` | irreversible | `secret.remove` | the Secret it deleted, as it was, without its value |
+| `koko secret move <space>/<secret>... --to <space>`, or `<space>/<secret> <space>` | reversible | `secret.move` | the Secret in its new Space; for several, an array of them, moved all or none ([several records at once](cli.md#several-records-at-once)) |
+| `koko secret rm <space>/<secret>...` | irreversible | `secret.remove` | the Secret it deleted, as it was, without its value; for several, an array of them, deleted all or none |
 
 - **Only `secret show` prints a value.** It sits in the tier that prints a
   credential (ADR 0019), so one harness rule asks before any value is

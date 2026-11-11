@@ -112,3 +112,45 @@ func TestAFieldTheServersRevisionLacksIsServerTooOld(t *testing.T) {
 		})
 	}
 }
+
+// A batch goes only to a koko server whose revision of the operation takes
+// it: to one at revision 1, several names fail with server_too_old, naming
+// the several records, with nothing sent, while one name goes in the
+// one-record form, which every koko server takes (ADR 0050).
+func TestABatchToAKokoServerWithoutBatchesIsServerTooOld(t *testing.T) {
+	t.Parallel()
+	ops := []string{"host.set", "host.move", "host.retire", "host.remove", "secret.move", "secret.remove", "host.list"}
+	for _, tc := range []struct {
+		several, one []string
+		option       string
+	}{
+		{[]string{"host", "set", "web1", "web2", "role=node"}, []string{"host", "set", "web1", "role=node"}, "several <host>"},
+		{[]string{"host", "move", "web1", "web2", "--to", "ops"}, []string{"host", "move", "web1", "ops"}, "several <host>"},
+		{[]string{"host", "retire", "web1", "web2"}, []string{"host", "retire", "web1"}, "several <host>"},
+		{[]string{"host", "rm", "web1", "web2"}, []string{"host", "rm", "web1"}, "several <host>"},
+		{[]string{"secret", "move", "ops/a", "ops/b", "--to", "web"}, []string{"secret", "move", "ops/a", "web"}, "several <space>/<secret>"},
+		{[]string{"secret", "rm", "ops/a", "ops/b"}, []string{"secret", "rm", "ops/a"}, "several <space>/<secret>"},
+	} {
+		t.Run(strings.Join(tc.several[:2], " "), func(t *testing.T) {
+			t.Parallel()
+			path, calls := revisedServer(t, wire.Report{Version: "v0.4.0", Operations: ops})
+			run := func(argv []string) (int, string) {
+				var stderr strings.Builder
+				r := &Runner{SocketPath: path}
+				status := r.Run(t.Context(), Invocation{Args: argv, Stdout: io.Discard, Stderr: &stderr, Env: []string{"HOME=" + t.TempDir()}})
+				return status, stderr.String()
+			}
+			status, stderr := run(append(tc.several, "--json"))
+			cmd := "koko " + strings.Join(tc.several[:2], " ")
+			if status != 1 || !strings.Contains(stderr, `"server_too_old"`) || !strings.Contains(stderr, "does not take "+tc.option+" of "+cmd) {
+				t.Errorf("%s: exit %d, stderr %q; want 1 and server_too_old naming %s", tc.several, status, stderr, tc.option)
+			}
+			if n := calls.Load(); n != 0 {
+				t.Errorf("%s sent %d call(s), want none", tc.several, n)
+			}
+			if status, stderr := run(tc.one); status != 0 || calls.Load() != 1 {
+				t.Errorf("%s: exit %d, stderr %q, %d call(s); want it sent", tc.one, status, stderr, calls.Load())
+			}
+		})
+	}
+}

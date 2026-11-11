@@ -315,7 +315,10 @@ transaction.
 ## The CLI
 
 `koko host add`, `ls`, `show`, `set`, `rename`, `move`, `retire` and `rm`
-([the commands so far](cli.md#the-commands-so-far)). Fields and Attributes are both
+([the commands so far](cli.md#the-commands-so-far)); `set`, `move`,
+`retire` and `rm` take several Hosts at once, all or none, and `set` and
+`move` take `--where <term>` in their place ([several records at
+once](cli.md#several-records-at-once)). Fields and Attributes are both
 `key=value`; `relay=<host>` takes a Host name or id, checked for its form before any call,
 and `koko host set --unset relay` clears it;
 `koko host set` refuses `name=`, `space=` and `state=`, naming
