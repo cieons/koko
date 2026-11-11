@@ -157,8 +157,9 @@ as the CLI resolves one in a write.
   `attr.list` answers; a column ticked goes last, and one unticked no
   longer sorts the list. Headers are the names of fields and Presets in the
   language, and any other key as stored. Cells are values as stored, never
-  translated: Provider shows its region after it, Price its currency and
-  billing cycle, and Address `:port` for a port other than 22, unless a
+  translated: Provider shows its region after it, or the region alone for
+  a Host with no provider, a separator only between the two, Price its
+  currency and billing cycle, and Address `:port` for a port other than 22, unless a
   column of their own shows them; `state` shows its state mark; a `relay`
   cell is the Relay's name, or "A Relay you cannot see" for a Relay in a
   Space the caller cannot act in (ADR 0035).
@@ -345,8 +346,8 @@ axe on each page, dialog and pane state it renders.
 
 - [`hosts.test.tsx`](../../web/src/pages/host/hosts.test.tsx): the Hosts
   grouped by Space in the default columns, their links and the head's
-  counts; a Member's, with no Space select; 0, 3 and 300 Hosts, and every
-  Host Retired; the search
+  counts; Provider and region with only one of the two; a Member's, with
+  no Space select; 0, 3 and 300 Hosts, and every Host Retired; the search
   over each value it matches, replacing the history entry, and no match
   with its way back; each option of the state select in the URL, a Retired
   Host opened by its id, a state term it cannot show as a chip, and a

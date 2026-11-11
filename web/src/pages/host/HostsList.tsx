@@ -161,7 +161,7 @@ const machine = new Set(["id", "address", "port", "account", "host_key"]);
 
 /**
  * hostColumn is the Hosts view's column of key. Provider shows its region
- * after it, and Price its currency and billing cycle, unless a column of
+ * after it, or the region alone with no provider, and Price its currency and billing cycle, unless a column of
  * their own shows them; State shows its mark; a Relay its name, or that the
  * caller cannot see it. Every other value shows as stored.
  */
@@ -171,15 +171,19 @@ function hostColumn(t: Translate, key: string, columns: readonly string[]): Colu
   const cell = (h: Host) => {
     const a = h.attributes;
     switch (key) {
-      case "provider":
-        return a.provider === undefined && (own("region") || a.region === undefined) ? (
-          <Missing />
-        ) : (
+      case "provider": {
+        const region = own("region") ? undefined : a.region;
+        if (a.provider === undefined) {
+          // The region alone, as the cell's value, with no separator before it.
+          return region === undefined ? <Missing /> : <span className="text-ink-2">{region}</span>;
+        }
+        return (
           <span className="text-ink-2">
-            {a.provider ?? ""}
-            {!own("region") && a.region !== undefined && <span className="text-muted"> · {a.region}</span>}
+            {a.provider}
+            {region !== undefined && <span className="text-muted"> · {region}</span>}
           </span>
         );
+      }
       case "price":
         return a.price === undefined ? (
           <Missing />

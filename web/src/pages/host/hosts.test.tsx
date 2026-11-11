@@ -84,6 +84,19 @@ test("the Hosts host.list answers, grouped by Space, a panel each in the default
   await expectAccessible();
 });
 
+test("Provider and region puts its separator only between a provider and a region", async () => {
+  const api = fakeApi();
+  actAs(api, alice);
+  const regionOnly = host("db1", { attributes: { region: "hk" } });
+  const providerOnly = host("web1", { attributes: { provider: "vultr" } });
+  records(api, { hosts: [regionOnly, providerOnly] });
+
+  renderAt("/hosts");
+
+  await screen.findByRole("table", { name: "ops" });
+  expect(cells("ops").map((row) => row[1])).toEqual(["hk", "vultr"]);
+});
+
 test("with every Host Retired, the page is not empty: its controls show the Retired Hosts", async () => {
   const api = fakeApi();
   actAs(api, alice);
