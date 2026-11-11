@@ -147,6 +147,23 @@ no probe while one is unanswered, so none came after, and a local
 **Evidence:** c152887 (#54); check run 42542720470; #100; the liveness
 test's fix of 2026-11-10
 
+### Code that compares versions is tested with the versions CI's builds carry
+
+**Why:** d6db4d8 made the CLI and the koko server turn away each other below
+`compat.Oldest`, and `make check` passed locally, where a clone has tags
+and a build carries a pseudo-version with a release before it
+(`v0.4.2-0.<time>-<revision>`). CI's shallow checkout has no tags, so its
+builds carry `v0.0.0-<time>-<revision>`, which sorted below every release:
+the image's own koko was refused by its own kokod, `TestRealOpenSSH` failed
+with `cli_too_old`, and the real-systemd check's builds, tagged `v0.0.1` and
+`v0.0.2`, fell below the window too. `main` went red in the check, container
+and systemd workflows at d6db4d8 and stayed red at 0ff30a4. Test such code
+with a build from a tagless clone, `(devel)` and the tags CI's checks give,
+not only with the local clone's version.
+**Seen:** 1 (2026-11-11)
+**Evidence:** d6db4d8 (#143); runs 42982103558 and 42982103626; fixed by
+7fe9f3d and 6791357
+
 ## Moved to the code standards
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128; check run 42951455550).
