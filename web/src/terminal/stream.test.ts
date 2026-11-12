@@ -473,7 +473,12 @@ async function transfer(rng: () => number, from: Stream, to: Stream, want: Uint8
 // resume and its answer never reaches the page. Some resumes start while
 // both ends are still on a working link, so the last attach wins. Every
 // byte must come out once, in order, with the end after it.
-test("bytes survive any sequence of cuts and resumes", async () => {
+//
+// It waits on no clock (settled is a zero-delay timeout), so its time is
+// the CPU's: about 1.3 s alone, and past Vitest's 5 s default on a machine
+// whose load average was about 75 (#188). Its timeout guards only against a
+// hang, so it is sized for a loaded runner rather than cut back in size.
+test("bytes survive any sequence of cuts and resumes", { timeout: 60_000 }, async () => {
   const seed = Number(import.meta.env.VITE_STREAM_SEED) || Date.now() >>> 0;
   console.log(`stream.test.ts: seed ${seed} (set VITE_STREAM_SEED to run it again)`);
   for (let round = 0; round < 4; round++) {
