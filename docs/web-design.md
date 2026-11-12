@@ -202,7 +202,7 @@ items as icons, each keeping its accessible name:
 | Window | The rail | Room the page leaves it (`--rail-w`) |
 | --- | --- | --- |
 | 1280px wide or more | Open, unless the person folds it; the browser keeps the choice (`koko.rail`) | 15.5rem open, 5rem folded |
-| 768px to 1279px | Folded. The fold button opens it over the page, on the backdrop, in the overlay colour with a 1.5rem radius at its end edge and the overlay shadow, until a place is chosen, Escape, or a click beside it; Escape and the click give the focus back to the fold button. The page stays where it was and takes no input meanwhile | 5rem |
+| 768px to 1279px | Folded. The fold button opens it over the page, on the backdrop, in the overlay colour with a 1.5rem radius at its end edge and the overlay shadow, until a place is chosen, Escape, or a click beside it, each giving the focus back to the fold button. The page stays where it was and takes no input meanwhile | 5rem |
 | Under 768px | None: the phone's frame below | 0 |
 
 **A page** sits beside the rail: its column, 76rem at most, is centred in

@@ -347,7 +347,7 @@ test("the skip link moves the focus to the page from under the rail laid over it
   expect(document.activeElement).toBe(screen.getByRole("main"));
 });
 
-test("over the page, the rail closes on a click beside it, giving the focus back, and on a place chosen", async () => {
+test("over the page, the rail closes on a click beside it and on a place chosen, giving the focus back each time", async () => {
   setViewportWidth(1100);
   const api = fakeApi();
   asDevice(api, alice);
@@ -370,10 +370,10 @@ test("over the page, the rail closes on a click beside it, giving the focus back
   expect(await screen.findByText("secrets page")).toBeDefined();
   expect(fold.getAttribute("aria-expanded")).toBe("false");
   expect(inert()).toBe(false);
-  // The place stays in the folded rail, marked, and keeps the focus, as a place does everywhere.
+  // The place stays in the folded rail, marked; the focus goes back to the fold button, as on Escape.
   expect(secrets.getAttribute("aria-current")).toBe("page");
   expect(secrets.getAttribute("aria-label")).toBe("Secrets");
-  expect(document.activeElement).toBe(secrets);
+  expect(document.activeElement).toBe(fold);
 });
 
 test("Escape closes a menu open in the rail over the page and leaves the rail open", async () => {
@@ -390,10 +390,12 @@ test("Escape closes a menu open in the rail over the page and leaves the rail op
 
   await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   expect(fold.getAttribute("aria-expanded")).toBe("true");
+  expect(inert()).toBe(true); // what React Aria set and cleared around the menu leaves the page as it was
   await openAccount("alice");
   fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(fold.getAttribute("aria-expanded")).toBe("true");
+  expect(inert()).toBe(true);
 });
 
 test("/ goes to the first place, keeping the query", async () => {

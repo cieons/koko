@@ -68,7 +68,8 @@ function storeFolded(folded: boolean): void {
  * useRail is the rail's state. From 1280 pixels wide it is open unless the
  * person folded it, which the browser keeps; under that it is folded, and
  * the fold button opens it over the page until a place is chosen (any
- * visit), Escape, or a click beside it.
+ * visit), Escape, or a click beside it, each giving the focus back to the
+ * fold button.
  */
 export function useRail(): RailControl {
   const wide = useMedia(wideQuery);
@@ -78,13 +79,21 @@ export function useRail(): RailControl {
   const { visit } = useLocation();
   const foldButton = useRef<HTMLButtonElement>(null);
 
-  // A visit, as a place chosen, ends the rail over the page, and so does the window crossing an edge.
-  useEffect(() => setOver(false), [visit, wide, phone]);
   const dismiss = useCallback(() => setOver(false), []);
   const close = useCallback(() => {
     setOver(false);
     foldButton.current?.focus();
   }, []);
+  // A visit, as a place chosen, closes the rail over the page as Escape does, the focus back on the
+  // fold button. It runs on a visit alone, not as the rail opens, and reads whether the rail lay
+  // over the page in the render the visit brought.
+  useEffect(() => {
+    if (over) {
+      close();
+    }
+  }, [visit]);
+  // The window crossing an edge ends it too, leaving the focus where it is.
+  useEffect(() => setOver(false), [wide, phone]);
   useEffect(() => {
     if (!over) {
       return;

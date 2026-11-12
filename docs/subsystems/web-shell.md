@@ -64,8 +64,8 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
     storage the browser refuses remembers nothing, and the rail opens;
   - from 768 to 1279 pixels it is folded, and the fold button opens it
     over the page, on the backdrop, until a visit (a place chosen), Escape
-    or a click beside it; Escape and the click give the focus back to the
-    fold button, and a menu or the account panel open in the rail takes
+    or a click beside it, each giving the focus back to the fold button
+    (a visit while it is over the page, not as it opens); a menu or the account panel open in the rail takes
     its own Escape first. While it lies over the page the page's column is
     `inert`, and the skip link closes the rail before it moves the focus;
   - folded, each place is its icon (`Route.icon`) alone, named by its
@@ -670,10 +670,11 @@ alone ([Sign-ins](signin.md#the-web-uis-pages)):
   browser that refuses storage; under 1280
   pixels the rail folded, opening over the page, the page inert and kept
   in its room, and closing on Escape, a click beside it (the focus back on
-  the fold button each time) and a place chosen (the focus kept on it),
+  the fold button each time) and a place chosen (the focus back there too),
   and on the window crossing 1280 or 768 pixels; the skip link from under
   it; Escape closing a menu and the account
-  panel open in the rail over the page, leaving the rail open; on a
+  panel open in the rail over the page, leaving the rail open and the
+  page inert; on a
   phone the top row's wordmark, Language, Appearance and account, the
   account panel from it, and the places in the bar at the foot with their
   icons; `/` going to
