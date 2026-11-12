@@ -46,9 +46,14 @@ const KokoPackage = "github.com/cieons/koko/cmd/koko"
 
 // KokoAsset is the name of a release's asset that holds the koko for
 // platform, such as koko-linux-amd64, which koko update downloads (ADR
-// 0047).
+// 0047): koko-<os>-<arch>, with .exe on Windows, which runs a file by its
+// extension (ADR 0052).
 func KokoAsset(platform string) string {
-	return "koko-" + strings.ReplaceAll(platform, "/", "-")
+	name := "koko-" + strings.ReplaceAll(platform, "/", "-")
+	if strings.HasPrefix(platform, "windows/") {
+		name += ".exe"
+	}
+	return name
 }
 
 // The bounds of a download: a koko or kokod is about 40 MiB, SHA256SUMS a

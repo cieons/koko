@@ -400,9 +400,10 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
 ## `koko update`
 
 [`koko update`](../../internal/client/cli/update.go) upgrades the CLI where
-install.sh puts it, with no root and no restart ([ADR
-0047](../adr/0047-koko-updates-itself-in-its-users-own-directory.md)). It
-needs no join, never contacts the koko server and never prompts. In this
+install.sh puts it, or install.ps1 on Windows, with no root and no restart
+([ADR 0047](../adr/0047-koko-updates-itself-in-its-users-own-directory.md),
+[ADR 0052](../adr/0052-install-ps1-installs-the-windows-cli-and-puts-its-directory-on-the-users-path.md)).
+It needs no join, never contacts the koko server and never prompts. In this
 order, each refusal with nothing changed:
 
 1. `--version` must be a release's tag (`build.Info.Release`), or the
@@ -413,22 +414,65 @@ order, each refusal with nothing changed:
    root, or `/usr/local/bin/koko` run by root. A development build,
    `KOKO_IMAGE` set (the image sets it), `/usr/local/bin/koko` run by
    another user and any other path are refused with `update_unsupported`,
-   each naming how that koko is upgraded.
+   each naming how that koko is upgraded. On Windows the one file is
+   `%USERPROFILE%\.local\bin\koko.exe`, elevated or not, and the refusal
+   of any other path names install.ps1's directory.
 3. The target is `--version`'s, or the tag the `releases/latest` redirect
    names (`release.Source.Latest`). When it is this build, it says so and
    exits 0, having asked only for the redirect. `--check` stops here and
    says what it would do.
-4. It downloads `SHA256SUMS` and `koko-<os>-<arch>` into a new 0700
-   `.koko-update-*` directory beside the file, so the rename stays on one
-   filesystem, and checks the SHA-256 and the build: `cmd/koko`, the
+4. It downloads `SHA256SUMS` and `koko-<os>-<arch>`
+   (`release.KokoAsset`: `koko-windows-amd64.exe` on Windows) into a new
+   0700 `.koko-update-*` directory beside the file, so the rename stays on
+   one filesystem, and checks the SHA-256 and the build: `cmd/koko`, the
    target's version, this platform (`release.Source.Fetch`). A failure is
    `download_failed`, naming the URL, and removes the directory.
-5. It sets mode 0755 and renames the file over the old one. A running koko
-   keeps its file: open SSH Sessions, `koko web` and the old build's Device
-   Mux carry on, and the Device Mux idles out.
+5. It sets mode 0755 and puts the file in place of the old one
+   ([the swap](#the-swap)). A running koko keeps its file: open SSH
+   Sessions, `koko web` and the old build's Device Mux carry on, and the
+   Device Mux idles out.
 6. It points koko's ssh_config's ProxyCommand at the file (below), and
-   prints what it did. Going back to a release from before `koko update`
-   names the install line as the way back up.
+   prints what it did, the path as `~/.local/bin/koko`, or
+   `~\.local\bin\koko.exe` on Windows. Going back to a release from before
+   `koko update` names the install line as the way back up.
+
+### The swap
+
+`replaceFile` puts a checked file in place of the koko file, per OS
+([rule 13](code-layout.md#rules-for-working-in-parallel)). `koko update`
+and [`koko server upgrade`](#koko-server-upgrade), for the CLI it brings
+along, both call it.
+
+- **Linux and macOS**
+  ([`update_unix.go`](../../internal/client/cli/update_unix.go)): one
+  rename over the old file, which a running koko keeps open.
+- **Windows**
+  ([`update_windows.go`](../../internal/client/cli/update_windows.go)),
+  which lets no one replace or delete a running program's file, but lets it
+  be renamed within its directory:
+  1. `koko.exe` is renamed to `.koko.old-<random>.exe` beside it, from
+     which a running koko, a Device Mux of the old build among them, runs
+     on.
+  2. The checked file is renamed to `koko.exe`.
+  3. When step 2 fails, as when another program holds the new file open,
+     the old file is renamed back, and the command fails saying that
+     nothing was changed. Should that rename fail too, the message names
+     the `.koko.old-*.exe` to rename back by hand.
+  4. Every `.koko.old-*.exe` that can be deleted is deleted: those no
+     process runs any more. One that still runs is given the hidden
+     attribute and left for the next `koko update`.
+
+  Between steps 1 and 2 there is no `koko.exe`, for two renames' time. The
+  ProxyCommand names `koko.exe` by the same path before and after.
+
+Its tests on Windows are
+[`update_windows_test.go`](../../internal/client/cli/update_windows_test.go),
+S1 on a device of their own, since the fake machine of the other update
+tests is a Linux machine: a profile directory, a fake GitHub, and a
+`cli.Kokod` that states each file's build by its bytes. The koko that runs
+while its file is replaced is the test binary itself, copied to `koko.exe`
+and started, and the second rename is made to fail by holding the
+downloaded file open as a virus scanner would.
 
 **ssh's ProxyCommand.** koko's ssh_config names its ProxyCommand's koko by
 full path, which on a v0.3.x device is `/usr/local/bin/koko`. Every command

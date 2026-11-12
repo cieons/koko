@@ -69,6 +69,9 @@ type Harness struct {
 	startCalls int
 	// web is the web listener's bound address, "" while it is off.
 	web string
+	// openBrowser is the browser hook of the command lines, nil for this
+	// OS's way.
+	openBrowser func(address string) error
 }
 
 // Option changes how Start sets up the harness.
@@ -467,7 +470,15 @@ func (h *Harness) KokoTerminal(term *Terminal, args ...string) Result {
 // runner is the runner of the Local caller's command lines: over the
 // harness's socket, on the koko server's clock.
 func (h *Harness) runner() cli.Runner {
-	return cli.Runner{SocketPath: h.socket, Clock: h.clock.Now}
+	return cli.Runner{SocketPath: h.socket, Clock: h.clock.Now, OpenBrowser: h.openBrowser}
+}
+
+// OpenBrowserWith makes the command lines started from now on open koko
+// web's address with open, through the browser hook, in place of this OS's
+// way: for Windows, where the shell's "open" would open a real browser on
+// the machine the test runs on, and no PATH puts a fake in its place.
+func (h *Harness) OpenBrowserWith(open func(address string) error) {
+	h.openBrowser = open
 }
 
 // Home returns the temporary HOME that Koko runs command lines under.

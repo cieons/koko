@@ -92,6 +92,13 @@ type Runner struct {
 	// the fake machine's root. Where it is nil, koko update refuses, and
 	// neither a command nor a Device Mux spawn reads a file's build.
 	Executable func() (string, error)
+
+	// OpenBrowser is the browser hook, for tests only: how koko web opens
+	// its address, in place of this OS's way. Nil means the OS's: its
+	// opener found on PATH on Linux and macOS, the shell's "open" on
+	// Windows, which no PATH decides and which would open a real browser on
+	// the machine a test runs on. No flag or environment variable sets it.
+	OpenBrowser func(address string) error
 }
 
 // Invocation is one command line with its streams and environment.

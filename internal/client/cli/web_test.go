@@ -16,6 +16,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -458,10 +460,13 @@ func TestWebTokenWorksForFiveMinutes(t *testing.T) {
 // A port another process holds is refused, naming that process and
 // --port, before any call: koko web never moves to another port. A browser
 // may reach localhost on [::1] first, so a port held there only is refused
-// too.
+// too. Windows names no process: there it is "another process".
 func TestWebRefusesATakenPort(t *testing.T) {
 	t.Parallel()
-	skip.OnWindows(t, "koko web tells a taken port on Windows from #154")
+	holder := fmt.Sprintf("pid %d", os.Getpid())
+	if runtime.GOOS == "windows" {
+		holder = "taken by another process:"
+	}
 	for _, l := range []struct{ network, addr string }{{"tcp4", "127.0.0.1:0"}, {"tcp6", "[::1]:0"}} {
 		t.Run(l.network, func(t *testing.T) {
 			h := harness.Start(t)
@@ -477,7 +482,7 @@ func TestWebRefusesATakenPort(t *testing.T) {
 			// the test when Wait gives up, instead of running on.
 			r := h.Background(nil, "web", "--port", port, "--no-open", "--json").Wait()
 			msg := r.WantError(t, 1, "port_taken")
-			for _, want := range []string{"port " + port, fmt.Sprintf("pid %d", os.Getpid()), "--port"} {
+			for _, want := range []string{"port " + port, holder, "--port"} {
 				if !strings.Contains(msg, want) {
 					t.Errorf("message %q does not say %q", msg, want)
 				}
@@ -501,29 +506,19 @@ func TestWebPortMustBeATCPPort(t *testing.T) {
 	}
 }
 
-// Without --no-open, koko web opens its address with the OS's opener found
-// on PATH (xdg-open on Linux, open on macOS); with it, it opens nothing.
-// koko web waits for the opener before it exits, so each run's opener has
-// done its work once the run is stopped.
+// Without --no-open, koko web opens its address in this OS's way: with its
+// opener found on PATH (xdg-open on Linux, open on macOS), or with the
+// shell's "open" on Windows; with it, it opens nothing.
 func TestWebOpensItsAddressUnlessNoOpen(t *testing.T) {
 	t.Parallel()
-	skip.OnWindows(t, "koko web opens a browser on Windows from #154")
 	h := harness.Start(t)
-	bin := t.TempDir()
-	opened := filepath.Join(t.TempDir(), "opened")
-	for _, opener := range []string{"xdg-open", "open"} {
-		script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" >> %q\n", opened)
-		if err := os.WriteFile(filepath.Join(bin, opener), []byte(script), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	env := []string{"PATH=" + bin}
+	env, opened := fakeOpener(t, h)
 
 	quiet := h.Background(env, "web", "--port", strconv.Itoa(freePort(t)), "--no-open")
 	quiet.WaitStdout("Ctrl-C")
 	quiet.Stop()
-	if _, err := os.Stat(opened); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("koko web --no-open ran the opener: %v", err)
+	if got := opened(); len(got) != 0 {
+		t.Fatalf("koko web --no-open opened %q", got)
 	}
 
 	p := h.Background(env, "web", "--port", strconv.Itoa(freePort(t)))
@@ -535,17 +530,18 @@ func TestWebOpensItsAddressUnlessNoOpen(t *testing.T) {
 	if r := p.Stop(); r.Status != 0 || r.Stderr != "" {
 		t.Errorf("exit status %d, stderr %q", r.Status, r.Stderr)
 	}
-	if got, err := os.ReadFile(opened); err != nil || string(got) != address+"\n" {
-		t.Errorf("the opener was given %q (%v), want the address %q", got, err, address)
+	if got := opened(); !slices.Equal(got, []string{address}) {
+		t.Errorf("koko web opened %q, want the address %q alone", got, address)
 	}
 }
 
-// Without an opener, koko web says so and serves on: the address it printed
-// still works.
+// When its address cannot be opened, for want of an opener or because the
+// shell's "open" fails, koko web says so and serves on: the address it
+// printed still works.
 func TestWebServesOnWhenNoBrowserOpens(t *testing.T) {
 	t.Parallel()
 	h := harness.Start(t)
-	p := h.Background([]string{"PATH=" + t.TempDir()}, "web", "--port", strconv.Itoa(freePort(t)), "--json")
+	p := h.Background(noOpener(t, h), "web", "--port", strconv.Itoa(freePort(t)), "--json")
 	w := printedWeb(t, p.WaitStdout("}\n"))
 	newBrowser(t, w.port).open(w)
 	r := p.Stop()

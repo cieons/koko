@@ -202,15 +202,16 @@ its own only when an agent would act on it differently.
 13. **Platform-specific code** sits behind a small per-OS interface selected
     by build tags (`_linux.go`, `_darwin.go`, `_windows.go` or a `//go:build`
     line), never inline: the Device Mux socket and its same-user check, the
-    route-change watch, the port-owner lookup, opening a browser, file
+    route-change watch, the port-owner lookup, opening a browser, putting a
+    new koko file in place of the running one (`koko update`), file
     permissions (on Windows an access control list), the name of the home
     directory's variable, which error number a socket call failed with
     (`sockerr`), the terminal (`golang.org/x/term` already splits it per OS,
     so koko adds no files of its own), and signal forwarding. A ticket that
     adds one writes the Linux, macOS and Windows implementations
     ([ADR 0051](../adr/0051-on-windows-the-cli-is-a-device-with-the-same-files-in-the-same-places.md));
-    the seams that still return "not supported on Windows" (the Device Mux,
-    opening a browser) get theirs in the tickets of
+    the seam that still returns "not supported on Windows" (the Device
+    Mux) gets its own in the tickets of
     [#151](https://github.com/cieons/koko/issues/151). `make cross` compiles
     `windows/amd64`, `make lint` lints it, and the `windows` CI job runs the
     client group's tests there

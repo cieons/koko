@@ -26,17 +26,29 @@ irreversible tier: it prints a credential, its token.
    another port, which would break bookmarks. A browser may try `localhost`
    on `[::1]` first, so the port is refused as taken when another process
    listens on `[::1]:<port>` too, though `koko web` does not listen there.
+   A taken port is told by the listen's error number, which differs by OS
+   ([`sockerr.Is`](../../internal/shared/sockerr/sockerr.go): `EADDRINUSE`,
+   or `WSAEADDRINUSE` on Windows). On Windows, which has no lookup, the
+   refusal says "another process".
 2. **The token.** It calls `web.start` and gets a one-time token.
 3. **The address.** It prints `http://localhost:<port>/?t=<token>` as soon
    as it serves; `--json` prints `{"address": "..."}`, once, at that moment
    ([`longAction`](../../internal/client/cli/tree.go)). Showing the token is
    the command's purpose; nothing else prints it.
-4. **Opening.** Unless `--no-open`, it runs the OS's opener on the address,
-   found on the invocation's `PATH` (`xdg-open` on Linux, `open` on macOS;
-   [`browser_<os>.go`](../../internal/client/cli/browser.go)), and serves at
-   once. It never stops the opener, which may be the browser itself, and
-   waits for it to exit before it exits itself. When the opener is missing or
-   fails, it says so on stderr and serves on.
+4. **Opening.** Unless `--no-open`, it opens the address in this OS's way
+   (`openAddress`, in
+   [`browser_<os>.go`](../../internal/client/cli/browser.go)) and serves at
+   once. On Linux and macOS it runs the OS's opener, found on the
+   invocation's `PATH` (`xdg-open` on Linux, `open` on macOS); it never
+   stops the opener, which may be the browser itself, and waits for it to
+   exit before it exits itself. On Windows it asks the shell to "open" the
+   address (`windows.ShellExecute`), so no command line carries the token
+   and no `cmd.exe` reads the address's `&` or `?`. When the opener is
+   missing or the opening fails, it says so on stderr and serves on. The
+   shell's "open" asks the registry, not `PATH`, and would open a real
+   browser on a test's machine, so tests on Windows put a fake in its place
+   through the browser hook (`cli.Runner.OpenBrowser`), which nothing else
+   sets.
 5. **Forwarding.** Each browser connection becomes one `web@koko` channel,
    carried both ways until either side closes it. Through the Device Mux, a
    dropped Device Connection ends the channels on it but not `koko web`'s
@@ -283,7 +295,9 @@ and user. It is per OS ([rule 13](code-layout.md#rules-for-working-in-parallel))
   named by its user alone.
 - **macOS** runs `/usr/sbin/lsof`, which sees only this user's processes
   unless run as root.
-- **Windows** returns a "not supported" error.
+- **Windows** has none: `ErrUnsupported`. Naming the process that holds a
+  port there is out of scope
+  ([P1 spec: the koko CLI on Windows](https://github.com/cieons/koko/issues/151)).
 
 `ErrNotFound` means no process this user can see holds the port.
 
