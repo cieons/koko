@@ -15,6 +15,7 @@ import (
 	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/portowner"
+	"github.com/cieons/koko/internal/shared/sockerr"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -111,7 +112,7 @@ func web(ctx context.Context, in *Input, ready func(webJSON) error) error {
 		return err
 	}
 	if res.opening {
-		waitForOpener := openBrowser(ctx, in.inv, res.Address)
+		waitForOpener := openBrowser(ctx, in, res.Address)
 		defer waitForOpener()
 	}
 	f := forwarder{conn: conn, payload: payload, stderr: in.inv.Stderr, passOn: in.runner.Timings.Resolve().PassOn}
@@ -144,11 +145,12 @@ func webEnded(in *Input, err error) error {
 // listenWeb listens on 127.0.0.1:port, refusing a taken port by naming the
 // process holding it. A browser may reach localhost on [::1] first, so a
 // port another process holds there is refused too, though koko web does not
-// listen there itself.
+// listen there itself. Which error number a taken port fails with is the
+// OS's (sockerr).
 func listenWeb(ctx context.Context, port int) (net.Listener, error) {
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
-	if errors.Is(err, syscall.EADDRINUSE) {
+	if sockerr.Is(err, syscall.EADDRINUSE) {
 		return nil, portTaken(ctx, port)
 	}
 	if err != nil {
@@ -157,7 +159,7 @@ func listenWeb(ctx context.Context, port int) (net.Listener, error) {
 	// A machine without IPv6 fails this probe otherwise, and has nothing
 	// on [::1] to take the browser elsewhere.
 	probe, err := lc.Listen(ctx, "tcp6", net.JoinHostPort("::1", strconv.Itoa(port)))
-	if errors.Is(err, syscall.EADDRINUSE) {
+	if sockerr.Is(err, syscall.EADDRINUSE) {
 		_ = ln.Close()
 		return nil, portTaken(ctx, port)
 	}
@@ -167,8 +169,9 @@ func listenWeb(ctx context.Context, port int) (net.Listener, error) {
 	return ln, nil
 }
 
-// portTaken is the refusal of a taken port, naming the process holding it.
-// koko web never moves to another port, which would break bookmarks.
+// portTaken is the refusal of a taken port, naming the process holding it,
+// or "another process" on Windows, which has no lookup. koko web never moves
+// to another port, which would break bookmarks.
 func portTaken(ctx context.Context, port int) error {
 	var holder string
 	switch p, err := portowner.Lookup(ctx, port); {
@@ -176,6 +179,8 @@ func portTaken(ctx context.Context, port int) error {
 		holder = p.String()
 	case errors.Is(err, portowner.ErrNotFound):
 		holder = "a process koko cannot see"
+	case errors.Is(err, portowner.ErrUnsupported):
+		holder = "another process"
 	default:
 		holder = fmt.Sprintf("another process (%v)", err)
 	}

@@ -3,7 +3,8 @@
 // rather than moving to another port and breaking a bookmark or a firewall
 // rule (P0 spec: overview, P0 spec: install and run).
 //
-// The lookup is per OS: /proc on Linux, lsof on macOS. Windows has none yet.
+// The lookup is per OS: /proc on Linux, lsof on macOS. Windows has none
+// (ErrUnsupported).
 package portowner
 
 import (
@@ -41,14 +42,18 @@ func (p Process) String() string {
 // ErrNotFound means no process this user can see listens on the port.
 var ErrNotFound = errors.New("no process this user can see listens on the port")
 
+// ErrUnsupported means this OS has no lookup, as Windows has none.
+var ErrUnsupported = errors.New("naming the process on a port is not supported on this OS")
+
 // Lookup returns the process listening on TCP port on any local address,
-// IPv4 or IPv6, or ErrNotFound.
+// IPv4 or IPv6, or ErrNotFound, or ErrUnsupported on an OS without a
+// lookup.
 func Lookup(ctx context.Context, port int) (Process, error) {
 	if port < 1 || port > 65535 {
 		return Process{}, fmt.Errorf("look up the process on port %d: not a TCP port", port)
 	}
 	p, err := lookup(ctx, port)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrUnsupported) {
 		return Process{}, fmt.Errorf("look up the process on port %d: %w", port, err)
 	}
 	return p, err

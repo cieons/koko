@@ -1,12 +1,9 @@
 package portowner
 
-import (
-	"context"
-	"errors"
-)
+import "context"
 
-// lookup is not written for Windows, where koko runs no command that needs
-// it until P1.
+// lookup is not written for Windows: naming the process that holds a port
+// there is out of scope (P1 spec: the koko CLI on Windows).
 func lookup(context.Context, int) (Process, error) {
-	return Process{}, errors.New("naming the process on a port is not supported on Windows")
+	return Process{}, ErrUnsupported
 }

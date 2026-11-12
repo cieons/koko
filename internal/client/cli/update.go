@@ -32,9 +32,10 @@ var updateCommands = []Command{
 	},
 }
 
-// The two places koko update replaces a koko (ADR 0047): install.sh's,
-// for a user other than root, under their HOME, and root's, for every user
-// of the machine.
+// The two places koko update replaces a koko (ADR 0047): the install
+// script's, for a user other than root, under their home, and root's, for
+// every user of the machine. Windows has the first alone, where the file
+// is koko.exe (kokoFile) and an elevated user's is the same one (ADR 0052).
 const (
 	userKokoDir = ".local/bin"
 	rootKokoDir = "/usr/local/bin"
@@ -46,7 +47,7 @@ const (
 const firstWithUpdate = 4
 
 // nothingChanged ends the message of every refusal and failure of koko
-// update before its rename.
+// update that left the koko file as it was.
 const nothingChanged = "; nothing was changed"
 
 // codeUpdateUnsupported: koko update does not replace this koko, which it
@@ -60,18 +61,19 @@ type updateTarget struct {
 	// file is its real path, its directory's symlinks resolved, which koko
 	// update renames over.
 	file string
-	// path is its path as the user knows it: under HOME, or
+	// path is its path as the user knows it: under the home, or
 	// /usr/local/bin/koko.
 	path string
-	// shown is path as koko update prints it, with ~ for HOME.
+	// shown is path as koko update prints it, with ~ for the home.
 	shown string
 }
 
 // target returns the file koko update may replace: the running koko,
 // symlinks resolved, when it is a release at $HOME/.local/bin/koko run by a
 // user other than root, or at /usr/local/bin/koko run by root, and not the
-// image's. Anything else is refused with update_unsupported, naming the way
-// to upgrade it instead.
+// image's; on Windows, at %USERPROFILE%\.local\bin\koko.exe, where no
+// file is root's. Anything else is refused with update_unsupported, naming
+// the way to upgrade it instead.
 func (in *Input) updateTarget(k Kokod) (updateTarget, error) {
 	self := k.Self()
 	refuse := func(format string, args ...any) error {
@@ -101,11 +103,11 @@ func (in *Input) updateTarget(k Kokod) (updateTarget, error) {
 		return updateTarget{file: exe, path: root, shown: root}, nil
 	}
 	if home := in.inv.home(); filepath.IsAbs(home) && !k.RunsAsRoot() &&
-		exe == resolvedFile(filepath.Join(home, userKokoDir), "koko") {
-		return updateTarget{file: exe, path: filepath.Join(home, userKokoDir, "koko"), shown: "~/" + userKokoDir + "/koko"}, nil
+		exe == resolvedFile(filepath.Join(home, userKokoDir), kokoFile) {
+		under := filepath.Join(userKokoDir, kokoFile)
+		return updateTarget{file: exe, path: filepath.Join(home, under), shown: "~" + string(filepath.Separator) + under}, nil
 	}
-	return updateTarget{}, refuse("koko update replaces only the koko install.sh put in ~/%s, or root's in %s; this koko is %s: upgrade it the way it was installed",
-		userKokoDir, rootKokoDir, exe)
+	return updateTarget{}, refuse("koko update replaces only %s; this koko is %s: upgrade it the way it was installed", replaceable, exe)
 }
 
 // resolvedFile is the path of name in dir, with dir's symlinks resolved
@@ -147,8 +149,9 @@ func update(ctx context.Context, in *Input) (updateJSON, error) {
 }
 
 // updateTo replaces the koko at t with the release tag's, downloaded beside
-// it and checked, then points koko's ssh_config at it: koko update's steps
-// once it knows what to install, which koko server upgrade takes too.
+// it and checked and put in its place as this OS allows (replaceFile), then
+// points koko's ssh_config at it: koko update's steps once it knows what to
+// install, which koko server upgrade takes too.
 func (in *Input) updateTo(ctx context.Context, k Kokod, t updateTarget, tag string) (updateJSON, error) {
 	src := in.releases(k)
 	out := updateJSON{path: t.path, shown: t.shown, from: k.Self().Version, to: tag}
@@ -165,8 +168,8 @@ func (in *Input) updateTo(ctx context.Context, k Kokod, t updateTarget, tag stri
 	if err := os.Chmod(file, 0o755); err != nil {
 		return updateJSON{}, fmt.Errorf("make %s runnable: %w", file, err)
 	}
-	if err := os.Rename(file, t.file); err != nil {
-		return updateJSON{}, fmt.Errorf("replace %s: %w%s", t.path, err, nothingChanged)
+	if err := replaceFile(file, t.file); err != nil {
+		return updateJSON{}, fmt.Errorf("replace %s: %w", t.path, err)
 	}
 	out.updated = true
 	if _, err := devicefiles.PointProxyCommand(in.inv.home(), t.path); err != nil {
