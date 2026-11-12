@@ -120,7 +120,7 @@ func (u *user) env() []string {
 			env = append(env, kv)
 		}
 	}
-	return append(env, "USERPROFILE="+u.home, "HOME="+u.home, "LOCALAPPDATA="+u.runtime)
+	return append(env, "USERPROFILE="+u.home, "LOCALAPPDATA="+u.runtime) // BREAK 6
 }
 
 // with returns the user running the OpenSSH client ts.

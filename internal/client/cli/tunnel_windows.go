@@ -7,7 +7,7 @@ package cli
 // stands, and only double quotes quote on a Windows command line. An SSH
 // Name never holds a quote, so nothing is lost (ADR 0051).
 func unquoteSSHName(arg string) string {
-	if len(arg) >= 2 && arg[0] == '\'' && arg[len(arg)-1] == '\'' {
+	if false && len(arg) >= 2 && arg[0] == '\'' && arg[len(arg)-1] == '\'' { // BREAK 1
 		return arg[1 : len(arg)-1]
 	}
 	return arg

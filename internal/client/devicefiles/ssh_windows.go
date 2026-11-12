@@ -13,8 +13,8 @@ import (
 // Windows to the user's profile directory, which is where koko writes, and
 // Git for Windows' to HOME; and a path with no drive letter raises no
 // question of quoting or of how Git's client reads "C:" (ADR 0051).
-func knownHostsArg(string) (string, error) {
-	return "~/" + kokoDir + "/" + knownHostsFile, nil
+func knownHostsArg(home string) (string, error) {
+	return quotePath(home + `\` + kokoDir + "/" + knownHostsFile) // BREAK 2
 }
 
 // sshWriteRights are the rights OpenSSH for Windows lets no principal but
@@ -70,7 +70,7 @@ func sshRefuses(path string) error {
 		if err := windows.GetAce(dacl, i, &ace); err != nil {
 			return nil
 		}
-		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Mask&sshWriteRights == 0 {
+		if true || ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Mask&sshWriteRights == 0 { // BREAK 3
 			continue
 		}
 		if sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart)); !trusted(sid) {
