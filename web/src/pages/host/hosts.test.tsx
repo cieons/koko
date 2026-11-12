@@ -84,6 +84,45 @@ test("the Hosts host.list answers, grouped by Space, a panel each in the default
   await expectAccessible();
 });
 
+/**
+ * givingWay are the columns of the table named name that hide as it narrows, each with the
+ * width it gives way under: the query its header and every cell carry (jsdom applies no CSS).
+ */
+function givingWay(name: string): string[] {
+  const table = screen.getByRole("table", { name });
+  const rows = within(table).getAllByRole("row");
+  return within(rows[0]!)
+    .getAllByRole("columnheader")
+    .flatMap((header, column) => {
+      const query = /@max-\[(\d+rem)\]:hidden/.exec(header.className)?.[1];
+      if (query === undefined) {
+        return [];
+      }
+      for (const row of rows.slice(1)) {
+        expect(row.children[column]?.className).toContain(`@max-[${query}]:hidden`);
+      }
+      return [`${header.textContent} ${query}`];
+    });
+}
+
+test("as its table narrows beside the rail, Provider and region gives way first, then Price; every other column shows", async () => {
+  const api = fakeApi();
+  actAs(api, alice);
+  records(api, three);
+  const { unmount } = renderAt("/hosts");
+  await screen.findByRole("table", { name: "ops" });
+
+  expect(givingWay("ops")).toEqual(["Provider and region 64rem", "Price 52rem"]);
+  expect(screen.getByRole("table", { name: "ops" }).parentElement?.className).toContain("@container");
+  unmount();
+
+  // A column the person adds shows always, and so does one the list sorts by.
+  renderAt("/hosts?sort=provider&columns=provider,address,price,expires_at,state,region,relay");
+  await screen.findByRole("table", { name: "ops" });
+  expect(headers("ops")).toEqual(["Name", "Provider", "Address", "Price", "Expires", "State", "Region", "Relay"]);
+  expect(givingWay("ops")).toEqual(["Price 52rem"]);
+});
+
 test("Provider and region puts its separator only between a provider and a region", async () => {
   const api = fakeApi();
   actAs(api, alice);

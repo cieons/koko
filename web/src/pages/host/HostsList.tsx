@@ -12,7 +12,7 @@ import { tickedOf } from "../batch/selection";
 import { Tick } from "../batch/Tick";
 import { groupBy } from "./group";
 import { keyLabel } from "./keys";
-import { columnsOf, InPanel, type ListProps, Missing, ShownCount, sorter, ViewFault } from "./ListParts";
+import { columnsOf, givesWayOf, InPanel, type ListProps, Missing, ShownCount, sorter, ViewFault } from "./ListParts";
 import { hostFields, hostPath } from "./record";
 import { type Column, linkClass, RecordTable } from "./RecordTable";
 import { byHost, hostValues, matches } from "./search";
@@ -341,5 +341,5 @@ function hostColumn(t: Translate, key: string, columns: readonly string[]): Colu
       }
     }
   };
-  return { key, label, sortable: true, cell };
+  return { key, label, sortable: true, cell, givesWay: givesWayOf[key] };
 }

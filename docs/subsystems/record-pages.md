@@ -44,6 +44,11 @@ Spaces alone, as `koko host ls` shows them.
   so the row is one Tab stop, with its Services' names after it. A Host
   opens at `/hosts/<name>`, or `/hosts/<id>` when it is Retired, since a
   new Host may hold its name ([`hostPath`](../../web/src/pages/host/record.ts)).
+  The table is a container: as it narrows, Provider and region gives way
+  under 64rem of its width and Price under 52rem (`givesWayOf` in
+  [`ListParts.tsx`](../../web/src/pages/host/ListParts.tsx), a column's
+  `givesWay`), unless the list sorts by it; every other column shows, and
+  past that the table scrolls inside its panel.
   On a phone a Host is one link of three lines: its name and state, its
   address, and its provider, region and expiry.
 - **The search**, `q` in the URL, is applied in the browser to what the
@@ -439,7 +444,9 @@ axe on each page, dialog and pane state it renders.
 
 - [`hosts.test.tsx`](../../web/src/pages/host/hosts.test.tsx): the Hosts
   grouped by Space in the default columns, their links and the head's
-  counts; Provider and region with only one of the two; a Member's, with
+  counts; Provider and region, then Price, giving way as the table
+  narrows, and neither once the list sorts by it, an added column never;
+  Provider and region with only one of the two; a Member's, with
   no Space select; 0, 3 and 300 Hosts, and every Host Retired; the search
   over each value it matches, replacing the history entry, and no match
   with its way back; each option of the state select in the URL, a Retired

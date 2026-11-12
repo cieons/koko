@@ -82,7 +82,8 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   from 768 pixels up keys on its own width with a container query
   (Tailwind's `@container`, on the part that changes, never on an
   ancestor of a fixed bar): the Host page's and Account's two columns,
-  and Access's rows.
+  Access's rows, and the Hosts table's columns that give way
+  ([the record's pages](record-pages.md)).
 - **On a phone**, under 768 pixels wide, the banner is a sticky top row:
   the wordmark, then Language, Appearance and the account button, each an
   icon. The places move to a bar fixed at the foot, each with its icon

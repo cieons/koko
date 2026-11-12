@@ -213,7 +213,8 @@ the title. With the rail open a page at 1280px wide gets about 1030px, and
 at 1100px wide with the rail folded about 1020px. A page's own layout keys
 on the room it has, not on the window's width: where it changes from 768px
 wide up, beside the rail, it is a container query on the part that
-changes (the Host page's and Account's two columns, Access's rows).
+changes (the Host page's and Account's two columns, Access's rows, the
+Hosts table's columns that give way).
 
 - **The shell's notices** (koko web is not running; the cookie is not one
   of this run of `koko web`; this device's Device Session was Revoked) run
@@ -427,11 +428,17 @@ released, so it needs no redirect.
   row is the link to the Host: the name is the link and covers the row.
 - A header sorts by its column; Shift adds a further key, which shows its
   rank. The columns button ticks which columns show, any Attribute key
-  among them. The view lives in the URL. The table keeps every column
-  chosen in the room beside the rail: when they pass the panel's width,
-  the table scrolls sideways inside its panel, never the page. The table
-  and its columns button are a desktop's (768px and wider), as the rows
-  of three lines are a phone's.
+  among them. The view lives in the URL. The table and its columns
+  button are a desktop's (768px and wider), as the rows of three lines
+  are a phone's.
+- **The table in the room beside the rail**, the Owner's choice (#182):
+  as the table itself narrows (a container query on its own width), two
+  of the default columns give way, Provider and region under 64rem, then
+  Price under 52rem; their header and cells hide, and the view in the
+  URL keeps them. Every other column shows always, any column the person
+  adds with the columns button among them, and so does a column the list
+  sorts by. Past what they free, the table scrolls sideways inside its
+  panel, never the page.
 - **A list remembers its view** in the browser, for each User: the Hosts
   view, the Services view, Secrets and Access, each on its own. Opened with no
   view in its URL (from the rail, a new tab, a link or after signing

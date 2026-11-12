@@ -10,6 +10,7 @@ import { Sheet } from "../../ui/Page";
 import { AlertLine, Loaded } from "../../ui/states";
 import type { SelectMode } from "../batch/useSelectMode";
 import type { Defaults, ListPage, Tab } from "./controls";
+import type { GivesWay } from "./RecordTable";
 import { hostFields, serviceFields } from "./record";
 import { type Clock, type Columns, type Fields, type KeyTypes, sortBy, type View } from "./view";
 
@@ -27,6 +28,14 @@ export const defaults: Defaults = {
   hosts: ["provider", "address", "price", "expires_at", "state"],
   services: ["ports"],
 };
+
+/**
+ * givesWayOf are the Hosts view's default columns that give way as its
+ * table narrows beside the rail (the Owner's choice, #182): Provider and
+ * region first, then Price. Every other column shows always, and so does
+ * any the person adds with the columns button.
+ */
+export const givesWayOf: Readonly<Partial<Record<string, GivesWay>>> = { provider: "first", price: "second" };
 
 /**
  * columnsOf are each view's columns besides its keys: those it always shows

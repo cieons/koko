@@ -19,6 +19,19 @@ import { readSortKey } from "./view";
 export const linkClass =
   "t-name text-foreground no-underline outline-none after:absolute after:inset-0 data-[focus-visible]:after:ring-2 data-[focus-visible]:after:ring-focus data-[focus-visible]:after:ring-inset";
 
+/**
+ * GivesWay is when a column gives way as its table narrows, by the
+ * table's own width (a container query), not the window's: first under
+ * 64rem, second under 52rem.
+ */
+export type GivesWay = "first" | "second";
+
+/** givesWayClass hides a column's header and cells below its width, written out whole for Tailwind to find. */
+const givesWayClass: Readonly<Record<GivesWay, string>> = {
+  first: "@max-[64rem]:hidden",
+  second: "@max-[52rem]:hidden",
+};
+
 /** Column is one column of a record table after its first. */
 export interface Column<R> {
   key: string;
@@ -26,6 +39,20 @@ export interface Column<R> {
   /** sortable makes its header a button that sorts by key. */
   sortable: boolean;
   cell: (record: R) => ReactNode;
+  /** givesWay, when set, hides the column while the table is narrower than its width; unset, it always shows. */
+  givesWay?: GivesWay;
+}
+
+/**
+ * hiddenWhenNarrow is the class that hides a column's header and cells
+ * while its table is narrow, or none: a column the list sorts by always
+ * shows, so the order on screen is never by a column out of sight.
+ */
+function hiddenWhenNarrow<R>(column: Column<R>, sort: readonly string[]): string {
+  if (column.givesWay === undefined || sort.some((s) => readSortKey(s).key === column.key)) {
+    return "";
+  }
+  return givesWayClass[column.givesWay];
 }
 
 /** RecordTableProps are a table's. */
@@ -90,7 +117,8 @@ export function RecordTable<R>({
     );
   }
   return (
-    <div className="overflow-x-auto">
+    // A container its columns that give way key on; past what they free, the table scrolls inside its panel.
+    <div className="@container overflow-x-auto">
       <table aria-label={label} className="w-full border-separate border-spacing-0">
         <thead>
           <tr>
@@ -126,7 +154,10 @@ export function RecordTable<R>({
                   {first.cell(r)}
                 </th>
                 {columns.map((c) => (
-                  <td key={c.key} className="max-w-72 truncate border-b border-line px-5 group-last:border-0">
+                  <td
+                    key={c.key}
+                    className={`max-w-72 truncate border-b border-line px-5 group-last:border-0 ${hiddenWhenNarrow(c, sort)}`}
+                  >
                     {c.cell(r)}
                   </td>
                 ))}
@@ -163,7 +194,7 @@ function Header<R>({
   const rank = keys.findIndex((k) => k.key === column.key);
   const key = keys[rank];
   const direction = key?.desc === true ? "descending" : "ascending";
-  const className = `h-10 border-b border-line text-left font-normal whitespace-nowrap ${flush ? "pr-5 pl-2" : "px-5"}`;
+  const className = `h-10 border-b border-line text-left font-normal whitespace-nowrap ${flush ? "pr-5 pl-2" : "px-5"} ${hiddenWhenNarrow(column, sort)}`;
   if (!column.sortable) {
     return (
       <th scope="col" className={`${className} t-label`}>
