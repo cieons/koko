@@ -233,6 +233,19 @@ disconnects within seconds. Wait only for a holder that is going.
 **Seen:** 1 (2026-11-12)
 **Evidence:** check run 43160373344 on cd22008; #181
 
+### On Windows a rename over a file waits out whoever holds it open
+
+**Why:** `os.Rename` on Windows is `MoveFileEx`, which is refused while
+another handle holds the file it replaces without `FILE_SHARE_DELETE`,
+which Go's `os.Open` never passes, or while another rename over it is
+under way. `koko device revoke` of the device in use and its Device Mux
+both write `revoked.json` at once, so the command could report that it
+failed to clear the device's files though it had: "Access is denied",
+seen first as a flake of `TestRevokingTheDeviceInUseThroughTheDeviceMux`.
+Every file the CLI writes atomically goes through `devicefiles.Rename`.
+**Seen:** 1 (2026-11-12)
+**Evidence:** check run 43214041054 on a5cc4a9; #183
+
 ## Moved to the code standards
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128, #147; check run 42951455550).

@@ -178,6 +178,14 @@ reads the table's modes as an access control list:
   Windows itself accepts on a private key. A directory's entries pass to
   what is made in it. Each file is given that list before it holds a byte
   and before it is renamed into place, and so is a `.ssh` koko makes.
+- **A rename into place waits out whoever holds the file it replaces**
+  ([`devicefiles.Rename`](../../internal/client/devicefiles/rename.go)).
+  Windows refuses a rename over a file while another handle holds it open
+  without `FILE_SHARE_DELETE`, which Go's `os.Open` never passes, or while
+  another rename over it is under way, as when `koko device revoke` of the
+  device in use and its Device Mux write the revocation record at once
+  (#183). Rename tries again for up to 2 s; every file the CLI writes
+  atomically, the skill stub included, goes through it.
 - **"Is mode 0600"** (`isPrivate`), which decides whether koko's ssh_config
   is rewritten, means exactly that: this user's own, protected, and those
   three entries and no other.

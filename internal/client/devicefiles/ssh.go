@@ -621,7 +621,7 @@ func replaceWith(path string, data []byte, access func(tmp string) error) error 
 	}
 	err = access(tmp)
 	if err == nil {
-		err = os.Rename(tmp, path)
+		err = Rename(tmp, path)
 	}
 	if err != nil {
 		_ = os.Remove(tmp)

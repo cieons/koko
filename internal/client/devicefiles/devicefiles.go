@@ -246,7 +246,7 @@ func makeDir(home string) (made []string, err error) {
 // the device joined.
 func (s *Staged) Commit(c Config) error {
 	keyPath := filepath.Join(dir(s.home), keyFile)
-	if err := os.Rename(s.tmpKey, keyPath); err != nil {
+	if err := Rename(s.tmpKey, keyPath); err != nil {
 		s.Abort()
 		return fmt.Errorf("put this device's key in place: %w", err)
 	}
@@ -284,7 +284,7 @@ func writeConfig(home string, c Config) error {
 	}
 	tmp, err := writeTemp(dir(home), "."+configFile+"-*", append(b, '\n'))
 	if err == nil {
-		if err = os.Rename(tmp, filepath.Join(dir(home), configFile)); err != nil {
+		if err = Rename(tmp, filepath.Join(dir(home), configFile)); err != nil {
 			_ = os.Remove(tmp)
 		}
 	}
@@ -352,7 +352,7 @@ func Revoke(home string, c Config, learned time.Time) error {
 	}
 	tmp, err := writeTemp(dir(home), "."+revocationFile+"-*", append(b, '\n'))
 	if err == nil {
-		if err = os.Rename(tmp, filepath.Join(dir(home), revocationFile)); err != nil {
+		if err = Rename(tmp, filepath.Join(dir(home), revocationFile)); err != nil {
 			_ = os.Remove(tmp)
 		}
 	}

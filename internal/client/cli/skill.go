@@ -587,5 +587,5 @@ func writeFileAtomically(path string, data []byte) (err error) {
 	if err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), path)
+	return devicefiles.Rename(f.Name(), path)
 }
