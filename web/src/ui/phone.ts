@@ -23,3 +23,23 @@ export function useMedia(media: string): boolean {
 export function usePhone(): boolean {
   return useMedia(phoneQuery);
 }
+
+/** coarseQuery is a touch screen as the primary pointer, which the terminal gives its key bar. */
+export const coarseQuery = "(pointer: coarse)";
+
+/**
+ * sidewaysQuery is a touch screen held sideways at a phone's height, at
+ * most 540 pixels, however wide: the terminal takes its phone layout there
+ * too (docs/web-design.md, "The terminal").
+ */
+export const sidewaysQuery = "(pointer: coarse) and (orientation: landscape) and (max-height: 540px)";
+
+/** useCoarsePointer tells whether the primary pointer is a touch screen, following it as it changes. */
+export function useCoarsePointer(): boolean {
+  return useMedia(coarseQuery);
+}
+
+/** useSideways tells whether the viewport is a phone's held sideways, following it as it changes. */
+export function useSideways(): boolean {
+  return useMedia(sidewaysQuery);
+}

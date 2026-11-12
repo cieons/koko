@@ -1,6 +1,6 @@
 import { onTestFinished } from "vitest";
 
-import { encodeRecord, type TerminalRecord } from "../terminal/records";
+import { encodeRecord, RecordReader, type TerminalRecord } from "../terminal/records";
 import { encodeFrame, type Frame, FrameReader } from "../terminal/stream";
 
 // Stand-ins for what the web terminal uses of the browser: Web Locks, which
@@ -140,5 +140,19 @@ export class FakeWebSocket {
       }
     }
     return frames;
+  }
+
+  /** typed is the text of the data records the page sent after its first message: what was typed, pasted or pressed. */
+  get typed(): string {
+    const reader = new RecordReader();
+    reader.push(Uint8Array.from(this.framesSent.flatMap((frame) => (frame.kind === "data" ? [...frame.data] : []))));
+    const decoder = new TextDecoder();
+    let text = "";
+    for (let record = reader.next(); record; record = reader.next()) {
+      if (record.type === "data") {
+        text += decoder.decode(record.data);
+      }
+    }
+    return text;
   }
 }

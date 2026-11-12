@@ -1,26 +1,28 @@
 import { Button } from "@heroui/react";
 import { ChevronRight, Folder, FolderOpen } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-aria-components";
 
 import type { Host } from "../api/host";
 import { hostPathOf } from "../pages/host/record";
 import { useT } from "../shell/i18n";
-import { navigate } from "../shell/router";
+import { navigate, type Route } from "../shell/router";
 import { writeClipboard } from "../ui/copy";
 import { notify } from "../ui/notify";
 import { useDocumentTitle } from "../ui/Page";
-import { usePhone } from "../ui/phone";
+import { useCoarsePointer, usePhone, useSideways } from "../ui/phone";
 import { type RowAction, RowMenu } from "../ui/RowMenu";
 import { Terminals } from "./connection";
 import { fontSizes } from "./emulator/Emulator";
 import { resetUploads } from "./files";
 import { DropCover, type Dropped, FilesColumn, FilesSheet, useFileDrop } from "./FilesPanel";
 import { useManagedHosts } from "./hosts";
+import { KeyBar } from "./KeyBar";
 import { chord, openSwitcher } from "./keys";
 import { Pane } from "./Pane";
-import { EndQuestion, Kbd, spaceOf } from "./RailSection";
+import { EndQuestion, Kbd, shortPath, spaceOf } from "./RailSection";
 import { Switcher } from "./Switcher";
+import { TabButton, TabSheet } from "./TabSheet";
 import { TabMark } from "./TabMark";
 import {
   addTab,
@@ -143,6 +145,86 @@ function Head(props: { tab: Tab | undefined; space: string | undefined; files: b
   );
 }
 
+/**
+ * PhoneHead is the phone's row over the terminal, under the safe area: the
+ * wordmark, a link back to Hosts; the active tab's state mark, with its
+ * word when it is not Connected, and the directory's last two parts; then
+ * Files and More as icon buttons.
+ */
+function PhoneHead(props: { tab: Tab | undefined; onFiles: () => void; more: RowAction[] }) {
+  const t = useT();
+  const { tab } = props;
+  return (
+    <div className="box-content flex h-12 shrink-0 items-center gap-2 border-b border-line bg-background ps-4 pe-1 pt-[env(safe-area-inset-top)]">
+      <Link
+        href="/"
+        className="me-1 rounded-md text-lg leading-none font-semibold tracking-[-0.04em] text-foreground no-underline outline-none select-none data-[focus-visible]:ring-2 data-[focus-visible]:ring-focus"
+      >
+        {t("shell.brand")}
+        <span className="sr-only">{`, ${t("terminal.back")}`}</span>
+      </Link>
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+        {tab && <TabMark status={tab.state.status} word={tab.state.status !== "connected"} />}
+        {tab?.state.status === "connected" && tab.cwd !== undefined && (
+          <span title={tab.cwd} className="t-code min-w-0 truncate text-[0.75rem] text-muted">
+            <span className="sr-only">{t("terminal.cwd")} </span>
+            {shortPath(tab.cwd)}
+          </span>
+        )}
+      </div>
+      <PhoneActions {...props} />
+    </div>
+  );
+}
+
+/** PhoneActions are Files and More as icon buttons: at the end of the phone's head, or of the key bar's row held sideways. */
+function PhoneActions(props: { tab: Tab | undefined; onFiles: () => void; more: RowAction[] }) {
+  const t = useT();
+  return (
+    <span className="flex shrink-0 items-center">
+      <Button
+        variant="ghost"
+        isIconOnly
+        className="rounded-full"
+        aria-label={t("terminal.files")}
+        isDisabled={!props.tab}
+        onPress={props.onFiles}
+      >
+        <FolderOpen aria-hidden className="size-[1.125rem]" />
+      </Button>
+      <RowMenu label={t("terminal.more")} actions={props.more} />
+    </span>
+  );
+}
+
+/**
+ * useVisualViewport keeps a phone's workspace in the visual viewport, the
+ * part of the page the soft keyboard leaves in view, so the key bar sits on
+ * the keyboard and the terminal fills what is above it.
+ */
+function useVisualViewport(layer: RefObject<HTMLDivElement | null>, on: boolean): void {
+  useLayoutEffect(() => {
+    const element = layer.current;
+    const viewport = window.visualViewport;
+    if (!element || !viewport || !on) {
+      return;
+    }
+    const place = () => {
+      element.style.top = `${viewport.offsetTop}px`;
+      element.style.height = `${viewport.height}px`;
+    };
+    place();
+    viewport.addEventListener("resize", place);
+    viewport.addEventListener("scroll", place);
+    return () => {
+      viewport.removeEventListener("resize", place);
+      viewport.removeEventListener("scroll", place);
+      element.style.top = "";
+      element.style.height = "";
+    };
+  }, [layer, on]);
+}
+
 /** EmptyWorkspace is the workspace with no tab: what a terminal is, up to eight Managed Hosts to open one to, and the switcher. */
 function EmptyWorkspace({ hosts }: { hosts: readonly Host[] | undefined }) {
   const t = useT();
@@ -188,20 +270,31 @@ export interface WorkspaceProps {
   shown: boolean;
   /** notice is the frame's notice, which on the terminal heads the workspace. */
   notice: ReactNode;
+  /** places are the places the caller may see, which a phone's sheet of tabs leads back to. */
+  places: readonly Route[];
 }
 
 /**
  * Workspace is the terminal workspace beside the rail: one island with the
  * active tab's head and every tab's terminal under it, only the active one
- * shown, and the Files column docked at its end. Off the terminal's page it
- * stays mounted, hidden and inert, its terminals' painting paused.
+ * shown, and the Files column docked at its end; on a touch screen the key
+ * bar at its foot. On a phone, and a phone held sideways, it fills the
+ * visual viewport in place of the frame: a row over the terminal (none
+ * held sideways), and under it the key bar's row, starting with the tab
+ * button. Off the terminal's page it stays mounted, hidden and inert, its
+ * terminals' painting paused. Every form keeps each terminal at one place
+ * in the tree, so none is mounted again as the form changes.
  */
-export function Workspace({ shown, notice }: WorkspaceProps) {
+export function Workspace({ shown, notice, places }: WorkspaceProps) {
   const t = useT();
   const ws = useWorkspace();
   const hosts = useManagedHosts();
-  const phone = usePhone();
+  const sideways = useSideways();
+  const compact = usePhone() || sideways;
+  const coarse = useCoarsePointer();
+  const layer = useRef<HTMLDivElement>(null);
   const [files, setFiles] = useState(false);
+  const [sheet, setSheet] = useState(false);
   const [dropped, setDropped] = useState<Dropped>();
   const [ending, setEnding] = useState<Tab>();
   const tab = ws.tabs.find((each) => each.key === ws.active);
@@ -239,15 +332,21 @@ export function Workspace({ shown, notice }: WorkspaceProps) {
     }
   }, [shown, query]);
 
+  useVisualViewport(layer, compact && shown);
+  // The sheet of tabs is the phone's: a window widening past it leaves it closed.
+  const sheetOpen = sheet && compact && shown;
+
   // The terminal shown takes the focus when asked (a tab chosen by a
   // pointer, the switcher or a chord), and when the workspace is shown with
   // the focus nowhere: each once its emulator is ready and no overlay is
-  // open, since an emulator still loading has nothing to focus.
-  const overlay = ws.switcher || ending !== undefined || ws.closing !== undefined || (files && phone);
+  // open, since an emulator still loading has nothing to focus. On a touch
+  // screen it never takes the focus by itself, which would open the soft
+  // keyboard: a tap on the terminal or the keyboard key does.
+  const overlay = ws.switcher || ending !== undefined || ws.closing !== undefined || (files && compact) || sheetOpen;
   const ready = tab?.ready === true;
   const answered = useRef(0);
   useEffect(() => {
-    if (!shown || overlay || !ready || ws.active === undefined) {
+    if (!shown || overlay || !ready || coarse || ws.active === undefined) {
       return;
     }
     const focused = document.activeElement;
@@ -255,23 +354,30 @@ export function Workspace({ shown, notice }: WorkspaceProps) {
       answered.current = ws.focusRequest;
       runtime(ws.active).emulator?.focus();
     }
-  }, [shown, overlay, ready, ws.active, ws.focusRequest]);
+  }, [shown, overlay, ready, coarse, ws.active, ws.focusRequest]);
 
+  const actions = { tab, onFiles: () => setFiles(true), more };
   return (
     <div
+      ref={layer}
       inert={!shown}
-      className={`fixed inset-y-0 end-0 start-[var(--rail-w)] z-20 flex flex-col gap-3 p-3 ps-0 max-md:top-[calc(3.5rem+1px+env(safe-area-inset-top))] max-md:bottom-[calc(3.8125rem+env(safe-area-inset-bottom))] max-md:p-0 ${
-        shown ? "" : "invisible"
-      }`}
+      className={`${
+        compact
+          ? "fixed inset-x-0 top-0 z-20 flex h-dvh flex-col bg-[var(--term-surface)] ps-[env(safe-area-inset-left)] pe-[env(safe-area-inset-right)]"
+          : "fixed inset-y-0 end-0 start-[var(--rail-w)] z-20 flex flex-col gap-3 p-3 ps-0"
+      } ${shown ? "" : "invisible"}`}
     >
       {shown && <Title tab={tab} />}
+      {compact && !sideways && <PhoneHead {...actions} />}
       {notice}
       <section
         aria-label={t("terminal.title")}
-        className="island flex min-h-0 flex-1 overflow-hidden rounded-2xl max-md:rounded-none"
+        className={compact ? "flex min-h-0 flex-1 overflow-hidden" : "island flex min-h-0 flex-1 overflow-hidden rounded-2xl"}
       >
         <div className="flex min-w-0 flex-1 flex-col">
-          <Head tab={tab} space={tab && spaceOf(hosts, tab.host)} files={files} onFiles={() => setFiles(!files)} more={more} />
+          {!compact && (
+            <Head tab={tab} space={tab && spaceOf(hosts, tab.host)} files={files} onFiles={() => setFiles(!files)} more={more} />
+          )}
           <div className="relative min-h-0 flex-1 overflow-hidden bg-[var(--term-surface)]" {...drop.handlers}>
             {ws.tabs.map((each) => (
               <Pane key={each.key} tab={each} active={each.key === ws.active} shown={shown} terminals={terminals} />
@@ -279,10 +385,25 @@ export function Workspace({ shown, notice }: WorkspaceProps) {
             {ws.tabs.length === 0 && <EmptyWorkspace hosts={hosts} />}
             {drop.over && tab && <DropCover tab={tab} />}
           </div>
+          {compact ? (
+            <div className="flex shrink-0 items-center gap-1.5 border-t border-line bg-background px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]">
+              <TabButton onPress={() => setSheet(true)} />
+              {coarse && tab ? <KeyBar tab={tab.key} /> : <span className="flex-1" />}
+              {sideways && <PhoneActions {...actions} />}
+            </div>
+          ) : (
+            coarse &&
+            tab && (
+              <div className="flex shrink-0 border-t border-line px-2 py-1.5">
+                <KeyBar tab={tab.key} />
+              </div>
+            )
+          )}
         </div>
-        {files && panel && !phone && <FilesColumn {...panel} />}
+        {files && panel && !compact && <FilesColumn {...panel} />}
       </section>
-      {files && panel && phone && shown && <FilesSheet {...panel} />}
+      {files && panel && compact && shown && <FilesSheet {...panel} />}
+      {sheetOpen && <TabSheet places={places} hosts={hosts} onClose={() => setSheet(false)} />}
       {shown && ws.switcher && <Switcher hosts={hosts} />}
       {ending && (
         <EndQuestion

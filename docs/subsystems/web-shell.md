@@ -92,7 +92,10 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   the wordmark, then Language, Appearance and the account button, each an
   icon. The places move to a bar fixed at the foot, each with its icon
   and its name, above the safe area, after the terminal's button, which
-  goes to the terminal. The main region leaves room for both.
+  goes to the terminal. The main region leaves room for both. On
+  `/terminal`, and there on a phone held sideways too, the frame renders
+  neither, nor the rail, and the workspace takes the whole viewport
+  ([the web terminal](web-terminal.md#on-a-phone)).
 - **The account panel** shows the User's initial, name and role, and how
   this browser reaches koko: "Through koko web on <device>" for a Device
   Session, "Signed in from <browser>" for a Sign-in, and "On the koko

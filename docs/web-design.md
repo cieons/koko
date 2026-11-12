@@ -291,8 +291,9 @@ Hosts table's columns that give way).
     the current one is raised.
 - Pages leave room for both. [The Select mode](#the-select-mode)'s bar
   covers the foot bar while the mode is on.
-- On the terminal the workspace sits between the two, until the
-  terminal's own phone layout (#178) takes their place there.
+- On the terminal both give way to the terminal's own phone layout, as
+  the rail does on a phone held sideways (see [The
+  terminal](#the-terminal-terminal), "On a phone").
 
 **A skip link** is the first stop of Tab. **The document's title** is the
 page's own name, then "koko" ("web1 · koko"). After a navigation that
@@ -721,6 +722,9 @@ direction. Details may be polished in implementation.
     system's fonts, padded 14px by 18px (8px by 10px on a phone);
   - the sixteen ANSI colours of each mode as `--term-*` tokens;
   - text sizes 12, 13, 14, 16 and 18px from More.
+- **The key bar**, when the primary pointer is a touch screen (`pointer:
+  coarse`), as on a tablet, at the island's foot under a hairline (see "On
+  a phone").
 - **Files** docks inside the island at its end edge, as a column
   `clamp(20rem, 28vw, 26rem)` wide with a hairline at its start. The
   terminal narrows to make room, and the shell is told its new size. The
@@ -844,10 +848,63 @@ tabs and the Managed Hosts the caller can see.
   the chord, which opens the switcher.
 - **One tree for every form.** The workspace keeps its terminals in one
   place in its tree on a desktop and a phone alike. A window crossing
-  768px keeps every tab's emulator and SSH Session.
+  768px, or a phone turning, keeps every tab's emulator and SSH Session.
 
-**On a phone**, until its own layout (#178): the frame's top row and foot
-bar stay, and the workspace fills the room between them.
+**On a phone** (under 768px wide, and on a touch screen held sideways:
+`pointer: coarse`, landscape, at most 540px high), the frame's top row
+and foot bar give way on this page, and the rail too, held sideways. The
+workspace fills the visual viewport (it follows `visualViewport`'s
+height), so the key bar's row sits on the soft keyboard, and the
+terminal runs edge to edge in `--term-surface`. On a touch screen the
+terminal never takes the focus by itself, which would open the soft
+keyboard: a tap on it, or the keyboard key, does.
+
+- **The row over the terminal**, 48px under the safe area, the page
+  colour, a hairline under it:
+  - the wordmark, a link back to Hosts ("koko, Back to Hosts" for a screen
+    reader);
+  - the state mark, with its word when the tab is not Connected;
+  - the directory's last two parts ("…/srv/app") in the code face at
+    12px;
+  - Files and More as ghost icon buttons.
+
+  Held sideways the row is hidden, and Files and More end the key bar's
+  row.
+- **The key bar's row**, at the foot, the page colour, a hairline over
+  it, above the safe area:
+  - **the tab button**: a 44px key filled in the text colour, a stack
+    icon, the active tab's name and the number of tabs, at most 42% of
+    the width ("web1, 3 open. Show the tabs"). With no tab open it is a
+    raised **Terminal** with the terminal icon. A tap opens the sheet of
+    tabs. A swipe across it, more than 36px, shows the next tab
+    (leftwards) or the one before (rightwards), wrapping, without opening
+    the sheet. A press on it moves no focus, so the soft keyboard stays
+    until the sheet opens;
+  - **the keys**, on a touch screen with a tab open: 44px, raised, in the
+    code face at 15px: Esc, Tab, Ctrl, Alt, ←, ↑, ↓, →, `|`, `/`, `-`,
+    `~`, Home, End, PgUp, PgDn, and the keyboard key, which opens or
+    closes the soft keyboard. Each is named for a screen reader
+    ("Escape", "Left arrow", "Vertical bar"). They scroll sideways,
+    fading at their end. Each key goes to the active tab as the
+    terminal's modes encode it. Ctrl and Alt are sticky: one tap applies
+    the modifier to the next key, from the bar or the soft keyboard, and
+    lets it go, with the accent fill; a second tap holds it, with the text
+    colour as fill; a third lets it go (`aria-pressed`). A key never takes
+    the focus. The row of keys is one Tab stop, so a keyboard can scroll
+    it;
+  - without a touch screen, as in a narrow desktop window, the row holds
+    the tab button alone.
+- **The sheet of tabs**, a side panel from the bottom titled "Tabs":
+  - Hosts, Secrets and Access first, as raised tiles of icon over name,
+    so one thumb gets back to them;
+  - then the tabs, 56px rows: the mark, the name, and the state or
+    directory under it, as in the rail; a tap shows the tab and closes the
+    sheet, and each row's close button closes it, asking first while its
+    shell runs;
+  - then **New tab** (primary, full width), which opens the switcher; at
+    16 tabs the limit's line in its place.
+- The frame's notice, when there is one, sits under the row, over the
+  terminal.
 
 **Strings.** The page is 终端, Files is 文件, a tab is 标签页, an SSH
 Session is SSH 会话.
@@ -977,8 +1034,9 @@ The frame, a title, one sentence and a link to Hosts.
   beside the page, and over it only while the page takes no input.
 - In forced colours (such as Windows' contrast themes) the focus ring is
   an outline, and the chosen place, tab (the terminal's active tab too),
-  segment, checked box, switch and radio, the rail's end edge and the
-  edges of panels, overlays and islands are
+  segment, checked box, switch and radio, the key bar's Ctrl and Alt
+  while on, the rail's end edge and the edges of panels, overlays,
+  islands and the phone's tab button are
   drawn in the system's colours ([the web UI build](subsystems/web-ui.md#heroui-and-tailwind)).
 - Checked on the build (#126): 200% text size (no loss of content; on a
   phone some fields keep their width, #130), forced colours, every modal

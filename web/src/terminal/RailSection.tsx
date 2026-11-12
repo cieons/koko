@@ -49,7 +49,7 @@ export function spaceOf(hosts: readonly Host[] | undefined, name: string): strin
 }
 
 /** TabLine is a tab's second line: its state when it is not Connected, else its directory, or its Space. */
-function TabLine({ tab, space }: { tab: TerminalTab; space: string | undefined }) {
+export function TabLine({ tab, space }: { tab: TerminalTab; space: string | undefined }) {
   const t = useT();
   const { status } = tab.state;
   if (status !== "connected") {

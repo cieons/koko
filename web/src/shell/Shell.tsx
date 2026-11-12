@@ -9,7 +9,7 @@ import { CodeSignInRequired } from "../api/web";
 import { ApiError, observeCalls } from "../client";
 import type { MessageKey } from "../i18n/catalogues";
 import { Page as PageHead } from "../ui/Page";
-import { usePhone } from "../ui/phone";
+import { usePhone, useSideways } from "../ui/phone";
 import { useTerminalKeys } from "../terminal/keys";
 import { CloseQuestion } from "../terminal/RailSection";
 import { WorkspaceLayer } from "../terminal/routes";
@@ -29,7 +29,9 @@ import { matchRoute, navigate, type Route, signInPage, signInPath, useLocation }
  * (docs/web-design.md, "The frame"): a skip link; on a desktop the rail down
  * the start edge with koko's wordmark, the places the caller may see and, at
  * its foot, the account, Language and Appearance; on a phone a top row with
- * the wordmark and those three, and the places in a bar at the foot. In the
+ * the wordmark and those three, and the places in a bar at the foot, which
+ * on the terminal give way to the terminal's own phone layout, as the rail
+ * does on a phone held sideways. In the
  * room beside the rail, the page's column: the shell's notice at its head,
  * then in the main region, for the Owner, the notice of a newer koko
  * release, then the page the URL names.
@@ -84,6 +86,7 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
   const routes = all.filter((r) => !r.outside);
   useSignInWhenRequired();
   const phone = usePhone();
+  const sideways = useSideways();
   const rail = useRail();
   const userCurrent = useRead(UserCurrent, {});
   const caller = userCurrent.data && callerOf(userCurrent.data);
@@ -99,6 +102,8 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
   useFocusMainAfterVisit(main);
   const { pathname } = useLocation();
   const onTerminal = pathname === terminalPath;
+  // On the terminal a phone's frame, and a phone's held sideways, gives way to the workspace's own phone layout.
+  const bare = onTerminal && (phone || sideways);
   const { loaded: terminalLoaded } = useWorkspace();
   useTerminalKeys(onTerminal);
   // The terminal workspace lives as long as the frame: a document's, or until signing out.
@@ -119,7 +124,7 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
   return (
     <CallerContext value={caller}>
       <ReleaseProvider value={release}>
-        <div className="min-h-dvh" data-rail={phone ? "none" : rail.state === "open" ? "open" : "folded"}>
+        <div className="min-h-dvh" data-rail={phone || bare ? "none" : rail.state === "open" ? "open" : "folded"}>
           <a
             href="#main"
             onClick={skip}
@@ -127,7 +132,7 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
           >
             {t("shell.skip")}
           </a>
-          {phone ? <PhoneTop caller={caller} /> : <Rail places={places} caller={caller} rail={rail} />}
+          {bare ? null : phone ? <PhoneTop caller={caller} /> : <Rail places={places} caller={caller} rail={rail} />}
           {/* The room beside the rail; while the rail lies over it, the page takes no input. */}
           <div className="ps-[var(--rail-w)]" inert={rail.state === "over"}>
             {notice && !onTerminal && <NoticeBar notice={notice} />}
@@ -149,11 +154,15 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
               )}
               {/* The terminal workspace: kept from the first terminal on, shown on its page alone, which its notice heads. */}
               {caller && terminalLoaded && (
-                <WorkspaceLayer shown={onTerminal} notice={onTerminal && notice ? <NoticeBar notice={notice} /> : null} />
+                <WorkspaceLayer
+                  shown={onTerminal}
+                  notice={onTerminal && notice ? <NoticeBar notice={notice} /> : null}
+                  places={places}
+                />
               )}
             </main>
           </div>
-          {phone && places.length > 0 && <PhoneBar places={places} />}
+          {phone && !bare && places.length > 0 && <PhoneBar places={places} />}
           <CloseQuestion />
         </div>
       </ReleaseProvider>

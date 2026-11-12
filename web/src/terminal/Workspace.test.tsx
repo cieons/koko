@@ -48,6 +48,8 @@ vi.mock("./emulator/Emulator", async () => {
         record.written += new TextDecoder().decode(bytes);
       },
       focus: () => input.current?.focus(),
+      blur: () => input.current?.blur(),
+      hasFocus: () => document.activeElement === input.current,
       fit: () => {},
       selection: () => record.selection,
       pressKey: () => {},
@@ -657,9 +659,10 @@ test("a window crossing 768 pixels keeps every tab's emulator and its one WebSoc
   expect(emulator("db2").mounts).toBe(1);
   expect(FakeWebSocket.sockets).toHaveLength(2);
   expect(opened.every((socket) => !socket.closed)).toBe(true);
-  // On a phone the bar at the foot starts with the terminal's button, named by what it shows.
+  // On a phone the terminal's own row takes the frame's place, starting with the tab button, named by what it shows.
   act(() => setViewportWidth(390));
-  expect(screen.getByRole("link", { name: "web1, Terminal, 2 open" })).toBeDefined();
+  expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
+  expect(screen.getByRole("button", { name: "web1, 2 open. Show the tabs" })).toBeDefined();
   await expectAccessible();
 });
 

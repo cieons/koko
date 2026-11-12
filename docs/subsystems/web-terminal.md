@@ -10,7 +10,6 @@ front's](web-front.md#the-web-terminals-websocket); the stream on it is
 [the resumable stream](resumable-stream.md#the-typescript-end); the SSH
 Session behind it is [the Gateway's](gateway.md#the-web-terminal); the
 Files panel's calls are [the web front's](web-front.md#the-web-terminals-files).
-The phone's layout and key bar (#178) are still to come.
 
 ## Modules
 
@@ -21,7 +20,8 @@ Everything is in [`web/src/terminal/`](../../web/src/terminal):
 | `workspace.ts` | the first load | The workspace's state: its tabs (Host, label, state, SSH Session's id, directory, clipboard request), the active one, the switcher, the text size; the URL's query; starting and resetting it. It imports the terminal's code as types alone |
 | `kept.ts` | the first load | The ids of a browser tab's SSH Sessions in `sessionStorage` (`koko.terminal.sessions`) |
 | `RailSection.tsx`, `TabMark.tsx`, `keys.ts`, `hosts.ts`, `routes.tsx` | the first load | The rail's Terminal section, the phone bar's button and the close question; the state marks; the chords and the switcher's opener; the Managed Hosts read; the two routes and the workspace's lazy part |
-| `TerminalPage.tsx`, `Pane.tsx`, `Switcher.tsx` | the terminal's chunk | The workspace: the island, its head, More, the Files column, the empty workspace; a tab's pane and its states; the switcher |
+| `TerminalPage.tsx`, `Pane.tsx`, `Switcher.tsx` | the terminal's chunk | The workspace: the island, its head, More, the Files column, the empty workspace, the phone's row; a tab's pane and its states; the switcher |
+| `KeyBar.tsx`, `TabSheet.tsx` | the terminal's chunk | The key bar; the phone's tab button and its sheet of tabs |
 | `FilesPanel.tsx`, `files.ts` | the terminal's chunk | The Files panel: the column, the phone's side panel, the listing, the replace question, dropping files on the terminal; the files calls and the uploads of every tab |
 | `connection.ts`, `stream.ts`, `records.ts` | the terminal's chunk | The page's end of an SSH Session: the first messages, the stream, the records, liveness and the Resume |
 | `emulator/` | the terminal's chunk | The emulator, wterm on its ghostty core: the only directory that imports `@wterm/*` |
@@ -91,6 +91,42 @@ of two sections, the open tabs and the Managed Hosts (`host.list` with
 `state=managed`), narrowed by `useFilter`'s `contains` on each item's text
 (a tab's name and directory, a Host's name and Space). Typing gives the
 first match the virtual focus, and Enter acts on it.
+
+## On a phone
+
+The workspace takes its phone form under 768 pixels wide, and on a touch
+screen held sideways (`sidewaysQuery` in `ui/phone.ts`: `pointer:
+coarse`, landscape, at most 540 pixels high, however wide). The frame
+reads the same queries: on `/terminal` in that form it renders neither
+the phone's top row and foot bar nor the rail (`data-rail="none"`), and
+the workspace, fixed over the whole viewport, follows `visualViewport`'s
+offset and height, so its foot sits on the soft keyboard. The form
+changes the parts around the panes alone, which keep their place in the
+tree, so turning a phone remounts no emulator.
+
+- **The key bar** (`KeyBar`) shows under `pointer: coarse` alone: in the
+  phone's row at the foot, after the tab button, and on a desktop at the
+  island's foot. Each key calls `pressKey(tab, name)` in `workspace.ts`,
+  which presses it through the tab's `Emulator.pressKey` with the sticky
+  Control and Alt (`ctrl`, `alt`: `off`, `once`, `held`;
+  `tapModifier`), and lets go of one applied once. The keyboard key
+  focuses the emulator, or blurs it while it has the focus. A key is a
+  button outside the Tab order whose pointer and mouse presses are
+  cancelled, so it never moves the focus; the row is one Tab stop.
+- **A character typed with Control or Alt on.** The pane hands the bytes
+  the emulator gives to `takeTyped` first: while a modifier is on, one
+  printable character (the soft keyboard's) is pressed again as that key
+  through `pressKey`, and anything else, or the bytes `pressKey` itself is
+  encoding (`Runtime.pressing`), goes to the connection as it is.
+- **The focus.** On a touch screen the workspace never gives the
+  terminal the focus by itself (`focusRequest` is not answered), since
+  focusing it opens the soft keyboard.
+- **The tab button** (`TabButton`) opens the sheet of tabs on a tap and,
+  on a swipe of more than 36 pixels between its pointer's down and up,
+  steps through the tabs (`stepTab`) without opening it. The sheet
+  (`TabSheet`, a `SidePanel`) takes the frame's places, which the
+  workspace is given, then the tabs (`showTab`, `askClose`), then New tab
+  (`setSwitcher`).
 
 ## A tab's SSH Session
 
@@ -204,7 +240,7 @@ The page compiles the core's WebAssembly once (`GhosttyCore.load`, by its
 hashed URL), and each terminal instantiates it, with 5,000 lines of
 scrollback and Kitty graphics off; unmounting a terminal frees its core.
 
-- **What the page sees:** `write`, `focus`, `fit`, `pressKey(name,
+- **What the page sees:** `write`, `focus`, `blur`, `hasFocus`, `fit`, `pressKey(name,
   modifiers)` (wterm's key encoder, following the terminal's modes, such
   as application cursor keys), `selection`; `onInput`, `onResize`,
   `onClipboardWrite`, `onWorkingDirectory`, `onTitle`, `onReady`,
@@ -233,6 +269,14 @@ scrollback and Kitty graphics off; unmounting a terminal frees its core.
   across pages with one emulator and one WebSocket; Ctrl+Shift+K from
   another page and the empty workspace; a reload ending the kept ids
   first; a window crossing 768 pixels; Chinese.
+- [`KeyBar.test.tsx`](../../web/src/terminal/KeyBar.test.tsx), the whole
+  web UI as on a phone: each key's `pressKey` call and what the shell is
+  sent, no key taking the focus, the keyboard key; Control and Alt once,
+  held and let go, on keys typed and pressed; the key bar under `pointer:
+  coarse` alone; the tab button's name, count and swipe; the sheet's
+  places, switching, closing asked first and New tab; the row over the
+  terminal, held upright and sideways, and turning keeping every emulator
+  and WebSocket; axe on each.
 - [`FilesPanel.test.tsx`](../../web/src/terminal/FilesPanel.test.tsx),
   the whole web UI against the fake API's files endpoints: opening on the
   reported directory or home, entering, Up, a download link with its

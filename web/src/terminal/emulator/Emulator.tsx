@@ -24,6 +24,10 @@ export interface EmulatorHandle {
   /** write gives the emulator the shell's output. */
   write(bytes: Uint8Array): void;
   focus(): void;
+  /** blur takes the focus off the terminal, which closes a phone's soft keyboard. */
+  blur(): void;
+  /** hasFocus tells whether the terminal has the focus, as it has while a phone's soft keyboard is open. */
+  hasFocus(): boolean;
   /** fit sizes the grid to its element again; onResize follows when the grid changes. */
   fit(): void;
   /**
@@ -116,6 +120,13 @@ export function Emulator(props: EmulatorProps) {
     return {
       write: (bytes) => terminal.current?.write(bytes),
       focus: () => terminal.current?.focus(),
+      blur: () => {
+        const focused = document.activeElement;
+        if (focused instanceof HTMLElement && instance()?.element.contains(focused)) {
+          focused.blur();
+        }
+      },
+      hasFocus: () => instance()?.element.contains(document.activeElement) === true,
       fit: () => instance()?.fit(),
       selection: () => instance()?.getSelectionText() ?? "",
       pressKey: (name, modifiers) => {

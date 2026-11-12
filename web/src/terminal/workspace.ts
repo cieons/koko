@@ -62,13 +62,22 @@ export interface Workspace {
   focusRequest: number;
   /** closing is the key of the tab whose closing asks first, while its shell may still run. */
   closing: number | undefined;
+  /** ctrl is the key bar's Control: off, applied to the next key, or held. */
+  ctrl: Sticky;
+  /** alt is the key bar's Alt, as ctrl is Control. */
+  alt: Sticky;
 }
+
+/** Sticky is a sticky modifier of the key bar: off, applied to the next key only, or held until tapped again. */
+export type Sticky = "off" | "once" | "held";
 
 /** Runtime is what the workspace's chunk keeps for a tab: its connection and its emulator. */
 export interface Runtime {
   /** end ends the tab's SSH Session: the stream's close, or an end while reconnecting. */
   end?: () => void;
   emulator?: EmulatorHandle | null;
+  /** pressing says the emulator is encoding a key pressed through pressKey, whose bytes go out as they are. */
+  pressing?: boolean;
 }
 
 const initial: Workspace = {
@@ -81,6 +90,8 @@ const initial: Workspace = {
   tabListId: undefined,
   focusRequest: 0,
   closing: undefined,
+  ctrl: "off",
+  alt: "off",
 };
 
 let state = initial;
@@ -226,6 +237,54 @@ export function setFontSize(fontSize: FontSize): void {
 /** setAnnounce turns the announcing of output on or off. */
 export function setAnnounce(announce: boolean): void {
   set({ announce });
+}
+
+/**
+ * pressKey presses a key in a tab, through its emulator, so it is encoded as
+ * the terminal's modes ask, with the key bar's Control and Alt; one applied
+ * once is let go after it. name is a KeyboardEvent key: "Escape", "a".
+ */
+export function pressKey(key: number, name: string): void {
+  const rt = runtimes.get(key);
+  if (!rt?.emulator) {
+    return;
+  }
+  rt.pressing = true;
+  try {
+    rt.emulator.pressKey(name, { ctrl: state.ctrl !== "off", alt: state.alt !== "off" });
+  } finally {
+    rt.pressing = false;
+  }
+  if (state.ctrl === "once" || state.alt === "once") {
+    set({ ctrl: state.ctrl === "once" ? "off" : state.ctrl, alt: state.alt === "once" ? "off" : state.alt });
+  }
+}
+
+/** tapModifier is a tap on the key bar's Control or Alt: applied to the next key, then held, then off. */
+export function tapModifier(which: "ctrl" | "alt"): void {
+  const next: Record<Sticky, Sticky> = { off: "once", once: "held", held: "off" };
+  set({ [which]: next[state[which]] });
+}
+
+const decoder = new TextDecoder();
+
+/**
+ * takeTyped takes the bytes a tab's emulator gives for what was typed, and
+ * tells whether it took them: while the key bar's Control or Alt is on, one
+ * printable character, as a phone's soft keyboard types it, is pressed as
+ * that key with the modifier. Anything else, and a key pressKey is
+ * encoding, is the caller's to send as it is.
+ */
+export function takeTyped(key: number, bytes: Uint8Array): boolean {
+  if ((state.ctrl === "off" && state.alt === "off") || runtimes.get(key)?.pressing === true || bytes.length > 4) {
+    return false;
+  }
+  const text = decoder.decode(bytes);
+  if ([...text].length !== 1 || text < " " || text === "\x7f") {
+    return false;
+  }
+  pressKey(key, text);
+  return true;
 }
 
 /** setTabListId records the id of the rail's tab list while it is shown. */

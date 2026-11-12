@@ -332,6 +332,11 @@
     box-shadow: var(--island-shadow);
   }
 
+  /* A row that scrolls sideways and fades at its end, such as the terminal's key bar: its first item is never under the fade. */
+  .end-fade {
+    mask-image: linear-gradient(to right, #000 calc(100% - 1.75rem), transparent);
+  }
+
   /* Type roles. */
   .t-display {
     font-size: 1.75rem;
@@ -446,8 +451,14 @@
       outline-offset: 2px;
     }
 
+    /* The phone's tab button, filled in the text colour, which forced colours drop. */
+    .tab-key {
+      outline: 1px solid CanvasText;
+    }
+
     .place[aria-current="page"],
     .island[role="tab"],
+    .key[aria-pressed="true"],
     .tabs__tab[aria-selected="true"],
     .toggle-button[data-selected="true"] {
       forced-color-adjust: none;

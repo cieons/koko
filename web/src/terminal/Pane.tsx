@@ -14,7 +14,7 @@ import { AlertLine, loadingDelay } from "../ui/states";
 import type { Connection, Ending, Terminals } from "./connection";
 import { Emulator, type EmulatorHandle } from "./emulator/Emulator";
 import { TabMark } from "./TabMark";
-import { closeTab, panelId, patchTab, reopen, runtime, type Tab, useWorkspace } from "./workspace";
+import { closeTab, panelId, patchTab, reopen, runtime, type Tab, takeTyped, useWorkspace } from "./workspace";
 
 // A tab's pane: its terminal, and over it the tab's state (docs/web-design.md,
 // "Tabs and their states"). No state moves the layout: a tab with nothing to
@@ -313,7 +313,12 @@ export function Pane({ tab, active, shown, terminals }: PaneProps) {
             setGrid({ cols, rows });
             patchTab(key, { ready: true });
           }}
-          onInput={(bytes) => connection.current?.send(bytes)}
+          onInput={(bytes) => {
+            // A character typed while the key bar's Control or Alt is on is pressed with it instead.
+            if (!takeTyped(key, bytes)) {
+              connection.current?.send(bytes);
+            }
+          }}
           onResize={(cols, rows) => {
             setGrid({ cols, rows });
             connection.current?.resize(cols, rows);
