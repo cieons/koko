@@ -349,9 +349,13 @@ timing hook, logs to `d.MuxLog()` and stops when the
 test ends; `d.KillMux()` stops those running as a crash would, as their
 commands and the koko server see it, their connections closed with
 nothing sent first. `d.KokoEnv(env, args...)` runs a command line with more
-variables, such as `KOKO_DIRECT=1`, and `d.DialMux()` connects to the
-Device Mux as a command does and holds the connection; `d.HoldMux()` does
-the same and starts a Device Mux first when none runs, for a test that
+variables, such as `KOKO_DIRECT=1`, and `d.KokoTimed(timings, args...)`
+runs one with a timing hook of its own in place of the device's, while a
+Device Mux it starts keeps the device's: a join, which the koko server
+answers, runs with the zero Timings, the product's, on a device whose
+short timings are for a koko server stopped later (#167).
+`d.DialMux()` connects to the Device Mux as a command does and holds the
+connection; `d.HoldMux()` does the same and starts a Device Mux first when none runs, for a test that
 shortens the idle time, whose Device Mux may idle out before its first
 command connects.
 `harness.NewMuxDeviceBeside(t, d)` is another home of `d`'s OS user: a

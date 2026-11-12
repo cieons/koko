@@ -40,7 +40,6 @@ var realTime = []func(*testing.T){
 	enrollRecordsNothingWhenTheHostChangesMeanwhile,
 	enrollRecordsNothingWhenTheRelayChangesMeanwhile,
 	killingTheDeviceMuxEndsNoSSHSession,
-	kokoConnectTakesANewAddressOnlyWhereThePinnedHostKeyAnswers,
 	kokoDisconnectEndsAnSSHSessionWithoutAResume,
 	kokoExecSaysInOneLineWhyItCouldNotResume,
 	kokoTunnelSaysInOneLineWhyItCouldNotResume,

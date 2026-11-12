@@ -689,6 +689,19 @@ func (d *Device) UseTimings(t timing.Timings) {
 	d.runner.Timings = t
 }
 
+// KokoTimed runs one koko command line in process on the device, as Koko
+// does, with t as its timing-constants hook in place of the device's: the
+// zero Timings, the product's, for a step a real peer answers, such as a
+// join, on a device whose timings are short for a koko server that stops
+// later; or a short wait for one command whose answer never comes. A
+// Device Mux it starts runs with the device's timings.
+func (d *Device) KokoTimed(t timing.Timings, args ...string) Result {
+	d.t.Helper()
+	r := d.runner
+	r.Timings = t
+	return run(d.t, r, d.environ(), "", args...)
+}
+
 // Home returns the device's HOME.
 func (d *Device) Home() string {
 	return d.home

@@ -25,16 +25,20 @@ import (
 )
 
 // muxDevice joins a device whose commands go through a Device Mux, with the
-// timings given, to a koko server reached through a forwarder, which counts
-// the Device Connections the device opens. It returns once the Device Mux
-// koko join started holds its Device Connection, the second after the join's
-// own, and has refreshed the bare names on it, so a test that cuts or counts
-// what the koko server sends starts once that refresh has its answer.
+// timings given after its join, to a koko server reached through a
+// forwarder, which counts the Device Connections the device opens. It
+// returns once the Device Mux koko join started holds its Device
+// Connection, the second after the join's own, and has refreshed the bare
+// names on it, so a test that cuts or counts what the koko server sends
+// starts once that refresh has its answer.
 func muxDevice(t *testing.T, timings timing.Timings) (*harness.Harness, *harness.Forwarder, *harness.Device) {
 	t.Helper()
 	h, fwd, _, init := initThrough(t)
 	d := harness.NewMuxDevice(t, timings)
-	d.Koko("join", init.JoinCode.Code).WantSuccess(t)
+	// The join, which the koko server answers, waits as long as the
+	// product's does: one cut at a short CommandWait failed (#167). The
+	// Device Mux it starts runs with timings.
+	d.KokoTimed(timing.Timings{}, "join", init.JoinCode.Code).WantSuccess(t)
 	waitConns(t, fwd, 2, d)
 	waitLog(t, d, `msg="refreshed the bare names"`)
 	return h, fwd, d

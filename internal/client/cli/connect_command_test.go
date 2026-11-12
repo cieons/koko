@@ -116,9 +116,13 @@ func TestKokoConnectChecksThePinnedHostKeyThroughTheDeviceMux(t *testing.T) {
 // key, an address nothing answers at and an address without a port each
 // leave the device's address as it was. Once it takes one, commands reach
 // the koko server there, the host keys pinned unchanged.
-func kokoConnectTakesANewAddressOnlyWhereThePinnedHostKeyAnswers(t *testing.T) {
+func TestKokoConnectTakesANewAddressOnlyWhereThePinnedHostKeyAnswers(t *testing.T) {
+	t.Parallel()
 	_, fwd, listen, init := initThroughWith(t, timing.Timings{})
-	d := harness.NewMuxDevice(t, timing.Timings{CommandWait: 300 * time.Millisecond, ReconnectFirst: 20 * time.Millisecond, ReconnectMax: 40 * time.Millisecond})
+	// Every step a koko server answers waits as long as the product's does
+	// (#167): only the try of an address nothing answers at waits the short
+	// time.
+	d := harness.NewMuxDevice(t, timing.Timings{})
 	d.Koko("join", init.JoinCode.Code).WantSuccess(t)
 	old := readClientConfig(t, d)
 	knownHosts, err := os.ReadFile(filepath.Join(kokoDir(d), "known_hosts"))
@@ -132,13 +136,18 @@ func kokoConnectTakesANewAddressOnlyWhereThePinnedHostKeyAnswers(t *testing.T) {
 		name, address, code string
 		status              int
 		says                []string
+		timings             timing.Timings
 	}{
-		{"a koko server with another host key", impostor, "host_key_mismatch", 1, []string{impostor, "this device keeps the address " + old.ServerAddress}},
-		{"an address nothing answers at", harness.FreeAddr(t), "server_unreachable", 1, []string{"cannot reach the koko server at", "this device keeps the address " + old.ServerAddress}},
-		{"an address without a port", "127.0.0.1", "invalid_usage", 2, []string{"names no port"}},
-		{"what is no address", "koko.example.com:https", "invalid_usage", 2, []string{"not an address"}},
+		{"a koko server with another host key", impostor, "host_key_mismatch", 1, []string{impostor, "this device keeps the address " + old.ServerAddress}, timing.Timings{}},
+		{
+			"an address nothing answers at", harness.FreeAddr(t), "server_unreachable", 1,
+			[]string{"cannot reach the koko server at", "this device keeps the address " + old.ServerAddress},
+			timing.Timings{CommandWait: 300 * time.Millisecond, ReconnectFirst: 20 * time.Millisecond, ReconnectMax: 40 * time.Millisecond},
+		},
+		{"an address without a port", "127.0.0.1", "invalid_usage", 2, []string{"names no port"}, timing.Timings{}},
+		{"what is no address", "koko.example.com:https", "invalid_usage", 2, []string{"not an address"}, timing.Timings{}},
 	} {
-		msg := d.Koko("connect", tc.address, "--json").WantError(t, tc.status, tc.code)
+		msg := d.KokoTimed(tc.timings, "connect", tc.address, "--json").WantError(t, tc.status, tc.code)
 		for _, s := range tc.says {
 			if !strings.Contains(msg, s) {
 				t.Errorf("for %s, connect says %q, without %q", tc.name, msg, s)

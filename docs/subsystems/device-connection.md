@@ -110,7 +110,11 @@ one-time code ([`join`](../../internal/client/cli/join.go)):
    join again.
 5. It authenticates in the two steps above
    ([`serverconn.Join`](../../internal/client/serverconn/serverconn.go)); the
-   banner of a refusal is the error, with `invalid_join_code`.
+   banner of a refusal is the error, with `invalid_join_code`. A connection
+   that ends before an answer fails with `server_unreachable`: before koko
+   sent the secret, the code stays usable; after, the koko server may have
+   taken it, and koko says to try the code again and, should it be refused,
+   to ask for a new one and revoke any Device Session the join left.
 6. On that connection it calls `user.current`, which names the User and the
    device name the code bound, and the Device Session's id. When the
    connection drops the call, or sent no report, the call is sent again,

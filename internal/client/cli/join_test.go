@@ -282,23 +282,57 @@ func TestJoinRefusesAnotherHostKeyAndTheCodeStaysUsable(t *testing.T) {
 }
 
 // A join whose connection ends in SSH authentication, here at
-// timing.CommandWait while the koko server has not answered the Join Code's
-// secret, is a koko server koko could not reach (server_unreachable), never
-// one that refused the device or its code (#163).
+// timing.CommandWait while the koko server has not answered, is a koko
+// server koko could not reach (server_unreachable), never one that refused
+// the device or its code (#163). Cut before koko sent the Join Code's
+// secret, the code stays usable; cut after, before the koko server answered
+// it, the koko server may have taken it, and koko says so (#167).
 func TestAJoinCutInAuthenticationIsNoRefusal(t *testing.T) {
 	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		secret bool
+		says   string
+	}{
+		{"before the secret", false, "; the code stays usable"},
+		{"after the secret", true, "; koko had sent the code when the connection ended, so the koko server may have taken it: try the code again, and should the koko server refuse it, ask for a new one and revoke the Device Session this join may have left, which koko device ls lists"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			address, code := stallingJoin(t, tc.secret)
+			d := harness.NewDevice(t)
+			d.UseTimings(timing.Timings{CommandWait: 200 * time.Millisecond})
+			msg := d.Koko("join", code, "--json").WantError(t, 1, "server_unreachable")
+			if !strings.HasPrefix(msg, "cannot reach the koko server at "+address) || !strings.HasSuffix(msg, tc.says) {
+				t.Errorf("a join cut in authentication %s says %q, want that koko cannot reach the koko server at %s, ending %q", tc.name, msg, address, tc.says)
+			}
+			wantNothingLeft(t, d)
+		})
+	}
+}
+
+// stallingJoin starts a fake koko server that never answers a join's
+// authentication: the device key's signature, or, once it has asked for the
+// Join Code's secret as a koko server does for a new key, when secret, the
+// secret. It returns its address and a Join Code for it.
+func stallingJoin(t *testing.T, secret bool) (address, code string) {
+	t.Helper()
+	stall := func() error {
+		<-t.Context().Done()
+		return errors.New("the test ended")
+	}
 	hostKey := sshhost.NewKey(t, ssh.KeyAlgoED25519)
 	cfg := &ssh.ServerConfig{
 		PublicKeyCallback: func(ssh.ConnMetadata, ssh.PublicKey) (*ssh.Permissions, error) {
 			return nil, nil
 		},
-		// As a koko server does for a new key, it asks for a Join Code's
-		// secret, which it then never answers.
 		VerifiedPublicKeyCallback: func(ssh.ConnMetadata, ssh.PublicKey, *ssh.Permissions, string) (*ssh.Permissions, error) {
+			if !secret {
+				return nil, stall()
+			}
 			return nil, &ssh.PartialSuccessError{Next: ssh.ServerAuthCallbacks{
 				PasswordCallback: func(ssh.ConnMetadata, []byte) (*ssh.Permissions, error) {
-					<-t.Context().Done()
-					return nil, errors.New("the test ended")
+					return nil, stall()
 				},
 			}}
 		},
@@ -310,7 +344,7 @@ func TestAJoinCutInAuthenticationIsNoRefusal(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The test's context ends before its cleanups run, which frees the
-	// password callback.
+	// stalled callback.
 	var wg sync.WaitGroup
 	t.Cleanup(func() {
 		_ = ln.Close()
@@ -328,19 +362,12 @@ func TestAJoinCutInAuthenticationIsNoRefusal(t *testing.T) {
 			})
 		}
 	})
-	address := ln.Addr().String()
-	code, err := joincode.Code{Address: address, Fingerprint: sha256.Sum256(hostKey.PublicKey().Marshal())}.Encode()
+	address = ln.Addr().String()
+	code, err = joincode.Code{Address: address, Fingerprint: sha256.Sum256(hostKey.PublicKey().Marshal())}.Encode()
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	d := harness.NewDevice(t)
-	d.UseTimings(timing.Timings{CommandWait: 200 * time.Millisecond})
-	msg := d.Koko("join", code, "--json").WantError(t, 1, "server_unreachable")
-	if !strings.HasPrefix(msg, "cannot reach the koko server at "+address) {
-		t.Errorf("a join cut in authentication says %q, want that koko cannot reach the koko server at %s", msg, address)
-	}
-	wantNothingLeft(t, d)
+	return address, code
 }
 
 // A used code, an expired one (the clock moved past its 15 minutes) and one

@@ -215,6 +215,12 @@ func joinError(address string, err error) error {
 	if e, ok := errors.AsType[*serverconn.RefusedError](err); ok {
 		return &cliError{code: codeInvalidJoinCode, message: e.Error()}
 	}
+	// Only a connection that ended before the secret went out leaves the
+	// code unspent for certain.
+	left := "the code stays usable"
+	if _, ok := errors.AsType[*serverconn.SecretSentError](err); ok {
+		left = "koko had sent the code when the connection ended, so the koko server may have taken it: try the code again, and should the koko server refuse it, ask for a new one and revoke the Device Session this join may have left, which koko device ls lists"
+	}
 	return &cliError{code: codeServerUnreachable, message: fmt.Sprintf(
-		"cannot reach the koko server at %s, which the Join Code names: %v; the code stays usable", address, err)}
+		"cannot reach the koko server at %s, which the Join Code names: %v; %s", address, err, left)}
 }

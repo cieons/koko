@@ -196,4 +196,4 @@ koko server.
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128, #147; check run 42951455550).
 - A channel or connection closes only once every request on it has its answer: [What a change contains](docs/code-standards.md#what-a-change-contains) (seen 2026-11-06, 2026-11-08, 2026-11-10; #49, #59, #64, #81, #127).
-- A test shortens a wait only where what it waits for never comes: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-11, 2026-11-12; #38, #77, #147, #163; check runs 42081318152 and 43128685688).
+- A test shortens a wait only where what it waits for never comes: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-11, 2026-11-12; #38, #77, #147, #163, #167; check runs 42081318152 and 43128685688).

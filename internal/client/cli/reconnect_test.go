@@ -92,11 +92,14 @@ func aCommandWaitsAtMostCommandWaitForTheDeviceConnection(t *testing.T) {
 	const wait = 500 * time.Millisecond
 	timings := timing.Timings{CommandWait: wait, ReconnectFirst: 20 * time.Millisecond, ReconnectMax: 40 * time.Millisecond}
 	h, fwd, _, init := initThroughWith(t, timing.Timings{})
+	// The joins, which the koko server answers, wait as long as the
+	// product's do (#167); the commands after them, and the Device Mux the
+	// second starts, wait the short time for the stopped koko server.
 	direct := harness.NewDevice(t)
-	direct.UseTimings(timings)
 	direct.Koko("join", init.JoinCode.Code).WantSuccess(t)
+	direct.UseTimings(timings)
 	mux := harness.NewMuxDevice(t, timings)
-	mux.Koko("join", deviceAdd(t, h, "mux").Code).WantSuccess(t)
+	mux.KokoTimed(timing.Timings{}, "join", deviceAdd(t, h, "mux").Code).WantSuccess(t)
 	waitLogs(t, mux, `msg="device connection opened"`, 1)
 	h.Stop()
 	waitLogs(t, mux, `msg="device connection dropped"`, 1)

@@ -340,7 +340,8 @@ func Pinned(address string, pinned []ssh.PublicKey) ssh.HostKeyCallback {
 // (wire.JoinSecret). It returns the connection, now an ordinary Device
 // Connection, and the host key the koko server presented. It fails with a
 // *HostKeyMismatchError, with a *RefusedError once the koko server refused
-// the secret, or with the error of a koko server it could not reach.
+// the secret, or with the error of a koko server it could not reach, as a
+// *SecretSentError once it had sent the secret.
 func Join(ctx context.Context, address string, fingerprint [sha256.Size]byte, key ssh.Signer, secret [joincode.SecretSize]byte) (Conn, ssh.PublicKey, error) {
 	var hostKey ssh.PublicKey
 	check := func(_ string, _ net.Addr, k ssh.PublicKey) error {
@@ -355,11 +356,17 @@ func Join(ctx context.Context, address string, fingerprint [sha256.Size]byte, ke
 		return nil
 	}
 	var banner string
+	// The handshake runs the auth methods in this goroutine.
+	var sent bool
 	client, err := dialTCP(ctx, address, nil, &ssh.ClientConfig{
 		HostKeyCallback: check,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(key),
-			ssh.Password(wire.JoinSecret(secret)),
+			// x/crypto asks for the password just before it writes it.
+			ssh.PasswordCallback(func() (string, error) {
+				sent = true
+				return wire.JoinSecret(secret), nil
+			}),
 		},
 		AuthCallback: func(c *ssh.ClientAuthContext) (ssh.AuthMethod, error) {
 			// The new key is never refused but answered with a partial
@@ -375,10 +382,24 @@ func Join(ctx context.Context, address string, fingerprint [sha256.Size]byte, ke
 		},
 	})
 	if err != nil {
+		if _, refused := errors.AsType[*RefusedError](err); sent && !refused {
+			err = &SecretSentError{Err: err}
+		}
 		return nil, nil, err
 	}
 	return client, hostKey, nil
 }
+
+// SecretSentError says a join's connection failed with Err after it sent the
+// Join Code's secret, before the koko server answered it: the koko server
+// may have taken the code.
+type SecretSentError struct {
+	Err error
+}
+
+func (e *SecretSentError) Error() string { return e.Err.Error() }
+
+func (e *SecretSentError) Unwrap() error { return e.Err }
 
 // dialTCP connects to the koko server at address and runs the SSH
 // handshake with cfg, as user koko with the CLI's version string, over the
