@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -278,6 +279,68 @@ func TestJoinRefusesAnotherHostKeyAndTheCodeStaysUsable(t *testing.T) {
 
 	fwd.To(listen)
 	d.Koko("join", init.JoinCode.Code).WantSuccess(t)
+}
+
+// A join whose connection ends in SSH authentication, here at
+// timing.CommandWait while the koko server has not answered the Join Code's
+// secret, is a koko server koko could not reach (server_unreachable), never
+// one that refused the device or its code (#163).
+func TestAJoinCutInAuthenticationIsNoRefusal(t *testing.T) {
+	t.Parallel()
+	hostKey := sshhost.NewKey(t, ssh.KeyAlgoED25519)
+	cfg := &ssh.ServerConfig{
+		PublicKeyCallback: func(ssh.ConnMetadata, ssh.PublicKey) (*ssh.Permissions, error) {
+			return nil, nil
+		},
+		// As a koko server does for a new key, it asks for a Join Code's
+		// secret, which it then never answers.
+		VerifiedPublicKeyCallback: func(ssh.ConnMetadata, ssh.PublicKey, *ssh.Permissions, string) (*ssh.Permissions, error) {
+			return nil, &ssh.PartialSuccessError{Next: ssh.ServerAuthCallbacks{
+				PasswordCallback: func(ssh.ConnMetadata, []byte) (*ssh.Permissions, error) {
+					<-t.Context().Done()
+					return nil, errors.New("the test ended")
+				},
+			}}
+		},
+	}
+	cfg.AddHostKey(hostKey)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The test's context ends before its cleanups run, which frees the
+	// password callback.
+	var wg sync.WaitGroup
+	t.Cleanup(func() {
+		_ = ln.Close()
+		wg.Wait()
+	})
+	wg.Go(func() {
+		for {
+			nc, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			wg.Go(func() {
+				_, _, _, _ = ssh.NewServerConn(nc, cfg)
+				_ = nc.Close()
+			})
+		}
+	})
+	address := ln.Addr().String()
+	code, err := joincode.Code{Address: address, Fingerprint: sha256.Sum256(hostKey.PublicKey().Marshal())}.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d := harness.NewDevice(t)
+	d.UseTimings(timing.Timings{CommandWait: 200 * time.Millisecond})
+	msg := d.Koko("join", code, "--json").WantError(t, 1, "server_unreachable")
+	if !strings.HasPrefix(msg, "cannot reach the koko server at "+address) {
+		t.Errorf("a join cut in authentication says %q, want that koko cannot reach the koko server at %s", msg, address)
+	}
+	wantNothingLeft(t, d)
 }
 
 // A used code, an expired one (the clock moved past its 15 minutes) and one

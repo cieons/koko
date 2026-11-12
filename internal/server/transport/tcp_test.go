@@ -231,10 +231,26 @@ func TestARevokedKeyIsToldByNameOnlyAfterItsSignature(t *testing.T) {
 	if e, ok := errors.AsType[*serverconn.RevokedError](err); !ok || e.Device != "laptop" {
 		t.Errorf("a Device Connection with a Revoked key = %v, want it refused as the Revoked laptop's", err)
 	}
-	device.Key = forgedSigner{key.PublicKey()}
-	_, err = serverconn.DialDevice(t.Context(), device)
-	if e, ok := errors.AsType[*serverconn.RefusedError](err); !ok || e.Banner != "" {
-		t.Errorf("a Device Connection offering the Revoked key without signing = %v, want a refusal with no banner", err)
+	// A signature that does not verify ends the connection in x/crypto,
+	// before the koko server is asked what the key is.
+	var d net.Dialer
+	nc, err := d.DialContext(t.Context(), "tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = nc.Close() }()
+	var banner string
+	_, _, _, err = ssh.NewClientConn(nc, addr, &ssh.ClientConfig{
+		User:            "koko",
+		HostKeyCallback: ssh.FixedHostKey(device.HostKeys[0]),
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(forgedSigner{key.PublicKey()})},
+		BannerCallback: func(message string) error {
+			banner = message
+			return nil
+		},
+	})
+	if err == nil || banner != "" {
+		t.Errorf("a Device Connection offering the Revoked key without signing = %v with the banner %q, want it failed with none", err, banner)
 	}
 }
 

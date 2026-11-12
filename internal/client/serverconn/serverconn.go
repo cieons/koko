@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -131,16 +132,64 @@ func HandshakeLocal(ctx context.Context, nc net.Conn, addr string, cfg *ssh.Clie
 	return c, nil
 }
 
+// handshake runs the SSH handshake for Handshake, HandshakeLocal and
+// dialTCP. An AuthCallback in cfg is asked only while the connection works:
+// x/crypto counts a method whose step failed with the connection as tried,
+// as it counts one the peer refused, so a connection cut in authentication,
+// as at ctx's end, would read as a refusal of the device (#163). It fails
+// with the connection's error instead.
 func handshake(ctx context.Context, nc net.Conn, addr string, cfg *ssh.ClientConfig) (*sshConn, error) {
 	stop := context.AfterFunc(ctx, func() { _ = nc.Close() })
 	defer stop()
 	cfg.User, cfg.ClientVersion = cmp.Or(cfg.User, user), clientVersion
-	conn, chans, reqs, err := ssh.NewClientConn(nc, addr, cfg)
+	carrier := nc
+	if decide := cfg.AuthCallback; decide != nil {
+		noted := &failureNoter{Conn: nc}
+		carrier = noted
+		cfg.AuthCallback = func(c *ssh.ClientAuthContext) (ssh.AuthMethod, error) {
+			if err := noted.failure(); err != nil {
+				return nil, err
+			}
+			return decide(c)
+		}
+	}
+	conn, chans, reqs, err := ssh.NewClientConn(carrier, addr, cfg)
 	if err != nil {
 		_ = nc.Close()
 		return nil, err
 	}
 	return newSSHConn(conn, chans, reqs), nil
+}
+
+// failureNoter is a connection that notes the first error a read or a write
+// on it failed with.
+type failureNoter struct {
+	net.Conn
+	failed atomic.Pointer[error]
+}
+
+func (c *failureNoter) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if err != nil {
+		c.failed.CompareAndSwap(nil, &err)
+	}
+	return n, err
+}
+
+func (c *failureNoter) Write(p []byte) (int, error) {
+	n, err := c.Conn.Write(p)
+	if err != nil {
+		c.failed.CompareAndSwap(nil, &err)
+	}
+	return n, err
+}
+
+// failure returns the first error a read or a write failed with, or nil.
+func (c *failureNoter) failure() error {
+	if err := c.failed.Load(); err != nil {
+		return *err
+	}
+	return nil
 }
 
 // Device is what a direct Device Connection needs: where the koko server

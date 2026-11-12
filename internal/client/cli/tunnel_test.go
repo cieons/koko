@@ -594,11 +594,15 @@ func kokoTunnelSaysWhyInOneLineBeforeTheDeviceConnection(t *testing.T) {
 	away := stopped.Join(harness.Owner)
 	away.UseTimings(short)
 	server = readClientConfig(t, away).ServerAddress
-	muxed := harness.NewMuxDevice(t, short)
+	// The join, which the koko server answers, waits as long as the
+	// product's does: one cut at the short wait on a loaded machine failed
+	// (#163). So does the Device Mux it starts; the one the tunnel below
+	// starts waits the short time for the stopped koko server.
+	muxed := harness.NewMuxDevice(t, timing.Timings{})
 	muxed.Koko("join", deviceAdd(t, stopped, "laptop").Code).WantSuccess(t)
-	waitLog(t, muxed, `msg="device connection opened"`)
+	muxed.KillMux()
+	muxed.UseTimings(short)
 	stopped.Stop()
-	waitLog(t, muxed, `msg="device connection dropped"`)
 	for path, d := range map[string]*harness.Device{"direct": away, "through the Device Mux": muxed} {
 		line = wantTunnelLine(t, "unreachable, "+path, d.Koko("tunnel", "web1.koko"))
 		if !strings.HasPrefix(line, "koko: cannot reach the koko server at "+server+": ") ||
