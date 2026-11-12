@@ -220,7 +220,7 @@ func PointProxyCommand(home, koko string) (wrote bool, err error) {
 		return false, nil
 	case err != nil:
 		return false, fmt.Errorf("read koko's ssh_config: %w", err)
-	case !ownedByMe(fi):
+	case !ownedByMe(path, fi):
 		return false, nil
 	}
 	old, err := os.ReadFile(path)
@@ -246,10 +246,11 @@ func PointProxyCommand(home, koko string) (wrote bool, err error) {
 }
 
 // replaceChanged writes b as koko's ssh_config at path, as replace does,
-// unless path is a regular file of mode 0600 that holds b already, and
-// tells whether it wrote. A file it cannot read counts as changed.
+// unless path is a regular file, private as koko writes one (mode 0600, or
+// on Windows the list restrict sets), that holds b already, and tells
+// whether it wrote. A file it cannot read counts as changed.
 func replaceChanged(path string, b []byte) (bool, error) {
-	if fi, err := os.Lstat(path); err == nil && fi.Mode().IsRegular() && fi.Mode().Perm() == 0o600 {
+	if fi, err := os.Lstat(path); err == nil && fi.Mode().IsRegular() && isPrivate(path, fi) {
 		if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, b) {
 			return false, nil
 		}
@@ -377,11 +378,15 @@ func sshConfig(koko, knownHosts string, names []string) ([]byte, error) {
 // quotePath returns path double-quoted for an ssh_config. It refuses a
 // relative path, which ssh would read against another directory, and a
 // character that ssh or the shell running ProxyCommand would read as
-// something else inside double quotes.
+// something else inside double quotes. On Windows it writes the path with
+// forward slashes, which Windows' file functions take: inside double quotes
+// OpenSSH's parser and a shell each read a backslash as an escape, and the
+// two disagree on which (ADR 0051).
 func quotePath(path string) (string, error) {
 	if !filepath.IsAbs(path) {
 		return "", fmt.Errorf("%q is not an absolute path", path)
 	}
+	path = filepath.ToSlash(path)
 	if i := strings.IndexFunc(path, func(r rune) bool {
 		return r < ' ' || r == 0x7f || strings.ContainsRune("\"$`\\%", r)
 	}); i >= 0 {
@@ -439,7 +444,8 @@ func AddInclude(home string) error {
 	case !writable(path, fi):
 		return leftAlone("~/" + userConfig + " is read-only")
 	}
-	if err := replace(path, append([]byte(IncludeLine+"\n"), b...), fi.Mode().Perm()); err != nil {
+	keep := func(tmp string) error { return keepAccess(tmp, path, fi) }
+	if err := replaceWith(path, append([]byte(IncludeLine+"\n"), b...), keep); err != nil {
 		return leftAlone(fmt.Sprintf("koko cannot write ~/%s (%v)", userConfig, err))
 	}
 	return nil
@@ -575,15 +581,38 @@ func includesKoko(arg, home string) bool {
 	return err == nil && ok
 }
 
+// writable tells whether the user's file at path, whose Lstat is fi, is
+// one koko may rewrite: one whose mode lets someone write it (on Windows,
+// one that is not read-only), which this process can open for writing, so
+// neither a file made read-only on purpose nor one another user keeps from
+// this one is replaced. Opening it changes nothing.
+func writable(path string, fi fs.FileInfo) bool {
+	if fi.Mode().Perm()&0o222 == 0 {
+		return false
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err != nil {
+		return false
+	}
+	_ = f.Close()
+	return true
+}
+
 // replace writes data to path atomically, through a new file of the given
 // mode in the same directory renamed over it, so that a reader sees the old
 // bytes or the new ones and never a file half written.
 func replace(path string, data []byte, mode fs.FileMode) error {
+	return replaceWith(path, data, func(tmp string) error { return restrict(tmp, mode) })
+}
+
+// replaceWith writes data to path atomically, as replace does, through a
+// new file that access is given before the rename, to set who may reach it.
+func replaceWith(path string, data []byte, access func(tmp string) error) error {
 	tmp, err := writeTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*", data)
 	if err != nil {
 		return err
 	}
-	err = restrict(tmp, mode)
+	err = access(tmp)
 	if err == nil {
 		err = os.Rename(tmp, path)
 	}

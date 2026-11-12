@@ -202,7 +202,7 @@ func TestAJoinBelowTheWindowSendsNothingMore(t *testing.T) {
 	h := harness.Start(t)
 	jc := deviceAdd(t, h, "laptop")
 	home := t.TempDir()
-	r := harness.Run(t, releaseCLI(t, "v0.2.0", ""), []string{"HOME=" + home}, "join", jc.Code, "--json")
+	r := harness.Run(t, releaseCLI(t, "v0.2.0", ""), []string{harness.HomeEnv(home)}, "join", jc.Code, "--json")
 	msg := r.WantError(t, 1, "cli_too_old")
 	for _, want := range []string{"at " + decode(t, jc.Code).Address, "v0.2.0", compat.Oldest, "the code is spent"} {
 		if !strings.Contains(msg, want) {

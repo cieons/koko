@@ -1,0 +1,5 @@
+# Every file is checked out with the bytes it was committed with, on every
+# OS: git on Windows would otherwise turn line ends into CRLF, and the golden
+# files, the generated TypeScript types and the scripts are compared, or run,
+# byte for byte.
+* -text

@@ -110,7 +110,9 @@ The [release workflow](../../.github/workflows/release.yml) runs on a pushed
 
 1. **check**, **systemd**, **container**, **skew** and **window**: the
    [check workflow](../../.github/workflows/check.yml) on the tag, on Linux
-   and macOS, [the real-systemd check](#the-real-systemd-check),
+   and macOS, with the CLI's tests on Windows
+   ([the `windows` job](#the-windows-job)),
+   [the real-systemd check](#the-real-systemd-check),
    [the container check](#the-container-check), on each platform,
    [the skew check](#the-skew-check), for each pair of versions, and
    [`release/oldest-check.sh`](../../release/oldest-check.sh), which
@@ -385,6 +387,87 @@ times as long on a slow runner as on a fast one. The Ubuntu job is expected
 to take 8 to 10 minutes and the macOS job 7 to 12. If the Ubuntu job grows
 past 12 minutes, move `make lint` and `make cross` into a job of their own
 beside the tests.
+
+### The `windows` job
+
+The workflow has a second job, `windows`, on `windows-latest`, beside the
+**check** job's two runs, on every push and pull request, and so before a
+release
+([ADR 0051](../adr/0051-on-windows-the-cli-is-a-device-with-the-same-files-in-the-same-places.md)).
+No release has a Windows CLI yet: the job is what the tickets of
+[#151](https://github.com/cieons/koko/issues/151) build it against.
+
+**What it runs.** `go vet ./...`, then `go test`, without the race
+detector, on `./cmd/...`, `./internal/shared/...`, `./internal/client/...`,
+`./internal/harness/...` and `./release/...`. It calls `go` itself, since
+the image has no GNU Make, under a temporary `USERPROFILE` and
+`LOCALAPPDATA`, as `make test` runs under a temporary `HOME`, with Go's
+caches pinned first. `go test` bounds a test binary at 10 minutes and the
+job ends at 20.
+
+**How long it takes.** `internal/client/cli` took 138 to 233 s in five
+runs on 2026-11-11 and 2026-11-12, and every other package under 2 s; the
+job took 4 to 6 minutes. The same package takes 168 to 218 s in the Ubuntu
+job, which runs it under the race detector. If it passes 5 minutes on
+Windows, the next ticket that adds tests there says so before it adds
+them.
+
+**What it does not run.** `./internal/server/...`: the koko server ships
+for Linux, and is tested there and on macOS. The web UI's build and
+Vitest, which do not differ by OS. Lint, which `make lint` runs for
+`GOOS=windows` in the other two jobs. The race detector, which needs a C
+toolchain everywhere but on macOS; the Linux and macOS jobs run the same Go
+code under it, but for the per-OS files. The real OpenSSH test
+(`internal/client/openssh`) builds for Unix only until
+[#155](https://github.com/cieons/koko/issues/155).
+
+**The harness on Windows.** The CLI's tests start the koko server in the
+test process, as on macOS; `kokod` itself still refuses to start there.
+The in-process Host runs a command through the `sh.exe` of Git for
+Windows, found on PATH, and a test that needs one fails naming it when
+there is none. A test that cannot hold on Windows is left out through
+`skip.OnWindows`, with its reason, and counted
+([code layout](code-layout.md#rules-for-working-in-parallel), rule 13).
+`.gitattributes` checks every file out with the bytes it was committed
+with, so the golden files compare on Windows too.
+
+**What the first run found** (2026-11-12, for the points
+[#151](https://github.com/cieons/koko/issues/151) left to verify):
+
+- **The in-process koko server runs on Windows:** its Unix socket, its
+  files and SQLite. Three things differed, each now behind a per-OS file or
+  a check that holds on every OS, with nothing changed on Linux:
+  - Windows flushes only a file opened for writing, and no directory, so
+    the store's `syncPath` has a file for each kind of OS;
+  - a socket call fails with Windows' own error numbers (`WSAECONNREFUSED`
+    for `ECONNREFUSED`), which Go does not match to the Unix ones:
+    [`sockerr`](../../internal/shared/sockerr/sockerr.go) matches both, for
+    the Gateway's retries, a taken port and a socket left behind;
+  - connecting to a Unix socket path that holds nothing is refused on
+    Windows, where Linux and macOS say the path does not exist, so
+    `serverconn.DialSocket` looks at the path after a failed connect.
+- **The clock moves in coarse steps on Windows**, so two moments a few
+  milliseconds apart can read as the same time. `liveness.Watch` told an
+  answered probe by comparing two times, and a probe sent in the same step
+  as the last bytes counted as answered: the connection was never declared
+  dead. It now counts the reads that brought bytes.
+- **The ssh clients on the runner:** `where ssh` finds
+  `C:\Windows\System32\OpenSSH\ssh.exe` first, OpenSSH for Windows 9.5p2
+  (LibreSSL 3.8.2), then `C:\Program Files\Git\usr\bin\ssh.exe`, OpenSSH
+  10.6p1 (OpenSSL 3.5.9). Git for Windows' `sftp-server.exe` is
+  `C:\Program Files\Git\usr\lib\ssh\sftp-server.exe`, and its `sh.exe`,
+  `C:\Program Files\Git\bin\sh.exe`, is on PATH. The job's first step
+  prints all of these on each run.
+- **A Unix socket's close can go unseen on Windows.** When the end that
+  reads is itself writing as its peer half-closes, the read sometimes
+  never returns, neither for the half-close nor for the close that
+  follows: once in 400 connections of plain `net` sockets on the runner,
+  and never over TCP or without that write. `koko web` over the koko
+  server's Unix socket met it when the koko server stopped (3 runs of 25),
+  a path only tests take on Windows, so
+  `TestWebEndsWhenTheKokoServerStops` is left out there. The Device Mux on
+  Windows ([#153](https://github.com/cieons/koko/issues/153)) listens on a
+  Unix socket and has to hold without relying on that end of stream.
 
 ## The real-systemd check
 

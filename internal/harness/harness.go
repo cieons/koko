@@ -438,21 +438,21 @@ func ShortTempDir(t testing.TB) string {
 // +30d count from.
 func (h *Harness) Koko(args ...string) Result {
 	h.t.Helper()
-	return Run(h.t, h.runner(), []string{"HOME=" + h.home}, args...)
+	return Run(h.t, h.runner(), []string{HomeEnv(h.home)}, args...)
 }
 
 // KokoEnv runs one koko command line in process, as Koko does, with the
 // variables env beside HOME, such as TZ.
 func (h *Harness) KokoEnv(env []string, args ...string) Result {
 	h.t.Helper()
-	return Run(h.t, h.runner(), append([]string{"HOME=" + h.home}, env...), args...)
+	return Run(h.t, h.runner(), append([]string{HomeEnv(h.home)}, env...), args...)
 }
 
 // KokoStdin runs one koko command line in process, as Koko does, with stdin
 // as its stdin, which is not a terminal.
 func (h *Harness) KokoStdin(stdin string, args ...string) Result {
 	h.t.Helper()
-	return run(h.t, h.runner(), []string{"HOME=" + h.home}, stdin, args...)
+	return run(h.t, h.runner(), []string{HomeEnv(h.home)}, stdin, args...)
 }
 
 // KokoTerminal runs one koko command line in process, as Koko does, with
@@ -461,7 +461,7 @@ func (h *Harness) KokoTerminal(term *Terminal, args ...string) Result {
 	h.t.Helper()
 	r := h.runner()
 	r.Terminal = term
-	return run(h.t, r, []string{"HOME=" + h.home}, "", args...)
+	return run(h.t, r, []string{HomeEnv(h.home)}, "", args...)
 }
 
 // runner is the runner of the Local caller's command lines: over the
@@ -585,7 +585,7 @@ func (c *clock) waiting() []time.Time {
 // such as koko web.
 func (h *Harness) Background(env []string, args ...string) *Process {
 	h.t.Helper()
-	return background(h.t, h.runner(), append([]string{"HOME=" + h.home}, env...), args...)
+	return background(h.t, h.runner(), append([]string{HomeEnv(h.home)}, env...), args...)
 }
 
 // WebAddress returns the address the koko server's web listener listens
@@ -632,7 +632,7 @@ type Device struct {
 // environ returns the environment the device's commands run with, and
 // then extra.
 func (d *Device) environ(extra ...string) []string {
-	return slices.Concat([]string{"HOME=" + d.home}, d.env, extra)
+	return slices.Concat([]string{HomeEnv(d.home)}, d.env, extra)
 }
 
 // NewDevice returns a device that has not joined a koko server. Its HOME

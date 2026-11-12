@@ -62,7 +62,7 @@ func (s sshSetupJSON) Human(w io.Writer) error {
 // a joined device it is refused before any call, since koko join wrote
 // those files there.
 func sshSetup(ctx context.Context, in *Input) (sshSetupJSON, error) {
-	home := in.inv.getenv("HOME")
+	home := in.inv.home()
 	switch c, err := devicefiles.ReadConfig(home); {
 	case err == nil:
 		return sshSetupJSON{}, &cliError{code: codeAlreadyJoined, message: fmt.Sprintf(

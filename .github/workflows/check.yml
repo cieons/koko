@@ -96,3 +96,52 @@ jobs:
           npm ci
           npm audit signatures
       - run: make check
+
+  # The CLI's tests on Windows (ADR 0051), against the koko server and Hosts
+  # in the test process. It calls go itself: the image has no GNU Make. It
+  # runs neither the koko server's own packages, which ship for Linux only,
+  # nor the web UI's build and tests, nor lint, which make lint runs for
+  # GOOS=windows in the jobs above, and no race detector, which would need
+  # a C toolchain there (docs/subsystems/release.md).
+  windows:
+    runs-on: windows-latest
+    concurrency:
+      group: check-${{ github.ref }}-windows
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+    # go test bounds each test binary at 10 minutes, well inside this, so a
+    # hanging test fails the job with a goroutine dump.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # What the image has, for the log: the ssh a command line finds, Git
+      # for Windows' own, its sftp-server, and the sh.exe the in-process
+      # Host runs a command through.
+      - name: Show the ssh clients and the shell
+        shell: cmd
+        run: |
+          where ssh
+          ssh -V
+          where sh
+          "C:\Program Files\Git\usr\bin\ssh.exe" -V
+          dir /s /b "C:\Program Files\Git\sftp-server.exe"
+          exit /b 0
+      - run: go vet ./...
+      # Under a throwaway profile, as make test runs under a throwaway
+      # HOME, so no test touches the runner's own .ssh or .claude. Go's
+      # caches and env file are pinned first, or go would look for them
+      # under the new profile.
+      - name: Test the CLI
+        shell: pwsh
+        run: |
+          $env:GOENV = go env GOENV
+          $env:GOPATH = go env GOPATH
+          $env:GOMODCACHE = go env GOMODCACHE
+          $env:GOCACHE = go env GOCACHE
+          $profile = Join-Path $env:RUNNER_TEMP "koko-profile-$([guid]::NewGuid())"
+          $env:USERPROFILE = $profile
+          $env:LOCALAPPDATA = Join-Path $profile 'AppData\Local'
+          New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
+          go test -timeout 10m ./cmd/... ./internal/shared/... ./internal/client/... ./internal/harness/... ./release/...

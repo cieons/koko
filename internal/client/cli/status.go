@@ -234,7 +234,7 @@ func status(ctx context.Context, in *Input) (statusJSON, error) {
 		}
 	}
 
-	home := in.inv.getenv("HOME")
+	home := in.inv.home()
 	c, _, err := devicefiles.Read(home)
 	switch {
 	case err == nil:

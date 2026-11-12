@@ -77,7 +77,7 @@ func join(ctx context.Context, in *Input) (joined, error) {
 	if err != nil {
 		return joined{}, err
 	}
-	home := in.inv.getenv("HOME")
+	home := in.inv.home()
 	switch c, _, err := devicefiles.Read(home); {
 	case err == nil:
 		return joined{}, &cliError{code: codeAlreadyJoined, message: fmt.Sprintf(

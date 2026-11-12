@@ -21,6 +21,7 @@ import (
 
 	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/client/devicemux"
+	"github.com/cieons/koko/internal/harness/skip"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -52,6 +53,7 @@ func TestACommandGetsTheReportOfTheNextDeviceConnection(t *testing.T) {
 // and what the Device Mux logs.
 func runMux(t *testing.T, srv *reporter, timings timing.Timings) (home, socket string, muxLog *syncBuffer) {
 	t.Helper()
+	skip.OnWindows(t, "no Device Mux runs on Windows until #153")
 	home = t.TempDir()
 	_, key, _ := ed25519.GenerateKey(rand.Reader)
 	staged, err := devicefiles.Stage(home, key)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/cieons/koko/internal/server/filesystem"
 	"github.com/cieons/koko/internal/shared/install"
+	"github.com/cieons/koko/internal/shared/sockerr"
 )
 
 // socketDialWait bounds the dial that tells a stale socket from a live one.
@@ -103,7 +104,7 @@ func claimSocket(ctx context.Context, path string, log *slog.Logger) error {
 			"something answers on the socket %s, such as a koko server running already: stop it before starting another", path)}
 	case errors.Is(err, fs.ErrNotExist):
 		return nil
-	case !errors.Is(err, syscall.ECONNREFUSED):
+	case !sockerr.Is(err, syscall.ECONNREFUSED):
 		return fmt.Errorf("find whether a koko server answers on the socket %s, which is left as it is: %w", path, err)
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {

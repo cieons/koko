@@ -120,11 +120,9 @@ func (k knownServer) version(t *testing.T) string {
 func (k knownServer) golden(t *testing.T, name, out string) {
 	t.Helper()
 	harness.Golden(t, name, strings.NewReplacer(
-		`"data_dir": "`+k.dataDir+`"`, `"data_dir": "<data-dir>"`,
-		`"root_key_file": "`+k.keyFile+`"`, `"root_key_file": "<root-key-file>"`,
 		`"listen_port": `+k.port+",", `"listen_port": <port>,`,
 		`"version": "`+k.version(t)+`"`, `"version": "<version>"`,
-	).Replace(out))
+	).Replace(harness.Paths(out, k.dataDir, "<data-dir>", k.keyFile, "<root-key-file>")))
 }
 
 // goldenText checks what server show printed for people against
@@ -133,13 +131,11 @@ func (k knownServer) golden(t *testing.T, name, out string) {
 func (k knownServer) goldenText(t *testing.T, name, out string) {
 	t.Helper()
 	harness.Golden(t, name, strings.NewReplacer(
-		k.dataDir, "<data-dir>",
-		k.keyFile, "<root-key-file>",
 		rootKeyID(t, k.key), "rootkey_<1>",
 		harness.Address+":"+k.port, harness.Address+":<port>",
 		"Listen port:     "+k.port, "Listen port:     <port>",
 		"Version:         "+k.version(t), "Version:         <version>",
-	).Replace(out))
+	).Replace(harness.Paths(out, k.dataDir, "<data-dir>", k.keyFile, "<root-key-file>")))
 }
 
 // rootKeyID returns the id a Root Key file's content names, before its key.
@@ -712,7 +708,8 @@ func TestServerShowFailsOnAnOutcomeItCannotRead(t *testing.T) {
 	}
 	h := harness.Start(t, harness.Upgrade(server.Upgrade{OutcomeFile: outcome}))
 	h.Koko("server", "show", "--json").WantError(t, 1, "internal_error")
-	if !strings.Contains(h.Log(), outcome) {
+	// The log quotes the error, so a Windows path's separators are doubled.
+	if !strings.Contains(h.Log(), strings.Trim(strconv.Quote(outcome), `"`)) {
 		t.Errorf("the koko server's log does not name %s:\n%s", outcome, h.Log())
 	}
 }

@@ -81,7 +81,7 @@ func dir(home string) string {
 // checkHome refuses a home directory koko cannot place its files under.
 func checkHome(home string) error {
 	if !filepath.IsAbs(home) {
-		return fmt.Errorf("HOME is %q, not an absolute path, so koko cannot find this device's files in ~/%s", home, kokoDir)
+		return fmt.Errorf("%s is %q, not an absolute path, so koko cannot find this device's files in ~/%s", HomeVar, home, kokoDir)
 	}
 	return nil
 }
@@ -190,10 +190,11 @@ func (s *Staged) stage(key ed25519.PrivateKey) error {
 	return err
 }
 
-// makeDir makes ~/.ssh and ~/.ssh/koko/ under home, mode 0700, when they
-// are missing, and makes koko's own directory, never the user's ~/.ssh,
-// private even when it was there already. It returns the directories it
-// made, deepest last, those it made before failing included.
+// makeDir makes ~/.ssh and ~/.ssh/koko/ under home, private to this user
+// (mode 0700), when they are missing, and makes koko's own directory, never
+// a ~/.ssh that was there, private even when it was there already. It
+// returns the directories it made, deepest last, those it made before
+// failing included.
 func makeDir(home string) (made []string, err error) {
 	for _, d := range []string{filepath.Dir(dir(home)), dir(home)} {
 		err := os.Mkdir(d, 0o700)
@@ -202,9 +203,16 @@ func makeDir(home string) (made []string, err error) {
 			made = append(made, d)
 		case !errors.Is(err, fs.ErrExist):
 			return made, fmt.Errorf("make %s: %w", d, err)
+		case d != dir(home):
+			continue
+		}
+		// Windows keeps no mode, so a directory just made is not private
+		// yet there.
+		if err := restrict(d, 0o700); err != nil {
+			return made, err
 		}
 	}
-	return made, restrict(dir(home), 0o700)
+	return made, nil
 }
 
 // Commit completes the join with the client config c: it puts the key in
@@ -437,14 +445,21 @@ func (s *Staged) Abort() {
 	s.made = nil
 }
 
-// writeTemp writes data to a new file in dir, readable by its owner only,
-// named after pattern as os.CreateTemp names one, and returns its path.
+// writeTemp writes data to a new file in dir, private to this user before
+// it holds a byte, named after pattern as os.CreateTemp names one, and
+// returns its path.
 func writeTemp(dir, pattern string, data []byte) (string, error) {
 	f, err := os.CreateTemp(dir, pattern) // mode 0600
 	if err != nil {
 		return "", err
 	}
-	_, err = f.Write(data)
+	// Windows keeps no mode: there the new file has what dir passes on
+	// until restrict has run. For the key, dir is koko's own directory,
+	// private already, so nobody else could open the file in between; the
+	// one file written elsewhere, ~/.ssh/config, holds no secret.
+	if err = restrict(f.Name(), 0o600); err == nil {
+		_, err = f.Write(data)
+	}
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}

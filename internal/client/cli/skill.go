@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/build"
 	"github.com/cieons/koko/internal/shared/record"
@@ -540,9 +541,9 @@ func (s skillInstalledJSON) Human(w io.Writer) error {
 func skillInstall(_ context.Context, in *Input) (skillInstalledJSON, error) {
 	dir := in.Flag("dir")
 	if dir == "" {
-		home := in.inv.getenv("HOME")
+		home := in.inv.home()
 		if home == "" {
-			return skillInstalledJSON{}, usagef("HOME is not set, so koko cannot find ~/.claude/skills: give --dir <dir>")
+			return skillInstalledJSON{}, usagef("%s is not set, so koko cannot find ~/.claude/skills: give --dir <dir>", devicefiles.HomeVar)
 		}
 		dir = filepath.Join(home, ".claude", "skills")
 	}

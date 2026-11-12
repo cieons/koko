@@ -114,7 +114,7 @@ func (in *Input) spawnDeviceMux(ctx context.Context, socket string) (exited <-ch
 // report it sends at once, and notes the state it answered in, for koko
 // status. One of another home fails wrapping errDirect.
 func (in *Input) dialDeviceMuxAt(ctx context.Context, socket string) (serverconn.Conn, error) {
-	conn, state, err := devicemux.Dial(ctx, socket, in.inv.getenv("HOME"))
+	conn, state, err := devicemux.Dial(ctx, socket, in.inv.home())
 	switch {
 	case errors.Is(err, devicemux.ErrOtherHome):
 		return nil, fmt.Errorf("%w: %w", errDirect, err)
@@ -164,7 +164,7 @@ func (r *Runner) runDeviceMux(ctx context.Context, inv *Invocation) int {
 	}
 	socket, err := devicemux.Socket(inv.getenv)
 	if err == nil {
-		err = devicemux.Run(ctx, devicemux.Config{Home: inv.getenv("HOME"), Socket: socket, Log: log, Timings: r.Timings})
+		err = devicemux.Run(ctx, devicemux.Config{Home: inv.home(), Socket: socket, Log: log, Timings: r.Timings})
 	}
 	if err != nil {
 		log.Error("the Device Mux cannot run", "err", err)

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -60,6 +61,51 @@ func Golden(t testing.TB, name, got string) {
 	}
 	if got != string(want) {
 		t.Errorf("output differs from %s (run go test -update to accept it)\ngot:\n%s\nwant:\n%s", path, got, want)
+	}
+}
+
+// Paths returns text with each path of the path, name pairs replaced by
+// its name, such as home, "<home>", for a golden file that holds the name:
+// the path as it is, as JSON writes it, and as koko's ssh_config writes it,
+// with forward slashes. On Windows the last two differ from the first, and
+// what follows the path in the same word, as in <home>\.ssh\koko, is given
+// forward slashes, so that one golden file holds on every OS. Give a path
+// before a path it starts with.
+func Paths(text string, pairs ...string) string {
+	for i := 0; i+1 < len(pairs); i += 2 {
+		path, name := pairs[i], pairs[i+1]
+		seen := map[string]bool{}
+		for _, form := range []struct{ path, sep string }{
+			{strings.ReplaceAll(path, `\`, `\\`), strings.Repeat(string(filepath.Separator), 2)},
+			{path, string(filepath.Separator)},
+			{filepath.ToSlash(path), "/"},
+		} {
+			if !seen[form.path] {
+				seen[form.path] = true
+				text = replacePath(text, form.path, form.sep, name)
+			}
+		}
+	}
+	return text
+}
+
+// replacePath replaces each path in text by name, and each sep in the rest
+// of its word by a forward slash.
+func replacePath(text, path, sep, name string) string {
+	var b strings.Builder
+	for {
+		before, rest, found := strings.Cut(text, path)
+		b.WriteString(before)
+		if !found {
+			return b.String()
+		}
+		b.WriteString(name)
+		end := strings.IndexAny(rest, " \t\r\n\"'")
+		if end < 0 {
+			end = len(rest)
+		}
+		b.WriteString(strings.ReplaceAll(rest[:end], sep, "/"))
+		text = rest[end:]
 	}
 }
 

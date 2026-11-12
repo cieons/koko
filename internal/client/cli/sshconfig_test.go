@@ -44,7 +44,7 @@ func kokoSSHConfig(t *testing.T, d *harness.Device) string {
 		t.Fatal(err)
 	}
 	b := readText(t, filepath.Join(kokoDir(d), "ssh_config"))
-	return strings.NewReplacer(koko, "<koko>", d.Home(), "<home>").Replace(b)
+	return harness.Paths(b, koko, "<koko>", d.Home(), "<home>")
 }
 
 // A join sets up ssh: it writes koko's own ssh_config (0600: the Host *.koko
@@ -64,9 +64,10 @@ func TestJoinSetsUpSSH(t *testing.T) {
 		t.Errorf("~/.ssh/config = %q, want the Include line alone", got)
 	}
 	for _, f := range []string{userSSHConfig(d), filepath.Join(kokoDir(d), "ssh_config"), filepath.Join(kokoDir(d), "known_hosts")} {
-		if m := mode(t, f); !m.IsRegular() || m.Perm() != 0o600 {
-			t.Errorf("%s has mode %v, want a file with 0600", f, m)
+		if m := mode(t, f); !m.IsRegular() {
+			t.Errorf("%s has mode %v, want a file", f, m)
 		}
+		harness.WantPrivate(t, f)
 	}
 	harness.Golden(t, "join-ssh_config", kokoSSHConfig(t, d))
 
@@ -126,24 +127,57 @@ func includeWarning(t *testing.T, r harness.Result) *string {
 	return out.IncludeWarning
 }
 
+// A join makes ~/.ssh/koko private to this user even when it was there
+// before and other users could read it, and every file it holds after the
+// join is private: mode 0700 and 0600, or on Windows a protected access
+// control list for this user, SYSTEM and Administrators only, with nothing
+// inherited (ADR 0051).
+func TestJoinMakesItsDirectoryPrivateThoughItWasOpenBefore(t *testing.T) {
+	t.Parallel()
+	h := harness.Start(t)
+	d, _ := joinWith(t, h, func(d *harness.Device) {
+		if err := os.Mkdir(kokoDir(d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		harness.LetOthersIn(t, kokoDir(d))
+	})
+	harness.WantPrivate(t, kokoDir(d))
+	entries, err := os.ReadDir(kokoDir(d))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+		harness.WantPrivate(t, filepath.Join(kokoDir(d), e.Name()))
+	}
+	if want := []string{"client.json", "device_key", "known_hosts", "ssh_config"}; !slices.Equal(names, want) {
+		t.Errorf("~/.ssh/koko holds %q after a join, want %q", names, want)
+	}
+}
+
 // A ~/.ssh/config of the user's own gets the Include line as its first
-// line, then its bytes as they were, keeping its mode; one that includes
+// line, then its bytes as they were, keeping who may reach it (its mode, or
+// on Windows its access control list); one that includes
 // koko's ssh_config already, however written, is left byte for byte, and
 // join warns, as koko status does, when that line comes below a Host line.
 func TestJoinPutsTheIncludeLineFirst(t *testing.T) {
 	t.Parallel()
 	h := harness.Start(t)
 	const own = "Host *\n  ServerAliveInterval 60\n\nHost github.com\n  User git"
+	var access string
 	d, r := joinWith(t, h, func(d *harness.Device) {
-		if err := os.WriteFile(userSSHConfig(d), []byte(own), 0o640); err != nil {
+		if err := os.WriteFile(userSSHConfig(d), []byte(own), 0o600); err != nil {
 			t.Fatal(err)
 		}
+		harness.LetOthersIn(t, userSSHConfig(d))
+		access = harness.Access(t, userSSHConfig(d))
 	}, "--json")
 	if got := readText(t, userSSHConfig(d)); got != includeLine+"\n"+own {
 		t.Errorf("~/.ssh/config = %q, want the Include line, then the file as it was", got)
 	}
-	if m := mode(t, userSSHConfig(d)); m.Perm() != 0o640 {
-		t.Errorf("~/.ssh/config has mode %v, want 0640 as it was", m)
+	if got := harness.Access(t, userSSHConfig(d)); got != access {
+		t.Errorf("~/.ssh/config may be reached as %s, want %s as it was", got, access)
 	}
 	if w := includeWarning(t, r); w != nil {
 		t.Errorf("join warns %q", *w)
@@ -272,7 +306,7 @@ func TestJoinRefusesAHomeSSHWouldMisreadBeforeSpendingTheCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := cli.Runner{SocketPath: filepath.Join(harness.ShortTempDir(t), "koko.sock")}
-	r := harness.Run(t, runner, []string{"HOME=" + home}, "join", jc.Code, "--json")
+	r := harness.Run(t, runner, []string{harness.HomeEnv(home)}, "join", jc.Code, "--json")
 	if msg := r.WantError(t, 1, "internal_error"); !strings.Contains(msg, "the Join Code stays usable") || !strings.Contains(msg, `holds '%'`) {
 		t.Errorf("join under %s says %q, want why, and that the code stays usable", home, msg)
 	}

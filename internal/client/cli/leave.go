@@ -50,7 +50,7 @@ func (l leftJSON) Human(w io.Writer) error {
 // (devicefiles.Leave). A Device Mux that does not stop leaves the device
 // joined.
 func leave(ctx context.Context, in *Input) (leftJSON, error) {
-	home := in.inv.getenv("HOME")
+	home := in.inv.home()
 	c, err := devicefiles.ReadConfig(home)
 	switch {
 	case errors.Is(err, devicefiles.ErrNotJoined):

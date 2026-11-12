@@ -11,6 +11,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/harness/skip"
 	"github.com/cieons/koko/internal/harness/sshhost"
 	"github.com/cieons/koko/internal/shared/timing"
 )
@@ -199,6 +200,7 @@ func TestExecExits255WhenKokoItselfFails(t *testing.T) {
 // does, and names the signal, which the koko server logs too.
 func TestExecExits255WhenASignalEndsTheCommand(t *testing.T) {
 	t.Parallel()
+	skip.OnWindows(t, "a Unix signal ends the command: Windows has none to send a process, or to tell from an exit status")
 	h := harness.Start(t)
 	managedHost(t, h, "web1")
 	wantRefused(t, h.Koko("exec", "web1", "kill -TERM $$"), "koko: the command on web1 was ended by SIGTERM\n")

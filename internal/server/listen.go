@@ -15,6 +15,7 @@ import (
 	"github.com/cieons/koko/internal/server/transport"
 	"github.com/cieons/koko/internal/shared/install"
 	"github.com/cieons/koko/internal/shared/portowner"
+	"github.com/cieons/koko/internal/shared/sockerr"
 )
 
 // tcpListener is the koko server's TCP listener, where devices reach it over
@@ -48,7 +49,7 @@ func (l *tcpListener) bind(ctx context.Context) error {
 	}
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "tcp", l.addr)
-	if errors.Is(err, syscall.EADDRINUSE) {
+	if sockerr.Is(err, syscall.EADDRINUSE) {
 		return listenAddressTaken(ctx, l.addr)
 	}
 	if err != nil {

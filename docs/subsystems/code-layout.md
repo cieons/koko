@@ -203,14 +203,32 @@ its own only when an agent would act on it differently.
     by build tags (`_linux.go`, `_darwin.go`, `_windows.go` or a `//go:build`
     line), never inline: the Device Mux socket and its same-user check, the
     route-change watch, the port-owner lookup, opening a browser, file
-    permissions, the terminal (`golang.org/x/term` already splits it per OS,
-    Windows included though untested until P1, so koko adds no files of its
-    own), and signal forwarding. A ticket that adds one writes the Linux and
-    macOS implementations the specs ask for, plus a Windows file that
-    compiles and returns a "not supported on Windows" error. `make cross`
-    compiles `windows/amd64` (compile only; a Windows CLI is P1). The server group runs
-    on Linux only (and on macOS in tests), so it needs no per-OS files;
-    `cmd/kokod`'s `main_linux.go` and `main_other.go` are the pattern.
+    permissions (on Windows an access control list), the name of the home
+    directory's variable, which error number a socket call failed with
+    (`sockerr`), the terminal (`golang.org/x/term` already splits it per OS,
+    so koko adds no files of its own), and signal forwarding. A ticket that
+    adds one writes the Linux, macOS and Windows implementations
+    ([ADR 0051](../adr/0051-on-windows-the-cli-is-a-device-with-the-same-files-in-the-same-places.md));
+    the seams that still return "not supported on Windows" (the Device Mux,
+    opening a browser) get theirs in the tickets of
+    [#151](https://github.com/cieons/koko/issues/151). `make cross` compiles
+    `windows/amd64`, `make lint` lints it, and the `windows` CI job runs the
+    client group's tests there
+    ([the `windows` job](release.md#the-windows-job)). The server group runs
+    on Linux only, on macOS in tests, and on Windows inside the CLI's tests,
+    which start the koko server in the test process: where its code meets
+    Windows there it has a per-OS file (`store`'s `sync_unix.go` and
+    `sync_other.go`), and `kokod` itself still refuses to start
+    (`cmd/kokod`'s `main_linux.go` and `main_other.go`).
+    **A test that cannot hold on Windows** calls `skip.OnWindows(t, reason)`
+    ([`internal/harness/skip`](../../internal/harness/skip/skip.go)), in the
+    test or in the helper its kind shares, and never skips silently;
+    `TestTheTestsLeftOutOnWindowsAreCounted` counts the call sites, so a new
+    one raises the count in view. A test of a private file asks
+    `harness.WantPrivate`, which reads the mode on Linux and macOS and the
+    access control list on Windows; a test names the home directory's
+    variable through `harness.HomeEnv`, and a path in a golden file through
+    `harness.Paths`.
 
 ## Test-only hooks
 
@@ -469,7 +487,9 @@ count its connections. It runs a session's command as sshd does: an exec
 request through `/bin/sh -c`, a shell request as `/bin/sh` reading its
 stdin, and a subsystem that a `Subsystem(name, command)` option names
 through `/bin/sh -c`; each a local process in the Host Account's home
-directory (`Home()`) with `HOME` set to it, the variables of the session's
+directory (`Home()`) with `HOME` set to it (on Windows the shell is the
+`sh.exe` of Git for Windows, found on PATH, and a test that runs a command
+fails naming it when there is none), the variables of the session's
 `env` requests and `TERM` from its `pty-req` (it allocates no terminal), its
 stdio on the channel. It sends the exit status, or `exit-signal` when a
 signal ended the command, sends the command a `signal` request's signal,

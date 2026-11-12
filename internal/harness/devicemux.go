@@ -13,6 +13,7 @@ import (
 	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/client/devicemux"
 	"github.com/cieons/koko/internal/client/serverconn"
+	"github.com/cieons/koko/internal/harness/skip"
 	"github.com/cieons/koko/internal/shared/timing"
 )
 
@@ -38,6 +39,7 @@ type muxes struct {
 // MuxLog, and stop when the test ends.
 func NewMuxDevice(t testing.TB, timings timing.Timings) *Device {
 	t.Helper()
+	skip.OnWindows(t, "no Device Mux runs on Windows until #153, so the device's commands would go direct")
 	d := NewDevice(t)
 	m := &muxes{runtime: ShortTempDir(t), log: &syncBuffer{}}
 	d.muxes = m

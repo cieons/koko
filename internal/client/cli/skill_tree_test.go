@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/record"
 )
@@ -33,7 +34,7 @@ func runOffline(t *testing.T, args ...string) (stdout, stderr string, status int
 		Stdin:  strings.NewReader(""),
 		Stdout: &out,
 		Stderr: &errs,
-		Env:    []string{"HOME=" + t.TempDir()},
+		Env:    []string{devicefiles.HomeVar + "=" + t.TempDir()},
 	})
 	return out.String(), errs.String(), status
 }
@@ -595,8 +596,10 @@ func TestCompletionInBash(t *testing.T) {
 				choice := f.Choices[len(f.Choices)-1]
 				lines = append(lines, line{slices.Concat([]string{"koko"}, w, []string{"--" + f.Name, choice[:1]}), choice})
 			case f.Value == "file":
-				typed := filepath.Join(dir, "no")
-				lines = append(lines, line{slices.Concat([]string{"koko"}, w, []string{"--" + f.Name, typed}), filepath.Join(dir, "note.txt")})
+				// With forward slashes, as bash on Windows (Git Bash) takes
+				// a path: a backslash is its escape character.
+				typed := filepath.ToSlash(filepath.Join(dir, "no"))
+				lines = append(lines, line{slices.Concat([]string{"koko"}, w, []string{"--" + f.Name, typed}), filepath.ToSlash(filepath.Join(dir, "note.txt"))})
 			}
 		}
 		for j, a := range c.Args {

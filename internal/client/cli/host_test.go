@@ -599,7 +599,7 @@ func TestTheNoteComesFromAFileOrStdin(t *testing.T) {
 	}
 
 	calls := h.Calls()
-	onTerminal := harness.Run(t, cli.Runner{SocketPath: h.Socket(), Terminal: noteTerminal{}}, []string{"HOME=" + t.TempDir()},
+	onTerminal := harness.Run(t, cli.Runner{SocketPath: h.Socket(), Terminal: noteTerminal{}}, []string{harness.HomeEnv(t.TempDir())},
 		"host", "set", "web1", "--note-file", "-", "--json")
 	onTerminal.WantError(t, 2, "invalid_usage")
 	for _, note := range []string{"", strings.Repeat("a", 64<<10+1), "nul\x00byte", "\xff\xfe"} {

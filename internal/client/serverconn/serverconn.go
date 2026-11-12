@@ -16,7 +16,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -82,6 +84,11 @@ func DialSocket(ctx context.Context, path string) (Conn, error) {
 	var d net.Dialer
 	nc, err := d.DialContext(ctx, "unix", path)
 	if err != nil {
+		// Windows refuses a connection to a path that holds nothing, where
+		// Linux and macOS say that it does not exist.
+		if _, statErr := os.Lstat(path); !errors.Is(err, fs.ErrNotExist) && errors.Is(statErr, fs.ErrNotExist) {
+			return nil, fmt.Errorf("%w (%w)", err, statErr)
+		}
 		return nil, err
 	}
 	conn, err := Handshake(ctx, nc, path, &ssh.ClientConfig{

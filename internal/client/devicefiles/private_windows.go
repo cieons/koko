@@ -1,26 +1,201 @@
 package devicefiles
 
 import (
-	"errors"
+	"fmt"
 	"io/fs"
+	"os"
+	"slices"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
-// restrict would make path private to this OS user. Windows keeps that in
-// ACLs, which the Windows CLI (P1) will set; until then a device cannot keep
-// a join there.
-func restrict(string, fs.FileMode) error {
-	return errors.New("joining a koko server is not supported on Windows yet: koko cannot make its files private to this user there")
+// HomeVar names the environment variable that holds the home directory:
+// on Windows the profile directory, where OpenSSH for Windows takes the home
+// from too. HOME is never read there (ADR 0051).
+const HomeVar = "USERPROFILE"
+
+// fullControl is every right a file or a directory has (FILE_ALL_ACCESS),
+// the one access mask of a private file's list.
+const fullControl windows.ACCESS_MASK = windows.STANDARD_RIGHTS_ALL | 0x1FF
+
+// principals returns the three principals a private file gives full control,
+// and no other any access: this process's user, SYSTEM and Administrators,
+// those OpenSSH for Windows itself accepts on a private key (ADR 0051). A
+// user who is one of the other two is listed once.
+func principals() (me *windows.SID, all []*windows.SID, err error) {
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return nil, nil, fmt.Errorf("find this process's user: %w", err)
+	}
+	me = user.User.Sid
+	all = []*windows.SID{me}
+	for _, known := range []windows.WELL_KNOWN_SID_TYPE{windows.WinLocalSystemSid, windows.WinBuiltinAdministratorsSid} {
+		sid, err := windows.CreateWellKnownSid(known)
+		if err != nil {
+			return nil, nil, fmt.Errorf("find a well-known principal: %w", err)
+		}
+		if !slices.ContainsFunc(all, sid.Equals) {
+			all = append(all, sid)
+		}
+	}
+	return me, all, nil
 }
 
-// writable would tell whether koko may rewrite the user's file at path.
-// Until the Windows CLI (P1) reads ACLs, koko rewrites none there.
-func writable(string, fs.FileInfo) bool {
-	return false
+// restrict makes path private to this OS user, where Linux and macOS set
+// mode 0700 or 0600: its owner becomes this user, and its access control
+// list a protected one, which inherits nothing, with full control for this
+// user, SYSTEM and Administrators. A directory's entries pass to what is
+// made in it. The mode is not read: Windows keeps none.
+func restrict(path string, _ fs.FileMode) error {
+	if err := setPrivate(path); err != nil {
+		return fmt.Errorf("make %s private to this user: %w", path, err)
+	}
+	return nil
 }
 
-// ownedByMe would tell whether this process's user owns the file fi
-// describes. Windows keeps that in ACLs, which the Windows CLI (P1) will
-// read; until then koko leaves such a file alone.
-func ownedByMe(fs.FileInfo) bool {
-	return false
+func setPrivate(path string) error {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	me, all, err := principals()
+	if err != nil {
+		return err
+	}
+	var inherit uint32 = windows.NO_INHERITANCE
+	if fi.IsDir() {
+		inherit = windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT
+	}
+	entries := make([]windows.EXPLICIT_ACCESS, 0, len(all))
+	for _, sid := range all {
+		entries = append(entries, windows.EXPLICIT_ACCESS{
+			AccessPermissions: fullControl,
+			AccessMode:        windows.GRANT_ACCESS,
+			Inheritance:       inherit,
+			Trustee: windows.TRUSTEE{
+				TrusteeForm:  windows.TRUSTEE_IS_SID,
+				TrusteeType:  windows.TRUSTEE_IS_UNKNOWN,
+				TrusteeValue: windows.TrusteeValueFromSID(sid),
+			},
+		})
+	}
+	acl, err := windows.ACLFromEntries(entries, nil)
+	if err != nil {
+		return fmt.Errorf("build its access control list: %w", err)
+	}
+	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		me, nil, acl, nil)
+}
+
+// isPrivate tells whether the file at path is as restrict leaves one, where
+// Linux and macOS ask for mode 0600: this user owns it, and its list is
+// protected and holds exactly one entry of its own for each of the three
+// principals, allowing full control. A file koko cannot look at is not.
+func isPrivate(path string, _ fs.FileInfo) bool {
+	me, all, err := principals()
+	if err != nil {
+		return false
+	}
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return false
+	}
+	owner, _, err := sd.Owner()
+	if err != nil || owner == nil || !owner.Equals(me) {
+		return false
+	}
+	control, _, err := sd.Control()
+	if err != nil || control&windows.SE_DACL_PROTECTED == 0 {
+		return false
+	}
+	// A nil list would let everyone in.
+	dacl, _, err := sd.DACL()
+	if err != nil || dacl == nil || int(dacl.AceCount) != len(all) {
+		return false
+	}
+	for i := range uint32(dacl.AceCount) {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		if err := windows.GetAce(dacl, i, &ace); err != nil {
+			return false
+		}
+		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Header.AceFlags&windows.INHERITED_ACE != 0 || ace.Mask != fullControl {
+			return false
+		}
+		// Each principal once: the count is theirs, so none is missing.
+		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+		at := slices.IndexFunc(all, sid.Equals)
+		if at < 0 {
+			return false
+		}
+		all = slices.Delete(all, at, at+1)
+	}
+	return true
+}
+
+// keepAccess gives the new file tmp the access the user's file at path has,
+// which tmp is about to replace, where Linux and macOS copy the mode: path's
+// access control list, protected or inheriting as it is. koko rewrites the
+// user's file without changing who may read or write it.
+func keepAccess(tmp, path string, _ fs.FileInfo) error {
+	info, dacl, err := accessOf(path)
+	if err != nil {
+		return fmt.Errorf("read the access control list of %s: %w", path, err)
+	}
+	if err := windows.SetNamedSecurityInfo(tmp, windows.SE_FILE_OBJECT, info, nil, nil, dacl, nil); err != nil {
+		return fmt.Errorf("give %s the access control list of %s: %w", tmp, path, err)
+	}
+	return nil
+}
+
+// accessOf reads the access control list of the file at path, and how to
+// set it on another file as it is here: protected, or inheriting.
+func accessOf(path string) (windows.SECURITY_INFORMATION, *windows.ACL, error) {
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return 0, nil, err
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return 0, nil, err
+	}
+	control, _, err := sd.Control()
+	if err != nil {
+		return 0, nil, err
+	}
+	if control&windows.SE_DACL_PROTECTED != 0 {
+		return windows.DACL_SECURITY_INFORMATION | windows.PROTECTED_DACL_SECURITY_INFORMATION, dacl, nil
+	}
+	return windows.DACL_SECURITY_INFORMATION | windows.UNPROTECTED_DACL_SECURITY_INFORMATION, dacl, nil
+}
+
+// ownedByMe tells whether this process's user owns the file at path: its
+// owner is this user, or Administrators when this process holds that group
+// enabled, since Windows makes Administrators the owner of what an elevated
+// process creates. A file koko cannot look at is not.
+func ownedByMe(path string, _ fs.FileInfo) bool {
+	me, _, err := principals()
+	if err != nil {
+		return false
+	}
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return false
+	}
+	owner, _, err := sd.Owner()
+	if err != nil || owner == nil {
+		return false
+	}
+	if owner.Equals(me) {
+		return true
+	}
+	if !owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) {
+		return false
+	}
+	// The zero Token asks about this thread's own, and counts a group only
+	// when it is enabled there.
+	elevated, err := windows.Token(0).IsMember(owner)
+	return err == nil && elevated
 }

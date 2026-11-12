@@ -3,7 +3,9 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,7 +138,13 @@ func TestSecretInputFromAFileThatCannotBeRead(t *testing.T) {
 	t.Parallel()
 	file := filepath.Join(t.TempDir(), "missing")
 	_, _, err := readSecret(t, secretValue, untouchedStdin{t}, nil, "secret", "add", "ops/db-password", "--from-file", file)
-	wantRefused(t, err, "cannot read --from-file "+file+": no such file or directory")
+	// In the OS's own words: "no such file or directory" on Linux and macOS.
+	_, missing := os.Stat(file)
+	notThere, ok := errors.AsType[*fs.PathError](missing)
+	if !ok {
+		t.Fatalf("%s is there, or cannot be looked at: %v", file, missing)
+	}
+	wantRefused(t, err, "cannot read --from-file "+file+": "+notThere.Err.Error())
 }
 
 // A Secret value is read from stdin whenever stdin is not a terminal: a

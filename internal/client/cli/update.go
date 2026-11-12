@@ -100,7 +100,7 @@ func (in *Input) updateTarget(k Kokod) (updateTarget, error) {
 		}
 		return updateTarget{file: exe, path: root, shown: root}, nil
 	}
-	if home := in.inv.getenv("HOME"); filepath.IsAbs(home) && !k.RunsAsRoot() &&
+	if home := in.inv.home(); filepath.IsAbs(home) && !k.RunsAsRoot() &&
 		exe == resolvedFile(filepath.Join(home, userKokoDir), "koko") {
 		return updateTarget{file: exe, path: filepath.Join(home, userKokoDir, "koko"), shown: "~/" + userKokoDir + "/koko"}, nil
 	}
@@ -169,7 +169,7 @@ func (in *Input) updateTo(ctx context.Context, k Kokod, t updateTarget, tag stri
 		return updateJSON{}, fmt.Errorf("replace %s: %w%s", t.path, err, nothingChanged)
 	}
 	out.updated = true
-	if _, err := devicefiles.PointProxyCommand(in.inv.getenv("HOME"), t.path); err != nil {
+	if _, err := devicefiles.PointProxyCommand(in.inv.home(), t.path); err != nil {
 		in.log.Debug("koko update left koko's ssh_config as it was", "err", err)
 	}
 	return out, nil
@@ -190,7 +190,7 @@ func (in *Input) pointSSHAtSelf() {
 	if err != nil {
 		return
 	}
-	if _, err := devicefiles.PointProxyCommand(in.inv.getenv("HOME"), t.path); err != nil {
+	if _, err := devicefiles.PointProxyCommand(in.inv.home(), t.path); err != nil {
 		in.log.Debug("koko left koko's ssh_config's ProxyCommand as it was", "err", err)
 	}
 }
