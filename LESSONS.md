@@ -207,6 +207,19 @@ beside a way out.
 **Evidence:** c9681cd (#172), found by the ticket's review before its
 second slice; the fix in that slice's commit
 
+### The web UI reads and writes the browser's storage only where a refusal is caught
+
+**Why:** the rail read whether it was folded from `localStorage` in the
+frame's first render with no `try`, though the language, the mode, a
+list's view and the release's Later each catch a refusal and remember
+nothing. A browser that refuses site storage throws `SecurityError` there,
+so every page in the frame would have shown nothing. Read and write it
+through a guarded helper, as `storedMode` does, and test the frame with a
+storage that throws.
+**Seen:** 1 (2026-11-12)
+**Evidence:** 6ca3d57 (#182), found by the ticket's review; fixed by
+b9e663c
+
 ## Moved to the code standards
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128, #147; check run 42951455550).
