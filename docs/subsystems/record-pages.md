@@ -13,7 +13,7 @@ UI shows it ([`lazyPage`](web-shell.md#pages-and-routing)).
 ## The Hosts list
 
 [`HostsPage`](../../web/src/pages/host/HostsPage.tsx), at `/hosts`, the
-first place of the top bar, so `/` goes to it. Anyone sees it: it lists
+first place of the frame, so `/` goes to it. Anyone sees it: it lists
 what `host.list` answers the caller, so a Member sees the Hosts of their
 Spaces alone, as `koko host ls` shows them.
 
@@ -174,7 +174,7 @@ grammar" says:
 **The view remembered.** The browser keeps the last view of the Hosts
 view and of the Services view, each on its own, for each User
 ([a list remembers its view](web-shell.md#pages-and-routing)): `/hosts`
-with no query, from the top bar, a new tab, a link or Sign in, is replaced
+with no query, from the rail, a new tab, a link or Sign in, is replaced
 by the Hosts view remembered, and `/hosts?view=services` alone, which
 `/services` goes to, by the Services view remembered. A URL with a view
 wins and is remembered in its place. **Reset view**, at the end of the row

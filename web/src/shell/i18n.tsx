@@ -4,7 +4,7 @@ import { ApiError, DroppedError, UnreachableError } from "../client";
 import { catalogues, type Language, languages, type MessageKey } from "../i18n/catalogues";
 
 // Language: the web UI follows the browser's preferred languages until the
-// top bar's Language menu picks one, which the browser then remembers.
+// frame's Language menu picks one, which the browser then remembers.
 // Names, keys, values and Notes are never translated: they reach a message
 // only as its parameters, shown as stored.
 

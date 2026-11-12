@@ -8,6 +8,8 @@ export default {
   "shell.place.secrets": "Secrets",
   "shell.place.access": "Access",
   "shell.skip": "Skip to main content",
+  "shell.rail.collapse": "Collapse the side bar",
+  "shell.rail.expand": "Expand the side bar",
   "shell.language": "Language",
   "shell.language.current": "Language: {language}",
   "shell.language.en": "English",

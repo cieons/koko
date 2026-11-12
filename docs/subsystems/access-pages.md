@@ -87,7 +87,7 @@ says so.
 (through `koko web` on a device, a Sign-in, or the Local caller), with
 Sign out by the title for a Sign-in; the Password, changed there for a
 Sign-in and otherwise one sentence saying where; This browser, Language
-and Appearance as segments that set what the top bar's menus set; the
+and Appearance as segments that set what the frame's menus set; the
 caller's devices; their Browser Sign-ins; and their Personal Space. The
 account panel links to it.
 
@@ -231,7 +231,7 @@ koko server whose writes change what it answers
 - [`devices.test.tsx`](../../web/src/pages/device/devices.test.tsx): a
   Member's Account, its devices and Personal Space, and no Owner-only
   control; the account panel's link; a Sign-in's and the Local caller's
-  Account, no device marked; This browser mirroring the top bar; "Show
+  Account, no device marked; This browser mirroring the frame; "Show
   Revoked devices" as `all=1`; `/devices` to Account; Add device for
   oneself, on a desktop and a phone, and refused; Revoke asking first,
   stating the consequence, the focus then on the list's heading; the

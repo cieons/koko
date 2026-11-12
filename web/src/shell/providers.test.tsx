@@ -5,7 +5,7 @@ import { expect, test } from "vitest";
 import { type User, UserCurrent } from "../api/user";
 import { fakeApi } from "../test/fakeApi";
 import { setSystemScheme } from "../test/media";
-import { chooseInTopBar } from "../test/pages";
+import { chooseInFrame } from "../test/pages";
 import { applyStoredMode, modes, useMode } from "./mode";
 import { type Route, useLocation } from "./router";
 import { Shell } from "./Shell";
@@ -138,7 +138,7 @@ test("React Aria's own strings follow koko's language: a dialog's close label in
   renderShell("/dialog");
   expect(await screen.findByRole("button", { name: "Dismiss" })).toBeDefined();
 
-  await chooseInTopBar("Language", "简体中文");
+  await chooseInFrame("Language", "简体中文");
   expect(await screen.findByRole("button", { name: "取消" })).toBeDefined();
   expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
 });

@@ -1,8 +1,8 @@
 # The web UI shell
 
 The frame every page of the web UI sits in, and the parts pages share: the
-top bar with its places, its Language and Appearance menus and the account
-panel, routing and who the web UI acts as, the language, the mode and the
+rail with its places, the account panel and the Language and Appearance
+menus, and the phone's top row and foot bar, routing and who the web UI acts as, the language, the mode and the
 catalogues, the API client, pages that load when first shown, the states
 every screen has, the dialogs and side panels, the confirmation, the
 fields, edit forms, reloading, what a page shows once, the notices,
@@ -39,22 +39,48 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
 
 - **A skip link**, "Skip to main content", is the first stop of Tab; it
   moves the focus to the main region, without changing the URL.
-- **The top bar**, sticky, holds koko's wordmark, a link to `/`; in the
-  centre, from 768 pixels wide, the places the caller may see, in a raised
-  track; and at its end ([`TopBar.tsx`](../../web/src/shell/TopBar.tsx))
-  the Language and Appearance buttons, each an icon button named for its
-  value ("Language: English", "Appearance: System") that opens a menu of
-  radio items, and, once `user.current` has answered, the account button,
-  named "Account: <name>", which opens the account panel.
+- **The rail**, on a desktop (768 pixels wide and more), is the frame's
+  banner (`<header>`), fixed down the start edge
+  ([`Rail.tsx`](../../web/src/shell/Rail.tsx)): koko's wordmark, a link to
+  `/`, and the fold button; the places the caller may see, in a navigation
+  named "Main"; and at its foot ([`controls.tsx`](../../web/src/shell/controls.tsx))
+  the account button, once `user.current` has answered, named
+  "Account: <name>", which opens the account panel upwards; and the
+  Language and Appearance buttons, each an icon button named for its value
+  ("Language: English", "Appearance: System") that opens a menu of radio
+  items. The terminal's section (#177) goes between the places and the
+  foot.
 - **The places** are the routes with a `nav` message, in the order of
   `routes`; the three of the design, Hosts, Secrets and Access, have their
   messages in the shell's catalogue (`shell.place.*`), and each comes back
-  to the top bar with its page. The one the URL is in, a page beneath its
-  path such as a Host's included, has `aria-current="page"`. A Member gets
-  no place whose route is `ownerOnly`.
-- **On a phone**, under 768 pixels wide, the places move to a bar fixed at
-  the foot, each with its Lucide icon (`Route.icon`) and its name, above
-  the safe area; the main region leaves room for it.
+  to the frame with its page. The one the URL is in, a page beneath its
+  path such as a Host's included, is raised and has
+  `aria-current="page"`. A Member gets no place whose route is
+  `ownerOnly`.
+- **Folding.** `useRail` holds the rail's state, which the frame's root
+  carries as `data-rail` (`open`, `folded`, or `none` on a phone):
+  - from 1280 pixels wide the rail is open unless the person folds it,
+    which the browser keeps in `localStorage` (`koko.rail`, `folded`);
+  - from 768 to 1279 pixels it is folded, and the fold button opens it
+    over the page, on the backdrop, until a visit (a place chosen), Escape
+    or a click beside it; Escape and the click give the focus back to the
+    fold button, and a menu or the account panel open in the rail takes
+    its own Escape first. While it lies over the page the page's column is
+    `inert`;
+  - folded, each place is its icon (`Route.icon`) alone, named by its
+    place, and the account button the User's initial alone; the names
+    stay those of the open rail. The fold button is named "Collapse the
+    side bar" or "Expand the side bar" and carries `aria-expanded`.
+- **`--rail-w`** is the room the rail takes beside the page, set by
+  `data-rail` in `theme.css`: 15.5rem open, 5rem folded and over the page,
+  0 on a phone. The page's column and the Select mode's bar
+  ([`BatchBar`](../../web/src/pages/batch/BatchBar.tsx)) leave it to the
+  rail, and so does the terminal's workspace (#177).
+- **On a phone**, under 768 pixels wide, the banner is a sticky top row:
+  the wordmark, then Language, Appearance and the account button, each an
+  icon. The places move to a bar fixed at the foot, each with its icon
+  and its name, above the safe area; the terminal's tab button (#177) is
+  to come first in it. The main region leaves room for both.
 - **The account panel** shows the User's initial, name and role, and how
   this browser reaches koko: "Through koko web on <device>" for a Device
   Session, "Signed in from <browser>" for a Sign-in, and "On the koko
@@ -65,15 +91,16 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   `/auth/signout` and goes to Sign in, replacing the history entry, its
   refusal shown in the panel. For the Owner, the koko server's line comes
   between them ([Releases](#releases)).
-- **The main region** (`<main id="main">`) holds the page, under the
+- **The main region** (`<main id="main">`) is the page's column, 76rem at
+  most, centred in the room beside the rail; it holds the page, under the
   release notice for the Owner ([Releases](#releases)). After a visit
   that leaves the focus on nothing, as when the link followed went with the
   page it was on, the focus moves to it; a visit that leaves the focus
   where it was, such as on a place, keeps it there.
 - **The document's title** is the page's own name, then koko ("web1 ·
   koko"): the page's head (`Page`, [Parts](#parts)) sets it.
-- **The notices** are one notice across the width under the top bar
-  ([Notices](#notices)).
+- **The notices** are one notice across the room beside the rail, at the
+  head of the page's column ([Notices](#notices)).
 - **A path with no page** shows "Page not found" in the frame, with one
   sentence and a link to the first place; so does a path only the Owner may
   open, to a Member.
@@ -82,7 +109,7 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
 - **The icon** of the browser's tab is `web/public/favicon.svg`, which
   `index.html` links, so the browser asks for no `/favicon.ico`.
   `index.html`'s viewport tag carries `viewport-fit=cover`, which lets the
-  phone's bar keep clear of the safe area.
+  phone's top row and foot bar keep clear of the safe area.
 
 ## Light and dark
 
@@ -103,10 +130,11 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
 
 - **A page is a path.** A [`Route`](../../web/src/shell/router.tsx) names a
   path (a `:name` segment matches any one segment, decoded, and reaches the
-  page as `params.name`), the page component, the message the top bar
-  links it under as a place (`nav`) and its Lucide icon in the phone's bar
-  (`icon`), whether only the Owner sees it (`ownerOnly`), and whether it
-  sits outside the frame (`outside`). The top bar
+  page as `params.name`), the page component, the message the frame
+  links it under as a place (`nav`) and its Lucide icon (`icon`), beside
+  the name in the open rail and the phone's foot bar and alone in the
+  folded rail, whether only the Owner sees it (`ownerOnly`), and whether it
+  sits outside the frame (`outside`). The frame
   links the places in the order of `routes` in
   [`web/src/routes.ts`](../../web/src/routes.ts), and `/` goes, keeping its
   query, to the first place the caller may see. A path no route
@@ -130,7 +158,7 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   keeps the last view each list showed in `localStorage`, under the User's
   id and the list's name (`koko.view.<user id>.<list>`): the Hosts view,
   the Services view, Secrets and the Owner's Access, each on its own. A URL with a view shows
-  it and is remembered; a URL with none, from the top bar, a new tab, a
+  it and is remembered; a URL with none, from the rail, a new tab, a
   link or Sign in, shows the view remembered and is replaced by it, so the
   URL still shows what is on screen. A history entry the page has shown as
   the default view is marked in its state, so Back to it, or its reload,
@@ -144,7 +172,7 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
 - **Outside the frame.** Sign in and Set a Password
   ([Sign-ins](signin.md#the-web-uis-pages)), which a browser opens before it
   is signed in on the web listener, are `outside` routes: the shell renders
-  them on their own, with no top bar and without asking `user.current`.
+  them on their own, with no rail and without asking `user.current`.
 - **A moved page.** A path a released koko served that has moved is a
   route whose page is `movedTo(to)`: it goes to the path `to` gives for its
   params, keeping its query and replacing the history entry.
@@ -156,7 +184,7 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
 ## Who the web UI acts as
 
 - **The account panel** shows the User and how this browser reaches koko,
-  and the top bar the places the caller may see.
+  and the rail the places the caller may see.
 - **It learns them from `user.current`**
   ([`api.UserCurrent`](../../internal/shared/api/user.go)), the operation
   `koko join` asks, so the web UI adds no operation of its own (ADR 0006). It
@@ -197,7 +225,7 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
 - **Choosing.** The first of the browser's preferred languages
   (`navigator.languages`) that the web UI ships wins: Chinese of any region
   gives Simplified Chinese, English gives English, and none gives English.
-  The top bar's Language menu overrides it, and the browser keeps the
+  The frame's Language menu overrides it, and the browser keeps the
   choice in `localStorage` (`koko.language`). `<html lang>` follows the
   language, and so do React Aria's own strings ([Providers](#providers)).
 - **Never translated.** Names, keys, values and Notes reach a message only as
@@ -374,7 +402,8 @@ issuing a Join Code never ask.
 ## Notices
 
 Every call's outcome reaches the shell (`observeCalls`), which shows one
-notice across the width under the top bar, announced as an alert, until
+notice across the room beside the rail, at the head of the page's column,
+announced as an alert, until
 what ends it ([`notice.ts`](../../web/src/shell/notice.ts)); it is not a
 toast:
 
@@ -596,7 +625,7 @@ query) and **a Space's panel** (`/access/spaces/<name>`, which
 | Action | Call | Who |
 | --- | --- | --- |
 | See who the web UI acts as and how this browser got in | `user.current` | anyone |
-| Choose the language and Light, Dark or System, as the top bar does | none | anyone |
+| Choose the language and Light, Dark or System, as the frame does | none | anyone |
 | List one's own Device Sessions, the Revoked ones when asked for, this one marked | `device.list` | anyone |
 | Add a device, with an optional name, valid for the time chosen, its Join Code shown once, with Copy and its countdown | `device.add` | anyone for themselves |
 | Revoke a live Device Session, asking first; the Owner's own last only once its name is typed, with `last` | `device.revoke` | anyone for their own |
@@ -625,9 +654,20 @@ alone ([Sign-ins](signin.md#the-web-uis-pages)):
   Testing Library against the [fake API](web-ui.md#testing-pages), with test
   pages of their own in the three places: the account panel for a Device
   Session, a Sign-in and the Local caller, and its Account link closing
-  it; the Owner's three places and the one the URL is in marked, a page beneath a place's path in it, a Member
-  given no Owner-only place and its path showing Page not found; on a
-  phone the places in the bar at the foot with their icons; `/` going to
+  it; the Owner's three places in the rail and the one the URL is in
+  marked, a page beneath a place's path in it, a Member
+  given no Owner-only place and its path showing Page not found; the open
+  rail naming each place beside its icon and the User with their role;
+  folding from 1280 pixels wide, each place and the account keeping its
+  name, the choice kept across a reload and opened again; under 1280
+  pixels the rail folded, opening over the page, the page inert and kept
+  in its room, and closing on Escape, a click beside it (the focus back on
+  the fold button each time) and a place chosen, and opening beside the
+  page once the window widens; Escape closing a menu and the account
+  panel open in the rail over the page, leaving the rail open; on a
+  phone the top row's wordmark, Language, Appearance and account, the
+  account panel from it, and the places in the bar at the foot with their
+  icons; `/` going to
   the first place, keeping the query; Page not found with its link to the
   first place, and with no page yet, on every path; the document's title;
   the skip link as the first stop of Tab, moving the focus to the main
@@ -635,12 +675,14 @@ alone ([Sign-ins](signin.md#the-web-uis-pages)):
   nothing, and kept on a place; the language from the browser's
   preferences, the Language menu overriding it and kept; Light, Dark and
   System from the Appearance menu, kept, System following the system; axe
-  on the frame, the account panel and both menus, light and dark, at a
-  desktop's and a phone's width; the three notices, revoking the web UI's
+  on the frame, the account panel and both menus, light and dark, with the
+  rail open, folded and over the page, and on a phone; the three notices,
+  the stopped one at the head of the page's column, revoking the web UI's
   own Device Session, a refusal ending the stopped notice; and
   `user.current` failing, with Try again.
 - [`release.test.tsx`](../../web/src/shell/release.test.tsx): the notice
-  for the Owner, with its notes' link, and axe; none for a Member, who
+  for the Owner, with its notes' link, at the head of the page's column,
+  and axe; none for a Member, who
   calls no `server.show` and has no koko server line, none with the check
   off or nothing newer, a development build included; Later per release,
   kept across a reload, and a newer release bringing it back; How to

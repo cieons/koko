@@ -44,7 +44,7 @@ test("Sign in is outside the frame, asks for the User name and Password the brow
   renderAt("/signin");
 
   expect(await screen.findByRole("heading", { level: 1, name: "Sign in" })).toBeDefined();
-  expect(screen.queryByRole("button", { name: /^Language:/ })).toBeNull(); // no top bar
+  expect(screen.queryByRole("button", { name: /^Language:/ })).toBeNull(); // no frame
   expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
   expect(field("User name").getAttribute("autocomplete")).toBe("username");
   expect(field("Password").getAttribute("autocomplete")).toBe("current-password");
@@ -206,7 +206,7 @@ test("a Password Link's page takes the secret out of the URL at once, and says w
   ).toBeDefined();
   expect(field("New Password").getAttribute("autocomplete")).toBe("new-password");
   expect(field("New Password, again").getAttribute("autocomplete")).toBe("new-password");
-  expect(screen.queryByRole("button", { name: /^Language:/ })).toBeNull(); // no top bar
+  expect(screen.queryByRole("button", { name: /^Language:/ })).toBeNull(); // no frame
   await expectAccessible();
 });
 

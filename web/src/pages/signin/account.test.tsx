@@ -5,7 +5,7 @@ import { AuthPassword, AuthSignOut, SignInList, SignInRevoke } from "../../api/s
 import { type User, UserCurrent } from "../../api/user";
 import { expectAccessible } from "../../test/axe";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
-import { actAs, alerts, preferLanguages, renderAt, topBarButton } from "../../test/pages";
+import { actAs, alerts, preferLanguages, renderAt, frameButton } from "../../test/pages";
 import { alice, bob, serve, world } from "../space/access.fixture";
 import { firefox, serveSignIns, signIn, signIns, type SignIns } from "./signins.fixture";
 
@@ -262,7 +262,7 @@ test("in Chinese each browser is named in Chinese, on Account, in Browser Sign-i
   fireEvent.click(within(dialog).getByRole("button", { name: "吊销" }));
   expect(await screen.findByText("来自 iPhone 上的 Safari 的登录会话已吊销。")).toBeDefined();
 
-  fireEvent.click(topBarButton("账户：bob"));
+  fireEvent.click(frameButton("账户：bob"));
   const panel = await screen.findByRole("dialog", { name: "账户：bob" });
   expect(within(panel).getByText("通过 Linux 上的 Firefox 登录")).toBeDefined();
 });
@@ -290,7 +290,7 @@ test("Sign out in the account panel ends this browser's Sign-in, and a failure s
     return {};
   });
 
-  fireEvent.click(topBarButton("Account: bob"));
+  fireEvent.click(frameButton("Account: bob"));
   const panel = await screen.findByRole("dialog", { name: "Account: bob" });
   fireEvent.click(within(panel).getByRole("button", { name: "Sign out" }));
   await waitFor(() =>
@@ -302,7 +302,7 @@ test("Sign out in the account panel ends this browser's Sign-in, and a failure s
 
   fireEvent.keyDown(panel, { key: "Escape" });
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "Account: bob" })).toBeNull());
-  fireEvent.click(topBarButton("Account: bob"));
+  fireEvent.click(frameButton("Account: bob"));
   const again = await screen.findByRole("dialog", { name: "Account: bob" });
   expect(within(again).queryByRole("alert")).toBeNull();
 

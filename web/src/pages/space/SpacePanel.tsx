@@ -5,9 +5,9 @@ import { type SpaceDetail, SpaceRemove, SpaceRename, SpaceShow } from "../../api
 import { UserList } from "../../api/user";
 import { useCaller } from "../../shell/caller";
 import { useRead, useWrite } from "../../shell/data";
+import { Initial } from "../../shell/controls";
 import { useCount, useT } from "../../shell/i18n";
 import { navigate, useLocation } from "../../shell/router";
-import { Initial } from "../../shell/TopBar";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Field, SearchChoices } from "../../ui/fields";
 import { useFocusFallback, useRowFocus } from "../../ui/focus";

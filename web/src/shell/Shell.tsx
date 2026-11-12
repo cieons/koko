@@ -15,17 +15,19 @@ import { useRead } from "./data";
 import { useT } from "./i18n";
 import { type Notice, useNotice } from "./notice";
 import { Providers } from "./providers";
+import { PhoneBar, PhoneTop, Rail, useRail } from "./Rail";
 import { ReleaseNotice, ReleaseProvider, useReleaseState } from "./release";
 import { matchRoute, navigate, type Route, signInPage, signInPath, useLocation } from "./router";
-import { AccountPanel, LanguageChoice, ModeChoice } from "./TopBar";
 
 /**
  * Shell is the frame every page sits in, inside the Providers
- * (docs/web-design.md, "The frame"): a skip link; the sticky top bar with
- * koko's wordmark, the places the caller may see and, at its end, Language,
- * Appearance and the account; the shell's notice under it; in the main
- * region, for the Owner, the notice of a newer koko release, then the page
- * the URL names; and on a phone the places in a bar at the foot.
+ * (docs/web-design.md, "The frame"): a skip link; on a desktop the rail down
+ * the start edge with koko's wordmark, the places the caller may see and, at
+ * its foot, the account, Language and Appearance; on a phone a top row with
+ * the wordmark and those three, and the places in a bar at the foot. In the
+ * room beside the rail, the page's column: the shell's notice at its head,
+ * then in the main region, for the Owner, the notice of a newer koko
+ * release, then the page the URL names.
  * It learns who the web UI acts as from user.current, reloaded as every
  * read is, and renders a page only once it knows, so a Member never sees an
  * Owner-only page or place.
@@ -77,6 +79,7 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
   const routes = all.filter((r) => !r.outside);
   useSignInWhenRequired();
   const phone = usePhone();
+  const rail = useRail();
   const userCurrent = useRead(UserCurrent, {});
   const caller = userCurrent.data && callerOf(userCurrent.data);
   const release = useReleaseState(caller?.owner === true);
@@ -98,66 +101,37 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
   return (
     <CallerContext value={caller}>
       <ReleaseProvider value={release}>
-        <div className="flex min-h-dvh flex-col">
+        <div className="min-h-dvh" data-rail={phone ? "none" : rail.state === "open" ? "open" : "folded"}>
           <a
             href="#main"
             onClick={skip}
-            className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-4 focus:z-50 focus:rounded-full focus:bg-surface focus:px-4 focus:py-2 focus:font-medium focus:shadow-sheet"
+            className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-4 focus:z-[60] focus:rounded-full focus:bg-surface focus:px-4 focus:py-2 focus:font-medium focus:shadow-sheet"
           >
             {t("shell.skip")}
           </a>
-          <header className="sticky top-0 z-20 border-b border-line bg-background/80 backdrop-blur-xl">
-            <div className="mx-auto grid h-16 max-w-[76rem] grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 md:px-8">
-              <div className="flex min-w-0 items-center">
-                <Link
-                  href="/"
-                  className="rounded-md text-xl leading-none font-semibold tracking-[-0.04em] text-foreground outline-none select-none data-[focus-visible]:ring-2 data-[focus-visible]:ring-focus"
-                >
-                  {t("shell.brand")}
-                </Link>
-              </div>
-              {!phone && places.length > 0 && (
-                <Places
-                  places={places}
-                  className="flex items-center gap-0.5 rounded-full bg-surface p-1 shadow-sheet"
-                  item="h-8 px-4"
-                />
+          {phone ? <PhoneTop caller={caller} /> : <Rail places={places} caller={caller} rail={rail} />}
+          {/* The room beside the rail; while the rail lies over it, the page takes no input. */}
+          <div className="ps-[var(--rail-w)]" inert={rail.state === "over"}>
+            {notice && <NoticeBar notice={notice} />}
+            <main
+              id="main"
+              ref={main}
+              tabIndex={-1}
+              className="mx-auto w-full max-w-[76rem] px-4 pb-28 outline-none md:px-8 md:pb-16"
+            >
+              {caller?.owner && <ReleaseNotice />}
+              {caller ? (
+                <Page routes={visible} places={places} />
+              ) : notice ? null : userCurrent.error !== undefined ? (
+                <div className="pt-6">
+                  <LoadFailed error={userCurrent.error} retry={userCurrent.reload} />
+                </div>
+              ) : (
+                <Loading />
               )}
-              <div className="col-start-3 flex items-center justify-end gap-0.5">
-                <LanguageChoice />
-                <ModeChoice />
-                {caller && <AccountPanel caller={caller} />}
-              </div>
-            </div>
-          </header>
-          {notice && <NoticeBar notice={notice} />}
-          <main
-            id="main"
-            ref={main}
-            tabIndex={-1}
-            className="mx-auto w-full max-w-[76rem] flex-1 px-4 pb-28 outline-none md:px-8 md:pb-16"
-          >
-            {caller?.owner && <ReleaseNotice />}
-            {caller ? (
-              <Page routes={visible} places={places} />
-            ) : notice ? null : userCurrent.error !== undefined ? (
-              <div className="pt-6">
-                <LoadFailed error={userCurrent.error} retry={userCurrent.reload} />
-              </div>
-            ) : (
-              <Loading />
-            )}
-          </main>
-          {phone && places.length > 0 && (
-            <div className="fixed inset-x-0 bottom-0 z-30 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              <Places
-                places={places}
-                className="flex w-full max-w-md items-stretch gap-1 rounded-full bg-surface p-1 shadow-sheet"
-                item="min-h-11 flex-1"
-                icons
-              />
-            </div>
-          )}
+            </main>
+          </div>
+          {phone && places.length > 0 && <PhoneBar places={places} />}
         </div>
       </ReleaseProvider>
     </CallerContext>
@@ -168,7 +142,7 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
  * useFocusMainAfterVisit moves the focus to the main region after a visit
  * that left it on nothing, as when the link followed went with the page it
  * was on, so reading starts again at the new page. A visit that left the
- * focus where it was, such as on a place in the top bar, keeps it there.
+ * focus where it was, such as on a place in the rail, keeps it there.
  */
 function useFocusMainAfterVisit(main: RefObject<HTMLElement | null>): void {
   const { visit } = useLocation();
@@ -184,46 +158,6 @@ function useFocusMainAfterVisit(main: RefObject<HTMLElement | null>): void {
   }, [visit, main]);
 }
 
-/**
- * Places links each place the caller may see, in the order of routes, and
- * marks the one the URL is in (aria-current), a page beneath it such as a
- * Host's included: in the top bar's raised track on a desktop, and in the
- * bar at the foot, with icons, on a phone.
- */
-function Places({
-  places,
-  className,
-  item,
-  icons = false,
-}: {
-  places: readonly Route[];
-  className: string;
-  item: string;
-  icons?: boolean;
-}) {
-  const t = useT();
-  const { pathname } = useLocation();
-  return (
-    <nav aria-label={t("shell.nav")} className={className}>
-      {places.map((r) => {
-        const Icon = r.icon;
-        const current = pathname === r.path || pathname.startsWith(`${r.path}/`);
-        return (
-          <Link
-            key={r.path}
-            href={r.path}
-            aria-current={current ? "page" : undefined}
-            className={`place flex items-center justify-center gap-2 rounded-full text-sm font-medium text-muted no-underline outline-none transition-colors hover:text-foreground data-[focus-visible]:ring-2 data-[focus-visible]:ring-focus ${item}`}
-          >
-            {icons && Icon && <Icon aria-hidden className="size-4" />}
-            {t(r.nav as MessageKey)}
-          </Link>
-        );
-      })}
-    </nav>
-  );
-}
-
 /** notices are how each notice shows: its tone, and the messages of its title and description. */
 const notices = {
   stopped: { tone: "warning", title: "shell.notice.stopped.title", description: "shell.notice.stopped.description" },
@@ -235,9 +169,9 @@ const notices = {
 >;
 
 /**
- * NoticeBar says why the web UI cannot act, in one notice across the width
- * under the top bar, announced as an alert, until what ends it. It is not a
- * toast.
+ * NoticeBar says why the web UI cannot act, in one notice across the room
+ * beside the rail, at the head of the page's column, announced as an alert,
+ * until what ends it. It is not a toast.
  */
 function NoticeBar({ notice }: { notice: Notice }) {
   const t = useT();

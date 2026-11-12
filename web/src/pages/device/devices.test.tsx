@@ -8,7 +8,7 @@ import { clipboard } from "../../test/clipboard";
 import { clickOutside } from "../../test/controls";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { setViewportWidth } from "../../test/media";
-import { actAs, alerts, chooseInTopBar, renderAt, topBarButton } from "../../test/pages";
+import { actAs, alerts, chooseInFrame, renderAt, frameButton } from "../../test/pages";
 import { alice, bob, device, joinCode, serve, type World, world } from "../space/access.fixture";
 
 // Account, against a fake koko server: who the web UI acts as, the choices
@@ -75,7 +75,7 @@ test("the account panel links to Account", async () => {
   renderAt("/access");
   await screen.findByRole("heading", { level: 1, name: "Access" });
 
-  fireEvent.click(topBarButton("Account: bob"));
+  fireEvent.click(frameButton("Account: bob"));
   const panel = await screen.findByRole("dialog", { name: "Account: bob" });
   fireEvent.click(within(panel).getByRole("link", { name: "Account" }));
 
@@ -107,14 +107,14 @@ test("for the Local caller Account says so and marks no device", async () => {
   expect(screen.queryByText("This device")).toBeNull();
 });
 
-test("This browser's Language and Appearance mirror the top bar's", async () => {
+test("This browser's Language and Appearance mirror the frame's", async () => {
   await atAccount();
 
   fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
   await waitFor(() => expect(document.documentElement.classList.contains("dark")).toBe(true));
-  expect(topBarButton(/^Appearance/).getAttribute("aria-label")).toBe("Appearance: Dark");
+  expect(frameButton(/^Appearance/).getAttribute("aria-label")).toBe("Appearance: Dark");
 
-  await chooseInTopBar("Language", "简体中文");
+  await chooseInFrame("Language", "简体中文");
   expect((await screen.findByRole("radio", { name: "简体中文" })).getAttribute("aria-checked")).toBe("true");
   expect(screen.getByRole("heading", { level: 2, name: "设备" })).toBeDefined();
   fireEvent.click(screen.getByRole("radio", { name: "English" }));

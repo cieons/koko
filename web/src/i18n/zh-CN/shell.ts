@@ -31,6 +31,8 @@ export default {
   "shell.place.secrets": "机密",
   "shell.place.access": "访问权限",
   "shell.skip": "跳至主要内容",
+  "shell.rail.collapse": "收起侧栏",
+  "shell.rail.expand": "展开侧栏",
   "shell.language": "语言",
   "shell.language.current": "语言：{language}",
   "shell.language.en": "English",

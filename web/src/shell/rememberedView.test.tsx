@@ -47,7 +47,7 @@ function search(q: string): void {
   fireEvent.change(screen.getByRole("searchbox", { name: /^Search/ }), { target: { value: q } });
 }
 
-/** place follows the top bar's link to the place named name. */
+/** place follows the rail's link to the place named name. */
 function place(name: string): void {
   fireEvent.click(within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name }));
 }
@@ -57,7 +57,7 @@ function resetView(): HTMLButtonElement {
   return screen.getByRole<HTMLButtonElement>("button", { name: "Reset view" });
 }
 
-test("a view set, the page left and opened again from the top bar shows it, the URL replaced by it", async () => {
+test("a view set, the page left and opened again from the rail shows it, the URL replaced by it", async () => {
   served();
   renderAt("/hosts");
   expect(await hostsShown()).toBe("");
@@ -75,7 +75,7 @@ test("a view set, the page left and opened again from the top bar shows it, the 
 
   expect(await hostsShown()).toBe("web");
   expect(where()).toBe(view);
-  // The top bar's visit is the one entry: the remembered view took its place.
+  // The rail's visit is the one entry: the remembered view took its place.
   expect(window.history.length).toBe(entries + 1);
   expect(selectButton("State").textContent).toContain("Managed");
   expect(resetView().disabled).toBe(false);

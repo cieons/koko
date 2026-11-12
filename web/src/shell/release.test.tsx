@@ -13,7 +13,7 @@ import { type User, UserCurrent } from "../api/user";
 import { expectAccessible } from "../test/axe";
 import { clipboard } from "../test/clipboard";
 import { type FakeApi, fakeApi, refusal } from "../test/fakeApi";
-import { alerts, topBarButton } from "../test/pages";
+import { alerts, frameButton } from "../test/pages";
 import { Page as PageHead } from "../ui/Page";
 import { reloadAfter } from "./release";
 import { reloadPage } from "./reloadPage";
@@ -92,7 +92,7 @@ function queryNotice(): HTMLElement | null {
 
 /** openAccount opens the account panel and is it. */
 async function openAccount(name: string): Promise<HTMLElement> {
-  fireEvent.click(topBarButton(`Account: ${name}`));
+  fireEvent.click(frameButton(`Account: ${name}`));
   return screen.findByRole("dialog", { name: `Account: ${name}` });
 }
 
@@ -127,6 +127,8 @@ test("the Owner sees which release is out and which version runs, with a link to
   expect(within(notice).getByRole("button", { name: "Check now" })).toBeDefined();
   expect(within(notice).getByRole("button", { name: "Later" })).toBeDefined();
   expect(screen.getByText("hosts page")).toBeDefined();
+  // The head of the page's column, above the page's title.
+  expect(screen.getByRole("main").firstElementChild).toBe(notice);
   await expectAccessible();
 });
 
@@ -138,7 +140,7 @@ test("a Member sees no notice, and the shell asks server.show nothing for them",
 
   expect(queryNotice()).toBeNull();
   expect(api.requests(ServerShow)).toEqual([]);
-  fireEvent.click(topBarButton("Account: bob"));
+  fireEvent.click(frameButton("Account: bob"));
   const panel = await screen.findByRole("dialog", { name: "Account: bob" });
   expect(within(panel).queryByText("koko server")).toBeNull();
   expect(within(panel).queryByRole("button", { name: "Check now" })).toBeNull();

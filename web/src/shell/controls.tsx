@@ -1,7 +1,7 @@
 import { Button, Dropdown, Label, Popover } from "@heroui/react";
-import { ChevronDown, Languages, LogOut, Monitor, Moon, Sun, UserRound } from "lucide-react";
+import { Languages, LogOut, Monitor, Moon, Sun, UserRound } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import { Link } from "react-aria-components";
+import { Link, type Placement } from "react-aria-components";
 
 import { type Language, languages } from "../i18n/catalogues";
 import { Refusal } from "../ui/states";
@@ -13,15 +13,18 @@ import { ServerLine } from "./release";
 import { accountPage } from "./router";
 import { useSignOut } from "./signOut";
 
-// The top bar's end: the two choices the browser keeps, Language and
+// The frame's controls, at the foot of the rail on a desktop and in the
+// phone's top row: the two choices the browser keeps, Language and
 // Appearance, each an icon button that opens a menu of radio items, and the
 // account button, which opens the account panel (docs/web-design.md, "The
-// frame").
+// frame"). Each opens where its place in the frame leaves room: upwards from
+// the rail's foot, downwards from the phone's top row.
 
 const modeIcons = { light: Sun, dark: Moon, system: Monitor } as const;
 
 /** BarChoice is one of the browser's two choices: an icon button named for its value, opening its options. */
 function BarChoice<T extends string>(props: {
+  placement: Placement;
   label: string;
   current: string;
   icon: ReactNode;
@@ -34,7 +37,7 @@ function BarChoice<T extends string>(props: {
       <Button variant="ghost" isIconOnly className="rounded-full text-ink-2" aria-label={props.current}>
         {props.icon}
       </Button>
-      <Dropdown.Popover placement="bottom end" className="min-w-44">
+      <Dropdown.Popover placement={props.placement} className="min-w-44">
         <Dropdown.Menu
           aria-label={props.label}
           selectionMode="single"
@@ -60,11 +63,12 @@ function BarChoice<T extends string>(props: {
 }
 
 /** LanguageChoice chooses the web UI's language, which the browser keeps. */
-export function LanguageChoice() {
+export function LanguageChoice({ placement }: { placement: Placement }) {
   const t = useT();
   const [language, setLanguage] = useLanguageChoice();
   return (
     <BarChoice<Language>
+      placement={placement}
       label={t("shell.language")}
       current={t("shell.language.current", { language: t(`shell.language.${language}`) })}
       icon={<Languages aria-hidden className="size-[1.125rem]" />}
@@ -76,12 +80,13 @@ export function LanguageChoice() {
 }
 
 /** ModeChoice chooses Light, Dark or System, which the browser keeps; its icon shows the choice. */
-export function ModeChoice() {
+export function ModeChoice({ placement }: { placement: Placement }) {
   const t = useT();
   const [mode, setMode] = useMode();
   const Icon = modeIcons[mode];
   return (
     <BarChoice<Mode>
+      placement={placement}
       label={t("shell.mode")}
       current={t("shell.mode.current", { mode: t(`shell.mode.${mode}`) })}
       icon={<Icon aria-hidden className="size-[1.125rem]" />}
@@ -147,34 +152,44 @@ function SignOutItem() {
 }
 
 /**
- * AccountPanel is the account button, the User's initial and name (the name
- * hidden on a phone) with a chevron, and the panel it opens: the initial,
- * the name and role, how this browser reaches koko, and a link to Account,
- * which closes the panel as it is followed; and, for a browser signed in
- * with a Password, Sign out, a refusal of which shows in the panel. For the
- * Owner, the koko server's line comes between them: its version, its last
- * check for a release and Check now.
+ * AccountPanel is the account button and the panel it opens. The button is
+ * the User's initial with their name and role beside it in the open rail
+ * (full), and the initial alone in the folded rail and the phone's top row.
+ * The panel holds the initial, the name and role, how this browser reaches
+ * koko, and a link to Account, which closes the panel as it is followed;
+ * and, for a browser signed in with a Password, Sign out, a refusal of
+ * which shows in the panel. For the Owner, the koko server's line comes
+ * between them: its version, its last check for a release and Check now.
  */
-export function AccountPanel({ caller }: { caller: Caller }) {
+export function AccountPanel({ caller, full, placement }: { caller: Caller; full: boolean; placement: Placement }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const { name } = caller.user;
   const label = t("shell.account", { name });
+  const role = t(caller.owner ? "shell.role.owner" : "shell.role.member");
   return (
     <Popover isOpen={open} onOpenChange={setOpen}>
-      <Button variant="ghost" className="h-10 gap-2 rounded-full pr-2.5 pl-1.5" aria-label={label}>
-        <Initial name={name} />
-        <span className="hidden font-medium sm:inline">{name}</span>
-        <ChevronDown aria-hidden className="size-4 text-muted" />
+      <Button
+        variant="ghost"
+        aria-label={label}
+        className={full ? "h-12 min-w-0 flex-1 justify-start gap-2.5 rounded-2xl ps-1.5 pe-2" : "size-11 rounded-full p-0"}
+      >
+        <Initial name={name} className="size-8 text-sm" />
+        {full && (
+          <span className="flex min-w-0 flex-col items-start leading-tight">
+            <span className="max-w-full truncate text-sm font-semibold">{name}</span>
+            <span className="t-label text-xs">{role}</span>
+          </span>
+        )}
       </Button>
-      <Popover.Content placement="bottom end" className="w-[19rem] rounded-2xl p-0">
+      <Popover.Content placement={placement} className="w-[19rem] rounded-2xl p-0">
         <Popover.Dialog className="p-0" aria-label={label}>
           <div className="flex items-center gap-3 px-4 pt-4 pb-4">
             <Initial name={name} className="size-10 text-base" />
             <div className="min-w-0">
               <p className="flex items-baseline gap-2">
                 <span className="t-name truncate">{name}</span>
-                <span className="t-label">{t(caller.owner ? "shell.role.owner" : "shell.role.member")}</span>
+                <span className="t-label">{role}</span>
               </p>
               <p className="t-label truncate">{viaText(t, caller)}</p>
             </div>

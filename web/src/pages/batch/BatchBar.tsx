@@ -37,8 +37,9 @@ export interface BatchBarProps {
 
 /**
  * BatchBar floats at the foot of the page while a Select mode is on: an
- * island, as the phone's bar of places is, which it covers on a phone. It
- * never takes the focus as it appears; its count is announced politely.
+ * island, centred in the room beside the rail on a desktop, and over the
+ * frame's bar at the foot on a phone. It never takes the focus as it
+ * appears; its count is announced politely.
  */
 export function BatchBar(props: BatchBarProps) {
   const phone = usePhone();
@@ -94,7 +95,7 @@ export function BatchBar(props: BatchBarProps) {
     <div
       role="region"
       aria-label={props.label}
-      className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-6"
+      className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center ps-[calc(var(--rail-w)+1.5rem)] pe-6"
     >
       <div className="pointer-events-auto flex max-w-full items-center gap-1 rounded-full bg-overlay py-2 pr-2 pl-3 shadow-overlay">
         {count}

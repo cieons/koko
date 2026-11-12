@@ -8,7 +8,7 @@ import { CodeNameTaken } from "../api/errors";
 import { type User, UserCurrent } from "../api/user";
 import { expectAccessible } from "../test/axe";
 import { type FakeApi, fakeApi, refusal } from "../test/fakeApi";
-import { alerts, chooseInTopBar, findAlert, preferLanguages } from "../test/pages";
+import { alerts, chooseInFrame, findAlert, preferLanguages } from "../test/pages";
 import { Refusal } from "../ui/states";
 import { OwnerOnly } from "./caller";
 import { useRead, useWrite } from "./data";
@@ -315,7 +315,7 @@ test("an API error shows in place, in its code's message in the current language
 
   expect(await findAlert()).toBe("This name is already in use.");
   await expectAccessible();
-  await chooseInTopBar("Language", "简体中文");
+  await chooseInFrame("Language", "简体中文");
   expect(alerts()).toEqual(["此名称已被占用。"]);
 });
 

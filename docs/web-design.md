@@ -28,11 +28,16 @@ paths below are within that source. Run `npm ci`, `npx vite build` and
 | --- | --- |
 | `src/styles.css` | Every token, the type roles and the panel: the source of truth for values |
 | `src/heroui.css` | The HeroUI component styles imported, in HeroUI's order |
-| `src/app/Shell.tsx` | The top bar, the account panel, the phone's bar, the page header |
+| `src/app/Shell.tsx` | The account panel and the page header; its top bar and phone's bar are replaced by the rail (below) |
 | `src/ui/parts.tsx`, `src/ui/DateInput.tsx` | The shared parts listed under Components |
 | `src/pages/*.tsx` | One file per screen |
 | `src/i18n.ts` | Every string, English and Simplified Chinese |
 | `index.html`, `vite.config.ts` | The CSP workaround's `<meta>`, the locale plugin |
+
+The frame, the rail of [The frame](#the-frame), was approved on a later
+preview, `../koko-terminal-preview` (#170), whose
+`web/src/frame/RailFrame.tsx` and `frame.css` are its reference; that
+preview's record pages are static stand-ins for koko's own.
 
 Build from the preview's layout, values and strings. Do not copy these
 parts of it, which are stand-ins:
@@ -87,7 +92,7 @@ and once for dark on `.dark`. Light, Dark or System sets `class` and
 | `--surface-secondary` | 0.972 0.003 265 | 0.2 0.007 265 | A row under the pointer |
 | `--surface-tertiary` | 0.95 0.005 265 | 0.235 0.008 265 | |
 | `--overlay` | 1 0 0 | 0.2 0.007 265 | Menus, popovers, dialogs, side panels |
-| `--default` | 0.948 0.005 265 | 0.235 0.008 265 | Quiet fills: the current place, avatars |
+| `--default` | 0.948 0.005 265 | 0.235 0.008 265 | Quiet fills: avatars |
 | `--foreground` | 0.2 0.015 265 | 0.97 0.003 265 | Text |
 | `--ink-2` | 0.36 0.016 265 | 0.87 0.006 265 | Values of second rank in a row |
 | `--muted` | 0.47 0.018 265 | 0.72 0.012 265 | Labels, help, counts |
@@ -109,11 +114,15 @@ and once for dark on `.dark`. Light, Dark or System sets `class` and
   HeroUI composes a field's focus ring with it, and `none` voids the list.
 - **The field edge is the Owner's choice** (2026-11-10): about 1.5:1 on a
   panel, under the 3:1 of WCAG 1.4.11. Do not raise it in a review.
-- Radius: `--radius` 0.75rem; panels 1rem; inset blocks 0.75rem; the nav
-  track, buttons and the phone's bar are full pills (HeroUI's default).
+- Radius: `--radius` 0.75rem; panels 1rem; inset blocks 0.75rem; a place
+  in the rail and buttons are full pills (HeroUI's default); a place in
+  the phone's foot bar is 0.75rem.
 - The panel's shadow (`--sheet-shadow`) is, in light, a 1px ring at 7%, a
   1px drop and a wide soft drop; in dark, a 1px highlight inside its top
-  edge at 7% white, a 1px ring at 5% white and a deep drop. Overlays use
+  edge at 7% white, a 1px ring at 5% white and a deep drop. **The island**
+  (`.island`, `--island-shadow`), what is raised beside the page, such as
+  the current place, is the panel's colour and shadow, and in dark also a
+  1px edge at 9% white, so it holds against the page. Overlays use
   the stronger `--overlay-shadow`.
 
 Measured contrast, light and dark: text on a panel 18.1 and 17.7;
@@ -143,36 +152,74 @@ not zoom on focus. Figures in columns use tabular numerals.
 
 ## The frame
 
-**Top bar**, sticky, 64px, the page colour at 80% with a backdrop blur and
-a hairline under it. Three zones on a `1fr auto 1fr` grid, in a column
-76rem wide:
+One rail down the start edge of every page holds the navigation: the
+places, and the User with the browser's two choices. The page fills the
+rest. There is no top bar. The Owner chose it on a live preview (#170,
+2026-11-12) over a top bar for the record pages beside a rail for the
+terminal, for one navigation across the web UI. The terminal's open tabs
+are to join it as a section of their own (#177).
 
-- Left: the wordmark `koko` (20px, 600), a link to Hosts.
-- Centre, from 768px: the three places, Hosts, Secrets and Access, in a
-  raised pill track (panel colour and shadow, 4px padding). Each is a 32px
-  pill; the current one is filled with `--default` and has
-  `aria-current="page"`.
-- Right: two icon buttons and the account button.
-  - **Language**: a languages icon; opens a menu of two radio
-    items, English and 简体中文. Its accessible name says the current
-    value ("Language: English").
+**The rail**, on a desktop (768px and wider), fixed to the start edge, the
+full height, on the page colour. It is 15.5rem wide when open, with 12px of
+padding. From top to bottom:
+
+- **The wordmark** `koko` (20px, 600), a link to Hosts, and at the end of
+  its row the fold button (a panel icon, "Collapse the side bar" or "Expand
+  the side bar", `aria-expanded`).
+- **The places**: Hosts, Secrets and Access, each a 40px pill with its
+  Lucide icon (18px) and its name. The current one is raised (the island:
+  panel colour and the panel shadow, in dark also a 1px edge at 9% white)
+  and has `aria-current="page"`. The others are in `--ink-2`, and hover
+  gives them a faint panel fill.
+- **The Terminal section** (#177), after a hairline: the terminal's link,
+  New tab and the open tabs. Until it lands the rail holds no section
+  there.
+- **The foot**, after a hairline:
+  - **the User**: an initial in a circle (32px), the name (600) and the
+    role ("Owner") under it. It opens the account panel, 19rem wide,
+    upwards from the rail's start: the initial, the name and role, how
+    this browser reaches koko ("Signed in from Chrome on macOS", "Through
+    koko web on laptop", or, for the Local caller, "On the koko server's
+    machine"), the Owner's koko server line, then Account, and Sign out
+    when the browser has a Sign-in;
+  - **Language**: a languages icon; opens a menu of two radio items,
+    English and 简体中文. Its accessible name says the current value
+    ("Language: English");
   - **Appearance**: a sun, a moon or a monitor, whichever is chosen; opens
     a menu of three radio items, Light, Dark and System.
-  - **Account**: an initial in a circle, the name (hidden under 640px) and
-    a chevron; opens a panel 19rem wide: the initial, the name and role,
-    "Signed in from Chrome on macOS", "Through koko web on laptop", or, for
-    the Local caller, "On the koko server's machine"; then Account, and
-    Sign out when the browser has a Sign-in.
-- Both choices are kept by the browser, as today.
+  Both choices are kept by the browser.
+
+**Folded**, the rail is 5rem wide with 8px of padding, and shows the same
+items as icons, each keeping its accessible name:
+
+- the wordmark over the fold button;
+- the places as 44px icon buttons named by the place;
+- the User's initial, Language and Appearance, stacked.
+
+**Its three states:**
+
+| Window | The rail | Room the page leaves it (`--rail-w`) |
+| --- | --- | --- |
+| 1280px wide or more | Open, unless the person folds it; the browser keeps the choice (`koko.rail`) | 15.5rem open, 5rem folded |
+| 768px to 1279px | Folded. The fold button opens it over the page, on the backdrop, in the overlay colour with a 1.5rem radius at its end edge and the overlay shadow, until a place is chosen, Escape, or a click beside it; Escape and the click give the focus back to the fold button. The page stays where it was and takes no input meanwhile | 5rem |
+| Under 768px | None: the phone's frame below | 0 |
+
+**A page** sits beside the rail: its column, 76rem at most, is centred in
+the room left beside it, with 32px of padding (16px on a phone). A page is
+a title (`t-display`), an optional line under it, and its one or two
+actions to the right of the title. A detail page has a breadcrumb above
+the title. With the rail open a page at 1280px wide gets about 1030px, and
+at 1100px wide with the rail folded about 1020px.
+
 - **The shell's notices** (koko web is not running; the cookie is not one
-  of this run of `koko web`; this device's Device Session was Revoked) stay
-  as the shell gives them: one notice across the width under the top bar,
-  announced as an alert, until what ends it. They are not toasts.
+  of this run of `koko web`; this device's Device Session was Revoked) run
+  across the room beside the rail at the head of the page's column,
+  announced as an alert, until what ends them. They are not toasts.
 - **A page whose chunk does not load**, as after an upgrade under an open
   tab, shows in place of the page that the browser page must be reloaded.
 - **The release notice**, the Owner's alone, while a newer koko release is
   known: a panel at the head of the main region, above the page's title,
-  in the column every page uses, so it reads as part of the page rather
+  in the page's column, so it reads as part of the page rather
   than as a warning. An upgrade icon in an accent-soft circle; "koko v0.5.0
   is available." in `t-name`; under it, muted, the version that runs and
   the release notes' link; at its end, Check now and Later as ghost
@@ -185,17 +232,23 @@ a hairline under it. Three zones on a `1fr auto 1fr` grid, in a column
   panel shows the Owner a koko server line above Account: the version,
   when it last checked, and Check now.
 
-**On a phone** (under 768px) the places move to a pill bar fixed at the
-foot, with icon and label, 44px targets, above the safe area. Pages leave
-room for it.
+**On a phone** (under 768px), every page has:
+
+- **A top row**, sticky, 56px under the safe area, the page colour at 85%
+  with a backdrop blur and a hairline under it: the wordmark, a link to
+  Hosts; then Language, Appearance and the User's initial, which opens the
+  account panel downwards.
+- **A bar at the foot**, fixed, the page colour at 90% with a blur and a
+  hairline over it, above the safe area, items 48px high: Hosts, Secrets
+  and Access, each an icon over its name at 12px; the current one is
+  raised. The terminal's tab button (#177) is to come first in it, where
+  the terminal's key bar starts.
+- Pages leave room for both. [The Select mode](#the-select-mode)'s bar
+  covers the foot bar while the mode is on.
 
 **A skip link** is the first stop of Tab. **The document's title** is the
 page's own name, then "koko" ("web1 · koko"). After a navigation that
 leaves focus on nothing, focus moves to the main region.
-
-**A page** is a title (`t-display`), an optional line under it, and its one
-or two actions to the right of the title. A detail page has a breadcrumb
-above the title.
 
 ## Components
 
@@ -203,6 +256,7 @@ HeroUI parts, as the preview composes them:
 
 | Part | Built from | Notes |
 | --- | --- | --- |
+| Rail | a `<header>` with a `<nav>`, `Link`s, `Button`s | The frame's navigation down the start edge: open, folded, or over the page ([The frame](#the-frame)) |
 | Panel (`.sheet`) | a `<section>` | Surface colour, 1rem radius, the panel shadow, 24px padding; a list on a panel has no padding and hairlines between rows |
 | Button | `Button` | Primary: one per page at most. Secondary: panel colour and shadow. Tertiary and ghost inside panels. Danger for the confirming action only |
 | Side panel | `Drawer` | From the right on a desktop (32rem, 44rem for the Host form), inset 12px with a 1.75rem radius; from the bottom on a phone, with a handle, at most 92% of the height |
@@ -212,7 +266,7 @@ HeroUI parts, as the preview composes them:
 | Searchable choice | `ComboBox` | Picking one item from a list that can grow; see below |
 | Segments | `ToggleButtonGroup` | A choice among two to four, all in view; the chosen one inverts (text colour as fill) |
 | Row menu | `Dropdown` | The actions a row uses less |
-| Selection bar | an island at the foot, `Button`s | The count, Select all, the actions and Done of [the Select mode](#the-select-mode) |
+| Selection bar | an island at the foot, `Button`s | The count, Select all, the actions and Done of [the Select mode](#the-select-mode); centred in the room beside the rail on a desktop, over the foot bar on a phone |
 | Copy | `Button` | Becomes "Copied" for 1.6 s, announced politely |
 | Command line | a `<code>` in an inset block | A `$`, the command, Copy; a line for a file has no `$` |
 | Shown once | an inset block with a dashed accent edge | A Join Code or Password Link, its time left counting down, Copy, and the line that it is not shown again |
@@ -260,7 +314,8 @@ closes it, unless closing would lose something.
 
 | Overlay | A click beside it |
 | --- | --- |
-| A popover or menu: Filter, Columns, a select's or searchable choice's list, a row menu, the top bar's menus, the account panel | Closes it, always |
+| A popover or menu: Filter, Columns, a select's or searchable choice's list, a row menu, the frame's menus, the account panel | Closes it, always |
+| The rail laid over the page, under 1280px wide | Closes it, always, as Escape and a place chosen do |
 | A short form or a side panel with a form: Add Host, Edit, Add Service, a Service's panel, Rename, Move, Add Secret, Set value, Add Space, the first step of Invite, Add device and a Password Link; a Space's panel, for its Add Members field; a person's panel, for its Add to a Space field | Closes it while nothing in it has changed; once something has been typed or chosen, does nothing |
 | A confirmation | Cancels it, as Cancel does, unless its call runs; a name typed in it to confirm is not kept |
 | A batch's dialog ([the Select mode](#the-select-mode)) | A form (Move, Attribute) as a short form; a confirmation (Retire, Delete) as one, but not once the count has been typed; a refused batch's list of records at fault closes, as Cancel does |
@@ -370,7 +425,7 @@ released, so it needs no redirect.
   among them. The view lives in the URL.
 - **A list remembers its view** in the browser, for each User: the Hosts
   view, the Services view, Secrets and Access, each on its own. Opened with no
-  view in its URL (from the top bar, a new tab, a link or after signing
+  view in its URL (from the rail, a new tab, a link or after signing
   in), a list shows the view it was left in, and its URL is replaced by
   it, so the URL and a bookmark keep exactly the view on screen; a URL
   with a view wins and is remembered. **Reset view** (secondary, with a
@@ -535,8 +590,9 @@ the Hosts list and the Secrets page.
   where a panel is a list, each heading and subheading has one. On
   Secrets each Space's heading has one. A group with some rows ticked
   shows the mixed state.
-- **The bar** floats at the foot from the start of the mode, an island
-  like the phone's bar of places, which it covers on a phone: the count
+- **The bar** floats at the foot from the start of the mode, an island,
+  centred in the room beside the rail on a desktop and covering the foot
+  bar on a phone: the count
   ("12 selected"), how many of those the view does not show ("3 not in
   this view"), **Select all N** ("Select all N matching" under a search
   or Filter) until every row shown is ticked, the actions, each an icon
@@ -647,7 +703,7 @@ handle that failure; the build does.
   out** when it has a Sign-in.
 - Panels: **Password** (current, new, again; a count toward 15 characters;
   through `koko web`, one sentence instead); **This browser** (Language
-  and Appearance as segments, which mirror the top bar); **Devices** (this
+  and Appearance as segments, which mirror the rail's); **Devices** (this
   one marked, Add device, Revoke as above, and "Show Revoked devices",
   `all=1` in the URL); **Browser Sign-ins** (this browser marked; revoking
   it signs out); **Personal Space** (counts and a link).
@@ -675,7 +731,9 @@ The frame, a title, one sentence and a link to Hosts.
 - axe with colour contrast on every page and every open dialog, panel,
   menu and popover, light and dark, in both languages, in the real-browser
   check ([the web UI build](subsystems/web-ui.md#verifying)) at 360×740,
-  390×844 and 1280×800, and at 1440 wide. The preview is at 0 violations.
+  390×844, 1100×800 (the rail folded, and laid over the page), 1280×800
+  (the rail open and folded), and at 1440 wide. The preview is at 0
+  violations.
   Page tests run axe on the same states, without colour contrast, which
   jsdom cannot compute.
 - Every overlay takes focus when it opens, closes on Escape, and on a
@@ -683,12 +741,13 @@ The frame, a title, one sentence and a link to Hosts.
   focus to what opened it. Every icon button has a name. A row that is a
   link is one Tab stop.
 - No horizontal scroll at 320px.
-- A focused control is never left under the sticky top bar or the
-  phone's bar; the root carries scroll padding for it.
+- A focused control is never left under the phone's top row or its foot
+  bar; the root carries scroll padding for it. A desktop's rail lies
+  beside the page, and over it only while the page takes no input.
 - In forced colours (such as Windows' contrast themes) the focus ring is
   an outline, and the chosen place, tab, segment, checked box, switch and
-  radio and the edges of panels and overlays are drawn in the system's
-  colours ([the web UI build](subsystems/web-ui.md#heroui-and-tailwind)).
+  radio, the rail's end edge and the edges of panels and overlays are
+  drawn in the system's colours ([the web UI build](subsystems/web-ui.md#heroui-and-tailwind)).
 - Checked on the build (#126): 200% text size (no loss of content; on a
   phone some fields keep their width, #130), forced colours, every modal
   overlay on iOS Safari 26.3 in the iOS Simulator, and axe over the whole

@@ -18,7 +18,7 @@ export interface DoorProps {
  * Door is the layout of a page outside the frame, Sign in and Set a
  * Password (docs/web-design.md, "Sign in and Set a Password"): koko's
  * wordmark, one panel 26rem wide with the page's title and content, and the
- * two languages as buttons, which the browser keeps as the top bar's
+ * two languages as buttons, which the browser keeps as the frame's
  * Language menu does.
  */
 export function Door({ title, lead, children }: DoorProps) {

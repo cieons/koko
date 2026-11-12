@@ -55,12 +55,15 @@ app sits in its providers is [the web UI shell](web-shell.md#providers).
   [`src/theme/theme.css`](../../web/src/theme/theme.css) imports it, then
   writes Obsidian's tokens on HeroUI's variable names, light on `:root`
   and dark on `.dark` and `[data-theme="dark"]`, the type roles (`t-display`
-  to `t-code`), the panel (`.sheet`) and koko's adjustments to HeroUI's
-  parts. Two of its rules are for keyboard and contrast-theme users. The
-  root's scroll padding keeps a focused control clear of the sticky top bar
-  and, under `ui/phone.ts`'s width, the phone's bar. Under `forced-colors: active`, where
+  to `t-code`), the panel (`.sheet`), the island (`.island`), the room the
+  rail takes (`--rail-w`, by the frame's `data-rail`) and koko's
+  adjustments to HeroUI's parts. Two of its rules are for keyboard and
+  contrast-theme users. Under `ui/phone.ts`'s width, the root's scroll
+  padding keeps a focused control clear of the phone's sticky top row and
+  its bar at the foot. Under `forced-colors: active`, where
   the browser drops shadows and paints fills in the page's colour, the
-  focus ring is a `Highlight` outline; panels, overlays and a switch's track
+  focus ring is a `Highlight` outline; panels, overlays, the rail's end
+  edge and a switch's track
   get a `CanvasText` edge; the current place, the chosen tab and the chosen
   segment are filled with `SelectedItem`, the tab's indicator hidden; and a
   checked box, a chosen radio and a switch turned on are filled with
@@ -224,8 +227,9 @@ deviceSession?)` makes `user.current` answer that User, on a Device Session
 of their laptop unless another is given, `tableRows(name)` reads the cells
 of the table that name labels, `alerts()`, `findAlert()` and `statuses()`
 read the alerts and statuses that say something (React Aria keeps empty
-live regions), `topBarButton(name)` finds a button of the top bar, and
-`chooseInTopBar(menu, option)` chooses a language or a mode.
+live regions), `frameButton(name)` finds a button of the frame's banner
+(the rail on a desktop, the top row on a phone), and
+`chooseInFrame(menu, option)` chooses a language or a mode.
 [`test/controls.ts`](../../web/src/test/controls.ts) drives React Aria's
 controls as a person does, each checking with axe while its list is open:
 `chooseRowAction(menu, action)` a row menu and `chooseOption(select,
@@ -289,8 +293,9 @@ empty.
 - The real-browser check, an acceptance check rather than a test (spec
   #108: "Phones, dark mode and the real browser"; [the design's
   checks](../web-design.md#accessibility-and-checks)): every page and
-  overlay a change touches, at 360×740, 390×844, 1280×800 and 1440 wide,
-  light and dark, English and Chinese, with axe-core's `color-contrast`
+  overlay a change touches, at 360×740, 390×844, 1100×800 (the rail
+  folded, and laid over the page), 1280×800 (the rail open and folded) and
+  1440 wide, light and dark, English and Chinese, with axe-core's `color-contrast`
   too, no CSP violation, no request to another origin, no horizontal
   scroll at 320 pixels, and one task per page done with the keyboard
   alone; agent-browser drives CloakBrowser in Docker. An overlay's CSP

@@ -12,7 +12,7 @@ import { CodeCookieRequired } from "../api/web";
 import { expectAccessible } from "../test/axe";
 import { type FakeApi, fakeApi, refusal } from "../test/fakeApi";
 import { setSystemScheme, setViewportWidth } from "../test/media";
-import { alerts, chooseInTopBar, findAlert, preferLanguages, topBarButton } from "../test/pages";
+import { alerts, chooseInFrame, findAlert, preferLanguages, frameButton } from "../test/pages";
 import { Page as PageHead } from "../ui/Page";
 import { Refusal } from "../ui/states";
 import { useCaller } from "./caller";
@@ -87,7 +87,7 @@ function places(name = "Main"): string[] {
 
 /** openAccount opens the account panel and is it. */
 async function openAccount(name: string): Promise<HTMLElement> {
-  fireEvent.click(topBarButton(`Account: ${name}`));
+  fireEvent.click(frameButton(`Account: ${name}`));
   return screen.findByRole("dialog", { name: `Account: ${name}` });
 }
 
@@ -144,7 +144,7 @@ test("for the Local caller the account panel names the Owner on the koko server'
 
 // The places.
 
-test("the top bar links the Owner's three places and marks the one the URL is in", async () => {
+test("the rail links the Owner's three places and marks the one the URL is in", async () => {
   const api = fakeApi();
   asDevice(api, alice);
   renderShell("/hosts");
@@ -180,20 +180,170 @@ test("a Member gets no place only the Owner may open, and its path shows Page no
   expect(screen.queryByText("access page")).toBeNull();
 });
 
-test("on a phone the places are in a bar at the foot, each with its icon, and the top bar holds none", async () => {
+test("on a phone a top row holds the wordmark, Language, Appearance and the account, and the places are in a bar at the foot", async () => {
   setViewportWidth(390);
   const api = fakeApi();
   asDevice(api, alice);
   renderShell("/secrets");
   await screen.findByText("secrets page");
 
-  expect(within(screen.getByRole("banner")).queryByRole("navigation")).toBeNull();
+  const top = within(screen.getByRole("banner"));
+  expect(top.getAllByRole("link").map((a) => a.textContent)).toEqual(["koko"]);
+  expect(top.getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+    "Language: English",
+    "Appearance: System",
+    "Account: alice",
+  ]);
+  expect(frameButton("Account: alice").textContent).toBe(""); // the initial alone, drawn from data-initial
+  expect(top.queryByRole("navigation")).toBeNull();
+  expect(screen.queryByRole("button", { name: /side bar$/ })).toBeNull();
+  expect(rail()).toBe("none");
   expect(places()).toEqual(["Hosts", "Secrets*", "Access"]);
   const nav = screen.getByRole("navigation", { name: "Main" });
   expect(nav.querySelectorAll("a > svg[aria-hidden='true']")).toHaveLength(3);
+  expect((await openAccount("alice")).textContent).toBe("aliceOwnerThrough koko web on laptopAccount");
 
   act(() => setViewportWidth(1280));
   expect(within(screen.getByRole("banner")).getByRole("navigation", { name: "Main" })).toBeDefined();
+  expect(rail()).toBe("open");
+});
+
+// The rail: open, folded, and over the page.
+
+/** rail is the room the frame leaves the rail beside the page: open, folded, or none on a phone. */
+function rail(): string | null | undefined {
+  return document.querySelector("[data-rail]")?.getAttribute("data-rail");
+}
+
+/** inert tells whether the page's column takes no input, as while the rail lies over it. */
+function inert(): boolean {
+  return screen.getByRole("main").closest("[inert]") !== null;
+}
+
+test("open, the rail names each place beside its icon and the User beside their initial, with the role", async () => {
+  const api = fakeApi();
+  asDevice(api, bob);
+  renderShell("/hosts");
+  await screen.findByText("hosts page");
+
+  expect(rail()).toBe("open");
+  const nav = screen.getByRole("navigation", { name: "Main" });
+  expect(nav.querySelectorAll("a > svg[aria-hidden='true']")).toHaveLength(2);
+  expect(frameButton("Account: bob").textContent).toBe("bobMember");
+  const fold = frameButton("Collapse the side bar");
+  expect(fold.getAttribute("aria-expanded")).toBe("true");
+});
+
+test("from 1280 pixels wide the rail folds to icons, each named as before, and the browser keeps the choice", async () => {
+  const api = fakeApi();
+  asDevice(api, alice);
+  const { unmount } = renderShell("/secrets");
+  await screen.findByText("secrets page");
+
+  fireEvent.click(frameButton("Collapse the side bar"));
+
+  expect(rail()).toBe("folded");
+  expect(frameButton("Expand the side bar").getAttribute("aria-expanded")).toBe("false");
+  const nav = within(screen.getByRole("navigation", { name: "Main" }));
+  expect(nav.getAllByRole("link").map((a) => [a.textContent, a.getAttribute("aria-label")])).toEqual([
+    ["", "Hosts"],
+    ["", "Secrets"],
+    ["", "Access"],
+  ]);
+  expect(nav.getByRole("link", { name: "Secrets", current: "page" })).toBeDefined();
+  expect(frameButton("Account: alice").textContent).toBe("");
+  expect(frameButton("Language: English")).toBeDefined();
+  expect(frameButton("Appearance: System")).toBeDefined();
+  expect(inert()).toBe(false);
+  expect(localStorage.getItem("koko.rail")).toBe("folded");
+  unmount();
+
+  renderShell("/secrets"); // a reload of the page
+  await screen.findByText("secrets page");
+  expect(rail()).toBe("folded");
+  fireEvent.click(frameButton("Expand the side bar"));
+  expect(rail()).toBe("open");
+  expect(localStorage.getItem("koko.rail")).toBeNull();
+});
+
+/** openOver opens the folded rail over the page, under 1280 pixels wide, and is its fold button. */
+function openOver(): HTMLElement {
+  const fold = frameButton("Expand the side bar");
+  fireEvent.click(fold);
+  expect(fold.getAttribute("aria-expanded")).toBe("true");
+  expect(fold.getAttribute("aria-label")).toBe("Collapse the side bar");
+  return fold;
+}
+
+test("under 1280 pixels the rail is folded, and opens over the page, which stays where it was, until Escape", async () => {
+  setViewportWidth(1100);
+  const api = fakeApi();
+  asDevice(api, alice);
+  renderShell("/hosts");
+  await screen.findByText("hosts page");
+  expect(rail()).toBe("folded");
+
+  const fold = openOver();
+
+  expect(rail()).toBe("folded"); // the page keeps its room
+  expect(inert()).toBe(true);
+  expect(places()).toEqual(["Hosts*", "Secrets", "Access"]);
+  expect(frameButton("Account: alice").textContent).toBe("aliceOwner");
+  expect(localStorage.getItem("koko.rail")).toBeNull();
+  fireEvent.keyDown(document.body, { key: "Escape" });
+
+  expect(fold.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(fold);
+  expect(inert()).toBe(false);
+
+  openOver();
+  act(() => setViewportWidth(1280)); // widened past the edge: open beside the page, as the browser keeps it
+  expect(rail()).toBe("open");
+  expect(inert()).toBe(false);
+});
+
+test("over the page, the rail closes on a click beside it, giving the focus back, and on a place chosen", async () => {
+  setViewportWidth(1100);
+  const api = fakeApi();
+  asDevice(api, alice);
+  renderShell("/hosts");
+  await screen.findByText("hosts page");
+
+  const fold = openOver();
+  const backdrop = screen.getByRole("banner").previousElementSibling;
+  expect(backdrop?.getAttribute("aria-hidden")).toBe("true");
+  fireEvent.click(backdrop!);
+
+  expect(fold.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(fold);
+
+  openOver();
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Secrets" }));
+
+  expect(await screen.findByText("secrets page")).toBeDefined();
+  expect(fold.getAttribute("aria-expanded")).toBe("false");
+  expect(inert()).toBe(false);
+  expect(within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Secrets", current: "page" })).toBeDefined();
+});
+
+test("Escape closes a menu open in the rail over the page and leaves the rail open", async () => {
+  setViewportWidth(1100);
+  const api = fakeApi();
+  asDevice(api, alice);
+  renderShell("/hosts");
+  await screen.findByText("hosts page");
+  const fold = openOver();
+
+  fireEvent.click(frameButton("Language: English"));
+  const menu = await screen.findByRole("menu");
+  fireEvent.keyDown(menu, { key: "Escape" });
+
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  expect(fold.getAttribute("aria-expanded")).toBe("true");
+  await openAccount("alice");
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(fold.getAttribute("aria-expanded")).toBe("true");
 });
 
 test("/ goes to the first place, keeping the query", async () => {
@@ -230,7 +380,7 @@ test("with no page yet, / and every path show the frame with Page not found", as
   expect(await screen.findByRole("heading", { level: 1, name: "Page not found" })).toBeDefined();
   expect(screen.queryByRole("navigation")).toBeNull();
   expect(screen.queryByRole("link", { name: /^Go to/ })).toBeNull();
-  expect(topBarButton("Account: alice")).toBeDefined();
+  expect(frameButton("Account: alice")).toBeDefined();
 });
 
 // The document's title, the skip link and the focus.
@@ -242,7 +392,7 @@ test("the document's title is the page's own name, then koko", async () => {
   await screen.findByText("hosts page");
   await waitFor(() => expect(document.title).toBe("Hosts · koko"));
 
-  await chooseInTopBar("Language", "简体中文");
+  await chooseInFrame("Language", "简体中文");
   act(() => navigate("/secrets"));
 
   await screen.findByText("secrets page");
@@ -282,7 +432,7 @@ test("after a visit that leaves the focus on nothing, the focus moves to the mai
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("main")));
 });
 
-test("after a visit from a place in the top bar, the focus stays on the place", async () => {
+test("after a visit from a place in the rail, the focus stays on the place", async () => {
   const api = fakeApi();
   asDevice(api, alice);
   renderShell("/hosts");
@@ -308,7 +458,7 @@ test("the language follows the browser's preferred languages: Chinese of any reg
   await screen.findByText("hosts page");
   await waitFor(() => expect(document.documentElement.lang).toBe("zh-CN"));
   expect(places("主导航")).toEqual(["主机*", "机密"]);
-  fireEvent.click(topBarButton("语言：简体中文"));
+  fireEvent.click(frameButton("语言：简体中文"));
   expect(await screen.findByRole("menuitemradio", { name: "简体中文", checked: true })).toBeDefined();
 });
 
@@ -333,12 +483,12 @@ test("the Language menu overrides the browser's language, and the browser keeps 
   asDevice(api, bob);
   const { unmount } = renderShell("/hosts");
   await screen.findByText("hosts page");
-  expect(topBarButton("Language: English")).toBeDefined();
+  expect(frameButton("Language: English")).toBeDefined();
 
-  await chooseInTopBar("Language", "简体中文");
+  await chooseInFrame("Language", "简体中文");
 
-  expect(topBarButton("语言：简体中文")).toBeDefined();
-  expect(topBarButton("账户：bob")).toBeDefined();
+  expect(frameButton("语言：简体中文")).toBeDefined();
+  expect(frameButton("账户：bob")).toBeDefined();
   expect(localStorage.getItem("koko.language")).toBe("zh-CN");
   unmount();
 
@@ -356,18 +506,18 @@ test("the Appearance menu chooses Light, Dark or System, which the browser keeps
   const html = document.documentElement;
   expect([html.className, html.dataset.theme]).toEqual(["light", "light"]);
 
-  fireEvent.click(topBarButton("Appearance: System"));
+  fireEvent.click(frameButton("Appearance: System"));
   expect(await screen.findByRole("menuitemradio", { name: "System", checked: true })).toBeDefined();
   await expectAccessible();
   fireEvent.click(screen.getByRole("menuitemradio", { name: "Dark" }));
 
   await waitFor(() => expect([html.className, html.dataset.theme]).toEqual(["dark", "dark"]));
   expect(localStorage.getItem("koko.theme")).toBe("dark");
-  expect(topBarButton("Appearance: Dark")).toBeDefined();
+  expect(frameButton("Appearance: Dark")).toBeDefined();
   act(() => setSystemScheme("light")); // Dark holds whatever the system's mode
   expect(html.dataset.theme).toBe("dark");
 
-  await chooseInTopBar("Appearance", "System");
+  await chooseInFrame("Appearance", "System");
   expect(localStorage.getItem("koko.theme")).toBe("system");
   expect([html.className, html.dataset.theme]).toEqual(["light", "light"]);
   act(() => setSystemScheme("dark"));
@@ -377,22 +527,33 @@ test("the Appearance menu chooses Light, Dark or System, which the browser keeps
 // Accessibility of the frame, the account panel and both menus.
 
 test.each([
-  ["light", 1280],
-  ["dark", 1280],
-  ["light", 390],
-  ["dark", 390],
-] as const)("the frame, the account panel and both menus pass axe, %s, %i pixels wide", async (mode, width) => {
+  ["light", 1280, "open"],
+  ["dark", 1280, "open"],
+  ["light", 1280, "folded"],
+  ["dark", 1280, "folded"],
+  ["light", 1100, "over"],
+  ["dark", 1100, "over"],
+  ["light", 390, "none"],
+  ["dark", 390, "none"],
+] as const)("the frame, the account panel and both menus pass axe, %s, %i pixels wide, the rail %s", async (mode, width, state) => {
   setViewportWidth(width);
   localStorage.setItem("koko.theme", mode);
+  if (state === "folded") {
+    localStorage.setItem("koko.rail", "folded");
+  }
   const api = fakeApi();
   asDevice(api, alice);
   renderShell("/hosts");
   await screen.findByText("hosts page");
   expect(document.documentElement.dataset.theme).toBe(mode);
+  if (state === "over") {
+    openOver();
+  }
+  expect(rail()).toBe(state === "over" ? "folded" : state);
   await expectAccessible();
 
   for (const button of ["Language: English", "Appearance: " + (mode === "light" ? "Light" : "Dark")]) {
-    fireEvent.click(topBarButton(button));
+    fireEvent.click(frameButton(button));
     const menu = await screen.findByRole("menu");
     await expectAccessible();
     fireEvent.keyDown(menu, { key: "Escape" });
@@ -416,6 +577,11 @@ test("when koko web stops the frame says to run it again, until a call gets thro
   const stopped = await findAlert();
   expect(stopped).toBe("koko web is not running Run koko web again, then return to this page.");
   expect(screen.getByText("hosts page")).toBeDefined();
+  // At the head of the page's column, in the room beside the rail.
+  const notice = screen.getByText("koko web is not running").closest("[role='alert']");
+  const main = screen.getByRole("main");
+  expect(notice?.parentElement).toBe(main.parentElement);
+  expect(notice?.nextElementSibling).toBe(main);
   await expectAccessible();
 
   api.drop(0);

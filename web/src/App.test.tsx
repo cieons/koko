@@ -9,7 +9,7 @@ import { expectAccessible } from "./test/axe";
 import { fakeApi } from "./test/fakeApi";
 import { actAs, renderAt } from "./test/pages";
 
-test("the web UI opens on the frame, with the User's account in the top bar", async () => {
+test("the web UI opens on the frame, with the User's account in the rail", async () => {
   const api = fakeApi();
   actAs(api, { id: "user_1", name: "alice", role: "owner", created_at: "2026-11-01T09:00:00Z" });
 

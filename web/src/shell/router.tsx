@@ -24,17 +24,20 @@ export interface Route {
   path: string;
   page: ComponentType<PageProps>;
   /**
-   * nav, when set, makes the page one of the places the top bar links, in
+   * nav, when set, makes the page one of the places the frame links, in
    * the order of routes, under this message; a page beneath its path, such
    * as a Host's under /hosts, is in that place too.
    */
   nav?: MessageKey;
-  /** icon is the Lucide icon beside a place's name in the phone's bar. */
+  /**
+   * icon is a place's Lucide icon: beside its name in the open rail and the
+   * phone's bar at the foot, and alone in the folded rail.
+   */
   icon?: LucideIcon;
   /** ownerOnly hides the page, and its link, from a Member. */
   ownerOnly?: boolean;
   /**
-   * outside renders the page outside the frame, with no top bar and no
+   * outside renders the page outside the frame, with no rail and no
    * user.current, as Sign in and Set a Password are, which a browser opens
    * before it is signed in.
    */

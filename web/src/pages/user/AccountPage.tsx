@@ -20,7 +20,7 @@ import { PersonalSpace } from "./PersonPanel";
 /**
  * AccountPage is Account (docs/web-design.md, "Account"): who the web UI
  * acts as, their role and how this browser got in; the two choices this
- * browser keeps, Language and Appearance, mirroring the top bar; the
+ * browser keeps, Language and Appearance, mirroring the rail's; the
  * caller's own devices, this one marked, the Revoked ones too with all=1;
  * their Browser Sign-ins, this browser's marked; and what their Personal
  * Space holds. A browser signed in with a Password changes it in the
@@ -99,7 +99,7 @@ function viaText(t: Translate, caller: Caller): string {
   return t("user.account.viaLocal");
 }
 
-/** ThisBrowser holds the two choices this browser keeps, as segments that mirror the top bar's menus. */
+/** ThisBrowser holds the two choices this browser keeps, as segments that mirror the rail's menus. */
 function ThisBrowser() {
   const t = useT();
   const [language, setLanguage] = useLanguageChoice();

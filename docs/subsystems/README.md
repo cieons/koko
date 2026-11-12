@@ -13,7 +13,7 @@ ADR; a proposed change lives in its issue or PR.
 | The store: SQLite, transactions, migrations and record ids | [store.md](store.md) |
 | The Seal: the Root Key's file, sealed values, and the Root Key at start-up | [seal.md](seal.md) |
 | The web UI build: Node, HeroUI and Tailwind, the size budget, the embedded app and placeholder, the generated types, page tests, the static checks and the real-browser check | [web-ui.md](web-ui.md) |
-| The web UI shell: the frame (the top bar with its places, Language, Appearance and the account panel, and the phone's bar), routing and who the web UI acts as, language, mode and catalogues, the API client, the states every screen has, confirmations, edit forms, notices, what a page shows once, the page inventory | [web-shell.md](web-shell.md) |
+| The web UI shell: the frame (the rail with its places, the account panel, Language and Appearance, how it folds, and the phone's top row and foot bar), routing and who the web UI acts as, language, mode and catalogues, the API client, the states every screen has, confirmations, edit forms, notices, what a page shows once, the page inventory | [web-shell.md](web-shell.md) |
 | The Access and Account pages: the Users against the Spaces, a Space's and a person's panels, one's own devices and Browser Sign-ins, who sees and does what, what asks first, and a Join Code or Password Link shown once | [access-pages.md](access-pages.md) |
 | The Host connector: logging in to a Host through its Relay, the pinned host key and connect retries | [host-connector.md](host-connector.md) |
 | Enroll: `koko host enroll`, its inputs, the host key it pins, the states, and the one line it adds to `authorized_keys` | [enroll.md](enroll.md) |

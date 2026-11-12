@@ -79,17 +79,20 @@ export async function findAlert(): Promise<string> {
   });
 }
 
-/** topBarButton is the button of the top bar whose name matches name, such as /^Language/. */
-export function topBarButton(name: string | RegExp): HTMLElement {
+/**
+ * frameButton is the button of the frame's banner whose name matches name,
+ * such as /^Language/: in the rail on a desktop, in the top row on a phone.
+ */
+export function frameButton(name: string | RegExp): HTMLElement {
   return within(screen.getByRole("banner")).getByRole("button", { name });
 }
 
 /**
- * chooseInTopBar opens the top bar's menu behind the button named button,
+ * chooseInFrame opens the frame's menu behind the button named button,
  * such as Language or Appearance, and chooses its option named option.
  */
-export async function chooseInTopBar(button: "Language" | "Appearance" | "语言" | "外观", option: string): Promise<void> {
-  fireEvent.click(topBarButton(new RegExp(`^${button}[:：]`)));
+export async function chooseInFrame(button: "Language" | "Appearance" | "语言" | "外观", option: string): Promise<void> {
+  fireEvent.click(frameButton(new RegExp(`^${button}[:：]`)));
   fireEvent.click(await screen.findByRole("menuitemradio", { name: option }));
   await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
 }

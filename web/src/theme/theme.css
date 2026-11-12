@@ -96,7 +96,7 @@
   --surface-shadow: var(--sheet-shadow);
   --overlay-shadow: 0 0 0 1px oklch(0.2 0.02 265 / 0.08), 0 20px 48px -12px oklch(0.2 0.02 265 / 0.25);
   --button-highlight: inset 0 1px 0 oklch(1 0 0 / 0.2), 0 1px 2px oklch(0.3 0.15 262 / 0.4);
-  --current-place-shadow: inset 0 1px 0 oklch(1 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.12);
+  --island-shadow: var(--sheet-shadow);
   --segment: oklch(1 0 0);
   --backdrop: oklch(0.2 0.02 265 / 0.35);
   /* What a filled button's hover is mixed with: 8% black. */
@@ -133,6 +133,7 @@
     inset 0 1px 0 oklch(1 0 0 / 0.07), 0 0 0 1px oklch(1 0 0 / 0.05), 0 24px 48px -24px oklch(0 0 0 / 0.9);
   --overlay-shadow:
     inset 0 1px 0 oklch(1 0 0 / 0.09), 0 0 0 1px oklch(1 0 0 / 0.08), 0 24px 48px -12px oklch(0 0 0 / 0.8);
+  --island-shadow: var(--sheet-shadow), 0 0 0 1px oklch(1 0 0 / 0.09);
   --segment: oklch(0.31 0.01 265);
   --backdrop: oklch(0 0 0 / 0.6);
 }
@@ -145,15 +146,33 @@
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     /*
-     * A control that takes the focus scrolls clear of the sticky top bar
-     * (h-16) and, on a phone (ui/phone.ts's query), of the bar at the foot:
-     * a 2.75rem place, 0.5rem of padding and the safe area, as Shell.tsx
-     * draws them, with 0.5rem to spare (WCAG 2.4.11).
+     * On a phone (ui/phone.ts's query), a control that takes the focus
+     * scrolls clear of the sticky top row (h-14 under the safe area) and of
+     * the bar at the foot (a 3rem place, its hairline and padding, and the
+     * safe area), as Rail.tsx draws them, with 0.5rem to spare (WCAG
+     * 2.4.11). A desktop's rail is beside the page, never over it.
      */
-    scroll-padding-top: 5rem;
     @media (width < 768px) {
-      scroll-padding-bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 3.75rem);
+      scroll-padding-top: calc(env(safe-area-inset-top) + 4rem);
+      scroll-padding-bottom: calc(max(0.375rem, env(safe-area-inset-bottom)) + 4rem);
     }
+  }
+
+  /*
+   * --rail-w is the room the frame's rail takes at the start edge
+   * (Shell.tsx's data-rail), which a page and the terminal's workspace
+   * leave to it. The rail laid over the page takes none of its own.
+   */
+  [data-rail] {
+    --rail-w: 0px;
+  }
+
+  [data-rail="open"] {
+    --rail-w: 15.5rem;
+  }
+
+  [data-rail="folded"] {
+    --rail-w: 5rem;
   }
 
   body {
@@ -239,11 +258,16 @@
     --toggle-button-fg-selected: var(--background);
   }
 
-  /* The current place in the top bar and the phone's bar. */
+  /*
+   * The island: what is raised beside the page, such as the current place
+   * in the rail and the phone's foot bar. The panel's colour and shadow,
+   * edged in dark too.
+   */
+  .island,
   .place[aria-current="page"] {
-    background: var(--default);
+    background: var(--surface);
     color: var(--foreground);
-    box-shadow: var(--current-place-shadow);
+    box-shadow: var(--island-shadow);
   }
 
   /* Type roles. */
@@ -343,6 +367,11 @@
     [role="alertdialog"],
     [role="listbox"]:not([role="dialog"] *) {
       outline: 1px solid CanvasText;
+    }
+
+    /* The rail's end edge, which in colour is only the page meeting the page. */
+    .rail {
+      border-inline-end: 1px solid CanvasText;
     }
 
     /* Not on what only a script focuses, such as the main region after a navigation. */
