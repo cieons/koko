@@ -181,7 +181,9 @@ test("a Managed Host's page: the breadcrumb, how to reach it, its pin, Attribute
   expect(services.getByRole("button", { name: "Add Service" })).toBeDefined();
 
   // Four of the Space's Secrets, those that name the Host first, and All 6.
+  // The region shows at once; its list only once SecretList answers.
   const secrets = await screen.findByRole("region", { name: "Secrets in ops" });
+  await within(secrets).findByRole("list", { name: "Secrets in ops" });
   expect(within(secrets).getAllByRole("listitem").map((li) => li.querySelector("p")?.textContent)).toEqual([
     "web1-tls",
     "web1-root",
@@ -205,8 +207,9 @@ test("a Secret on a Host's page is copied and shown as on the Secrets page", asy
 
   await openHost("/hosts/web1", "web1");
   const secrets = await screen.findByRole("region", { name: "Secrets in ops" });
+  const copy = await within(secrets).findByRole("button", { name: "Copy the value of ops/web1-tls" });
   expect(within(secrets).queryByRole("link", { name: /^All/ })).toBeNull();
-  fireEvent.click(within(secrets).getByRole("button", { name: "Copy the value of ops/web1-tls" }));
+  fireEvent.click(copy);
   await waitFor(() => expect(writeText).toHaveBeenCalledWith("tls-key"));
   fireEvent.click(within(secrets).getByRole("button", { name: "Show the value of ops/web1-tls" }));
   expect((await within(secrets).findByRole("group", { name: "Value of ops/web1-tls" })).textContent).toContain("tls-key");
