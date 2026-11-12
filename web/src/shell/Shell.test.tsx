@@ -436,6 +436,46 @@ test("with no page yet, / and every path show the frame with Page not found", as
   expect(frameButton("Account: alice")).toBeDefined();
 });
 
+// The page's column: a list page fills the room beside the rail, every other page starts at the rail.
+
+test("a list page fills the room beside the rail, and every other page keeps its column, starting at the rail", async () => {
+  const api = fakeApi();
+  asDevice(api, alice);
+  const pages: Route[] = [
+    { path: "/hosts", page: HostsPage, nav: "shell.place.hosts", icon: Server, fill: true },
+    { path: "/account", page: AccountPage },
+  ];
+  renderShell("/hosts", pages);
+
+  await screen.findByText("hosts page");
+  const main = screen.getByRole("main");
+  expect(main.className).not.toContain("max-w-");
+  expect(main.className).toContain("md:px-8");
+
+  act(() => navigate("/account"));
+  await screen.findByText("account page");
+  expect(main.className).toContain("max-w-[76rem]");
+  expect(main.className).toContain("md:px-8");
+  expect(main.className).not.toContain("mx-auto");
+
+  // No page there: the column, as for any page that is no list.
+  act(() => navigate("/nowhere"));
+  await screen.findByRole("heading", { level: 1, name: "Page not found" });
+  expect(main.className).toContain("max-w-[76rem]");
+});
+
+test("a list page only the Owner may open does not fill the room for a Member, who gets Page not found", async () => {
+  const api = fakeApi();
+  asDevice(api, bob);
+  renderShell("/access", [
+    { path: "/hosts", page: HostsPage, nav: "shell.place.hosts", icon: Server, fill: true },
+    { path: "/access", page: AccessPage, nav: "shell.place.access", icon: UsersRound, ownerOnly: true, fill: true },
+  ]);
+
+  await screen.findByRole("heading", { level: 1, name: "Page not found" });
+  expect(screen.getByRole("main").className).toContain("max-w-[76rem]");
+});
+
 // The document's title, the skip link and the focus.
 
 test("the document's title is the page's own name, then koko", async () => {

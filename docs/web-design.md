@@ -242,8 +242,11 @@ items as icons, each keeping its accessible name:
 | 768px to 1279px | Folded. The fold button opens it over the page, on the backdrop, in the overlay colour with a 1.5rem radius at its end edge and the overlay shadow, until a place is chosen, Escape, or a click beside it, each giving the focus back to the fold button. The page stays where it was and takes no input meanwhile | 5rem |
 | Under 768px | None: the phone's frame below | 0 |
 
-**A page** sits beside the rail: its column, 76rem at most, is centred in
-the room left beside it, with 32px of padding (16px on a phone). A page is
+**A page** sits beside the rail, with 32px of padding (16px on a phone). A
+page whose body is a table or a list (Hosts, Secrets and Access) fills the
+room left beside the rail. Every other page is a column, 76rem at most,
+that starts at the rail, so the room left over is at its end; text that
+reads as prose keeps its own limit in `ch` on both. A page is
 a title (`t-display`), an optional line under it, and its one or two
 actions to the right of the title. A detail page has a breadcrumb above
 the title. With the rail open a page at 1280px wide gets about 1030px, and

@@ -50,6 +50,7 @@ export const hostRoutes: Route[] = [
     page: lazyPage(() => import("./HostsPage").then((m) => m.HostsPage)),
     nav: "shell.place.hosts",
     icon: Server,
+    fill: true,
   },
   { path: "/hosts/:host", page: hostPage },
   { path: "/hosts/:host/services/:service", page: hostPage },

@@ -34,7 +34,8 @@ import { matchRoute, navigate, type Route, signInPage, signInPath, useLocation }
  * does on a phone held sideways. In the
  * room beside the rail, the page's column: the shell's notice at its head,
  * then in the main region, for the Owner, the notice of a newer koko
- * release, then the page the URL names.
+ * release, then the page the URL names. A list page (`Route.fill`) has the
+ * whole room; any other keeps a column 76rem wide at most, from the rail.
  * It learns who the web UI acts as from user.current, reloaded as every
  * read is, and renders a page only once it knows, so a Member never sees an
  * Owner-only page or place.
@@ -102,6 +103,8 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
   useFocusMainAfterVisit(main);
   const { pathname } = useLocation();
   const onTerminal = pathname === terminalPath;
+  // A list page fills the room beside the rail; any other, and a path with no page, keeps the column.
+  const fill = matchRoute(visible, pathname)?.route.fill === true;
   // On the terminal a phone's frame, and a phone's held sideways, gives way to the workspace's own phone layout.
   const bare = onTerminal && (phone || sideways);
   const { loaded: terminalLoaded } = useWorkspace();
@@ -140,7 +143,9 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
               id="main"
               ref={main}
               tabIndex={-1}
-              className={onTerminal ? "outline-none" : "mx-auto w-full max-w-[76rem] px-4 pb-28 outline-none md:px-8 md:pb-16"}
+              className={
+                onTerminal ? "outline-none" : `w-full px-4 pb-28 outline-none md:px-8 md:pb-16 ${fill ? "" : "max-w-[76rem]"}`
+              }
             >
               {caller?.owner && !onTerminal && <ReleaseNotice />}
               {caller ? (
@@ -214,7 +219,7 @@ function NoticeBar({ notice }: { notice: Notice }) {
       role="alert"
       className={tone === "danger" ? "bg-danger-soft text-danger-soft-foreground" : "bg-warning-soft text-warning-soft-foreground"}
     >
-      <div className="mx-auto flex max-w-[76rem] items-start gap-3 px-4 py-3 md:px-8">
+      <div className="flex items-start gap-3 px-4 py-3 md:px-8">
         <Icon aria-hidden className="mt-0.5 size-5 shrink-0" />
         <p>
           <span className="font-semibold">{t(title)}</span>

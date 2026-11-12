@@ -10,5 +10,6 @@ export const secretRoutes: Route[] = [
     page: lazyPage(async () => (await import("./SecretsPage")).SecretsPage),
     nav: "shell.place.secrets",
     icon: KeyRound,
+    fill: true,
   },
 ];

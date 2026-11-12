@@ -106,8 +106,12 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   `/auth/signout` and goes to Sign in, replacing the history entry, its
   refusal shown in the panel. For the Owner, the koko server's line comes
   between them ([Releases](#releases)).
-- **The main region** (`<main id="main">`) is the page's column, 76rem at
-  most, centred in the room beside the rail; it holds the page, under the
+- **The main region** (`<main id="main">`) is the page's column. For a
+  list page (`Route.fill`) it is the whole room beside the rail; for any
+  other, and for a path with no page, it is 76rem at most and starts at
+  the rail. [`routes.test.ts`](../../web/src/routes.test.ts) names the
+  pages that fill, so a new list page is added there on purpose. It holds
+  the page, under the
   release notice for the Owner ([Releases](#releases)). After a visit
   that leaves the focus on nothing, as when the link followed went with the
   page it was on, the focus moves to it; a visit that leaves the focus
@@ -157,8 +161,9 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   page as `params.name`), the page component, the message the frame
   links it under as a place (`nav`) and its Lucide icon (`icon`), beside
   the name in the open rail and the phone's foot bar and alone in the
-  folded rail, whether only the Owner sees it (`ownerOnly`), and whether it
-  sits outside the frame (`outside`). The frame
+  folded rail, whether only the Owner sees it (`ownerOnly`), whether it
+  sits outside the frame (`outside`), and whether it fills the room beside
+  the rail (`fill`). The frame
   links the places in the order of `routes` in
   [`web/src/routes.ts`](../../web/src/routes.ts), and `/` goes, keeping its
   query, to the first place the caller may see. A path no route

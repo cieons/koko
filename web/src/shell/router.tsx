@@ -42,6 +42,12 @@ export interface Route {
    * before it is signed in.
    */
   outside?: boolean;
+  /**
+   * fill gives the page the whole room beside the rail, as a page whose
+   * body is a table or a list has; any other page keeps a column 76rem
+   * wide at most, starting at the rail.
+   */
+  fill?: boolean;
 }
 
 /** Location is where the browser is, and which visit of it this is. */
