@@ -101,6 +101,33 @@
   --backdrop: oklch(0.2 0.02 265 / 0.35);
   /* What a filled button's hover is mixed with: 8% black. */
   --darken: oklch(0 0 0);
+  /* The web terminal's background, and the covers over it: a step above the page. */
+  --term-surface: oklch(1 0 0);
+  /* The Reconnecting mark. */
+  --wait: oklch(0.6 0.14 70);
+  /*
+   * The web terminal's text, cursor, selection and sixteen ANSI colours
+   * (terminal/emulator/emulator.css hands them to wterm).
+   */
+  --term-text: #1d1f27;
+  --term-caret: #2a57c7;
+  --term-selection: rgb(60 110 230 / 24%);
+  --term-ansi-0: #1d1f27;
+  --term-ansi-1: #c4302b;
+  --term-ansi-2: #1f7a3d;
+  --term-ansi-3: #8f6400;
+  --term-ansi-4: #2157c9;
+  --term-ansi-5: #8b3fbf;
+  --term-ansi-6: #0f7480;
+  --term-ansi-7: #5f6370;
+  --term-ansi-8: #7a7e8a;
+  --term-ansi-9: #d9453f;
+  --term-ansi-10: #2a9150;
+  --term-ansi-11: #a87700;
+  --term-ansi-12: #3a6fe0;
+  --term-ansi-13: #a257d6;
+  --term-ansi-14: #1a8d9a;
+  --term-ansi-15: #8a8e9a;
 }
 
 .dark,
@@ -136,6 +163,27 @@
   --island-shadow: var(--sheet-shadow), 0 0 0 1px oklch(1 0 0 / 0.09);
   --segment: oklch(0.31 0.01 265);
   --backdrop: oklch(0 0 0 / 0.6);
+  --term-surface: oklch(0.145 0.005 265);
+  --wait: oklch(0.84 0.14 80);
+  --term-text: #e6e7ea;
+  --term-caret: #a3c4ff;
+  --term-selection: rgb(122 168 247 / 32%);
+  --term-ansi-0: #1c1d23;
+  --term-ansi-1: #f2777a;
+  --term-ansi-2: #7ed491;
+  --term-ansi-3: #e6c56c;
+  --term-ansi-4: #7aa8f7;
+  --term-ansi-5: #c79bf2;
+  --term-ansi-6: #6fd3d6;
+  --term-ansi-7: #c9cbd1;
+  --term-ansi-8: #6b6e7a;
+  --term-ansi-9: #ff9a9c;
+  --term-ansi-10: #a3e6b0;
+  --term-ansi-11: #f2d98d;
+  --term-ansi-12: #a3c4ff;
+  --term-ansi-13: #dcbcff;
+  --term-ansi-14: #9be6e8;
+  --term-ansi-15: #ffffff;
 }
 
 @layer base {

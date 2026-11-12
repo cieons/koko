@@ -1,0 +1,70 @@
+/*
+ * The terminal's look over wterm's own stylesheet (docs/web-design.md, "The
+ * terminal"): Geist Mono, Chinese falling through to the system's fonts, the
+ * text sizes More offers, and the theme's terminal tokens in wterm's
+ * variables. The colours themselves are in theme/theme.css, light and dark,
+ * as every colour is; wterm's stylesheet sets its own on .wterm, so these
+ * rules name both classes to be the ones that hold.
+ */
+.wterm.koko-term {
+  --term-font-family:
+    "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, "PingFang SC", "Hiragino Sans GB", "Noto Sans Mono CJK SC",
+    "Noto Sans CJK SC", "Microsoft YaHei", monospace;
+  --term-font-size: 14px;
+  --term-row-height: 18px;
+
+  --term-fg: var(--term-text);
+  --term-bg: var(--term-surface);
+  --term-cursor: var(--term-caret);
+  --term-selection-bg: var(--term-selection);
+  --term-color-0: var(--term-ansi-0);
+  --term-color-1: var(--term-ansi-1);
+  --term-color-2: var(--term-ansi-2);
+  --term-color-3: var(--term-ansi-3);
+  --term-color-4: var(--term-ansi-4);
+  --term-color-5: var(--term-ansi-5);
+  --term-color-6: var(--term-ansi-6);
+  --term-color-7: var(--term-ansi-7);
+  --term-color-8: var(--term-ansi-8);
+  --term-color-9: var(--term-ansi-9);
+  --term-color-10: var(--term-ansi-10);
+  --term-color-11: var(--term-ansi-11);
+  --term-color-12: var(--term-ansi-12);
+  --term-color-13: var(--term-ansi-13);
+  --term-color-14: var(--term-ansi-14);
+  --term-color-15: var(--term-ansi-15);
+
+  border-radius: 0;
+  box-shadow: none;
+  padding: 14px 18px;
+}
+
+.wterm.koko-term ::selection {
+  background: var(--term-selection);
+}
+
+.wterm.koko-term-12 {
+  --term-font-size: 12px;
+  --term-row-height: 16px;
+}
+
+.wterm.koko-term-13 {
+  --term-font-size: 13px;
+  --term-row-height: 17px;
+}
+
+.wterm.koko-term-16 {
+  --term-font-size: 16px;
+  --term-row-height: 21px;
+}
+
+.wterm.koko-term-18 {
+  --term-font-size: 18px;
+  --term-row-height: 23px;
+}
+
+@media (width < 768px) {
+  .wterm.koko-term {
+    padding: 8px 10px;
+  }
+}

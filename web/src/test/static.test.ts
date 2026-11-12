@@ -5,6 +5,8 @@ import herouiIndex from "../../node_modules/@heroui/styles/dist/components/index
 import usePress from "../../node_modules/react-aria/dist/private/interactions/usePress.mjs?raw";
 import usePreventScroll from "../../node_modules/react-aria/dist/private/overlays/usePreventScroll.mjs?raw";
 import indexHTML from "../../index.html?raw";
+import packageLock from "../../package-lock.json?raw";
+import packageJSON from "../../package.json?raw";
 
 // Static checks of the web UI's own source, which keep it on ADR 0046's
 // terms: a colour is written in the theme's stylesheet alone, so the rest is
@@ -16,6 +18,9 @@ import indexHTML from "../../index.html?raw";
 
 /** code is every TypeScript file of the app and its tests, by path. */
 const code = import.meta.glob<string>(["../**/*.ts", "../**/*.tsx"], { query: "?raw", import: "default", eager: true });
+
+/** patches are the changes patch-package makes to installed packages, by path. */
+const patches = import.meta.glob<string>("../../patches/*.patch", { query: "?raw", import: "default", eager: true });
 
 /** css is every CSS file of koko's own, by path. */
 const css = import.meta.glob<string>(["../**/*.css"], {
@@ -164,4 +169,36 @@ test("index.html runs no inline script, and carries the viewport, color-scheme a
   expect(indexHTML).toContain('<meta name="color-scheme" content="light dark">');
   // An icon of its own, so the browser asks for no /favicon.ico.
   expect(indexHTML).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml">');
+});
+
+// The web terminal's emulator is wterm (ADR 0054), kept behind one component
+// so that replacing it, or its core, changes one directory.
+const emulatorDir = "../terminal/emulator/";
+
+test("only the terminal's emulator directory imports wterm", () => {
+  expect(Object.keys(code).filter((path) => path.startsWith(emulatorDir)).length).toBeGreaterThan(0);
+  const outside = Object.fromEntries(Object.entries(code).filter(([path]) => !path.startsWith(emulatorDir)));
+  expect(offending(outside, /(\bfrom\s*|\bimport\s*\(?\s*)["']@wterm\//)).toEqual([]);
+});
+
+test("the four wterm packages are pinned to one exact version, and its renderer's patch is applied at install", () => {
+  const { dependencies, scripts } = JSON.parse(packageJSON) as {
+    dependencies: Record<string, string>;
+    scripts: Record<string, string>;
+  };
+  const lock = JSON.parse(packageLock) as { packages: Record<string, { version: string }> };
+  const wterm = Object.entries(dependencies).filter(([name]) => name.startsWith("@wterm/"));
+  expect(wterm.map(([name]) => name).sort()).toEqual(["@wterm/core", "@wterm/dom", "@wterm/ghostty", "@wterm/react"]);
+  const versions = new Set(wterm.map(([, version]) => version));
+  expect(versions.size).toBe(1);
+  const [version = ""] = versions;
+  expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+  for (const [name] of wterm) {
+    expect({ name, locked: lock.packages[`node_modules/${name}`]?.version }).toEqual({ name, locked: version });
+  }
+  // patch-package fails the install when the patch no longer applies, so
+  // an upgrade cannot drop it silently: it makes the patch again, or drops
+  // it once wterm sets its rows' styles through CSSOM itself.
+  expect(scripts.postinstall).toBe("patch-package --error-on-fail");
+  expect(Object.keys(patches)).toEqual([`../../patches/@wterm+dom+${version}.patch`]);
 });

@@ -37,13 +37,28 @@ app sits in its providers is [the web UI shell](web-shell.md#providers).
   | `react-aria` 3.53.1 | `dependencies` | React Aria's hooks, at the version `react-aria-components` brings, so there is one copy; its `usePress` and `usePreventScroll` are what the CSP meets (below) |
   | `@internationalized/date` 3.12.4 | `dependencies` | the calendar dates of the date field's value (`ui/DateInput.tsx`) |
   | `lucide-react` 1.70.0 | `dependencies` | the icons koko names itself, such as each place's in the phone's bar |
+  | `@wterm/react`, `@wterm/dom`, `@wterm/core`, `@wterm/ghostty` 0.5.10 | `dependencies` | the web terminal's emulator, wterm on its ghostty core ([ADR 0054](../adr/0054-the-web-terminal-is-wterm-on-its-ghostty-core-behind-one-component-of-kokos-own.md)), imported by `src/terminal/emulator/` alone; `@wterm/dom`'s renderer is patched (below) |
+  | `patch-package` 8.0.1 | `devDependencies` | applies `web/patches/` at install |
   | `tailwindcss` 4.3.5, `@tailwindcss/vite` 4.3.5 | `devDependencies` | Tailwind, the web UI's one styling vocabulary, and its Vite plugin, which builds the stylesheet; never in the build itself |
   | `@react-aria/optimize-locales-plugin` 2.1.0 | `devDependencies` | keeps React Aria's own strings for English and Simplified Chinese alone (`vite.config.ts`) |
   | `axe-core` | `devDependencies` | the accessibility check of page tests |
 
   HeroUI v3 needs no animation library: its motion is CSS.
 - **Install scripts.** `allowScripts` in `package.json` lists `fsevents`,
-  the one dependency that ships one, as `false`, so no install script runs.
+  the one dependency that ships one, as `false`, so no dependency's install
+  script runs. The web UI's own `postinstall` runs `patch-package
+  --error-on-fail`, which applies each file in `web/patches/` to the package
+  it names, so `make webui` and CI build the patched package.
+- **wterm's renderer patch.** `@wterm/dom` 0.5.10 writes each row of the
+  terminal as HTML whose runs carry `style` attributes, which kokod's CSP
+  refuses, so the terminal drew garbled.
+  `patches/@wterm+dom+0.5.10.patch` has the rows carry their styles in
+  `data-term-style` and sets them through CSSOM after the parser (ADR
+  0054). The install fails when the patch no longer applies, so an upgrade
+  of wterm makes it again, or drops it once wterm ships the change.
+  `src/terminal/emulator/wterm.test.ts` runs the real renderer and core
+  under jsdom and fails on any `style` attribute handed to the HTML parser;
+  the page tests' CSP watch cannot see one, since jsdom enforces no CSP.
 - **Provenance.** CI's check job runs `npm audit signatures` after `npm ci`,
   and fails on a registry signature or provenance attestation that does not
   verify. It needs the registry, so `make check` does not run it.

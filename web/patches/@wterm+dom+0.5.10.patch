@@ -1,0 +1,55 @@
+diff --git a/node_modules/@wterm/dom/dist/renderer.js b/node_modules/@wterm/dom/dist/renderer.js
+index 077910e..2e7c2c1 100644
+--- a/node_modules/@wterm/dom/dist/renderer.js
++++ b/node_modules/@wterm/dom/dist/renderer.js
+@@ -149,10 +149,10 @@ function cellSpanPart(className, style, text) {
+     const flat = !style.includes("text-decoration:underline line-through;");
+     if (!flat) {
+         style = style.replace("text-decoration:underline line-through;", "text-decoration:underline;");
+-        content = `<span style="text-decoration:line-through solid currentColor;">${content}</span>`;
++        content = `<span data-term-style="text-decoration:line-through solid currentColor;">${content}</span>`;
+     }
+     const classAttr = className ? ` class="${className}"` : "";
+-    const styleAttr = style ? ` style="${style}"` : "";
++    const styleAttr = style ? ` data-term-style="${style}"` : "";
+     const opening = `<span${classAttr}${styleAttr}>`;
+     return {
+         html: `${opening}${content}</span>`,
+@@ -160,6 +160,15 @@ function cellSpanPart(className, style, text) {
+         text: flat ? text : undefined,
+     };
+ }
++// koko: a style attribute the HTML parser meets is refused by a CSP without
++// 'unsafe-inline' for styles, so rows carry their styles in data-term-style
++// and they are applied here through CSSOM, which the CSP does not govern.
++function applyTermStyles(root) {
++    for (const el of root.querySelectorAll("[data-term-style]")) {
++        el.style.cssText = el.getAttribute("data-term-style");
++        el.removeAttribute("data-term-style");
++    }
++}
+ function safeLinkHref(uri) {
+     if (!uri)
+         return undefined;
+@@ -896,6 +905,7 @@ export class Renderer {
+         // Parsing the whole row is cheaper when there is little to retain.
+         if (retained < replaced) {
+             row.innerHTML = parts.map((part) => part.html).join("");
++            applyTermStyles(row);
+         }
+         else {
+             // Replace only the changed middle, retaining the native text nodes and
+@@ -908,8 +918,11 @@ export class Renderer {
+                 .slice(start, newEnd)
+                 .map((part) => part.html)
+                 .join("");
+-            if (html)
+-                range.insertNode(range.createContextualFragment(html));
++            if (html) {
++                const fragment = range.createContextualFragment(html);
++                applyTermStyles(fragment);
++                range.insertNode(fragment);
++            }
+         }
+         this.rowParts.set(row, parts);
+     }
