@@ -28,6 +28,8 @@ export interface Tab {
   state: ConnectionState;
   /** opening counts the SSH Sessions the tab has opened: Try again and Open a new one each open the next. */
   opening: number;
+  /** session is its SSH Session's id once the shell has started, which the Files panel's calls name. */
+  session?: string;
   /** cwd is the directory its shell last reported (OSC 7). */
   cwd?: string;
   /** clipboard is the text a program in it asks to copy (OSC 52), not yet answered. */
@@ -207,7 +209,7 @@ export function stepTab(by: 1 | -1): void {
 export function reopen(key: number): void {
   const tab = state.tabs.find((each) => each.key === key);
   if (tab && settled(tab)) {
-    patchTab(key, { state: { status: "connecting" }, opening: tab.opening + 1, clipboard: undefined });
+    patchTab(key, { state: { status: "connecting" }, opening: tab.opening + 1, session: undefined, clipboard: undefined });
   }
 }
 

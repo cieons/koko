@@ -225,11 +225,12 @@ export function Pane({ tab, active, shown, terminals }: PaneProps) {
     if (!size) {
       return;
     }
-    const opened = terminals.open(
+    // A connection tells its state only after open returns, so its id is there to read.
+    const opened: Connection = terminals.open(
       host,
       { columns: size.cols, rows: size.rows },
       {
-        onState: (next) => patchTab(key, { state: next }),
+        onState: (next) => patchTab(key, { state: next, session: opened.sessionId || undefined }),
         onOutput: (bytes) => emulator.current?.write(bytes),
       },
     );

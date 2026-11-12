@@ -14,8 +14,11 @@ export type OpOrEndpoint<Req, Resp> = Op<Req, Resp> | AuthEndpoint<Req, Resp>;
 /** FakeCall is one request the fake API received. */
 export interface FakeCall {
   method: string;
+  /** The path, without its query. */
   path: string;
-  /** The parsed JSON body, or undefined when there was none. */
+  /** The query, as an upload's chunk carries one. */
+  query: URLSearchParams;
+  /** The parsed JSON body, the bytes of a body that is no JSON, or undefined when there was none. */
   request: unknown;
   /** The request's headers, by lowercase name. */
   headers: Record<string, string>;
@@ -31,8 +34,8 @@ class Refusal extends Error {
   readonly retryAfter?: number;
   readonly items?: ItemError[];
 
-  constructor(code: string, status: number, retryAfter?: number, items?: ItemError[]) {
-    super(`the fake API refused with ${code}`);
+  constructor(code: string, status: number, retryAfter?: number, items?: ItemError[], message?: string) {
+    super(message ?? `the fake API refused with ${code}`);
     this.code = code;
     this.status = status;
     this.retryAfter = retryAfter;
@@ -47,6 +50,14 @@ class Refusal extends Error {
  */
 export function refusal(code: string, status = 400, retryAfter?: number): Refusal {
   return new Refusal(code, status, retryAfter);
+}
+
+/**
+ * refusalSaying makes the Refusal a handler throws to refuse with code and
+ * the koko server's own words, as host_refused carries the Host's.
+ */
+export function refusalSaying(code: string, status: number, message: string): Refusal {
+  return new Refusal(code, status, undefined, undefined, message);
 }
 
 /**
@@ -75,7 +86,7 @@ export function batchRefusal(faults: Readonly<Record<number, string>>): Refusal 
  */
 export class FakeApi {
   readonly calls: FakeCall[] = [];
-  readonly #handlers = new Map<string, (request: unknown) => unknown | Promise<unknown>>();
+  readonly #handlers = new Map<string, (request: unknown, query: URLSearchParams) => unknown | Promise<unknown>>();
   #drops = 0;
 
   /**
@@ -85,6 +96,16 @@ export class FakeApi {
    */
   on<Req, Resp>(op: OpOrEndpoint<Req, Resp>, handler: (request: Req) => Resp | Promise<Resp>): void {
     this.#handlers.set(op.path, (request) => handler(request as Req));
+  }
+
+  /**
+   * onBytes answers every POST of bytes to path, such as an upload's chunk,
+   * with what handler returns, given the bytes and the query; a handler
+   * that throws a refusal refuses the call, and one that throws a TypeError
+   * fails it as a dropped connection does.
+   */
+  onBytes<Resp>(path: string, handler: (bytes: Blob, query: URLSearchParams) => Resp | Promise<Resp>): void {
+    this.#handlers.set(path, (request, query) => handler(request as Blob, query));
   }
 
   /** requests are the parsed bodies of every call of op, in the order they came. */
@@ -104,20 +125,23 @@ export class FakeApi {
 
   /** fetch answers one request, as the koko server's API would. */
   readonly fetch = async (path: string, init: RequestInit = {}): Promise<Response> => {
-    const body = typeof init.body === "string" ? init.body : "";
-    const request: unknown = body === "" ? undefined : JSON.parse(body);
+    const [pathname = path, search = ""] = path.split("?");
+    const query = new URLSearchParams(search);
+    const body = init.body;
+    const request: unknown =
+      body instanceof Blob ? body : typeof body === "string" && body !== "" ? JSON.parse(body) : undefined;
     const headers = Object.fromEntries(new Headers(init.headers).entries());
-    this.calls.push({ method: init.method ?? "GET", path, request, headers });
+    this.calls.push({ method: init.method ?? "GET", path: pathname, query, request, headers });
     if (this.#drops > 0) {
       this.#drops--;
       throw new TypeError("Failed to fetch");
     }
-    const handler = this.#handlers.get(path);
+    const handler = this.#handlers.get(pathname);
     if (!handler) {
-      return refuse(new Refusal("unknown_operation", 404), `the fake API has no handler for ${path}`);
+      return refuse(new Refusal("unknown_operation", 404), `the fake API has no handler for ${pathname}`);
     }
     try {
-      return Response.json(await handler(request));
+      return Response.json(await handler(request, query));
     } catch (error) {
       if (error instanceof Refusal) {
         return refuse(error, error.message);

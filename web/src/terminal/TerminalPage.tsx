@@ -1,6 +1,6 @@
 import { Button } from "@heroui/react";
-import { ChevronRight, Folder, FolderOpen, X } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { ChevronRight, Folder, FolderOpen } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-aria-components";
 
 import type { Host } from "../api/host";
@@ -10,9 +10,12 @@ import { navigate } from "../shell/router";
 import { writeClipboard } from "../ui/copy";
 import { notify } from "../ui/notify";
 import { useDocumentTitle } from "../ui/Page";
+import { usePhone } from "../ui/phone";
 import { type RowAction, RowMenu } from "../ui/RowMenu";
 import { Terminals } from "./connection";
 import { fontSizes } from "./emulator/Emulator";
+import { resetUploads } from "./files";
+import { DropCover, type Dropped, FilesColumn, FilesSheet, useFileDrop } from "./FilesPanel";
 import { useManagedHosts } from "./hosts";
 import { chord, openSwitcher } from "./keys";
 import { Pane } from "./Pane";
@@ -140,30 +143,6 @@ function Head(props: { tab: Tab | undefined; space: string | undefined; files: b
   );
 }
 
-/**
- * FilesColumn is where the Files panel docks, inside the island at its end
- * edge, the terminal narrowing for it: its head names the tab's Host, and
- * its listing is the Files panel's (#179).
- */
-function FilesColumn({ tab, onClose }: { tab: Tab; onClose: () => void }) {
-  const t = useT();
-  return (
-    <aside
-      aria-label={t("terminal.files")}
-      className="flex w-[clamp(20rem,28vw,26rem)] shrink-0 flex-col border-s border-line bg-surface"
-    >
-      <div className="flex h-14 shrink-0 items-center gap-2 border-b border-line ps-5 pe-3">
-        <h2 className="t-title min-w-0 flex-1 truncate">
-          {t("terminal.files")} <span className="text-muted">· {t("terminal.files.on", { host: tab.label })}</span>
-        </h2>
-        <Button variant="ghost" isIconOnly size="sm" className="rounded-full" aria-label={t("terminal.files.close")} onPress={onClose}>
-          <X aria-hidden className="size-4" />
-        </Button>
-      </div>
-    </aside>
-  );
-}
-
 /** EmptyWorkspace is the workspace with no tab: what a terminal is, up to eight Managed Hosts to open one to, and the switcher. */
 function EmptyWorkspace({ hosts }: { hosts: readonly Host[] | undefined }) {
   const t = useT();
@@ -221,9 +200,25 @@ export function Workspace({ shown, notice }: WorkspaceProps) {
   const t = useT();
   const ws = useWorkspace();
   const hosts = useManagedHosts();
+  const phone = usePhone();
   const [files, setFiles] = useState(false);
+  const [dropped, setDropped] = useState<Dropped>();
   const [ending, setEnding] = useState<Tab>();
   const tab = ws.tabs.find((each) => each.key === ws.active);
+  const taken = useCallback(() => setDropped(undefined), []);
+  // Files dropped on a terminal whose shell runs go into the directory it is in, through the Files panel.
+  const drop = useFileDrop(shown && tab?.session !== undefined && shellLives(tab), (dropping) => {
+    if (tab && dropping.length > 0) {
+      setDropped({ tab: tab.key, files: dropping });
+      setFiles(true);
+    }
+  });
+  const panel = tab && {
+    tab,
+    dropped: dropped?.tab === tab.key ? dropped : undefined,
+    onTaken: taken,
+    onClose: () => setFiles(false),
+  };
   const more = useMore(tab, setEnding);
   // This document's SSH Sessions, which end first what the document before a reload left.
   const [terminals] = useState(() => new Terminals());
@@ -232,6 +227,9 @@ export function Workspace({ shown, notice }: WorkspaceProps) {
   useEffect(() => {
     void terminals.endEarlier();
   }, [terminals]);
+
+  // The uploads go with the workspace, as on signing out, so the next Sign-in sees none of them.
+  useEffect(() => resetUploads, []);
 
   // The URL lists the tabs, so a reload or a bookmark opens the same Hosts again.
   const query = workspaceQuery(ws);
@@ -245,7 +243,7 @@ export function Workspace({ shown, notice }: WorkspaceProps) {
   // pointer, the switcher or a chord), and when the workspace is shown with
   // the focus nowhere: each once its emulator is ready and no overlay is
   // open, since an emulator still loading has nothing to focus.
-  const overlay = ws.switcher || ending !== undefined || ws.closing !== undefined;
+  const overlay = ws.switcher || ending !== undefined || ws.closing !== undefined || (files && phone);
   const ready = tab?.ready === true;
   const answered = useRef(0);
   useEffect(() => {
@@ -274,15 +272,17 @@ export function Workspace({ shown, notice }: WorkspaceProps) {
       >
         <div className="flex min-w-0 flex-1 flex-col">
           <Head tab={tab} space={tab && spaceOf(hosts, tab.host)} files={files} onFiles={() => setFiles(!files)} more={more} />
-          <div className="relative min-h-0 flex-1 overflow-hidden bg-[var(--term-surface)]">
+          <div className="relative min-h-0 flex-1 overflow-hidden bg-[var(--term-surface)]" {...drop.handlers}>
             {ws.tabs.map((each) => (
               <Pane key={each.key} tab={each} active={each.key === ws.active} shown={shown} terminals={terminals} />
             ))}
             {ws.tabs.length === 0 && <EmptyWorkspace hosts={hosts} />}
+            {drop.over && tab && <DropCover tab={tab} />}
           </div>
         </div>
-        {files && tab && <FilesColumn tab={tab} onClose={() => setFiles(false)} />}
+        {files && panel && !phone && <FilesColumn {...panel} />}
       </section>
+      {files && panel && phone && shown && <FilesSheet {...panel} />}
       {shown && ws.switcher && <Switcher hosts={hosts} />}
       {ending && (
         <EndQuestion

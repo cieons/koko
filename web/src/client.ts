@@ -174,6 +174,27 @@ export async function post<Req, Resp>(endpoint: AuthEndpoint<Req, Resp>, request
 }
 
 /**
+ * postBytes sends bytes to one of the web front's own endpoints that takes
+ * them as they are, as an upload's chunk does: a POST of
+ * application/octet-stream to path, sent once. It returns the JSON
+ * response, or throws an ApiError when the koko server refuses and an
+ * UnreachableError when the connection fails, as post does.
+ */
+export async function postBytes<Resp>(path: string, bytes: Blob): Promise<Resp> {
+  let answer: { response: Response; body: string };
+  try {
+    answer = await attempt(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: bytes,
+    });
+  } catch (error) {
+    throw error instanceof TypeError ? new UnreachableError(path, error) : error;
+  }
+  return answered<Resp>(answer);
+}
+
+/**
  * attempt sends a request once and reads its whole answer, so that a
  * connection that drops before the answer ends fails the attempt with
  * fetch's TypeError, as one that drops before it begins does.
