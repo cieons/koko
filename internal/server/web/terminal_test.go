@@ -127,11 +127,11 @@ func TestTheTerminalRefusesBeforeTheUpgrade(t *testing.T) {
 // After the upgrade, the first message's answer refuses a page out of date
 // (reload_page), a browser not signed in and one whose Sign-in has ended
 // (signin_required), then the WebSocket closes with status 1008; a
-// malformed first message, and none within its time, close it with 1008
-// alone. No Host is dialled for any of them.
+// malformed first message closes it with 1008 alone. No Host is dialled for
+// any of them.
 func TestTheTerminalRefusesInItsFirstAnswer(t *testing.T) {
 	t.Parallel()
-	h := startTerminals(t, harness.Timings(timing.Timings{FirstMessage: 300 * time.Millisecond}))
+	h := startTerminals(t)
 	host := terminalHost(t, h, "web1", nil)
 	conns := host.Conns()
 	b := h.SignIn(harness.Owner)
@@ -163,18 +163,15 @@ func TestTheTerminalRefusesInItsFirstAnswer(t *testing.T) {
 		"an id not hex":     `{"protocol": 1, "resume": "` + strings.Repeat("g", 32) + `", "offset": 0}`,
 		"over 4 KiB":        `{"protocol": 1, "open": "` + strings.Repeat("w", 5000) + `", "cols": 80, "rows": 24}`,
 		"binary, not text":  "",
-		"no first message":  "-",
 		"an id of 31 chars": `{"protocol": 1, "end": "` + strings.Repeat("0", 31) + `"}`,
 	} {
 		c, _, err := b.TerminalPage().Dial()
 		if err != nil {
 			t.Fatal(err)
 		}
-		switch msg {
-		case "":
+		if msg == "" {
 			err = c.Write(t.Context(), websocket.MessageBinary, []byte(`{"protocol": 1, "open": "web1", "cols": 80, "rows": 24}`))
-		case "-":
-		default:
+		} else {
 			err = c.Write(t.Context(), websocket.MessageText, []byte(msg))
 		}
 		if err != nil {
@@ -186,6 +183,21 @@ func TestTheTerminalRefusesInItsFirstAnswer(t *testing.T) {
 	}
 	if got := host.Conns(); got != conns {
 		t.Errorf("the refused first messages dialled the Host %d times", got-conns)
+	}
+}
+
+// A WebSocket that sends no first message within timing.FirstMessage is
+// closed with status 1008.
+func TestATerminalWithoutAFirstMessageIsClosed(t *testing.T) {
+	t.Parallel()
+	// The first message never comes, so its wait is shortened.
+	h := startTerminals(t, harness.Timings(timing.Timings{FirstMessage: 300 * time.Millisecond}))
+	c, _, err := h.SignIn(harness.Owner).TerminalPage().Dial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := harness.CloseStatus(t.Context(), c); got != websocket.StatusPolicyViolation {
+		t.Errorf("a WebSocket without a first message closed with %d, want 1008", got)
 	}
 }
 
@@ -232,9 +244,16 @@ func TestATerminalRunsAShellOnThePty(t *testing.T) {
 	w.WaitOutput("ready\n")
 	data := make([]byte, 4<<20)
 	_, _ = rand.Read(data)
-	go w.Type(data)
+	typed := make(chan error, 1)
+	go func() {
+		_, err := w.Write(data)
+		typed <- err
+	}()
 	if out := w.WaitOutputLen(len("ready\n") + len(data)); !bytes.Equal(out[len("ready\n"):], data) {
 		t.Error("the 4 MiB cat echoed are not those sent")
+	}
+	if err := <-typed; err != nil {
+		t.Errorf("send 4 MiB: %v", err)
 	}
 
 	w.Resize(100, 40)
@@ -384,9 +403,19 @@ func TestASignInHoldsAtMost16SSHSessions(t *testing.T) {
 
 	signInAgain(t, h, harness.Owner).TerminalPage().Open("web1", 80, 24).Type([]byte("echo other\n"))
 
+	// Its place is free once it has left the koko server's registry, a
+	// moment after its end is logged.
 	open[0].Close()
-	waitLog(t, h, `msg="ssh session ended" tunnel=`+open[0].ID+` .* reason="client closed"\n`)
-	p.Open("web1", 80, 24)
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if w, _ := p.TryOpen("web1", 80, 24); w != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no SSH Session opened within 10 s of one of the 16 closing")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	if a, _ := p.End(open[1].ID); !a.Ended {
 		t.Fatalf("the end answered %+v", a)
@@ -496,6 +525,25 @@ func TestATerminalEnds(t *testing.T) {
 	held.Drop()
 	waitLog(t, h, `msg="ssh session ended" tunnel=`+held.ID+` .* reason="grace over"\n`)
 	wantRefused(t, b.TerminalPage().Resume(held), wire.TerminalResumeRefused, "")
+
+	// A shell that keeps writing fills the stream's buffer once its page
+	// is gone: an end, and the grace, end its SSH Session all the same.
+	busy := func() *harness.WebTerminal {
+		t.Helper()
+		w := b.TerminalPage().Open("web1", 80, 24)
+		w.Type([]byte("yes\n"))
+		w.WaitOutputLen(64 << 10)
+		w.Drop()
+		waitLog(t, h, `msg="ssh session detached" tunnel=`+w.ID+` `)
+		return w
+	}
+	ended := busy()
+	if a, _ := b.TerminalPage().End(ended.ID); !a.Ended {
+		t.Errorf("the end of a busy terminal answered %+v", a)
+	}
+	waitLog(t, h, `msg="ssh session ended" tunnel=`+ended.ID+` .* reason="client closed"\n`)
+	graced := busy()
+	waitLog(t, h, `msg="ssh session ended" tunnel=`+graced.ID+` .* reason="grace over"\n`)
 }
 
 // The Gateway watches a terminal's WebSocket, as the page does: an idle one
@@ -566,11 +614,12 @@ func TestTheGatewayWatchesATerminalsWebSocket(t *testing.T) {
 
 // Stopping the koko server gives each web terminal the restart notice, as a
 // line and as the stream's close, before the web listener closes: while a
-// call in flight still holds the listener. A page too stalled to take its
-// notice is cut once StopNotice has passed, and the stop goes on.
+// call in flight is still open on it. A page too stalled to take its notice
+// is cut once StopNotice has passed, a terminal whose Host sits on its
+// session's open ends, and the stop goes on.
 func TestStoppingGivesEachTerminalTheRestartNotice(t *testing.T) {
 	t.Parallel()
-	h := startTerminals(t, harness.Timings(timing.Timings{StopNotice: 500 * time.Millisecond}))
+	h := startTerminals(t)
 	terminalHost(t, h, "web1", nil)
 	b := h.SignIn(harness.Owner)
 	live := b.TerminalPage().Open("web1", 80, 24)
@@ -581,6 +630,24 @@ func TestStoppingGivesEachTerminalTheRestartNotice(t *testing.T) {
 	stalled.Type([]byte("yes\n"))
 	stalled.WaitOutputLen(1 << 20)
 	f.Stall()
+
+	loaded := terminalHost(t, h, "loaded", nil)
+	loaded.HoldChannels()
+	opens := len(loaded.Requests())
+	opening, _, err := b.TerminalPage().Dial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := opening.Write(t.Context(), websocket.MessageText, []byte(`{"protocol": 1, "open": "loaded", "cols": 80, "rows": 24}`)); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for len(loaded.Requests()) == opens {
+		if time.Now().After(deadline) {
+			t.Fatal("the Host that holds its channels got no session open within 10 s")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	var d net.Dialer
 	held, err := d.DialContext(t.Context(), "tcp", h.WebAddress())
@@ -619,6 +686,9 @@ func TestStoppingGivesEachTerminalTheRestartNotice(t *testing.T) {
 	}
 	if !regexp.MustCompile(`msg="ssh session ended" tunnel=` + stalled.ID + ` .* reason="server stopping"\n`).MatchString(h.Log()) {
 		t.Errorf("the stalled terminal did not end as the koko server stopped:\n%s", h.Log())
+	}
+	if _, _, err := opening.Read(t.Context()); err == nil {
+		t.Error("the terminal whose Host held its open got an answer as the koko server stopped")
 	}
 }
 

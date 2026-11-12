@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"slices"
@@ -232,7 +233,10 @@ func (g *Gateway) resumeTerminal(c TerminalCaller, s TerminalSocket, id tunnelID
 // count against its limit. The page that held it is gone, so the WebSocket
 // it may still seem to be on is cut rather than waited for.
 func (g *Gateway) EndTerminal(c TerminalCaller, id [wire.TunnelIDSize]byte) {
-	t, _ := g.resumable(tunnelID(id), callerKey{id: callerID(c.Caller), run: c.Run}, clientBrowser)
+	// Whether or not its stream is attached yet, or it has ended already.
+	g.mu.Lock()
+	t := g.ownLocked(tunnelID(id), callerKey{id: callerID(c.Caller), run: c.Run}, clientBrowser)
+	g.mu.Unlock()
 	if t == nil {
 		return
 	}
@@ -384,6 +388,10 @@ func (g *Gateway) startShell(t *tunnel, a admission, cols, rows uint32) (*termin
 		return nil, connectRefusal(a.host, err), nil
 	}
 	sh := &terminalShell{host: conn, hostName: a.host.Name, relayName: relayName(a.host)}
+	// A Host that answers neither the open nor a request would hold the
+	// SSH Session's end, as when the koko server stops: the end closes the
+	// connection, which fails them.
+	defer context.AfterFunc(t.ctx, func() { _ = conn.Close() })()
 	refused := &refusal{
 		banner: "koko: " + a.host.Name + " refused a shell with a terminal for its Host Account \"" + a.host.Account + "\"; this SSH Session did not start.\n",
 		code:   wire.TerminalShellRefused, reason: "shell refused",
@@ -394,7 +402,7 @@ func (g *Gateway) startShell(t *tunnel, a admission, cols, rows uint32) (*termin
 		return sh, refused, nil
 	}
 	if err != nil {
-		return sh, nil, err
+		return sh, nil, fmt.Errorf("open a session channel on %s: %w", a.host.Name, err)
 	}
 	sh.ch, sh.reqs = ch, reqs
 	pty := ssh.Marshal(struct {
@@ -408,7 +416,7 @@ func (g *Gateway) startShell(t *tunnel, a admission, cols, rows uint32) (*termin
 	}{{"pty-req", pty}, {"shell", nil}} {
 		ok, err := ch.SendRequest(r.kind, true, r.payload)
 		if err != nil {
-			return sh, nil, err
+			return sh, nil, fmt.Errorf("ask %s for a %s: %w", a.host.Name, r.kind, err)
 		}
 		if !ok {
 			refused.attrs = []any{"request", r.kind}
@@ -513,20 +521,26 @@ func (sh *terminalShell) relay(ctx context.Context) *ending {
 	}
 	switch {
 	case end == errShellEnded:
-		sh.writeLast(sh.exitRecords())
-		_ = sh.stream.Close()
-	case end == errMalformed:
-		sh.mu.Lock()
-		reason := sh.malformed.Error()
-		sh.mu.Unlock()
-		sh.writeLast(nil)
-		_ = sh.stream.CloseWithReason(reason)
+		// A page that takes nothing more, Detached with the buffer full,
+		// holds the exit record back until it Resumes, or until the SSH
+		// Session ends otherwise, which then says why.
+		if !sh.last(sh.exitRecords(), ctx.Done(), &wg) {
+			end = endingOf(context.Cause(ctx))
+		}
+		_ = sh.stream.CloseWithReason(end.notice)
 	case end.notice != "":
-		sh.tell(terminalNoticeLine(end.notice))
+		sh.last(noticeRecord(end.notice), sh.stream.Detached(), &wg)
 		_ = sh.stream.CloseWithReason(end.notice)
 	default:
-		sh.writeLast(nil)
-		_ = sh.stream.Close()
+		// Nothing more is written. Closing the stream first ends a write
+		// of output waiting for room, which holds the records' turn.
+		reason := ""
+		if end == errMalformed {
+			sh.mu.Lock()
+			reason = sh.malformed.Error()
+			sh.mu.Unlock()
+		}
+		_ = sh.stream.CloseWithReason(reason)
 	}
 	// Ends the reads of the channel, its requests and the stream.
 	sh.close()
@@ -564,39 +578,39 @@ func (sh *terminalShell) write(recs []byte) bool {
 	return err == nil
 }
 
-// writeLast writes the encoded records recs, if any, as the last the stream
-// carries.
-func (sh *terminalShell) writeLast(recs []byte) {
-	sh.writeMu.Lock()
-	defer sh.writeMu.Unlock()
-	if !sh.closed && len(recs) > 0 {
-		n, _ := sh.stream.Write(recs)
-		sh.written.Add(int64(n))
-	}
-	sh.closed = true
-}
-
-// terminalNoticeLine is an ending's notice as a web terminal shows it, in
-// its output and its scrollback, as ssh shows a device's on stderr: one
-// line of its own, starting on a new line wherever the cursor stood.
-func terminalNoticeLine(notice string) string {
-	return "\r\nkoko: " + notice + "\r\n"
-}
-
-// tell writes line, an ending's notice, as the last data record, and
-// returns once it is written or the stream is off its channel, which a
-// stalled page never takes it from; a stream that ends then drops it.
-func (sh *terminalShell) tell(line string) {
-	rec, _ := wire.AppendTerminalRecord(nil, wire.TerminalRecord{Type: wire.TerminalData, Data: []byte(line)}) // a notice is short
+// last writes the encoded records recs as the last the stream carries,
+// after any written before, in a goroutine wg waits for, and says once they
+// are in the stream. It gives up, saying false, once giveUp is closed
+// first: a write of output waiting for room in a full buffer, which a
+// Detached or stalled page never frees, holds the records' turn, and only
+// the stream's close, which the caller makes then, ends it and drops them.
+func (sh *terminalShell) last(recs []byte, giveUp <-chan struct{}, wg *sync.WaitGroup) bool {
 	written := make(chan struct{})
-	go func() {
+	wg.Go(func() {
 		defer close(written)
-		sh.writeLast(rec)
-	}()
+		sh.writeMu.Lock()
+		defer sh.writeMu.Unlock()
+		if !sh.closed && len(recs) > 0 {
+			n, _ := sh.stream.Write(recs)
+			sh.written.Add(int64(n))
+		}
+		sh.closed = true
+	})
 	select {
 	case <-written:
-	case <-sh.stream.Detached():
+		return true
+	case <-giveUp:
+		return false
 	}
+}
+
+// noticeRecord is an ending's notice as a web terminal shows it, in its
+// output and its scrollback, as ssh shows a device's on stderr: a data
+// record of one line of its own, starting on a new line wherever the
+// cursor stood.
+func noticeRecord(notice string) []byte {
+	rec, _ := wire.AppendTerminalRecord(nil, wire.TerminalRecord{Type: wire.TerminalData, Data: []byte("\r\nkoko: " + notice + "\r\n")}) // a notice is short
+	return rec
 }
 
 // exitRecords are the records of how the Host said the shell ended: its

@@ -373,7 +373,22 @@ URL's Host and Origin, `X-Forwarded-For` from its `Address`, its
 `b.Do(method, path, body)`, `b.Post(path, req)` and `b.Send(op, body)`, the
 last as `d.Send` is for a device; `h.SignIn(user)` is such a browser
 signed in as the User, through a Password Link it issues and spends,
-setting `harness.Password`. `h.Socket()` is the socket's path, for a runner on
+setting `harness.Password`.
+[`b.TerminalPage()`](../../internal/harness/webterminal.go) is that
+browser's page of the web terminal, and `harness.KokoWebTerminalPage(t,
+port, cookie)` a page of `koko web` on its port: each dials
+`/terminal/socket` at its `Addr`, which a test may point at a
+`harness.Forward`, with the Host, Origin, cookie and `X-Forwarded-For` a
+browser and its proxy send, and speaks the terminal protocol with the Go
+end of the resumable stream on `websocket.NetConn`, probing as the page
+does every `Probe`. `p.Dial()` returns a refused upgrade's answer,
+`p.Exchange(first)` a first message's answer and, after a refusal or an
+end, the close status (`harness.CloseStatus`); `p.Open`, `p.TryOpen`,
+`p.Resume(w)` and `p.End(id)` do what the page does. A
+`harness.WebTerminal` sends keys (`Type`, `Write`), resizes and raw bytes
+(`Send`), reads the output and exit records (`WaitOutput`, `Exit`), and
+closes (`Close`) or drops (`Drop`) its WebSocket, and waits for the
+stream's end (`WaitEnd`). `h.Socket()` is the socket's path, for a runner on
 the koko server's own machine. `h.Send(op, body)` and `d.Send(op, body)`
 call an operation with a raw JSON body, as the Local caller or as the
 device's Device Session, and return the status and the body as the koko
@@ -531,7 +546,9 @@ fails naming it when there is none), the variables of the session's
 `env` requests and `TERM` from its `pty-req` (it allocates no terminal), its
 stdio on the channel. It sends the exit status, or `exit-signal` when a
 signal ended the command, sends the command a `signal` request's signal,
-takes a `window-change`, and refuses every other session request. It
+takes a `window-change`, and refuses every other session request, and
+those of the types a `RefuseRequests(types...)` option names, such as
+`pty-req` or `shell`, as an sshd whose policy forbids them does. It
 forwards `-L` to a Unix socket (`direct-streamlocal@openssh.com`), and takes
 `-R` from a loopback TCP port or a Unix socket (`tcpip-forward`,
 `streamlocal-forward@openssh.com` and their cancels), carrying each

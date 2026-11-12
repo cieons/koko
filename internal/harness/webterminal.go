@@ -294,6 +294,24 @@ func (w *WebTerminal) Type(data []byte) {
 	}
 }
 
+// Write sends p as data records, as Type does, and returns the error
+// instead of failing the test, for a goroutine of the test's to write while
+// the test reads.
+func (w *WebTerminal) Write(p []byte) (int, error) {
+	for sent := 0; sent < len(p); {
+		n := min(len(p)-sent, wire.TerminalMaxRecord)
+		rec, err := wire.AppendTerminalRecord(nil, wire.TerminalRecord{Type: wire.TerminalData, Data: p[sent : sent+n]})
+		if err != nil {
+			return sent, err
+		}
+		if _, err := w.stream.Write(rec); err != nil {
+			return sent, err
+		}
+		sent += n
+	}
+	return len(p), nil
+}
+
 // Resize sends a resize record.
 func (w *WebTerminal) Resize(cols, rows uint32) {
 	w.t.Helper()

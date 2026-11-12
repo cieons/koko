@@ -114,7 +114,7 @@ func (g *Gateway) keepEnding(t *tunnel, until time.Time) {
 func (g *Gateway) resumable(id tunnelID, key callerKey, client string) (*tunnel, *ending) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if t := g.tunnels[id]; t != nil && t.key() == key && t.client == client && t.stream != nil {
+	if t := g.ownLocked(id, key, client); t != nil && t.stream != nil {
 		if t.ctx.Err() != nil {
 			return nil, endingOf(context.Cause(t.ctx))
 		}
@@ -124,6 +124,15 @@ func (g *Gateway) resumable(id tunnelID, key callerKey, client string) (*tunnel,
 		return nil, e.ending
 	}
 	return nil, nil
+}
+
+// ownLocked returns the Tunnel id names in the registry, when it is one of
+// the caller key's from client, or nil. g.mu is held.
+func (g *Gateway) ownLocked(id tunnelID, key callerKey, client string) *tunnel {
+	if t := g.tunnels[id]; t != nil && t.key() == key && t.client == client {
+		return t
+	}
+	return nil
 }
 
 // recheckResume checks the access of the SSH Session in the Tunnel t

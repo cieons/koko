@@ -225,7 +225,14 @@ run of `koko web`, and the page's address.
   stream with the notice as its reason. Bytes from the page that are no
   record, or an exit record from it, end the SSH Session (`malformed
   record`), the stream's close saying why. The page's close frame is the
-  client's close (`client closed`).
+  client's close (`client closed`). A shell that keeps writing while its
+  page is gone fills the stream's buffer, and its write waits for room
+  that never comes: an ending without a notice closes the stream first,
+  which ends that write; a notice gives up once the stream is off its
+  WebSocket, and an exit record once the SSH Session ends otherwise, so no
+  ending waits on it. Until the shell has started, the SSH Session's end
+  closes the Host connection, so a Host that answers neither the session's
+  open nor its requests holds nothing.
 - **Detach and Resume** (`ResumeTerminal`), as a Tunnel's
   ([below](#detach-and-resume)): the WebSocket closing Detaches it, for
   `timing.BrowserGrace` (15 minutes), and its ending is kept as long. A
@@ -742,8 +749,13 @@ and another Sign-in's refused; an idle WebSocket kept by both ends'
 probes, a stalled one Detached no sooner than `ServerDead` after its last
 byte, and a cut one at once, each Resumed byte for byte
 (`harness.Forward`); the page's close, an `end` and another caller's, and
-`BrowserGrace`; a malformed record; the restart notice before the web
-listener closes, while a call in flight holds it, and a stalled page cut
-at `StopNotice`; and the log lines, with no cookie in them.
+`BrowserGrace`, each also for a busy shell whose page left with the
+stream's buffer full; a malformed record; the restart notice before the
+web listener closes, while a call in flight is open on it, a stalled page
+cut at `StopNotice`, and a Host sitting on the session's open ended; and
+the log lines, with no cookie in them.
+[`gateway/terminal_test.go`](../../internal/server/gateway/terminal_test.go)
+also maps the access check's refusals to `unknown_host` and
+`access_refused`.
 [`wire/tunnel_test.go`](../../internal/shared/wire/tunnel_test.go) pins the
 `open` and `resume` payloads' bytes.

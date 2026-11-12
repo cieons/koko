@@ -92,6 +92,20 @@ func TestTheLimitCountsByTheCallersID(t *testing.T) {
 	}
 }
 
+// The access check's refusal of a Host the caller cannot see answers a web
+// terminal as an unknown name does; any other, such as a Revoked Device
+// Session's, is access_refused with the refusal's message as one sentence.
+func TestAnAccessRefusalCarriesItsCode(t *testing.T) {
+	unseen := accessRefusal("web1", api.CodeUnknownHost.Errorf("no Host the caller can act on is named %q", "web1"))
+	if unseen.code != wire.TerminalUnknownHost || unseen.message() != `no Host is named "web1".` {
+		t.Errorf("an unseen Host is refused with %q and %q, want an unknown name's", unseen.code, unseen.message())
+	}
+	revoked := accessRefusal("web1", api.CodeRevoked.Errorf("the Device Session %q of this device was revoked", "laptop"))
+	if revoked.code != wire.TerminalAccessRefused || revoked.message() != `the Device Session "laptop" of this device was revoked.` {
+		t.Errorf("a Revoked Device Session is refused with %q and %q, want access_refused with its message", revoked.code, revoked.message())
+	}
+}
+
 // The records a web terminal's shell writes into its stream, from the
 // Host's stdout and stderr and an ending's notice, take turns while the
 // stream's buffer fills: each arrives whole, the notice last, and nothing
@@ -138,12 +152,16 @@ func TestATerminalsRecordsTakeTurns(t *testing.T) {
 		}
 	}()
 
-	notice := terminalNoticeLine("the koko server is restarting; this SSH Session has ended.")
+	const notice = "\r\nkoko: the koko server is restarting; this SSH Session has ended.\r\n"
 	var wg sync.WaitGroup
 	wg.Go(func() { sh.output(&chunks{fill: 'o', n: 200}) })
 	wg.Go(func() { sh.output(&chunks{fill: 'e', n: 200}) })
 	<-flowing
-	wg.Go(func() { sh.tell(notice) })
+	wg.Go(func() {
+		if !sh.last(noticeRecord("the koko server is restarting; this SSH Session has ended."), gw.Detached(), &wg) {
+			t.Error("the notice was not written while the page reads")
+		}
+	})
 	wg.Wait()
 	_ = gw.CloseWithReason("the koko server is restarting; this SSH Session has ended.")
 	recs := <-read

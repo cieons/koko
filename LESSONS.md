@@ -192,6 +192,21 @@ koko server.
 **Seen:** 1 (2026-11-12)
 **Evidence:** check run 43128685688 on 08ba4ad; #163
 
+### An ending never waits for a lock that a blocked write holds
+
+**Why:** a web terminal's shell writes its output into the resumable
+stream under a lock, so that records take turns, and a write waits for
+room in the stream's 2 MiB buffer, which a page that has left never frees.
+The endings without a notice (a page's `end`, the grace, `koko web`
+ending) took that lock before they closed the stream, which alone ends the
+write, so a busy shell's terminal never ended: its Host connection and its
+place in the Sign-in's limit stayed held, and `server.Close` hung on it.
+Close what the blocked write waits on first, or wait for the lock only
+beside a way out.
+**Seen:** 1 (2026-11-12)
+**Evidence:** c9681cd (#172), found by the ticket's review before its
+second slice; the fix in that slice's commit
+
 ## Moved to the code standards
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128, #147; check run 42951455550).
