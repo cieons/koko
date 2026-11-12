@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -842,4 +843,95 @@ func TestErrSaysWhyTheStreamEnded(t *testing.T) {
 			t.Errorf("Err after this end's close: %v, want ErrClosed", err)
 		}
 	})
+}
+
+// A probe is one acknowledgement-only frame on the stream's channel, and
+// the other end takes one as it takes any frame.
+func TestProbeSendsAnAcknowledgementAlone(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		raw, s := rawPeer(t)
+		s.Probe()
+		expectBytes(t, raw, "a probe", 0x00, 0x00)
+		s.Probe()
+		expectBytes(t, raw, "a second probe", 0x00, 0x00)
+		expectSilence(t, raw, "after the two probes")
+
+		if _, err := raw.Write([]byte{0x00, 0x00}); err != nil {
+			t.Fatalf("write a probe: %v", err)
+		}
+		synctest.Wait()
+		if err := s.Err(); err != nil {
+			t.Errorf("the stream ended on the other end's probe: %v", err)
+		}
+		done := write(s, "hi")
+		expectBytes(t, raw, "the data after a probe each way", 0x00, 0x02, 'h', 'i')
+		if err := <-done; err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	})
+}
+
+// A probe asked for while the stream is Detached is not sent, then or on
+// the channel the stream Resumes on.
+func TestProbeSendsNothingWhileDetached(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		_, s := rawPeer(t)
+		s.Detach()
+		s.Probe()
+
+		raw, ch := net.Pipe()
+		t.Cleanup(func() { _ = raw.Close() })
+		attached := make(chan error, 1)
+		go func() { attached <- s.AcceptResume(ch, 0) }()
+		expectBytes(t, raw, "the answer to the resume", 0x00)
+		if err := <-attached; err != nil {
+			t.Fatalf("accept the resume: %v", err)
+		}
+		expectSilence(t, raw, "after a probe asked for while Detached")
+
+		s.Probe()
+		expectBytes(t, raw, "a probe once Resumed", 0x00, 0x00)
+	})
+}
+
+// A probe asked for on a channel that stalled before sending it is not
+// sent on the channel the stream Resumes on.
+func TestAProbeIsNotCarriedOntoTheNextChannel(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		old, s := rawPeer(t)
+		full := append([]byte{0x00, 0x80, 0x80, 0x02}, bytes.Repeat([]byte{'x'}, resumable.MaxData)...)
+		if _, err := old.Write(full); err != nil {
+			t.Fatalf("write a full data frame: %v", err)
+		}
+		readN(t, s, resumable.MaxData)
+		synctest.Wait() // the acknowledgement is stalled on the channel, which nothing reads
+		s.Probe()
+		s.Detach()
+
+		raw, ch := net.Pipe()
+		t.Cleanup(func() { _ = raw.Close() })
+		attached := make(chan error, 1)
+		go func() { attached <- s.AcceptResume(ch, 0) }()
+		expectBytes(t, raw, "the answer to the resume", 0x80, 0x80, 0x02)
+		if err := <-attached; err != nil {
+			t.Fatalf("accept the resume: %v", err)
+		}
+		expectSilence(t, raw, "after the resume")
+	})
+}
+
+// expectSilence fails the test if a byte comes from raw within a minute of
+// the bubble's clock, which passes at once when none is on its way.
+func expectSilence(t *testing.T, raw net.Conn, when string) {
+	t.Helper()
+	if err := raw.SetReadDeadline(time.Now().Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	b := make([]byte, 16)
+	if n, err := raw.Read(b); !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Errorf("%s the stream sent % x (%v), want nothing", when, b[:n], err)
+	}
+	if err := raw.SetReadDeadline(time.Time{}); err != nil {
+		t.Fatal(err)
+	}
 }

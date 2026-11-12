@@ -16,13 +16,17 @@ any `io.ReadWriteCloser`, owns that channel and closes it when it comes off.
 | `CloseWrite` | both | Half-closes: the other end reads what came before, then `io.EOF`. |
 | `CloseWithReason(r)`, `Close` | both | Ends the stream for good: sends what is unsent, then a close frame carrying `r`, and returns once the channel took them or failed. On a stalled channel that is when the connection's liveness check fails it, or when `Detach` is called. Once a write on the channel has failed, nothing more is sent, and it returns once the channel's reads have failed too. |
 | `Err()` | both | Why the stream ended, or nil while it lives. |
+| `Probe()` | both | Asks for a frame on the current channel, for a caller that watches the channel's liveness: an acknowledgement alone (`00 00` when nothing is owed), unless a frame is on its way anyway. It does not wait for the frame, and sends nothing while Detached, then or after a resume. |
 | `Detached()` | both | A channel closed once the stream is off its latest channel. |
 | `Detach()` | device | Takes the stream off its channel and returns its received offset, for the resume payload. |
 | `Resume(ch, sent)` | device | Attaches `ch` after the Gateway accepted a resume whose payload carried `sent`. |
 | `AcceptResume(ch, peer)` | Gateway | Attaches `ch`, given the device's offset `peer` from the resume payload. The last attach wins: the stream leaves its current channel. |
 
 The stream has no timers. The 5 s resume exchange and the grace belong to its
-callers, who close the channel to abort an exchange or `Close` the stream.
+callers, who close the channel to abort an exchange or `Close` the stream. So
+does liveness where the channel has none of its own, as a web terminal's
+WebSocket: its caller calls `Probe` after a silence of its own choosing, and
+the other end takes the frame as any acknowledgement.
 
 ## On the wire
 
@@ -83,7 +87,8 @@ its Tunnel opened at, any that some koko in the window speaks.
 in `testing/synctest` bubbles. It moves a few MiB each way over channels cut
 at random bytes, mid-frame and mid-exchange, through overlapping attaches, and
 logs the seed it used. Other tests pin the frame bytes above, and check that a
-full buffer blocks without loss, that a half-close survives a resume, and each
+full buffer blocks without loss, that a half-close survives a resume, that a
+probe is one acknowledgement-only frame and none while Detached, and each
 failure in the table. `TestTheFramesAreRecordedByRevision` records the
 frames and the resume answer of each revision of `tunnel@koko` in
 `testdata/frames.golden`, a section a revision, which never changes once

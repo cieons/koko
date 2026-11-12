@@ -66,6 +66,7 @@ type Stream struct {
 	err        error              // why the stream ended, once it has
 	owesClose  bool               // a close frame carrying reason is due after the data
 	reason     string
+	owesProbe  bool // Probe asked for a frame on att, and none has gone since
 
 	// This end's writes, by position (a byte each, then one for the EOF):
 	// acknowledged up to outAcked, sent on the current channel up to outSent,
@@ -133,6 +134,19 @@ func (s *Stream) Detached() <-chan struct{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.detached
+}
+
+// Probe asks for a frame on the stream's channel, for a caller that watches
+// the channel's liveness: an acknowledgement alone, unless a frame is on its
+// way anyway, which serves as well. It does not wait for the frame to be
+// sent, and while the stream is Detached it sends nothing, then or later.
+func (s *Stream) Probe() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.att != nil {
+		s.owesProbe = true
+		s.cond.Broadcast()
+	}
 }
 
 // Resume attaches ch at the device, once the Gateway accepted a resume whose
@@ -383,7 +397,7 @@ func (s *Stream) dropLocked(a *attachment) {
 	if a == nil || s.att != a {
 		return
 	}
-	s.att = nil
+	s.att, s.owesProbe = nil, false
 	close(a.done)
 	go func() { _ = a.ch.Close() }()
 	if s.err == nil {
@@ -397,7 +411,7 @@ func (s *Stream) dropLocked(a *attachment) {
 
 // owesFrameLocked says whether this end has a frame to send.
 func (s *Stream) owesFrameLocked() bool {
-	return s.outSent < s.outEnd || s.owesClose || s.inDelivered-s.inAcked >= ackThreshold
+	return s.outSent < s.outEnd || s.owesClose || s.owesProbe || s.inDelivered-s.inAcked >= ackThreshold
 }
 
 // send writes frames on a's channel for as long as the stream is on it. A
@@ -439,10 +453,11 @@ func (s *Stream) send(a *attachment) {
 
 // appendFrameLocked appends the next frame to buf: unsent data, then the EOF,
 // then a close frame owed, or else an acknowledgement alone. last says it is
-// the close frame.
+// the close frame. Whichever it is, it is the frame a Probe asked for.
 func (s *Stream) appendFrameLocked(buf []byte) (_ []byte, last bool) {
 	ack := s.inDelivered - s.inAcked
 	s.inAcked = s.inDelivered
+	s.owesProbe = false
 	dataEnd := s.outEnd
 	if s.outEOF {
 		dataEnd--

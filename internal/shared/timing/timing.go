@@ -98,6 +98,15 @@ const (
 	// Tunnel's channel failed: as when the koko server declared its Device
 	// Connection dead.
 	Grace = time.Minute
+	// BrowserGrace is how long the Gateway holds a Detached SSH Session
+	// opened from a web terminal, and its Host connection, for the page to
+	// Resume it, from when its WebSocket closed or was found dead: longer
+	// than Grace, since the leg that drops is a browser's, which a phone
+	// put away keeps from reconnecting for minutes.
+	BrowserGrace = 15 * time.Minute
+	// SignInCheck is how often the Gateway looks for web terminals whose
+	// Sign-in has expired, to end their SSH Sessions.
+	SignInCheck = time.Minute
 	// ResumeExchange bounds how long the device waits for the koko server's
 	// answer to a resume once its channel opened; past it, the device tries
 	// again, on the next Device Connection should this one have died.
@@ -153,6 +162,8 @@ type Timings struct {
 	WakeCheck            time.Duration
 	BareNameRefresh      time.Duration
 	Grace                time.Duration
+	BrowserGrace         time.Duration
+	SignInCheck          time.Duration
 	ResumeExchange       time.Duration
 	ResumeGiveUp         time.Duration
 	PassOn               time.Duration
@@ -190,6 +201,8 @@ func (t Timings) Resolve() Timings {
 	t.WakeCheck = cmp.Or(t.WakeCheck, WakeCheck)
 	t.BareNameRefresh = cmp.Or(t.BareNameRefresh, BareNameRefresh)
 	t.Grace = cmp.Or(t.Grace, Grace)
+	t.BrowserGrace = cmp.Or(t.BrowserGrace, BrowserGrace)
+	t.SignInCheck = cmp.Or(t.SignInCheck, SignInCheck)
 	t.ResumeExchange = cmp.Or(t.ResumeExchange, ResumeExchange)
 	t.ResumeGiveUp = cmp.Or(t.ResumeGiveUp, ResumeGiveUp)
 	t.PassOn = cmp.Or(t.PassOn, PassOn)
