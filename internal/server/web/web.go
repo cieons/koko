@@ -250,8 +250,18 @@ func (f *Front) serveFile(w http.ResponseWriter, r *http.Request, page pageWrite
 		f.fail(w, r, fmt.Errorf("read the web UI's %s: %w", name, err), page)
 		return
 	}
+	if strings.HasPrefix(name, hashedFiles) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
 	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(file))
 }
+
+// hashedFiles is the directory of the web UI's build whose files carry a
+// hash of their content in their names (Vite's assets/), so a name never
+// comes to hold other content, and a browser keeps each for a year without
+// asking again. index.html and every other file change under one name, and
+// get no caching header.
+const hashedFiles = "assets/"
 
 // fail answers a failure the web front did not expect, to a page as page
 // writes it; the log holds the cause.
@@ -354,8 +364,11 @@ func writePage(w http.ResponseWriter, status int, text string) {
 // frames a page. The one is the <style> element React Aria adds on iOS
 // Safari while an overlay is open, @layer { * { overscroll-behavior:
 // contain } }, allowed by its hash (ADR 0046); the web UI's static checks
-// fail when the pinned React Aria adds another.
-const contentSecurityPolicy = "default-src 'self'; style-src 'self' 'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='; " +
+// fail when the pinned React Aria adds another. script-src adds to 'self'
+// only the compiling of WebAssembly, which the web terminal's emulator
+// needs (ADR 0054): no inline script, eval or other source.
+const contentSecurityPolicy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; " +
+	"style-src 'self' 'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='; " +
 	"frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
 // securityHeaders sets the headers every answer of the web front carries,

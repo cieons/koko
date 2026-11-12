@@ -139,7 +139,7 @@ func wantRefusalHeaders(t *testing.T, a answer) {
 func wantSecurityHeaders(t *testing.T, h http.Header) {
 	t.Helper()
 	for name, want := range map[string]string{
-		"Content-Security-Policy":   "default-src 'self'; style-src 'self' 'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+		"Content-Security-Policy":   "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
 		"X-Content-Type-Options":    "nosniff",
 		"Referrer-Policy":           "no-referrer",
 		"Strict-Transport-Security": "max-age=31536000",

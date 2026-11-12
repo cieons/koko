@@ -218,7 +218,8 @@ address.
 ### The headers every answer carries
 
 Every answer of the web listener carries
-`Content-Security-Policy: default-src 'self'; style-src 'self'
+`Content-Security-Policy: default-src 'self'; script-src 'self'
+'wasm-unsafe-eval'; style-src 'self'
 'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='; frame-ancestors
 'none'; base-uri 'none'; form-action 'self'`, `X-Content-Type-Options:
 nosniff`, `Referrer-Policy: no-referrer` and `Strict-Transport-Security:
@@ -230,7 +231,28 @@ none of them. The one inline style sheet it allows, by its hash, is the
 `<style>` element React Aria adds on iOS Safari while an overlay is open
 ([ADR 0046](../adr/0046-the-web-ui-is-built-on-heroui.md));
 [the web UI's static checks](web-ui.md#static-checks) fail when the pinned
-React Aria adds another text.
+React Aria adds another text. `script-src` adds to `'self'` only
+`'wasm-unsafe-eval'`, the compiling of WebAssembly, which the web
+terminal's emulator needs
+([ADR 0054](../adr/0054-the-web-terminal-is-wterm-on-its-ghostty-core-behind-one-component-of-kokos-own.md));
+no inline script, `eval` or other source is allowed.
+
+### The web UI's files and the browser's cache
+
+Both ways in serve the web UI's files through
+[`Front.serveFile`](../../internal/server/web/web.go).
+
+- **A file under the build's `assets/`**, where Vite gives every name a
+  hash of the file's content, carries `Cache-Control: public,
+  max-age=31536000, immutable`, so a browser downloads each chunk, font and
+  `.wasm` file once per release.
+- **`index.html` and every other file** carry no caching header, since a
+  release changes what they hold under the same name. That covers the
+  `index.html` a path naming no file is answered with, a missing file
+  under `assets/` included.
+- **The `Content-Type`** follows the file's extension (Go's `mime` table):
+  a `.wasm` file is `application/wasm`, so a browser compiles it while it
+  downloads.
 
 ## Runs, tokens and the cookie
 
@@ -355,6 +377,10 @@ and user. It is per OS ([rule 13](code-layout.md#rules-for-working-in-parallel))
 - `TestWebAnswersCarryTheSecurityHeaders` in
   [`web_test.go`](../../internal/client/cli/web_test.go): `koko web`'s
   answers carry the headers, without `Strict-Transport-Security`.
+- [`files_test.go`](../../internal/server/web/files_test.go): a file under
+  `assets/` served with the year-long cache, a `.wasm` file as
+  `application/wasm`, and `index.html`, a file outside `assets/` and a
+  missing asset's `index.html` with no caching header.
 - [`internal/server/web/web_test.go`](../../internal/server/web/web_test.go):
   the cookie key made on first use, sealed under the Root Key, and in no file
   of the data directory; [`host_test.go`](../../internal/server/web/host_test.go):

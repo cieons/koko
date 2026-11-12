@@ -21,6 +21,7 @@ repository's own [AGENTS.md](../AGENTS.md).
   tokens. A HeroUI component taken up for the first time adds its style
   file to `src/theme/heroui.css`, in HeroUI's order.
 - The CSP is `default-src 'self'`, with one hash in `style-src` for the
-  `<style>` element React Aria adds on iOS Safari: no inline script, no
+  `<style>` element React Aria adds on iOS Safari and `'wasm-unsafe-eval'`
+  in `script-src` for the web terminal's emulator: no inline script, no
   other `<style>` element, no `data:` URL and no file from another site. Every string comes from the two catalogues, in the formal register
   of product UI.

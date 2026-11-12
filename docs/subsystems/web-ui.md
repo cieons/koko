@@ -69,7 +69,9 @@ app sits in its providers is [the web UI shell](web-shell.md#providers).
   class uses the tokens. Geist and Geist Mono, their Latin subsets as
   variable WOFF2 files, are bundled in `src/assets/fonts/` with their SIL
   Open Font License files; Chinese text uses the system's fonts.
-- **The CSP**, `default-src 'self'` with one hash in `style-src` ([the web
+- **The CSP**, `default-src 'self'` with one hash in `style-src` and
+  `'wasm-unsafe-eval'` in `script-src`, which lets the web terminal's
+  emulator compile WebAssembly and nothing else (ADR 0054; [the web
   front](web-front.md#the-headers-every-answer-carries)), refuses an inline
   script, a `<style>` element but that one, and a `data:` URL, so the web UI
   needs none: `index.html` runs no inline script, and Vite inlines no asset
@@ -117,7 +119,12 @@ was 237 KB gzipped and the build 0.78 MB on disk.
 - `make webui` type-checks the app (`tsc`) and builds it with Vite into
   `internal/server/webui/site/app/`, which git ignores. `make build` and
   `make check` run it first (`check` runs its steps in order, even under
-  `-j`), so the binaries they build carry the app.
+  `-j`), so the binaries they build carry the app. Vite writes every
+  script, stylesheet, font and other imported file under `assets/`, with a
+  hash of its content in its name, and the web front lets a browser keep
+  those for a year; `index.html` and the files beside it are not cached
+  that way ([the web
+  front](web-front.md#the-web-uis-files-and-the-browsers-cache)).
 - [`internal/server/webui`](../../internal/server/webui/webui.go), in the
   server-only group, embeds `site/`. `webui.FS()` is the files to serve, with
   `index.html` at the root: the built app when `site/app/index.html` was there
