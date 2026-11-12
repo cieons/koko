@@ -1,3 +1,7 @@
+---
+status: its "never reaches a Host through the Gateway", superseded by ADR-0053
+---
+
 # A browser signs in with a password set through a Password Link
 
 A person signs in to the web UI at the Web URL (ADR 0042) with their User

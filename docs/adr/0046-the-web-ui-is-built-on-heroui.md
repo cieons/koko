@@ -1,3 +1,7 @@
+---
+status: its CSP's script-src, refined by ADR-0054
+---
+
 # The web UI is built on HeroUI
 
 The web UI is built on HeroUI v3 (Apache-2.0), which is React Aria

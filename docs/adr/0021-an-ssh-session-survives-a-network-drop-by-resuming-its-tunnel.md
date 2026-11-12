@@ -1,3 +1,7 @@
+---
+status: its "only the device's leg resumes", refined by ADR-0053
+---
+
 # An SSH Session survives a network drop by resuming its Tunnel
 
 A live SSH Session survives a drop of the device's network, because each
