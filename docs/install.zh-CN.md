@@ -588,14 +588,30 @@ koko.example.com {
 
 Caddy 会为该域名获取证书，按浏览器发送的原样转发 `Host` 请求头，并设置 `X-Forwarded-For`，以客户端地址作为其最后一项，即满足 koko 的全部要求。koko 提供的 Web 界面文件未经压缩，`encode zstd gzip` 负责压缩这些文件。Web 界面在域名的根路径提供，不支持在子路径下提供（例如 `https://example.com/koko`）。
 
-> **nginx** 默认以上游地址作为 `Host`，且不设置 `X-Forwarded-For`。请在转发至 Web 监听器的 `location` 中加入：
+Web 终端经由 WebSocket 运行，Caddy 无需额外配置即可代理 WebSocket。重新加载 Caddy 的配置会关闭其代理的 WebSocket，除非设置了 `stream_close_delay`（见 [Caddy 文档](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#stream_close_delay)，英文）。此时每个已打开的终端会短暂显示“正在重新连接”，随后恢复其 SSH 会话，不会丢失任何内容，因此该设置并非必需。
+
+> **nginx** 默认以上游地址作为 `Host`，不设置 `X-Forwarded-For`，也不转发 WebSocket。请在 `http` 块中加入常用的 `map`（见 [nginx 文档](https://nginx.org/en/docs/http/websocket.html)，英文）：
 >
 > ```nginx
-> proxy_set_header Host $host;
-> proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+> map $http_upgrade $connection_upgrade {
+>     default upgrade;
+>     ''      close;
+> }
 > ```
 >
-> 缺少 `Host` 一行时，koko 服务器会以 `421` 和一个写明其 Web 地址的页面回应所有请求。缺少 `X-Forwarded-For` 一行时，所有浏览器的地址均为反向代理的地址，任何人失败 10 次后，所有人的登录请求都将在 15 分钟内被拒绝。
+> 并在转发至 Web 监听器的 `location` 中加入：
+>
+> ```nginx
+> proxy_http_version 1.1;
+> proxy_set_header Host $host;
+> proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+> proxy_set_header Upgrade $http_upgrade;
+> proxy_set_header Connection $connection_upgrade;
+> ```
+>
+> 缺少 `Host` 一行时，koko 服务器会以 `421` 和一个写明其 Web 地址的页面回应所有请求。缺少 `X-Forwarded-For` 一行时，所有浏览器的地址均为反向代理的地址，任何人失败 10 次后，所有人的登录请求都将在 15 分钟内被拒绝。缺少 `proxy_http_version`、`Upgrade` 和 `Connection` 三行时，Web 终端将无法连接。
+>
+> nginx 的其他默认设置无需更改。Web 终端的两端至少每 15 秒发送一次数据，远在 nginx 60 秒的读取超时之内；“文件”面板以 512 KiB 的分块上传文件，不超过 nginx 对请求体 1 MiB 的限制（`client_max_body_size`）。
 
 ### 设置 Web 地址
 
@@ -652,6 +668,10 @@ koko signin revoke <id>
 
 ### 浏览器用户可执行的操作
 
-登录后，用户在 Web 界面中可执行的操作与在其设备上相同，完全取决于其空间成员身份：可维护其所在空间的主机、服务和机密；所有者可执行其在设备上能够执行的全部操作。与在设备上一样，`koko server set` 仍只能在 koko 服务器所在的机器上运行。浏览器无法访问主机：它不会打开 SSH 会话或隧道，因为只有设备才能经由网关连接。需要使用 SSH 的浏览器用户，可在“账户”页面通过“添加设备”签发加入码，再在安装了 CLI 的计算机上以 `koko join` 使用该加入码；此后该计算机与该用户的其他设备一样可以访问主机。
+登录后，用户在 Web 界面中可执行的操作与在其设备上相同，完全取决于其空间成员身份：可维护其所在空间的主机、服务和机密；所有者可执行其在设备上能够执行的全部操作。与在设备上一样，`koko server set` 仍只能在 koko 服务器所在的机器上运行。
+
+登录会话访问主机的范围也与同一用户的设备相同：Web 终端可在独立的标签页中，向该用户有权访问的每台已接入主机打开 SSH 会话，其“文件”面板可在该主机上上传和下载文件。一个登录会话同时最多持有 16 个 SSH 会话。连接中断或页面重新加载后，终端会在 15 分钟内恢复其 SSH 会话。登录会话的终端在以下情况下结束：登录会话本身结束（见[登录会话](#登录会话)），其用户离开主机所在的空间，或 Web 地址发生变更。
+
+浏览器用户如还需使用 `ssh`、`scp` 或 `koko exec`，或需要 agent 代为操作，可在“账户”页面通过“添加设备”签发加入码，再在安装了 CLI 的计算机上以 `koko join` 使用该加入码；此后该计算机与该用户的其他设备一样可以访问主机。
 
 使用 CLI 的所有者可继续使用无需密码的 `koko web`。

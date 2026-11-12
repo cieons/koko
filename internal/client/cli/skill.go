@@ -345,6 +345,8 @@ func (s skillJSON) Human(w io.Writer) error {
 			p("  `%s` is the command's, as typed, flags included, joined with spaces for the Host Account's\n", c.Args[len(c.Args)-2].Arg)
 			p("  shell. It takes no flag, not even `--json`, passes stdin, stdout and stderr through, and exits\n")
 			p("  with the command's status, or %d when there is none or koko itself failed.\n", exitRemote)
+			p("- The web UI's terminal, in `koko web` or at the Web URL, is for people: an agent reaches\n")
+			p("  a Host with `%s`, never through the web UI.\n", c.Usage)
 		}
 		if c.stdio {
 			p("- `%s` is the ProxyCommand of koko's ssh_config, for ssh, not for direct use: it\n", c.Usage)

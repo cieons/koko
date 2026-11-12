@@ -40,7 +40,7 @@ curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | 
 
 [安装 koko](docs/install.zh-CN.md) 介绍各行命令的作用，以及升级、回退和恢复。没有 systemd 的环境中，可使用 Docker 运行镜像 `ghcr.io/cieons/koko`（见[在容器中运行](docs/install.zh-CN.md#在容器中运行)）。
 
-在任一已加入的设备上运行 `koko web` 即可打开 Web 界面。不使用 CLI 的人（例如使用手机的团队成员）则可在浏览器中使用 Web 界面：koko 服务器将其提供给持有域名及证书的反向代理（例如 Caddy），每个人以密码登录，密码通过所有者签发的一次性密码链接设置。登录后，用户可维护其空间所允许的记录，但无法通过 SSH 访问主机（见[在浏览器中使用 Web 界面](docs/install.zh-CN.md#在浏览器中使用-web-界面)）。
+在任一已加入的设备上运行 `koko web` 即可打开 Web 界面。不使用 CLI 的人（例如使用手机的团队成员）则可在浏览器中使用 Web 界面：koko 服务器将其提供给持有域名及证书的反向代理（例如 Caddy），每个人以密码登录，密码通过所有者签发的一次性密码链接设置。登录后，用户可维护其空间所允许的记录。无论以何种方式打开，Web 界面中的终端均可在独立的标签页中，向使用者有权访问的主机打开 SSH 会话，其“文件”面板可在这些主机上上传和下载文件（见[在浏览器中使用 Web 界面](docs/install.zh-CN.md#在浏览器中使用-web-界面)）。
 
 ## 功能
 

@@ -345,6 +345,19 @@ func TestSkillDocumentsThePresetsAndTheFilterSyntax(t *testing.T) {
 	}
 }
 
+// The skill tells an agent that the web UI's terminal is for people and
+// that an agent reaches a Host with koko exec (#169: "Docs, help and the
+// glossary").
+func TestSkillSendsAgentsToKokoExecNotTheWebTerminal(t *testing.T) {
+	t.Parallel()
+	line := skillSections(t)["The command line"]
+	for _, want := range []string{"web UI's terminal", "for people", "`koko exec <host>"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("koko skill's command line section does not say %q:\n%s", want, line)
+		}
+	}
+}
+
 // koko skill, koko help and koko completion only print, and koko skill
 // install writes one file koko owns (P0 spec: overview).
 func TestSkillCommandsSitInTheirTiers(t *testing.T) {

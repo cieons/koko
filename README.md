@@ -58,7 +58,9 @@ use the CLI, such as a teammate on a phone, use it in a browser instead:
 the koko server serves it to a reverse proxy, such as Caddy, that holds a
 domain and its certificate, and each person signs in with a Password,
 which they set through a one-time Password Link the Owner issues. Signed in, they
-keep the record their Spaces allow, and reach no Host over SSH
+keep the record their Spaces allow. Either way, the web UI's terminal opens
+SSH Sessions, each in a tab of its own, to the Hosts the person may reach,
+and its Files panel uploads and downloads files on them
 ([The web UI in a browser](docs/install.md#the-web-ui-in-a-browser)).
 
 ## What it does

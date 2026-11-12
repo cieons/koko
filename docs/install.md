@@ -1031,19 +1031,46 @@ which koko serves uncompressed. The web UI is served at the root of the
 domain; serving it under a path, such as `https://example.com/koko`, is not
 supported.
 
-> **nginx** by default sends the upstream's address as `Host` and sets no
-> `X-Forwarded-For`. In the `location` that proxies to the web listener,
-> add:
+The web terminal runs over a WebSocket, which Caddy proxies with no further
+configuration. A reload of Caddy's configuration closes the WebSockets it
+proxies, unless its `stream_close_delay` is set
+([Caddy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#stream_close_delay)).
+Each open terminal then shows Reconnecting for a moment and Resumes its SSH
+Session, with nothing lost, so the setting is optional.
+
+> **nginx** by default sends the upstream's address as `Host`, sets no
+> `X-Forwarded-For`, and passes on no WebSocket. In the `http` block, add
+> the usual map
+> ([nginx](https://nginx.org/en/docs/http/websocket.html)):
 >
 > ```nginx
+> map $http_upgrade $connection_upgrade {
+>     default upgrade;
+>     ''      close;
+> }
+> ```
+>
+> and in the `location` that proxies to the web listener:
+>
+> ```nginx
+> proxy_http_version 1.1;
 > proxy_set_header Host $host;
 > proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+> proxy_set_header Upgrade $http_upgrade;
+> proxy_set_header Connection $connection_upgrade;
 > ```
 >
 > Without the `Host` line, the koko server answers every request with
 > `421` and a page naming its Web URL. Without the `X-Forwarded-For` line,
 > every browser has the proxy's address, so 10 failed attempts from anyone
-> stop sign-ins from everyone for 15 minutes.
+> stop sign-ins from everyone for 15 minutes. Without the
+> `proxy_http_version`, `Upgrade` and `Connection` lines, the web terminal
+> never connects.
+>
+> nginx's other defaults need no change. Both ends of a web terminal send
+> something at least every 15 seconds, well within nginx's 60-second read
+> timeout, and the Files panel uploads in chunks of 512 KiB, within its
+> 1 MiB limit on a request's body (`client_max_body_size`).
 
 ### Setting the Web URL
 
@@ -1145,12 +1172,21 @@ signed in keep working.
 Signed in, a User may do in the web UI exactly what their Space membership
 allows, as on a device of theirs: keep the Hosts, Services and Secrets of
 their Spaces, and for the Owner, everything the Owner does from a device.
-As from a device, `koko server set` stays on the koko server's machine. A browser
-never reaches a Host: it opens no SSH Session and no Tunnel, since only a
-device connects through the Gateway. A browser User who needs SSH adds a
-device with **Add device** on the Account page; its Join Code is spent by
-`koko join` on a computer with the CLI, which then reaches Hosts as any
-device of that User does.
+As from a device, `koko server set` stays on the koko server's machine.
+
+A Sign-in also reaches Hosts as a device of the same User does: the web
+terminal opens an SSH Session, in a tab of its own, to each Managed Host
+the User may reach, and its Files panel uploads and downloads files on
+that Host. A Sign-in holds at most 16 SSH Sessions at once. A terminal
+whose connection dropped, or whose page was reloaded, Resumes its SSH
+Session within 15 minutes. A Sign-in's terminals end with the Sign-in
+itself (see [Sign-ins](#sign-ins)), when its User leaves the Host's Space,
+and when the Web URL changes.
+
+A browser User who also wants `ssh`, `scp` or `koko exec`, or an agent
+working for them, adds a device with **Add device** on the Account page;
+its Join Code is spent by `koko join` on a computer with the CLI, which
+then reaches Hosts as any device of that User does.
 
 The Owner who uses the CLI can keep using `koko web`, which needs no
 Password.
