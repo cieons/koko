@@ -199,31 +199,15 @@ func (g *Gateway) resumeTerminal(c TerminalCaller, s TerminalSocket, id tunnelID
 		s.Refuse(wire.TerminalRefusal(wire.TerminalResumeRefused, why))
 		return
 	}
-	t.mu.Lock()
-	t.resuming++
-	t.mu.Unlock()
 	sc := newSocketConn(s.Conn())
-	err := t.stream.AcceptResumeAnswering(sc, offset, func(own uint64) error {
-		return s.Answer(wire.TerminalAnswer{Offset: &own})
-	})
-	t.mu.Lock()
-	t.resuming--
-	if err != nil {
-		// The stream stays Detached, unless the page's offset was outside
-		// its buffer, which ends it and its SSH Session.
-		g.holdLocked(t)
-	} else {
-		t.stopGraceLocked()
-		t.socket = s
+	attach := func() error {
+		return t.stream.AcceptResumeAnswering(sc, offset, func(own uint64) error {
+			return s.Answer(wire.TerminalAnswer{Offset: &own})
+		})
 	}
-	t.mu.Unlock()
-	if err != nil {
-		g.log.Info("ssh session resume failed", append(attrs, "err", err)...)
-		return
+	if g.moveOnto(t, attrs, attach, func() { t.socket = s }) {
+		g.wg.Go(func() { g.watchSocket(t, s, sc) })
 	}
-	g.log.Info("ssh session resumed", attrs...)
-	g.watch(t)
-	g.wg.Go(func() { g.watchSocket(t, s, sc) })
 }
 
 // EndTerminal ends the web terminal's SSH Session id of the caller c as the
