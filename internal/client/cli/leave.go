@@ -58,7 +58,8 @@ func leave(ctx context.Context, in *Input) (leftJSON, error) {
 	case err != nil:
 		return leftJSON{}, err
 	}
-	if _, err := stopDeviceMuxes(ctx, in, "koko leave"); err != nil {
+	// It needs each stopped, not what each ended.
+	if _, _, err := stopDeviceMuxes(ctx, in, "koko leave"); err != nil {
 		return leftJSON{}, fmt.Errorf("%w; this device is still joined to the koko server at %s, and koko deleted none of its files", err, c.ServerAddress)
 	}
 	if err := devicefiles.Leave(home); err != nil {

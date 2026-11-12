@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -283,37 +284,73 @@ func (c Conn) WaitingToResume(ctx context.Context) (stop func()) {
 	return func() { _ = ch.Close() }
 }
 
+// ErrUncounted says a Device Mux stopped for koko disconnect, but its
+// answer, with how many commands it ended, never reached koko disconnect.
+var ErrUncounted = errors.New("its answer, with how many commands it ended, never came")
+
 // Stop asks the Device Mux at socket, of any build, to stop, as koko
 // disconnect does, and returns how many commands it carried, which it
 // ends: SSH Sessions, koko web runs and calls in flight. When none
 // answers at socket, such as one that is stopping already, or the socket a
 // crashed one left, the error wraps ErrNotRunning.
-func Stop(ctx context.Context, socket string) (int, error) {
+//
+// It waits for the answer at most timings' CommandWait, which a Device Mux
+// answers well within, since it answers without waiting for a Device
+// Connection: on Windows a Unix socket can keep what the Device Mux sends,
+// and its close, from this end for good (#184). Then one that still
+// listens did not answer, and one that no longer listens stopped, but its
+// answer never came: the error wraps ErrUncounted.
+func Stop(ctx context.Context, socket string, timings timing.Timings) (int, error) {
+	wait := timings.Resolve().CommandWait
+	bounded, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
 	var d net.Dialer
-	nc, err := d.DialContext(ctx, "unix", socket)
+	nc, err := d.DialContext(bounded, "unix", socket)
 	if err != nil {
 		return 0, fmt.Errorf("%w at %s: %w", ErrNotRunning, socket, err)
 	}
-	var banner string
-	conn, err := serverconn.Handshake(ctx, nc, socket, &ssh.ClientConfig{
-		User:            disconnectUser,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // its private directory is its pin
-		BannerCallback: func(message string) error {
-			banner = message
-			return nil
-		},
-	})
-	if err == nil {
-		// A Device Mux never lets koko disconnect in.
-		_ = conn.Close()
-		err = errors.New("it let koko disconnect in")
+	// The banner is the answer, whether or not the refusal after it
+	// arrives.
+	var banner atomic.Pointer[string]
+	handshook := make(chan error, 1)
+	go func() {
+		conn, err := serverconn.Handshake(bounded, nc, socket, &ssh.ClientConfig{
+			User:            disconnectUser,
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(), // its private directory is its pin
+			BannerCallback: func(message string) error {
+				banner.Store(&message)
+				return nil
+			},
+		})
+		if err == nil {
+			// A Device Mux never lets koko disconnect in.
+			_ = conn.Close()
+			err = errors.New("it let koko disconnect in")
+		}
+		handshook <- err
+	}()
+	// A read the socket never completes may outlast even the close of its
+	// connection, so Stop does not wait for the handshake past the bound.
+	select {
+	case err = <-handshook:
+	case <-bounded.Done():
+		_ = nc.Close()
 	}
-	if banner == "" {
+	b := banner.Load()
+	switch {
+	case b != nil:
+	case ctx.Err() != nil:
+		return 0, fmt.Errorf("ask the Device Mux at %s to stop: %w", socket, context.Cause(ctx))
+	case bounded.Err() != nil && serving(ctx, socket):
+		return 0, fmt.Errorf("the Device Mux at %s did not answer within %v", socket, wait)
+	case bounded.Err() != nil:
+		return 0, fmt.Errorf("the Device Mux at %s stopped, but %w within %v", socket, ErrUncounted, wait)
+	default:
 		return 0, fmt.Errorf("%w at %s: %w", ErrNotRunning, socket, err)
 	}
 	var sj stateJSON
-	if err := json.Unmarshal([]byte(banner), &sj); err != nil || sj.State != "stopped" || sj.Commands == nil {
-		return 0, fmt.Errorf("the Device Mux at %s did not stop: it answered %q", socket, banner)
+	if err := json.Unmarshal([]byte(*b), &sj); err != nil || sj.State != "stopped" || sj.Commands == nil {
+		return 0, fmt.Errorf("the Device Mux at %s did not stop: it answered %q", socket, *b)
 	}
 	return *sj.Commands, nil
 }

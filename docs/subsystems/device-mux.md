@@ -174,7 +174,13 @@ The koko server's own SSH, as on its Unix socket
   whenever it is asked, and Windows' monotonic clock runs on while the
   machine sleeps, so a sleep would read as a silence. The Device Mux's
   side of the handshake is bounded by `timing.CommandWait` and
-  `timing.DeviceMuxStart`, the longest a command waits for it. On Linux and
+  `timing.DeviceMuxStart`, the longest a command waits for it; a
+  command's side by the same (`dialJoined`), and that of `koko
+  disconnect` and `koko leave` by `timing.CommandWait`
+  (`devicemux.Stop`). A reading end can miss what
+  comes before the close too: `koko disconnect` once missed a Device
+  Mux's whole answer, banner and refusal, and the close 20 s after it
+  (#184). On Linux and
   macOS, whose sockets always tell each end of the other's close, neither
   end probes.
 - **One device, one home.** A device is an OS user's home (P0 spec: reach,
@@ -367,10 +373,19 @@ ssh_config following the record
   `koko web` runs and calls in flight alike. A socket nothing answers at,
   such as one a crashed Device Mux left, is passed over; one that answers
   anything else fails the command once it has asked every other, naming
-  that socket and saying what it stopped. The next command starts a new
+  that socket and saying what it stopped. It waits for each answer at
+  most `timing.CommandWait` ([`devicemux.Stop`](../../internal/client/devicemux/local.go)),
+  since on Windows a Unix socket once kept the answer, and the close
+  after it, from `koko disconnect` for good (#184). The banner alone is
+  the answer. Without one by then, a Device Mux that still listens did
+  not answer, and fails the command as one that does not stop; one that
+  no longer listens stopped, but how many commands it ended is not known
+  (`devicemux.ErrUncounted`), so `koko disconnect` fails saying so, and
+  names the ones it stopped. The next command starts a new
   Device Mux. `koko leave` stops them in the same way
   (`stopDeviceMuxes`) before it deletes the device's files
-  ([`koko leave`](device-connection.md#on-the-device)).
+  ([`koko leave`](device-connection.md#on-the-device)); it needs each
+  stopped, not counted, so it passes over one whose answer never came.
 - On stopping it closes its listener, which removes the socket, then every
   connection, then releases the lock. When koko disconnect stopped it, it
   first tells each command (`disconnected@koko`), then waits, within
@@ -437,7 +452,10 @@ at once` (reason: wake or route change) and `no route-change watch`.
   command told, none running (golden), the next command starting a new
   one, the Device Mux of another build stopped beside it, a stale socket
   passed over, and one that answers but does not stop failing the command
-  only after the others stopped.
+  only after the others stopped; an answer that never comes holding
+  `koko disconnect` at most `timing.CommandWait`, a banner whose refusal
+  never comes counted, and `koko leave` passing over a Device Mux that
+  stopped without its answer coming.
 
 The peer-credential refusal of another OS user, and a runtime directory
 another user owns, are not tested: both need a second OS user, which a

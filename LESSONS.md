@@ -260,6 +260,19 @@ the chmod.
 **Evidence:** e04c515 (#176); found by the ticket's review, fixed in
 eb130be
 
+### Every exchange over a local socket has a bound of its own, not only the waits after it
+
+**Why:** on Windows a Unix socket can keep what the other end sends, and
+its close, from a reading end for good. #153 bounded the Device Mux's side
+of a command's handshake and watched the connections once they were up,
+but `devicemux.Stop`, `koko disconnect`'s exchange, ran under the
+command's context, which has no deadline. A Device Mux took its request
+and stopped, its answer and its close 20 s later never arrived, and `koko
+disconnect` and `koko leave` waited for ever: three times on the
+`windows` job in one day, twice past the cli package's 10-minute limit.
+**Seen:** 1 (2026-11-12)
+**Evidence:** check runs 43217674345, 43223196821 and 43225408580; #184
+
 ## Moved to the code standards
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128, #147; check run 42951455550).

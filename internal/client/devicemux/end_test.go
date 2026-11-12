@@ -70,7 +70,7 @@ func TestCommandsWritingAsTheDeviceMuxStopsSeeTheirConnectionsEnd(t *testing.T) 
 	// Every command has written, and writes on, as the Device Mux stops.
 	writing.Wait()
 	stopped := time.Now()
-	if _, err := devicemux.Stop(t.Context(), socket); err != nil {
+	if _, err := devicemux.Stop(t.Context(), socket, timing.Timings{}); err != nil {
 		t.Fatalf("stop the Device Mux: %v", err)
 	}
 	deadline := time.After(endWithin)

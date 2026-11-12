@@ -201,7 +201,12 @@ func (d disconnectJSON) Human(w io.Writer) error {
 // connected that koko disconnect stopped them, so an SSH Session ends for
 // good.
 func disconnect(ctx context.Context, in *Input) (disconnectJSON, error) {
-	return stopDeviceMuxes(ctx, in, "koko disconnect")
+	out, uncounted, err := stopDeviceMuxes(ctx, in, "koko disconnect")
+	if err == nil && uncounted != nil {
+		// What it prints is a count, which it does not have.
+		return disconnectJSON{}, fmt.Errorf("koko disconnect cannot say how many commands it ended: %w%s", uncounted, out.stopped())
+	}
+	return out, err
 }
 
 // stopDeviceMuxes stops every Device Mux of this OS user, of every build
@@ -209,18 +214,22 @@ func disconnect(ctx context.Context, in *Input) (disconnectJSON, error) {
 // what each carried. A socket nothing answers at, such as one a crashed
 // Device Mux left, is passed over. One that answers but does not stop
 // fails the command, once it has asked every other, saying which it
-// stopped.
-func stopDeviceMuxes(ctx context.Context, in *Input, command string) (disconnectJSON, error) {
+// stopped. One that stopped but whose answer never came is in uncounted
+// (devicemux.ErrUncounted): stopped, but in no count.
+func stopDeviceMuxes(ctx context.Context, in *Input, command string) (out disconnectJSON, uncounted, err error) {
 	sockets, err := devicemux.Sockets(in.inv.getenv)
 	if err != nil {
-		return disconnectJSON{}, fmt.Errorf("look for the Device Muxes of this OS user: %w", err)
+		return disconnectJSON{}, nil, fmt.Errorf("look for the Device Muxes of this OS user: %w", err)
 	}
-	out := disconnectJSON{DeviceMuxes: []stoppedDeviceMuxJSON{}}
-	var failed []error
+	out = disconnectJSON{DeviceMuxes: []stoppedDeviceMuxJSON{}}
+	var failed, lost []error
 	for _, socket := range sockets {
-		n, err := devicemux.Stop(ctx, socket)
+		n, err := devicemux.Stop(ctx, socket, in.runner.Timings)
 		switch {
 		case errors.Is(err, devicemux.ErrNotRunning):
+			continue
+		case errors.Is(err, devicemux.ErrUncounted):
+			lost = append(lost, err)
 			continue
 		case err != nil:
 			failed = append(failed, err)
@@ -230,11 +239,17 @@ func stopDeviceMuxes(ctx context.Context, in *Input, command string) (disconnect
 		out.CommandsEnded += n
 	}
 	if failed != nil {
-		var stopped strings.Builder
-		for _, m := range out.DeviceMuxes {
-			fmt.Fprintf(&stopped, "; it stopped the Device Mux at %s, ending %d command(s)", m.Socket, m.CommandsEnded)
-		}
-		return disconnectJSON{}, fmt.Errorf("%s could not stop every Device Mux: %w%s", command, errors.Join(failed...), stopped.String())
+		return disconnectJSON{}, nil, fmt.Errorf("%s could not stop every Device Mux: %w%s", command, errors.Join(append(failed, lost...)...), out.stopped())
 	}
-	return out, nil
+	return out, errors.Join(lost...), nil
+}
+
+// stopped says which Device Muxes d holds were stopped, and how many
+// commands each ended, after an error.
+func (d disconnectJSON) stopped() string {
+	var b strings.Builder
+	for _, m := range d.DeviceMuxes {
+		fmt.Fprintf(&b, "; it stopped the Device Mux at %s, ending %d command(s)", m.Socket, m.CommandsEnded)
+	}
+	return b.String()
 }

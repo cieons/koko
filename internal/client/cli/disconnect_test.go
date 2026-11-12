@@ -6,10 +6,14 @@ import (
 	"crypto/rand"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -201,4 +205,127 @@ func answerElsewhere(t *testing.T, path string) {
 			_ = nc.Close()
 		}
 	}()
+}
+
+// A Device Mux whose answer never reaches koko disconnect, as a Unix
+// socket on Windows once kept it from koko disconnect for good (#184),
+// holds koko disconnect for at most timing.CommandWait. One that still
+// listens then did not answer, and fails koko disconnect as one that does
+// not stop does; one that no longer listens stopped, but how many commands
+// it ended is not known, so koko disconnect fails saying so.
+func TestKokoDisconnectWaitsForAnAnswerAtMostCommandWait(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		stops bool
+		want  string
+	}{
+		{"listening", false, "koko disconnect could not stop every Device Mux: the Device Mux at %s did not answer within 200ms"},
+		{"stopped", true, "koko disconnect cannot say how many commands it ended: the Device Mux at %s stopped, but its answer, with how many commands it ended, never came within 200ms"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// Nothing a real peer answers waits on the short wait: this
+			// device runs no Device Mux of its own.
+			d := harness.NewMuxDevice(t, timing.Timings{CommandWait: 200 * time.Millisecond})
+			d.Koko("disconnect").WantSuccess(t) // makes the runtime directory
+			silent := filepath.Join(d.MuxDir(), "v0.0.1-silent.sock")
+			holdAnswer(t, silent, "", tc.stops)
+
+			msg := d.Koko("disconnect", "--json").WantError(t, 1, "internal_error")
+			if want := fmt.Sprintf(tc.want, silent); !strings.Contains(msg, want) {
+				t.Errorf("disconnect says %q, without %q", msg, want)
+			}
+		})
+	}
+}
+
+// The banner is koko disconnect's answer: a Device Mux whose refusal after
+// it never comes is counted all the same, once koko disconnect stops
+// waiting.
+func TestKokoDisconnectCountsABannerWhoseRefusalNeverCame(t *testing.T) {
+	t.Parallel()
+	d := harness.NewMuxDevice(t, timing.Timings{CommandWait: 200 * time.Millisecond})
+	d.Koko("disconnect").WantSuccess(t) // makes the runtime directory
+	silent := filepath.Join(d.MuxDir(), "v0.0.1-silent.sock")
+	holdAnswer(t, silent, `{"state":"stopped","commands":3}`, true)
+
+	out, _ := kokoDisconnect(t, d)
+	if len(out.DeviceMuxes) != 1 || out.DeviceMuxes[0].Socket != silent || out.DeviceMuxes[0].CommandsEnded != 3 || out.CommandsEnded != 3 {
+		t.Errorf("disconnect printed %+v, want the Device Mux at %s with its 3 commands", out, silent)
+	}
+}
+
+// koko leave needs every Device Mux stopped, not their counts, so one that
+// stopped without its answer reaching koko leave does not keep the device
+// joined.
+func TestKokoLeavePassesOverADeviceMuxThatStoppedWithoutAnswering(t *testing.T) {
+	t.Parallel()
+	_, _, d := muxDevice(t, timing.Timings{})
+	d.Koko("disconnect").WantSuccess(t)
+	// The Device Mux the device ran has stopped: the short wait is for
+	// the one whose answer never comes alone.
+	d.UseTimings(timing.Timings{CommandWait: 200 * time.Millisecond})
+	holdAnswer(t, filepath.Join(d.MuxDir(), "v0.0.1-silent.sock"), "", true)
+
+	d.Koko("leave", "--json").WantSuccess(t)
+	if _, err := os.Lstat(filepath.Join(kokoDir(d), "client.json")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("leave left koko's client config (%v)", err)
+	}
+}
+
+// holdAnswer serves SSH on the Unix socket path, as a Device Mux does,
+// until the test ends, and answers the authentication koko disconnect
+// opens with banner alone, or with nothing when banner is "", but never
+// with the refusal after it, as when the rest of the answer never reaches
+// koko disconnect. With stops it closes its listener as it is asked, as a
+// Device Mux that stops does.
+func holdAnswer(t *testing.T, path, banner string, stops bool) {
+	t.Helper()
+	_, key, _ := ed25519.GenerateKey(rand.Reader)
+	signer, err := ssh.NewSignerFromKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &ssh.ServerConfig{
+		NoClientAuth: true,
+		BannerCallback: func(ssh.ConnMetadata) string {
+			if stops {
+				_ = ln.Close()
+			}
+			if banner == "" {
+				<-t.Context().Done()
+			}
+			return banner
+		},
+		NoClientAuthCallback: func(ssh.ConnMetadata) (*ssh.Permissions, error) {
+			<-t.Context().Done()
+			return nil, errors.New("koko disconnect is never let in")
+		},
+	}
+	cfg.AddHostKey(signer)
+	var wg sync.WaitGroup
+	t.Cleanup(func() {
+		_ = ln.Close()
+		wg.Wait()
+	})
+	wg.Go(func() {
+		for {
+			nc, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			wg.Go(func() {
+				stop := context.AfterFunc(t.Context(), func() { _ = nc.Close() })
+				defer stop()
+				_, _, _, _ = ssh.NewServerConn(nc, cfg)
+				_ = nc.Close()
+			})
+		}
+	})
 }
