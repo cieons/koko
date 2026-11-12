@@ -161,7 +161,7 @@ func (g *Gateway) recheckResume(t *tunnel) *ending {
 func (g *Gateway) resume(c *transport.Connection, nch ssh.NewChannel, p wire.TunnelPayload) {
 	id := tunnelID(p.ID)
 	attrs := slices.Concat([]any{"tunnel", id, "client", clientSSH}, callerAttrs(c.Caller()), []any{"addr", c.RemoteAddr()})
-	t, ended := g.resumable(id, callerKey{id: callerID(c.Caller())}, clientSSH)
+	t, ended := g.resumable(id, callerKey{id: c.Caller().ID()}, clientSSH)
 	if t != nil {
 		ended = g.recheckResume(t)
 	}

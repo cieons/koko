@@ -363,6 +363,10 @@ the Tunnel out of the registry.
 | The Tunnel stayed Detached for the whole grace | none | `grace over` |
 | Its Device Session was Revoked | `access to web1 was withdrawn: this device's Device Session was Revoked; this SSH Session is closed.` | `revoked` |
 | Its User was Removed | `access to web1 was withdrawn: bob was Removed; this SSH Session is closed.` | `user removed` |
+| A web terminal's browser signed out | `this browser signed out; this SSH Session is closed.` | `signed out` |
+| Its Sign-in was revoked (`signin.revoke`) | `access to web1 was withdrawn: this browser's Sign-in was revoked; this SSH Session is closed.` | `signin revoked` |
+| The Password was set or changed, ending the User's other Sign-ins | `access to web1 was withdrawn: the Password was changed; this SSH Session is closed.` | `password changed` |
+| The Password was removed (`password.remove`) | `access to web1 was withdrawn: the Password was removed; this SSH Session is closed.` | `password removed` |
 | The Host was Retired | `access to web1 was withdrawn: web1 was Retired; this SSH Session is closed.` | `host retired` |
 | The Host went back to Registered | `access to web1 was withdrawn; this SSH Session is closed.` | `host registered` |
 | Its Relay is no longer Managed | `access to web1 was withdrawn: web1's Relay gw is no longer Managed; this SSH Session is closed.`, the Relay unnamed to a caller who cannot see it | `relay registered`, `relay retired` |
@@ -399,12 +403,23 @@ SSH Session that ends gives its notice as any ending does
   revocation, or the User's removal when `user.remove` Revoked it, and
   reaches the client before its Device Connections close
   ([revoking](device-connection.md#revoking)).
+- **An ended Sign-in's** web terminals end at once too, live and Detached,
+  without a read: the change names the Sign-ins it ended and why
+  (`SignIns`, `SignInEnd`), and each ends with the notice of its end reason
+  ([above](#when-an-ssh-session-ends)): signed out, revoked, the Password
+  changed or removed, the User Removed (`signInEnding`). A check that finds
+  a Sign-in ended some other way, as `recheck` and `recheckResume` read it,
+  ends its SSH Session as its record says it ended (`signInWithdrawal`). A
+  resume of a web terminal whose Sign-in has ended never reaches the
+  Gateway: the web front refuses it first, with `signin_required`
+  ([the web front](web-front.md#the-web-terminals-websocket)).
 - **Any other change** names the Hosts it may have put out of a caller's
   reach (`host.move` to another Space, `host.retire`, and `host.set` sending
-  a Managed Host back to Registered), or the live Device Sessions of each
-  User `space.member.remove` took out of a Space. The Gateway checks each
+  a Managed Host back to Registered), or the live Device Sessions and
+  Sign-ins of each User `space.member.remove` took out of a Space, by the
+  caller's id (`op.Caller.ID`). The Gateway checks each
   SSH Session to one of those Hosts, each through any Relay, since a named
-  Host may be its Relay, or of one of those Device Sessions again, in one read-only transaction, by the
+  Host may be its Relay, or of one of those callers again, in one read-only transaction, by the
   rule that admits a new one
   ([`host.ReachOf`](../../internal/server/host/reach.go) by the Host's id,
   so a rename changes nothing, and the Host and its Relay Managed), and ends
@@ -421,7 +436,8 @@ SSH Session that ends gives its notice as any ending does
 - **Changes that keep access** publish nothing or pass the check, and
   interrupt nothing: a rename, the address, port, Note and Attributes, a
   move to a Space the caller still acts in, another Device Session's
-  revocation.
+  revocation, another Sign-in's ending, and the Password changed from the
+  Sign-in's own browser, which ends only the User's other Sign-ins.
 - **An SSH Session admitted across a change**, its admission read before
   the change committed and its Tunnel registered after the Gateway took it,
   is checked again once registered, so none slips between the two.
@@ -766,6 +782,14 @@ stream's buffer full; a malformed record; the restart notice before the
 web listener closes, while a call in flight is open on it, a stalled page
 cut at `StopNotice`, and a Host sitting on the session's open ended; and
 the log lines, with no cookie in them.
+[`web/terminal_access_test.go`](../../internal/server/web/terminal_access_test.go)
+holds a live and a Detached terminal across each change that withdraws a
+Sign-in's access: signing out, `signin.revoke`, the Password changed (the
+changing Sign-in's own terminal going on), `password.remove`,
+`user.remove`, `space.member.remove`, `host.move`, `host.retire` and a
+Relay back to Registered; each ends with its notice and log reason, and a
+later resume is refused, with `signin_required` once the Sign-in has ended
+and saying why otherwise. Changes that keep access end none.
 [`cli/web_terminal_test.go`](../../internal/client/cli/web_terminal_test.go)
 does so through `koko web` (`h.Background`): as the Local caller with
 `localhost` and `127.0.0.1` Origins, 256 KiB each way through its

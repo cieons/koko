@@ -8,16 +8,17 @@ import (
 
 	"github.com/cieons/koko/internal/server/access"
 	"github.com/cieons/koko/internal/server/host"
+	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
 )
 
 // Withdraw ends each live SSH Session that the committed change c withdrew
 // access from, since one goes on only while a new one would be allowed (P0
-// spec: reach). Each of a Device Session c Revoked ends at once; each to a
-// Host c names, through a Relay when c names any Host, or of a Device
-// Session it narrowed, ends once a read of the record finds that a new one
-// would now be refused (recheck). The channel
+// spec: reach). Each of a Device Session c Revoked, or of a Sign-in it
+// ended, ends at once; each to a Host c names, through a Relay when c names
+// any Host, or of a caller it narrowed, ends once a read of the record finds
+// that a new one would now be refused (recheck). The channel
 // it returns is closed once the Revoked Device Sessions' SSH Sessions have
 // given their notice and ended, so that their Device Connections close only
 // after. It never blocks, since the access-change signal calls it before
@@ -45,7 +46,9 @@ func (g *Gateway) Withdraw(c access.Change) <-chan struct{} {
 				t.end(revokedEnding(t))
 			}
 			revoked = append(revoked, t.done)
-		case slices.Contains(c.Narrowed, t.caller.DeviceSession), slices.Contains(c.Hosts, t.hostID),
+		case t.caller.SignIn != "" && slices.Contains(c.SignIns, t.caller.SignIn):
+			t.end(signInEnding(t, c.SignInEnd))
+		case t.caller.ID() != "" && slices.Contains(c.Narrowed, t.caller.ID()), slices.Contains(c.Hosts, t.hostID),
 			// Any Host c names may be the Relay this SSH Session passes
 			// through, or the one its Host has had since, which only a read
 			// tells: check every SSH Session through a Relay.
@@ -109,8 +112,11 @@ func (g *Gateway) recheck(ts []*tunnel) {
 func withdrawal(ctx context.Context, tx store.Tx, t *tunnel) (*ending, error) {
 	who, h, err := host.ReachOf(ctx, tx, t.caller, t.hostID)
 	if e, ok := errors.AsType[*api.Error](err); ok {
-		if e.Code == api.CodeRevoked.Name {
+		switch e.Code {
+		case api.CodeRevoked.Name:
 			return revokedEnding(t), nil
+		case api.CodeSignInRequired.Name:
+			return signInWithdrawal(ctx, tx, t)
 		}
 		return withdrawn(t, "access withdrawn", ""), nil
 	}
@@ -147,6 +153,44 @@ func relayWithdrawal(ctx context.Context, tx store.Tx, t *tunnel, who access.Ide
 		}
 	}
 	return nil, nil
+}
+
+// signInWithdrawal is how the SSH Session in the Tunnel t ends once its
+// Sign-in has ended: as the Sign-in's record says it ended, read at the
+// time of ctx, so that a check that finds it ended, after an access change
+// or before a resume, ends it as the signal would have.
+func signInWithdrawal(ctx context.Context, tx store.Tx, t *tunnel) (*ending, error) {
+	found, err := access.SignIns(ctx, tx, op.Now(ctx), "s.id = ?", t.caller.SignIn)
+	if err != nil {
+		return nil, err
+	}
+	reason := ""
+	if len(found) == 1 {
+		reason = found[0].EndReason
+	}
+	return signInEnding(t, reason), nil
+}
+
+// signInEnding is how the SSH Session in the Tunnel t ends once its
+// Sign-in has ended for reason, as the Sign-in's record names it
+// (api.EndSignedOut, ...): each with the notice and the log reason of its
+// own, and any other reason as access withdrawn.
+func signInEnding(t *tunnel, reason string) *ending {
+	switch reason {
+	case api.EndSignedOut:
+		return &ending{reason: "signed out", notice: "this browser signed out; this SSH Session is closed.", why: "this browser signed out"}
+	case api.EndRevoked:
+		return withdrawn(t, "signin revoked", "this browser's Sign-in was revoked")
+	case api.EndPasswordChanged:
+		return withdrawn(t, "password changed", "the Password was changed")
+	case api.EndPasswordRemoved:
+		return withdrawn(t, "password removed", "the Password was removed")
+	case api.EndUserRemoved:
+		return withdrawn(t, "user removed", t.user+" was Removed")
+	case api.EndExpired:
+		return withdrawn(t, "signin expired", "this browser's Sign-in has expired")
+	}
+	return withdrawn(t, "access withdrawn", "")
 }
 
 // revokedEnding ends the SSH Session in the Tunnel t of a Revoked Device

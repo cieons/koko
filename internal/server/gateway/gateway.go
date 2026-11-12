@@ -83,7 +83,7 @@ type Gateway struct {
 	// a notice ended, until its grace would have ended, so that a resume
 	// of it is refused with why (resume.go).
 	ended map[tunnelID]endedTunnel
-	// sshSessions counts, by the caller's id (callerID), the Tunnels in the
+	// sshSessions counts, by the caller's id (op.Caller.ID), the Tunnels in the
 	// registry that the access check admitted, attached or Detached: from
 	// then until the Tunnel ends, its dial to the Host included.
 	sshSessions map[string]int
@@ -195,21 +195,14 @@ func (g *Gateway) newTunnel(caller op.Caller, client string, from net.Addr) *tun
 }
 
 // callerKey is whose a Tunnel is, as a resume or an end must show to reach
-// it: the caller's id (callerID), and for the Local caller's web terminal,
+// it: the caller's id (op.Caller.ID), and for the Local caller's web terminal,
 // the run of koko web it came through.
 type callerKey struct {
 	id, run string
 }
 
 func (t *tunnel) key() callerKey {
-	return callerKey{id: callerID(t.caller), run: t.run}
-}
-
-// callerID is the id a caller's SSH Sessions are counted and found by: its
-// Sign-in's or its Device Session's, or "" for the Local caller, who has no
-// limit.
-func callerID(c op.Caller) string {
-	return cmp.Or(c.SignIn, c.DeviceSession)
+	return callerKey{id: t.caller.ID(), run: t.run}
 }
 
 // callerAttrs names who an SSH Session came from in a log line: a Sign-in by
@@ -358,7 +351,7 @@ func (g *Gateway) serve(c *transport.Connection, nch ssh.NewChannel) {
 
 // register puts the new Tunnel t in the registry, under its id. One the
 // access check admitted, as a says, counts against its caller's limit
-// (callerID), unless the caller holds the most already, when register
+// (op.Caller.ID), unless the caller holds the most already, when register
 // returns the refusal: maxBrowserSSHSessions for a Sign-in, maxSSHSessions
 // for a Device Session. Withdraw could not see one admitted across an access
 // change, a change it took after the first seen, so register has it checked
@@ -375,7 +368,7 @@ func (g *Gateway) register(t *tunnel, a admission, seen uint64) (*refusal, bool)
 	if a.refused != nil {
 		return nil, true
 	}
-	if id := callerID(t.caller); id != "" {
+	if id := t.caller.ID(); id != "" {
 		most, holder := maxSSHSessions, "Device Session"
 		if t.caller.SignIn != "" {
 			most, holder = maxBrowserSSHSessions, "Sign-in"
@@ -416,7 +409,7 @@ func (g *Gateway) unregister(t *tunnel) {
 	close(t.done)
 	delete(g.tunnels, t.id)
 	g.keepEnding(t, from.Add(t.holdFor))
-	if id := callerID(t.caller); t.limited {
+	if id := t.caller.ID(); t.limited {
 		if g.sshSessions[id]--; g.sshSessions[id] == 0 {
 			delete(g.sshSessions, id)
 		}

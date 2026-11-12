@@ -102,6 +102,27 @@ Secrets ([`secret.Holding`](../../internal/server/secret/secret.go)); `space
 rm` refuses while any count is above 0, and its message names each, as in
 "2 Hosts and 1 Retired Host".
 
+## The access-change signal
+
+A change that can withdraw access announces it on the access-change signal
+([`access.Signal`](../../internal/server/access/signal.go)) once its
+transaction commits ([revoking](device-connection.md#revoking)).
+`access.Change` names what it affects. The Gateway ends at once, or checks
+again, the SSH Sessions it touches, Tunnels and web terminals alike
+([the Gateway](gateway.md#access-during-a-live-ssh-session)); the
+transport closes the Revoked Device Sessions' Device Connections; and the
+web front ends their `koko web` cookies.
+
+| Field | What it names | Published by |
+| --- | --- | --- |
+| `Revoked`, `Removed` | The Device Sessions the change Revoked, and whether they were a Removed User's | `device.revoke`, `user.remove` |
+| `SignIns`, `SignInEnd` | The Sign-ins the change ended, and why, as their records say: `signed_out`, `revoked`, `password_changed`, `password_removed` or `user_removed` | signing out, `signin.revoke`, a Password set or changed (the User's other Sign-ins), `password.remove`, `user.remove` ([Sign-ins](signin.md#sign-ins)) |
+| `Narrowed` | The live Device Sessions and Sign-ins of each User taken out of a Space | `space.member.remove` |
+| `Hosts` | The Hosts the change may have put out of a caller's reach | `host.move`, `host.retire`, `host.set` sending a Host back to Registered |
+
+`Narrowed` names each caller by `op.Caller.ID`, its Sign-in's id or its
+Device Session's, the one helper every consumer matches a caller with.
+
 ## The access matrix
 
 [`internal/server/access/matrix_test.go`](../../internal/server/access/matrix_test.go)

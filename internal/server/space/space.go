@@ -312,8 +312,8 @@ func (s *area) memberAdd(ctx context.Context, tx store.Tx, caller op.Caller, req
 // memberRemove is space.member.remove: it takes the Users out of a Space,
 // all or none, leaving a User who is not a Member as they are, as a Removed
 // User never is. Once it commits, the access-change signal names the live
-// Device Sessions of each User it took out, so that their SSH Sessions to
-// the Space's Hosts end.
+// Device Sessions and Sign-ins of each User it took out, so that their SSH
+// Sessions to the Space's Hosts end.
 func (s *area) memberRemove(ctx context.Context, tx store.Tx, caller op.Caller, req api.SpaceMemberRemoveRequest) (api.SpaceMemberRemoveResponse, error) {
 	sp, users, err := s.members(ctx, tx, caller, req.Space, req.Users)
 	if err != nil {
@@ -338,6 +338,15 @@ func (s *area) memberRemove(ctx context.Context, tx store.Tx, caller op.Caller, 
 		}
 		for _, d := range live {
 			narrowed = append(narrowed, d.ID)
+		}
+		signIns, err := access.SignIns(ctx, tx, op.Now(ctx), "u.id = ? AND s.ended_at IS NULL", u.ID)
+		if err != nil {
+			return api.SpaceMemberRemoveResponse{}, err
+		}
+		for _, si := range signIns {
+			if si.EndedAt == "" {
+				narrowed = append(narrowed, si.ID)
+			}
 		}
 	}
 	if len(narrowed) > 0 {

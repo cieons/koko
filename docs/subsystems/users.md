@@ -65,6 +65,7 @@ refused with `owner_only` before the name is read.
   a line naming the removal
   ([the Gateway](gateway.md#access-during-a-live-ssh-session)), and their
   Device Connections then close ([revoking](device-connection.md#revoking));
+  it also names the Sign-ins it ended, whose web terminals end alike;
   a later consumer ends their `koko web` cookies through the same Device
   Sessions. Who
   is calling then refuses each of them with `revoked`, by its device's name,

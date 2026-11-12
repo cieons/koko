@@ -103,7 +103,12 @@ which keeps a Sign-in's browser and system apart in place of its label:
   back, and logs it.
 - **Ending**: by its browser signing out, by being revoked, by the User's
   Password being set or removed, and by the User being Removed. Ending is
-  immediate: every call reads the Sign-in in its own transaction.
+  immediate: every call reads the Sign-in in its own transaction. Once the
+  call that ends it commits, an `/auth/` endpoint's included, the
+  access-change signal names it with its end reason (`access.Change.SignIns`,
+  [the access check](access.md#the-access-change-signal)), and its web
+  terminals end at once, live and Detached, each with its notice
+  ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
 - **`signin.list`** (`koko signin ls [--user <u>] [--all]`, read tier)
   answers the caller's own Sign-ins, everyone's for the Owner, without the
   ended ones unless `all`; a Member naming another User gets none. Its
@@ -186,7 +191,9 @@ membership rules a device follows
 at most 16 at once, attached or Detached, across all its tabs, Resumed only
 from the same Sign-in ([the Gateway](gateway.md#the-web-terminal)). Opening
 and Resuming one moves its Last used time, at most once a minute, as a call
-does; keys typed do not. The terminal is the web front's own endpoint, as
+does; keys typed do not. They go on only while the Sign-in would be
+allowed a new one: they end with it, and with a Space change that takes the
+Host out of its User's reach ([the Gateway](gateway.md#access-during-a-live-ssh-session)). The terminal is the web front's own endpoint, as
 `/auth/` is, so no operation is added and the access matrix gains no row.
 
 `user.current` answers the Sign-in as `signin`, `{"id", "client",

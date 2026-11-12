@@ -9,9 +9,9 @@ import (
 )
 
 // Change is a committed change to the record that can withdraw access, as
-// the access-change signal carries it: the Device Sessions and the Hosts it
-// affects. A kind of change that withdraws access some other way adds a
-// field of its own.
+// the access-change signal carries it: the Device Sessions, the Sign-ins
+// and the Hosts it affects. A kind of change that withdraws access some
+// other way adds a field of its own.
 type Change struct {
 	// Revoked are the ids of the Device Sessions the change Revoked: one
 	// revoked by itself, or every one of a User Removed. Their SSH Sessions
@@ -20,9 +20,14 @@ type Change struct {
 	// Removed says the Device Sessions in Revoked are those of a User the
 	// change Removed.
 	Removed bool
-	// Narrowed are the ids of the live Device Sessions of each User the
-	// change took out of a Space: each of their SSH Sessions is checked
-	// again.
+	// SignIns are the ids of the Sign-ins the change ended, and SignInEnd
+	// why, as their records say (api.EndSignedOut, ...): their SSH Sessions
+	// end at once.
+	SignIns   []string
+	SignInEnd string
+	// Narrowed are the ids (op.Caller.ID) of the live Device Sessions and
+	// Sign-ins of each User the change took out of a Space: each of their
+	// SSH Sessions is checked again.
 	Narrowed []string
 	// Hosts are the ids of the Hosts the change may have put out of a
 	// caller's reach: one moved to another Space, Retired, or sent back to

@@ -17,6 +17,7 @@
 package op
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -53,6 +54,14 @@ type Caller struct {
 	// v0.3.0 for one that stated none (compat.CLIVersion), for a call over
 	// the Unix socket or a Device Connection.
 	CLIVersion string
+}
+
+// ID is the id the caller is known by beyond a call: its Sign-in's or its
+// Device Session's, or "" for the Local caller. The access-change signal
+// names callers by it, and the Gateway counts and finds their SSH Sessions
+// by it.
+func (c Caller) ID() string {
+	return cmp.Or(c.SignIn, c.DeviceSession)
 }
 
 type callerKey struct{}

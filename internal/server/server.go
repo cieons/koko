@@ -343,7 +343,7 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	rootKeyFile := cmp.Or(cfg.RootKeySource, cfg.RootKeyPath)
 	device.Register(a, issuer, &changes, log)
 	user.Register(a, issuer.Issue, signins, holdings, &changes, log)
-	signins.Register(a)
+	signins.Register(a, &changes)
 	registerServer(a, key, issuer, tcp, log)
 	registerSettings(a, &settings{
 		rootKey:     key,

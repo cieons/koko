@@ -58,6 +58,9 @@ type Service struct {
 	// api runs the /auth/ endpoints' writes, as writes of the koko
 	// server's own (op.API.Do); Register sets it.
 	api *op.API
+	// changes is the access-change signal, which names each Sign-in a call
+	// ends, so that its SSH Sessions end; Register sets it.
+	changes *access.Signal
 }
 
 // New returns the signin area, whose records live in st, whose Password
@@ -67,9 +70,10 @@ func New(st *store.Store, rootKey *seal.RootKey, clock func() time.Time, log *sl
 	return &Service{store: st, rootKey: rootKey, clock: clock, log: log, hasher: newHasher(), limiter: newLimiter()}
 }
 
-// Register adds the signin operations to the API.
-func (s *Service) Register(a *op.API) {
-	s.api = a
+// Register adds the signin operations to the API, and has each call that
+// ends a Sign-in, an /auth/ endpoint's among them, publish it on changes.
+func (s *Service) Register(a *op.API, changes *access.Signal) {
+	s.api, s.changes = a, changes
 	a.Handle(api.PasswordLinkIssue, s.link)
 	a.Handle(api.PasswordRemove, s.removePassword)
 	a.Handle(api.SignInList, s.list)
@@ -224,7 +228,7 @@ func (s *Service) revoke(ctx context.Context, tx store.Tx, caller op.Caller, req
 	if si.EndedAt != "" {
 		return api.SignInRevokeResponse{SignIn: si}, nil
 	}
-	if err := end(ctx, tx, si.ID, now, api.EndRevoked, who.By()); err != nil {
+	if err := s.end(ctx, tx, []string{si.ID}, now, api.EndRevoked, who.By()); err != nil {
 		return api.SignInRevokeResponse{}, err
 	}
 	afterCommit(ctx, s.log, "sign-in revoked", "user", si.User, "signin", si.ID, "revoked_by", who.By())
@@ -280,28 +284,36 @@ func (s *Service) endAll(ctx context.Context, tx store.Tx, u api.User, reason, b
 	if err != nil {
 		return 0, err
 	}
-	var ended int64
+	var ended []string
 	for _, si := range live {
 		if si.EndedAt != "" {
 			// Expired already: it ended by its expiry, not by this call.
 			continue
 		}
-		if err := end(ctx, tx, si.ID, now, reason, by); err != nil {
-			return 0, err
-		}
-		ended++
+		ended = append(ended, si.ID)
 		afterCommit(ctx, s.log, "sign-in ended", "user", u.Name, "signin", si.ID, "reason", reason, "ended_by", by)
 	}
-	return ended, nil
+	if err := s.end(ctx, tx, ended, now, reason, by); err != nil {
+		return 0, err
+	}
+	return int64(len(ended)), nil
 }
 
-// end ends the Sign-in id at now for reason, by being the caller named by.
-func end(ctx context.Context, tx store.Tx, id string, now time.Time, reason, by string) error {
-	_, err := tx.ExecContext(ctx, `UPDATE signins SET ended_at = ?, end_reason = ?, ended_by = ?
-		WHERE id = ? AND ended_at IS NULL`, now.Format(time.RFC3339), reason, by, id)
-	if err != nil {
-		return fmt.Errorf("end the Sign-in %s: %w", id, err)
+// end ends the live Sign-ins ids at now for reason, by being the caller
+// named by, and once the call commits, the access-change signal names them,
+// so that their SSH Sessions end.
+func (s *Service) end(ctx context.Context, tx store.Tx, ids []string, now time.Time, reason, by string) error {
+	if len(ids) == 0 {
+		return nil
 	}
+	for _, id := range ids {
+		_, err := tx.ExecContext(ctx, `UPDATE signins SET ended_at = ?, end_reason = ?, ended_by = ?
+			WHERE id = ? AND ended_at IS NULL`, now.Format(time.RFC3339), reason, by, id)
+		if err != nil {
+			return fmt.Errorf("end the Sign-in %s: %w", id, err)
+		}
+	}
+	s.changes.Publish(ctx, access.Change{SignIns: ids, SignInEnd: reason})
 	return nil
 }
 

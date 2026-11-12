@@ -424,7 +424,7 @@ func (s *Service) SignOut(ctx context.Context, token string, a Attempt) error {
 		if err != nil {
 			return err
 		}
-		if err := end(ctx, tx, si.ID, op.Now(ctx), api.EndSignedOut, si.ID); err != nil {
+		if err := s.end(ctx, tx, []string{si.ID}, op.Now(ctx), api.EndSignedOut, si.ID); err != nil {
 			return err
 		}
 		afterCommit(ctx, s.log, "signed out", "user", si.User, "signin", si.ID, "address", a.Address)

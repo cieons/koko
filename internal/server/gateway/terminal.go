@@ -200,7 +200,7 @@ func (g *Gateway) ResumeTerminal(c TerminalCaller, s TerminalSocket, id [wire.Tu
 
 func (g *Gateway) resumeTerminal(c TerminalCaller, s TerminalSocket, id tunnelID, offset uint64) {
 	attrs := slices.Concat([]any{"tunnel", id, "client", clientBrowser}, callerAttrs(c.Caller), []any{"addr", c.Addr})
-	t, ended := g.resumable(id, callerKey{id: callerID(c.Caller), run: c.Run}, clientBrowser)
+	t, ended := g.resumable(id, callerKey{id: c.Caller.ID(), run: c.Run}, clientBrowser)
 	if t != nil {
 		ended = g.recheckResume(t)
 	}
@@ -233,7 +233,7 @@ func (g *Gateway) resumeTerminal(c TerminalCaller, s TerminalSocket, id tunnelID
 func (g *Gateway) EndTerminal(c TerminalCaller, id [wire.TunnelIDSize]byte) {
 	// Whether or not its stream is attached yet, or it has ended already.
 	g.mu.Lock()
-	t := g.ownLocked(tunnelID(id), callerKey{id: callerID(c.Caller), run: c.Run}, clientBrowser)
+	t := g.ownLocked(tunnelID(id), callerKey{id: c.Caller.ID(), run: c.Run}, clientBrowser)
 	g.mu.Unlock()
 	if t == nil {
 		return
