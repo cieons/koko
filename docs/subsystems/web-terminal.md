@@ -8,9 +8,9 @@ page's end of each SSH Session. What it looks like is "The terminal" in
 WebSocket it speaks, `/terminal/socket`, is [the web
 front's](web-front.md#the-web-terminals-websocket); the stream on it is
 [the resumable stream](resumable-stream.md#the-typescript-end); the SSH
-Session behind it is [the Gateway's](gateway.md#the-web-terminal). The
-phone's layout and key bar (#178) and the Files panel's listing and
-uploads (#179) are still to come.
+Session behind it is [the Gateway's](gateway.md#the-web-terminal); the
+Files panel's calls are [the web front's](web-front.md#the-web-terminals-files).
+The phone's layout and key bar (#178) are still to come.
 
 ## Modules
 
@@ -18,10 +18,11 @@ Everything is in [`web/src/terminal/`](../../web/src/terminal):
 
 | Module | In | Holds |
 | --- | --- | --- |
-| `workspace.ts` | the first load | The workspace's state: its tabs (Host, label, state, directory, clipboard request), the active one, the switcher, the text size; the URL's query; starting and resetting it. It imports the terminal's code as types alone |
+| `workspace.ts` | the first load | The workspace's state: its tabs (Host, label, state, SSH Session's id, directory, clipboard request), the active one, the switcher, the text size; the URL's query; starting and resetting it. It imports the terminal's code as types alone |
 | `kept.ts` | the first load | The ids of a browser tab's SSH Sessions in `sessionStorage` (`koko.terminal.sessions`) |
 | `RailSection.tsx`, `TabMark.tsx`, `keys.ts`, `hosts.ts`, `routes.tsx` | the first load | The rail's Terminal section, the phone bar's button and the close question; the state marks; the chords and the switcher's opener; the Managed Hosts read; the two routes and the workspace's lazy part |
 | `TerminalPage.tsx`, `Pane.tsx`, `Switcher.tsx` | the terminal's chunk | The workspace: the island, its head, More, the Files column, the empty workspace; a tab's pane and its states; the switcher |
+| `FilesPanel.tsx`, `files.ts` | the terminal's chunk | The Files panel: the column, the phone's side panel, the listing, the replace question, dropping files on the terminal; the files calls and the uploads of every tab |
 | `connection.ts`, `stream.ts`, `records.ts` | the terminal's chunk | The page's end of an SSH Session: the first messages, the stream, the records, liveness and the Resume |
 | `emulator/` | the terminal's chunk | The emulator, wterm on its ghostty core: the only directory that imports `@wterm/*` |
 
@@ -110,7 +111,65 @@ connection's (`connection.ts`):
 Keys typed go to the connection (`send`); a resize of the grid goes as a
 resize record; the emulator's OSC 7 directory, when its host part is
 empty or the tab's Host, is the tab's directory; an OSC 52 request is a
-card asking before the clipboard is written.
+card asking before the clipboard is written. The SSH Session's id, from
+the open's answer, is the tab's `session` while the connection reports
+its state, cleared when the tab opens a new one; the Files panel's calls
+name it.
+
+## The Files panel
+
+Files in the island's head opens the panel on the active tab: a column
+docked at the island's end edge on a desktop (`FilesColumn`), which the
+terminal narrows for, and a side panel from the bottom on a phone
+(`FilesSheet`). It lists one directory of the tab's Host at a time over
+its SSH Session, through [the web front's files
+endpoints](web-front.md#the-web-terminals-files), Detached or not.
+
+- **Where it opens.** On the tab's directory (OSC 7), or else, or when
+  that cannot be listed, on the Host Account's home (an empty `path`).
+  `sftp_unavailable`, `ssh_session_ended` and `unknown_tunnel` hold for
+  every directory, so home is not tried after them.
+- **What it shows.** The path in the code face, Up, Refresh and Upload;
+  directories first, then everything else, by name in the browser's
+  collation, each with its size (a file) or kind, and its date; the count
+  past 5,000 (`more`). A tab still connecting shows the loading rows, an
+  ended SSH Session "The SSH Session has ended.", one refused or never
+  answered that it has none. `sftp_unavailable` takes the whole panel.
+  Any other refusal shows in place, the Host's own words beneath for
+  `host_refused`, with Try again while nothing is listed.
+- **A row.** A directory is listed; a file downloads (`files.download`):
+  `download` gives a token, and the page follows a hidden link to
+  `FilesDownload.path + "/<token>"` with `download` set, so the browser
+  saves it with its own progress and the page stays. A link is
+  downloaded, and entered when that is `not_a_file`. Anything else is
+  shown, not offered.
+- **Uploads** (`files.ts`) are a store beside the workspace, so the
+  panel's closing and the tab shown stop none, and every tab's are
+  listed, each with its Host, directory, progress and Cancel; done,
+  cancelled and failed rows stay until dismissed.
+  - Upload takes several files into the directory listed. A name the
+    listing holds is asked about first, one file at a time
+    (`ConfirmDialog`), and sent with `replace: true`; a name past the
+    5,000 listed fails its row with `file_exists`.
+  - An upload starts (`upload`), then sends 512 KiB chunks
+    (`client.postBytes`, `application/octet-stream`) at the offset the
+    koko server last answered, then finishes (`finish`). At most 4 run
+    per SSH Session (`maxRunning`); the rest wait in order.
+  - A chunk or a finish whose connection failed is sent again with a
+    Resume's backoff, `timing.reconnectFirst` doubling to
+    `reconnectMax`, for up to `timing.grace`: the koko server answers both
+    the same when they come twice. A start is sent once. A refusal fails
+    the upload.
+  - Cancel ends a waiting upload at once; a running one sends `cancel`,
+    which removes the partial file, and keeps its place until that is
+    answered, so the next start never meets `too_many_uploads`.
+  - A finish into the directory shown lists it again.
+  - The uploads go with the workspace (`resetUploads`), as on signing
+    out.
+- **Dropping files on the terminal** of a tab whose shell runs uploads
+  them into its directory: while they are dragged over it, a dashed
+  accent edge says where (`DropCover`); dropping opens the panel on that
+  directory, or home, and uploads into it as Upload does.
 
 ## A reload, a duplicated browser tab, and closing
 
@@ -174,6 +233,13 @@ scrollback and Kitty graphics off; unmounting a terminal frees its core.
   across pages with one emulator and one WebSocket; Ctrl+Shift+K from
   another page and the empty workspace; a reload ending the kept ids
   first; a window crossing 768 pixels; Chinese.
+- [`FilesPanel.test.tsx`](../../web/src/terminal/FilesPanel.test.tsx),
+  the whole web UI against the fake API's files endpoints: opening on the
+  reported directory or home, entering, Up, a download link with its
+  token, a link entered; a refused directory; uploads in chunks with
+  progress, queued past 4, cancelled, a replace asked first, a failed
+  chunk sent again; files dropped on the terminal; `sftp_unavailable`; an
+  ended SSH Session; signing out forgetting the uploads; axe on each.
 - [`connection.test.ts`](../../web/src/terminal/connection.test.ts): the
   connection, and the kept ids across a reload, a duplicated browser tab
   and a browser without Web Locks.

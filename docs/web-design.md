@@ -725,7 +725,46 @@ direction. Details may be polished in implementation.
   `clamp(20rem, 28vw, 26rem)` wide with a hairline at its start. The
   terminal narrows to make room, and the shell is told its new size. The
   column has its own 56px head ("Files · on web1", and Close) over the
-  listing, which the Files panel (#179) fills.
+  Files panel, padded 16px by 20px, which acts on the active tab's SSH
+  Session (below).
+
+**The Files panel** lists one directory of the tab's Host at a time, and
+takes uploads into it (spec #169, "Files over SFTP"):
+
+- **Where it opens:** the directory the shell last reported (OSC 7, its
+  host part empty or the Host's name), or else, or when that cannot be
+  listed, the Host Account's home.
+- **The path** in the code face at 13px on a `--default` field, the full
+  path wrapping, named "Directory:" for a screen reader; under it Up and
+  Refresh (ghost, icons alone) and, at the end, **Upload**, the panel's
+  primary button, which takes several files.
+- **The listing:** directories first, then the rest, by name in the
+  browser's collation; each row a folder, link or file icon (a directory
+  or link's in the link colour), the name, and under it its size in
+  binary units (a file) or its kind, then its date. A directory row opens
+  it, a file row downloads it with the browser's own progress, a link
+  downloads or is entered; anything else is shown dimmed and not offered.
+  An empty directory says "This directory is empty."; past 5,000 entries,
+  "7120 more entries are not listed."
+- **Uploads**, under a hairline, from every tab: each row the file's name,
+  "To web1: /home/deploy", HeroUI's `ProgressBar` (small) while it runs
+  with "512 KiB of 600 KiB" under it, and Cancel (ghost, ✕); its state in
+  words otherwise (Waiting; "The connection dropped. Sending again…";
+  Uploaded; Cancelled; the refusal in the danger colour), with Dismiss.
+- **A replace** is asked first, one file at a time: "Replace notes.txt in
+  /home/deploy?" (`AlertDialog`), "The file on web1 is replaced by the
+  one uploaded, and its present content is lost.", Replace.
+- **Dropping files on the terminal** uploads them into the directory its
+  shell is in: while they are dragged over it, a dashed accent edge 12px
+  in, over the terminal at 85%, says "Drop to upload into /home/deploy on
+  web1"; dropping opens Files there and asks about a name it holds.
+- **States:** loading rows while the tab connects or a directory loads;
+  a refusal in place, the Host's own words beneath, with Try again; a Host
+  without SFTP as one line in place of the panel ("web1 offers no SFTP,
+  which koko moves files through." over "The terminal is unaffected.");
+  "The SSH Session has ended." in place of a listing once it has.
+- **On a phone** the panel is a side panel from the bottom, titled "Files
+  on web1".
 - **More**: Larger text, Smaller text, Copy the selection, Announce output,
   and End SSH Session (danger, asked first: "End the SSH Session to
   web1?").
