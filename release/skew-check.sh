@@ -19,8 +19,11 @@
 # issues a Join Code, and the CLI, in a container of its own, joins with it;
 # koko space add, koko host add and koko host enroll make a throwaway sshd
 # container a Managed Host; ssh web1.koko true, through koko's ssh_config,
-# and koko exec web1 true reach it; and a command that sends what the kokod
-# lacks fails with server_too_old and its message, having changed nothing.
+# and koko exec web1 true reach it; against this build's kokod, a web
+# terminal opened through the CLI's koko web, by cmd/skewterm as the page,
+# answers a line and closes, so the forwarder is shown to carry the
+# WebSocket unchanged; and a command that sends what the kokod lacks fails
+# with server_too_old and its message, having changed nothing.
 #
 # The Host and the device are alpine containers: the Host installs and runs
 # OpenSSH's sshd, with root as its Host Account, and the device installs
@@ -28,9 +31,9 @@
 # Host's authorized_keys, and supplies it to koko host enroll, as a User
 # who already logs in to the Host with a key does.
 #
-# It needs Docker, curl, jq and sha256sum, and skopeo for an archive, on
-# Linux or macOS, and reaches GitHub, ghcr.io, Docker Hub and alpine's
-# package mirror. It removes the containers, the network, the files and
+# It needs Docker, curl, jq and sha256sum, and skopeo and Go for an archive,
+# on Linux or macOS, run from a clone of the commit, and reaches GitHub,
+# ghcr.io, Docker Hub and alpine's package mirror. It removes the containers, the network, the files and
 # the loaded image it made, and keeps the images it pulled.
 
 set -eu
@@ -220,6 +223,29 @@ on_device ssh -o BatchMode=yes web1.koko true || fail "ssh web1.koko true failed
 
 step "koko exec web1 true"
 on_device koko exec web1 true || fail "koko exec web1 true failed"
+
+step "a web terminal through koko web opens, answers a line and closes"
+if release "$kokod"; then
+	echo "the kokod is $kokod, and the forwarder of this CLI is the S1 tests' own: nothing to run"
+else
+	CGO_ENABLED=0 GOOS=linux GOARCH=$arch go -C "$(dirname "$0")/.." build -o "$work/skewterm" ./cmd/skewterm ||
+		fail "could not build cmd/skewterm, the web terminal's page"
+	docker cp -q "$work/skewterm" "$device:/usr/local/bin/skewterm"
+	docker exec -d "$device" sh -c 'exec koko web --no-open --json >/tmp/web.json 2>/tmp/web.err'
+	deadline=$(($(date +%s) + 30))
+	until address=$(on_device cat /tmp/web.json 2>/dev/null | jq -er .address 2>/dev/null); do
+		[ "$(date +%s)" -lt "$deadline" ] ||
+			fail "koko web printed no address within 30 s: $(on_device cat /tmp/web.err 2>/dev/null || :)"
+		sleep 0.5
+	done
+	id=$(on_device skewterm "$address" web1) || fail "the web terminal through koko web failed"
+	deadline=$(($(date +%s) + 10))
+	until docker logs "$server" 2>&1 | grep -qE "msg=\"ssh session ended\" tunnel=$id client=browser .* reason=\"client closed\""; do
+		[ "$(date +%s)" -lt "$deadline" ] || fail "the koko server logged no end of the web terminal's SSH Session $id within 10 s"
+		sleep 0.5
+	done
+	echo "the SSH Session $id answered through koko web $cli_version and ended as its page closed it"
+fi
 
 step "a command that sends what the kokod lacks fails with server_too_old"
 if ! release "$kokod"; then

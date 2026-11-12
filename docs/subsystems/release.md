@@ -911,9 +911,9 @@ once, as the release's build job does, lists the pairs, and uploads
 `koko-linux-amd64` and the image's archive as the artifact `skew`. Its
 **pair** jobs, one for each pair, run in parallel on `ubuntu-24.04`
 runners: each downloads the artifact and runs `release/skew-check.sh`
-with `dist/koko-linux-amd64` or `dist/koko-image.tar` for `this`. The
-build job takes about as long as the container check's build, and a pair
-under a minute.
+with `dist/koko-linux-amd64` or `dist/koko-image.tar` for `this`; a pair
+with this kokod sets up Go first, for step 7. The build job takes about
+as long as the container check's build, and a pair under a minute.
 
 **One pair.** [`release/skew-check.sh`](../../release/skew-check.sh)
 `<cli> <kokod>` takes, for each, a release's tag or a path: the path of a
@@ -938,7 +938,23 @@ of the koko server and the device's Device Mux log. In order:
    --key` make the sshd container a Managed Host with a pinned host key;
 6. `ssh web1.koko true`, through koko's ssh_config, and `koko exec web1
    true` both exit 0;
-7. a command that sends what the kokod lacks fails with `server_too_old`,
+7. **the web terminal through `koko web`**, against this kokod alone: the
+   check builds [`cmd/skewterm`](../../cmd/skewterm/main.go), the web
+   terminal's page, from the commit, and runs it on the device beside the
+   CLI's `koko web --no-open --json`. It trades the printed address's
+   token for the `koko_<port>` cookie, opens an SSH Session to `web1`
+   over `/terminal/socket` with `koko web`'s own Origin, sends the shell
+   `echo koko-skew-$((6*7))`, reads `koko-skew-42`, which only the
+   shell's answer holds, and closes the stream as the page's tab does;
+   the koko server then logs the SSH Session ended with `client=browser`
+   and `reason="client closed"`. The page and the koko server are one
+   build, and `koko web` of another release forwards the WebSocket's
+   upgrade and frames as they are, which this shows for the previous
+   release's CLI and `compat.Oldest`'s. With a released kokod the step
+   runs nothing: the CLI is then this build, whose forwarder the S1 tests
+   cover (`internal/client/cli/web_terminal_test.go`), and a released
+   kokod may have no web terminal;
+8. a command that sends what the kokod lacks fails with `server_too_old`,
    exit 1, and a message naming the kokod's version, the command and
    `upgrade the koko server`, and changes nothing: `koko host set web1
    web2 provider=acme`, several Hosts in one `host.set`, which a kokod
@@ -951,7 +967,7 @@ of its own, which the check writes as the Host's `authorized_keys`, and
 supplies it to `koko host enroll --key`, as a User who already logs in to
 the Host with a key does.
 
-**What step 7 does not run.** It runs only for this CLI with a kokod
+**What step 8 does not run.** It runs only for this CLI with a kokod
 before v0.5.0, the script's `batch_since`. A kokod from v0.5.0 on lacks
 nothing the script knows, and the step says so: when a later operation's
 revision rises, or `compat.Oldest` passes v0.5.0, the script names the
@@ -963,7 +979,8 @@ v0.3.0. The S1 tests cover `cli_too_old`
 ([`internal/client/cli/skew_test.go`](../../internal/client/cli/skew_test.go)).
 
 **Running one pair locally** needs Docker, `curl`, `jq` and `sha256sum`,
-on Linux or macOS, and `skopeo` for an archive; it takes under a minute
+on Linux or macOS, and `skopeo` and Go for an archive, run from the
+commit's clone; it takes under a minute
 once the images are pulled, and removes the containers, the network and
 the loaded image it made:
 

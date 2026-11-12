@@ -3,7 +3,8 @@ name: skew
 # Runs this commit's CLI against the kokod of the previous release and of
 # compat.Oldest, and the CLI of each against this commit's kokod, real
 # binaries all: a device joins, makes a throwaway sshd container a Managed
-# Host and reaches it with ssh and koko exec, and a command that sends what
+# Host and reaches it with ssh and koko exec, a web terminal opens through
+# koko web against this commit's kokod, and a command that sends what
 # the older kokod lacks fails with server_too_old (ADR 0049,
 # release/skew-check.sh, docs/subsystems/release.md).
 on:
@@ -81,7 +82,13 @@ jobs:
       - name: Install skopeo
         if: ${{ matrix.kokod == 'this' }}
         run: command -v skopeo >/dev/null || { sudo apt-get update && sudo apt-get install -y skopeo; }
-      - name: Join, enroll, ssh, exec and refuse
+      # It builds cmd/skewterm, the page of the web terminal it opens
+      # through the CLI's koko web.
+      - uses: actions/setup-go@v7
+        if: ${{ matrix.kokod == 'this' }}
+        with:
+          go-version-file: go.mod
+      - name: Join, enroll, ssh, exec, open a web terminal and refuse
         env:
           CLI: ${{ matrix.cli == 'this' && 'dist/koko-linux-amd64' || matrix.cli }}
           KOKOD: ${{ matrix.kokod == 'this' && 'dist/koko-image.tar' || matrix.kokod }}

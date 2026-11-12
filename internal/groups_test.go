@@ -45,7 +45,10 @@ var mayNotUse = map[string][]string{
 	"client":    {"server", "harness", "cmd"},
 	"cmd/koko":  {"server", "harness", "cmd"},
 	"cmd/kokod": {"client", "harness", "cmd"},
-	"harness":   {"cmd"},
+	// skewterm, the skew check's web terminal page, speaks only the
+	// shared wire, as a browser does.
+	"cmd/skewterm": {"server", "client", "harness", "cmd"},
+	"harness":      {"cmd"},
 }
 
 // inGroup tells whether the group g is banned or, for "cmd", one of the

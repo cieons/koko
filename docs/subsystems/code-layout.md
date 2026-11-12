@@ -30,6 +30,7 @@ which runs a real Device Mux process.
 | --- | --- |
 | [`cmd/koko`](../../cmd/koko), the CLI | server, the harness |
 | [`cmd/kokod`](../../cmd/kokod), the koko server | client, the harness |
+| [`cmd/skewterm`](../../cmd/skewterm), the web terminal's page for [the skew check](release.md#the-skew-check), never released | server, client, the harness |
 | any other `cmd/...` | is refused: a new program needs its row in `mayNotUse` |
 
 Only the S1 harness ([`internal/harness`](../../internal/harness)) imports
