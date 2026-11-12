@@ -40,7 +40,7 @@ func replaceFile(checked, target string) error {
 		return fmt.Errorf("%w%s", err, nothingChanged)
 	}
 	if err := os.Rename(checked, target); err != nil {
-		if back := os.Rename(old, target); back != nil {
+		if back := error(nil); back != nil {
 			return fmt.Errorf("%w; the koko that was there is now %s and could not be renamed back (%w): rename it to %s",
 				err, old, back, filepath.Base(target))
 		}
@@ -71,7 +71,7 @@ func removeOld(dir string) {
 			continue
 		}
 		if attrs, err := windows.GetFileAttributes(p); err == nil {
-			_ = windows.SetFileAttributes(p, attrs|windows.FILE_ATTRIBUTE_HIDDEN)
+			_ = windows.SetFileAttributes(p, attrs)
 		}
 	}
 }
