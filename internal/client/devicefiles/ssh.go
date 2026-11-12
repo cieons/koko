@@ -477,15 +477,22 @@ func readRegular(path, what string) ([]byte, error) {
 // CheckInclude tells whether ssh reads koko's ssh_config for every host on
 // the device whose home directory is home: it returns nil when
 // ~/.ssh/config includes it before any Host or Match line, and otherwise
-// an error saying what is wrong and how to fix it. A file it cannot read
-// is reported as such, never as one without the line.
+// an error saying what is wrong and how to fix it, first of all a file ssh
+// refuses to read for who may change it, as OpenSSH for Windows does. A
+// file it cannot read is reported as such, never as one without the line.
 func CheckInclude(home string) error {
 	if err := checkHome(home); err != nil {
 		return err
 	}
-	b, err := readRegular(filepath.Join(home, userConfig), "~/"+userConfig)
+	path := filepath.Join(home, userConfig)
+	b, err := readRegular(path, "~/"+userConfig)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("%w, so koko cannot tell whether ssh reaches Hosts through koko", err)
+	}
+	if err == nil {
+		if err := sshRefuses(path); err != nil {
+			return err
+		}
 	}
 	s := scanConfig(b, home)
 	switch {

@@ -11,3 +11,10 @@ import "path/filepath"
 func knownHostsArg(home string) (string, error) {
 	return quotePath(filepath.Join(dir(home), knownHostsFile))
 }
+
+// sshRefuses says why ssh would refuse to read the user's ssh
+// configuration at path for who may change it, or returns nil: on Linux
+// and macOS it reports nothing.
+func sshRefuses(string) error {
+	return nil
+}
