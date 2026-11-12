@@ -161,7 +161,8 @@ func TestADeviceMuxOutlivesTheCommandThatStartedIt(t *testing.T) {
 
 // kill ends each Device Mux process the log at path says started, for a
 // test whose koko disconnect failed to stop it, so that none outlives the
-// test.
+// test, and logs what they logged, which says what they saw of that koko
+// disconnect (#184).
 func kill(t *testing.T, path string) {
 	t.Helper()
 	b, err := os.ReadFile(path)
@@ -169,6 +170,7 @@ func kill(t *testing.T, path string) {
 		t.Errorf("read the Device Mux log, to end the process: %v", err)
 		return
 	}
+	t.Logf("the Device Mux logged:\n%s", b)
 	for _, m := range regexp.MustCompile(`msg="device mux started" .*pid=(\d+)`).FindAllSubmatch(b, -1) {
 		pid, _ := strconv.Atoi(string(m[1]))
 		if p, err := os.FindProcess(pid); err == nil {
