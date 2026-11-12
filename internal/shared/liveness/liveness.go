@@ -39,6 +39,10 @@ type Conn struct {
 	// last is when bytes last arrived, as time since start; 0 until then,
 	// so a connection counts as heard from when it opened.
 	last atomic.Int64
+	// arrivals counts the reads that brought bytes, which tells Watch that
+	// something arrived since a probe went out even when the clock, which
+	// on Windows moves in steps of up to 16 ms, gives both the same time.
+	arrivals atomic.Int64
 }
 
 // NewConn returns nc noting when bytes arrive on it.
@@ -50,6 +54,7 @@ func (c *Conn) Read(p []byte) (int, error) {
 	n, err := c.Conn.Read(p)
 	if n > 0 {
 		c.last.Store(int64(time.Since(c.start)))
+		c.arrivals.Add(1)
 	}
 	return n, err
 }
@@ -68,6 +73,8 @@ func (c *Conn) Watch(sc ssh.Conn, probe, dead time.Duration, probeNow, done <-ch
 	// probed is when the probe still unanswered went out, as time since
 	// c.start; -1 while none is.
 	probed := time.Duration(-1)
+	// arrivedAtProbe is how many reads had brought bytes when it went out.
+	var arrivedAtProbe int64
 	for {
 		now := false
 		select {
@@ -78,12 +85,13 @@ func (c *Conn) Watch(sc ssh.Conn, probe, dead time.Duration, probeNow, done <-ch
 		case <-timer.C:
 		}
 		elapsed := time.Since(c.start)
+		arrived := c.arrivals.Load()
 		last := time.Duration(c.last.Load())
-		if probed >= 0 && last >= probed {
+		if probed >= 0 && arrived != arrivedAtProbe {
 			probed = -1 // answered, or something else arrived since
 		}
 		if probed < 0 && (now || elapsed >= last+probe) {
-			probed = elapsed
+			probed, arrivedAtProbe = elapsed, arrived
 			// A reply, or the connection ending, returns it.
 			go func() { _, _, _ = sc.SendRequest(Request, true, nil) }()
 		}
