@@ -4,6 +4,9 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -49,9 +52,15 @@ func TestFilesThroughKokoWeb(t *testing.T) {
 	}
 	own := fmt.Sprintf("http://localhost:%d", w.port)
 	wantAPIError(t, post(api.FilesListPath, own, nil), http.StatusUnauthorized, "cookie_required")
+	// The home is named by its SFTP path, which on Windows is not the
+	// OS's: the listing is known by what it holds.
+	if err := os.WriteFile(filepath.Join(host.Home(), "marker.txt"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	a := post(api.FilesListPath, own, p.Cookie)
 	var got api.FilesListResponse
-	if err := json.Unmarshal([]byte(a.body), &got); a.StatusCode != http.StatusOK || err != nil || got.Path != host.Home() {
-		t.Errorf("the listing through koko web answered %s %q, want the Host Account's home %s", a.Status, a.body, host.Home())
+	err := json.Unmarshal([]byte(a.body), &got)
+	if a.StatusCode != http.StatusOK || err != nil || !slices.ContainsFunc(got.Entries, func(e api.FileEntry) bool { return e.Name == "marker.txt" }) {
+		t.Errorf("the listing through koko web answered %s %q, want the Host Account's home, holding marker.txt", a.Status, a.body)
 	}
 }
