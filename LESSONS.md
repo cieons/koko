@@ -246,6 +246,20 @@ Every file the CLI writes atomically goes through `devicefiles.Rename`.
 **Seen:** 1 (2026-11-12)
 **Evidence:** check run 43214041054 on a5cc4a9; #183
 
+### A file that must be private is created private, not made so after
+
+**Why:** an upload's partial file on the Host was created with pkg/sftp's
+open, which sends no mode, so the Host gave it its default, usually 0644,
+and a chmod to 0600 followed. Another account on the Host could open the
+file in between and keep reading through its handle every chunk written
+later, since a chmod revokes no open handle. The mode goes in the create
+itself: the Gateway's SFTP client gives each exclusive create the
+permissions 0600 (`privateCreates`), and a test reads the mode without
+the chmod.
+**Seen:** 1 (2026-11-12)
+**Evidence:** e04c515 (#176); found by the ticket's review, fixed in
+eb130be
+
 ## Moved to the code standards
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128, #147; check run 42951455550).

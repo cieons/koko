@@ -166,13 +166,15 @@ was 237 KB gzipped and the build 0.78 MB on disk.
   (`SpaceAdd`, with its name, path and whether it writes), each registered
   error code as a string constant under its Go name
   (`export const CodeUnknownSpace = "unknown_space";`), and `Op` itself in
-  `api.ts`. The web front's own `/auth/` endpoints, which are no operations,
-  come as `AuthEndpoint` values in `signin.ts` (`AuthSignIn`, with its path
-  and its request and response types), from the `api.AuthEndpoint`
-  literals `api.AuthEndpoints` lists. A type from another file is imported.
-  An operation, a registered error code or an `/auth/` endpoint that no
-  `var` of package api declares as an `Op`, `Code` or `AuthEndpoint`
-  literal is refused.
+  `api.ts`. The web front's own JSON endpoints, which are no operations,
+  come as `AuthEndpoint` values in the file of the Go file that declares
+  them, with their paths and their request and response types: the
+  `/auth/` endpoints in `signin.ts` (`AuthSignIn`), from the literals
+  `api.AuthEndpoints` lists, and the web terminal's files endpoints in
+  `files.ts` (`FilesList`), from those `api.FilesEndpoints` lists. A type
+  from another file is imported. An operation, a registered error code or
+  an endpoint that no `var` of package api declares as an `Op`, `Code` or
+  `AuthEndpoint` literal is refused.
 - The generator is test code,
   [`tsgen_test.go`](../../internal/shared/api/tsgen_test.go), so none of it
   ships. The files are committed, and
