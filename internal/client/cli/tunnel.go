@@ -34,7 +34,7 @@ var tunnelCommands = []Command{
 // line, only when it cannot. It ignores SIGINT, which ends ctx, and ends on
 // SIGHUP or SIGTERM with a close frame.
 func proxySSH(ctx context.Context, in *Input) error {
-	sshName := in.Arg("ssh-name")
+	sshName := unquoteSSHName(in.Arg("ssh-name"))
 	hostName := wire.TunnelHost(sshName)
 	ctx, hangUp := context.WithCancel(context.WithoutCancel(ctx))
 	defer hangUp()

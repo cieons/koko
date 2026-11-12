@@ -69,7 +69,7 @@ func TestJoinSetsUpSSH(t *testing.T) {
 		}
 		harness.WantPrivate(t, f)
 	}
-	harness.Golden(t, "join-ssh_config", kokoSSHConfig(t, d))
+	harness.Golden(t, joinSSHConfigGolden, kokoSSHConfig(t, d))
 
 	pinned := readClientConfig(t, d).HostKeys
 	marker, hosts, key, _, rest, err := ssh.ParseKnownHosts([]byte(readText(t, filepath.Join(kokoDir(d), "known_hosts"))))
