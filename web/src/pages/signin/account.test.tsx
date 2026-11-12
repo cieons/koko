@@ -5,7 +5,7 @@ import { AuthPassword, AuthSignOut, SignInList, SignInRevoke } from "../../api/s
 import { type User, UserCurrent } from "../../api/user";
 import { expectAccessible } from "../../test/axe";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
-import { actAs, alerts, preferLanguages, renderAt, frameButton } from "../../test/pages";
+import { actAs, alerts, frameButton, preferLanguages, renderAt } from "../../test/pages";
 import { alice, bob, serve, world } from "../space/access.fixture";
 import { firefox, serveSignIns, signIn, signIns, type SignIns } from "./signins.fixture";
 

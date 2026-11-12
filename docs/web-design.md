@@ -120,7 +120,7 @@ and once for dark on `.dark`. Light, Dark or System sets `class` and
 - The panel's shadow (`--sheet-shadow`) is, in light, a 1px ring at 7%, a
   1px drop and a wide soft drop; in dark, a 1px highlight inside its top
   edge at 7% white, a 1px ring at 5% white and a deep drop. **The island**
-  (`.island`, `--island-shadow`), what is raised beside the page, such as
+  (`--island-shadow`), what is raised beside the page, such as
   the current place, is the panel's colour and shadow, and in dark also a
   1px edge at 9% white, so it holds against the page. Overlays use
   the stronger `--overlay-shadow`.
@@ -163,7 +163,8 @@ are to join it as a section of their own (#177).
 full height, on the page colour. It is 15.5rem wide when open, with 12px of
 padding. From top to bottom:
 
-- **The wordmark** `koko` (20px, 600), a link to Hosts, and at the end of
+- **The wordmark** `koko` (20px, 600), a link to `/`, which opens the
+  first place, Hosts, and at the end of
   its row the fold button (a panel icon, "Collapse the side bar" or "Expand
   the side bar", `aria-expanded`).
 - **The places**: Hosts, Secrets and Access, each a 40px pill with its
@@ -238,8 +239,8 @@ changes (the Host page's and Account's two columns, Access's rows).
 **On a phone** (under 768px), every page has:
 
 - **A top row**, sticky, 56px under the safe area, the page colour at 85%
-  with a backdrop blur and a hairline under it: the wordmark, a link to
-  Hosts; then Language, Appearance and the User's initial, which opens the
+  with a backdrop blur and a hairline under it: the wordmark, as in the
+  rail; then Language, Appearance and the User's initial, which opens the
   account panel downwards.
 - **A bar at the foot**, fixed, the page colour at 90% with a blur and a
   hairline over it, above the safe area, items 48px high: Hosts, Secrets

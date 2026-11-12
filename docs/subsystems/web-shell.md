@@ -61,19 +61,21 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   carries as `data-rail` (`open`, `folded`, or `none` on a phone):
   - from 1280 pixels wide the rail is open unless the person folds it,
     which the browser keeps in `localStorage` (`koko.rail`, `folded`);
+    storage the browser refuses remembers nothing, and the rail opens;
   - from 768 to 1279 pixels it is folded, and the fold button opens it
     over the page, on the backdrop, until a visit (a place chosen), Escape
     or a click beside it; Escape and the click give the focus back to the
     fold button, and a menu or the account panel open in the rail takes
     its own Escape first. While it lies over the page the page's column is
-    `inert`;
+    `inert`, and the skip link closes the rail before it moves the focus;
   - folded, each place is its icon (`Route.icon`) alone, named by its
     place, and the account button the User's initial alone; the names
     stay those of the open rail. The fold button is named "Collapse the
     side bar" or "Expand the side bar" and carries `aria-expanded`.
 - **`--rail-w`** is the room the rail takes beside the page, set by
-  `data-rail` in `theme.css`: 15.5rem open, 5rem folded and over the page,
-  0 on a phone. The page's column and the Select mode's bar
+  `data-rail` in `theme.css` from the rail's own widths (`--rail-open`,
+  `--rail-folded`): 15.5rem open, 5rem folded and over the page, 0 on a
+  phone. The page's column and the Select mode's bar
   ([`BatchBar`](../../web/src/pages/batch/BatchBar.tsx)) leave it to the
   rail, and so does the terminal's workspace (#177). Since the window's
   width no longer tells the room a page has, a page's layout that changes
@@ -664,11 +666,13 @@ alone ([Sign-ins](signin.md#the-web-uis-pages)):
   given no Owner-only place and its path showing Page not found; the open
   rail naming each place beside its icon and the User with their role;
   folding from 1280 pixels wide, each place and the account keeping its
-  name, the choice kept across a reload and opened again; under 1280
+  name, the choice kept across a reload and opened again, and in a
+  browser that refuses storage; under 1280
   pixels the rail folded, opening over the page, the page inert and kept
   in its room, and closing on Escape, a click beside it (the focus back on
-  the fold button each time) and a place chosen, and opening beside the
-  page once the window widens; Escape closing a menu and the account
+  the fold button each time) and a place chosen (the focus kept on it),
+  and on the window crossing 1280 or 768 pixels; the skip link from under
+  it; Escape closing a menu and the account
   panel open in the rail over the page, leaving the rail open; on a
   phone the top row's wordmark, Language, Appearance and account, the
   account panel from it, and the places in the bar at the foot with their

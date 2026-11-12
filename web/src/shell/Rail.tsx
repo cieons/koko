@@ -37,7 +37,31 @@ export interface RailControl {
   toggle: () => void;
   /** close ends the rail over the page, as Escape and a click beside it do, and gives the focus back to the fold button. */
   close: () => void;
+  /** dismiss ends the rail over the page and leaves the focus to the caller, as the skip link moves it to the page. */
+  dismiss: () => void;
   foldButton: RefObject<HTMLButtonElement | null>;
+}
+
+/** storedFolded tells whether the browser keeps the rail folded; storage the browser refuses remembers nothing. */
+function storedFolded(): boolean {
+  try {
+    return localStorage.getItem(foldedKey) === "folded";
+  } catch {
+    return false;
+  }
+}
+
+/** storeFolded keeps the choice where the browser can, and the choice still holds on this page where it cannot. */
+function storeFolded(folded: boolean): void {
+  try {
+    if (folded) {
+      localStorage.setItem(foldedKey, "folded");
+    } else {
+      localStorage.removeItem(foldedKey);
+    }
+  } catch {
+    // Storage the browser refuses remembers nothing.
+  }
 }
 
 /**
@@ -49,13 +73,14 @@ export interface RailControl {
 export function useRail(): RailControl {
   const wide = useMedia(wideQuery);
   const phone = usePhone();
-  const [folded, setFolded] = useState(() => localStorage.getItem(foldedKey) === "folded");
+  const [folded, setFolded] = useState(storedFolded);
   const [over, setOver] = useState(false);
   const { visit } = useLocation();
   const foldButton = useRef<HTMLButtonElement>(null);
 
   // A visit, as a place chosen, ends the rail over the page, and so does the window crossing an edge.
   useEffect(() => setOver(false), [visit, wide, phone]);
+  const dismiss = useCallback(() => setOver(false), []);
   const close = useCallback(() => {
     setOver(false);
     foldButton.current?.focus();
@@ -76,18 +101,14 @@ export function useRail(): RailControl {
 
   const toggle = () => {
     if (!wide) {
-      setOver(!over);
+      setOver((was) => !was);
       return;
     }
-    if (folded) {
-      localStorage.removeItem(foldedKey);
-    } else {
-      localStorage.setItem(foldedKey, "folded");
-    }
+    storeFolded(!folded);
     setFolded(!folded);
   };
   const state: RailState = wide ? (folded ? "folded" : "open") : over ? "over" : "folded";
-  return { state, toggle, close, foldButton };
+  return { state, toggle, close, dismiss, foldButton };
 }
 
 /** inPlace tells whether a path is the place's or beneath it, as a Host's page is beneath Hosts. */
@@ -125,7 +146,7 @@ export function Rail({ places, caller, rail }: { places: readonly Route[]; calle
       {rail.state === "over" && <div aria-hidden className="fixed inset-0 z-[45] bg-[var(--backdrop)]" onClick={rail.close} />}
       <header
         className={`rail fixed inset-y-0 start-0 flex flex-col gap-5 overflow-y-auto py-3 [scrollbar-width:none] ${
-          open ? "w-[15.5rem] px-3" : "w-20 px-2"
+          open ? "w-[var(--rail-open)] px-3" : "w-[var(--rail-folded)] px-2"
         } ${rail.state === "over" ? "z-50 rounded-e-[1.5rem] bg-overlay shadow-overlay" : "z-30 bg-background"}`}
       >
         <div className={`flex shrink-0 items-center ${open ? "h-10 justify-between ps-2.5" : "flex-col gap-2 pt-1"}`}>

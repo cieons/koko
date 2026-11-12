@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { KeyRound, Server, UsersRound } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-aria-components";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test, vi } from "vitest";
 
 import { CodeRevoked, DeviceRevoke, type DeviceSession } from "../api/device";
 import { CodeNameTaken } from "../api/errors";
@@ -12,7 +12,7 @@ import { CodeCookieRequired } from "../api/web";
 import { expectAccessible } from "../test/axe";
 import { type FakeApi, fakeApi, refusal } from "../test/fakeApi";
 import { setSystemScheme, setViewportWidth } from "../test/media";
-import { alerts, chooseInFrame, findAlert, preferLanguages, frameButton } from "../test/pages";
+import { alerts, chooseInFrame, findAlert, frameButton, preferLanguages } from "../test/pages";
 import { Page as PageHead } from "../ui/Page";
 import { Refusal } from "../ui/states";
 import { useCaller } from "./caller";
@@ -266,6 +266,28 @@ test("from 1280 pixels wide the rail folds to icons, each named as before, and t
   expect(localStorage.getItem("koko.rail")).toBeNull();
 });
 
+test("in a browser that refuses storage the rail shows open and still folds, remembering nothing", async () => {
+  const refused = () => {
+    throw new DOMException("The operation is insecure.", "SecurityError");
+  };
+  vi.spyOn(Storage.prototype, "getItem").mockImplementation(refused);
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(refused);
+  vi.spyOn(Storage.prototype, "removeItem").mockImplementation(refused);
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
+  const api = fakeApi();
+  asDevice(api, alice);
+  renderShell("/hosts");
+  await screen.findByText("hosts page");
+  expect(rail()).toBe("open");
+
+  fireEvent.click(frameButton("Collapse the side bar"));
+  expect(rail()).toBe("folded");
+  fireEvent.click(frameButton("Expand the side bar"));
+  expect(rail()).toBe("open");
+});
+
 /** openOver opens the folded rail over the page, under 1280 pixels wide, and is its fold button. */
 function openOver(): HTMLElement {
   const fold = frameButton("Expand the side bar");
@@ -300,6 +322,29 @@ test("under 1280 pixels the rail is folded, and opens over the page, which stays
   act(() => setViewportWidth(1280)); // widened past the edge: open beside the page, as the browser keeps it
   expect(rail()).toBe("open");
   expect(inert()).toBe(false);
+  act(() => setViewportWidth(1100)); // and narrowed again: folded, no longer over the page
+  expect(fold.getAttribute("aria-expanded")).toBe("false");
+  expect(inert()).toBe(false);
+
+  openOver();
+  act(() => setViewportWidth(390)); // a phone has no rail, and its page takes input
+  expect(rail()).toBe("none");
+  expect(inert()).toBe(false);
+});
+
+test("the skip link moves the focus to the page from under the rail laid over it", async () => {
+  setViewportWidth(1100);
+  const api = fakeApi();
+  asDevice(api, alice);
+  renderShell("/hosts");
+  await screen.findByText("hosts page");
+  const fold = openOver();
+
+  fireEvent.click(screen.getByRole("link", { name: "Skip to main content" }));
+
+  expect(fold.getAttribute("aria-expanded")).toBe("false");
+  expect(inert()).toBe(false);
+  expect(document.activeElement).toBe(screen.getByRole("main"));
 });
 
 test("over the page, the rail closes on a click beside it, giving the focus back, and on a place chosen", async () => {
@@ -318,12 +363,17 @@ test("over the page, the rail closes on a click beside it, giving the focus back
   expect(document.activeElement).toBe(fold);
 
   openOver();
-  fireEvent.click(within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Secrets" }));
+  const secrets = within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Secrets" });
+  secrets.focus(); // as a click or a key does in a browser
+  fireEvent.click(secrets);
 
   expect(await screen.findByText("secrets page")).toBeDefined();
   expect(fold.getAttribute("aria-expanded")).toBe("false");
   expect(inert()).toBe(false);
-  expect(within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Secrets", current: "page" })).toBeDefined();
+  // The place stays in the folded rail, marked, and keeps the focus, as a place does everywhere.
+  expect(secrets.getAttribute("aria-current")).toBe("page");
+  expect(secrets.getAttribute("aria-label")).toBe("Secrets");
+  expect(document.activeElement).toBe(secrets);
 });
 
 test("Escape closes a menu open in the rail over the page and leaves the rail open", async () => {

@@ -159,20 +159,26 @@
   }
 
   /*
-   * --rail-w is the room the frame's rail takes at the start edge
-   * (Shell.tsx's data-rail), which a page and the terminal's workspace
-   * leave to it. The rail laid over the page takes none of its own.
+   * The rail's two widths (Rail.tsx), and --rail-w, the room it takes at
+   * the start edge (Shell.tsx's data-rail), which a page and the terminal's
+   * workspace leave to it. The rail laid over the page takes no more room
+   * than folded.
    */
+  :root {
+    --rail-open: 15.5rem;
+    --rail-folded: 5rem;
+  }
+
   [data-rail] {
     --rail-w: 0px;
   }
 
   [data-rail="open"] {
-    --rail-w: 15.5rem;
+    --rail-w: var(--rail-open);
   }
 
   [data-rail="folded"] {
-    --rail-w: 5rem;
+    --rail-w: var(--rail-folded);
   }
 
   body {
@@ -259,11 +265,9 @@
   }
 
   /*
-   * The island: what is raised beside the page, such as the current place
-   * in the rail and the phone's foot bar. The panel's colour and shadow,
-   * edged in dark too.
+   * The current place in the rail and the phone's foot bar, raised as an
+   * island: the panel's colour and the island's shadow, edged in dark too.
    */
-  .island,
   .place[aria-current="page"] {
     background: var(--surface);
     color: var(--foreground);

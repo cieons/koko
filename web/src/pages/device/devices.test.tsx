@@ -8,7 +8,7 @@ import { clipboard } from "../../test/clipboard";
 import { clickOutside } from "../../test/controls";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { setViewportWidth } from "../../test/media";
-import { actAs, alerts, chooseInFrame, renderAt, frameButton } from "../../test/pages";
+import { actAs, alerts, chooseInFrame, frameButton, renderAt } from "../../test/pages";
 import { alice, bob, device, joinCode, serve, type World, world } from "../space/access.fixture";
 
 // Account, against a fake koko server: who the web UI acts as, the choices

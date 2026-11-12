@@ -2,6 +2,7 @@ import { buttonVariants } from "@heroui/react";
 import { CircleAlert, TriangleAlert } from "lucide-react";
 import { type MouseEvent, type RefObject, useEffect, useRef } from "react";
 import { Link } from "react-aria-components";
+import { flushSync } from "react-dom";
 
 import { UserCurrent } from "../api/user";
 import { CodeSignInRequired } from "../api/web";
@@ -95,6 +96,10 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
 
   const skip = (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
+    // The page takes no focus while the rail lies over it: the rail goes first, at once.
+    if (rail.state === "over") {
+      flushSync(rail.dismiss);
+    }
     main.current?.focus();
   };
 

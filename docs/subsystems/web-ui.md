@@ -55,8 +55,10 @@ app sits in its providers is [the web UI shell](web-shell.md#providers).
   [`src/theme/theme.css`](../../web/src/theme/theme.css) imports it, then
   writes Obsidian's tokens on HeroUI's variable names, light on `:root`
   and dark on `.dark` and `[data-theme="dark"]`, the type roles (`t-display`
-  to `t-code`), the panel (`.sheet`), the island (`.island`), the room the
-  rail takes (`--rail-w`, by the frame's `data-rail`) and koko's
+  to `t-code`), the panel (`.sheet`), the island's shadow (`--island-shadow`)
+  that raises the current place, the rail's widths (`--rail-open`,
+  `--rail-folded`) and the room it takes (`--rail-w`, by the frame's
+  `data-rail`) and koko's
   adjustments to HeroUI's parts. Two of its rules are for keyboard and
   contrast-theme users. Under `ui/phone.ts`'s width, the root's scroll
   padding keeps a focused control clear of the phone's sticky top row and
