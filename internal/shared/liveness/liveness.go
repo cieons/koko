@@ -6,6 +6,10 @@
 // connection dead once nothing has arrived for longer. Any reply, a refusal
 // included, is bytes, so a peer that knows no such request still answers.
 // The device's end and the koko server's run it with their own timings.
+// WatchAnswers declares a connection dead only once a probe went
+// unanswered, for a peer on the same machine: a command and its Device
+// Mux on Windows, whose Unix socket may never tell one end that the other
+// closed it.
 package liveness
 
 import (
@@ -21,8 +25,8 @@ import (
 // keepalives send.
 const Request = "keepalive@openssh.com"
 
-// DeadError says Watch declared a connection dead: nothing arrived on it
-// for Quiet.
+// DeadError says Watch or WatchAnswers declared a connection dead: nothing
+// arrived on it for Quiet.
 type DeadError struct {
 	Quiet time.Duration
 }
@@ -68,6 +72,25 @@ func (c *Conn) Read(p []byte) (int, error) {
 // answered that one sent after probe gets. It never closes sc: the caller
 // notes why, then closes it.
 func (c *Conn) Watch(sc ssh.Conn, probe, dead time.Duration, probeNow, done <-chan struct{}) error {
+	return c.watch(sc, probe, dead, dead-probe, probeNow, done)
+}
+
+// WatchAnswers watches sc, the SSH connection over c, until done closes, and
+// returns nil then. Once nothing has arrived on c for probe it sends sc a
+// probe, and it returns a *DeadError once a probe has gone unanswered for
+// answer. Unlike Watch, it never counts a silence as dead before a probe has
+// gone out for it, so it suits a peer on the same machine, which answers
+// whenever it is asked and is silent only when it has nothing to say: a
+// silence, however long, is no sign of its end, and on Windows, whose
+// monotonic clock runs on while the machine sleeps, a sleep reads as one.
+// It never closes sc.
+func (c *Conn) WatchAnswers(sc ssh.Conn, probe, answer time.Duration, done <-chan struct{}) error {
+	return c.watch(sc, probe, 0, answer, nil, done)
+}
+
+// watch is Watch, and WatchAnswers when dead is 0: then only a probe
+// unanswered for answer ends the connection.
+func (c *Conn) watch(sc ssh.Conn, probe, dead, answer time.Duration, probeNow, done <-chan struct{}) error {
 	timer := time.NewTimer(probe)
 	defer timer.Stop()
 	// probed is when the probe still unanswered went out, as time since
@@ -95,9 +118,15 @@ func (c *Conn) Watch(sc ssh.Conn, probe, dead time.Duration, probeNow, done <-ch
 			// A reply, or the connection ending, returns it.
 			go func() { _, _, _ = sc.SendRequest(Request, true, nil) }()
 		}
-		deadAt := last + dead
+		// never stands for no deadline: a silence without a probe, under
+		// WatchAnswers.
+		const never = time.Duration(1<<63 - 1)
+		deadAt := never
+		if dead > 0 {
+			deadAt = last + dead
+		}
 		if probed >= 0 {
-			deadAt = min(deadAt, probed+dead-probe)
+			deadAt = min(deadAt, probed+answer)
 		}
 		if elapsed >= deadAt {
 			return &DeadError{Quiet: elapsed - last}

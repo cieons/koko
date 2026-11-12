@@ -98,6 +98,15 @@ func pair(t *testing.T) (net.Conn, net.Conn) {
 // what Watch returned.
 func watched(t *testing.T, probe, dead time.Duration, now <-chan struct{}) (*peer, *gate, <-chan error) {
 	t.Helper()
+	return watchedBy(t, func(lc *liveness.Conn, sc ssh.Conn, end <-chan struct{}) error {
+		return lc.Watch(sc, probe, dead, now, end)
+	})
+}
+
+// watchedBy opens an SSH connection to a peer as watched does, and watches
+// it with watch until the test ends.
+func watchedBy(t *testing.T, watch func(lc *liveness.Conn, sc ssh.Conn, end <-chan struct{}) error) (*peer, *gate, <-chan error) {
+	t.Helper()
 	end := make(chan struct{})
 	a, b := pair(t)
 	g := &gate{Conn: a, shut: make(chan struct{}), end: end}
@@ -142,7 +151,7 @@ func watched(t *testing.T, probe, dead time.Duration, now <-chan struct{}) (*pee
 	watching := make(chan struct{})
 	go func() {
 		defer close(watching)
-		result <- lc.Watch(client, probe, dead, now, end)
+		result <- watch(lc, client, end)
 	}()
 	t.Cleanup(func() {
 		close(end)
@@ -238,6 +247,38 @@ func TestAProbeSentAtOnceGetsDeadMinusProbe(t *testing.T) {
 	}
 	if n := len(p.probed()); n != 1 {
 		t.Errorf("the peer got %d probes, want the one sent at once", n)
+	}
+}
+
+// WatchAnswers probes a quiet connection whose peer answers each time
+// nothing has arrived for probe, and never declares it dead; once its
+// probes go unanswered it does. (When it counts from, a probe rather than
+// the last byte, differs from Watch only for a watch that wakes late, as
+// after a sleep on Windows, which no test can bring about.)
+func TestWatchAnswersEndsAConnectionOnceItsProbesGoUnanswered(t *testing.T) {
+	// A probe is answered at once, but a loaded machine gets a second.
+	const probe, answer = 20 * time.Millisecond, time.Second
+	p, g, result := watchedBy(t, func(lc *liveness.Conn, sc ssh.Conn, end <-chan struct{}) error {
+		return lc.WatchAnswers(sc, probe, answer, end)
+	})
+	for deadline := time.Now().Add(5 * time.Second); len(p.probed()) < 5; time.Sleep(probe / 5) {
+		if time.Now().After(deadline) {
+			t.Fatal("five probes did not come within 5 s")
+		}
+	}
+	select {
+	case err := <-result:
+		t.Fatalf("WatchAnswers declared a connection that answers dead: %v", err)
+	default:
+	}
+	g.close()
+	select {
+	case err := <-result:
+		if _, ok := errors.AsType[*liveness.DeadError](err); !ok {
+			t.Errorf("WatchAnswers returned %v, want a *DeadError", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("WatchAnswers did not end a connection whose probes go unanswered within 5 s")
 	}
 }
 
