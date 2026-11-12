@@ -13,8 +13,8 @@ It provides the features listed below and is still at an early stage.
 
 ## Installing
 
-koko is two programs: `koko` is the CLI, on Linux and macOS, and `kokod`
-is the koko server, on Linux.
+koko is two programs: `koko` is the CLI, on Linux, macOS and Windows, and
+`kokod` is the koko server, on Linux.
 
 The CLI, on Linux (amd64 or arm64) or macOS (Apple Silicon), for the user
 who runs it, in `~/.local/bin`, without `sudo`:
@@ -24,7 +24,20 @@ curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | 
 ```
 
 It prints the line that puts `~/.local/bin` on `PATH` when it is not
-there. `koko update` upgrades the CLI later.
+there.
+
+The CLI, on Windows 10 (1809 and later), Windows 11 or Windows Server 2019
+and later, from v0.6.0 on, for the user who runs it, in
+`%USERPROFILE%\.local\bin`, without administrator rights, in PowerShell:
+
+```powershell
+irm https://github.com/cieons/koko/releases/latest/download/install.ps1 | iex
+```
+
+It adds that directory to the user's `PATH` when it is not there, and says
+so ([On Windows](docs/install.md#on-windows)).
+
+`koko update` upgrades the CLI later, on every system.
 
 The koko server as well, on a Linux machine with systemd, as root, naming
 the Owner and the address devices will use to reach it:

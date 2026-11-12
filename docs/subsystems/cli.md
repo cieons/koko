@@ -384,7 +384,8 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
   describes one.
 - **`koko completion <shell>`** prints a script for `bash` or `zsh`
   ([`completion.go`](../../internal/client/cli/completion.go)), the login
-  shells of the Linux and macOS the CLI runs on, loaded with `eval
+  shells of the Linux and macOS the CLI runs on, and on Windows the bash
+  of Git Bash (there is no PowerShell script), loaded with `eval
   "$(koko completion bash)"`, or for zsh after `compinit` or saved as
   `_koko` in `$fpath`. The script holds the tree as case tables
   (`_koko_next`, `_koko_flags`, `_koko_value`, `_koko_arg`) and one walk over

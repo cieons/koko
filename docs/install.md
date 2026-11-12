@@ -2,8 +2,8 @@
 
 [中文](install.zh-CN.md)
 
-koko is two programs from one release: `koko`, the CLI, on Linux and macOS,
-and `kokod`, the koko server, on Linux. One line installs the CLI, and the
+koko is two programs from one release: `koko`, the CLI, on Linux, macOS and
+Windows, and `kokod`, the koko server, on Linux. One line installs the CLI, and the
 same line with `--owner` installs the koko server too, on one Linux machine
 with systemd. Without systemd, the koko server runs in a container from its
 image, `ghcr.io/cieons/koko` ([In a container](#in-a-container)). This page
@@ -17,6 +17,8 @@ is in the [installer](subsystems/installer.md) and
 
 ## What the machine needs
 
+The koko server's machine:
+
 - Linux on amd64 or arm64, with systemd 247 or later running it: Debian 11,
   Ubuntu 22.04, RHEL 9 or later. `koko server install` refuses a container
   that systemd does not run, before it downloads anything: run
@@ -26,6 +28,13 @@ is in the [installer](subsystems/installer.md) and
 - A free TCP port, 7822, or the one given with `--port`.
 - `curl`, `sha256sum`, `awk` and `mktemp`, and root, as the root user or
   through `sudo`.
+
+A machine that runs the CLI alone, as a device:
+
+- Linux on amd64 or arm64, or macOS on Apple Silicon.
+- Windows 10 (1809 and later), Windows 11, or Windows Server 2019 and
+  later, on x64. On Arm64, Windows 11 runs the same x64 CLI under
+  emulation. The first release with a Windows CLI is v0.6.0.
 
 ## Installing
 
@@ -83,7 +92,7 @@ expired, `koko device add` on the machine prints a new one.
 
 The same line without arguments installs the CLI alone, on Linux (amd64 or
 arm64) and macOS (Apple Silicon), for the user who runs it, without
-`sudo`:
+`sudo`. Windows has a line of its own ([On Windows](#on-windows)):
 
 ```sh
 curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh
@@ -141,6 +150,135 @@ mkdir -p ~/.local/bin
 install -m 0755 koko-linux-amd64 ~/.local/bin/koko
 ```
 
+#### On Windows
+
+In PowerShell, the following line installs the CLI for the user who runs
+it, without administrator rights:
+
+```powershell
+irm https://github.com/cieons/koko/releases/latest/download/install.ps1 | iex
+```
+
+From cmd, or from an agent's harness, run the same line through Windows
+PowerShell:
+
+```bat
+powershell -NoProfile -Command "irm https://github.com/cieons/koko/releases/latest/download/install.ps1 | iex"
+```
+
+install.ps1 runs in Windows PowerShell 5.1, which every supported Windows
+has, and in PowerShell 7. It downloads `koko-windows-amd64.exe`, checks it
+against the release's `SHA256SUMS`, and installs it as
+`%USERPROFILE%\.local\bin\koko.exe`, making the directory when it is
+missing. It never prompts, writes its messages to the error stream and
+nothing to the output stream, and prints the full path of `koko.exe`, for a
+harness that does not read `PATH` again. It takes no arguments, since the
+koko server runs on Linux only. `koko update` upgrades the CLI later
+([Upgrading](#upgrading)).
+
+When `%USERPROFILE%\.local\bin` is not in the user's `PATH`, install.ps1
+adds it to that value, which Windows keeps for each user, and to the
+`PATH` of the PowerShell session it ran in, and says what it added. It
+never changes the machine's `PATH`. A terminal that was already open must
+be reopened to find `koko`. When another `koko` comes first on `PATH`,
+install.ps1 names it.
+
+On Windows, `~` in this page and in koko's messages is the profile
+directory, `%USERPROFILE%`, such as `C:\Users\alice`: the CLI is
+`~\.local\bin\koko.exe`, and the device's files are in `~\.ssh\koko`.
+
+Without install.ps1, as on a machine whose administrator does not allow
+the line above, download `koko-windows-amd64.exe` and `SHA256SUMS`, check
+the file and install it. In PowerShell:
+
+```powershell
+$base = 'https://github.com/cieons/koko/releases/latest/download'
+Invoke-WebRequest "$base/koko-windows-amd64.exe" -OutFile koko-windows-amd64.exe -UseBasicParsing
+Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS -UseBasicParsing
+$want = ((Select-String -Path SHA256SUMS -Pattern ' koko-windows-amd64\.exe$').Line -split ' ')[0]
+(Get-FileHash koko-windows-amd64.exe -Algorithm SHA256).Hash -eq $want
+```
+
+The last line prints `True` when the file is the one `SHA256SUMS` lists.
+Only then, install it:
+
+```powershell
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.local\bin" | Out-Null
+Move-Item koko-windows-amd64.exe "$env:USERPROFILE\.local\bin\koko.exe"
+```
+
+Then add `%USERPROFILE%\.local\bin` to the user's `PATH`, in Windows'
+settings under "Edit environment variables for your account". The file is
+not signed, so one downloaded with a browser may meet a Windows SmartScreen
+prompt when it is first run; one downloaded by install.ps1 or by the lines
+above does not.
+
+#### ssh on Windows
+
+- **OpenSSH for Windows is the supported `ssh`**: the client Windows
+  provides as an optional feature, which PowerShell, cmd and Windows
+  Terminal run. `ssh web1`, `scp` and `sftp` reach a Host through koko with
+  it, as on Linux and macOS.
+- **Git for Windows' `ssh`**, the one Git Bash runs, reads the same files
+  and also works.
+- **A Windows without the OpenSSH client** can still join: `koko join`,
+  `koko exec`, `koko web` and the record commands need no `ssh`. `koko
+  status` says when no `ssh` is on `PATH`. To add the client, run the
+  following in PowerShell as an administrator:
+
+  ```powershell
+  Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+  ```
+
+- **`rsync`** is in neither client's distribution. On Windows, copy files
+  with `scp` and `sftp`.
+- **`HOME`**: Windows does not set it, and koko writes its files under the
+  profile directory. When `HOME` is set to another directory, `ssh` may
+  read another configuration than koko's; `koko status` says so, naming
+  both directories: unset `HOME`, or set it to the profile directory.
+- **WSL** is a Linux machine with a home of its own, and its `ssh` does not
+  read the files koko wrote on Windows. Install the Linux CLI inside WSL,
+  with the `curl` line above, and join it there with a Join Code of its
+  own: it is a device of its own.
+
+#### Windows terminals
+
+- **A Secret in Git Bash.** Git Bash's own window is not a console to a
+  Windows program, so koko cannot prompt for a Secret there. Give the
+  Secret on stdin or in a file, as `koko secret add <space>/<secret>
+  --from-file <file>` does, or run the command in PowerShell, cmd or
+  Windows Terminal, where the prompt reads it without showing it.
+- **Piped output in PowerShell.** koko writes UTF-8. Text printed to the
+  console shows correctly as it is. Output that PowerShell captures or
+  pipes is decoded by `[Console]::OutputEncoding`, in Windows PowerShell
+  5.1 in particular, so set it first when a Host name or a value may hold
+  characters outside ASCII:
+
+  ```powershell
+  [Console]::OutputEncoding = [Text.Encoding]::UTF8
+  ```
+
+- **Quoting for `koko exec`.** `koko exec` joins its words with spaces, as
+  `ssh` does, and the Host's shell reads the result. PowerShell and cmd
+  read the line first, each by its own rules. To pass quotes on to the
+  Host's shell, put the whole command in double quotes and use single
+  quotes inside it. In PowerShell:
+
+  ```powershell
+  koko exec web1 "echo 'a  b'"
+  ```
+
+  In cmd:
+
+  ```bat
+  koko exec web1 "echo 'a  b'"
+  ```
+
+  Either way the Host's shell runs `echo 'a  b'`. Windows PowerShell 5.1
+  drops a double quote inside an argument on the way to any program, and
+  single quotes group nothing in cmd, so the other ways round do not
+  arrive as written.
+
 ### Offline
 
 On a machine that cannot reach GitHub, `koko server install` cannot
@@ -181,9 +319,10 @@ was built by koko's release workflow:
 gh attestation verify kokod-linux-amd64 --repo cieons/koko
 ```
 
-This works for every file `SHA256SUMS` lists: `koko-<os>-<arch>`,
-`kokod-linux-<arch>` and `install.sh`. The koko server's machine needs no
-`gh`: install.sh and `koko server install` check the SHA-256 alone.
+This works for every file `SHA256SUMS` lists: `koko-<os>-<arch>`
+(`koko-windows-amd64.exe` for Windows), `kokod-linux-<arch>`, `install.sh`
+and `install.ps1`. The koko server's machine needs no `gh`: install.sh,
+install.ps1 and `koko server install` check the SHA-256 alone.
 
 ## Upgrading
 
@@ -198,6 +337,15 @@ against the release's `SHA256SUMS` and its build, and replaces the file it
 runs from. Open SSH Sessions, `koko web` and running commands carry on.
 `koko update --check` says what it would do and changes nothing. Root's
 `/usr/local/bin/koko` upgrades with `sudo koko update`.
+
+On Windows, `koko update` upgrades `~\.local\bin\koko.exe`, the file
+install.ps1 installs, whether or not it runs as an administrator, and
+refuses a `koko.exe` anywhere else. Windows does not let a running
+program's file be replaced, so `koko update` renames the old file aside,
+as `.koko.old-<random>.exe` in the same directory, and puts the new one in
+its place: open SSH Sessions and running commands carry on from the old
+file, which a later `koko update` or install.ps1 deletes once nothing runs
+it. The install line, run again, upgrades the CLI the same way.
 
 The koko server, installed with systemd, upgrades in place with one
 command, run by the Owner on any of their devices or on its own machine:
@@ -315,6 +463,19 @@ koko update --version v0.3.0
 with that release in place of `v0.3.0`. A release from before
 `koko update`, such as v0.3.0, has no `koko update`: to come back up from
 it, run the install line again ([The CLI alone](#the-cli-alone)).
+
+On Windows, `koko update --version` goes back the same way, and so does
+install.ps1 with the release named in `KOKO_VERSION`, in PowerShell:
+
+```powershell
+$env:KOKO_VERSION = 'v0.6.0'; irm https://github.com/cieons/koko/releases/latest/download/install.ps1 | iex
+```
+
+with that release in place of `v0.6.0`. The variable stays set in that
+PowerShell session, where a later install line would install the same
+release again: `Remove-Item Env:KOKO_VERSION` clears it. v0.6.0 is the
+first release with a Windows CLI: an older release is refused, naming
+v0.6.0, and nothing is written.
 
 To go back on the koko server's machine to the release that ran before the
 upgrade, install it with the newest install.sh, naming the release in
@@ -437,6 +598,39 @@ one: it installs the `kokod` of its own version again.
 
 The CLI is one file: remove it with `rm ~/.local/bin/koko`, or with `sudo
 rm /usr/local/bin/koko` for root's.
+
+On Windows, remove the CLI in PowerShell, in this order:
+
+1. Leave the koko server, which stops every Device Mux and removes the
+   join:
+
+   ```powershell
+   koko leave
+   ```
+
+2. Delete `koko.exe`, and any older one `koko update` left beside it:
+
+   ```powershell
+   Remove-Item -Force "$env:USERPROFILE\.local\bin\koko.exe", "$env:USERPROFILE\.local\bin\.koko.old-*.exe"
+   ```
+
+3. Take the directory out of the user's `PATH`, unless another tool uses
+   `%USERPROFILE%\.local\bin`:
+
+   ```powershell
+   $key = Get-Item HKCU:\Environment; Set-ItemProperty HKCU:\Environment -Name Path -Type $key.GetValueKind('Path') -Value (($key.GetValue('Path', '', 'DoNotExpandEnvironmentNames') -split ';' | Where-Object { $_ -and [Environment]::ExpandEnvironmentVariables($_).Trim('"').TrimEnd('\') -ne "$env:USERPROFILE\.local\bin" }) -join ';')
+   ```
+
+   The line keeps every other entry as it was written, and the value's
+   type. Terminals opened after the next sign-in no longer have the
+   directory on `PATH`.
+
+4. Delete koko's runtime directory, then delete the line
+   `Include ~/.ssh/koko/ssh_config` from `~\.ssh\config`:
+
+   ```powershell
+   Remove-Item -Recurse -Force "$env:LOCALAPPDATA\koko"
+   ```
 
 ## In a container
 

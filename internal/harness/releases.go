@@ -21,8 +21,10 @@ import (
 // <releasesPath>/download/<version>/<name>.
 const releasesPath = "/cieons/koko/releases"
 
-// KokoPlatforms are the platforms a release has a koko for, as the
-// Makefile's RELEASE_TARGETS builds them.
+// KokoPlatforms are the platforms the fake machine's release has a koko
+// for: those of the Makefile's RELEASE_TARGETS but windows/amd64. The fake
+// machine is a Linux machine, and the tests of koko update on Windows
+// publish their own koko-windows-amd64.exe.
 var KokoPlatforms = []string{"linux/amd64", "linux/arm64", "darwin/arm64"}
 
 // Releases is one release of a fake GitHub that serves koko's releases over

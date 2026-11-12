@@ -10,7 +10,7 @@ koko 是一个自托管系统。它记录在各家云服务商租用的服务器
 
 ## 安装
 
-koko 由两个程序组成：`koko` 为 CLI，支持 Linux 和 macOS；`kokod` 为 koko 服务器，仅支持 Linux。
+koko 由两个程序组成：`koko` 为 CLI，支持 Linux、macOS 和 Windows；`kokod` 为 koko 服务器，仅支持 Linux。
 
 安装 CLI，适用于 Linux（amd64 或 arm64）和 macOS（Apple Silicon）。CLI 安装在运行该命令的用户的 `~/.local/bin` 中，无需 `sudo`：
 
@@ -18,7 +18,17 @@ koko 由两个程序组成：`koko` 为 CLI，支持 Linux 和 macOS；`kokod` �
 curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh
 ```
 
-`~/.local/bin` 不在 `PATH` 中时，该命令会输出将其加入 `PATH` 的命令。此后可使用 `koko update` 升级 CLI。
+`~/.local/bin` 不在 `PATH` 中时，该命令会输出将其加入 `PATH` 的命令。
+
+安装 CLI，适用于 Windows 10（1809 及更高版本）、Windows 11 和 Windows Server 2019 及更高版本，自 v0.6.0 起提供。CLI 安装在运行该命令的用户的 `%USERPROFILE%\.local\bin` 中，无需管理员权限。在 PowerShell 中运行：
+
+```powershell
+irm https://github.com/cieons/koko/releases/latest/download/install.ps1 | iex
+```
+
+该目录不在用户的 `PATH` 中时，该命令会将其加入并给出说明（见[在 Windows 上安装](docs/install.zh-CN.md#在-windows-上安装)）。
+
+此后在各系统上均可使用 `koko update` 升级 CLI。
 
 在由 systemd 管理的 Linux 机器上以 root 同时安装 koko 服务器，并指定所有者以及设备访问它所用的地址：
 

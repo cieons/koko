@@ -2,14 +2,21 @@
 
 [English](install.md)
 
-koko 的每个发布版本包含两个程序：CLI `koko`，支持 Linux 和 macOS；koko 服务器 `kokod`，仅支持 Linux。一行命令即可安装 CLI；同一行命令加上 `--owner`，会在一台由 systemd 管理的 Linux 机器上同时安装 koko 服务器。没有 systemd 的环境中，可使用镜像 `ghcr.io/cieons/koko` 在容器中运行 koko 服务器（见[在容器中运行](#在容器中运行)）。本文介绍安装、校验发布版本、升级与回退、保管根密钥、恢复到另一台机器，以及根密钥丢失时的处理，随后介绍容器部署下的相应操作，最后介绍如何经由反向代理向浏览器提供 Web 界面（见[在浏览器中使用 Web 界面](#在浏览器中使用-web-界面)）。各步骤的实现原理见[安装器](subsystems/installer.md)和[发布](subsystems/release.md)参考文档（英文）。
+koko 的每个发布版本包含两个程序：CLI `koko`，支持 Linux、macOS 和 Windows；koko 服务器 `kokod`，仅支持 Linux。一行命令即可安装 CLI；同一行命令加上 `--owner`，会在一台由 systemd 管理的 Linux 机器上同时安装 koko 服务器。没有 systemd 的环境中，可使用镜像 `ghcr.io/cieons/koko` 在容器中运行 koko 服务器（见[在容器中运行](#在容器中运行)）。本文介绍安装、校验发布版本、升级与回退、保管根密钥、恢复到另一台机器，以及根密钥丢失时的处理，随后介绍容器部署下的相应操作，最后介绍如何经由反向代理向浏览器提供 Web 界面（见[在浏览器中使用 Web 界面](#在浏览器中使用-web-界面)）。各步骤的实现原理见[安装器](subsystems/installer.md)和[发布](subsystems/release.md)参考文档（英文）。
 
 ## 机器要求
+
+koko 服务器所在的机器：
 
 - amd64 或 arm64 架构的 Linux，由 systemd 247 或更高版本管理：Debian 11、Ubuntu 22.04、RHEL 9 或更高版本。对于不由 systemd 管理的容器，`koko server install` 会在下载任何文件之前拒绝安装，此时请改用[镜像](#在容器中运行)。
 - `/var/lib/koko` 位于本地文件系统，而非 NFS 或其他网络文件系统。
 - 一个空闲的 TCP 端口，默认为 7822，可通过 `--port` 另行指定。
 - `curl`、`sha256sum`、`awk` 和 `mktemp`，以及 root 权限（以 root 用户运行，或通过 `sudo`）。
+
+仅运行 CLI、作为设备使用的机器：
+
+- amd64 或 arm64 架构的 Linux，或 Apple Silicon 的 macOS。
+- x64 架构的 Windows 10（1809 及更高版本）、Windows 11，或 Windows Server 2019 及更高版本。在 Arm64 架构上，Windows 11 以仿真方式运行同一个 x64 CLI。首个提供 Windows CLI 的发布版本为 v0.6.0。
 
 ## 安装
 
@@ -37,7 +44,7 @@ install.sh 下载适用于本机的 `koko`，使用发布版本的 `SHA256SUMS` 
 
 ### 仅安装 CLI
 
-不带参数运行同一行命令，即只安装 CLI，适用于 Linux（amd64 或 arm64）和 macOS（Apple Silicon）。该命令为运行它的用户安装 CLI，无需 `sudo`：
+不带参数运行同一行命令，即只安装 CLI，适用于 Linux（amd64 或 arm64）和 macOS（Apple Silicon）。该命令为运行它的用户安装 CLI，无需 `sudo`。Windows 使用单独的安装命令（见[在 Windows 上安装](#在-windows-上安装)）：
 
 ```sh
 curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | sh
@@ -75,6 +82,82 @@ mkdir -p ~/.local/bin
 install -m 0755 koko-linux-amd64 ~/.local/bin/koko
 ```
 
+#### 在 Windows 上安装
+
+在 PowerShell 中运行以下命令，即为运行它的用户安装 CLI，无需管理员权限：
+
+```powershell
+irm https://github.com/cieons/koko/releases/latest/download/install.ps1 | iex
+```
+
+在 cmd 或智能体的运行环境中，通过 Windows PowerShell 运行同一行命令：
+
+```bat
+powershell -NoProfile -Command "irm https://github.com/cieons/koko/releases/latest/download/install.ps1 | iex"
+```
+
+install.ps1 可在所有受支持的 Windows 均自带的 Windows PowerShell 5.1 中运行，也可在 PowerShell 7 中运行。它下载 `koko-windows-amd64.exe`，使用发布版本的 `SHA256SUMS` 校验后安装为 `%USERPROFILE%\.local\bin\koko.exe`；该目录不存在时会先创建。运行时无需交互输入，提示信息只写入错误流，不向输出流写入任何内容，并输出 `koko.exe` 的完整路径，供不重新读取 `PATH` 的运行环境使用。koko 服务器仅支持 Linux，因此 install.ps1 不接受参数。此后可使用 `koko update` 升级 CLI（见[升级](#升级)）。
+
+`%USERPROFILE%\.local\bin` 不在用户的 `PATH` 中时，install.ps1 会将其加入该值（由 Windows 为每个用户保存），同时加入运行它的 PowerShell 会话的 `PATH`，并说明所添加的内容。它不会更改系统的 `PATH`。此前已打开的终端需重新打开后才能找到 `koko`。`PATH` 中排在前面的是另一个 `koko` 时，install.ps1 会指出该文件。
+
+在 Windows 上，本文及 koko 的提示信息中的 `~` 指用户配置文件目录 `%USERPROFILE%`，例如 `C:\Users\alice`：CLI 为 `~\.local\bin\koko.exe`，设备的文件位于 `~\.ssh\koko`。
+
+不使用 install.ps1 时（例如管理员不允许运行上述命令的机器），请下载 `koko-windows-amd64.exe` 和 `SHA256SUMS`，校验后安装。在 PowerShell 中运行：
+
+```powershell
+$base = 'https://github.com/cieons/koko/releases/latest/download'
+Invoke-WebRequest "$base/koko-windows-amd64.exe" -OutFile koko-windows-amd64.exe -UseBasicParsing
+Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS -UseBasicParsing
+$want = ((Select-String -Path SHA256SUMS -Pattern ' koko-windows-amd64\.exe$').Line -split ' ')[0]
+(Get-FileHash koko-windows-amd64.exe -Algorithm SHA256).Hash -eq $want
+```
+
+文件与 `SHA256SUMS` 所列一致时，最后一行输出 `True`。仅在此时安装该文件：
+
+```powershell
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.local\bin" | Out-Null
+Move-Item koko-windows-amd64.exe "$env:USERPROFILE\.local\bin\koko.exe"
+```
+
+随后在 Windows 设置的“编辑账户的环境变量”中，将 `%USERPROFILE%\.local\bin` 加入用户的 `PATH`。该文件未经签名，因此通过浏览器下载的文件在首次运行时可能出现 Windows SmartScreen 提示；通过 install.ps1 或上述命令下载的文件不会出现该提示。
+
+#### Windows 上的 ssh
+
+- **受支持的 `ssh` 为 OpenSSH for Windows**：Windows 以可选功能形式提供的客户端，PowerShell、cmd 和 Windows 终端运行的即为该客户端。与 Linux 和 macOS 相同，`ssh web1`、`scp` 和 `sftp` 通过它经由 koko 访问主机。
+- **Git for Windows 的 `ssh`**（Git Bash 运行的客户端）读取相同的文件，同样可以使用。
+- **未安装 OpenSSH 客户端的 Windows** 仍可加入：`koko join`、`koko exec`、`koko web` 以及各记录命令均不需要 `ssh`。`PATH` 中没有 `ssh` 时，`koko status` 会给出提示。如需添加该客户端，请以管理员身份在 PowerShell 中运行：
+
+  ```powershell
+  Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+  ```
+
+- **`rsync`** 不包含在上述两个客户端的发行内容中。在 Windows 上请使用 `scp` 和 `sftp` 复制文件。
+- **`HOME`**：Windows 不设置该变量，koko 将文件写入用户配置文件目录。`HOME` 被设为其他目录时，`ssh` 读取的可能不是 koko 的配置；`koko status` 会给出提示并列出两个目录：请取消设置 `HOME`，或将其设为用户配置文件目录。
+- **WSL** 是一台拥有独立主目录的 Linux 机器，其中的 `ssh` 不读取 koko 在 Windows 上写入的文件。请使用上文的 `curl` 命令在 WSL 内安装 Linux 版 CLI，并使用单独的加入码加入：它是一台独立的设备。
+
+#### Windows 终端注意事项
+
+- **在 Git Bash 中输入机密。** 对 Windows 程序而言，Git Bash 自身的窗口不是控制台，因此 koko 无法在其中提示输入机密。请通过 stdin 或文件提供机密，例如 `koko secret add <space>/<secret> --from-file <file>`；或在 PowerShell、cmd 或 Windows 终端中运行该命令，提示输入时不会显示所输入的内容。
+- **PowerShell 中经管道传递的输出。** koko 以 UTF-8 输出。直接显示在控制台中的文本无需任何设置即可正确显示。由 PowerShell 捕获或经管道传递的输出按 `[Console]::OutputEncoding` 解码，Windows PowerShell 5.1 尤其如此；主机名称或属性值可能包含 ASCII 以外的字符时，请先设置：
+
+  ```powershell
+  [Console]::OutputEncoding = [Text.Encoding]::UTF8
+  ```
+
+- **`koko exec` 的引号。** 与 `ssh` 相同，`koko exec` 以空格连接各个参数，再由主机上的 shell 解析。PowerShell 和 cmd 会先按各自的规则解析命令行。如需将引号传递给主机上的 shell，请将整条命令置于双引号内，并在其中使用单引号。在 PowerShell 中：
+
+  ```powershell
+  koko exec web1 "echo 'a  b'"
+  ```
+
+  在 cmd 中：
+
+  ```bat
+  koko exec web1 "echo 'a  b'"
+  ```
+
+  两种情况下，主机上的 shell 运行的均为 `echo 'a  b'`。Windows PowerShell 5.1 向任何程序传递参数时都会丢弃参数内的双引号，单引号在 cmd 中不具有分组作用，因此其他写法无法按原样传递。
+
 ### 离线安装
 
 在无法访问 GitHub 的机器上，`koko server install` 无法下载 `kokod`，会给出相应提示并指出 `--kokod`，且不写入任何内容。此时需使用复制到该机器上的文件安装 koko 服务器。先在可访问 GitHub 的机器上，从同一个发布版本下载与目标机器架构相符的 `koko-linux-<arch>`、`kokod-linux-<arch>` 和 `SHA256SUMS`，以下以 amd64 为例：
@@ -103,7 +186,7 @@ sudo install -m 0755 koko-linux-amd64 /usr/local/bin/koko
 gh attestation verify kokod-linux-amd64 --repo cieons/koko
 ```
 
-`SHA256SUMS` 列出的所有文件均可按此检查，包括 `koko-<os>-<arch>`、`kokod-linux-<arch>` 和 `install.sh`。koko 服务器所在的机器无需安装 `gh`：install.sh 和 `koko server install` 仅校验 SHA-256。
+`SHA256SUMS` 列出的所有文件均可按此检查，包括 `koko-<os>-<arch>`（Windows 为 `koko-windows-amd64.exe`）、`kokod-linux-<arch>`、`install.sh` 和 `install.ps1`。koko 服务器所在的机器无需安装 `gh`：install.sh、install.ps1 和 `koko server install` 仅校验 SHA-256。
 
 ## 升级
 
@@ -114,6 +197,8 @@ koko update
 ```
 
 该命令下载最新发布版本中适用于本机的 `koko`，使用发布版本的 `SHA256SUMS` 及其构建信息校验，然后替换当前运行的文件。已打开的 SSH 会话、`koko web` 和正在运行的命令均不受影响。`koko update --check` 只说明将执行的操作，不做任何更改。root 的 `/usr/local/bin/koko` 使用 `sudo koko update` 升级。
+
+在 Windows 上，`koko update` 升级 install.ps1 所安装的 `~\.local\bin\koko.exe`，无论是否以管理员身份运行；位于其他位置的 `koko.exe` 会被拒绝。Windows 不允许替换正在运行的程序文件，因此 `koko update` 先将旧文件在同一目录中改名为 `.koko.old-<random>.exe`，再将新文件放到原位置：已打开的 SSH 会话和正在运行的命令继续使用旧文件运行；旧文件不再被任何进程使用后，由之后的 `koko update` 或 install.ps1 删除。再次运行安装命令，也会以同样的方式升级 CLI。
 
 通过 systemd 安装的 koko 服务器可使用一条命令就地升级，所有者可在其任一设备或 koko 服务器所在的机器上运行：
 
@@ -168,6 +253,14 @@ koko update --version v0.3.0
 ```
 
 将 `v0.3.0` 替换为要回退到的版本。早于 `koko update` 的发布版本（例如 v0.3.0）不包含 `koko update`：如需从该版本重新升级，请再次运行安装命令（见[仅安装 CLI](#仅安装-cli)）。
+
+在 Windows 上，`koko update --version` 以同样的方式回退；也可以在 `KOKO_VERSION` 中指定发布版本后运行 install.ps1。在 PowerShell 中运行：
+
+```powershell
+$env:KOKO_VERSION = 'v0.6.0'; irm https://github.com/cieons/koko/releases/latest/download/install.ps1 | iex
+```
+
+将 `v0.6.0` 替换为要回退到的版本。该变量在当前 PowerShell 会话中保持有效，此后在该会话中运行安装命令仍会安装同一版本：使用 `Remove-Item Env:KOKO_VERSION` 可将其清除。v0.6.0 是首个提供 Windows CLI 的发布版本：指定更早的版本时会被拒绝，提示中会指出 v0.6.0，且不写入任何内容。
 
 如需在 koko 服务器所在的机器上回退到升级前运行的发布版本，请使用最新的 install.sh 安装该版本，并在 `KOKO_VERSION` 中指定。在这台机器上以 root 运行：
 
@@ -234,6 +327,34 @@ koko 目前没有备份命令。在 koko 服务器停止时复制的数据目录
 `koko server uninstall` 停止 koko 服务器，并删除其 unit、升级助手的 unit 及其目录 `/var/lib/koko-upgrade`，以及 `/usr/local/bin/kokod`，不在机器上留下任何以 root 运行的 koko 组件。它保留 CLI `/usr/local/bin/koko`、数据目录、根密钥和 `koko` 用户，并输出 koko 服务器原先监听的端口，以及原先设有的 Web 监听地址。如需在同一份数据上再次运行 koko 服务器，请运行不带 `--owner`、带上该 `--port`（若输出了 Web 监听地址，一并带上该 `--web-listen`）的 `sudo koko server install`：它会再次安装与自身同一版本的 `kokod`。
 
 CLI 只有一个文件：使用 `rm ~/.local/bin/koko` 删除；root 的 CLI 使用 `sudo rm /usr/local/bin/koko` 删除。
+
+在 Windows 上，请在 PowerShell 中依次执行以下步骤以删除 CLI：
+
+1. 退出 koko 服务器。该命令会停止所有 Device Mux 并移除加入信息：
+
+   ```powershell
+   koko leave
+   ```
+
+2. 删除 `koko.exe`，以及 `koko update` 在同一目录中留下的旧文件：
+
+   ```powershell
+   Remove-Item -Force "$env:USERPROFILE\.local\bin\koko.exe", "$env:USERPROFILE\.local\bin\.koko.old-*.exe"
+   ```
+
+3. 将该目录从用户的 `PATH` 中移除；如有其他工具使用 `%USERPROFILE%\.local\bin`，请跳过此步骤：
+
+   ```powershell
+   $key = Get-Item HKCU:\Environment; Set-ItemProperty HKCU:\Environment -Name Path -Type $key.GetValueKind('Path') -Value (($key.GetValue('Path', '', 'DoNotExpandEnvironmentNames') -split ';' | Where-Object { $_ -and [Environment]::ExpandEnvironmentVariables($_).Trim('"').TrimEnd('\') -ne "$env:USERPROFILE\.local\bin" }) -join ';')
+   ```
+
+   该命令保留其余各项的原有写法以及该值的类型。下次登录后打开的终端，其 `PATH` 中不再包含该目录。
+
+4. 删除 koko 的运行时目录，然后从 `~\.ssh\config` 中删除 `Include ~/.ssh/koko/ssh_config` 这一行：
+
+   ```powershell
+   Remove-Item -Recurse -Force "$env:LOCALAPPDATA\koko"
+   ```
 
 ## 在容器中运行
 
