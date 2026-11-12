@@ -720,19 +720,27 @@ func sendSignal(cmd *exec.Cmd, name string) bool {
 	return false
 }
 
-// start starts a session's command as sshd does: /bin/sh, the Host
-// Account's shell, with argv, as a local process in the Host Account's home
-// directory with HOME set to it and the variables env, its stdin, stdout and
-// stderr on the channel. Once the command ends, it sends the exit status,
-// or the signal that ended it, and closes the channel (finish).
+// start starts a session's command as sshd does: the Host Account's shell
+// (shell: /bin/sh, or on Windows the sh.exe of Git for Windows), with argv,
+// as a local process in the Host Account's home directory with HOME set to
+// it and the variables env, its stdin, stdout and stderr on the channel.
+// Once the command ends, it sends the exit status, or the signal that ended
+// it, and closes the channel (finish). Without a shell it fails the test,
+// naming what is missing.
 func (h *Host) start(ch ssh.Channel, argv, env []string) *exec.Cmd {
-	cmd := exec.CommandContext(h.t.Context(), "/bin/sh", argv...)
-	cmd.Dir = h.home
-	cmd.Env = append([]string{"HOME=" + h.home, "USER=" + Account, "LOGNAME=" + Account, "SHELL=/bin/sh", "PATH=" + os.Getenv("PATH")}, env...)
-	cmd.Stdout, cmd.Stderr = ch, ch.Stderr()
-	stdin, err := cmd.StdinPipe()
-	if err == nil {
-		err = cmd.Start()
+	sh, err := shell()
+	var cmd *exec.Cmd
+	var stdin io.WriteCloser
+	if err != nil {
+		h.t.Errorf("the in-process Host cannot run a command: %v", err)
+	} else {
+		cmd = exec.CommandContext(h.t.Context(), sh, argv...)
+		cmd.Dir = h.home
+		cmd.Env = append([]string{"HOME=" + h.home, "USER=" + Account, "LOGNAME=" + Account, "SHELL=/bin/sh", "PATH=" + os.Getenv("PATH")}, env...)
+		cmd.Stdout, cmd.Stderr = ch, ch.Stderr()
+		if stdin, err = cmd.StdinPipe(); err == nil {
+			err = cmd.Start()
+		}
 	}
 	if err != nil {
 		_, _ = fmt.Fprintf(ch.Stderr(), "sh: %v\n", err)

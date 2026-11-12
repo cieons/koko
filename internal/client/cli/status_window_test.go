@@ -56,7 +56,7 @@ func TestStatusSaysHowTheCLIAndTheServerWorkTogether(t *testing.T) {
 			tc.report.Operations = []string{"space.list"}
 			path, calls := otherServer(t, tc.report)
 			run := func(args ...string) harness.Result {
-				return harness.Run(t, releaseCLI(t, "v0.4.0", path), []string{"HOME=" + t.TempDir()}, args...)
+				return harness.Run(t, releaseCLI(t, "v0.4.0", path), []string{harness.HomeEnv(t.TempDir())}, args...)
 			}
 			r := run("status")
 			r.WantSuccess(t)

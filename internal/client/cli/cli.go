@@ -101,8 +101,18 @@ type Invocation struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
-	// Env is the environment as KEY=value strings, HOME included.
+	// Env is the environment as KEY=value strings, the home directory's
+	// variable included (home).
 	Env []string
+}
+
+// home returns the invocation's home directory, the one place the CLI reads
+// it: the value of devicefiles.HomeVar, HOME on Linux and macOS and
+// USERPROFILE on Windows, where HOME is never read (ADR 0051). It is "" when
+// the variable is unset; what needs a home refuses one that is not an
+// absolute path, naming the variable.
+func (inv *Invocation) home() string {
+	return inv.getenv(devicefiles.HomeVar)
 }
 
 // getenv returns the value of the last KEY=value in the environment.
@@ -112,10 +122,11 @@ func (inv *Invocation) getenv(key string) string {
 }
 
 // lookupEnv returns the value of the last KEY=value in the environment, and
-// whether there is one, empty or not.
+// whether there is one, empty or not. Names match as the OS matches them
+// (sameEnvKey).
 func (inv *Invocation) lookupEnv(key string) (value string, ok bool) {
 	for _, kv := range inv.Env {
-		if k, v, found := strings.Cut(kv, "="); found && k == key {
+		if k, v, found := strings.Cut(kv, "="); found && sameEnvKey(k, key) {
 			value, ok = v, true
 		}
 	}
@@ -366,7 +377,7 @@ func (in *Input) reach(ctx context.Context) (serverconn.Conn, error) {
 // after trying the Device Mux, has what is left of it. Starting a Device
 // Mux, or one that does not answer, may add timing.DeviceMuxStart.
 func (in *Input) dialJoined(ctx context.Context, socket string) (serverconn.Conn, error) {
-	home := in.inv.getenv("HOME")
+	home := in.inv.home()
 	c, key, err := devicefiles.Read(home)
 	switch {
 	case errors.Is(err, devicefiles.ErrNotJoined):

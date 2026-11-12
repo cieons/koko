@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cieons/koko/internal/shared/install"
+	"github.com/cieons/koko/internal/shared/sockerr"
 )
 
 // webShutdownGrace bounds how long Close waits for the web listener's calls
@@ -43,7 +44,7 @@ func listenWeb(ctx context.Context, addr string) (*webListener, error) {
 	}
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "tcp", addr)
-	if errors.Is(err, syscall.EADDRINUSE) {
+	if sockerr.Is(err, syscall.EADDRINUSE) {
 		return nil, webAddressTaken(ctx, addr)
 	}
 	if err != nil {

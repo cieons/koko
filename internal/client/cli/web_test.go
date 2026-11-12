@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/harness/skip"
 	"github.com/cieons/koko/internal/server/webui"
 	"github.com/cieons/koko/internal/shared/api"
 )
@@ -460,6 +461,7 @@ func TestWebTokenWorksForFiveMinutes(t *testing.T) {
 // too.
 func TestWebRefusesATakenPort(t *testing.T) {
 	t.Parallel()
+	skip.OnWindows(t, "koko web tells a taken port on Windows from #154")
 	for _, l := range []struct{ network, addr string }{{"tcp4", "127.0.0.1:0"}, {"tcp6", "[::1]:0"}} {
 		t.Run(l.network, func(t *testing.T) {
 			h := harness.Start(t)
@@ -505,6 +507,7 @@ func TestWebPortMustBeATCPPort(t *testing.T) {
 // done its work once the run is stopped.
 func TestWebOpensItsAddressUnlessNoOpen(t *testing.T) {
 	t.Parallel()
+	skip.OnWindows(t, "koko web opens a browser on Windows from #154")
 	h := harness.Start(t)
 	bin := t.TempDir()
 	opened := filepath.Join(t.TempDir(), "opened")
@@ -555,6 +558,7 @@ func TestWebServesOnWhenNoBrowserOpens(t *testing.T) {
 // its cookie no longer works anyway.
 func TestWebEndsWhenTheKokoServerStops(t *testing.T) {
 	t.Parallel()
+	skip.OnWindows(t, "koko web reaches the koko server over its Unix socket here, and on Windows a Unix socket's reader that is writing as its peer half-closes can miss the end, and the close after it (docs/subsystems/release.md); no Windows CLI uses that socket outside tests")
 	h := harness.Start(t)
 	w := startWeb(t, h)
 	h.Stop()

@@ -25,9 +25,9 @@ func offline(t *testing.T) cli.Runner {
 func TestSkillInstallWritesTheStubUnderHome(t *testing.T) {
 	t.Parallel()
 	home := t.TempDir()
-	r := harness.Run(t, offline(t), []string{"HOME=" + home}, "skill", "install", "--json")
+	r := harness.Run(t, offline(t), []string{harness.HomeEnv(home)}, "skill", "install", "--json")
 	r.WantSuccess(t)
-	harness.Golden(t, "skill-install.json", strings.ReplaceAll(r.Stdout, home, "<home>"))
+	harness.Golden(t, "skill-install.json", harness.Paths(r.Stdout, home, "<home>"))
 
 	stub, err := os.ReadFile(filepath.Join(home, ".claude", "skills", "koko", "SKILL.md"))
 	if err != nil {
@@ -68,7 +68,7 @@ func TestSkillInstallIntoDirTouchesOnlyItsOwnFile(t *testing.T) {
 		}
 	}
 
-	r := harness.Run(t, offline(t), []string{"HOME=" + t.TempDir()}, "skill", "install", "--dir", dir)
+	r := harness.Run(t, offline(t), []string{harness.HomeEnv(t.TempDir())}, "skill", "install", "--dir", dir)
 	r.WantSuccess(t)
 	stub := filepath.Join(dir, "koko", "SKILL.md")
 	if !strings.Contains(r.Stdout, stub) {
@@ -117,7 +117,7 @@ func TestSkillInstallWithoutHomeNamesDir(t *testing.T) {
 // koko skill needs no koko server: it prints the reference of the binary.
 func TestSkillIsOffline(t *testing.T) {
 	t.Parallel()
-	r := harness.Run(t, offline(t), []string{"HOME=" + t.TempDir()}, "skill")
+	r := harness.Run(t, offline(t), []string{harness.HomeEnv(t.TempDir())}, "skill")
 	r.WantSuccess(t)
 	if !strings.HasPrefix(r.Stdout, "# koko\n") {
 		t.Errorf("koko skill = %q, want the reference", r.Stdout[:min(len(r.Stdout), 200)])

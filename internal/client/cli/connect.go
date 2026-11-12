@@ -84,7 +84,7 @@ func (c connectJSON) Human(w io.Writer) error {
 // The Device Mux takes the new address at the next Device Connection it
 // opens.
 func connectDevice(ctx context.Context, in *Input) (connectJSON, error) {
-	home := in.inv.getenv("HOME")
+	home := in.inv.home()
 	c, key, err := devicefiles.Read(home)
 	switch {
 	case errors.Is(err, devicefiles.ErrNotJoined):

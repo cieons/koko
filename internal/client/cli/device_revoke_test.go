@@ -48,9 +48,7 @@ func readRevocation(t *testing.T, d *harness.Device) revocationRecord {
 	if err != nil {
 		t.Fatalf("read the revocation record: %v", err)
 	}
-	if m := mode(t, path); m.Perm() != 0o600 {
-		t.Errorf("the revocation record has mode %v, want 0600", m)
-	}
+	harness.WantPrivate(t, path)
 	var r revocationRecord
 	if err := json.Unmarshal(b, &r, json.RejectUnknownMembers(true)); err != nil {
 		t.Fatalf("the revocation record %s does not parse: %v", b, err)

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cieons/koko/internal/harness/skip"
 	"github.com/cieons/koko/internal/shared/compat"
 )
 
@@ -21,6 +22,7 @@ type history struct {
 
 func newHistory(t *testing.T) *history {
 	t.Helper()
+	skip.OnWindows(t, "oldest-check.sh and skew-pairs.sh are shell scripts of the release workflow, which runs them on Linux")
 	h := &history{t: t, dir: t.TempDir()}
 	h.git("init", "-q")
 	return h

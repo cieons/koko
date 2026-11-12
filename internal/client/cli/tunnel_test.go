@@ -17,6 +17,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/harness/skip"
 	"github.com/cieons/koko/internal/harness/sshhost"
 	"github.com/cieons/koko/internal/shared/timing"
 )
@@ -167,6 +168,7 @@ func TestKokoTunnelPassesEverySessionRequestToTheHost(t *testing.T) {
 	})
 
 	t.Run("a signal", func(t *testing.T) {
+		skip.OnWindows(t, "the in-process Host sends the command a Unix signal: Windows has none to send a process")
 		s := openSession(t, c)
 		out := &firstLineWriter{ready: make(chan struct{})}
 		s.Stdout = out
@@ -461,18 +463,18 @@ func kokoTunnelSendsACloseFrameOnSIGHUPAndSIGTERM(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		sig   syscall.Signal
-		proxy func(h *harness.Harness) *harness.Proxy
+		proxy func(t *testing.T, h *harness.Harness) *harness.Proxy
 	}{
-		{"SIGHUP over the Unix socket", syscall.SIGHUP, func(h *harness.Harness) *harness.Proxy {
+		{"SIGHUP over the Unix socket", syscall.SIGHUP, func(_ *testing.T, h *harness.Harness) *harness.Proxy {
 			return h.Proxy("tunnel", "web1")
 		}},
-		{"SIGTERM over the Unix socket", syscall.SIGTERM, func(h *harness.Harness) *harness.Proxy {
+		{"SIGTERM over the Unix socket", syscall.SIGTERM, func(_ *testing.T, h *harness.Harness) *harness.Proxy {
 			return h.Proxy("tunnel", "web1")
 		}},
-		{"SIGHUP over a direct Device Connection", syscall.SIGHUP, func(h *harness.Harness) *harness.Proxy {
+		{"SIGHUP over a direct Device Connection", syscall.SIGHUP, func(_ *testing.T, h *harness.Harness) *harness.Proxy {
 			return h.Join(harness.Owner).Proxy(nil, "tunnel", "web1")
 		}},
-		{"SIGHUP through the Device Mux", syscall.SIGHUP, func(h *harness.Harness) *harness.Proxy {
+		{"SIGHUP through the Device Mux", syscall.SIGHUP, func(t *testing.T, h *harness.Harness) *harness.Proxy {
 			d := harness.NewMuxDevice(t, timing.Timings{})
 			d.Koko("join", deviceAdd(t, h, "laptop").Code).WantSuccess(t)
 			return d.Proxy(nil, "tunnel", "web1")
@@ -481,7 +483,7 @@ func kokoTunnelSendsACloseFrameOnSIGHUPAndSIGTERM(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h := harness.Start(t)
 			tunnelHost(t, h, "web1")
-			p := tc.proxy(h)
+			p := tc.proxy(t, h)
 			c := sshOver(t, p, "web1", gatewayHostKey(t, h))
 			// cat runs until the SSH Session ends and closes its stdin, so
 			// nothing on the Host outlives the test.

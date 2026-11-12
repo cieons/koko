@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cieons/koko/internal/harness/skip"
 	"github.com/cieons/koko/internal/shared/build"
 )
 
@@ -46,6 +47,7 @@ func TestTheSocketPathFitsMacOSsLimit(t *testing.T) {
 
 // Socket refuses a path too long for a Unix socket, so commands go direct.
 func TestSocketRefusesAPathTooLong(t *testing.T) {
+	skip.OnWindows(t, "the Device Mux has no runtime directory on Windows until #153")
 	long := filepath.Join(t.TempDir(), strings.Repeat("d", 100))
 	if err := os.Mkdir(long, 0o700); err != nil {
 		t.Fatal(err)
@@ -59,6 +61,7 @@ func TestSocketRefusesAPathTooLong(t *testing.T) {
 // The runtime directory is the OS's per-user one: $XDG_RUNTIME_DIR on
 // Linux, $TMPDIR on macOS, and /tmp/koko-<uid> without it.
 func TestTheRuntimeDirectory(t *testing.T) {
+	skip.OnWindows(t, "the Device Mux has no runtime directory on Windows until #153")
 	env := map[string]string{"XDG_RUNTIME_DIR": "/run/user/1000", "TMPDIR": "/var/folders/x/T/"}
 	got, err := runtimeDir(func(k string) string { return env[k] })
 	want := map[string]string{"linux": "/run/user/1000/koko", "darwin": "/var/folders/x/T/koko"}[runtime.GOOS]
@@ -74,6 +77,7 @@ func TestTheRuntimeDirectory(t *testing.T) {
 // The peer-credential check reads the OS user of the process that
 // connected: this one's, here.
 func TestPeerUIDIsTheConnectingUser(t *testing.T) {
+	skip.OnWindows(t, "Windows gives a Unix socket no peer credentials: the private directory is the Device Mux's only gate there (ADR 0051)")
 	dir, err := os.MkdirTemp("", "koko-")
 	if err != nil {
 		t.Fatal(err)

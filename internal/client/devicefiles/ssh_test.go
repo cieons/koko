@@ -10,6 +10,7 @@ import (
 
 	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/harness/skip"
 )
 
 // openSSH73 holds the keywords koko's ssh_config may use, each one that
@@ -45,14 +46,12 @@ func TestKokosSSHConfigSplitsALongNameList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi, err := os.Stat(path); err != nil || fi.Mode().Perm() != 0o600 {
-		t.Errorf("koko's ssh_config has mode %v (%v), want 0600", fi.Mode(), err)
-	}
+	harness.WantPrivate(t, path)
 	koko, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	harness.Golden(t, "ssh_config-split", strings.NewReplacer(koko, "<koko>", home, "<home>").Replace(string(b)))
+	harness.Golden(t, "ssh_config-split", harness.Paths(string(b), koko, "<koko>", home, "<home>"))
 
 	var hosts []string
 	var bodies [][]string
@@ -73,11 +72,12 @@ func TestKokosSSHConfigSplitsALongNameList(t *testing.T) {
 			bodies = append(bodies, nil)
 			continue
 		case "ProxyCommand":
-			if want := `"` + koko + `" tunnel '%h'`; args != want {
+			// Both paths with forward slashes, on Windows too.
+			if want := `"` + filepath.ToSlash(koko) + `" tunnel '%h'`; args != want {
 				t.Errorf("ProxyCommand %s, want %s", args, want)
 			}
 		case "UserKnownHostsFile":
-			if want := `"` + filepath.Join(home, ".ssh", "koko", "known_hosts") + `"`; args != want {
+			if want := `"` + filepath.ToSlash(filepath.Join(home, ".ssh", "koko", "known_hosts")) + `"`; args != want {
 				t.Errorf("UserKnownHostsFile %s, want %s", args, want)
 			}
 		}
@@ -103,6 +103,7 @@ func TestKokosSSHConfigSplitsALongNameList(t *testing.T) {
 // that is this very binary, such as a package manager's link that outlives
 // an upgrade, and by the path the OS gives for the binary otherwise.
 func TestKokosSSHConfigRunsKokoByItsPathOnPATH(t *testing.T) {
+	skip.OnWindows(t, "the koko a PATH lookup finds is koko.exe on Windows, which #155 writes koko's ssh_config for")
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +153,6 @@ func TestKokosSSHConfigRefusesWhatSSHWouldMisread(t *testing.T) {
 	}{
 		"a $ in the home directory":  {home: "a$HOME"},
 		"a %h in the home directory": {home: "a%h"},
-		"a quote in the home":        {home: `a"b`},
 		"a name with a space":        {home: "ok", names: []string{"web1 db1"}},
 		"a pattern for a name":       {home: "ok", names: []string{"*"}},
 	} {
@@ -166,6 +166,21 @@ func TestKokosSSHConfigRefusesWhatSSHWouldMisread(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(home, ".ssh", "koko", "ssh_config")); err == nil {
 			t.Errorf("%s: an ssh_config is there", name)
 		}
+	}
+}
+
+// A home directory whose path holds a double quote is refused too.
+func TestKokosSSHConfigRefusesAQuoteInTheHome(t *testing.T) {
+	skip.OnWindows(t, "no path on Windows holds a double quote, so no home directory there does")
+	home := filepath.Join(t.TempDir(), `a"b`)
+	if err := os.MkdirAll(filepath.Join(home, ".ssh", "koko"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := devicefiles.WriteSSHConfig(home, nil); err == nil {
+		t.Errorf("koko wrote its ssh_config under %s", home)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".ssh", "koko", "ssh_config")); err == nil {
+		t.Errorf("an ssh_config is there under %s", home)
 	}
 }
 
@@ -211,6 +226,7 @@ func TestAddressNamesAreTheNamesSSHReadsAsAnIPv4Address(t *testing.T) {
 // PATH does, or an old build's after an upgrade, keeps it. A file that names
 // no koko gets this binary.
 func TestARefreshKeepsTheKokoTheFileRuns(t *testing.T) {
+	skip.OnWindows(t, "the koko a PATH lookup finds is koko.exe on Windows, which #155 writes koko's ssh_config for")
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -255,8 +271,9 @@ func TestARefreshKeepsTheKokoTheFileRuns(t *testing.T) {
 }
 
 // koko's ssh_config is written only when it would change: the same names
-// again leave the file alone, while other names, or a mode other than 0600
-// on the same bytes, rewrite it with mode 0600.
+// again leave the file alone, while other names, or the same bytes in a
+// file that is not private to this user (a mode other than 0600, or on
+// Windows another access control list), rewrite it private.
 func TestKokosSSHConfigIsWrittenOnlyWhenItWouldChange(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, ".ssh", "koko"), 0o700); err != nil {
@@ -286,10 +303,10 @@ func TestKokosSSHConfigIsWrittenOnlyWhenItWouldChange(t *testing.T) {
 	if wrote, other := write("web1", "db1"); !wrote || os.SameFile(first, other) {
 		t.Errorf("other names: koko says it wrote %v, and the file is the same one: %v; want it rewritten", wrote, os.SameFile(first, other))
 	}
-	if err := os.Chmod(path, 0o644); err != nil {
-		t.Fatal(err)
+	harness.WantPrivate(t, path)
+	harness.LetOthersIn(t, path)
+	if wrote, _ := write("web1", "db1"); !wrote {
+		t.Errorf("the same names on a file other users can read: koko says it did not write; want it rewritten")
 	}
-	if wrote, fi := write("web1", "db1"); !wrote || fi.Mode().Perm() != 0o600 {
-		t.Errorf("the same names on a file of mode 0644: koko says it wrote %v, and the mode is %v; want it rewritten 0600", wrote, fi.Mode().Perm())
-	}
+	harness.WantPrivate(t, path)
 }

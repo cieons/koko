@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/cieons/koko/internal/client/cli"
+	"github.com/cieons/koko/internal/harness/skip"
 	"github.com/cieons/koko/internal/server"
 	"github.com/cieons/koko/internal/server/installer"
 	"github.com/cieons/koko/internal/server/kokod"
@@ -215,6 +216,7 @@ var skeleton = []string{"/etc/systemd/system", "/usr/local/bin", "/var/lib", "/r
 // --kokod, and no release to download from.
 func NewMachine(t testing.TB) *Machine {
 	t.Helper()
+	skip.OnWindows(t, "the fake machine is a Linux machine, whose /usr/local/bin, /etc and file owners koko server install, upgrade and uninstall work on; the koko server runs on Linux only")
 	m := &Machine{
 		OSArch:    "linux/amd64",
 		Systemd:   252,
@@ -279,7 +281,7 @@ func (m *Machine) KokoEnv(env []string, args ...string) Result {
 	if exe := m.exe; exe != "" {
 		r.Executable = func() (string, error) { return exe, nil }
 	}
-	return Run(m.t, r, append([]string{"HOME=" + m.home, "TMPDIR=" + m.tmp}, env...), args...)
+	return Run(m.t, r, append([]string{HomeEnv(m.home), "TMPDIR=" + m.tmp}, env...), args...)
 }
 
 // Home is the HOME koko runs with on the machine, outside its root.

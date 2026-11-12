@@ -47,7 +47,7 @@ var errExited = errors.New("the command has exited")
 // is stopped when the test ends.
 func (h *Harness) Proxy(args ...string) *Proxy {
 	h.t.Helper()
-	return proxy(h.t, h.runner(), []string{"HOME=" + h.home}, args...)
+	return proxy(h.t, h.runner(), []string{HomeEnv(h.home)}, args...)
 }
 
 // Proxy starts one koko command line in process on the device, as KokoEnv

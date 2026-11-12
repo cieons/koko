@@ -221,7 +221,7 @@ func deviceRevoke(ctx context.Context, in *Input) (revokedDevice, error) {
 	}
 	d := revokedDevice{deviceSessionJSON: deviceSessionFromAPI(resp.DeviceSession)}
 	if c := in.joined; c != nil && c.DeviceSession == d.ID {
-		if err := devicefiles.Revoke(in.inv.getenv("HOME"), *c, time.Now()); err != nil {
+		if err := devicefiles.Revoke(in.inv.home(), *c, time.Now()); err != nil {
 			return revokedDevice{}, api.CodeRevoked.Errorf("revoked %s's device %s, which is this device, but koko could not finish clearing its files of it: %v", d.User, d.Device, err)
 		}
 		d.here = c.ServerAddress

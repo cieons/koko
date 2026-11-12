@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/server/transport"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/wire"
@@ -137,7 +138,7 @@ func TestABatchToAKokoServerWithoutBatchesIsServerTooOld(t *testing.T) {
 			run := func(argv []string) (int, string) {
 				var stderr strings.Builder
 				r := &Runner{SocketPath: path}
-				status := r.Run(t.Context(), Invocation{Args: argv, Stdout: io.Discard, Stderr: &stderr, Env: []string{"HOME=" + t.TempDir()}})
+				status := r.Run(t.Context(), Invocation{Args: argv, Stdout: io.Discard, Stderr: &stderr, Env: []string{devicefiles.HomeVar + "=" + t.TempDir()}})
 				return status, stderr.String()
 			}
 			status, stderr := run(append(tc.several, "--json"))

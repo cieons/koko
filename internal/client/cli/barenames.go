@@ -45,7 +45,7 @@ func bareNames(resp api.HostListResponse) []string {
 // an OS user whose koko ssh setup wrote koko's ssh_config, and writes none
 // into a home that never asked for it.
 func (in *Input) rewriteBareNamesAfterHostChange(ctx context.Context) {
-	home := in.inv.getenv("HOME")
+	home := in.inv.home()
 	if in.joined != nil || (in.socket != "" && devicefiles.HasSSHConfig(home)) {
 		writeBareNames(ctx, in.client(), home, in.inv.Stderr)
 	}

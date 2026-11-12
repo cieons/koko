@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/harness/skip"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/timing"
 )
@@ -141,6 +142,7 @@ func TestKokoLeaveLetsADeviceJoinAKokoServerInitialisedAnew(t *testing.T) {
 // revoking it on the koko server's machine works.
 func TestKokoLeaveNamesTheDeviceSessionLeftBehind(t *testing.T) {
 	t.Parallel()
+	skip.OnWindows(t, "koko leave stops every Device Mux first, and Windows has no runtime directory to look for them in until #153")
 	h := harness.Start(t)
 	d := h.Join(harness.Owner)
 	c := readClientConfig(t, d)

@@ -136,7 +136,7 @@ func webEnded(in *Input, err error) error {
 	case in.joined == nil:
 		return &cliError{code: codeServerUnreachable, message: "lost the connection to the koko server, and with it this run of koko web and its cookie: run koko web again once the koko server is back"}
 	case errors.Is(err, serverconn.ErrRevoked):
-		return revoked(in.inv.getenv("HOME"), "", *in.joined, &serverconn.RevokedError{Device: in.joined.Device})
+		return revoked(in.inv.home(), "", *in.joined, &serverconn.RevokedError{Device: in.joined.Device})
 	}
 	return &cliError{code: codeServerUnreachable, message: "lost the connection to the koko server: run koko web again, and the browser's cookie still works"}
 }

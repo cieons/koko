@@ -20,6 +20,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/shared/liveness"
+	"github.com/cieons/koko/internal/shared/sockerr"
 	"github.com/cieons/koko/internal/shared/sshconn"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
@@ -453,15 +454,13 @@ func retryable(err error) bool {
 	if _, lost := errors.AsType[*relayLostError](err); lost {
 		return false // the Host's leg cannot recover without the Relay's
 	}
-	for _, errno := range []syscall.Errno{
+	if sockerr.Is(err,
 		syscall.ECONNREFUSED,
 		syscall.ENETUNREACH, syscall.EHOSTUNREACH,
 		syscall.ETIMEDOUT,
 		syscall.ECONNRESET, syscall.ECONNABORTED, syscall.EPIPE,
-	} {
-		if errors.Is(err, errno) {
-			return true
-		}
+	) {
+		return true
 	}
 	if ne, ok := errors.AsType[net.Error](err); ok && ne.Timeout() {
 		return true

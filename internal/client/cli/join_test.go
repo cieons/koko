@@ -114,13 +114,15 @@ func TestJoinWithACodeIssuedOverTheSocket(t *testing.T) {
 	}
 
 	dir := kokoDir(d)
-	if m := mode(t, dir); !m.IsDir() || m.Perm() != 0o700 {
-		t.Errorf("%s has mode %v, want a directory with 0700", dir, m)
+	if m := mode(t, dir); !m.IsDir() {
+		t.Errorf("%s has mode %v, want a directory", dir, m)
 	}
+	harness.WantPrivate(t, dir)
 	keyPath := filepath.Join(dir, "device_key")
-	if m := mode(t, keyPath); !m.IsRegular() || m.Perm() != 0o600 {
-		t.Errorf("the key has mode %v, want a file with 0600", m)
+	if m := mode(t, keyPath); !m.IsRegular() {
+		t.Errorf("the key has mode %v, want a file", m)
 	}
+	harness.WantPrivate(t, keyPath)
 	pemBytes, err := os.ReadFile(keyPath)
 	if err != nil {
 		t.Fatal(err)
@@ -129,9 +131,7 @@ func TestJoinWithACodeIssuedOverTheSocket(t *testing.T) {
 	if !strings.HasPrefix(string(pemBytes), "-----BEGIN OPENSSH PRIVATE KEY-----\n") || err != nil || key.PublicKey().Type() != ssh.KeyAlgoED25519 {
 		t.Errorf("the key is not an unencrypted OpenSSH-format ed25519 key (%v):\n%.40s", err, pemBytes)
 	}
-	if m := mode(t, filepath.Join(dir, "client.json")); m.Perm() != 0o600 {
-		t.Errorf("the client config has mode %v, want 0600", m)
-	}
+	harness.WantPrivate(t, filepath.Join(dir, "client.json"))
 	c := readClientConfig(t, d)
 	if c.ServerAddress != code.Address || c.User != harness.Owner || c.Device != "laptop" || c.DeviceSession != out.DeviceSession.ID {
 		t.Errorf("the client config is %+v, want %s's device laptop (%s) at %s", c, harness.Owner, out.DeviceSession.ID, code.Address)

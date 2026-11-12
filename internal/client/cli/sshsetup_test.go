@@ -48,7 +48,7 @@ func TestSSHSetupWritesKokosSSHFilesOnTheKokoServersMachine(t *testing.T) {
 
 	r := h.Koko("ssh", "setup", "--json")
 	r.WantSuccess(t)
-	harness.Golden(t, "ssh-setup.json", strings.ReplaceAll(r.Stdout, h.Home(), "<home>"))
+	harness.Golden(t, "ssh-setup.json", harness.Paths(r.Stdout, h.Home(), "<home>"))
 
 	home := h.Home()
 	kokoDir := filepath.Join(home, ".ssh", "koko")
@@ -56,14 +56,16 @@ func TestSSHSetupWritesKokosSSHFilesOnTheKokoServersMachine(t *testing.T) {
 		t.Errorf("~/.ssh/config = %q, want the Include line alone", got)
 	}
 	for _, d := range []string{filepath.Join(home, ".ssh"), kokoDir} {
-		if m := mode(t, d); !m.IsDir() || m.Perm() != 0o700 {
-			t.Errorf("%s has mode %v, want a directory with 0700", d, m)
+		if m := mode(t, d); !m.IsDir() {
+			t.Errorf("%s has mode %v, want a directory", d, m)
 		}
+		harness.WantPrivate(t, d)
 	}
 	for _, f := range []string{filepath.Join(home, ".ssh", "config"), filepath.Join(kokoDir, "ssh_config"), filepath.Join(kokoDir, "known_hosts")} {
-		if m := mode(t, f); !m.IsRegular() || m.Perm() != 0o600 {
-			t.Errorf("%s has mode %v, want a file with 0600", f, m)
+		if m := mode(t, f); !m.IsRegular() {
+			t.Errorf("%s has mode %v, want a file", f, m)
 		}
+		harness.WantPrivate(t, f)
 	}
 	if got, want := hostBareNames(t, home), []string{"db1", "web1"}; !slices.Equal(got, want) {
 		t.Errorf("koko's ssh_config holds the bare names %q, want %q", got, want)

@@ -19,6 +19,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cieons/koko/internal/harness/skip"
 )
 
 // repo is where install.sh downloads releases from.
@@ -73,6 +75,7 @@ type machine struct {
 // ~/.local/bin, then /usr/local/bin, and GitHub has no koko release yet.
 func newMachine(t *testing.T) *machine {
 	t.Helper()
+	skip.OnWindows(t, "install.sh installs koko on Linux and macOS, through /bin/sh and fake Unix commands; Windows gets install.ps1 (#156)")
 	m := &machine{t: t, OS: "Linux", Arch: "x86_64", Systemctl: true, Sudo: "nopasswd", dir: t.TempDir()}
 	for _, d := range []string{"bin", "web", "log", "tmp", "home", "root"} {
 		if err := os.Mkdir(m.path(d), 0o755); err != nil {

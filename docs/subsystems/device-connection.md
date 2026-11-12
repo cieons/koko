@@ -156,8 +156,35 @@ pinned host keys, each written as in `authorized_keys`; a Device Connection
 takes any of them, and a join pins the one its code names), `user`, `device`
 and `device_session` (the id). A client config or key that cannot be read or
 parsed fails the command naming the file, and never counts as not joined.
-Making the directory private sits behind a per-OS file; on Windows a join
-fails as not supported until the Windows CLI (P1).
+
+**On Windows** the home directory is the profile directory, `%USERPROFILE%`,
+and the files are in `%USERPROFILE%\.ssh\koko\`, with the same names
+([ADR 0051](../adr/0051-on-windows-the-cli-is-a-device-with-the-same-files-in-the-same-places.md)).
+The CLI reads the home in one place, `cli.Invocation`'s `home`, from the
+variable `devicefiles.HomeVar` names: `HOME` on Linux and macOS,
+`USERPROFILE` on Windows, where `HOME` is never read, and a home that is
+not an absolute path is refused naming that variable. Windows keeps no
+modes, so the per-OS file of `devicefiles`
+([`private_windows.go`](../../internal/client/devicefiles/private_windows.go))
+reads the table's modes as an access control list:
+
+- **0700 and 0600 are one list.** `restrict` makes this user the owner and
+  sets a protected list, one that inherits nothing, with full control for
+  this user, `SYSTEM` and `Administrators`, the principals OpenSSH for
+  Windows itself accepts on a private key. A directory's entries pass to
+  what is made in it. Each file is given that list before it holds a byte
+  and before it is renamed into place, and so is a `.ssh` koko makes.
+- **"Is mode 0600"** (`isPrivate`), which decides whether koko's ssh_config
+  is rewritten, means exactly that: this user's own, protected, and those
+  three entries and no other.
+- **Owned by this user** (`ownedByMe`) is an owner of this user, or of
+  `Administrators` when the process holds that group enabled, since Windows
+  makes `Administrators` the owner of what an elevated process creates.
+- **A rewritten `~/.ssh/config` keeps its list** (`keepAccess`), protected
+  or inheriting as it was, where Linux and macOS keep its mode.
+
+koko reads the key without checking its list, as it reads it without
+checking its mode on Linux and macOS.
 
 The revocation record is JSON: `server_address`, `user`, `device`,
 `device_session` (the Revoked one's id) and `learned_at`, when the device
@@ -194,7 +221,8 @@ ssh integration (P0 spec: reach, "Device files and ssh integration").
   manager's link that outlives an upgrade, and otherwise by the path the OS
   gives for it, which on Linux has every symlink resolved; the Device Mux's
   refresh keeps the binary the file runs ([the bare-name refresh](device-mux.md#the-bare-name-refresh)). known_hosts' path
-  is resolved from `HOME`. Both are absolute and double-quoted, and a path
+  is resolved from the home directory. Both are absolute and double-quoted,
+  written on Windows with forward slashes (`C:/Users/alice/…`), and a path
   holding `"`, `$`, `` ` ``, `\`, `%` or a control character is refused,
   since ssh or the shell running ProxyCommand would read it otherwise; a
   join renders the file before it connects, so such a path refuses the join
@@ -229,14 +257,15 @@ ssh integration (P0 spec: reach, "Device files and ssh integration").
 - **The Include line** (`devicefiles.AddInclude`): `Include
   ~/.ssh/koko/ssh_config` goes first in `~/.ssh/config`, which is made with
   mode 0600 when absent, or rewritten atomically as the line followed by
-  its bytes as they were, keeping its mode. A file that includes koko's
+  its bytes as they were, keeping its mode (on Windows, its access control
+  list). A file that includes koko's
   ssh_config already, anywhere, is left alone; so is one that is a symlink,
   not a regular file (never read, since a named pipe would never end),
-  read-only (no write bit, or this user cannot open it for writing; the
-  check sits behind the per-OS file, and Windows rewrites none), or that
+  read-only (no write bit, which on Windows is the read-only attribute, or
+  this user cannot open it for writing), or that
   cannot be read or written, and then the error says why, with the line to
   add. An `Include` names koko's ssh_config when one of its arguments,
-  bare or double-quoted, resolved as OpenSSH does (`~/` from `HOME`, a
+  bare or double-quoted, resolved as OpenSSH does (`~/` from the home directory, a
   relative path from `~/.ssh`) and read as a glob, matches that file;
   keywords are case-insensitive, and `=` may follow one.
 - **The check** (`devicefiles.CheckInclude`), for `koko status` and after

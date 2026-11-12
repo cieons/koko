@@ -64,7 +64,8 @@ var versionField = regexp.MustCompile(`"(cli_version|server_version)": "[^"]*"`)
 
 // status runs koko status --json through run, which must succeed, and
 // returns what it printed, parsed and as written with each version replaced
-// by a placeholder, then each of the old, new pairs, in order.
+// by a placeholder, then each of the old, new pairs, in order, a path among
+// them however the OS writes it (harness.Paths).
 func status(t *testing.T, run func(...string) harness.Result, oldNew ...string) (statusOut, string) {
 	t.Helper()
 	r := run("status", "--json")
@@ -74,7 +75,7 @@ func status(t *testing.T, run func(...string) harness.Result, oldNew ...string) 
 		t.Fatalf("status --json printed %q: %v", r.Stdout, err)
 	}
 	out := versionField.ReplaceAllString(r.Stdout, `"$1": "<version>"`)
-	return s, strings.NewReplacer(oldNew...).Replace(out)
+	return s, harness.Paths(out, oldNew...)
 }
 
 func deref[T any](p *T) any {
@@ -364,7 +365,7 @@ func TestStatusNamesANewerReleaseForTheOwner(t *testing.T) {
 	socket := cannedServer(t, `{"address": "koko.example.com", "listen_port": 7822, "version": "v0.4.0", "upgrade_way": "systemd",
 		"update_check": {"enabled": true, "checked_at": "2026-11-11T09:00:30Z", "latest": "v0.5.0", "error": null}}`)
 	run := func(args ...string) harness.Result {
-		return harness.Run(t, cli.Runner{SocketPath: socket}, []string{"HOME=" + t.TempDir()}, args...)
+		return harness.Run(t, cli.Runner{SocketPath: socket}, []string{harness.HomeEnv(t.TempDir())}, args...)
 	}
 	if s, _ := status(t, run); deref(s.ServerLatest) != "v0.5.0" {
 		t.Errorf("status shows the latest release %v, want v0.5.0", deref(s.ServerLatest))

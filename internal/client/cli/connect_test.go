@@ -192,7 +192,7 @@ func TestTheSocketWinsOverTheJoinedServer(t *testing.T) {
 	if jc := deviceAddOn(t, d); jc.User != "bob" {
 		t.Errorf("without the socket, device add issued for %s, want bob", jc.User)
 	}
-	r := harness.Run(t, cli.Runner{SocketPath: h.Socket()}, []string{"HOME=" + d.Home()}, "device", "add", "--json")
+	r := harness.Run(t, cli.Runner{SocketPath: h.Socket()}, []string{harness.HomeEnv(d.Home())}, "device", "add", "--json")
 	r.WantSuccess(t)
 	if !strings.Contains(r.Stdout, `"user": "alice"`) {
 		t.Errorf("with the socket at its path, device add printed %s, want a code for the Owner, alice", r.Stdout)

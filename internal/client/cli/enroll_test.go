@@ -23,6 +23,7 @@ import (
 	"github.com/cieons/koko/internal/client/apiclient"
 	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/harness/skip"
 	"github.com/cieons/koko/internal/harness/sshhost"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
@@ -170,6 +171,24 @@ func wantOneLoginWith(t *testing.T, host *sshhost.Host, method string, key ssh.P
 	}
 }
 
+// Enroll makes the Host Account's ~/.ssh with mode 0700 and its
+// authorized_keys with mode 0600 when they are missing, as sshd asks of
+// them.
+func TestEnrollMakesTheHostsSSHFilesWithTheModesSSHDAsksFor(t *testing.T) {
+	t.Parallel()
+	skip.OnWindows(t, "a Host is a Unix machine, whose files have modes for the group and others; Windows keeps none on the in-process Host's files")
+	h := harness.Start(t)
+	host := sshhost.Start(t, sshhost.Password(hostPassword))
+	addHostAt(t, h.Koko, "web1", host)
+	h.KokoStdin(hostPassword+"\n", "host", "enroll", "web1", "--password-stdin").WantSuccess(t)
+	if m := mode(t, filepath.Join(host.Home(), ".ssh")); !m.IsDir() || m.Perm() != 0o700 {
+		t.Errorf("~/.ssh on the Host has the mode %v, want a directory of mode 0700", m)
+	}
+	if m := mode(t, filepath.Join(host.Home(), ".ssh", "authorized_keys")); !m.IsRegular() || m.Perm() != 0o600 {
+		t.Errorf("authorized_keys on the Host has the mode %v, want a file of mode 0600", m)
+	}
+}
+
 // Enroll with the password on stdin makes a Registered Host Managed: koko
 // logs in once with the password and never with the koko key, pins the host
 // key the Host offered, appends exactly one line, the koko key, to the Host
@@ -192,12 +211,6 @@ func TestEnrollWithThePasswordOnStdinMakesTheHostManaged(t *testing.T) {
 	line := kokoKeyLine(t, host)
 	if !strings.HasPrefix(line, ssh.KeyAlgoED25519+" ") {
 		t.Errorf("the koko key's line is %q, want an ed25519 key", line)
-	}
-	if m := mode(t, filepath.Join(host.Home(), ".ssh")); !m.IsDir() || m.Perm() != 0o700 {
-		t.Errorf("~/.ssh on the Host has the mode %v, want a directory of mode 0700", m)
-	}
-	if m := mode(t, filepath.Join(host.Home(), ".ssh", "authorized_keys")); !m.IsRegular() || m.Perm() != 0o600 {
-		t.Errorf("authorized_keys on the Host has the mode %v, want a file of mode 0600", m)
 	}
 	wantOneLoginWith(t, host, "password", nil)
 	wantNoLoginWith(t, host, line)
