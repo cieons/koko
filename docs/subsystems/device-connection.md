@@ -220,13 +220,15 @@ ssh integration (P0 spec: reach, "Device files and ssh integration").
   lookup of `koko` finds when that is the same file, such as a package
   manager's link that outlives an upgrade, and otherwise by the path the OS
   gives for it, which on Linux has every symlink resolved; the Device Mux's
-  refresh keeps the binary the file runs ([the bare-name refresh](device-mux.md#the-bare-name-refresh)). known_hosts' path
-  is resolved from the home directory. Both are absolute and double-quoted,
-  written on Windows with forward slashes (`C:/Users/alice/…`), and a path
-  holding `"`, `$`, `` ` ``, `\`, `%` or a control character is refused,
-  since ssh or the shell running ProxyCommand would read it otherwise; a
-  join renders the file before it connects, so such a path refuses the join
-  while its code stays usable. A bare name must be a name (a DNS label).
+  refresh keeps the binary the file runs ([the bare-name refresh](device-mux.md#the-bare-name-refresh)). On Linux and
+  macOS known_hosts' path is resolved from the home directory; on Windows
+  `UserKnownHostsFile` is `~/.ssh/koko/known_hosts` ([On Windows](#on-windows)).
+  A path the file names is absolute and double-quoted, written on Windows
+  with forward slashes (`C:/Users/alice/…`), and a path holding `"`, `$`,
+  `` ` ``, `\`, `%` or a control character is refused, since ssh or the
+  shell running ProxyCommand would read it otherwise; a join renders the
+  file before it connects, so such a path refuses the join while its code
+  stays usable. A bare name must be a name (a DNS label).
   Every keyword is one OpenSSH 7.3 knows. A name list too long for one
   `Host` line is split across blocks identical but for their names, so that
   no line passes 1 KiB, newline included
@@ -272,7 +274,75 @@ ssh integration (P0 spec: reach, "Device files and ssh integration").
   `koko join` and `koko ssh setup`: the Include line is missing, or it comes after the first
   `Host` or `Match` line, where ssh reads it only for that block's hosts; a
   `~/.ssh/config` that cannot be read, or is not a regular file, is reported
-  as such, not as missing.
+  as such, not as missing. On Windows it first reports a `~/.ssh/config`
+  OpenSSH for Windows would refuse ([On Windows](#on-windows)).
+
+### On Windows
+
+koko's ssh_config is written for both ssh clients a Windows device has
+([ADR 0051](../adr/0051-on-windows-the-cli-is-a-device-with-the-same-files-in-the-same-places.md)):
+OpenSSH for Windows, the optional feature in `C:\Windows\System32\OpenSSH`
+or the project's installer in `C:\Program Files\OpenSSH`, which koko
+supports; and Git for Windows' `ssh`, the one Git Bash runs, which also
+works. Both read the same file. The block keeps every keyword, and two
+lines differ in form from Linux and macOS
+([golden](../../internal/client/devicefiles/testdata/ssh_config-home-with-a-space-windows)):
+
+```
+  ProxyCommand "C:/Users/Alice Smith/.local/bin/koko.exe" tunnel '%h'
+  UserKnownHostsFile ~/.ssh/koko/known_hosts
+```
+
+- **The ProxyCommand.** OpenSSH for Windows runs no shell: it expands its
+  `%` tokens and starts the rest of the line with `CreateProcessW`, which
+  takes the double-quoted path written with forward slashes; the `windows`
+  job runs it (2026-11-12, OpenSSH for Windows 9.5p2), so the fallback the
+  spec held ready, single backslashes, was not needed. Git's client runs the
+  line through its `sh`. The double quotes cover a space in the path, as in
+  a profile directory named `Alice Smith`.
+- **`'%h'` stays.** Git's `sh` removes the single quotes; OpenSSH for
+  Windows passes them to `koko.exe`, since only double quotes quote on a
+  Windows command line. So on Windows `koko tunnel` removes one pair of
+  single quotes around its argument
+  ([`tunnel_windows.go`](../../internal/client/cli/tunnel_windows.go)); an
+  SSH Name never holds a quote.
+- **known_hosts under `~`.** Both clients expand `~` to the home whose
+  `.ssh/config` they read: OpenSSH for Windows to the profile directory
+  Windows records for the user (`ProfileImagePath`), Git's to `HOME`. The
+  line holds no drive letter and raises no question of quoting. The home's
+  own path is in the file only through the koko path, so a home holding `%`
+  or `$` is refused on Windows only when `koko.exe` is under it.
+- **The Include line** is the same on every OS.
+
+`koko status` on a joined Windows device says, each only when it applies,
+what keeps ssh from the configuration koko wrote, in text and in `--json`:
+
+- **`home_warning`:** `HOME` is set to another directory than
+  `USERPROFILE`, compared as Windows compares paths (any case, either
+  separator, a trailing one or none). OpenSSH for Windows expands the `~`
+  of an `Include` from `HOME`, and Git's client takes its whole home from
+  it, so either may miss koko's files. The fix is to unset `HOME` or set it
+  to the profile directory; koko writes under the profile directory only.
+  This is the one place the CLI reads `HOME` on Windows
+  (`TestOnlyTheHomeRuleReadsHOME` names it).
+- **`ssh_client_warning`:** no `ssh` is in an absolute directory of the
+  invocation's `PATH`, with an extension of `PATHEXT`. The note gives
+  `Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0`, which
+  needs an administrator. `koko join`, `koko exec`, `koko web` and every
+  record command work without it.
+- **`include_warning`** names a `~/.ssh/config` that OpenSSH for Windows
+  would refuse with "Bad owner or permissions", which ends every `ssh`:
+  one whose owner is not this user, `SYSTEM`, `Administrators` or
+  `TrustedInstaller`, or whose access control list, inherited entries
+  included, lets another principal write it (write data, append, write
+  attributes or extended attributes, change the list or the owner, or
+  delete; releases up to 9.5 check the first four). It names the principal
+  and the `icacls` line that fixes it (`/inheritance:d /remove:g *<SID>`,
+  or `/setowner`), which the `windows` job runs. koko changes no list of a
+  file it does not own.
+
+rsync is in neither client's distribution; `scp` and `sftp` are the file
+tools on Windows.
 
 ### On the koko server's own machine
 
