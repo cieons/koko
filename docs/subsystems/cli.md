@@ -567,7 +567,7 @@ SSH Session through it ends, and never prompts (ADR 0019).
 | `koko disconnect` | reversible | none | `{"device_muxes": [{"socket", "commands_ended"}], "commands_ended"}`: each Device Mux it stopped, by socket, with how many commands were connected to it, which ended, and the sum ([`koko disconnect`](device-mux.md#state-and-exit)) |
 | `koko ssh setup` | reversible | `server.show`, then `host.list` | `{"ssh_config", "include_warning"}`: the path of koko's ssh_config it wrote for this OS user on the koko server's own machine, and `include_warning` as `koko status` prints it ([on the koko server's own machine](device-connection.md#on-the-koko-servers-own-machine)) |
 | `koko leave` | irreversible | none: it never contacts the koko server | `{"server_address", "device_session"}`: the koko server the device left and its Device Session there, left behind, as `koko status` names one ([`koko leave`](device-connection.md#on-the-device)) |
-| `koko status` | read | none: the koko server's version comes from its report; for the Owner, `user.current` on a device, then `server.show` | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_latest", "server_oldest", "server_error", "device_mux", "revocation", "include_warning", "names_read_as_addresses"}`, below |
+| `koko status` | read | none: the koko server's version comes from its report; for the Owner, `user.current` on a device, then `server.show` | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_latest", "server_oldest", "server_error", "device_mux", "revocation", "include_warning", "home_warning", "ssh_client_warning", "names_read_as_addresses"}`, below |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko update [--check] [--version <vX.Y.Z>]` | reversible | none: it never contacts the koko server | `{"path", "from", "to", "updated"}`, or with `--check` `{"path", "installed", "target", "update_available"}` ([`koko update`](#koko-update)) |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
@@ -653,9 +653,15 @@ direct path) or found no join; `revocation` is the revocation record,
 `{"server_address", "device_session", "learned_at"}` with the Device Session
 in the same shape, or `null`; and `include_warning` says why ssh does not
 read koko's ssh_config for every host and how to fix it (the Include line
-missing or below a `Host` or `Match` line, or `~/.ssh/config` left alone or
-unreadable, [the device's ssh](device-connection.md#ssh)), or is `null`,
-also when the device has not joined; and `names_read_as_addresses` lists
+missing or below a `Host` or `Match` line, `~/.ssh/config` left alone or
+unreadable, or on Windows one OpenSSH for Windows refuses for who may
+write it, [the device's ssh](device-connection.md#ssh)), or is `null`,
+also when the device has not joined; `home_warning` and
+`ssh_client_warning` are on Windows only, on a joined device, and say that
+`HOME` names another directory than the profile directory and that no
+`ssh` is on PATH, each with its fix
+([On Windows](device-connection.md#on-windows)), or are `null`; the human
+form shows each warning on a `Warning:` line; and `names_read_as_addresses` lists
 the bare names in koko's ssh_config that ssh reads as an IPv4 address,
 such as `201`, `010` or `0xab`, which `ssh <name>` does not reach through
 koko ([the device's ssh](device-connection.md#ssh)), in the file's order:

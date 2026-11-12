@@ -448,15 +448,37 @@ finds a real-time test left out of `realTime`.
 runs the system's OpenSSH through koko end to end (P0 spec: reach, "Real
 OpenSSH"). It is a package of its own, holding only tests, so that its
 build of koko and the processes it runs count against no other package's
-5-minute limit; it builds only on Unix (`//go:build unix`), since it runs
-each process in a session of its own, with no controlling terminal, so
-that anything that would prompt fails rather than hangs.
+5-minute limit. Its cases are shared (`openssh_test.go`); the Linux and
+macOS run (`openssh_unix_test.go`, `TestRealOpenSSH`) runs each process in
+a session of its own, with no controlling terminal, so that anything that
+would prompt fails rather than hangs, and the Windows run
+(`openssh_windows_test.go`, `TestRealOpenSSHOnWindows`) runs both Windows
+clients (P1 spec: the koko CLI on Windows, "The real OpenSSH test on
+Windows").
 
 - **The tools.** `ssh`, `scp`, `sftp` and `rsync` from `PATH`, OpenSSH 9.0
   or later (whose scp speaks SFTP and takes `-O`), and `sftp-server` from
   where Debian, Fedora, Arch and macOS put it. A missing one fails the
   test, never skips it; CI's Ubuntu job installs any its runner lacks
   (`.github/workflows/check.yml`), and macOS ships them.
+- **On Windows** OpenSSH for Windows from `%ProgramFiles%\OpenSSH` or
+  `%SystemRoot%\System32\OpenSSH` runs `ssh` a command (stdin and stdout
+  byte for byte, CR LF, NUL and Ctrl-Z among them, stderr and the exit
+  status), `scp` and `sftp` both ways and a local forward; Git for
+  Windows' `ssh` and `scp`, found beside `git`, run the `ssh` and `scp`
+  cases; Git's `sftp-server.exe` serves the in-process Hosts' sftp. The
+  user's profile directory is named `Alice Smith`, under a short temporary
+  directory, with `USERPROFILE` and `HOME` set to it and a `LOCALAPPDATA`
+  of its own; `scp` and `sftp` name local files relative to the directory
+  they run in, since Git's `scp` reads `C:` as a host. OpenSSH for Windows
+  expands `~` from the profile directory Windows records, not from
+  `USERPROFILE`, so its commands name koko's known_hosts under the
+  temporary profile with `-o UserKnownHostsFile`, and one subtest checks
+  with `ssh -G` that the `~` line of koko's ssh_config names the profile
+  directory Windows records. Git's client takes `~` from `HOME`, so its
+  cases read the line as written. `rsync`, the stand-in ssh-agent, the
+  other forwards and the koko server's machine's part stay in the Unix
+  run.
 - **The koko binary.** It builds `cmd/koko` once, with `-race` exactly
   when the test runs with it, so the build takes the packages `go test`
   compiled from the cache, and with `-ldflags -X main.socketPath=<path>`,
@@ -472,7 +494,9 @@ that anything that would prompt fails rather than hangs.
   also keeps ssh from reading the default keys in the real `~/.ssh`. The
   user's Device Mux is stopped with `koko disconnect` when the test ends,
   and a command the test ends kills its whole process group, ssh's
-  ProxyCommand included.
+  ProxyCommand included (on Windows the program alone, whose `koko tunnel`
+  ends once its pipes close). Both runs end by checking that an SSH
+  Session's `koko tunnel` went through the one Device Mux.
 - **The order.** The joined device's part runs first, its subtests in
   parallel; then the koko server's machine's part starts a koko server
   with `harness.SocketPath` at the binary's socket path, which from then

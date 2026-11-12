@@ -34,15 +34,15 @@ type muxes struct {
 // koko would start one in the background (cli.Runner.StartDeviceMux), as
 // `koko device-mux` with the device's environment: a temporary runtime
 // directory as TMPDIR and XDG_RUNTIME_DIR, and as LOCALAPPDATA, where
-// Windows keeps it, and timings as the timing-constants hook (the zero
-// Timings for the product's). They log to MuxLog, and stop when the test
-// ends.
+// Windows keeps it, beside what NewDevice gives (osEnv), and timings as
+// the timing-constants hook (the zero Timings for the product's). They log
+// to MuxLog, and stop when the test ends.
 func NewMuxDevice(t testing.TB, timings timing.Timings) *Device {
 	t.Helper()
 	d := NewDevice(t)
 	m := &muxes{runtime: ShortTempDir(t), log: &syncBuffer{}}
 	d.muxes = m
-	d.env = []string{"TMPDIR=" + m.runtime, "XDG_RUNTIME_DIR=" + m.runtime, "LOCALAPPDATA=" + m.runtime}
+	d.env = append([]string{"TMPDIR=" + m.runtime, "XDG_RUNTIME_DIR=" + m.runtime, "LOCALAPPDATA=" + m.runtime}, osEnv()...)
 	d.runner.Timings = timings
 	d.runner.StartDeviceMux = d.startMux
 	t.Cleanup(func() { m.stop(t) })

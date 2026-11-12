@@ -69,6 +69,15 @@ type statusJSON struct {
 	// host, and how to fix it; null when it does, or the device has not
 	// joined.
 	IncludeWarning *string `json:"include_warning"`
+	// HomeWarning says, on Windows, that HOME names another directory than
+	// the profile directory koko writes under, so ssh may read another
+	// configuration, and how to fix it; null when it does not, elsewhere,
+	// or when the device has not joined.
+	HomeWarning *string `json:"home_warning"`
+	// SSHClientWarning says, on Windows, that no ssh is on PATH, and how to
+	// add the OpenSSH client; null when one is, elsewhere, or when the
+	// device has not joined.
+	SSHClientWarning *string `json:"ssh_client_warning"`
 	// NamesReadAsAddresses are the bare names in koko's ssh_config that ssh
 	// reads as an IPv4 address, such as 201, so that ssh <name> does not
 	// reach those Hosts through koko and only ssh <name>.koko does; empty
@@ -168,8 +177,10 @@ func (s statusJSON) Human(w io.Writer) error {
 		d := r.DeviceSession
 		line("Revoked", "%s's device %s (%s) at %s, learned at %s", d.User, d.Device, d.ID, r.ServerAddress, r.LearnedAt)
 	}
-	if s.IncludeWarning != nil {
-		fmt.Fprintf(&b, "\nWarning: %s.\n", *s.IncludeWarning)
+	for _, w := range []*string{s.IncludeWarning, s.HomeWarning, s.SSHClientWarning} {
+		if w != nil {
+			fmt.Fprintf(&b, "\nWarning: %s.\n", *w)
+		}
 	}
 	switch names := s.NamesReadAsAddresses; {
 	case names == nil:
@@ -243,6 +254,7 @@ func status(ctx context.Context, in *Input) (statusJSON, error) {
 		if err := devicefiles.CheckInclude(home); err != nil {
 			s.IncludeWarning = new(err.Error())
 		}
+		s.HomeWarning, s.SSHClientWarning = sshClientWarnings(in.inv)
 	case !errors.Is(err, devicefiles.ErrNotJoined):
 		return statusJSON{}, err
 	}

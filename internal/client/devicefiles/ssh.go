@@ -194,7 +194,7 @@ func RefreshSSHConfig(home string, names []string) (wrote bool, err error) {
 	if !ok {
 		return WriteSSHConfig(home, names)
 	}
-	b, err := sshConfig(koko, filepath.Join(dir(home), knownHostsFile), names)
+	b, err := sshConfig(koko, home, names)
 	if err != nil {
 		return false, fmt.Errorf("write koko's ssh_config: %w", err)
 	}
@@ -286,7 +286,7 @@ func renderSSHConfig(home string, names []string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("find this koko binary for koko's ssh_config: %w", err)
 	}
-	b, err := sshConfig(koko, filepath.Join(dir(home), knownHostsFile), names)
+	b, err := sshConfig(koko, home, names)
 	if err != nil {
 		return nil, fmt.Errorf("write koko's ssh_config: %w", err)
 	}
@@ -314,15 +314,15 @@ func kokoPath() (string, error) {
 	return found, nil
 }
 
-// sshConfig returns koko's ssh_config, whose ProxyCommand runs the koko
-// binary at koko and whose known_hosts file is knownHosts, with Host lines
+// sshConfig returns koko's ssh_config for the device whose home directory
+// is home, whose ProxyCommand runs the koko binary at koko, with Host lines
 // for *.koko and names.
-func sshConfig(koko, knownHosts string, names []string) ([]byte, error) {
+func sshConfig(koko, home string, names []string) ([]byte, error) {
 	kokoArg, err := quotePath(koko)
 	if err != nil {
 		return nil, err
 	}
-	knownHostsArg, err := quotePath(knownHosts)
+	knownHostsArg, err := knownHostsArg(home)
 	if err != nil {
 		return nil, err
 	}
@@ -477,15 +477,22 @@ func readRegular(path, what string) ([]byte, error) {
 // CheckInclude tells whether ssh reads koko's ssh_config for every host on
 // the device whose home directory is home: it returns nil when
 // ~/.ssh/config includes it before any Host or Match line, and otherwise
-// an error saying what is wrong and how to fix it. A file it cannot read
-// is reported as such, never as one without the line.
+// an error saying what is wrong and how to fix it, first of all a file ssh
+// refuses to read for who may change it, as OpenSSH for Windows does. A
+// file it cannot read is reported as such, never as one without the line.
 func CheckInclude(home string) error {
 	if err := checkHome(home); err != nil {
 		return err
 	}
-	b, err := readRegular(filepath.Join(home, userConfig), "~/"+userConfig)
+	path := filepath.Join(home, userConfig)
+	b, err := readRegular(path, "~/"+userConfig)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("%w, so koko cannot tell whether ssh reaches Hosts through koko", err)
+	}
+	if err == nil {
+		if err := sshRefuses(path); err != nil {
+			return err
+		}
 	}
 	s := scanConfig(b, home)
 	switch {
