@@ -34,6 +34,15 @@ func isFiles(r *http.Request) bool {
 	return strings.HasPrefix(r.URL.Path, api.FilesPrefix)
 }
 
+// loggedPath is a request's path as a log line names it: a download's
+// token, which its GET's path carries, never reaches the log.
+func loggedPath(r *http.Request) string {
+	if strings.HasPrefix(r.URL.Path, api.FilesDownloadPath+"/") {
+		return api.FilesDownloadPath + "/<token>"
+	}
+	return r.URL.Path
+}
+
 // filesEndpoint is one files endpoint: how it reads a request's body, and
 // how it answers.
 type filesEndpoint struct {
@@ -41,8 +50,8 @@ type filesEndpoint struct {
 	serve func(r *http.Request, c gateway.TerminalCaller, body []byte) (any, error)
 }
 
-// serveFiles answers a request under api.FilesPrefix that came in by way,
-// in this order: an unknown endpoint, another method, a POST from another
+// serveFiles answers a request under api.FilesPrefix that came in by way:
+// a download's GET (serveDownload), or else, in this order: an unknown endpoint, another method, a POST from another
 // Origin (bad_origin), before anything else is read, then a page that is no
 // one, as the terminal's WebSocket refuses it; then the body, read whole: a
 // JSON endpoint's application/json of at most api.MaxFilesBody bytes, or a
@@ -50,6 +59,10 @@ type filesEndpoint struct {
 // query nor the cookie reaches the log.
 func (f *Front) serveFiles(w http.ResponseWriter, r *http.Request, way terminalWay) {
 	w.Header().Set("Cache-Control", "no-store")
+	if token, ok := strings.CutPrefix(r.URL.Path, api.FilesDownloadPath+"/"); ok {
+		f.serveDownload(w, r, way, token)
+		return
+	}
 	var e filesEndpoint
 	switch r.URL.Path {
 	case api.FilesListPath:
@@ -62,6 +75,8 @@ func (f *Front) serveFiles(w http.ResponseWriter, r *http.Request, way terminalW
 		e = filesEndpoint{readJSON, filesJSON(f.filesFinish)}
 	case api.FilesCancelPath:
 		e = filesEndpoint{readJSON, filesJSON(f.filesCancel)}
+	case api.FilesDownloadPath:
+		e = filesEndpoint{readJSON, filesJSON(f.filesDownload)}
 	default:
 		f.refuseAPI(w, r, api.CodeUnknownOperation.Errorf("no endpoint is served at %s", r.URL.Path))
 		return

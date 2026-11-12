@@ -191,7 +191,7 @@ func (f *Front) refuseAPI(w http.ResponseWriter, r *http.Request, err error) {
 		code, registered = api.LookupCode(e.Code)
 	}
 	if !registered {
-		f.log.Error("web request failed", "path", r.URL.Path, "err", err)
+		f.log.Error("web request failed", "path", loggedPath(r), "err", err)
 		code, e = api.CodeInternal, api.CodeInternal.Errorf("the koko server failed; its log says why")
 	}
 	writeAPIError(w, code.Status, e)

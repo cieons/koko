@@ -8,5 +8,7 @@ export default {
   "error.file_exists": "A file of this name already exists in this directory.",
   "error.bad_offset": "Part of the upload did not arrive. Upload the file again.",
   "error.unknown_upload": "This upload is no longer in progress.",
+  "error.not_a_file": "Only a regular file can be downloaded.",
+  "error.unknown_download": "This download link has expired or has already been used. Download the file again.",
   "error.too_many_uploads": "This SSH Session is already running the most uploads at once. Wait for one to finish.",
 };

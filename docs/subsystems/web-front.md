@@ -404,7 +404,9 @@ A request is answered in this order (`Front.serveFiles`), every answer
 JSON with `Cache-Control: no-store` beside the way in's headers:
 
 1. **An unknown endpoint** is `unknown_operation` (404), and **another
-   method** than a JSON endpoint's `POST` `method_not_allowed` (405).
+   method** than a JSON endpoint's `POST` `method_not_allowed` (405). A
+   download's `GET` skips the Origin check and the body, and follows its
+   own order (a download, below).
 2. **The Origin check**: on the listener as for every `POST`, and on
    `web@koko` `http://localhost:<port>` or `http://127.0.0.1:<port>`, where
    the API needs none since it takes only JSON. Another, or none, is
@@ -425,6 +427,8 @@ JSON with `Cache-Control: no-store` beside the way in's headers:
 | `POST /terminal/files/chunk?upload=<id>&offset=<n>` | the bytes, `application/octet-stream`, at most 512 KiB (`api.MaxFilesChunk`) | `{"received": <n>}` |
 | `POST /terminal/files/finish` | `{"upload"}` | `{"path", "size"}` |
 | `POST /terminal/files/cancel` | `{"upload"}` | `{}` |
+| `POST /terminal/files/download` | `{"tunnel", "path"}`; `path` absolute | `{"token": "<32 hex>", "name", "size"}` |
+| `GET /terminal/files/download/<token>` | | the file's bytes |
 
 - **A listing** resolves the path on the Host (SFTP `realpath`), so `..`
   goes up and a link to a directory is entered, and answers it as
@@ -442,8 +446,8 @@ JSON with `Cache-Control: no-store` beside the way in's headers:
     `replace` is set; the page asks first. A fifth upload while the SSH
     Session runs four is `too_many_uploads` (429); the page queues it.
     `upload` then creates `.<name>.koko-upload-<8 hex>` in `dir`,
-    exclusively, and makes it `0600` before any byte is written, since
-    pkg/sftp's open sends no mode.
+    exclusively, with the mode `0600` in the open itself, so no other
+    account can open it first ([the Gateway](gateway.md#the-web-terminal)).
   - **Chunks** are read whole before the upload is touched, so a page that
     sends slowly holds nothing of it, then written at `offset`. A chunk at
     an offset already received is answered with the count and not written
@@ -468,6 +472,31 @@ JSON with `Cache-Control: no-store` beside the way in's headers:
     ([the Gateway's log](gateway.md#logging)), `outcome=done`,
     `cancelled`, or `failed` with `err` (`no chunk came for 15m0s`, `the SSH
     Session ended`).
+- **A download** ([`download.go`](../../internal/server/web/download.go))
+  goes in two steps, so the file's path never enters a URL, and so never
+  the proxy's log, and a cross-site page gets nothing from a `GET`.
+  - **The token.** `download` takes a regular file only, links followed, so
+    a FIFO or `/dev/zero` is `not_a_file` (409) and never streams for ever.
+    It answers a token, 128 random bits kept only by their SHA-256, good
+    once, for 60 seconds on the koko server's clock, for the same caller.
+  - **The `GET`** of `/terminal/files/download/<token>`, a download link,
+    checks the caller as every files call does, then spends the token: one
+    of another caller's is `unknown_download` (404) and is not spent, as is
+    one spent or past its time. The file is checked again before it is
+    opened, since opening a FIFO waits for a writer and would hold the SFTP
+    channel every call shares. The answer streams the file's size, read
+    from the open file, with `Content-Type: application/octet-stream`,
+    `Content-Length`, `Content-Disposition: attachment` (RFC 6266) with the
+    name in UTF-8 as `filename*` and an ASCII stand-in as `filename`, and
+    `no-store`, beside the way in's headers. The browser shows its own
+    progress and Cancel, so a large file never sits in the page's memory.
+  - Each is logged once it ends, `file transferred` with
+    `direction=download` and the path as asked: `done`; `cancelled` when
+    the browser closed the request; `failed` with `err` when the Host's
+    read failed, the file ended early, or the SSH Session ended, which cuts
+    the answer short. No line holds the token: a failure's log line names
+    the path as `/terminal/files/download/<token>` (`loggedPath`), whichever
+    step fails, the listener's own included.
 
 | Code | Status | When |
 | --- | --- | --- |
@@ -480,6 +509,8 @@ JSON with `Cache-Control: no-store` beside the way in's headers:
 | `bad_offset` | 409 | A chunk would leave a gap, or a finish came before every byte. |
 | `unknown_upload` | 404 | No live upload of this caller has the id. |
 | `too_many_uploads` | 429 | The SSH Session already runs 4 uploads (`api.MaxUploads`). |
+| `not_a_file` | 409 | A download named something other than a regular file, links followed. |
+| `unknown_download` | 404 | No unspent download token of this caller is the one given. |
 
 ## The port-owner lookup
 
@@ -556,8 +587,13 @@ and user. It is per OS ([rule 13](code-layout.md#rules-for-working-in-parallel))
 - [`terminal_files_test.go`](../../internal/server/web/terminal_files_test.go),
   S1 against the web listener and in-process Hosts serving SFTP: the
   listings, a Host without SFTP, every refusal of a files call as JSON,
-  files while Detached and once ended, and the uploads
-  ([the Gateway's tests](gateway.md#verifying)).
+  files while Detached and once ended, the uploads and the downloads
+  ([the Gateway's tests](gateway.md#verifying));
+  [`web_terminal_files_test.go`](../../internal/client/cli/web_terminal_files_test.go)
+  the Origin check on every files `POST` through `koko web`,
+  `cookie_required`, and a listing as the Local caller;
+  [`download_test.go`](../../internal/server/web/download_test.go) a
+  download's failure logged without its token.
 - [`run_checks_test.go`](../../internal/server/kokod/run_checks_test.go):
   a taken web listener address refused naming the process holding it;
   [`kokod_test.go`](../../internal/server/kokod/kokod_test.go):

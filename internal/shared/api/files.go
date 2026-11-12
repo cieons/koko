@@ -28,6 +28,10 @@ const (
 	// FilesCancelPath cancels an upload with a FilesCancelRequest,
 	// answering a FilesCancelResponse.
 	FilesCancelPath = FilesPrefix + "cancel"
+	// FilesDownloadPath gives a download's token for a
+	// FilesDownloadRequest, answering a FilesDownloadResponse; a GET of
+	// FilesDownloadPath/<token> answers the file's bytes.
+	FilesDownloadPath = FilesPrefix + "download"
 	// MaxFilesBody is the largest JSON body a files endpoint reads.
 	MaxFilesBody = 4 << 10
 	// MaxListed is the most entries a listing holds; the rest are counted.
@@ -56,11 +60,17 @@ var (
 	FilesFinish = AuthEndpoint[FilesFinishRequest, FilesFinishResponse]{Path: FilesFinishPath}
 	// FilesCancel cancels an upload, removing its partial file.
 	FilesCancel = AuthEndpoint[FilesCancelRequest, FilesCancelResponse]{Path: FilesCancelPath}
+	// FilesDownload gives a token for a regular file on the Host, links
+	// followed; anything else, such as a FIFO, is refused with
+	// CodeNotAFile. A GET of FilesDownloadPath/<token>, once, within 60
+	// seconds, by the same caller, answers the file's bytes as an
+	// attachment, which the browser saves with its own progress and Cancel.
+	FilesDownload = AuthEndpoint[FilesDownloadRequest, FilesDownloadResponse]{Path: FilesDownloadPath}
 )
 
 // FilesEndpoints returns every files endpoint that takes and answers JSON.
 func FilesEndpoints() []AuthEndpointInfo {
-	return []AuthEndpointInfo{FilesList.Info(), FilesUpload.Info(), FilesFinish.Info(), FilesCancel.Info()}
+	return []AuthEndpointInfo{FilesList.Info(), FilesUpload.Info(), FilesFinish.Info(), FilesCancel.Info(), FilesDownload.Info()}
 }
 
 // FilesListRequest names a directory on the Host of the web terminal's SSH
@@ -143,6 +153,24 @@ type FilesCancelRequest struct {
 // FilesCancelResponse answers a cancel.
 type FilesCancelResponse struct{}
 
+// FilesDownloadRequest names a file to download from the Host of the web
+// terminal's SSH Session Tunnel.
+type FilesDownloadRequest struct {
+	Tunnel string `json:"tunnel"`
+	// Path is absolute.
+	Path string `json:"path"`
+}
+
+// FilesDownloadResponse is a download's token, and the file's name and
+// size.
+type FilesDownloadResponse struct {
+	// Token is the download's token, 32 lowercase hex characters, for a
+	// GET of FilesDownloadPath/<token>.
+	Token string `json:"token"`
+	Name  string `json:"name"`
+	Size  int64  `json:"size"`
+}
+
 // The files area's codes.
 var (
 	// CodeUnknownTunnel: a files call named no live web terminal SSH
@@ -168,6 +196,12 @@ var (
 	// CodeTooManyUploads: the SSH Session already runs MaxUploads uploads;
 	// the page queues the rest.
 	CodeTooManyUploads = Code{"too_many_uploads", http.StatusTooManyRequests}
+	// CodeNotAFile: a download named something other than a regular file,
+	// links followed, such as a directory or a FIFO.
+	CodeNotAFile = Code{"not_a_file", http.StatusConflict}
+	// CodeUnknownDownload: no unspent download token of this caller is the
+	// one given.
+	CodeUnknownDownload = Code{"unknown_download", http.StatusNotFound}
 )
 
 var filesCodes = []Code{
@@ -179,4 +213,6 @@ var filesCodes = []Code{
 	CodeBadOffset,
 	CodeUnknownUpload,
 	CodeTooManyUploads,
+	CodeNotAFile,
+	CodeUnknownDownload,
 }

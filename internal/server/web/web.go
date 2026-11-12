@@ -75,8 +75,10 @@ type Front struct {
 	// message may take among them.
 	timings timing.Timings
 	runs    *runs
-	// uploads are the web terminals' uploads in progress (upload.go).
-	uploads *uploads
+	// uploads are the web terminals' uploads in progress (upload.go), and
+	// downloads their download tokens not yet spent (download.go).
+	uploads   *uploads
+	downloads *downloads
 
 	// keyMu guards key, the cookie key once loaded or made.
 	keyMu sync.Mutex
@@ -92,7 +94,8 @@ func New(api http.Handler, signins *signin.Service, gw *gateway.Gateway, st *sto
 	timings = timings.Resolve()
 	return &Front{
 		api: api, signins: signins, gateway: gw, files: webui.FS(), store: st, rootKey: rootKey,
-		log: log, clock: clock, timings: timings, runs: newRuns(), uploads: newUploads(timings.UploadIdle),
+		log: log, clock: clock, timings: timings, runs: newRuns(),
+		uploads: newUploads(timings.UploadIdle), downloads: newDownloads(),
 	}
 }
 
@@ -291,7 +294,7 @@ const hashedFiles = "assets/"
 // fail answers a failure the web front did not expect, to a page as page
 // writes it; the log holds the cause.
 func (f *Front) fail(w http.ResponseWriter, r *http.Request, err error, page pageWriter) {
-	f.log.Error("web request failed", "path", r.URL.Path, "err", err)
+	f.log.Error("web request failed", "path", loggedPath(r), "err", err)
 	const message = "the koko server failed; its log says why"
 	if isAPI(r) {
 		refuse(w, r, api.CodeInternal, message)

@@ -218,7 +218,7 @@ func (f *Front) terminalRefusal(r *http.Request, err error) *wire.TerminalAnswer
 			return new(wire.TerminalRefusal(e.Code, e.Message))
 		}
 	}
-	f.log.Error("web request failed", "path", r.URL.Path, "err", err)
+	f.log.Error("web request failed", "path", loggedPath(r), "err", err)
 	return new(wire.TerminalRefusal(api.CodeInternal.Name, "the koko server failed; its log says why"))
 }
 

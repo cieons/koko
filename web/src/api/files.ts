@@ -35,6 +35,17 @@ export const FilesCancel: AuthEndpoint<FilesCancelRequest, FilesCancelResponse> 
 };
 
 /**
+ * FilesDownload gives a token for a regular file on the Host, links
+ * followed; anything else, such as a FIFO, is refused with
+ * CodeNotAFile. A GET of FilesDownloadPath/<token>, once, within 60
+ * seconds, by the same caller, answers the file's bytes as an
+ * attachment, which the browser saves with its own progress and Cancel.
+ */
+export const FilesDownload: AuthEndpoint<FilesDownloadRequest, FilesDownloadResponse> = {
+  path: "/terminal/files/download",
+};
+
+/**
  * FilesListRequest names a directory on the Host of the web terminal's SSH
  * Session Tunnel, its id.
  */
@@ -120,6 +131,30 @@ export interface FilesCancelRequest {
 export type FilesCancelResponse = Record<string, never>;
 
 /**
+ * FilesDownloadRequest names a file to download from the Host of the web
+ * terminal's SSH Session Tunnel.
+ */
+export interface FilesDownloadRequest {
+  tunnel: string;
+  /** Path is absolute. */
+  path: string;
+}
+
+/**
+ * FilesDownloadResponse is a download's token, and the file's name and
+ * size.
+ */
+export interface FilesDownloadResponse {
+  /**
+   * Token is the download's token, 32 lowercase hex characters, for a
+   * GET of FilesDownloadPath/<token>.
+   */
+  token: string;
+  name: string;
+  size: number;
+}
+
+/**
  * CodeUnknownTunnel: a files call named no live web terminal SSH
  * Session of this caller.
  */
@@ -163,3 +198,15 @@ export const CodeUnknownUpload = "unknown_upload";
  * the page queues the rest.
  */
 export const CodeTooManyUploads = "too_many_uploads";
+
+/**
+ * CodeNotAFile: a download named something other than a regular file,
+ * links followed, such as a directory or a FIFO.
+ */
+export const CodeNotAFile = "not_a_file";
+
+/**
+ * CodeUnknownDownload: no unspent download token of this caller is the
+ * one given.
+ */
+export const CodeUnknownDownload = "unknown_download";

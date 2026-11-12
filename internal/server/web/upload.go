@@ -91,17 +91,19 @@ type upload struct {
 	received int64
 	// done is a finished upload's answer, and ended why a call of one
 	// that ended with its SSH Session is refused.
-	done      api.FilesFinishResponse
-	ended     error
+	done  api.FilesFinishResponse
+	ended error
+	// idle gives the upload up once no call of it came for
+	// timing.UploadIdle since lastCall.
 	idle      *time.Timer
+	lastCall  time.Time
 	stopAtEnd func() bool
 }
 
 // filesUpload starts an upload of req into its directory on the Host: it
 // refuses a bad name, a name that exists unless req replaces it, and a
 // fifth upload of the SSH Session, then creates the partial file
-// .<name>.koko-upload-<8 hex>, exclusively, and makes it private before
-// any byte is written.
+// .<name>.koko-upload-<8 hex>, exclusively, with the mode 0600.
 func (f *Front) filesUpload(c gateway.TerminalCaller, req api.FilesUploadRequest) (api.FilesUploadResponse, error) {
 	switch {
 	case req.Name == "" || req.Name == "." || req.Name == ".." || strings.ContainsAny(req.Name, "/\x00"):
@@ -125,13 +127,14 @@ func (f *Front) filesUpload(c gateway.TerminalCaller, req api.FilesUploadRequest
 		size:    req.Size, replace: req.Replace, all: f.uploads,
 	}
 	if err := u.create(); err != nil {
-		f.uploads.give(req.Tunnel)
+		f.uploads.free(req.Tunnel)
 		return api.FilesUploadResponse{}, err
 	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	f.uploads.add(u)
-	u.idle = time.AfterFunc(u.idleFor(), u.idleOver)
+	u.lastCall = time.Now()
+	u.idle = time.AfterFunc(f.uploads.idle, u.idleOver)
 	u.stopAtEnd = files.AtEnd(u.sessionEnded)
 	if err := files.Err(); err != nil {
 		// Ended before the hook was set, which then never runs.
@@ -143,7 +146,8 @@ func (f *Front) filesUpload(c gateway.TerminalCaller, req api.FilesUploadRequest
 }
 
 // create refuses a name that exists unless u replaces it, then creates
-// u's partial file, exclusively, private to the Host Account.
+// u's partial file, exclusively, private to the Host Account from its
+// creation.
 func (u *upload) create() error {
 	c := u.files.SFTP
 	if !u.replace {
@@ -151,15 +155,10 @@ func (u *upload) create() error {
 			return err
 		}
 	}
+	// The Gateway's SFTP client creates an exclusive file 0600
+	// (gateway.Files).
 	file, err := c.OpenFile(u.partial, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 	if err != nil {
-		return hostError(u.files, err)
-	}
-	// pkg/sftp's open sends no mode: the Host gives the new, empty file its
-	// own, which this narrows before any byte is written.
-	if err := file.Chmod(0o600); err != nil {
-		_ = file.Close()
-		_ = c.Remove(u.partial)
 		return hostError(u.files, err)
 	}
 	u.file = file
@@ -213,7 +212,7 @@ func (u *upload) write(offset int64, data []byte) (api.FilesChunkResponse, error
 	case offset+int64(len(data)) > u.size:
 		return api.FilesChunkResponse{}, api.CodeInvalidRequest.Errorf("the chunk runs past the upload's size of %d bytes", u.size)
 	}
-	u.idle.Reset(u.idleFor())
+	u.calledLocked()
 	if len(data) > 0 {
 		if _, err := u.file.WriteAt(data, offset); err != nil {
 			// Some of it may be written: the page sends it again, at the
@@ -245,14 +244,14 @@ func (f *Front) filesFinish(c gateway.TerminalCaller, req api.FilesFinishRequest
 	case u.received != u.size:
 		return api.FilesFinishResponse{}, api.CodeBadOffset.Errorf("%d of this upload's %d bytes have come", u.received, u.size)
 	}
-	u.idle.Reset(u.idleFor())
+	u.calledLocked()
 	if err := u.place(); err != nil {
 		return api.FilesFinishResponse{}, err
 	}
 	u.done = api.FilesFinishResponse{Path: u.final, Size: u.size}
 	u.state = uploadDone
 	u.stopAtEnd()
-	u.all.give(u.tunnel)
+	u.all.free(u.tunnel)
 	u.files.Transferred(gateway.Upload, u.final, u.size, gateway.TransferDone, nil)
 	return u.done, nil
 }
@@ -316,13 +315,24 @@ func (f *Front) filesCancel(c gateway.TerminalCaller, req api.FilesCancelRequest
 	return api.FilesCancelResponse{}, nil
 }
 
+// calledLocked notes a call of u, which starts its idle time again. u.mu
+// is held.
+func (u *upload) calledLocked() {
+	u.lastCall = time.Now()
+	u.idle.Reset(u.all.idle)
+}
+
 // idleOver gives u up once no call of it came for timing.UploadIdle,
-// removing its partial file if it still runs, and forgets it.
+// removing its partial file if it still runs, and forgets it. A call that
+// came as the timer fired has started the time again.
 func (u *upload) idleOver() {
 	u.mu.Lock()
 	defer u.mu.Unlock()
+	if time.Since(u.lastCall) < u.all.idle {
+		return
+	}
 	if u.state == uploadRunning {
-		u.endLocked(gateway.TransferFailed, fmt.Errorf("no chunk came for %v", u.idleFor()))
+		u.endLocked(gateway.TransferFailed, fmt.Errorf("no chunk came for %v", u.all.idle))
 	}
 	u.all.remove(u)
 }
@@ -343,7 +353,7 @@ func (u *upload) sessionEnded() {
 // endLocked ends u, which runs, as outcome, with err for a failure: it
 // closes and removes the partial file, logs the transfer and frees its
 // place among the SSH Session's uploads. u.mu is held.
-func (u *upload) endLocked(outcome string, err error) {
+func (u *upload) endLocked(outcome gateway.Outcome, err error) {
 	if u.file != nil {
 		_ = u.file.Close()
 		u.file = nil
@@ -353,13 +363,8 @@ func (u *upload) endLocked(outcome string, err error) {
 	_ = u.files.SFTP.Remove(u.partial)
 	u.state, u.ended = uploadEnded, api.CodeUnknownUpload.Errorf("this upload has ended")
 	u.stopAtEnd()
-	u.all.give(u.tunnel)
+	u.all.free(u.tunnel)
 	u.files.Transferred(gateway.Upload, u.final, u.received, outcome, err)
-}
-
-// idleFor is how long u waits for its next call.
-func (u *upload) idleFor() time.Duration {
-	return u.all.idle
 }
 
 // take takes one of the SSH Session tunnel's places for a running upload,
@@ -374,8 +379,8 @@ func (us *uploads) take(tunnel string) bool {
 	return true
 }
 
-// give gives back a place take took.
-func (us *uploads) give(tunnel string) {
+// free gives back a place take took.
+func (us *uploads) free(tunnel string) {
 	us.mu.Lock()
 	defer us.mu.Unlock()
 	if us.running[tunnel]--; us.running[tunnel] <= 0 {

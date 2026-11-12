@@ -283,7 +283,10 @@ run of `koko web`, and the page's address.
   ([`github.com/pkg/sftp`](https://github.com/pkg/sftp)): one `session`
   channel with the `sftp` subsystem, opened at the first call, outside the
   Gateway's locks, and shared by every call after it, attached or Detached;
-  the next call opens another once the Host ends it. Or it says why not:
+  the next call opens another once the Host ends it. pkg/sftp's open sends
+  no mode, so the client writes through `privateCreates`, which gives each
+  exclusive create, an upload's partial file, the permissions `0600`, so
+  the Host makes it private as it creates it. Or it says why not:
   `unknown_tunnel` for an id that names no live web terminal of the
   caller's, `ssh_session_ended` for one that has ended, as long as its
   ending is kept, `sftp_unavailable` for a Host that refuses the subsystem,
@@ -858,7 +861,12 @@ refused, a finish sent again; `file_exists`, then a replace keeping the
 old mode, and bad names; four uploads at once, a cancel; the SSH
 Session's end and the idle limit each removing the partial file and
 logging it; and a Host that fails writes (`sshhost.SFTPFailingWrites`),
-each upload leaving nothing under its real name.
+each upload leaving nothing under its real name; downloads streamed byte
+for byte with their headers, a Chinese name, a quote and a newline among
+them, a directory and a FIFO, or a link to one, refused, a cancel midway
+logged with the bytes moved, and a token spent once, expired after 60 s on
+the koko server's clock, refused to another caller without being spent,
+and absent from the log.
 [`cli/web_terminal_access_test.go`](../../internal/client/cli/web_terminal_access_test.go)
 keeps a terminal through `koko web` across a Web URL change that ends a
 Sign-in's.

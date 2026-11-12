@@ -176,17 +176,19 @@ func TestFilesOnAHostWithoutSFTP(t *testing.T) {
 	w.WaitOutput("still here\n")
 }
 
-// A files call is refused, as JSON, from another Origin or none before the
-// cookie is read, without a live Sign-in, and for an SSH Session that is
+// Every files call is refused, as JSON, from another Origin or none before
+// the cookie is read, without a live Sign-in, and for an SSH Session that is
 // not the caller's, or no SSH Session at all; a GET and an unknown endpoint
 // are refused too.
 func TestFilesCallsAreTheCallersOwn(t *testing.T) {
 	t.Parallel()
 	h, _, b, w := filesTerminal(t, sshhost.SFTP())
 	body := `{"tunnel":"` + w.ID + `","path":""}`
-	for _, origin := range []string{"", "https://evil.example", "http://koko.example.com"} {
-		a := send(t, h, request{method: http.MethodPost, path: api.FilesListPath, host: "koko.example.com", origin: origin, body: body})
-		wantAPIError(t, a, http.StatusForbidden, "bad_origin")
+	for _, path := range []string{api.FilesListPath, api.FilesUploadPath, api.FilesChunkPath, api.FilesFinishPath, api.FilesCancelPath, api.FilesDownloadPath} {
+		for _, origin := range []string{"", "https://evil.example", "http://koko.example.com"} {
+			a := send(t, h, request{method: http.MethodPost, path: path, host: "koko.example.com", origin: origin, body: body})
+			wantAPIError(t, a, http.StatusForbidden, "bad_origin")
+		}
 	}
 	wantAPIError(t, send(t, h, request{method: http.MethodPost, path: api.FilesListPath, host: "koko.example.com", origin: harness.WebURL, body: body}),
 		http.StatusUnauthorized, "signin_required")
@@ -447,4 +449,146 @@ func TestFilesUploadToAHostThatFailsWrites(t *testing.T) {
 	wantMessage(t, a, "Failure")
 	wantFiles[api.FilesCancelResponse](t, filesPost(t, b, api.FilesCancelPath, api.FilesCancelRequest{Upload: id}))
 	wantGone(t, home, "full.bin")
+}
+
+// fetch sends GET path to the web listener of h as the browser b, through
+// the proxy, and returns the answer, not yet read.
+func fetch(t *testing.T, h *harness.Harness, b *harness.Browser, path string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+h.WebAddress()+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = strings.TrimPrefix(harness.WebURL, "https://")
+	req.AddCookie(&http.Cookie{Name: "__Host-koko", Value: b.Cookie})
+	tr := &http.Transport{}
+	t.Cleanup(tr.CloseIdleConnections)
+	resp, err := (&http.Client{Transport: tr}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	return resp
+}
+
+// fetchAll is fetch with the body read.
+func fetchAll(t *testing.T, h *harness.Harness, b *harness.Browser, path string) answer {
+	t.Helper()
+	resp := fetch(t, h, b, path)
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return answer{Response: resp, body: string(body)}
+}
+
+// downloadToken asks for the download of path through the terminal w.
+func downloadToken(t *testing.T, b *harness.Browser, w *harness.WebTerminal, path string) api.FilesDownloadResponse {
+	t.Helper()
+	return wantFiles[api.FilesDownloadResponse](t, filesPost(t, b, api.FilesDownloadPath, api.FilesDownloadRequest{Tunnel: w.ID, Path: path}))
+}
+
+// A download's token is answered with the file's name and size, and its
+// GET streams the file byte for byte as an attachment, its name in UTF-8
+// and as an ASCII stand-in, with its length, kept by no cache; the token
+// is spent, and the download logged, the token in no line. A directory is
+// not_a_file, and a missing file host_refused.
+func TestFilesDownloadStreamsAFile(t *testing.T) {
+	t.Parallel()
+	h, host, b, w := filesTerminal(t, sshhost.SFTP())
+	home := host.Home()
+	const name = "报告 \"v2\";\n.txt"
+	data := make([]byte, 3*api.MaxFilesChunk+7)
+	_, _ = rand.Read(data)
+	if err := os.WriteFile(filepath.Join(home, name), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	d := downloadToken(t, b, w, home+"/"+name)
+	if !regexp.MustCompile(`^[0-9a-f]{32}$`).MatchString(d.Token) || d.Name != name || d.Size != int64(len(data)) {
+		t.Fatalf("the download was answered %+v, want a 32 hex token, the name and %d bytes", d, len(data))
+	}
+	a := fetchAll(t, h, b, api.FilesDownloadPath+"/"+d.Token)
+	if a.StatusCode != http.StatusOK || sha256.Sum256([]byte(a.body)) != sha256.Sum256(data) {
+		t.Fatalf("the download answered %s with %d bytes that differ from the file's %d", a.Status, len(a.body), len(data))
+	}
+	wantSecurityHeaders(t, a.Header)
+	for header, want := range map[string]string{
+		"Content-Type":        "application/octet-stream",
+		"Content-Length":      strconv.Itoa(len(data)),
+		"Content-Disposition": `attachment; filename="__ _v2_;_.txt"; filename*=UTF-8''%E6%8A%A5%E5%91%8A%20%22v2%22%3B%0A.txt`,
+		"Cache-Control":       "no-store",
+	} {
+		if got := a.Header.Get(header); got != want {
+			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+	waitLog(t, h, `msg="file transferred" tunnel=`+w.ID+` client=browser user=`+harness.Owner+` signin=signin_\w+ host=web1 host_id=\S+ direction=download path=".+" bytes=`+strconv.Itoa(len(data))+` outcome=done\n`)
+	wantAPIError(t, fetchAll(t, h, b, api.FilesDownloadPath+"/"+d.Token), http.StatusNotFound, "unknown_download")
+	if strings.Contains(h.Log(), d.Token) {
+		t.Error("the log holds the download's token")
+	}
+
+	if err := os.Mkdir(filepath.Join(home, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wantAPIError(t, filesPost(t, b, api.FilesDownloadPath, api.FilesDownloadRequest{Tunnel: w.ID, Path: home + "/docs"}), http.StatusConflict, "not_a_file")
+	a = filesPost(t, b, api.FilesDownloadPath, api.FilesDownloadRequest{Tunnel: w.ID, Path: home + "/missing"})
+	wantAPIError(t, a, http.StatusForbidden, "host_refused")
+	wantMessage(t, a, "No such file")
+	wantAPIError(t, filesPost(t, b, api.FilesDownloadPath, api.FilesDownloadRequest{Tunnel: w.ID, Path: "notes.txt"}), http.StatusBadRequest, "invalid_request")
+}
+
+// A download's token is good for 60 seconds on the koko server's clock,
+// and for its own caller alone, whose token another caller's attempt does
+// not spend.
+func TestFilesDownloadTokensExpireAndAreTheCallersOwn(t *testing.T) {
+	t.Parallel()
+	h, host, b, w := filesTerminal(t, sshhost.SFTP())
+	writeFile(t, host.Home(), "notes.txt", "notes")
+
+	d := downloadToken(t, b, w, host.Home()+"/notes.txt")
+	other := h.SignIn("bob")
+	wantAPIError(t, fetchAll(t, h, other, api.FilesDownloadPath+"/"+d.Token), http.StatusNotFound, "unknown_download")
+	if a := fetchAll(t, h, b, api.FilesDownloadPath+"/"+d.Token); a.StatusCode != http.StatusOK || a.body != "notes" {
+		t.Errorf("the download after another caller's attempt answered %s %q", a.Status, a.body)
+	}
+
+	late := downloadToken(t, b, w, host.Home()+"/notes.txt")
+	h.Advance(59 * time.Second)
+	inTime := downloadToken(t, b, w, host.Home()+"/notes.txt")
+	h.Advance(time.Second)
+	wantAPIError(t, fetchAll(t, h, b, api.FilesDownloadPath+"/"+late.Token), http.StatusNotFound, "unknown_download")
+	if a := fetchAll(t, h, b, api.FilesDownloadPath+"/"+inTime.Token); a.StatusCode != http.StatusOK {
+		t.Errorf("a token 1 s old answered %s", a.Status)
+	}
+}
+
+// A browser that cancels a download midway closes its request, which ends
+// the transfer, logged cancelled with the bytes moved.
+func TestFilesDownloadCancelledMidway(t *testing.T) {
+	t.Parallel()
+	h, host, b, w := filesTerminal(t, sshhost.SFTP())
+	const size = 256 << 20
+	// Sparse: a file far larger than the connection's buffers, made at once.
+	f, err := os.Create(filepath.Join(host.Home(), "big.img"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(size); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	d := downloadToken(t, b, w, host.Home()+"/big.img")
+	resp := fetch(t, h, b, api.FilesDownloadPath+"/"+d.Token)
+	if _, err := io.ReadFull(resp.Body, make([]byte, 64<<10)); err != nil {
+		t.Fatalf("read the download's start: %v", err)
+	}
+	_ = resp.Body.Close()
+	m := waitLog(t, h, `msg="file transferred" tunnel=`+w.ID+` .* direction=download path=\S+/big.img bytes=(\d+) outcome=cancelled\n`)
+	if moved, _ := strconv.Atoi(m[1]); moved >= size {
+		t.Errorf("the cancelled download moved %d bytes, the whole file", moved)
+	}
 }

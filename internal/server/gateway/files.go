@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -37,15 +38,23 @@ type Files struct {
 	log  *slog.Logger
 }
 
-// The direction and the outcome of a file transferred, as its log line
-// names them.
-const (
-	Upload   = "upload"
-	Download = "download"
+// Direction is which way a file moved, as its log line names it.
+type Direction string
 
-	TransferDone      = "done"
-	TransferCancelled = "cancelled"
-	TransferFailed    = "failed"
+// The directions.
+const (
+	Upload   Direction = "upload"
+	Download Direction = "download"
+)
+
+// Outcome is how a file's transfer ended, as its log line names it.
+type Outcome string
+
+// The outcomes.
+const (
+	TransferDone      Outcome = "done"
+	TransferCancelled Outcome = "cancelled"
+	TransferFailed    Outcome = "failed"
 )
 
 // Transferred logs that a file moved, once its transfer ended: its
@@ -53,7 +62,7 @@ const (
 // download's as asked, an upload's final one), the bytes moved, and the
 // outcome, with err for TransferFailed. The line names the SSH Session as
 // its other lines do, and holds no token and no content.
-func (f *Files) Transferred(direction, path string, bytes int64, outcome string, err error) {
+func (f *Files) Transferred(direction Direction, path string, bytes int64, outcome Outcome, err error) {
 	t := f.t
 	attrs := slices.Concat(t.named(), []any{"user", t.user}, callerAttrs(t.caller), []any{
 		"host", t.hostName, "host_id", t.hostID,
@@ -233,7 +242,7 @@ func (g *Gateway) openSFTP(conn *hostconn.Conn, hostName string) (*sftp.Client, 
 		_ = ch.Close()
 		return nil, api.CodeSFTPUnavailable.Errorf("%s offers no SFTP, which koko moves files through", hostName)
 	}
-	client, err := sftp.NewClientPipe(ch, ch)
+	client, err := sftp.NewClientPipe(ch, &privateCreates{ch: ch})
 	if err != nil {
 		_ = ch.Close()
 		return nil, fmt.Errorf("start SFTP on %s: %w", hostName, err)
@@ -282,4 +291,68 @@ func (tf *terminalFiles) end() {
 			_ = client.Close()
 		}
 	})
+}
+
+// privateCreates is the channel ch as the SFTP client writes to it: it gives
+// each exclusive create, an SSH_FXP_OPEN with SSH_FXF_CREAT and SSH_FXF_EXCL
+// that sends no attributes, the permissions 0600, so the Host makes the
+// file private as it creates it and no other account can open it first.
+// pkg/sftp's open sends no attributes, and koko creates exclusively only an
+// upload's partial file. Every other packet passes as it is, whole.
+type privateCreates struct {
+	ch io.WriteCloser
+
+	mu  sync.Mutex
+	buf []byte
+}
+
+// The SFTP values privateCreates reads and writes
+// (draft-ietf-secsh-filexfer-02).
+const (
+	fxpOpen        = 3
+	fxfCreatExcl   = 0x08 | 0x20
+	attrPermission = 0x04
+	privateMode    = 0o600
+)
+
+// Write takes what the SFTP client writes, a packet in one or more parts,
+// and sends each packet once it is whole.
+func (p *privateCreates) Write(b []byte) (int, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.buf = append(p.buf, b...)
+	for len(p.buf) >= 4 {
+		n := 4 + int(binary.BigEndian.Uint32(p.buf))
+		if len(p.buf) < n {
+			break
+		}
+		if _, err := p.ch.Write(privateCreate(p.buf[:n])); err != nil {
+			return 0, err
+		}
+		p.buf = p.buf[n:]
+	}
+	return len(b), nil
+}
+
+func (p *privateCreates) Close() error {
+	return p.ch.Close()
+}
+
+// privateCreate returns the packet pkt, its length first, with the
+// permissions 0600 added when it is an exclusive create without
+// attributes: uint32 length, byte type, uint32 id, string path, uint32
+// flags, then the attributes' uint32 flags, 0 for none.
+func privateCreate(pkt []byte) []byte {
+	if len(pkt) < 13 || pkt[4] != fxpOpen {
+		return pkt
+	}
+	end := 13 + int(binary.BigEndian.Uint32(pkt[9:13]))
+	if end < 13 || len(pkt) != end+8 ||
+		binary.BigEndian.Uint32(pkt[end:])&fxfCreatExcl != fxfCreatExcl || binary.BigEndian.Uint32(pkt[end+4:]) != 0 {
+		return pkt
+	}
+	out := binary.BigEndian.AppendUint32(slices.Clone(pkt[:end+4]), attrPermission)
+	out = binary.BigEndian.AppendUint32(out, privateMode)
+	binary.BigEndian.PutUint32(out, uint32(len(out)-4))
+	return out
 }
