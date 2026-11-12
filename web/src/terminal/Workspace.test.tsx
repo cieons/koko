@@ -31,14 +31,18 @@ interface FakeEmulator {
 
 const emulators = vi.hoisted(() => new Map<string, FakeEmulator>());
 
+/** loading holds back each emulator mounted while hold is set, as a core still loading does, until it is let go. */
+const loading = vi.hoisted(() => ({ hold: false, held: [] as (() => void)[] }));
+
 vi.mock("./emulator/Emulator", async () => {
-  const { useEffect, useImperativeHandle, useRef } = await import("react");
+  const { useEffect, useImperativeHandle, useRef, useState } = await import("react");
   const { createElement } = await import("react");
   function Emulator(props: EmulatorProps) {
     const record = emulators.get(props.label) ?? { props, mounts: 0, written: "", selection: "" };
     record.props = props;
     emulators.set(props.label, record);
     const input = useRef<HTMLTextAreaElement>(null);
+    const [loaded, setLoaded] = useState(!loading.hold);
     useImperativeHandle(props.ref, () => ({
       write: (bytes: Uint8Array) => {
         record.written += new TextDecoder().decode(bytes);
@@ -50,8 +54,18 @@ vi.mock("./emulator/Emulator", async () => {
     }));
     useEffect(() => {
       record.mounts++;
-      props.onReady(120, 36);
+      if (loaded) {
+        props.onReady(120, 36);
+      } else {
+        loading.held.push(() => {
+          setLoaded(true);
+          props.onReady(120, 36);
+        });
+      }
     }, []);
+    if (!loaded) {
+      return null;
+    }
     // A key typed reaches the page as its name, as wterm's bytes would.
     return createElement("textarea", {
       ref: input,
@@ -74,6 +88,8 @@ beforeEach(() => {
 
 afterEach(() => {
   emulators.clear();
+  loading.hold = false;
+  loading.held = [];
   sessionStorage.clear();
 });
 
@@ -421,10 +437,22 @@ test("tabs are switched by a pointer, by the arrow keys in the rail, and by Cont
   expect(selected()).toBe("cache3");
   chord("ArrowLeft");
   expect(selected()).toBe("db2");
-  for (const name of ["web1", "db2", "cache3"]) {
-    const sent = FakeWebSocket.sockets.flatMap((socket) => socket.framesSent);
-    expect(sent, name).toEqual([]);
-  }
+  expect(
+    FakeWebSocket.sockets.flatMap((socket) => socket.framesSent),
+    "no key reached a shell",
+  ).toEqual([]);
+});
+
+test("a new tab's terminal takes the focus once its emulator has loaded", async () => {
+  loading.hold = true;
+  serve("/terminal?host=web1");
+  await waitFor(() => expect(loading.held).toHaveLength(1));
+  press(screen.getByRole("button", { name: /^New tab/ }));
+  press(within(await screen.findByRole("dialog")).getByRole("option", { name: /^db2opsOpen/ }));
+  await waitFor(() => expect(loading.held).toHaveLength(2));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  act(() => loading.held[1]?.());
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Terminal on db2" })));
 });
 
 test("the chords never reach the emulator", async () => {
@@ -528,9 +556,13 @@ test("a page holds at most 16 tabs: New tab is then disabled and says why", asyn
   expect(screen.getByRole("button", { name: /^New tab/ }).hasAttribute("disabled")).toBe(true);
   expect(screen.getByText("A browser holds at most 16 SSH Sessions at once. Close a tab to open another.")).toBeDefined();
 
+  // Open terminal at 16 adds none, and says why in a notice beside the rail's line.
   act(() => navigate("/hosts/web1/terminal"));
   await waitFor(() => expect(window.location.pathname).toBe("/terminal"));
   expect(tabs()).toHaveLength(16);
+  await waitFor(() =>
+    expect(screen.getAllByText("A browser holds at most 16 SSH Sessions at once. Close a tab to open another.")).toHaveLength(2),
+  );
 });
 
 test("/hosts/<name>/terminal adds a tab, and the tabs stay as they were while the person visits other pages", async () => {
@@ -625,8 +657,10 @@ test("a window crossing 768 pixels keeps every tab's emulator and its one WebSoc
   expect(emulator("db2").mounts).toBe(1);
   expect(FakeWebSocket.sockets).toHaveLength(2);
   expect(opened.every((socket) => !socket.closed)).toBe(true);
-  // On a phone the bar at the foot starts with the terminal's button.
-  expect(screen.getByRole("link", { name: "Terminal, 2 open" }).textContent).toBe("web12");
+  // On a phone the bar at the foot starts with the terminal's button, named by what it shows.
+  act(() => setViewportWidth(390));
+  expect(screen.getByRole("link", { name: "web1, Terminal, 2 open" })).toBeDefined();
+  await expectAccessible();
 });
 
 test("the terminal speaks Simplified Chinese", async () => {

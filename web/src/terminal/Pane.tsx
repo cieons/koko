@@ -2,6 +2,9 @@ import { Button, Spinner } from "@heroui/react";
 import { Clipboard as ClipboardIcon } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
+import { CodeRevoked } from "../api/device";
+import { CodeHostUnreachable, CodeLoginRefused } from "../api/enroll";
+import { CodeUnknownHost } from "../api/host";
 import { CodeCookieRequired, CodeSignInRequired } from "../api/web";
 import type { MessageKey } from "../i18n/catalogues";
 import { type Translate, useCount, useLanguage, useT } from "../shell/i18n";
@@ -17,22 +20,36 @@ import { closeTab, panelId, patchTab, reopen, runtime, type Tab, useWorkspace } 
 // "Tabs and their states"). No state moves the layout: a tab with nothing to
 // show is covered; one whose terminal stays has cards at its top end.
 
-/** restartNotice is the Gateway's notice when the koko server stops for a restart. */
+/**
+ * restartNotice is the Gateway's notice when the koko server stops for a
+ * restart (gateway.go, errStopping), which the page says in its own words;
+ * it must match the Gateway's byte for byte.
+ */
 const restartNotice = "the koko server is restarting; this SSH Session has ended.";
 
-/** refusals are the open's refusals the page says in its own words; any other, the koko server's. */
-const refusals = new Set([
-  "unknown_host",
-  "host_registered",
-  "relay_registered",
-  "access_refused",
-  "ssh_session_limit",
-  "host_unreachable",
-  "host_key_mismatch",
-  "login_refused",
-  "host_connection_failed",
-  "shell_refused",
-]);
+/**
+ * refusals are the open's refusals (the Gateway's, spec #169) the page says
+ * in its own words, by their codes; any other is said generally.
+ */
+const refusals: Readonly<Record<string, MessageKey>> = {
+  [CodeUnknownHost]: "terminal.refused.unknown_host",
+  host_registered: "terminal.refused.host_registered",
+  relay_registered: "terminal.refused.relay_registered",
+  access_refused: "terminal.refused.access_refused",
+  ssh_session_limit: "terminal.refused.ssh_session_limit",
+  [CodeHostUnreachable]: "terminal.refused.host_unreachable",
+  host_key_mismatch: "terminal.refused.host_key_mismatch",
+  [CodeLoginRefused]: "terminal.refused.login_refused",
+  host_connection_failed: "terminal.refused.host_connection_failed",
+  shell_refused: "terminal.refused.shell_refused",
+};
+
+/** shellRefusals are the web front's refusals the shell already has words for. */
+const shellRefusals: Readonly<Record<string, MessageKey>> = {
+  [CodeCookieRequired]: "error.cookie_required",
+  [CodeRevoked]: "error.revoked",
+  [CodeSignInRequired]: "error.signin_required",
+};
 
 /**
  * Said is what a state says: a line in the page's words, and beneath it the
@@ -46,15 +63,13 @@ interface Said {
 
 /** refusalSaid says why an open or a resume was refused. */
 function refusalSaid(t: Translate, host: string, code: string, message: string): Said {
-  if (code === CodeCookieRequired || code === "revoked" || code === CodeSignInRequired) {
-    return { line: t(`error.${code}` as MessageKey) };
+  const shell = shellRefusals[code];
+  if (shell !== undefined) {
+    return { line: t(shell) };
   }
   // An unknown name's words are the same for every Host the caller cannot see, and add nothing.
-  const detail = message === "" || code === "unknown_host" ? undefined : message;
-  if (refusals.has(code)) {
-    return { line: t(`terminal.refused.${code}` as MessageKey, { host }), detail };
-  }
-  return { line: t("terminal.refused.other", { host }), detail };
+  const detail = message === "" || code === CodeUnknownHost ? undefined : message;
+  return { line: t(refusals[code] ?? "terminal.refused.other", { host }), detail };
 }
 
 /** endingSaid says why an SSH Session ended. */
@@ -293,7 +308,10 @@ export function Pane({ tab, active, shown, terminals }: PaneProps) {
           fontSize={fontSize}
           paused={!active || !shown}
           announce={announce}
-          onReady={(cols, rows) => setGrid({ cols, rows })}
+          onReady={(cols, rows) => {
+            setGrid({ cols, rows });
+            patchTab(key, { ready: true });
+          }}
           onInput={(bytes) => connection.current?.send(bytes)}
           onResize={(cols, rows) => {
             setGrid({ cols, rows });

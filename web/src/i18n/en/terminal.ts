@@ -13,7 +13,7 @@ export default {
   "terminal.tab.newKeys": "New tab ({keys})",
   "terminal.tab.close": "Close tab",
   "terminal.tab.closeNamed": "Close {tab}",
-  "terminal.tab.limit": "A browser holds at most 16 SSH Sessions at once. Close a tab to open another.",
+  "terminal.tab.limit": "A browser holds at most {max} SSH Sessions at once. Close a tab to open another.",
   "terminal.leave": "To leave the terminal with the keyboard, press Escape, then Tab.",
   "terminal.state.connecting": "Connecting",
   "terminal.state.connected": "Connected",
@@ -51,7 +51,7 @@ export default {
   "terminal.ended.closed": "The SSH Session to {host} was ended from this page.",
   "terminal.ended.lost":
     "Lost the connection to the koko server at {time}; the SSH Session to {host} could not be resumed.",
-  "terminal.ended.protocol": "This page and the koko server disagree about the terminal. Reload the page.",
+  "terminal.ended.protocol": "This page and the koko server do not agree on the terminal's protocol. Reload the page.",
   "terminal.ended.new": "Open a new one",
   "terminal.clipboard.ask.one": "{host} asks to copy {count} character to the clipboard.",
   "terminal.clipboard.ask.other": "{host} asks to copy {count} characters to the clipboard.",

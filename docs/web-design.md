@@ -110,7 +110,8 @@ and once for dark on `.dark`. Light, Dark or System sets `class` and
 
 - The terminal's text, cursor, selection and sixteen ANSI colours are
   `--term-text`, `--term-caret`, `--term-selection` and `--term-ansi-0`
-  to `--term-ansi-15`, a set for each mode, in `theme.css`;
+  to `--term-ansi-15`, a set for each mode, in `theme.css`, written in
+  hex and `rgb()` as the approved preview gave them;
   `terminal/emulator/emulator.css` hands them to wterm.
 - Filled buttons darken on hover (`color-mix` with 8% black). Lightening
   them drops the white label under 4.5:1 in dark.
@@ -200,11 +201,14 @@ padding. From top to bottom:
     keys only move along the list, and choosing a tab goes to the terminal
     showing it;
   - with no tab open, one line, "Open terminal", with the chord;
-  - at 16 tabs, New tab is disabled and a line says why;
+  - at 16 tabs, New tab is disabled and a line says why (folded, to a
+    screen reader alone), and Open terminal on a Host's page says so in a
+    notice;
   - the list scrolls past what fits, and the section keeps at least 10rem.
 - **On the terminal only**, above the foot, "To leave the terminal with
   the keyboard, press Escape, then Tab." in `t-label` at 12px. A window
-  under 640px high keeps the line for screen readers alone.
+  under 640px high, and the folded rail, keep the line for screen readers
+  alone.
 - **The foot**, after a hairline:
   - **the User**: an initial in a circle (32px), the name (600) and the
     role ("Owner") under it. It opens the account panel, 19rem wide,

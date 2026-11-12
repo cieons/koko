@@ -9,7 +9,7 @@ import { keptSessions } from "./kept";
 // web UI, "The page"). The rail's Terminal section reads it on every page,
 // so this module is in the first load, and imports nothing of the
 // terminal's own code but types: the workspace that opens the SSH Sessions
-// and draws the terminals is a chunk of its own (Workspace.tsx), loaded with
+// and draws the terminals is a chunk of its own (TerminalPage.tsx), loaded with
 // the first terminal.
 
 /** maxTabs is the most tabs a page holds: a Sign-in's limit of SSH Sessions. */
@@ -32,6 +32,8 @@ export interface Tab {
   cwd?: string;
   /** clipboard is the text a program in it asks to copy (OSC 52), not yet answered. */
   clipboard?: string;
+  /** ready says its emulator has loaded and laid out its grid, so it can take the focus. */
+  ready?: boolean;
   /** failed says its emulator could not load. */
   failed?: boolean;
 }

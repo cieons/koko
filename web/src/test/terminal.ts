@@ -17,9 +17,25 @@ export class FakeLocks {
   /** queues holds, for each lock asked for, when its last request lets it go. */
   private readonly queues = new Map<string, Promise<void>>();
 
-  /** request runs callback once the lock is free, and holds it until callback's promise settles. */
-  request(name: string, callback: () => Promise<void>): Promise<void> {
+  /**
+   * request runs callback once the lock is free, and holds it until
+   * callback's promise settles; a request whose signal aborts before then
+   * is refused at once, and its callback never runs.
+   */
+  request(name: string, ...args: [() => Promise<void>] | [{ signal?: AbortSignal }, () => Promise<void>]): Promise<void> {
+    const [options, callback] = args.length === 1 ? [{}, args[0]] : args;
+    const { signal } = options;
+    let aborted = false;
+    const refused = new Promise<never>((_, reject) => {
+      signal?.addEventListener("abort", () => {
+        aborted = true;
+        reject(new DOMException("The request was aborted.", "AbortError"));
+      });
+    });
     const granted = (this.queues.get(name) ?? Promise.resolve()).then(() => {
+      if (aborted) {
+        return;
+      }
       this.held.add(name);
       return callback().finally(() => this.held.delete(name));
     });
@@ -27,7 +43,7 @@ export class FakeLocks {
       name,
       granted.catch(() => {}),
     );
-    return granted;
+    return signal ? Promise.race([granted, refused]) : granted;
   }
 
   async query(): Promise<LockManagerSnapshot> {

@@ -26,10 +26,11 @@ function serveWasm(): void {
   vi.stubGlobal("fetch", async () => new Response(wasm, { headers: { "Content-Type": "application/wasm" } }));
 }
 
-const elements: HTMLElement[] = [];
+/** made is what each test's terminals started, ended with the test. */
+const made: (() => void)[] = [];
 afterEach(() => {
-  for (const element of elements.splice(0)) {
-    element.remove();
+  for (const end of made.splice(0)) {
+    end();
   }
 });
 
@@ -39,7 +40,6 @@ async function terminal() {
   const core = await GhosttyCore.load({ wasmPath: "/ghostty-vt.wasm", scrollbackLines: 5000, imageStorageLimit: 0 });
   const element = document.createElement("div");
   document.body.append(element);
-  elements.push(element);
   const copied: string[] = [];
   const dirs: string[] = [];
   const wt = new WTerm(element, {
@@ -49,12 +49,17 @@ async function terminal() {
     onClipboardWrite: (text) => copied.push(text),
     onWorkingDirectory: (uri) => dirs.push(uri),
   });
+  made.push(() => {
+    wt.destroy();
+    core.dispose();
+    element.remove();
+  });
   await wt.init();
   return { wt, core, copied, dirs, element };
 }
 
-/** painted waits for wterm's next paint, which it schedules after a write. */
-const painted = () => new Promise((resolve) => setTimeout(resolve, 50));
+/** painted waits for wterm to paint text, which it does a frame after a write. */
+const painted = (element: HTMLElement, text: string) => waitFor(() => expect(element.textContent).toContain(text));
 
 test("OSC 52 and OSC 7 reach the callbacks, and a wide character takes two cells", async () => {
   const { wt, core, copied, dirs } = await terminal();
@@ -92,10 +97,10 @@ test("the patched renderer gives the HTML parser no style attribute, and styles 
   try {
     const { wt, element } = await terminal();
     wt.write("\x1b[31mred\x1b[0m plain \x1b[1;4;9mbold\x1b[0m 中文\r\n");
-    await painted();
+    await painted(element, "bold");
     // A change in the middle of a row goes through createContextualFragment.
     wt.write("\x1b[32mgreen\x1b[0m again");
-    await painted();
+    await painted(element, "green again");
     const rows = parsed.filter((html) => html.includes("<span"));
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.filter((html) => /\sstyle=/.test(html))).toEqual([]);

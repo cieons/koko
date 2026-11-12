@@ -27,6 +27,12 @@ export const timing = {
   connect: 10_000,
   /** answer bounds how long the answer to a resume or an end takes, once the WebSocket is open (ResumeExchange). */
   answer: 5_000,
+  /**
+   * heldWait bounds how long a new document waits for a kept SSH Session
+   * another document holds to be let go before it opens its own, as the
+   * document before a reload does within it.
+   */
+  heldWait: 1_000,
 } as const;
 
 /** TerminalSocket is the part of a WebSocket the terminal uses. */
@@ -150,27 +156,52 @@ async function heldElsewhere(): Promise<Set<string> | null> {
 
 /**
  * endLeft ends the SSH Sessions an earlier document of this browser tab
- * left, and forgets the kept ids it may not end now: those another document
- * holds, and every one when the browser cannot tell whose they are, which
- * the Gateway then ends at the grace. An id another document holds is
- * ended once that document lets it go without ending it, as when it is
- * closed and its close never arrived, or when it is the document before a
- * reload whose locks the browser had not yet let go.
+ * left, before this document opens its own. A kept id another document
+ * holds is waited for, a moment at most (timing.heldWait): the document
+ * before a reload lets its locks go within it, and its SSH Session is then
+ * ended here first. One still held after it is a live document's, such as
+ * the original of a duplicated browser tab, which this document leaves
+ * alone; it is ended once that document lets it go, as when it is closed
+ * and its close never arrived (one it ended itself is answered as ended).
+ * The kept ids this document may not end now are forgotten, and every one
+ * when the browser cannot tell whose they are: the Gateway ends those at
+ * the grace.
  */
 async function endLeft(dial: () => TerminalSocket): Promise<void> {
   const kept = keptSessions();
+  const manager = locks();
   if (kept.length === 0) {
     return;
   }
   const elsewhere = await heldElsewhere();
-  const ours = elsewhere === null ? [] : kept.filter((id) => !elsewhere.has(id));
-  keepSessions((ids) => ids.filter((id) => ours.includes(id)));
-  for (const id of kept.filter((each) => elsewhere?.has(each))) {
-    locks()
-      ?.request(lockPrefix + id, () => endSession(dial, id))
-      .catch(() => {});
+  if (!manager || elsewhere === null) {
+    keepSessions(() => []);
+    return;
   }
-  await Promise.all(ours.map((id) => endSession(dial, id)));
+  const ours = kept.filter((id) => !elsewhere.has(id));
+  keepSessions((ids) => ids.filter((id) => ours.includes(id)));
+  await Promise.all([
+    ...ours.map((id) => endSession(dial, id)),
+    ...kept.filter((id) => elsewhere.has(id)).map((id) => endOnceLetGo(manager, dial, id)),
+  ]);
+}
+
+/**
+ * endOnceLetGo ends the SSH Session of a kept id another document holds
+ * once that document lets it go: within timing.heldWait, before this
+ * document opens anything, or else whenever it does.
+ */
+async function endOnceLetGo(manager: LockManager, dial: () => TerminalSocket, id: string): Promise<void> {
+  const name = lockPrefix + id;
+  const waited = new AbortController();
+  const timer = setTimeout(() => waited.abort(), timing.heldWait);
+  try {
+    await manager.request(name, { signal: waited.signal }, () => endSession(dial, id));
+  } catch {
+    manager.request(name, () => endSession(dial, id)).catch(() => {});
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**

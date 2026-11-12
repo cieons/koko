@@ -761,6 +761,8 @@ test("a browser tab duplicated from a live one leaves that one's SSH Sessions al
 
   const copy = terminals();
   const page = await opening(copy);
+  expect(copy.sockets, "the copy waits a moment for the original's SSH Session to be let go").toHaveLength(0);
+  await passed(timing.heldWait);
   expect(copy.sockets, "no end for the original's SSH Session").toHaveLength(1);
   latest(copy.sockets).opened();
   expect(latest(copy.sockets).first).toEqual({ protocol: 1, open: "web1", cols: 120, rows: 36 });
@@ -795,18 +797,18 @@ test("a document that cannot tell whose the kept ids are ends none of them and f
   expect(kept()).toEqual([]);
 });
 
-test("a reload whose earlier document still held its locks when asked ends its SSH Sessions once they are let go", async () => {
+test("a reload whose earlier document still held its locks when asked ends its SSH Sessions first all the same", async () => {
   await connected();
   pagehide(false); // the next document asks before the browser lets this one's locks go
 
   const after = terminals();
   await opening(after);
-  const firsts = after.sockets.map((socket) => {
-    socket.opened();
-    return socket.first;
-  });
-  expect(firsts).toEqual([
-    { protocol: 1, open: "web1", cols: 120, rows: 36 },
-    { protocol: 1, end: id },
-  ]);
+  expect(after.sockets, "the end, once the lock was let go, and no open yet").toHaveLength(1);
+  latest(after.sockets).opened();
+  expect(latest(after.sockets).first).toEqual({ protocol: 1, end: id });
+  latest(after.sockets).answer({ ended: true });
+  await passed();
+  expect(after.sockets).toHaveLength(2);
+  latest(after.sockets).opened();
+  expect(latest(after.sockets).first).toEqual({ protocol: 1, open: "web1", cols: 120, rows: 36 });
 });

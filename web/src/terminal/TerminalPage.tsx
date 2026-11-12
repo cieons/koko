@@ -1,12 +1,12 @@
 import { Button } from "@heroui/react";
 import { ChevronRight, Folder, FolderOpen, X } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link } from "react-aria-components";
 
 import type { Host } from "../api/host";
+import { hostPathOf } from "../pages/host/record";
 import { useT } from "../shell/i18n";
 import { navigate } from "../shell/router";
-import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { writeClipboard } from "../ui/copy";
 import { notify } from "../ui/notify";
 import { useDocumentTitle } from "../ui/Page";
@@ -16,7 +16,7 @@ import { fontSizes } from "./emulator/Emulator";
 import { useManagedHosts } from "./hosts";
 import { chord, openSwitcher } from "./keys";
 import { Pane } from "./Pane";
-import { Kbd, spaceOf } from "./RailSection";
+import { EndQuestion, Kbd, spaceOf } from "./RailSection";
 import { Switcher } from "./Switcher";
 import { TabMark } from "./TabMark";
 import {
@@ -104,7 +104,7 @@ function Head(props: { tab: Tab | undefined; space: string | undefined; files: b
               </>
             )}
             <Link
-              href={`/hosts/${encodeURIComponent(tab.host)}`}
+              href={hostPathOf(tab.host)}
               className="truncate text-[1.0625rem] font-semibold tracking-[-0.01em] text-foreground no-underline outline-none hover:underline data-[focus-visible]:ring-2 data-[focus-visible]:ring-focus"
             >
               {tab.label}
@@ -241,20 +241,23 @@ export function Workspace({ shown, notice }: WorkspaceProps) {
     }
   }, [shown, query]);
 
-  // The terminal shown takes the focus when asked: a tab chosen by a pointer, the switcher or a chord, or the
-  // workspace shown with the focus nowhere.
+  // The terminal shown takes the focus when asked (a tab chosen by a
+  // pointer, the switcher or a chord), and when the workspace is shown with
+  // the focus nowhere: each once its emulator is ready and no overlay is
+  // open, since an emulator still loading has nothing to focus.
   const overlay = ws.switcher || ending !== undefined || ws.closing !== undefined;
+  const ready = tab?.ready === true;
+  const answered = useRef(0);
   useEffect(() => {
-    if (shown && !overlay && ws.active !== undefined) {
-      runtime(ws.active).emulator?.focus();
+    if (!shown || overlay || !ready || ws.active === undefined) {
+      return;
     }
-  }, [ws.focusRequest]);
-  useEffect(() => {
     const focused = document.activeElement;
-    if (shown && !overlay && ws.active !== undefined && (focused === null || focused === document.body)) {
+    if (ws.focusRequest !== answered.current || focused === null || focused === document.body) {
+      answered.current = ws.focusRequest;
       runtime(ws.active).emulator?.focus();
     }
-  }, [shown]);
+  }, [shown, overlay, ready, ws.active, ws.focusRequest]);
 
   return (
     <div
@@ -282,11 +285,9 @@ export function Workspace({ shown, notice }: WorkspaceProps) {
       </section>
       {shown && ws.switcher && <Switcher hosts={hosts} />}
       {ending && (
-        <ConfirmDialog
-          title={t("terminal.end.title", { host: ending.label })}
-          consequence={t("terminal.end.consequence", { host: ending.host })}
-          confirm={t("terminal.end.confirm")}
-          onConfirm={() => {
+        <EndQuestion
+          tab={ending}
+          onEnd={() => {
             runtime(ending.key).end?.();
             setEnding(undefined);
           }}

@@ -188,7 +188,9 @@ function RailTabs({ open, onTerminal, hosts }: { open: boolean; onTerminal: bool
  * the foot: Terminal, a link to the workspace with the count while tabs
  * are open; New tab, which opens the switcher from any page; then the open
  * tabs, or "Open terminal" with none; and at 16 tabs, why New tab is
- * disabled. On the terminal, the way out with the keyboard follows it.
+ * disabled, which the folded rail says to a screen reader alone. On the
+ * terminal, the way out with the keyboard follows it, in the folded rail
+ * for a screen reader alone.
  */
 export function TerminalSection({ open, onTerminal }: { open: boolean; onTerminal: boolean }) {
   const t = useT();
@@ -248,10 +250,12 @@ export function TerminalSection({ open, onTerminal }: { open: boolean; onTermina
             </button>
           )
         )}
-        {full && open && <p className="t-label px-2">{t("terminal.tab.limit")}</p>}
+        {full && <p className={open ? "t-label px-2" : "sr-only"}>{t("terminal.tab.limit", { max: maxTabs })}</p>}
       </div>
-      {open && onTerminal && tabs.length > 0 && (
-        <p className="t-label shrink-0 px-2.5 text-xs [@media(max-height:640px)]:sr-only">{t("terminal.leave")}</p>
+      {onTerminal && tabs.length > 0 && (
+        <p className={open ? "t-label shrink-0 px-2.5 text-xs [@media(max-height:640px)]:sr-only" : "sr-only"}>
+          {t("terminal.leave")}
+        </p>
       )}
     </>
   );
@@ -270,7 +274,6 @@ export function PhoneTerminalButton() {
   return (
     <Link
       href={terminalPath + workspaceQuery(workspace())}
-      aria-label={tab ? t("terminal.place.count", { count: tabs.length }) : undefined}
       className={`flex h-12 max-w-[40%] shrink-0 items-center gap-2 rounded-xl ps-3 pe-2.5 no-underline outline-none data-[focus-visible]:ring-2 data-[focus-visible]:ring-focus ${
         tab ? "bg-foreground text-background" : "island text-foreground"
       }`}
@@ -281,26 +284,35 @@ export function PhoneTerminalButton() {
         <SquareTerminal aria-hidden className="size-[1.125rem] shrink-0" />
       )}
       <span className="truncate text-[0.9375rem] font-semibold">{tab ? tab.label : t("terminal.title")}</span>
-      {tab && <span className="t-num rounded-full bg-background/20 px-1.5 text-xs font-semibold">{tabs.length}</span>}
+      {tab && (
+        <>
+          <span aria-hidden className="t-num rounded-full bg-background/20 px-1.5 text-xs font-semibold">
+            {tabs.length}
+          </span>
+          <span className="sr-only">{`, ${t("terminal.place.count", { count: tabs.length })}`}</span>
+        </>
+      )}
     </Link>
   );
 }
 
-/** CloseQuestion asks before a tab whose shell runs is closed, wherever its closing was asked for. */
-export function CloseQuestion() {
+/** EndQuestion asks before a tab's SSH Session, whose shell runs, is ended: by closing the tab, or by More's End SSH Session. */
+export function EndQuestion({ tab, onEnd, onCancel }: { tab: TerminalTab; onEnd: () => void; onCancel: () => void }) {
   const t = useT();
-  const { tabs, closing } = useWorkspace();
-  const tab = tabs.find((each) => each.key === closing);
-  if (!tab) {
-    return null;
-  }
   return (
     <ConfirmDialog
       title={t("terminal.end.title", { host: tab.label })}
       consequence={t("terminal.end.consequence", { host: tab.host })}
       confirm={t("terminal.end.confirm")}
-      onConfirm={() => closeTab(tab.key)}
-      onCancel={cancelClose}
+      onConfirm={onEnd}
+      onCancel={onCancel}
     />
   );
+}
+
+/** CloseQuestion asks before a tab whose shell runs is closed, wherever its closing was asked for. */
+export function CloseQuestion() {
+  const { tabs, closing } = useWorkspace();
+  const tab = tabs.find((each) => each.key === closing);
+  return tab ? <EndQuestion tab={tab} onEnd={() => closeTab(tab.key)} onCancel={cancelClose} /> : null;
 }

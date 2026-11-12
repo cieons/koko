@@ -122,7 +122,7 @@ export function Switcher({ hosts }: { hosts: readonly Host[] | undefined }) {
               )}
             </ListBox>
           </Autocomplete>
-          {full && <p className="t-label border-t border-line px-5 py-3">{t("terminal.tab.limit")}</p>}
+          {full && <p className="t-label border-t border-line px-5 py-3">{t("terminal.tab.limit", { max: maxTabs })}</p>}
           <p className="t-label hidden border-t border-line px-5 py-3 md:block">
             {t("terminal.switcher.keys", { open: chord("K"), left: chord("←"), right: chord("→") })}
           </p>

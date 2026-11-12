@@ -68,7 +68,8 @@ that id (`panelId`); with no list shown a panel has an id of its own.
   activation) and leave the focus in the list; elsewhere they only move
   along it (manual activation), and choosing a tab goes to the terminal.
 - A tab chosen by a pointer, the switcher or a chord gives its terminal
-  the focus (`focusRequest`); one chosen with the keys does not.
+  the focus (`focusRequest`), once its emulator has loaded and no overlay
+  is open; one chosen with the keys does not.
 - Delete or Backspace on a focused tab, and a click on its close mark,
   close it, asking first while its shell runs (connected or reconnecting;
   `askClose`, answered by `CloseQuestion` in the frame). The mark is
@@ -122,12 +123,16 @@ card asking before the clipboard is written.
 - **A duplicated browser tab** starts with a copy of the original's
   `sessionStorage`. Each document holds a Web Lock,
   `koko.terminal.<id>`, for each SSH Session it holds, which the browser
-  lets go with the document. The new document ends at once only the kept
-  ids no live document holds; it forgets the others, and ends each once
-  the document holding it lets it go without ending it (the original
-  closed and its close never arrived, or a reload's old document whose
-  locks went only after the new one asked). Without Web Locks it cannot
-  tell, ends none and forgets them; the Gateway ends them at the grace.
+  lets go with the document. The new document ends the kept ids no live
+  document holds, and waits for each other one to be let go, at most
+  `timing.heldWait` (1 s), ending it too, before it opens anything: a
+  reload's old document lets its locks go within that. One still held
+  after it belongs to a live document, the original of a duplicated tab,
+  which the copy leaves alone and forgets; it ends it only once that
+  document lets it go, as when the original was closed and its close
+  never arrived (one the original ended is answered as ended). Without Web
+  Locks it cannot tell, ends none and forgets them; the Gateway ends them
+  at the grace.
 - **Closing the browser tab** sends each SSH Session's close on `pagehide`
   not kept for the back-forward cache, at best effort.
 

@@ -14,7 +14,7 @@ export default {
   "terminal.tab.newKeys": "新建标签页（{keys}）",
   "terminal.tab.close": "关闭标签页",
   "terminal.tab.closeNamed": "关闭 {tab}",
-  "terminal.tab.limit": "一个浏览器最多同时保持 16 个 SSH 会话。请先关闭一个标签页，再打开新的标签页。",
+  "terminal.tab.limit": "一个浏览器最多同时保持 {max} 个 SSH 会话。请先关闭一个标签页，再打开新的标签页。",
   "terminal.leave": "如需使用键盘离开终端，请先按 Escape 键，再按 Tab 键。",
   "terminal.state.connecting": "正在连接",
   "terminal.state.connected": "已连接",
