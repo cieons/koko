@@ -34,18 +34,34 @@ func isFiles(r *http.Request) bool {
 	return strings.HasPrefix(r.URL.Path, api.FilesPrefix)
 }
 
+// filesEndpoint is one files endpoint: how it reads a request's body, and
+// how it answers.
+type filesEndpoint struct {
+	read  func(r *http.Request) ([]byte, error)
+	serve func(r *http.Request, c gateway.TerminalCaller, body []byte) (any, error)
+}
+
 // serveFiles answers a request under api.FilesPrefix that came in by way,
 // in this order: an unknown endpoint, another method, a POST from another
 // Origin (bad_origin), before anything else is read, then a page that is no
-// one, as the terminal's WebSocket refuses it; a JSON endpoint then takes
-// application/json of at most api.MaxFilesBody bytes. Every answer is JSON,
-// which no cache keeps; neither the body nor the cookie reaches the log.
+// one, as the terminal's WebSocket refuses it; then the body, read whole: a
+// JSON endpoint's application/json of at most api.MaxFilesBody bytes, or a
+// chunk. Every answer is JSON, which no cache keeps; neither the body, the
+// query nor the cookie reaches the log.
 func (f *Front) serveFiles(w http.ResponseWriter, r *http.Request, way terminalWay) {
 	w.Header().Set("Cache-Control", "no-store")
-	var serve func(r *http.Request, c gateway.TerminalCaller, body []byte) (any, error)
+	var e filesEndpoint
 	switch r.URL.Path {
 	case api.FilesListPath:
-		serve = filesJSON(f.filesList)
+		e = filesEndpoint{readJSON, filesJSON(f.filesList)}
+	case api.FilesUploadPath:
+		e = filesEndpoint{readJSON, filesJSON(f.filesUpload)}
+	case api.FilesChunkPath:
+		e = filesEndpoint{readChunk, f.filesChunk}
+	case api.FilesFinishPath:
+		e = filesEndpoint{readJSON, filesJSON(f.filesFinish)}
+	case api.FilesCancelPath:
+		e = filesEndpoint{readJSON, filesJSON(f.filesCancel)}
 	default:
 		f.refuseAPI(w, r, api.CodeUnknownOperation.Errorf("no endpoint is served at %s", r.URL.Path))
 		return
@@ -65,25 +81,33 @@ func (f *Front) serveFiles(w http.ResponseWriter, r *http.Request, way terminalW
 		f.refuseAPI(w, r, refusalError(*refused))
 		return
 	}
-	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
-		f.refuseAPI(w, r, api.CodeUnsupportedMediaType.Errorf("the request body must be application/json"))
-		return
-	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, api.MaxFilesBody+1))
+	body, err := e.read(r)
 	if err != nil {
-		f.refuseAPI(w, r, api.CodeInvalidRequest.Errorf("read the request body: %v", err))
+		f.refuseAPI(w, r, err)
 		return
 	}
-	if len(body) > api.MaxFilesBody {
-		f.refuseAPI(w, r, api.CodeRequestTooLarge.Errorf("the request body is over the limit of %d KiB of %s", api.MaxFilesBody>>10, r.URL.Path))
-		return
-	}
-	resp, err := serve(r, c, body)
+	resp, err := e.serve(r, c, body)
 	if err != nil {
 		f.refuseAPI(w, r, err)
 		return
 	}
 	writeJSON(w, resp)
+}
+
+// readJSON reads a JSON endpoint's body: application/json of at most
+// api.MaxFilesBody bytes.
+func readJSON(r *http.Request) ([]byte, error) {
+	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
+		return nil, api.CodeUnsupportedMediaType.Errorf("the request body must be application/json")
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, api.MaxFilesBody+1))
+	if err != nil {
+		return nil, api.CodeInvalidRequest.Errorf("read the request body: %v", err)
+	}
+	if len(body) > api.MaxFilesBody {
+		return nil, api.CodeRequestTooLarge.Errorf("the request body is over the limit of %d KiB of %s", api.MaxFilesBody>>10, r.URL.Path)
+	}
+	return body, nil
 }
 
 // filesJSON is a JSON files endpoint that handle answers: it decodes the

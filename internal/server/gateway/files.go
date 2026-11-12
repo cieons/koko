@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"slices"
 	"sync"
@@ -33,6 +34,35 @@ type Files struct {
 	SFTP *sftp.Client
 	t    *tunnel
 	f    *terminalFiles
+	log  *slog.Logger
+}
+
+// The direction and the outcome of a file transferred, as its log line
+// names them.
+const (
+	Upload   = "upload"
+	Download = "download"
+
+	TransferDone      = "done"
+	TransferCancelled = "cancelled"
+	TransferFailed    = "failed"
+)
+
+// Transferred logs that a file moved, once its transfer ended: its
+// direction, Upload or Download, its absolute path on the Host (a
+// download's as asked, an upload's final one), the bytes moved, and the
+// outcome, with err for TransferFailed. The line names the SSH Session as
+// its other lines do, and holds no token and no content.
+func (f *Files) Transferred(direction, path string, bytes int64, outcome string, err error) {
+	t := f.t
+	attrs := slices.Concat(t.named(), []any{"user", t.user}, callerAttrs(t.caller), []any{
+		"host", t.hostName, "host_id", t.hostID,
+		"direction", direction, "path", path, "bytes", bytes, "outcome", outcome,
+	})
+	if err != nil {
+		attrs = append(attrs, "err", err)
+	}
+	f.log.Info("file transferred", attrs...)
 }
 
 // Done is closed once the SSH Session has ended, which ends its files.
@@ -134,7 +164,7 @@ func (g *Gateway) Files(c TerminalCaller, id [wire.TunnelIDSize]byte) (*Files, e
 	if err != nil {
 		return nil, err
 	}
-	return &Files{SFTP: client, t: t, f: tf}, nil
+	return &Files{SFTP: client, t: t, f: tf, log: g.log}, nil
 }
 
 // sftpOf returns the SFTP client of the web terminal t, whose files are tf,

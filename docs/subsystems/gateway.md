@@ -508,6 +508,14 @@ the client's address as the web listener counts it (the last
   `direct-streamlocal@openssh.com` channel opens, `-R` with the address a
   `tcpip-forward` or `streamlocal-forward@openssh.com` asks the Host to
   listen on. A busy forward is logged once per target.
+- `file transferred`, once per file a web terminal moved
+  (`Files.Transferred`), when its transfer ends: `tunnel`, `client`,
+  `user`, `signin` or `device_session`, `host`, `host_id`, `direction`
+  (`upload` or `download`), `path` (the file's absolute path on the Host: a
+  download's as asked, an upload's final one), `bytes` (those moved), and
+  `outcome`: `done`, `cancelled`, or `failed` with `err`. A listing is not
+  logged, and no line holds a cookie, a download token or a file's
+  content.
 - `ssh session ended`: the same as the start but `addr`, then `duration`,
   `bytes_from_device` and `bytes_to_device` (the Tunnel's bytes each way),
   `exit_status` and `exit_signal` when the Host sent them, and `reason`, as
@@ -844,7 +852,13 @@ an unreadable directory, past 5,000 entries, with the `sftp` subsystem
 opened and logged once; a Host without SFTP, its terminal going on; the
 Origin check, `signin_required`, another caller's SSH Session and an id
 of none; files while Detached, and `ssh_session_ended` once the SSH
-Session has ended.
+Session has ended; uploads in chunks checksummed on the Host, a chunk sent
+twice written once, a gap, a finish too early and a chunk past the size
+refused, a finish sent again; `file_exists`, then a replace keeping the
+old mode, and bad names; four uploads at once, a cancel; the SSH
+Session's end and the idle limit each removing the partial file and
+logging it; and a Host that fails writes (`sshhost.SFTPFailingWrites`),
+each upload leaving nothing under its real name.
 [`cli/web_terminal_access_test.go`](../../internal/client/cli/web_terminal_access_test.go)
 keeps a terminal through `koko web` across a Web URL change that ends a
 Sign-in's.

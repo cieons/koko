@@ -7,4 +7,8 @@ export default {
   "error.ssh_session_ended": "此 SSH 会话已结束，其文件传输随之终止。",
   "error.sftp_unavailable": "此主机未提供 SFTP，koko 无法通过它传输文件。",
   "error.host_refused": "主机拒绝了该请求。",
+  "error.file_exists": "此目录中已存在同名文件。",
+  "error.bad_offset": "上传的部分内容未能送达。请重新上传该文件。",
+  "error.unknown_upload": "此上传已不在进行中。",
+  "error.too_many_uploads": "此 SSH 会话同时进行的上传已达上限。请等待其中一项完成。",
 } satisfies Record<keyof typeof en, string>;

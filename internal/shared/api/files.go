@@ -14,10 +14,30 @@ const (
 	// FilesListPath lists a directory on the Host with a FilesListRequest,
 	// answering a FilesListResponse.
 	FilesListPath = FilesPrefix + "list"
+	// FilesUploadPath starts an upload with a FilesUploadRequest, answering
+	// a FilesUploadResponse.
+	FilesUploadPath = FilesPrefix + "upload"
+	// FilesChunkPath takes one chunk of an upload, at most MaxFilesChunk
+	// bytes of application/octet-stream, as a POST to
+	// FilesChunkPath?upload=<id>&offset=<n>, answering a
+	// FilesChunkResponse.
+	FilesChunkPath = FilesPrefix + "chunk"
+	// FilesFinishPath finishes an upload with a FilesFinishRequest,
+	// answering a FilesFinishResponse.
+	FilesFinishPath = FilesPrefix + "finish"
+	// FilesCancelPath cancels an upload with a FilesCancelRequest,
+	// answering a FilesCancelResponse.
+	FilesCancelPath = FilesPrefix + "cancel"
 	// MaxFilesBody is the largest JSON body a files endpoint reads.
 	MaxFilesBody = 4 << 10
 	// MaxListed is the most entries a listing holds; the rest are counted.
 	MaxListed = 5000
+	// MaxFilesChunk is the largest chunk of an upload: under the 1 MiB
+	// body that nginx takes by default.
+	MaxFilesChunk = 512 << 10
+	// MaxUploads is how many uploads one SSH Session runs at once; the
+	// page queues the rest.
+	MaxUploads = 4
 )
 
 // The files endpoints that take and answer JSON, with their types.
@@ -25,11 +45,22 @@ var (
 	// FilesList lists the directory a path names on the Host, following
 	// links, or the Host Account's home for an empty path.
 	FilesList = AuthEndpoint[FilesListRequest, FilesListResponse]{Path: FilesListPath}
+	// FilesUpload starts an upload into a directory on the Host: a hidden
+	// partial file beside its name, which FilesFinish renames into place.
+	// A name that exists is refused with CodeFileExists unless the request
+	// replaces it, and a fifth upload of one SSH Session with
+	// CodeTooManyUploads.
+	FilesUpload = AuthEndpoint[FilesUploadRequest, FilesUploadResponse]{Path: FilesUploadPath}
+	// FilesFinish renames an upload's partial file onto its name once every
+	// byte has come, and answers the same again when sent again.
+	FilesFinish = AuthEndpoint[FilesFinishRequest, FilesFinishResponse]{Path: FilesFinishPath}
+	// FilesCancel cancels an upload, removing its partial file.
+	FilesCancel = AuthEndpoint[FilesCancelRequest, FilesCancelResponse]{Path: FilesCancelPath}
 )
 
 // FilesEndpoints returns every files endpoint that takes and answers JSON.
 func FilesEndpoints() []AuthEndpointInfo {
-	return []AuthEndpointInfo{FilesList.Info()}
+	return []AuthEndpointInfo{FilesList.Info(), FilesUpload.Info(), FilesFinish.Info(), FilesCancel.Info()}
 }
 
 // FilesListRequest names a directory on the Host of the web terminal's SSH
@@ -64,6 +95,54 @@ type FileEntry struct {
 	Modified string `json:"modified"`
 }
 
+// FilesUploadRequest starts an upload of a file of Size bytes, named Name,
+// into the directory Dir on the Host of the web terminal's SSH Session
+// Tunnel.
+type FilesUploadRequest struct {
+	Tunnel string `json:"tunnel"`
+	// Dir is absolute.
+	Dir string `json:"dir"`
+	// Name is the file's name in Dir: not empty, "." or "..", and without
+	// "/".
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+	// Replace replaces a file of that name, which is otherwise refused.
+	Replace bool `json:"replace,omitzero"`
+}
+
+// FilesUploadResponse names the upload started.
+type FilesUploadResponse struct {
+	// Upload is the upload's id, which its chunks, finish and cancel name.
+	Upload string `json:"upload"`
+}
+
+// FilesChunkResponse is how much of an upload has come: the bytes from
+// its start, the chunk just sent among them, or a chunk sent again not
+// written twice.
+type FilesChunkResponse struct {
+	Received int64 `json:"received"`
+}
+
+// FilesFinishRequest names the upload to finish.
+type FilesFinishRequest struct {
+	Upload string `json:"upload"`
+}
+
+// FilesFinishResponse is the file an upload made on the Host.
+type FilesFinishResponse struct {
+	// Path is the file's absolute path.
+	Path string `json:"path"`
+	Size int64  `json:"size"`
+}
+
+// FilesCancelRequest names the upload to cancel.
+type FilesCancelRequest struct {
+	Upload string `json:"upload"`
+}
+
+// FilesCancelResponse answers a cancel.
+type FilesCancelResponse struct{}
+
 // The files area's codes.
 var (
 	// CodeUnknownTunnel: a files call named no live web terminal SSH
@@ -78,6 +157,17 @@ var (
 	// CodeHostRefused: the Host refused a listing, a read or a write; the
 	// message is the Host's.
 	CodeHostRefused = Code{"host_refused", http.StatusForbidden}
+	// CodeFileExists: an upload's name exists in its directory and the
+	// upload does not replace it.
+	CodeFileExists = Code{"file_exists", http.StatusConflict}
+	// CodeBadOffset: a chunk would leave a gap in its upload, or an upload
+	// was finished before every byte had come.
+	CodeBadOffset = Code{"bad_offset", http.StatusConflict}
+	// CodeUnknownUpload: no live upload of this caller has the id.
+	CodeUnknownUpload = Code{"unknown_upload", http.StatusNotFound}
+	// CodeTooManyUploads: the SSH Session already runs MaxUploads uploads;
+	// the page queues the rest.
+	CodeTooManyUploads = Code{"too_many_uploads", http.StatusTooManyRequests}
 )
 
 var filesCodes = []Code{
@@ -85,4 +175,8 @@ var filesCodes = []Code{
 	CodeSSHSessionEnded,
 	CodeSFTPUnavailable,
 	CodeHostRefused,
+	CodeFileExists,
+	CodeBadOffset,
+	CodeUnknownUpload,
+	CodeTooManyUploads,
 }

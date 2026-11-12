@@ -1,7 +1,13 @@
 package web_test
 
 import (
+	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json/v2"
+	"errors"
+	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +21,7 @@ import (
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/harness/sshhost"
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/timing"
 )
 
 // filesPost posts req, as JSON, to the files endpoint path from the browser
@@ -208,4 +215,236 @@ func TestFilesWhileDetachedAndOnceEnded(t *testing.T) {
 	h.Koko("host", "retire", "web1").WantSuccess(t)
 	waitLog(t, h, `msg="ssh session ended" tunnel=`+w.ID+` .* reason="host retired"\n`)
 	wantAPIError(t, list(t, b, w.ID, ""), http.StatusGone, "ssh_session_ended")
+}
+
+// startUpload starts an upload of size bytes named name into dir through
+// the terminal w, and returns its id.
+func startUpload(t *testing.T, b *harness.Browser, w *harness.WebTerminal, dir, name string, size int64, replace bool) string {
+	t.Helper()
+	return wantFiles[api.FilesUploadResponse](t, filesPost(t, b, api.FilesUploadPath,
+		api.FilesUploadRequest{Tunnel: w.ID, Dir: dir, Name: name, Size: size, Replace: replace})).Upload
+}
+
+// sendChunk sends data as the chunk of the upload id at offset, as the
+// browser b would, with contentType.
+func sendChunk(t *testing.T, h *harness.Harness, b *harness.Browser, id string, offset int64, data []byte, contentType string) answer {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
+		"http://"+h.WebAddress()+api.FilesChunkPath+"?upload="+id+"&offset="+strconv.FormatInt(offset, 10), bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = strings.TrimPrefix(harness.WebURL, "https://")
+	req.Header.Set("Origin", harness.WebURL)
+	req.Header.Set("Content-Type", contentType)
+	req.AddCookie(&http.Cookie{Name: "__Host-koko", Value: b.Cookie})
+	tr := &http.Transport{}
+	defer tr.CloseIdleConnections()
+	resp, err := (&http.Client{Transport: tr}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return answer{Response: resp, body: string(body)}
+}
+
+// chunk sends data as the chunk of the upload id at offset, and fails the
+// test unless it is answered with received.
+func chunk(t *testing.T, h *harness.Harness, b *harness.Browser, id string, offset int64, data []byte, received int64) {
+	t.Helper()
+	if got := wantFiles[api.FilesChunkResponse](t, sendChunk(t, h, b, id, offset, data, "application/octet-stream")); got.Received != received {
+		t.Errorf("the chunk at %d was answered with %d received, want %d", offset, got.Received, received)
+	}
+}
+
+// partials returns the partial files of uploads named name in dir.
+func partials(t *testing.T, dir, name string) []string {
+	t.Helper()
+	found, err := filepath.Glob(filepath.Join(dir, "."+name+".koko-upload-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return found
+}
+
+// wantGone fails the test unless dir holds neither the file name nor a
+// partial file of it.
+func wantGone(t *testing.T, dir, name string) {
+	t.Helper()
+	if p := partials(t, dir, name); len(p) > 0 {
+		t.Errorf("the partial files %q are left", p)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, name)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("%s is under its real name (%v)", name, err)
+	}
+}
+
+// An upload is written in chunks into a hidden partial file, private to
+// the Host Account, and renamed onto its name once every byte has come,
+// byte for byte; a chunk sent again is answered and not written twice, a
+// gap and a chunk past the size are refused, as is a finish before the
+// last byte; a finish sent again is answered the same; and the file
+// moved is logged.
+func TestFilesUploadInChunks(t *testing.T) {
+	t.Parallel()
+	h, host, b, w := filesTerminal(t, sshhost.SFTP())
+	home := host.Home()
+	data := make([]byte, 2*api.MaxFilesChunk+300<<10)
+	_, _ = rand.Read(data)
+	size := int64(len(data))
+	id := startUpload(t, b, w, home, "data.bin", size, false)
+
+	p := partials(t, home, "data.bin")
+	if len(p) != 1 || !regexp.MustCompile(`/\.data\.bin\.koko-upload-[0-9a-f]{8}$`).MatchString(p[0]) {
+		t.Fatalf("the partial files are %q, want one .data.bin.koko-upload-<8 hex>", p)
+	}
+	harness.WantPrivate(t, p[0])
+	if _, err := os.Lstat(filepath.Join(home, "data.bin")); err == nil {
+		t.Error("data.bin is under its real name before the upload finished")
+	}
+
+	const c = api.MaxFilesChunk
+	chunk(t, h, b, id, 0, data[:c], c)
+	chunk(t, h, b, id, c, data[c:2*c], 2*c)
+	// Sent again, with other bytes: answered, and not written.
+	chunk(t, h, b, id, 0, make([]byte, c), 2*c)
+	wantAPIError(t, sendChunk(t, h, b, id, 2*c+1, data[2*c+1:], "application/octet-stream"), http.StatusConflict, "bad_offset")
+	wantAPIError(t, sendChunk(t, h, b, id, 2*c, data[2*c:], "application/json"), http.StatusUnsupportedMediaType, "unsupported_media_type")
+	wantAPIError(t, sendChunk(t, h, b, id, 2*c, make([]byte, c+1), "application/octet-stream"), http.StatusRequestEntityTooLarge, "request_too_large")
+	wantAPIError(t, filesPost(t, b, api.FilesFinishPath, api.FilesFinishRequest{Upload: id}), http.StatusConflict, "bad_offset")
+	chunk(t, h, b, id, 2*c, data[2*c:], size)
+	wantAPIError(t, sendChunk(t, h, b, id, size, []byte{1}, "application/octet-stream"), http.StatusBadRequest, "invalid_request")
+
+	want := api.FilesFinishResponse{Path: home + "/data.bin", Size: size}
+	for range 2 {
+		if got := wantFiles[api.FilesFinishResponse](t, filesPost(t, b, api.FilesFinishPath, api.FilesFinishRequest{Upload: id})); got != want {
+			t.Errorf("the finish answered %+v, want %+v", got, want)
+		}
+	}
+	got, err := os.ReadFile(filepath.Join(home, "data.bin"))
+	if err != nil || sha256.Sum256(got) != sha256.Sum256(data) {
+		t.Errorf("data.bin on the Host holds %d bytes that differ from the %d sent (%v)", len(got), size, err)
+	}
+	if fi, err := os.Stat(filepath.Join(home, "data.bin")); err != nil || fi.Mode().Perm() != 0o644 {
+		t.Errorf("data.bin has the mode %v, want 0644 (%v)", fi.Mode(), err)
+	}
+	if p := partials(t, home, "data.bin"); len(p) > 0 {
+		t.Errorf("the partial files %q are left", p)
+	}
+	waitLog(t, h, `msg="file transferred" tunnel=`+w.ID+` client=browser user=`+harness.Owner+` signin=signin_\w+ host=web1 host_id=\S+ direction=upload path=`+regexp.QuoteMeta(home)+`/data.bin bytes=`+strconv.FormatInt(size, 10)+` outcome=done\n`)
+}
+
+// An upload whose name exists is refused with file_exists unless it
+// replaces it, which then keeps the old file's mode; a bad name, or a
+// directory that is not absolute, is refused.
+func TestFilesUploadAsksBeforeReplacing(t *testing.T) {
+	t.Parallel()
+	h, host, b, w := filesTerminal(t, sshhost.SFTP())
+	home := host.Home()
+	writeFile(t, home, "notes.txt", "old")
+	if err := os.Chmod(filepath.Join(home, "notes.txt"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	a := filesPost(t, b, api.FilesUploadPath, api.FilesUploadRequest{Tunnel: w.ID, Dir: home, Name: "notes.txt", Size: 3})
+	wantAPIError(t, a, http.StatusConflict, "file_exists")
+	wantMessage(t, a, "notes.txt exists in "+home)
+	if p := partials(t, home, "notes.txt"); len(p) > 0 {
+		t.Errorf("a refused upload left %q", p)
+	}
+
+	id := startUpload(t, b, w, home, "notes.txt", 11, true)
+	chunk(t, h, b, id, 0, []byte("new content"), 11)
+	wantFiles[api.FilesFinishResponse](t, filesPost(t, b, api.FilesFinishPath, api.FilesFinishRequest{Upload: id}))
+	if got, err := os.ReadFile(filepath.Join(home, "notes.txt")); err != nil || string(got) != "new content" {
+		t.Errorf("notes.txt holds %q, want the upload's (%v)", got, err)
+	}
+	if fi, err := os.Stat(filepath.Join(home, "notes.txt")); err != nil || fi.Mode().Perm() != 0o640 {
+		t.Errorf("the replaced notes.txt has the mode %v, want its old 0640 (%v)", fi.Mode(), err)
+	}
+
+	for _, name := range []string{"", ".", "..", "a/b", "/etc"} {
+		a := filesPost(t, b, api.FilesUploadPath, api.FilesUploadRequest{Tunnel: w.ID, Dir: home, Name: name, Size: 1})
+		wantAPIError(t, a, http.StatusBadRequest, "invalid_name")
+	}
+	wantAPIError(t, filesPost(t, b, api.FilesUploadPath, api.FilesUploadRequest{Tunnel: w.ID, Dir: "docs", Name: "a", Size: 1}),
+		http.StatusBadRequest, "invalid_request")
+}
+
+// An SSH Session runs at most four uploads at once. Cancelling one removes
+// its partial file, frees its place and is logged; a cancelled upload, or
+// another caller's, is unknown.
+func TestFilesUploadsAreCancelledAndLimited(t *testing.T) {
+	t.Parallel()
+	h, host, b, w := filesTerminal(t, sshhost.SFTP())
+	home := host.Home()
+	var ids []string
+	for i := range api.MaxUploads {
+		ids = append(ids, startUpload(t, b, w, home, "f"+strconv.Itoa(i), 10, false))
+	}
+	a := filesPost(t, b, api.FilesUploadPath, api.FilesUploadRequest{Tunnel: w.ID, Dir: home, Name: "f4", Size: 10})
+	wantAPIError(t, a, http.StatusTooManyRequests, "too_many_uploads")
+	wantGone(t, home, "f4")
+
+	chunk(t, h, b, ids[0], 0, []byte("12345"), 5)
+	other := h.SignIn("bob")
+	wantAPIError(t, filesPost(t, other, api.FilesCancelPath, api.FilesCancelRequest{Upload: ids[0]}), http.StatusNotFound, "unknown_upload")
+	wantFiles[api.FilesCancelResponse](t, filesPost(t, b, api.FilesCancelPath, api.FilesCancelRequest{Upload: ids[0]}))
+	wantGone(t, home, "f0")
+	waitLog(t, h, `msg="file transferred" tunnel=`+w.ID+` .* direction=upload path=`+regexp.QuoteMeta(home)+`/f0 bytes=5 outcome=cancelled\n`)
+	wantAPIError(t, sendChunk(t, h, b, ids[0], 5, []byte("67890"), "application/octet-stream"), http.StatusNotFound, "unknown_upload")
+	wantAPIError(t, filesPost(t, b, api.FilesCancelPath, api.FilesCancelRequest{Upload: ids[0]}), http.StatusNotFound, "unknown_upload")
+	startUpload(t, b, w, home, "f4", 10, false)
+}
+
+// The SSH Session's end removes the partial file of each upload it runs,
+// while the Host connection lives, and logs it failed; a later chunk is
+// ssh_session_ended.
+func TestFilesUploadEndsWithItsSSHSession(t *testing.T) {
+	t.Parallel()
+	h, host, b, w := filesTerminal(t, sshhost.SFTP())
+	home := host.Home()
+	id := startUpload(t, b, w, home, "big.bin", 10, false)
+	chunk(t, h, b, id, 0, []byte("12345"), 5)
+
+	if a, _ := b.TerminalPage().End(w.ID); !a.Ended {
+		t.Fatalf("the end was answered %+v", a)
+	}
+	waitLog(t, h, `msg="file transferred" tunnel=`+w.ID+` .* direction=upload path=`+regexp.QuoteMeta(home)+`/big.bin bytes=5 outcome=failed err="the SSH Session ended"\n`)
+	wantGone(t, home, "big.bin")
+	wantAPIError(t, sendChunk(t, h, b, id, 5, []byte("67890"), "application/octet-stream"), http.StatusGone, "ssh_session_ended")
+	wantAPIError(t, filesPost(t, b, api.FilesFinishPath, api.FilesFinishRequest{Upload: id}), http.StatusGone, "ssh_session_ended")
+}
+
+// An upload that gets no chunk for timing.UploadIdle is given up: its
+// partial file goes, and it is logged failed and forgotten.
+func TestFilesUploadGivenUpWhenIdle(t *testing.T) {
+	t.Parallel()
+	h := startTerminals(t, harness.Timings(timing.Timings{UploadIdle: 200 * time.Millisecond}))
+	host := terminalHost(t, h, "web1", nil, sshhost.SFTP())
+	b := h.SignIn(harness.Owner)
+	w := b.TerminalPage().Open("web1", 80, 24)
+	id := startUpload(t, b, w, host.Home(), "idle.bin", 10, false)
+
+	waitLog(t, h, `msg="file transferred" tunnel=`+w.ID+` .* path=\S+/idle.bin bytes=0 outcome=failed err="no chunk came for 200ms"\n`)
+	wantGone(t, host.Home(), "idle.bin")
+	wantAPIError(t, sendChunk(t, h, b, id, 0, []byte("1"), "application/octet-stream"), http.StatusNotFound, "unknown_upload")
+}
+
+// A Host that fails writes, as on a full disk, answers a chunk
+// host_refused with its message, and a cancel then removes the partial
+// file.
+func TestFilesUploadToAHostThatFailsWrites(t *testing.T) {
+	t.Parallel()
+	h, host, b, w := filesTerminal(t, sshhost.SFTPFailingWrites())
+	home := host.Home()
+	id := startUpload(t, b, w, home, "full.bin", 5, false)
+	a := sendChunk(t, h, b, id, 0, []byte("12345"), "application/octet-stream")
+	wantAPIError(t, a, http.StatusForbidden, "host_refused")
+	wantMessage(t, a, "Failure")
+	wantFiles[api.FilesCancelResponse](t, filesPost(t, b, api.FilesCancelPath, api.FilesCancelRequest{Upload: id}))
+	wantGone(t, home, "full.bin")
 }

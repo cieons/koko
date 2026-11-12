@@ -75,6 +75,8 @@ type Front struct {
 	// message may take among them.
 	timings timing.Timings
 	runs    *runs
+	// uploads are the web terminals' uploads in progress (upload.go).
+	uploads *uploads
 
 	// keyMu guards key, the cookie key once loaded or made.
 	keyMu sync.Mutex
@@ -87,9 +89,10 @@ type Front struct {
 // terminals to gw, reads a token's expiry on clock, the koko server's, and
 // waits as timings say (the zero Timings is the product's).
 func New(api http.Handler, signins *signin.Service, gw *gateway.Gateway, st *store.Store, rootKey *seal.RootKey, clock func() time.Time, timings timing.Timings, log *slog.Logger) *Front {
+	timings = timings.Resolve()
 	return &Front{
 		api: api, signins: signins, gateway: gw, files: webui.FS(), store: st, rootKey: rootKey,
-		log: log, clock: clock, timings: timings.Resolve(), runs: newRuns(),
+		log: log, clock: clock, timings: timings, runs: newRuns(), uploads: newUploads(timings.UploadIdle),
 	}
 }
 

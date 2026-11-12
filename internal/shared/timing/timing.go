@@ -107,6 +107,11 @@ const (
 	// SignInCheck is how often the Gateway looks for web terminals whose
 	// Sign-in has expired, to end their SSH Sessions.
 	SignInCheck = time.Minute
+	// UploadIdle is how long a web terminal's upload goes without a chunk
+	// before the web front gives it up and removes its partial file: as
+	// long as BrowserGrace, which a page that keeps its uploads across a
+	// drop resends a failed chunk within.
+	UploadIdle = 15 * time.Minute
 	// FirstMessage bounds how long the web front waits for a web
 	// terminal's first message once its WebSocket is upgraded: a page sends
 	// it at once, and an upgrade that sends none holds nothing for long.
@@ -168,6 +173,7 @@ type Timings struct {
 	Grace                time.Duration
 	BrowserGrace         time.Duration
 	SignInCheck          time.Duration
+	UploadIdle           time.Duration
 	FirstMessage         time.Duration
 	ResumeExchange       time.Duration
 	ResumeGiveUp         time.Duration
@@ -208,6 +214,7 @@ func (t Timings) Resolve() Timings {
 	t.Grace = cmp.Or(t.Grace, Grace)
 	t.BrowserGrace = cmp.Or(t.BrowserGrace, BrowserGrace)
 	t.SignInCheck = cmp.Or(t.SignInCheck, SignInCheck)
+	t.UploadIdle = cmp.Or(t.UploadIdle, UploadIdle)
 	t.FirstMessage = cmp.Or(t.FirstMessage, FirstMessage)
 	t.ResumeExchange = cmp.Or(t.ResumeExchange, ResumeExchange)
 	t.ResumeGiveUp = cmp.Or(t.ResumeGiveUp, ResumeGiveUp)

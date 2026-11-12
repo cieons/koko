@@ -34,7 +34,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -110,16 +109,10 @@ type settings struct {
 	subsystems map[string]string
 	// refused are the session requests the Host refuses (RefuseRequests).
 	refused []string
-	// sftp serves the "sftp" subsystem in the test process (SFTP).
-	sftp bool
-}
-
-// SFTP lets a session ask for the "sftp" subsystem, which the Host serves
-// in the test process with github.com/pkg/sftp's server, on the real files
-// of the test's machine, starting in the Host Account's home directory, as
-// OpenSSH's sftp-server does.
-func SFTP() Option {
-	return func(s *settings) { s.sftp = true }
+	// sftp serves the "sftp" subsystem in the test process (SFTP), and
+	// sftpFailingWrites fails every write it is asked for
+	// (SFTPFailingWrites).
+	sftp, sftpFailingWrites bool
 }
 
 // Subsystem lets a session ask for the subsystem name, which the Host runs
@@ -787,21 +780,6 @@ func (h *Host) start(ch ssh.Channel, argv, env []string) *exec.Cmd {
 	})
 	h.wg.Go(func() { h.finish(ch, cmd) })
 	return cmd
-}
-
-// serveSFTP serves SFTP on the session channel ch in the test process, in
-// the Host Account's home directory, until the client closes it or the
-// connection ends, then sends the exit status 0 and closes the channel, as
-// sftp-server's end does.
-func (h *Host) serveSFTP(ch ssh.Channel) {
-	defer func() { _ = ch.Close() }()
-	s, err := sftp.NewServer(ch, sftp.WithServerWorkingDirectory(h.home))
-	if err != nil {
-		h.t.Errorf("the in-process Host cannot serve SFTP: %v", err)
-		return
-	}
-	_ = s.Serve() // ends with the channel, as the session does
-	sendExitStatus(ch, 0)
 }
 
 // finish waits for a session's command, then sends its exit status, or the

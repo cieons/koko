@@ -421,6 +421,10 @@ JSON with `Cache-Control: no-store` beside the way in's headers:
 | Endpoint | Takes | Answers |
 | --- | --- | --- |
 | `POST /terminal/files/list` | `{"tunnel", "path"}`; `path` absolute, or empty for the Host Account's home | `{"path", "entries": [{"name", "kind", "size", "modified"}], "more"}` |
+| `POST /terminal/files/upload` | `{"tunnel", "dir", "name", "size", "replace"}` | `{"upload": "<32 hex>"}`, once the partial file is made |
+| `POST /terminal/files/chunk?upload=<id>&offset=<n>` | the bytes, `application/octet-stream`, at most 512 KiB (`api.MaxFilesChunk`) | `{"received": <n>}` |
+| `POST /terminal/files/finish` | `{"upload"}` | `{"path", "size"}` |
+| `POST /terminal/files/cancel` | `{"upload"}` | `{}` |
 
 - **A listing** resolves the path on the Host (SFTP `realpath`), so `..`
   goes up and a link to a directory is entered, and answers it as
@@ -431,6 +435,39 @@ JSON with `Cache-Control: no-store` beside the way in's headers:
   the browser's collation. A file named as a directory, or one the Host
   Account cannot read, is `host_refused` with the Host's message. A
   listing is not logged.
+- **An upload** ([`upload.go`](../../internal/server/web/upload.go)) is
+  held in the web front's memory, by its 128-bit id, for its caller alone.
+  - **Starting it.** A name that is empty, `.`, `..` or holds `/` is
+    `invalid_name` (400), and one that exists `file_exists` (409) unless
+    `replace` is set; the page asks first. A fifth upload while the SSH
+    Session runs four is `too_many_uploads` (429); the page queues it.
+    `upload` then creates `.<name>.koko-upload-<8 hex>` in `dir`,
+    exclusively, and makes it `0600` before any byte is written, since
+    pkg/sftp's open sends no mode.
+  - **Chunks** are read whole before the upload is touched, so a page that
+    sends slowly holds nothing of it, then written at `offset`. A chunk at
+    an offset already received is answered with the count and not written
+    again, so the page resends safely after a drop; a gap is `bad_offset`
+    (409), and a chunk past the size `invalid_request`. A write the Host
+    refuses, as on a full disk, is `host_refused`, and the page sends the
+    chunk again.
+  - **Finishing** takes every byte, else `bad_offset`. It gives the partial
+    file the mode of the file it replaces, or `0644`, then renames it onto
+    its name: with `posix-rename@openssh.com` where the Host offers it, so
+    a replace is one step, or else removing the old file first; without
+    `replace`, SFTP's rename, which never replaces a file made meanwhile.
+    A finish sent again, after an answer lost to a drop, is answered the
+    same.
+  - **The partial file goes** on `cancel`; after `timing.UploadIdle` (15
+    minutes) without a call of it; and when the SSH Session ends, while its
+    Host connection lives (`Files.AtEnd`), after which a call of it is
+    `ssh_session_ended`. A broken Host connection, or a koko server that
+    stops, leaves it under its hidden name, never its real one. A cancelled
+    or given-up upload is then unknown.
+  - Each is logged once it ends: `file transferred` with `direction=upload`
+    ([the Gateway's log](gateway.md#logging)), `outcome=done`,
+    `cancelled`, or `failed` with `err` (`no chunk came for 15m0s`, `the SSH
+    Session ended`).
 
 | Code | Status | When |
 | --- | --- | --- |
@@ -438,6 +475,11 @@ JSON with `Cache-Control: no-store` beside the way in's headers:
 | `ssh_session_ended` | 410 | The web terminal's SSH Session ended, as the Gateway still knows (its ending kept for a resume), which ends every transfer of it. |
 | `sftp_unavailable` | 409 | The Host offers no SFTP: `web1 offers no SFTP, which koko moves files through`. The terminal is unaffected. |
 | `host_refused` | 403 | The Host refused a listing, a read or a write; the message is the Host's, such as `Permission denied`. |
+| `invalid_name` | 400 | An upload's name is empty, `.`, `..` or holds `/` (the API's own code). |
+| `file_exists` | 409 | An upload's name exists and `replace` was not given. |
+| `bad_offset` | 409 | A chunk would leave a gap, or a finish came before every byte. |
+| `unknown_upload` | 404 | No live upload of this caller has the id. |
+| `too_many_uploads` | 429 | The SSH Session already runs 4 uploads (`api.MaxUploads`). |
 
 ## The port-owner lookup
 
@@ -514,8 +556,8 @@ and user. It is per OS ([rule 13](code-layout.md#rules-for-working-in-parallel))
 - [`terminal_files_test.go`](../../internal/server/web/terminal_files_test.go),
   S1 against the web listener and in-process Hosts serving SFTP: the
   listings, a Host without SFTP, every refusal of a files call as JSON,
-  files while Detached and once ended ([the Gateway's
-  tests](gateway.md#verifying)).
+  files while Detached and once ended, and the uploads
+  ([the Gateway's tests](gateway.md#verifying)).
 - [`run_checks_test.go`](../../internal/server/kokod/run_checks_test.go):
   a taken web listener address refused naming the process holding it;
   [`kokod_test.go`](../../internal/server/kokod/kokod_test.go):
