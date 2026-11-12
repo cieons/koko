@@ -274,6 +274,25 @@ run of `koko web`, and the page's address.
   WebSocket, and refuse new ones; a WebSocket still at it after
   `timing.StopNotice` (5 s), a page too stalled to take the notice, is cut.
   The web listener follows, then the Tunnels and the transport, as below.
+- **Files** (`Files`, [`files.go`](../../internal/server/gateway/files.go)).
+  The page's files calls ([the web front](web-front.md#the-web-terminals-files))
+  move files over SFTP on the SSH Session's own Host connection, as the
+  Host Account, so the web front never holds a Host connection.
+  `Files(caller, id)` takes only the caller who opened the SSH Session, as a
+  resume does, and returns its SFTP client
+  ([`github.com/pkg/sftp`](https://github.com/pkg/sftp)): one `session`
+  channel with the `sftp` subsystem, opened at the first call, outside the
+  Gateway's locks, and shared by every call after it, attached or Detached;
+  the next call opens another once the Host ends it. Or it says why not:
+  `unknown_tunnel` for an id that names no live web terminal of the
+  caller's, `ssh_session_ended` for one that has ended, as long as its
+  ending is kept, `sftp_unavailable` for a Host that refuses the subsystem,
+  and `host_refused` for one that refuses its channel. Once the SSH Session
+  ends, its files end first, while the Host connection still lives: every
+  later call is `ssh_session_ended`, and the end hooks the web front
+  registered (`Files.AtEnd`) run, waited for up to `timing.StopNotice`, so
+  an upload's partial file is removed; then the SFTP client and the Host
+  connection close, which cuts every transfer still running.
 
 ## Detach and Resume
 
@@ -818,6 +837,14 @@ upgraded before it refused; each
 ends with its notice and log reason, and a later resume is refused, with
 `signin_required` once the Sign-in has ended and saying why otherwise.
 Changes that keep access end none.
+[`web/terminal_files_test.go`](../../internal/server/web/terminal_files_test.go)
+moves files on in-process Hosts serving SFTP (`sshhost.SFTP`): listings
+of the home, `..`, a link to a directory, a file named as a directory and
+an unreadable directory, past 5,000 entries, with the `sftp` subsystem
+opened and logged once; a Host without SFTP, its terminal going on; the
+Origin check, `signin_required`, another caller's SSH Session and an id
+of none; files while Detached, and `ssh_session_ended` once the SSH
+Session has ended.
 [`cli/web_terminal_access_test.go`](../../internal/client/cli/web_terminal_access_test.go)
 keeps a terminal through `koko web` across a Web URL change that ends a
 Sign-in's.

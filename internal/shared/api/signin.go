@@ -230,9 +230,11 @@ const (
 	MaxAuthBody = 4 << 10
 )
 
-// AuthEndpoint is one of the web front's own endpoints under /auth/: a POST
-// of a Req's JSON, answered by a Resp's, or by the error object. The web
-// UI's generated types carry each one with its types, as they carry an Op.
+// AuthEndpoint is one of the web front's own endpoints apart from the API,
+// under /auth/ or the web terminal's under /terminal/files/ (FilesPrefix): a
+// POST of a Req's JSON, answered by a Resp's, or by the error object. The
+// web UI's generated types carry each one with its types, as they carry an
+// Op.
 type AuthEndpoint[Req, Resp any] struct {
 	// Path is the endpoint's URL path, such as AuthSignInPath.
 	Path string

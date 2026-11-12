@@ -164,6 +164,14 @@ func (g *Gateway) serveTerminal(c TerminalCaller, s TerminalSocket, hostName str
 		s.Refuse(wire.TerminalRefusal(api.CodeInternal.Name, "the koko server could not open this SSH Session; its log says why"))
 		return
 	}
+	// Before the answer, which gives the page the id its files calls name.
+	// The files end before the Host connection closes, after the relay or
+	// on a return before it.
+	shell.files = g.newTerminalFiles(shell.host)
+	defer shell.files.end()
+	g.mu.Lock()
+	t.files = shell.files
+	g.mu.Unlock()
 	if err := s.Answer(wire.TerminalAnswer{Tunnel: t.id.String()}); err != nil {
 		g.log.Debug("ssh session ended before it started", slices.Concat(t.named(), []any{"name", hostName}, callerAttrs(t.caller), []any{"addr", t.from, "err", err})...)
 		return
@@ -445,6 +453,9 @@ type terminalShell struct {
 	ch        ssh.Channel
 	reqs      <-chan *ssh.Request
 	stream    *resumable.Stream
+	// files are the SSH Session's files on the Host (files.go), which end
+	// before the Host connection closes; nil before the shell started.
+	files *terminalFiles
 
 	// writeMu makes the records written into the stream take turns: the
 	// Host's stdout's, its stderr's, the notice and the exit record.
@@ -545,7 +556,12 @@ func (sh *terminalShell) relay(ctx context.Context) *ending {
 		}
 		_ = sh.stream.CloseWithReason(reason)
 	}
-	// Ends the reads of the channel, its requests and the stream.
+	// The files end while the Host connection lives, so an upload's partial
+	// file goes; closing it then ends the reads of the channel, its requests
+	// and the stream.
+	if sh.files != nil {
+		sh.files.end()
+	}
 	sh.close()
 	return end
 }

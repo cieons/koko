@@ -9,6 +9,7 @@ import enBatch from "./en/batch";
 import enDevice from "./en/device";
 import enEnroll from "./en/enroll";
 import enErrors from "./en/errors";
+import enFiles from "./en/files";
 import enHost from "./en/host";
 import enSecret from "./en/secret";
 import enServer from "./en/server";
@@ -22,6 +23,7 @@ import zhBatch from "./zh-CN/batch";
 import zhDevice from "./zh-CN/device";
 import zhEnroll from "./zh-CN/enroll";
 import zhErrors from "./zh-CN/errors";
+import zhFiles from "./zh-CN/files";
 import zhHost from "./zh-CN/host";
 import zhSecret from "./zh-CN/secret";
 import zhServer from "./zh-CN/server";
@@ -46,6 +48,7 @@ const en = {
   ...enService,
   ...enSignin,
   ...enBatch,
+  ...enFiles,
 };
 
 /** MessageKey is the key of a message, such as "shell.language". */
@@ -68,6 +71,7 @@ const zhCN: Catalogue = {
   ...zhService,
   ...zhSignin,
   ...zhBatch,
+  ...zhFiles,
 };
 
 /** The languages the web UI ships, English first: the default. */

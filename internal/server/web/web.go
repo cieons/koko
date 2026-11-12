@@ -142,6 +142,12 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.serveTerminal(w, r, f.kokoWebTerminal(r, conn, port))
 		return
 	}
+	if isFiles(r) {
+		// Its Origin check comes before the cookie, and every refusal is
+		// JSON.
+		f.serveFiles(w, r, f.kokoWebTerminal(r, conn, port))
+		return
+	}
 	sub, state := f.runs.subject(conn)
 	if state == subjectRevoked {
 		refuse(w, r, api.CodeRevoked, "this device's Device Session was revoked, and with it the web UI's cookie: koko web has stopped, and this device must join the koko server again")

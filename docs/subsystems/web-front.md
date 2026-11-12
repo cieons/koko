@@ -100,8 +100,9 @@ request on a `web@koko` channel in this order:
    the channel's port (for port 80 browsers leave `:80` out, and so may the
    header). Any other Host gets no answer: the connection is closed without
    a response. This defeats DNS rebinding. `/terminal/socket` then goes to
-   [the web terminal's WebSocket](#the-web-terminals-websocket), which
-   checks the rest itself.
+   [the web terminal's WebSocket](#the-web-terminals-websocket), and a path
+   under `/terminal/files/` to [the web terminal's
+   files](#the-web-terminals-files), each of which checks the rest itself.
 2. **A Revoked Device Session.** A request on a connection of a Device
    Session Revoked since the koko server started is refused with `revoked`
    (`401`): a page says the Device Session was revoked, and an API call gets
@@ -196,16 +197,19 @@ endpoints set the Sign-in cookie, and only they and `/v1/` read it.
    header equal to the Web URL; another, or none, is refused with
    `bad_origin` (403) from its headers alone, before its body is read or
    anything is counted. An API path and an `/auth/` endpoint get the error
-   object, any other path a page.
+   object, any other path a page; a files endpoint gets the error object
+   too.
 5. **`/terminal/socket`** is [the web terminal's
    WebSocket](#the-web-terminals-websocket).
 6. **`/auth/`** is the web front's own endpoints, which sign a browser in,
    set a Password and sign out ([Sign-ins](signin.md#the-auth-endpoints)).
-7. **`/v1/`** goes to the API as the live Sign-in the `__Host-koko` cookie
+7. **`/terminal/files/`** is [the web terminal's
+   files](#the-web-terminals-files).
+8. **`/v1/`** goes to the API as the live Sign-in the `__Host-koko` cookie
    names (`op.Caller.SignIn`), moving its Last used time; without one it is
    answered `signin_required` (401) without reaching the API
    ([`Front.serveSignedIn`](../../internal/server/web/listener.go)).
-8. **Every other path** serves the web UI's files as `web@koko` does, the
+9. **Every other path** serves the web UI's files as `web@koko` does, the
    same code path (`Front.serveFile`).
 
 Refusals, `/auth/` and API answers carry `Cache-Control: no-store`. The
@@ -383,6 +387,58 @@ Session's id travels inside the WebSocket. A refusal is logged at debug
 level as `web terminal refused` with its reason and the client's address,
 never with the cookie.
 
+## The web terminal's files
+
+The Files panel's calls are the web front's own endpoints under
+`/terminal/files/` ([`files.go`](../../internal/server/web/files.go),
+`api.FilesPrefix`), on the web listener and on `web@koko` alike (P1 spec:
+a terminal in the web UI, "Files over SFTP"; ADR 0053), apart from the API
+as `/auth/` is, so no operation is added. Each names a web terminal's SSH
+Session by its id, and moves files on its Host over SFTP, as the Host
+Account, through the [Gateway](gateway.md#the-web-terminal)'s `Files`:
+the web front holds no Host connection. The calls stay off the WebSocket,
+so a large file never waits in the stream's buffer beside the shell's
+output.
+
+A request is answered in this order (`Front.serveFiles`), every answer
+JSON with `Cache-Control: no-store` beside the way in's headers:
+
+1. **An unknown endpoint** is `unknown_operation` (404), and **another
+   method** than a JSON endpoint's `POST` `method_not_allowed` (405).
+2. **The Origin check**: on the listener as for every `POST`, and on
+   `web@koko` `http://localhost:<port>` or `http://127.0.0.1:<port>`, where
+   the API needs none since it takes only JSON. Another, or none, is
+   `bad_origin` (403), before the cookie or the body is read.
+3. **The caller**, as for the WebSocket: on the listener the live Sign-in,
+   moving its Last used time as a call does, else `signin_required`; on
+   `web@koko` `revoked`, then `cookie_required`.
+4. **A JSON endpoint** takes `application/json` of at most 4 KiB
+   (`api.MaxFilesBody`), a member it does not know refused.
+5. **The Gateway** takes only the caller who opened the SSH Session, so
+   another caller's id is `unknown_tunnel`, as an id of none is. The files
+   move whether the WebSocket is attached or Detached.
+
+| Endpoint | Takes | Answers |
+| --- | --- | --- |
+| `POST /terminal/files/list` | `{"tunnel", "path"}`; `path` absolute, or empty for the Host Account's home | `{"path", "entries": [{"name", "kind", "size", "modified"}], "more"}` |
+
+- **A listing** resolves the path on the Host (SFTP `realpath`), so `..`
+  goes up and a link to a directory is entered, and answers it as
+  resolved. An entry's `kind` is `file`, `dir`, `link` (not followed) or
+  `other`, `size` is in bytes and `modified` RFC 3339 in UTC. At most
+  5,000 entries (`api.MaxListed`) are listed, directories first, then by
+  name byte for byte, and `more` counts the rest; the page sorts them by
+  the browser's collation. A file named as a directory, or one the Host
+  Account cannot read, is `host_refused` with the Host's message. A
+  listing is not logged.
+
+| Code | Status | When |
+| --- | --- | --- |
+| `unknown_tunnel` | 404 | A files call named no live web terminal SSH Session of this caller. |
+| `ssh_session_ended` | 410 | The web terminal's SSH Session ended, as the Gateway still knows (its ending kept for a resume), which ends every transfer of it. |
+| `sftp_unavailable` | 409 | The Host offers no SFTP: `web1 offers no SFTP, which koko moves files through`. The terminal is unaffected. |
+| `host_refused` | 403 | The Host refused a listing, a read or a write; the message is the Host's, such as `Permission denied`. |
+
 ## The port-owner lookup
 
 [`portowner.Lookup`](../../internal/shared/portowner/portowner.go), in the
@@ -455,6 +511,11 @@ and user. It is per OS ([rule 13](code-layout.md#rules-for-working-in-parallel))
   none within `timing.FirstMessage` closed with 1008 and no answer; and no
   Host dialled for any of them. What follows the first message is the
   Gateway's ([its tests](gateway.md#verifying)).
+- [`terminal_files_test.go`](../../internal/server/web/terminal_files_test.go),
+  S1 against the web listener and in-process Hosts serving SFTP: the
+  listings, a Host without SFTP, every refusal of a files call as JSON,
+  files while Detached and once ended ([the Gateway's
+  tests](gateway.md#verifying)).
 - [`run_checks_test.go`](../../internal/server/kokod/run_checks_test.go):
   a taken web listener address refused naming the process holding it;
   [`kokod_test.go`](../../internal/server/kokod/kokod_test.go):

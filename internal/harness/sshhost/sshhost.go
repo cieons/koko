@@ -34,6 +34,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -109,6 +110,16 @@ type settings struct {
 	subsystems map[string]string
 	// refused are the session requests the Host refuses (RefuseRequests).
 	refused []string
+	// sftp serves the "sftp" subsystem in the test process (SFTP).
+	sftp bool
+}
+
+// SFTP lets a session ask for the "sftp" subsystem, which the Host serves
+// in the test process with github.com/pkg/sftp's server, on the real files
+// of the test's machine, starting in the Host Account's home directory, as
+// OpenSSH's sftp-server does.
+func SFTP() Option {
+	return func(s *settings) { s.sftp = true }
 }
 
 // Subsystem lets a session ask for the subsystem name, which the Host runs
@@ -590,7 +601,7 @@ func (h *Host) session(nch ssh.NewChannel, open *openSessions) {
 				continue
 			}
 			var argv []string
-			ok := false
+			ok, sftpServer := false, false
 			switch r.Type {
 			case "env":
 				var v struct{ Name, Value string }
@@ -617,14 +628,18 @@ func (h *Host) session(nch ssh.NewChannel, open *openSessions) {
 				argv = []string{}
 			case "subsystem":
 				var subsystem struct{ Name string }
-				if ssh.Unmarshal(r.Payload, &subsystem) == nil && h.settings.subsystems[subsystem.Name] != "" {
+				switch {
+				case ssh.Unmarshal(r.Payload, &subsystem) != nil:
+				case h.settings.subsystems[subsystem.Name] != "":
 					argv = []string{"-c", h.settings.subsystems[subsystem.Name]}
+				case subsystem.Name == "sftp" && h.settings.sftp:
+					sftpServer = true
 				}
 			case "signal":
 				var signal struct{ Signal string }
 				ok = cmd != nil && ssh.Unmarshal(r.Payload, &signal) == nil && sendSignal(cmd, signal.Signal)
 			}
-			start := argv != nil && !started
+			start := (argv != nil || sftpServer) && !started
 			if start {
 				ok, started = true, true
 			}
@@ -632,7 +647,10 @@ func (h *Host) session(nch ssh.NewChannel, open *openSessions) {
 			// channel, and a reply after that is lost. The command still
 			// starts before the next request, such as a signal, is read.
 			_ = r.Reply(ok, nil)
-			if start {
+			switch {
+			case start && sftpServer:
+				h.wg.Go(func() { h.serveSFTP(ch) })
+			case start:
 				cmd = h.start(ch, argv, env)
 			}
 		}
@@ -769,6 +787,21 @@ func (h *Host) start(ch ssh.Channel, argv, env []string) *exec.Cmd {
 	})
 	h.wg.Go(func() { h.finish(ch, cmd) })
 	return cmd
+}
+
+// serveSFTP serves SFTP on the session channel ch in the test process, in
+// the Host Account's home directory, until the client closes it or the
+// connection ends, then sends the exit status 0 and closes the channel, as
+// sftp-server's end does.
+func (h *Host) serveSFTP(ch ssh.Channel) {
+	defer func() { _ = ch.Close() }()
+	s, err := sftp.NewServer(ch, sftp.WithServerWorkingDirectory(h.home))
+	if err != nil {
+		h.t.Errorf("the in-process Host cannot serve SFTP: %v", err)
+		return
+	}
+	_ = s.Serve() // ends with the channel, as the session does
+	sendExitStatus(ch, 0)
 }
 
 // finish waits for a session's command, then sends its exit status, or the

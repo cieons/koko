@@ -192,6 +192,10 @@ type tunnel struct {
 	// socket, for a web terminal, is the WebSocket its stream was last
 	// attached to, which cut closes at once.
 	socket TerminalSocket
+
+	// files, for a web terminal once its shell has started, are its files
+	// on the Host (files.go). g.mu guards it.
+	files *terminalFiles
 }
 
 // newTunnel returns a new Tunnel, not yet in the registry, of the caller's,

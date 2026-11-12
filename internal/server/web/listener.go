@@ -58,6 +58,9 @@ func (f *Front) serveListener(w http.ResponseWriter, r *http.Request) {
 	case isAuth(r):
 		f.serveAuth(w, r)
 		return
+	case isFiles(r):
+		f.serveFiles(w, r, f.listenerTerminal(r, webURL))
+		return
 	case isAPI(r):
 		f.serveSignedIn(w, r)
 		return
@@ -113,10 +116,11 @@ func clientAddress(r *http.Request) string {
 }
 
 // refuseOnListener answers a refusal with code on the web listener: to an
-// API call or an /auth/ endpoint, the error object the web UI reads, as on
-// web@koko; to a page, the message as text a person reads.
+// API call, an /auth/ endpoint or a files endpoint, the error object the
+// web UI reads, as on web@koko; to a page, the message as text a person
+// reads.
 func refuseOnListener(w http.ResponseWriter, r *http.Request, code api.Code, message string) {
-	if isAPI(r) || isAuth(r) {
+	if isAPI(r) || isAuth(r) || isFiles(r) {
 		writeAPIError(w, code.Status, code.Errorf("%s", message))
 		return
 	}

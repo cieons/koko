@@ -43,10 +43,10 @@ func generateTypeScript(dir string) (map[string]string, error) {
 	for _, c := range api.Codes() {
 		codes[c.Name] = true
 	}
-	// endpoints are the /auth/ endpoints, by their request type's name, which
-	// is each one's own.
+	// endpoints are the web front's own JSON endpoints, under /auth/ and
+	// /terminal/files/, by their request type's name, which is each one's own.
 	endpoints := map[string]api.AuthEndpointInfo{}
-	for _, e := range api.AuthEndpoints() {
+	for _, e := range slices.Concat(api.AuthEndpoints(), api.FilesEndpoints()) {
 		endpoints[e.Request.Name()] = e
 	}
 	structs := map[string]reflect.Type{}
@@ -108,7 +108,7 @@ func generateTypeScript(dir string) (map[string]string, error) {
 	}{
 		{"operation", "an Op", slices.Sorted(maps.Keys(ops)), found},
 		{"error code", "a Code", slices.Sorted(maps.Keys(codes)), foundCodes},
-		{"/auth/ endpoint of request", "an AuthEndpoint", slices.Sorted(maps.Keys(endpoints)), foundEndpoints},
+		{"web front endpoint of request", "an AuthEndpoint", slices.Sorted(maps.Keys(endpoints)), foundEndpoints},
 	} {
 		for _, name := range registered.names {
 			if !registered.found[name] {
@@ -540,7 +540,7 @@ func (w *tsWriter) op(d goDecl, o api.OpInfo) error {
 	return nil
 }
 
-// endpoint writes an /auth/ endpoint as an AuthEndpoint value, which the
+// endpoint writes a web front endpoint as an AuthEndpoint value, which the
 // web UI posts to as it calls an Op.
 func (w *tsWriter) endpoint(d goDecl, e api.AuthEndpointInfo) error {
 	req, err := w.ref(e.Request)

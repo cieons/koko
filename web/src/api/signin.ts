@@ -218,9 +218,11 @@ export const CodeUnknownSignIn = "unknown_signin";
 export const CodeNoPassword = "no_password";
 
 /**
- * AuthEndpoint is one of the web front's own endpoints under /auth/: a POST
- * of a Req's JSON, answered by a Resp's, or by the error object. The web
- * UI's generated types carry each one with its types, as they carry an Op.
+ * AuthEndpoint is one of the web front's own endpoints apart from the API,
+ * under /auth/ or the web terminal's under /terminal/files/ (FilesPrefix): a
+ * POST of a Req's JSON, answered by a Resp's, or by the error object. The
+ * web UI's generated types carry each one with its types, as they carry an
+ * Op.
  */
 export interface AuthEndpoint<Req, Resp> {
   /** The endpoint is a POST to this path, such as /auth/signin. */
