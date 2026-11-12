@@ -1,7 +1,7 @@
 # The release and install.sh
 
-What a koko release publishes, how it is built, and what `install.sh` does
-with it. Where the assets live and why their names are fixed is
+What a koko release publishes, how it is built, and what `install.sh` and
+[`install.ps1`](#installps1) do with it. Where the assets live and why their names are fixed is
 [ADR 0026](../adr/0026-install-sh-and-the-binaries-are-release-assets-with-fixed-names.md);
 what install does once the binary runs is the [installer](installer.md).
 
@@ -15,7 +15,9 @@ holds:
 | `koko-linux-amd64`, `koko-linux-arm64` | the CLI only, without the koko server or its web UI; in v0.1.0 and v0.2.0, the koko server and the CLI in one ([ADR 0041](../adr/0041-koko-installs-the-koko-server-of-its-own-version.md)) |
 | `koko-darwin-arm64` | the CLI for Apple Silicon macOS; it carries no koko server, so no web UI |
 | `kokod-linux-amd64`, `kokod-linux-arm64` | `kokod`, the koko server, with its web UI ([ADR 0040](../adr/0040-koko-is-the-cli-and-kokod-the-koko-server.md)) |
+| `koko-windows-amd64.exe` | the CLI for Windows on x64, which Windows on Arm64 runs under emulation; from v0.6.0 on. `.exe` is part of the name, since Windows runs a file by its extension ([ADR 0052](../adr/0052-install-ps1-installs-the-windows-cli-and-puts-its-directory-on-the-users-path.md)); it carries no Authenticode signature |
 | `install.sh` | [`release/install.sh`](../../release/install.sh) as it is at the tag |
+| `install.ps1` | [`release/install.ps1`](../../release/install.ps1) as it is at the tag; from v0.6.0 on |
 | `SHA256SUMS` | the SHA-256 of each asset above, one `<hex>  <name>` line each, as `sha256sum` writes it |
 
 Each binary is self-contained, built with `CGO_ENABLED=0`, `-trimpath` and
@@ -23,9 +25,10 @@ Each binary is self-contained, built with `CGO_ENABLED=0`, `-trimpath` and
 attestation, which `gh attestation verify <file> --repo cieons/koko` checks.
 
 The names, the `releases/latest` redirect and `SHA256SUMS` are read by
-install.sh, by `koko server install`, which downloads `kokod-linux-<arch>`
-of its own release, and by every `koko`'s `koko update`, which reads the
-redirect and downloads `koko-<os>-<arch>`
+install.sh and install.ps1, by `koko server install`, which downloads
+`kokod-linux-<arch>` of its own release, and by every `koko`'s
+`koko update`, which reads the redirect and downloads `koko-<os>-<arch>`,
+with `.exe` on Windows
 ([`internal/shared/release`](../../internal/shared/release/release.go),
 [ADR 0047](../adr/0047-koko-updates-itself-in-its-users-own-directory.md)),
 and by every `kokod run`, whose check for a new release reads the redirect
@@ -94,9 +97,10 @@ signing in, as the release assets need the repository public.
 
 `make dist` builds the assets into `dist/`, which git ignores: the web UI
 first, as `make build` does, then the binaries of `RELEASE_BINARIES` in the
-[Makefile](../../Makefile), each `<program>-<os>-<arch>` from
-`cmd/<program>` (`koko` from [`cmd/koko`](../../cmd/koko), `kokod` from
-[`cmd/kokod`](../../cmd/kokod)), then `install.sh` and `SHA256SUMS`. Both
+[Makefile](../../Makefile), each `<program>-<os>-<arch>`, with `.exe` for
+Windows, from `cmd/<program>` (`koko` from [`cmd/koko`](../../cmd/koko),
+`kokod` from [`cmd/kokod`](../../cmd/kokod)), then `install.sh` and
+`install.ps1` (`RELEASE_SCRIPTS`), then `SHA256SUMS`. Both
 programs come from one module and one commit, and Go stamps each binary's
 version from git ([`build.Read`](../../internal/shared/build/build.go)), so
 `koko version` and `kokod version` say the tag in a checkout at the tag
@@ -122,10 +126,15 @@ The [release workflow](../../.github/workflows/release.yml) runs on a pushed
 2. **build**, with a read-only token and no credentials left in the
    checkout, since it runs koko's and npm's code: `make dist`, a check that
    `dist/koko-linux-amd64 version` and `dist/kokod-linux-amd64 version` are
-   the tag, `make image`, and two
+   the tag, and that the Go build information of
+   `dist/koko-windows-amd64.exe`, which cannot run there, names the tag as
+   its version (`go version -m`), `make image`, and two
    workflow artifacts: `dist/` without the image's archive, and the
    archive;
-3. **publish**, which alone may write and sign, and runs no code of koko's
+3. **windows**, on `windows-latest`, with a read-only token: it downloads
+   the `dist/` artifact and runs `koko-windows-amd64.exe version --json`,
+   which must say the tag. Publishing waits for it;
+4. **publish**, which alone may write and sign, and runs no code of koko's
    or npm's. In order:
    1. one attestation that covers every subject in `SHA256SUMS`
       (`actions/attest`, `subject-checksums`);
@@ -171,6 +180,11 @@ attestations, GitHub Enterprise Cloud).
   release's: the release job's **window** job refuses one that moves it,
   as a pre-release of one, comparing with the highest release tag below
   it; a previous release from before the window, which has none, passes.
+- **The first release with a Windows CLI** is named in
+  [`install.ps1`](../../release/install.ps1), as `$first`, `v0.6.0`: it
+  tells a person who asks for an earlier release which one to ask for. If
+  that release gets another number, `$first`, the script's tests and the
+  table of [the assets](#the-assets) change with it, before the tag.
 
 ## install.sh
 
@@ -276,6 +290,90 @@ Nothing prompts. install.sh writes only to stderr, as `install.sh: ...`, and
 exits 1 when it stops; stdout is `koko server install`'s alone, so `--json`
 passes through clean.
 
+## install.ps1
+
+```powershell
+irm https://github.com/cieons/koko/releases/latest/download/install.ps1 | iex
+$env:KOKO_VERSION = 'v0.6.0'; irm https://github.com/cieons/koko/releases/latest/download/install.ps1 | iex   # a pinned release
+powershell -NoProfile -Command "irm https://github.com/cieons/koko/releases/latest/download/install.ps1 | iex"   # from cmd, or an agent's harness
+```
+
+A PowerShell script that installs `koko`, the CLI, on Windows, as
+`%USERPROFILE%\.local\bin\koko.exe` for the user who runs it
+([ADR 0051](../adr/0051-on-windows-the-cli-is-a-device-with-the-same-files-in-the-same-places.md),
+[ADR 0052](../adr/0052-install-ps1-installs-the-windows-cli-and-puts-its-directory-on-the-users-path.md)).
+It runs in Windows PowerShell 5.1 and in PowerShell 7, needs no
+administrator and no tool beyond PowerShell, and takes no arguments: the
+koko server runs on Linux only. Everything is in the function
+`Install-Koko`, called on the last line, so a download cut short runs
+nothing. The file is ASCII, since Windows PowerShell 5.1 reads other bytes
+in the system's code page. In this order:
+
+1. **Checks before any download or write**, each ending with "nothing was
+   written":
+   - the system is not Windows (PowerShell 7 on another system);
+   - the machine is neither `AMD64` nor `ARM64`, read from
+     `PROCESSOR_ARCHITEW6432`, which a 32-bit PowerShell on 64-bit Windows
+     has, or else from `PROCESSOR_ARCHITECTURE`: 32-bit Windows is refused,
+     and Windows on Arm64 gets the amd64 file;
+   - `USERPROFILE` is unset or names no directory.
+2. **The release.** `KOKO_VERSION`, with or without its `v`, refused when
+   it is not `v<digit>` followed by letters, digits, `.`, `+` and `-`; or
+   else the tag of the page that `releases/latest` redirects to, followed
+   through every redirect and read once (`Invoke-WebRequest -Method
+   Head`). The page's address is where each PowerShell keeps it:
+   `BaseResponse.ResponseUri` in 5.1, `BaseResponse.RequestMessage.RequestUri`
+   in 7.
+3. **`SHA256SUMS`**, downloaded with `Invoke-WebRequest -UseBasicParsing`
+   into a new directory under the user's temporary directory, removed on
+   every exit. Every URL the script names is HTTPS. Where Windows
+   PowerShell 5.1 is set to offer only TLS older than 1.2, TLS 1.2 is
+   added for the run and the setting put back afterwards; the system's
+   default already offers it. PowerShell 7 follows no redirect from HTTPS
+   to HTTP; Windows PowerShell 5.1 would follow one that GitHub sent.
+4. **A release without a Windows CLI.** When `SHA256SUMS` lists no
+   `koko-windows-amd64.exe` and the release is older than `v0.6.0`,
+   install.ps1 says `koko <tag> has no Windows CLI; the first release with
+   one is v0.6.0`. For a later release it says that `SHA256SUMS` lists no
+   such file. Either way the file is never asked for.
+5. **The download of `koko-windows-amd64.exe` and its checksum**, with
+   `Get-FileHash`. A file whose SHA-256 differs is never installed.
+   install.ps1 never runs the file.
+6. **The CLI.** `%USERPROFILE%\.local\bin` is made when missing, the file
+   is copied there as `.koko.new.exe`, and put in place by
+   [the swap `koko update` uses](cli.md#the-swap), since a `koko.exe` may
+   be running: `koko.exe` is renamed to `.koko.old-<random>.exe`, the new
+   file is renamed to `koko.exe`, and the old one is renamed back when
+   that fails. Then every `.koko.old-*.exe` in the directory, this run's,
+   an earlier run's or `koko update`'s, is deleted; one that still runs
+   cannot be, and is given the hidden attribute and left for the next run.
+   It says `install.ps1: installed koko <tag> at <path>`, the path in
+   full.
+7. **PATH.** The user's PATH is the value `Path` under `HKCU:\Environment`,
+   read with its variables unexpanded. When no entry of it is the
+   directory, however the entry spells it (with a variable such as
+   `%USERPROFILE%`, in quotes, in another case, with a `\` at its end),
+   install.ps1 appends the directory, writes the value back with the
+   registry type it had (`REG_EXPAND_SZ` when there was none), tells
+   running programs that the environment changed (`WM_SETTINGCHANGE`,
+   through `SendMessageTimeout`), adds the directory to the PATH of the
+   PowerShell session it runs in, and says what it added and that a
+   terminal already open must be reopened. When the directory is there
+   already, it changes nothing and says nothing. A value that is not text
+   is left alone, with the directory to add by hand. It never touches the
+   machine's PATH.
+8. **Another koko.** When `Get-Command koko` finds another file first than
+   the one just installed, install.ps1 names it, and removes nothing.
+
+Nothing prompts. install.ps1 writes its messages to the error stream, as
+`install.ps1: ...`, and nothing to the output stream. A failure is a
+terminating error whose message starts the same way, which sets a
+non-zero exit status under `powershell -Command`; it never calls `exit`,
+which would close the PowerShell the line was pasted into, so it has no
+exit status 2 for a bad `KOKO_VERSION` as install.sh has. The line runs
+text through `Invoke-Expression`, not a script file, so the default
+execution policy does not stop it.
+
 ## Verifying
 
 [`release/install_test.go`](../../release/install_test.go) runs `install.sh`
@@ -321,6 +419,50 @@ release at all; and a `koko server install` that fails, whose exit status
 install.sh takes, writing no CLI. CI runs them under Ubuntu's `sh` (dash)
 and macOS's. `release/` holds no Go code but the tests, so nothing imports
 it, and it is in no [package group](code-layout.md#the-package-groups).
+
+[`release/install_ps1_windows_test.go`](../../release/install_ps1_windows_test.go),
+which only Windows builds, runs `install.ps1` as the line does: its text
+given to `Invoke-Expression`, in a PowerShell started with `-NoProfile
+-Command` whose stdin stays open, once under Windows PowerShell 5.1 and
+once under PowerShell 7, both of which the machine must have. The fake
+machine is a profile directory, a temporary directory and a session PATH
+of its own, and PowerShell functions defined ahead of the script, which
+PowerShell finds before the cmdlets of the same names: an
+`Invoke-WebRequest` that serves a fake GitHub from a directory, follows
+its redirects, logs every URL, refuses one that is not HTTPS, and answers
+in the shape of the PowerShell it runs in; and a `Get-Item` and a
+`Set-ItemProperty` that are the registry for the user's PATH alone, kept
+in a file as its type and value, and refuse any other path. The
+machine's architecture is set once PowerShell runs. The release's
+`koko-windows-amd64.exe` is a few bytes, since nothing runs it. The tests
+cover the latest release, read once; `KOKO_VERSION` with and without its
+`v`, and values that are no version, with nothing asked of GitHub; a
+checksum that does not match, a file `SHA256SUMS` does not list, a failed
+download of either file, no release, and a `releases/latest` that leads
+elsewhere; releases from before `v0.6.0` refused naming it; the directory
+made with `koko.exe` alone in it, and nothing else written in the profile,
+but for the `AppData` files each PowerShell keeps there for itself, or
+left in the temporary directory; the user's PATH appended to, with its
+type kept, for a value with variables, a plain one, an empty one and none,
+and the session's PATH with it, or left alone for each spelling of the
+directory; a `koko.exe` that runs, which is the test binary copied there
+and started, renamed aside and hidden, with one that `koko update` left
+deleted, and itself deleted by the next run once it has stopped; another
+`koko.exe` first on PATH named and left; 32-bit Windows refused, and
+Arm64 and a 32-bit PowerShell on 64-bit Windows given the amd64 file; a
+`USERPROFILE` unset or naming a file; and, in every run, nothing on the
+output stream. Telling running programs that PATH changed is the real
+call, which changes nothing on the machine; the script would say so had it
+failed. Not covered: the swap's rename back, TLS older than 1.2, and a
+system that is not Windows.
+[`release/install_ps1_test.go`](../../release/install_ps1_test.go) reads
+the script on every OS: it is ASCII, nothing but comments stands outside
+`Install-Koko` and its call on the last line, it never calls `exit`, it
+reaches the network and the registry only through the cmdlets the fake
+machine stands in for, and it installs the file `release.KokoAsset` names.
+There too, a test reads `make -n dist`: every `koko-…` that `SHA256SUMS`
+lists has the name `release.KokoAsset` gives its platform, the four
+platforms are there, and both install scripts are copied and listed.
 
 The release workflow runs only on a tag, and no test runs it; actionlint
 checks it by hand.
@@ -394,8 +536,9 @@ The workflow has a second job, `windows`, on `windows-latest`, beside the
 **check** job's two runs, on every push and pull request, and so before a
 release
 ([ADR 0051](../adr/0051-on-windows-the-cli-is-a-device-with-the-same-files-in-the-same-places.md)).
-No release has a Windows CLI yet: the job is what the tickets of
-[#151](https://github.com/cieons/koko/issues/151) build it against.
+It is what the tickets of
+[#151](https://github.com/cieons/koko/issues/151) build the Windows CLI
+against, and where [install.ps1's tests](#verifying) run.
 
 **What it runs.** `go vet ./...`, then `go test`, without the race
 detector, on `./cmd/...`, `./internal/shared/...`, `./internal/client/...`,
@@ -411,7 +554,9 @@ job took 4 to 6 minutes. The same package takes 168 to 218 s in the Ubuntu
 job, which runs it under the race detector. With the Device Mux's tests
 running on Windows too ([#153](https://github.com/cieons/koko/issues/153)),
 `internal/client/cli` took 156 and 172 s in two runs on 2026-11-12, and
-`internal/client/devicemux` about 6 s. If it passes 5 minutes on
+`internal/client/devicemux` about 6 s. `release`, which starts a
+PowerShell for each run of install.ps1, takes about 40 s beside them. If
+`internal/client/cli` passes 5 minutes on
 Windows, the next ticket that adds tests there says so before it adds
 them.
 

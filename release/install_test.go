@@ -1,6 +1,8 @@
 // Package release holds what a koko release publishes besides the binaries,
-// which make dist builds: install.sh. Its tests run install.sh as people and
-// agents run it, `curl … | sh -s -- <args>`, on a fake machine.
+// which make dist builds: install.sh and install.ps1. Its tests run
+// install.sh as people and agents run it, `curl … | sh -s -- <args>`, on a
+// fake machine, and install.ps1, on Windows, as `irm … | iex` runs it
+// (install_ps1_windows_test.go).
 package release
 
 import (
@@ -75,7 +77,7 @@ type machine struct {
 // ~/.local/bin, then /usr/local/bin, and GitHub has no koko release yet.
 func newMachine(t *testing.T) *machine {
 	t.Helper()
-	skip.OnWindows(t, "install.sh installs koko on Linux and macOS, through /bin/sh and fake Unix commands; Windows gets install.ps1 (#156)")
+	skip.OnWindows(t, "install.sh installs koko on Linux and macOS, through /bin/sh and fake Unix commands; install.ps1 installs it on Windows")
 	m := &machine{t: t, OS: "Linux", Arch: "x86_64", Systemctl: true, Sudo: "nopasswd", dir: t.TempDir()}
 	for _, d := range []string{"bin", "web", "log", "tmp", "home", "root"} {
 		if err := os.Mkdir(m.path(d), 0o755); err != nil {

@@ -1,15 +1,20 @@
 GO ?= go
 NPM ?= npm
 # A release publishes the CLI, koko, for each of RELEASE_TARGETS, and the
-# koko server, kokod, for each of KOKOD_TARGETS, named <program>-<os>-<arch>
-# (ADR 0026, ADR 0040).
-RELEASE_TARGETS := linux/amd64 linux/arm64 darwin/arm64
+# koko server, kokod, for each of KOKOD_TARGETS, named <program>-<os>-<arch>,
+# with .exe on Windows, which runs a file by its extension (ADR 0026, ADR
+# 0040, ADR 0052).
+RELEASE_TARGETS := linux/amd64 linux/arm64 darwin/arm64 windows/amd64
 KOKOD_TARGETS := linux/amd64 linux/arm64
-RELEASE_BINARIES := $(foreach t,$(RELEASE_TARGETS),koko-$(subst /,-,$(t))) \
-	$(foreach t,$(KOKOD_TARGETS),kokod-$(subst /,-,$(t)))
-# windows/amd64 is compiled only, never released: it keeps the CLI ready for
-# Windows (P1) by failing the build when code skips its per-OS interface.
-CROSS_TARGETS := $(RELEASE_TARGETS) windows/amd64
+asset = $(1)-$(subst /,-,$(2))$(if $(filter windows/%,$(2)),.exe)
+RELEASE_BINARIES := $(foreach t,$(RELEASE_TARGETS),$(call asset,koko,$(t))) \
+	$(foreach t,$(KOKOD_TARGETS),$(call asset,kokod,$(t)))
+# The install scripts a release publishes beside the binaries: install.sh
+# for Linux and macOS, install.ps1 for Windows.
+RELEASE_SCRIPTS := install.sh install.ps1
+# make cross compiles every package for each target, cmd/kokod's stub on
+# macOS and Windows included.
+CROSS_TARGETS := $(RELEASE_TARGETS)
 # npm ci writes this file, so it is newer than the lockfile once installed.
 WEB_DEPS := web/node_modules/.package-lock.json
 
@@ -64,18 +69,19 @@ build: webui
 	$(GO) build -o bin/kokod ./cmd/kokod
 
 ## dist: build a release's assets into dist/: the binaries (kokod-linux-<arch>
-## carries the koko server and its web UI), install.sh, and SHA256SUMS
-## listing them (docs/subsystems/release.md). Go stamps each binary's version
-## from git, so at a tag, with nothing changed, the version is the tag.
+## carries the koko server and its web UI), install.sh, install.ps1, and
+## SHA256SUMS listing them (docs/subsystems/release.md). Go stamps each
+## binary's version from git, so at a tag, with nothing changed, the version
+## is the tag.
 dist: webui
 	@mkdir -p dist
 	@for b in $(RELEASE_BINARIES); do \
-		prog=$${b%%-*}; p=$${b#*-}; echo "build dist/$$b"; \
+		prog=$${b%%-*}; p=$${b#*-}; p=$${p%.exe}; echo "build dist/$$b"; \
 		GOOS=$${p%-*} GOARCH=$${p#*-} CGO_ENABLED=0 \
 			$(GO) build -trimpath -ldflags='-s -w' -o dist/$$b ./cmd/$$prog || exit 1; \
 	done
-	cp release/install.sh dist/install.sh
-	cd dist && sha256sum $(RELEASE_BINARIES) install.sh >SHA256SUMS
+	cp $(addprefix release/,$(RELEASE_SCRIPTS)) dist/
+	cd dist && sha256sum $(RELEASE_BINARIES) $(RELEASE_SCRIPTS) >SHA256SUMS
 
 ## image: build the koko server's image (release/Dockerfile) for
 ## IMAGE_PLATFORMS from the binaries make dist built, into dist/koko-image.tar,

@@ -1,7 +1,7 @@
 name: release
 
 # Pushing a tag such as v0.3.0 publishes the GitHub Release of that version:
-# the koko binaries, install.sh and SHA256SUMS listing them, with one
+# the koko binaries, install.sh, install.ps1 and SHA256SUMS listing them, with one
 # artifact attestation that covers every asset SHA256SUMS lists (ADR 0026,
 # docs/subsystems/release.md); and the image ghcr.io/cieons/koko:0.3.0,
 # attested too, which latest then names. A tag with a pre-release part, such
@@ -58,10 +58,13 @@ jobs:
       # Go stamps the version from the tag, but only when the checkout is at
       # the tag with nothing changed; koko version and kokod version must
       # each say the tag.
+      # The Windows CLI cannot run here, so its version is read from its Go
+      # build information; the windows job below runs it.
       - name: The binaries are ${{ github.ref_name }}
         run: |
           test "$(dist/koko-linux-amd64 version --json | jq -r .version)" = "$GITHUB_REF_NAME"
           test "$(dist/kokod-linux-amd64 version --json | jq -r .version)" = "$GITHUB_REF_NAME"
+          test "$(go version -m dist/koko-windows-amd64.exe | awk '$1 == "mod" { print $3 }')" = "$GITHUB_REF_NAME"
       # The image holds the binaries make dist built, copied.
       - run: make image
       # The image goes to the registry, never to the Release.
@@ -78,11 +81,30 @@ jobs:
           path: dist/koko-image.tar
           if-no-files-found: error
 
+  # The Windows CLI the build made runs on Windows and says the tag. It
+  # runs koko's code, so it holds no token that can publish or sign either.
+  windows:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+      - name: koko-windows-amd64.exe is ${{ github.ref_name }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $file = 'dist/koko-windows-amd64.exe'
+          $version = (& $file version --json | ConvertFrom-Json).version
+          if ($LASTEXITCODE -ne 0) { throw "koko version failed with status $LASTEXITCODE" }
+          if ($version -cne $env:GITHUB_REF_NAME) { throw "$file is $version, want $env:GITHUB_REF_NAME" }
+
   # Publishing runs no code of koko's or npm's: it attests and uploads what
   # the build made. The image is pushed and attested before the Release is
   # created, and latest moves to it only once the Release is published.
   publish:
-    needs: build
+    needs: [build, windows]
     # skopeo comes from the runner, pinned with Ubuntu 24.04's archive.
     runs-on: ubuntu-24.04
     permissions:

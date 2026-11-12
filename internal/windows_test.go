@@ -77,7 +77,7 @@ func TestOnlyTheHomeRuleReadsHOME(t *testing.T) {
 // tests, or the helpers many tests share, that cannot hold on Windows, each
 // saying why. Raising it is a decision to leave a test out there, so it is
 // made here, in view.
-const leftOutOnWindows = 10
+const leftOutOnWindows = 11
 
 // The tests left out on Windows are counted: each goes through
 // skip.OnWindows with its reason, and a new one fails this test until the
