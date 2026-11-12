@@ -41,8 +41,10 @@ type TerminalCaller struct {
 	// web@koko, the Device Session or the Local caller koko web runs as.
 	Caller op.Caller
 	// Run, for the Local caller, names the run of koko web the page came
-	// through.
-	Run string
+	// through, which alone may Resume the SSH Session, and RunEnded is
+	// closed once that run ends, which ends it too.
+	Run      string
+	RunEnded <-chan struct{}
 	// Addr is where the page came from: on the web listener, the client's
 	// address the listener counts; through koko web, its connection's.
 	Addr net.Addr
@@ -73,6 +75,9 @@ var (
 	errShellEnded = &ending{reason: "shell ended"}
 	// errMalformed: the page sent bytes that are no terminal record.
 	errMalformed = &ending{reason: "malformed record"}
+	// errRunEnded: the run of koko web the Local caller's page came
+	// through ended, and no page can Resume the SSH Session on another.
+	errRunEnded = &ending{reason: "koko web ended"}
 )
 
 // OpenTerminal opens an SSH Session to the Host named hostName for the
@@ -118,6 +123,15 @@ func (g *Gateway) serveTerminal(c TerminalCaller, s TerminalSocket, hostName str
 		g.logRefused(t, hostName, a.refused)
 		s.Refuse(wire.TerminalRefusal(a.refused.code, a.refused.message()))
 		return
+	}
+	if c.RunEnded != nil {
+		g.wg.Go(func() {
+			select {
+			case <-c.RunEnded:
+				t.end(errRunEnded)
+			case <-t.ctx.Done():
+			}
+		})
 	}
 
 	shell, refused, err := g.startShell(t, a, cols, rows)

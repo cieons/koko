@@ -378,7 +378,7 @@ the koko server stops, a new one is closed at once.
 
 The caller is the live Sign-in on the listener, and on `web@koko` the
 connection's Device Session or the Local caller with its run of `koko
-web`. No secret is in the URL: the cookie authenticates, and the SSH
+web`, whose terminals end when the run's connection closes. No secret is in the URL: the cookie authenticates, and the SSH
 Session's id travels inside the WebSocket. A refusal is logged at debug
 level as `web terminal refused` with its reason and the client's address,
 never with the cookie.

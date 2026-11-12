@@ -257,6 +257,17 @@ run of `koko web`, and the page's address.
   SSH Session. The page does the same with the same values. The 15-second
   traffic also keeps nginx, which cuts a quiet connection at 60 s by
   default, from cutting a terminal.
+- **Through `koko web`** the caller is the device's Device Session, which
+  counts the terminal among its 64 beside its Tunnels, and whose
+  revocation ends it as it ends them. The Local caller's terminal, through
+  a run of `koko web` over the Unix socket, Resumes only on that run and
+  ends when its connection does (`koko web ended`); the web front hands
+  the Gateway the run's end (`TerminalCaller.RunEnded`). `koko web`
+  forwards a browser connection's bytes as they are, so the WebSocket's
+  upgrade and frames pass through it unchanged and no channel's revision
+  changes; a dropped Device Connection ends the `web@koko` channels on it,
+  and so the WebSocket, and the page Resumes on a new one once the Device
+  Mux has reconnected.
 - **Stopping** (`CloseTerminals`). The web listener's shutdown does not
   track a WebSocket, which it has given up, so `server.Close` first has the
   Gateway end every web terminal with the restart notice, which closes its
@@ -344,6 +355,7 @@ the Tunnel out of the registry.
 | The client closed its connection, or a web terminal's page its stream or ended it | none | `client closed` |
 | A web terminal's shell ended, with its exit record | none | `shell ended` |
 | A web terminal's page sent bytes that are no record | none; the stream's close says why | `malformed record` |
+| The run of `koko web` a Local caller's web terminal came through ended | none | `koko web ended` |
 | The Host leg broke: the [Host connector](host-connector.md#keeping-a-connection-alive) heard nothing for 60 s, its probes unanswered | `lost the connection to web1 (no answer for 60 s); this SSH Session has ended.` | `Host leg lost` |
 | The Host, or the network beneath, closed its connection | `web1 closed the connection.` | `Host closed` |
 | The Relay leg broke, as the Host leg's rows above | `lost the connection to web1's Relay gw (no answer for 60 s); this SSH Session has ended.`, or `web1's Relay gw closed the connection.`, the Relay unnamed to a caller who cannot see it | `Relay leg lost`, `Relay closed` |
@@ -754,6 +766,17 @@ stream's buffer full; a malformed record; the restart notice before the
 web listener closes, while a call in flight is open on it, a stalled page
 cut at `StopNotice`, and a Host sitting on the session's open ended; and
 the log lines, with no cookie in them.
+[`cli/web_terminal_test.go`](../../internal/client/cli/web_terminal_test.go)
+does so through `koko web` (`h.Background`): as the Local caller with
+`localhost` and `127.0.0.1` Origins, 256 KiB each way through its
+forwarder, another Origin and no cookie refused, another run's resume
+refused and its `end` ending nothing, and the terminal ending with its run;
+on a joined device, the 65th SSH Session of a Device Session refused
+through `koko web` beside 64 of the CLI's, and its revocation's notice
+reaching the page; and, in `realTime`, a cut and a stalled Device
+Connection beneath it, the page Resuming through `koko web` and the Device
+Mux byte for byte, and a web terminal ending at a short `BrowserGrace`
+while a Tunnel Detached beside it is held for its own grace and Resumes.
 [`gateway/terminal_test.go`](../../internal/server/gateway/terminal_test.go)
 also maps the access check's refusals to `unknown_host` and
 `access_refused`.

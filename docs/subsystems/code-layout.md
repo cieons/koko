@@ -387,8 +387,8 @@ end, the close status (`harness.CloseStatus`); `p.Open`, `p.TryOpen`,
 `p.Resume(w)` and `p.End(id)` do what the page does. A
 `harness.WebTerminal` sends keys (`Type`, `Write`), resizes and raw bytes
 (`Send`), reads the output and exit records (`WaitOutput`, `Exit`), and
-closes (`Close`) or drops (`Drop`) its WebSocket, and waits for the
-stream's end (`WaitEnd`). `h.Socket()` is the socket's path, for a runner on
+closes (`Close`), drops (`Drop`) or waits for its WebSocket's loss
+(`WaitDropped`) and the stream's end (`WaitEnd`). `h.Socket()` is the socket's path, for a runner on
 the koko server's own machine. `h.Send(op, body)` and `d.Send(op, body)`
 call an operation with a raw JSON body, as the Local caller or as the
 device's Device Session, and return the status and the body as the koko

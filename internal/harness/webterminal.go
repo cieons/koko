@@ -427,6 +427,18 @@ func (w *WebTerminal) Close() {
 	_ = w.stream.Close()
 }
 
+// WaitDropped waits until the page's WebSocket has closed beneath the
+// stream, as when the connection under it drops, and fails the test after
+// 20 s.
+func (w *WebTerminal) WaitDropped() {
+	w.t.Helper()
+	select {
+	case <-w.stream.Detached():
+	case <-time.After(20 * time.Second):
+		w.t.Fatal("the web terminal's WebSocket did not close within 20 s")
+	}
+}
+
 // Drop cuts the page's WebSocket without a close, as a network drop does:
 // the stream is Detached.
 func (w *WebTerminal) Drop() {

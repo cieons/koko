@@ -18,6 +18,7 @@ import (
 // alphabetical order.
 var realTime = []func(*testing.T){
 	aBareNameRefreshNeverMakesTheDeviceMuxReconnect,
+	aBrowsersGraceLeavesATunnelsAsItIs,
 	aBulkTransferThroughKokoExecCarriesOnAcrossADrop,
 	aCommandThatEndsWhileDetachedGivesItsStatusOnTheResume,
 	aCommandWaitsAtMostCommandWaitForTheDeviceConnection,
@@ -37,6 +38,7 @@ var realTime = []func(*testing.T){
 	aTunnelWaitingToResumeKeepsTheDeviceMuxAndShowsInKokoStatus,
 	aWakeOrARouteChangeProbesTheDeviceConnectionAtOnce,
 	aWakeWhileTheDeviceMuxReconnectsTriesAgainAtOnce,
+	aWebTerminalThroughKokoWebResumesAcrossADrop,
 	enrollRecordsNothingWhenTheHostChangesMeanwhile,
 	enrollRecordsNothingWhenTheRelayChangesMeanwhile,
 	killingTheDeviceMuxEndsNoSSHSession,

@@ -86,7 +86,8 @@ func (f *Front) kokoWebTerminal(r *http.Request, conn *transport.Connection, por
 			}
 			c := gateway.TerminalCaller{Caller: conn.Caller(), Addr: conn.RemoteAddr()}
 			if c.Caller.DeviceSession == "" {
-				c.Run = string(sub)
+				// A run of koko web is its connection, and ends with it.
+				c.Run, c.RunEnded = string(sub), conn.Context().Done()
 			}
 			return c, nil
 		},
