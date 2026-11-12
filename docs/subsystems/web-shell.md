@@ -75,7 +75,12 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   `data-rail` in `theme.css`: 15.5rem open, 5rem folded and over the page,
   0 on a phone. The page's column and the Select mode's bar
   ([`BatchBar`](../../web/src/pages/batch/BatchBar.tsx)) leave it to the
-  rail, and so does the terminal's workspace (#177).
+  rail, and so does the terminal's workspace (#177). Since the window's
+  width no longer tells the room a page has, a page's layout that changes
+  from 768 pixels up keys on its own width with a container query
+  (Tailwind's `@container`, on the part that changes, never on an
+  ancestor of a fixed bar): the Host page's and Account's two columns,
+  and Access's rows.
 - **On a phone**, under 768 pixels wide, the banner is a sticky top row:
   the wordmark, then Language, Appearance and the account button, each an
   icon. The places move to a bar fixed at the foot, each with its icon

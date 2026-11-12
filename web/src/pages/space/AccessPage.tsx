@@ -333,43 +333,50 @@ function spaceLine(t: Translate, count: Count, space: SpaceDetail): string {
 
 const rowClass = "row-link -mx-2 grid w-[calc(100%+1rem)] items-center gap-x-3 px-2 py-2 text-foreground no-underline";
 
-/** personRow lays a person's row out: initial, name, summary and chevron, the summary under the name on a phone. */
-const personRow = `${rowClass} grid-cols-[auto_minmax(0,1fr)_auto] md:grid-cols-[auto_minmax(0,18rem)_minmax(0,1fr)_auto]`;
+/**
+ * listClass is the panel a list of rows lies on, a container its rows key
+ * on: they lay their summary beside the name from 42rem of the list's own
+ * width, which the rail beside the page narrows, and under it below that.
+ */
+const listClass = "sheet @container overflow-hidden px-4 md:px-5";
+
+/** personRow lays a person's row out: initial, name, summary and chevron, the summary under the name on a narrow list. */
+const personRow = `${rowClass} grid-cols-[auto_minmax(0,1fr)_auto] @2xl:grid-cols-[auto_minmax(0,18rem)_minmax(0,1fr)_auto]`;
 
 /**
  * spaceRow lays a Space's row out as a person's, without the initial, its
  * summary in line with theirs: 20.75rem is a person's 18rem name column,
  * their 2rem initial and the 0.75rem gap between.
  */
-const spaceRow = `${rowClass} grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,20.75rem)_minmax(0,1fr)_auto]`;
+const spaceRow = `${rowClass} grid-cols-[minmax(0,1fr)_auto] @2xl:grid-cols-[minmax(0,20.75rem)_minmax(0,1fr)_auto]`;
 
 /**
  * PeopleRows is the People as a list on one panel: a row per person, a link
  * to their panel, with the initial, the name, "Owner" where so, and the
- * one-line summary, beside the name on a desktop and under it on a phone.
+ * one-line summary, beside the name on a wide list and under it on a narrow one.
  */
 function PeopleRows({ people, listed }: { people: readonly User[]; listed: Listed }) {
   const t = useT();
   const count = useCount();
   const { search } = useLocation();
   return (
-    <ul className="sheet overflow-hidden px-4 md:px-5">
+    <ul className={listClass}>
       {people.map((u) => (
         <li key={u.id} className="border-b border-line py-0.5 last:border-0">
           <Link href={personPath(u.name) + search} className={personRow}>
-            <Initial name={u.name} className="row-span-2 size-8 text-sm md:row-span-1" />
+            <Initial name={u.name} className="row-span-2 size-8 text-sm @2xl:row-span-1" />
             <span className="flex min-w-0 items-center gap-2">
               <span className={`t-name truncate ${u.removed_at === undefined ? "" : "text-muted line-through"}`}>
                 {u.name}
               </span>
               {u.role === "owner" && <span className="t-label">{t("shell.role.owner")}</span>}
             </span>
-            <span className="col-start-2 row-start-2 truncate text-sm text-muted md:col-start-3 md:row-start-1">
+            <span className="col-start-2 row-start-2 truncate text-sm text-muted @2xl:col-start-3 @2xl:row-start-1">
               {personLine(t, count, u, listed)}
             </span>
             <ChevronRight
               aria-hidden
-              className="col-start-3 row-span-2 row-start-1 size-5 text-muted md:col-start-4 md:row-span-1"
+              className="col-start-3 row-span-2 row-start-1 size-5 text-muted @2xl:col-start-4 @2xl:row-span-1"
             />
           </Link>
         </li>
@@ -381,27 +388,27 @@ function PeopleRows({ people, listed }: { people: readonly User[]; listed: Liste
 /**
  * SpaceRows is Spaces as a list on one panel: a row per Space, a link to its
  * panel, with its name, "Personal Space" where so, and its one-line summary,
- * beside the name on a desktop and under it on a phone.
+ * beside the name on a wide list and under it on a narrow one.
  */
 function SpaceRows({ spaces }: { spaces: readonly SpaceDetail[] }) {
   const t = useT();
   const count = useCount();
   const { search } = useLocation();
   return (
-    <ul className="sheet overflow-hidden px-4 md:px-5">
+    <ul className={listClass}>
       {spaces.map((space) => (
         <li key={space.id} className="border-b border-line py-0.5 last:border-0">
           <Link href={spacePath(space.name) + search} className={spaceRow}>
-            <span className="flex min-w-0 items-center gap-2 py-1.5 md:py-1">
+            <span className="flex min-w-0 items-center gap-2 py-1.5 @2xl:py-1">
               <span className="t-name truncate">{space.name}</span>
               {space.personal && <Chip variant="secondary">{t("space.personal")}</Chip>}
             </span>
-            <span className="t-num col-start-1 row-start-2 truncate text-sm text-muted md:col-start-2 md:row-start-1">
+            <span className="t-num col-start-1 row-start-2 truncate text-sm text-muted @2xl:col-start-2 @2xl:row-start-1">
               {spaceLine(t, count, space)}
             </span>
             <ChevronRight
               aria-hidden
-              className="col-start-2 row-span-2 row-start-1 size-5 text-muted md:col-start-3 md:row-span-1"
+              className="col-start-2 row-span-2 row-start-1 size-5 text-muted @2xl:col-start-3 @2xl:row-span-1"
             />
           </Link>
         </li>

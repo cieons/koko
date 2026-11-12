@@ -209,7 +209,10 @@ the room left beside it, with 32px of padding (16px on a phone). A page is
 a title (`t-display`), an optional line under it, and its one or two
 actions to the right of the title. A detail page has a breadcrumb above
 the title. With the rail open a page at 1280px wide gets about 1030px, and
-at 1100px wide with the rail folded about 1020px.
+at 1100px wide with the rail folded about 1020px. A page's own layout keys
+on the room it has, not on the window's width: where it changes from 768px
+wide up, beside the rail, it is a container query on the part that
+changes (the Host page's and Account's two columns, Access's rows).
 
 - **The shell's notices** (koko web is not running; the cookie is not one
   of this run of `koko web`; this device's Device Session was Revoked) run
@@ -390,7 +393,8 @@ released, so it needs no redirect.
   **Group by**, the columns button (desktop only), **Select**
   ([the Select mode](#the-select-mode)) and **Reset view**. Each
   control keeps its label on one line, a tab as wide as its label and
-  count; when room runs out the row wraps onto a second line.
+  count; when the room beside the rail runs out the row wraps onto a
+  second line.
 - **Filter** opens a popover: field or Attribute, comparison, value (a
   select for an enum, a date field for a date). Each term becomes a chip
   under the controls with a remove button named for it.
@@ -422,7 +426,11 @@ released, so it needs no redirect.
   row is the link to the Host: the name is the link and covers the row.
 - A header sorts by its column; Shift adds a further key, which shows its
   rank. The columns button ticks which columns show, any Attribute key
-  among them. The view lives in the URL.
+  among them. The view lives in the URL. The table keeps every column
+  chosen in the room beside the rail: when they pass the panel's width,
+  the table scrolls sideways inside its panel, never the page. The table
+  and its columns button are a desktop's (768px and wider), as the rows
+  of three lines are a phone's.
 - **A list remembers its view** in the browser, for each User: the Hosts
   view, the Services view, Secrets and Access, each on its own. Opened with no
   view in its URL (from the rail, a new tab, a link or after signing
@@ -509,6 +517,8 @@ CLI resolves one in a write.
   Delete as danger items. Delete is offered only to a Host with no pinned
   host key. A Retired Host disables Rename and Retire, offers no Add
   Service, and shows its Services read-only.
+- Two columns once the page's own room is 56rem wide (container query),
+  one under the other below that.
 - Two thirds, left:
   - **Reaching it**. Managed: `$ ssh <name>` with Copy, then "From a device
     that has joined this koko server. koko logs in as <account>; no key of
@@ -639,8 +649,9 @@ For the Owner:
   "Owner" where so, and a one-line summary, "16 Spaces · 2 devices ·
   Password set", "No Space · Invited, not yet in", "Every Space · 1
   device" for the Owner. A Space's row: name and "30 Members · 40 Hosts ·
-  0 Secrets". The summary is beside the name on a desktop and under it on
-  a phone. The Owner is first and the Removed Users last.
+  0 Secrets". The summary is beside the name once the list itself is
+  42rem wide (container query) and under it below that, as on a phone.
+  The Owner is first and the Removed Users last.
 - Nothing matching the search: one panel with "No User matches this
   search." or "No Space matches this search." and **Clear the search**.
   No shared Space: the Spaces tab says so, and what a Space is for.
@@ -706,7 +717,8 @@ handle that failure; the build does.
   and Appearance as segments, which mirror the rail's); **Devices** (this
   one marked, Add device, Revoke as above, and "Show Revoked devices",
   `all=1` in the URL); **Browser Sign-ins** (this browser marked; revoking
-  it signs out); **Personal Space** (counts and a link).
+  it signs out); **Personal Space** (counts and a link). Two columns once
+  the page's own room is 56rem wide (container query).
 - For the Local caller there is no device to mark and no Sign-in; the
   Owner's own last device asks for its name there too.
 

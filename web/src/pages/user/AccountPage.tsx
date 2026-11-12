@@ -58,30 +58,26 @@ export function AccountPage() {
           <Refusal error={signOut.error} />
         </div>
       )}
-      <div className="grid items-start gap-5 lg:grid-cols-2">
-        <div className="flex flex-col gap-5">
-          <Sheet title={t("signin.password")}>
-            {caller.signin ? (
-              <ChangePassword user={name} onChanged={() => setChanges((n) => n + 1)} />
-            ) : (
-              <p className="text-muted">
-                {t(caller.deviceSession ? "signin.change.viaDevice" : "signin.change.viaLocal")}
-              </p>
-            )}
-          </Sheet>
-          <ThisBrowser />
-        </div>
-        <div className="flex flex-col gap-5">
-          <Devices
-            user={name}
-            owner={caller.owner}
-            all={all}
-            onAll={setAll}
-            level={2}
-            className="sheet p-6"
-          />
-          <SignIns user={name} level={2} changes={changes} className="sheet p-6" />
-          <PersonalSpacePanel name={name} />
+      {/* Two columns once the page's own room allows, beside the rail as on a narrower window. */}
+      <div className="@container">
+        <div className="grid items-start gap-5 @4xl:grid-cols-2">
+          <div className="flex flex-col gap-5">
+            <Sheet title={t("signin.password")}>
+              {caller.signin ? (
+                <ChangePassword user={name} onChanged={() => setChanges((n) => n + 1)} />
+              ) : (
+                <p className="text-muted">
+                  {t(caller.deviceSession ? "signin.change.viaDevice" : "signin.change.viaLocal")}
+                </p>
+              )}
+            </Sheet>
+            <ThisBrowser />
+          </div>
+          <div className="flex flex-col gap-5">
+            <Devices user={name} owner={caller.owner} all={all} onAll={setAll} level={2} className="sheet p-6" />
+            <SignIns user={name} level={2} changes={changes} className="sheet p-6" />
+            <PersonalSpacePanel name={name} />
+          </div>
         </div>
       </div>
     </Page>

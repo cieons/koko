@@ -177,32 +177,35 @@ function HostView({ host, services, service, error, reload }: HostViewProps) {
           </Sheet>
         </div>
       )}
-      <div className="grid items-start gap-5 lg:grid-cols-3">
-        <div className="flex min-w-0 flex-col gap-5 lg:col-span-2">
-          <Reaching host={host} />
-          <Attributes host={host} />
-        </div>
-        <div className="flex min-w-0 flex-col gap-5">
-          <Services
-            services={services}
-            onAdd={retired ? undefined : () => setActing("addService")}
-            addRef={addService}
-          />
-          <SecretsIn host={host} spaces={spaces.data?.spaces} />
-          <Sheet title={t("host.key.note")}>
-            {host.note === undefined ? (
-              <p className="text-sm text-muted">{t("host.page.noNote")}</p>
-            ) : (
-              <p className="text-sm break-words whitespace-pre-wrap text-ink-2">{host.note}</p>
-            )}
-          </Sheet>
-          <p className="t-label px-1">
-            {t("host.page.recorded", {
-              created: formatDate(host.created_at),
-              changed: formatAgo(host.updated_at, language),
-            })}{" "}
-            · <span className="t-code break-all">{host.id}</span>
-          </p>
+      {/* Two columns once the page's own room allows, beside the rail as on a narrower window. */}
+      <div className="@container">
+        <div className="grid items-start gap-5 @4xl:grid-cols-3">
+          <div className="flex min-w-0 flex-col gap-5 @4xl:col-span-2">
+            <Reaching host={host} />
+            <Attributes host={host} />
+          </div>
+          <div className="flex min-w-0 flex-col gap-5">
+            <Services
+              services={services}
+              onAdd={retired ? undefined : () => setActing("addService")}
+              addRef={addService}
+            />
+            <SecretsIn host={host} spaces={spaces.data?.spaces} />
+            <Sheet title={t("host.key.note")}>
+              {host.note === undefined ? (
+                <p className="text-sm text-muted">{t("host.page.noNote")}</p>
+              ) : (
+                <p className="text-sm break-words whitespace-pre-wrap text-ink-2">{host.note}</p>
+              )}
+            </Sheet>
+            <p className="t-label px-1">
+              {t("host.page.recorded", {
+                created: formatDate(host.created_at),
+                changed: formatAgo(host.updated_at, language),
+              })}{" "}
+              · <span className="t-code break-all">{host.id}</span>
+            </p>
+          </div>
         </div>
       </div>
 
