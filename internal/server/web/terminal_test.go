@@ -492,12 +492,14 @@ func TestATerminalResumesByteForByte(t *testing.T) {
 }
 
 // The page's close ends the SSH Session as the client's close, and a later
-// page's end does too, answered once it has ended; another Sign-in's end
-// ends nothing, answered alike. An SSH Session Detached for its grace ends,
-// and its resume is then refused with an empty message.
+// page's end does too, answered once it has ended, a busy shell's whose page
+// is gone included; another Sign-in's end ends nothing, answered alike.
 func TestATerminalEnds(t *testing.T) {
 	t.Parallel()
-	h := startTerminals(t, harness.Timings(timing.Timings{BrowserGrace: 200 * time.Millisecond}))
+	// A call ends each terminal here, so the grace keeps the product's
+	// timing: shortened, it could end a Detached one before the call comes
+	// (#187).
+	h := startTerminals(t)
 	terminalHost(t, h, "web1", nil)
 	b := h.SignIn(harness.Owner)
 
@@ -521,29 +523,44 @@ func TestATerminalEnds(t *testing.T) {
 		t.Errorf("the end was answered before the SSH Session ended as the client's close:\n%s", h.Log())
 	}
 
+	// A shell that keeps writing fills the stream's buffer once its page
+	// is gone: an end ends its SSH Session all the same.
+	ended := detachBusy(t, h, b)
+	if a, _ := b.TerminalPage().End(ended.ID); !a.Ended {
+		t.Errorf("the end of a busy terminal answered %+v", a)
+	}
+	waitLog(t, h, `msg="ssh session ended" tunnel=`+ended.ID+` .* reason="client closed"\n`)
+}
+
+// An SSH Session Detached for its grace ends, a busy shell's too, and its
+// resume is then refused with an empty message.
+func TestADetachedTerminalEndsAtItsGrace(t *testing.T) {
+	t.Parallel()
+	// Nothing but the grace ends these terminals, so it is shortened.
+	h := startTerminals(t, harness.Timings(timing.Timings{BrowserGrace: 200 * time.Millisecond}))
+	terminalHost(t, h, "web1", nil)
+	b := h.SignIn(harness.Owner)
+
 	held := b.TerminalPage().Open("web1", 80, 24)
 	held.Drop()
 	waitLog(t, h, `msg="ssh session ended" tunnel=`+held.ID+` .* reason="grace over"\n`)
 	wantRefused(t, b.TerminalPage().Resume(held), wire.TerminalResumeRefused, "")
 
-	// A shell that keeps writing fills the stream's buffer once its page
-	// is gone: an end, and the grace, end its SSH Session all the same.
-	busy := func() *harness.WebTerminal {
-		t.Helper()
-		w := b.TerminalPage().Open("web1", 80, 24)
-		w.Type([]byte("yes\n"))
-		w.WaitOutputLen(64 << 10)
-		w.Drop()
-		waitLog(t, h, `msg="ssh session detached" tunnel=`+w.ID+` `)
-		return w
-	}
-	ended := busy()
-	if a, _ := b.TerminalPage().End(ended.ID); !a.Ended {
-		t.Errorf("the end of a busy terminal answered %+v", a)
-	}
-	waitLog(t, h, `msg="ssh session ended" tunnel=`+ended.ID+` .* reason="client closed"\n`)
-	graced := busy()
+	graced := detachBusy(t, h, b)
 	waitLog(t, h, `msg="ssh session ended" tunnel=`+graced.ID+` .* reason="grace over"\n`)
+}
+
+// detachBusy opens a terminal on web1 whose shell keeps writing, drops its
+// page once 64 KiB of the output has reached it, and returns once the SSH
+// Session is Detached, while the shell's output fills the stream's buffer.
+func detachBusy(t *testing.T, h *harness.Harness, b *harness.Browser) *harness.WebTerminal {
+	t.Helper()
+	w := b.TerminalPage().Open("web1", 80, 24)
+	w.Type([]byte("yes\n"))
+	w.WaitOutputLen(64 << 10)
+	w.Drop()
+	waitLog(t, h, `msg="ssh session detached" tunnel=`+w.ID+` `)
+	return w
 }
 
 // The Gateway watches a terminal's WebSocket, as the page does: an idle one
