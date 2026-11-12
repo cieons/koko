@@ -34,15 +34,14 @@ func sshClientWarnings(inv *Invocation) (home, client *string) {
 // a path: in any case, with either separator, with or without a trailing
 // one.
 func sameDir(a, b string) bool {
-	return a == b && strings.EqualFold(a, b) // BREAK 4
+	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
 }
 
 // onPath tells whether a program named name is in an absolute directory of
 // path, a PATH value, with one of the extensions of pathext, a PATHEXT
 // value, as a Windows shell finds one.
 func onPath(name, path, pathext string) bool {
-	exts := []string{""} // BREAK 5
-	_ = cmp.Or(pathext)
+	exts := strings.Split(cmp.Or(pathext, ".COM;.EXE;.BAT;.CMD"), ";")
 	for _, dir := range filepath.SplitList(path) {
 		if !filepath.IsAbs(dir) {
 			continue
