@@ -32,12 +32,11 @@ var sftpServers = []string{
 	"/usr/libexec/sftp-server",         // macOS, Alpine
 }
 
-// findTools finds the system's OpenSSH client, sftp-server and rsync. A
-// missing one fails the test rather than skipping it: CI installs them.
-func findTools(t *testing.T) tools {
+// findTools finds the system's OpenSSH client and sftp-server, and rsync.
+// A missing one fails the test rather than skipping it: CI installs them.
+func findTools(t *testing.T) (ts tools, rsync string) {
 	t.Helper()
-	var ts tools
-	for name, path := range map[string]*string{"ssh": &ts.ssh, "scp": &ts.scp, "sftp": &ts.sftp, "rsync": &ts.rsync} {
+	for name, path := range map[string]*string{"ssh": &ts.ssh, "scp": &ts.scp, "sftp": &ts.sftp, "rsync": &rsync} {
 		p, err := exec.LookPath(name)
 		if err != nil {
 			t.Fatalf("the real-OpenSSH test runs %s, which is not installed: install the OpenSSH client, sftp-server and rsync (%v)", name, err)
@@ -48,11 +47,11 @@ func findTools(t *testing.T) tools {
 	for _, p := range sftpServers {
 		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() {
 			ts.sftpServer = p
-			return ts
+			return ts, rsync
 		}
 	}
 	t.Fatalf("the real-OpenSSH test serves sftp with the system's sftp-server, found at none of %q: install it", sftpServers)
-	return ts
+	return ts, rsync
 }
 
 // newUser makes a user with a HOME of their own, and an agent their
@@ -150,19 +149,20 @@ func (u *user) command(ctx context.Context, path string, args ...string) *exec.C
 // path once that part starts, and goes over it.
 func TestRealOpenSSH(t *testing.T) {
 	t.Parallel()
-	ts := findTools(t)
+	ts, rsync := findTools(t)
 	socket := filepath.Join(harness.ShortTempDir(t), "koko.sock")
 	koko := buildKoko(t, t.TempDir(), socket)
 
-	t.Run("on a joined device", func(t *testing.T) { onAJoinedDevice(t, koko, ts) })
+	t.Run("on a joined device", func(t *testing.T) { onAJoinedDevice(t, koko, ts, rsync) })
 	t.Run("on the koko server's machine", func(t *testing.T) { onTheKokoServersMachine(t, koko, ts, socket) })
 }
 
 // onAJoinedDevice joins a Member's device with the koko binary built for
 // the test, so that koko's ssh_config runs it, and runs ssh, scp, sftp,
 // rsync and forwards against Hosts in the Member's Space, each a subtest
-// beside the others, every one through the Device Mux.
-func onAJoinedDevice(t *testing.T, koko string, ts tools) {
+// beside the others, every one through the Device Mux, rsync running the
+// rsync at the path given.
+func onAJoinedDevice(t *testing.T, koko string, ts tools, rsync string) {
 	d := joinDevice(t, koko, ts)
 	bob := d.bob
 
@@ -250,7 +250,7 @@ func onAJoinedDevice(t *testing.T, koko string, ts tools) {
 				{"rsync to web1", src, "web1.koko:rsync-up.bin", src, filepath.Join(d.web1.Home(), "rsync-up.bin")},
 				{"rsync from web1", "web1.koko:rsync-down.bin", filepath.Join(local, "rsync-down.bin"), remote, filepath.Join(local, "rsync-down.bin")},
 			} {
-				if r := u.run(nil, u.tools.rsync, "-e", rsh, c.from, c.to); r.status != 0 || r.stderr != "" {
+				if r := u.run(nil, rsync, "-e", rsh, c.from, c.to); r.status != 0 || r.stderr != "" {
 					t.Errorf("%s: %v", c.what, r)
 				}
 				wantSameFile(t, c.what, c.a, c.b)

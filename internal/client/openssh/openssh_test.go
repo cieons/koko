@@ -46,10 +46,9 @@ const hostPassword = "correct horse battery staple"
 // commandWait bounds each OpenSSH or koko command the test runs.
 const commandWait = 30 * time.Second
 
-// tools are the binaries of one OpenSSH client the test runs, and rsync,
-// by path.
+// tools are the binaries of one OpenSSH client the test runs, by path.
 type tools struct {
-	ssh, scp, sftp, rsync string
+	ssh, scp, sftp string
 	// sftpServer serves the in-process Host's sftp subsystem.
 	sftpServer string
 	// knownHostsByProfile says the client expands ~ from the user's
@@ -130,13 +129,6 @@ func writeKey(t *testing.T) string {
 func (u *user) in(t *testing.T) *user {
 	v := *u
 	v.t = t
-	return &v
-}
-
-// with returns the user running the OpenSSH client ts.
-func (u *user) with(ts tools) *user {
-	v := *u
-	v.tools = ts
 	return &v
 }
 

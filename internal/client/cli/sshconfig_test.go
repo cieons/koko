@@ -15,6 +15,7 @@ import (
 
 	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/harness/skip"
 )
 
 // includeLine is the line koko puts first in ~/.ssh/config.
@@ -299,6 +300,7 @@ func TestJoinWithNoSSHConfig(t *testing.T) {
 // Join Code stays usable, and the device keeps nothing of the join.
 func TestJoinRefusesAHomeSSHWouldMisreadBeforeSpendingTheCode(t *testing.T) {
 	t.Parallel()
+	skip.OnWindows(t, "koko's ssh_config names known_hosts under ~ on Windows, so the home directory's path is not in it, and a '%' there is no reason to refuse")
 	h := harness.Start(t)
 	jc := deviceAdd(t, h, "laptop")
 	home := filepath.Join(t.TempDir(), "a%h")

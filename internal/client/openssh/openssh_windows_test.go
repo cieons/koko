@@ -123,6 +123,13 @@ func (u *user) env() []string {
 	return append(env, "USERPROFILE="+u.home, "HOME="+u.home, "LOCALAPPDATA="+u.runtime)
 }
 
+// with returns the user running the OpenSSH client ts.
+func (u *user) with(ts tools) *user {
+	v := *u
+	v.tools = ts
+	return &v
+}
+
 // command returns the program at path with args, run as the user: in its
 // profile directory, with its environment. Ending ctx kills the program;
 // its koko tunnel ends once the pipes ssh gave it close.
