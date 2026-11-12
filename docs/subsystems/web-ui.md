@@ -132,7 +132,11 @@ part only forms use, such as the date field with its calendar
 (`ui/DateInput.tsx`), is imported by those forms alone, so it loads with
 them. The size test logs each size, and a commit that changes the build
 much records them in its body. With the frame alone (#121) the first load
-was 237 KB gzipped and the build 0.78 MB on disk.
+was 237 KB gzipped and the build 0.78 MB on disk. With the web terminal
+(#177) the build is 2.27 MB on disk and the first load 309 KB gzipped: the
+terminal's chunk (213 KB) and its ghostty core (599 KB of WebAssembly, a
+file of its own) load with the first terminal, and wterm's own inline core
+(72 KB), which koko never loads, is a chunk of its own too.
 
 ## Building and embedding
 

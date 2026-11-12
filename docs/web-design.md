@@ -105,7 +105,13 @@ and once for dark on `.dark`. Light, Dark or System sets `class` and
 | `--ok` | 0.5 0.13 155 | 0.8 0.15 155 | The Managed mark |
 | `--danger` | 0.555 0.21 26 | 0.64 0.2 26 | Danger as text |
 | `--danger-fill` | as `--danger` | 0.58 0.2 26 | A danger button's fill |
+| `--term-surface` | 1 0 0 | 0.145 0.005 265 | The terminal's background, and the covers over it |
+| `--wait` | 0.6 0.14 70 | 0.84 0.14 80 | The Reconnecting mark |
 
+- The terminal's text, cursor, selection and sixteen ANSI colours are
+  `--term-text`, `--term-caret`, `--term-selection` and `--term-ansi-0`
+  to `--term-ansi-15`, a set for each mode, in `theme.css`;
+  `terminal/emulator/emulator.css` hands them to wterm.
 - Filled buttons darken on hover (`color-mix` with 8% black). Lightening
   them drops the white label under 4.5:1 in dark.
 - Dark needs two reds: no single red holds 4.5:1 both as text and under
@@ -121,7 +127,9 @@ and once for dark on `.dark`. Light, Dark or System sets `class` and
   1px drop and a wide soft drop; in dark, a 1px highlight inside its top
   edge at 7% white, a 1px ring at 5% white and a deep drop. **The island**
   (`--island-shadow`), what is raised beside the page, such as
-  the current place, is the panel's colour and shadow, and in dark also a
+  the current place, the active tab on the terminal, a Host's card in the
+  empty workspace and the terminal's island (`.island`), is the panel's
+  colour and shadow, and in dark also a
   1px edge at 9% white, so it holds against the page. Overlays use
   the stronger `--overlay-shadow`.
 
@@ -157,7 +165,7 @@ places, and the User with the browser's two choices. The page fills the
 rest. There is no top bar. The Owner chose it on a live preview (#170,
 2026-11-12) over a top bar for the record pages beside a rail for the
 terminal, for one navigation across the web UI. The terminal's open tabs
-are to join it as a section of their own (#177).
+are a section of it.
 
 **The rail**, on a desktop (768px and wider), fixed to the start edge, the
 full height, on the page colour. It is 15.5rem wide when open, with 12px of
@@ -172,9 +180,31 @@ padding. From top to bottom:
   panel colour and the panel shadow, in dark also a 1px edge at 9% white)
   and has `aria-current="page"`. The others are in `--ink-2`, and hover
   gives them a faint panel fill.
-- **The Terminal section** (#177), after a hairline: the terminal's link,
-  New tab and the open tabs. Until it lands the rail holds no section
-  there.
+- **The Terminal section**, after a hairline and 16px, a labelled group
+  outside the places' navigation:
+  - its head: **Terminal**, a link to `/terminal` with the count "3 of 16"
+    in a `--default` badge while tabs are open, and **New tab**, a 36px
+    icon button (`+`) named with its chord, which opens the switcher on the
+    terminal from any page (see [The terminal](#the-terminal-terminal));
+  - the open tabs, a vertical React Aria `Tabs` list, one per row, 56px.
+    Each row shows the state mark, the name (15px; 600 for the active tab,
+    else 500 in `--ink-2`), and under the name either the state in words
+    when the tab is not Connected (Refused in the danger colour), or the
+    directory its shell last reported in the code face at 12px, cut to its
+    last two parts ("…/srv/app"), or, with none reported, its Space. A
+    close mark, for a pointer and no button inside the tab, ends the row on
+    hover and on the active tab; Delete or Backspace closes the focused
+    tab;
+  - on the terminal the active tab is raised as a place is, and the arrow
+    keys show each tab in turn; on other pages no tab is raised, the arrow
+    keys only move along the list, and choosing a tab goes to the terminal
+    showing it;
+  - with no tab open, one line, "Open terminal", with the chord;
+  - at 16 tabs, New tab is disabled and a line says why;
+  - the list scrolls past what fits, and the section keeps at least 10rem.
+- **On the terminal only**, above the foot, "To leave the terminal with
+  the keyboard, press Escape, then Tab." in `t-label` at 12px. A window
+  under 640px high keeps the line for screen readers alone.
 - **The foot**, after a hairline:
   - **the User**: an initial in a circle (32px), the name (600) and the
     role ("Owner") under it. It opens the account panel, 19rem wide,
@@ -195,6 +225,9 @@ items as icons, each keeping its accessible name:
 
 - the wordmark over the fold button;
 - the places as 44px icon buttons named by the place;
+- Terminal as an icon with its count in a badge on its corner, then `+`;
+- the tabs as 56px tiles: the state mark over the name's first characters
+  in the code face at 11px, the full name as the tile's tooltip;
 - the User's initial, Language and Appearance, stacked.
 
 **Its three states:**
@@ -244,12 +277,18 @@ Hosts table's columns that give way).
   rail; then Language, Appearance and the User's initial, which opens the
   account panel downwards.
 - **A bar at the foot**, fixed, the page colour at 90% with a blur and a
-  hairline over it, above the safe area, items 48px high: Hosts, Secrets
-  and Access, each an icon over its name at 12px; the current one is
-  raised. The terminal's tab button (#177) is to come first in it, where
-  the terminal's key bar starts.
+  hairline over it, above the safe area, items 48px high:
+  - first, where the terminal's key bar starts, **the terminal's button**:
+    while tabs are open it is filled in the text colour and shows a stack
+    icon, the active tab's name and the count of tabs; with none open it is
+    a raised **Terminal** with the terminal icon. It goes to the terminal,
+    and takes at most 40% of the bar;
+  - then Hosts, Secrets and Access, each an icon over its name at 12px;
+    the current one is raised.
 - Pages leave room for both. [The Select mode](#the-select-mode)'s bar
   covers the foot bar while the mode is on.
+- On the terminal the workspace sits between the two, until the
+  terminal's own phone layout (#178) takes their place there.
 
 **A skip link** is the first stop of Tab. **The document's title** is the
 page's own name, then "koko" ("web1 · koko"). After a navigation that
@@ -261,7 +300,8 @@ HeroUI parts, as the preview composes them:
 
 | Part | Built from | Notes |
 | --- | --- | --- |
-| Rail | a `<header>` with a `<nav>`, `Link`s, `Button`s | The frame's navigation down the start edge: open, folded, or over the page ([The frame](#the-frame)) |
+| Rail | a `<header>` with a `<nav>`, `Link`s, `Button`s, `Tabs` | The frame's navigation down the start edge: open, folded, or over the page, with the terminal's tabs ([The frame](#the-frame)) |
+| Switcher | a `ModalOverlay` with an `Autocomplete`: a field over one `ListBox` of two sections | The terminal's: an open tab to show or a Managed Host to open ([The terminal](#the-terminal-terminal)) |
 | Panel (`.sheet`) | a `<section>` | Surface colour, 1rem radius, the panel shadow, 24px padding; a list on a panel has no padding and hairlines between rows |
 | Button | `Button` | Primary: one per page at most. Secondary: panel colour and shadow. Tertiary and ghost inside panels. Danger for the confirming action only |
 | Side panel | `Drawer` | From the right on a desktop (32rem, 44rem for the Host form), inset 12px with a 1.75rem radius; from the bottom on a phone, with a handle, at most 92% of the height |
@@ -275,7 +315,7 @@ HeroUI parts, as the preview composes them:
 | Copy | `Button` | Becomes "Copied" for 1.6 s, announced politely |
 | Command line | a `<code>` in an inset block | A `$`, the command, Copy; a line for a file has no `$` |
 | Shown once | an inset block with a dashed accent edge | A Join Code or Password Link, its time left counting down, Copy, and the line that it is not shown again |
-| State mark | a `<span>` | Managed: a filled green dot with a halo. Registered: a hollow dot. Retired: a short bar, muted. Always with its word |
+| State mark | a `<span>` | Managed: a filled green dot with a halo. Registered: a hollow dot. Retired: a short bar, muted. A terminal's tab: Connecting, a hollow ring in `--muted`; Connected, the Managed mark; Reconnecting, a dot half filled in `--wait`; Ended, a short bar in `--muted`; Refused, or not reached, a ✕ in the danger colour. Always with its word, shown or for a screen reader |
 | Notice | `toast` | The outcome of a call that changed something, bottom end |
 | Refusal | a `role="alert"` block | The koko server's message, in the form or dialog that made the call |
 
@@ -372,6 +412,8 @@ The preview's mock answers at once, so these are specified here:
 | `/access/spaces/<name>` | `/spaces/<name>` | A side panel over Access |
 | `/account` | `/devices` | One's own devices and Sign-ins live here |
 | `/signin`, `/password` | none | Outside the frame |
+| `/terminal` | none | The terminal workspace: `?host=web1&host=db2&tab=2` lists its tabs' Hosts and the active one |
+| `/hosts/<name>/terminal` | none | Adds a tab for the Host, then replaces itself with the workspace's URL |
 | `/` | `/` | Goes to `/hosts`, keeping its query |
 
 Every URL a released koko served (`/services`, `/services/<host>/<service>`,
@@ -528,7 +570,9 @@ CLI resolves one in a write.
 - Two columns once the page's own room is 56rem wide (container query),
   one under the other below that.
 - Two thirds, left:
-  - **Reaching it**. Managed: `$ ssh <name>` with Copy, then "From a device
+  - **Reaching it**. Managed: **Open terminal**, a secondary button
+    linking to `/hosts/<name>/terminal`, over `$ ssh <name>` with Copy,
+    then "From a device
     that has joined this koko server. koko logs in as <account>; no key of
     the Host leaves koko." Registered: "koko cannot log in to this Host
     yet. Enroll it from a device that has the CLI:" and
@@ -640,6 +684,130 @@ the Hosts list and the Secrets page.
   Hosts"). Cancel leaves the selection as it was.
 - **Success.** A notice says what was done ("17 Hosts are now in ops."),
   the mode ends and the selection clears.
+
+### The terminal (`/terminal`)
+
+The terminal workspace: tabs, each its own SSH Session to a Managed Host,
+beside the frame's rail. Its tabs live in the rail's Terminal section on
+every page, and the workspace stays mounted while the person visits other
+pages (spec #169; [the web terminal](subsystems/web-terminal.md)). The
+Owner approved it on a live preview (#170, 2026-11-12), the rail's
+direction. Details may be polished in implementation.
+
+**On a desktop:**
+
+- **The island.** The workspace fills the room beside the rail with 12px
+  around it (none at the rail's side, whose own padding is the gap). It is
+  one island, with a 1rem radius, the panel shadow, and in dark a 1px edge
+  at 9% white. The frame's notice, when there is one, heads it. In it:
+  - **The head**, 56px, panel colour, a hairline under it:
+    - the breadcrumb: the Space (from 1024px wide), "›", and the tab's
+      name (17px, 600), a link to the Host's page;
+    - the state mark with its word;
+    - the directory the shell reported, from 1280px wide: a `--default`
+      chip with a folder icon and the full path in the code face at 12px,
+      named "Directory:" for a screen reader;
+    - at the end, **Files** (secondary, a folder icon and the word;
+      `aria-pressed`, filled in the text colour while open) and **More**
+      (ghost, an ellipsis);
+  - **the terminal**, under the head, filling the island.
+- **The terminal itself:**
+  - background `--term-surface`, a step above the page;
+  - Geist Mono at 14px on 18px rows, Chinese falling through to the
+    system's fonts, padded 14px by 18px (8px by 10px on a phone);
+  - the sixteen ANSI colours of each mode as `--term-*` tokens;
+  - text sizes 12, 13, 14, 16 and 18px from More.
+- **Files** docks inside the island at its end edge, as a column
+  `clamp(20rem, 28vw, 26rem)` wide with a hairline at its start. The
+  terminal narrows to make room, and the shell is told its new size. The
+  column has its own 56px head ("Files · on web1", and Close) over the
+  listing, which the Files panel (#179) fills.
+- **More**: Larger text, Smaller text, Copy the selection, Announce output,
+  and End SSH Session (danger, asked first: "End the SSH Session to
+  web1?").
+- **The title** is the active tab's Host: "web1 · Terminal · koko".
+
+**The keys that reach the workspace.** The workspace takes these chords on
+the window, before the terminal sees them, so the shell never receives
+them; the browsers bind none of them:
+
+| Chord (`⌃⇧` on a Mac) | Does |
+| --- | --- |
+| Ctrl+Shift+K | Opens the switcher, from any page; from another page it goes to the terminal first |
+| Ctrl+Shift+← and → | Show the tab before and after the active one, wrapping, on the terminal, unless the switcher is open |
+
+In the rail's tab list the arrow keys move between tabs, and Delete or
+Backspace closes the focused tab, asking first while its shell runs.
+
+**The switcher.** New tab and Ctrl+Shift+K open it: one field over the open
+tabs and the Managed Hosts the caller can see.
+
+- A dialog 36rem wide, 12vh from the top (12px from it on a phone), radius
+  1.25rem, the overlay colour and shadow, over the backdrop.
+- The field is 56px high, at 17px (16px on a phone), with a search icon and
+  the placeholder "Search tabs and Hosts". Under it, one list box of two
+  sections:
+  - **Open tabs**: the mark, the name, and the directory or state; the
+    shown tab is marked "Shown";
+  - **Open in a new tab**: `+`, each Managed Host's name and Space, and
+    "Open".
+- Typing narrows both by name, directory and Space, the first match taking
+  the virtual focus. ↑ and ↓ move, Enter shows the tab or opens the Host
+  in a new tab, Escape closes. None matching: "No tab or Host matches."
+- At 16 tabs the second section gives way to the limit's line. A footer
+  line gives the chords.
+
+**Tabs and their states.**
+
+- **Labels**: the Host's name, and for a second tab to the same Host
+  "web1 (2)", the lowest number no open tab has. A page holds at most 16
+  tabs, a Sign-in's limit.
+- **A state never moves the layout.** Each shows inside its tab, over the
+  terminal:
+  - **Covers**, in `--term-surface`, for a tab with nothing to show, the
+    text and actions at the start of a column 32rem wide, centred:
+    - Connecting: "Connecting to web1…" (17px, 500), with the spinner past
+      300 ms;
+    - Refused: the refusal block, the page's words for the code ("koko
+      could not reach web1. This SSH Session did not start.") over the
+      koko server's own words in the code face, as it wrote them, then
+      **Try again** (primary) and **Close tab** (tertiary). An open that
+      got no answer says the koko server could not be reached;
+    - an out-of-date page: "This page is out of date. Reload it." and
+      **Reload** (primary).
+    A refusal for want of a Sign-in goes to Sign in, which comes back here.
+  - **Notices**, for a tab whose terminal stays: cards at the terminal's
+    top end, 12px in, at most 34rem wide (8px in and full width on a
+    phone), the overlay colour and shadow, a 1rem radius, the state's mark
+    first, announced politely. Several stack in this order:
+    - Reconnecting dims the terminal to 55%, still selectable, under
+      "Reconnecting to the koko server… Keys typed now are sent once it is
+      back." and **Try now** (secondary);
+    - Ended: why ("The shell on web1 exited with status 0.", "The shell on
+      web1 ended by signal KILL.", "The koko server is restarting; this SSH
+      Session has ended.", "Lost the connection to the koko server at
+      12:01; the SSH Session to web1 could not be resumed." with the koko
+      server's reason under it), and **Open a new one** (primary), in the
+      same tab, and **Close tab** (tertiary);
+    - the clipboard request (OSC 52): a clipboard icon, "web1 asks to copy
+      42 characters to the clipboard.", the first line in the code face,
+      then **Copy** (secondary) and **Dismiss** (tertiary). A newer request
+      replaces an unanswered one.
+- **Closing** a tab whose shell runs asks first, as End SSH Session does;
+  one still connecting, refused or ended closes at once.
+- **An empty workspace:** "No terminal is open" (`t-display`), the line
+  saying what a terminal is, up to eight Managed Hosts as raised cards
+  (name over Space; one opens a tab), and "Search every Managed Host" with
+  the chord, which opens the switcher.
+- **One tree for every form.** The workspace keeps its terminals in one
+  place in its tree on a desktop and a phone alike. A window crossing
+  768px keeps every tab's emulator and SSH Session.
+
+**On a phone**, until its own layout (#178): the frame's top row and foot
+bar stay, and the workspace fills the room between them.
+
+**Strings.** The page is 终端, Files is 文件, a tab is 标签页, an SSH
+Session is SSH 会话.
 
 ### Access (`/access`)
 
@@ -765,8 +933,9 @@ The frame, a title, one sentence and a link to Hosts.
   bar; the root carries scroll padding for it. A desktop's rail lies
   beside the page, and over it only while the page takes no input.
 - In forced colours (such as Windows' contrast themes) the focus ring is
-  an outline, and the chosen place, tab, segment, checked box, switch and
-  radio, the rail's end edge and the edges of panels and overlays are
+  an outline, and the chosen place, tab (the terminal's active tab too),
+  segment, checked box, switch and radio, the rail's end edge and the
+  edges of panels, overlays and islands are
   drawn in the system's colours ([the web UI build](subsystems/web-ui.md#heroui-and-tailwind)).
 - Checked on the build (#126): 200% text size (no loss of content; on a
   phone some fields keep their width, #130), forced colours, every modal

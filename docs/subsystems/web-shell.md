@@ -48,8 +48,12 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   "Account: <name>", which opens the account panel upwards; and the
   Language and Appearance buttons, each an icon button named for its value
   ("Language: English", "Appearance: System") that opens a menu of radio
-  items. The terminal's section (#177) goes between the places and the
-  foot.
+  items. Between the places and the foot, once `user.current` has
+  answered, the terminal's section
+  ([`RailSection.tsx`](../../web/src/terminal/RailSection.tsx)), a
+  labelled group outside the places' navigation: Terminal with its count,
+  New tab, and the open tabs as a React Aria `Tabs` list ([the web
+  terminal](web-terminal.md#the-tabs-in-the-rail)).
 - **The places** are the routes with a `nav` message, in the order of
   `routes`; the three of the design, Hosts, Secrets and Access, have their
   messages in the shell's catalogue (`shell.place.*`), and each comes back
@@ -77,7 +81,7 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   `--rail-folded`): 15.5rem open, 5rem folded and over the page, 0 on a
   phone. The page's column and the Select mode's bar
   ([`BatchBar`](../../web/src/pages/batch/BatchBar.tsx)) leave it to the
-  rail, and so does the terminal's workspace (#177). Since the window's
+  rail, and so does the terminal's workspace. Since the window's
   width no longer tells the room a page has, a page's layout that changes
   from 768 pixels up keys on its own width with a container query
   (Tailwind's `@container`, on the part that changes, never on an
@@ -87,8 +91,8 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
 - **On a phone**, under 768 pixels wide, the banner is a sticky top row:
   the wordmark, then Language, Appearance and the account button, each an
   icon. The places move to a bar fixed at the foot, each with its icon
-  and its name, above the safe area; the terminal's tab button (#177) is
-  to come first in it. The main region leaves room for both.
+  and its name, above the safe area, after the terminal's button, which
+  goes to the terminal. The main region leaves room for both.
 - **The account panel** shows the User's initial, name and role, and how
   this browser reaches koko: "Through koko web on <device>" for a Device
   Session, "Signed in from <browser>" for a Sign-in, and "On the koko
@@ -105,6 +109,15 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   that leaves the focus on nothing, as when the link followed went with the
   page it was on, the focus moves to it; a visit that leaves the focus
   where it was, such as on a place, keeps it there.
+- **The terminal's workspace**, once wanted (a terminal opened, `/terminal`
+  visited, or SSH Sessions kept from before a reload), is mounted in the
+  main region for the frame's life, shown on `/terminal` and hidden and
+  `inert` elsewhere; on `/terminal` the main region is not the page's
+  column, and the frame's notice heads the workspace in place of the
+  page's. Its chords (Ctrl+Shift+K, and on the terminal Ctrl+Shift+← and
+  →) are taken on the window on every page ([the web
+  terminal](web-terminal.md)). The frame going, on signing out, ends its
+  SSH Sessions.
 - **The document's title** is the page's own name, then koko ("web1 ·
   koko"): the page's head (`Page`, [Parts](#parts)) sets it.
 - **The notices** are one notice across the room beside the rail, at the
@@ -155,7 +168,9 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   page, as an alert, that the browser page must be reloaded; any other
   error a page throws goes on past it. `loadPage(page)` loads a lazy
   page's chunk ahead of time, once, so its first render does not wait on
-  it; the page tests load every page so before they run.
+  it; the page tests load every page so before they run. `lazyPart(load)`
+  does the same for a part that is no page, with props of its own: the
+  terminal's workspace, which the frame keeps mounted across pages.
 - **Page state lives in the URL's query** (`useSearchParams`, and
   `useQueryFlag` for a yes-or-no state kept as `name=1`), so a bookmark
   is a saved view and Back returns to the earlier state. The router uses the
@@ -518,6 +533,9 @@ HeroUI (#121) took the pages out; each came back with its ticket (#122 to
 | See who the web UI acts as, from which device | `user.current` | anyone |
 | Follow a link to each page the caller may see | none | anyone; a person's panel the Owner alone |
 | Open Account from the account panel | none | anyone |
+| See the terminal's tabs and their states, and go to one | none | anyone |
+| Open the switcher (New tab, Ctrl+Shift+K) | `host.list`, of the Managed Hosts | anyone |
+| Close a tab, asked first while its shell runs | the stream's close on `/terminal/socket` | anyone |
 | Sign out, from the account panel | `/auth/signout` | a browser signed in with a Password |
 | Choose the language, which the browser keeps | none | anyone |
 | Choose Light, Dark or System, which the browser keeps | none | anyone |

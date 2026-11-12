@@ -30,6 +30,7 @@ ADR; a proposed change lives in its issue or PR.
 | Users: the record, `user ls`, and `user remove` deleting a User who never used koko or Removing anyone else | [users.md](users.md) |
 | Passwords, Password Links and Sign-ins: the hash, issuing and spending a link, the Sign-in cookie and its lifetime, the `/auth/` endpoints, the rate limits, what a Sign-in may do, the web UI's Sign in and Set a Password pages and its Password and Sign-ins parts of Account and a person's panel, the log lines | [signin.md](signin.md) |
 | The record: a Host's fields and their rules, a Service and its ports, Attributes, the Preset Attributes and the four types, the Note, the host and service operations and `attr.list`, filtering and sorting, relative dates, the one leak | [record.md](record.md) |
+| The web terminal: the workspace and its tabs in the rail, the switcher and the chords, a tab's SSH Session and its states, the URL, a reload and a duplicated browser tab, and the emulator behind one component | [web-terminal.md](web-terminal.md) |
 | The record's pages: the Hosts page and its Services view, the view in the URL, the filter, relative dates, sorting and columns, Add Host, a Host's page and its actions, edit forms, and a Service's panel | [record-pages.md](record-pages.md) |
 | Secrets: the record and its name rule, the commands and the one that prints a value, values in JSON, access, sealing, and the web UI's Secrets page | [secrets.md](secrets.md) |
 

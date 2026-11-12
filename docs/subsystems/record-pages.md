@@ -309,7 +309,9 @@ the Host's name or its id, shows what `host.show` answers the caller, as
   which names the browser's tab, with its [state mark](web-shell.md#parts);
   **Edit**, and "More actions for <name>": Rename, Move to another Space,
   then Retire and Delete as danger items.
-- **Reaching it**, by state: Managed, `ssh <name>` in a [command
+- **Reaching it**, by state: Managed, **Open terminal**, a link to
+  `/hosts/<name>/terminal`, which adds a tab for the Host to [the web
+  terminal](web-terminal.md), over `ssh <name>` in a [command
   line](web-shell.md#parts) with Copy, and that koko logs in as the Host
   Account and keeps the Host's key; Registered, that koko cannot log in
   yet, and `koko host enroll <name>` with Copy, since Enroll stays in the
