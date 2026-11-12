@@ -122,9 +122,14 @@ none.
   holds none: `flock` on Linux and macOS, and on Windows `LockFileEx`,
   exclusive and failing at once, as Go's own toolchain locks a file
   (`tryLock` in `sys_unix.go` and `sys_windows.go`). One that finds it
-  taken retries for up to `timing.DeviceMuxStart`, for one that is exiting,
-  then exits 0 without touching the socket. Holding the lock, it removes
-  any socket left behind, listens, and opens its Device Connection at once.
+  taken exits 0 at once, without touching the socket, when the socket
+  accepts a connection: the holder serves, as the winner of a race to start
+  does. Otherwise it retries for up to `timing.DeviceMuxStart`, for one that is
+  exiting, which closes its socket as it stops, before it refuses any
+  command; then it exits 0. A loser that waited on would take over should
+  `koko disconnect` stop the winner meanwhile, and run with nothing to
+  carry (#181). Holding the lock, it removes any socket left behind,
+  listens, and opens its Device Connection at once.
 - **Same user only** (`sameUser`, per OS in `platform_unix.go` and
   `platform_windows.go`). On Linux and macOS each connection's peer
   credentials (`SO_PEERCRED` on Linux, `LOCAL_PEERCRED` on macOS:

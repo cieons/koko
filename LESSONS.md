@@ -220,6 +220,19 @@ storage that throws.
 **Evidence:** 6ca3d57 (#182), found by the ticket's review; fixed by
 b9e663c
 
+### A process that lost a race to start gives up once the winner serves
+
+**Why:** a Device Mux that found its build's lock taken waited the whole
+`DeviceMuxStart` for it, even while the holder served, as the loser of a
+race to start does. When `koko disconnect` stopped the winner within that
+wait, the loser took the lock and ran with nothing to carry, unseen by
+that `koko disconnect`, since it was not yet listening. On Windows it held
+its lock open, and `TestRealOpenSSHOnWindows` could not remove its
+directory: the Git for Windows block starts two Device Muxes at once and
+disconnects within seconds. Wait only for a holder that is going.
+**Seen:** 1 (2026-11-12)
+**Evidence:** check run 43160373344 on cd22008; #181
+
 ## Moved to the code standards
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128, #147; check run 42951455550).

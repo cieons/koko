@@ -136,28 +136,29 @@ func TestOneDeviceMuxPerBuildWhenCommandsRaceToStartIt(t *testing.T) {
 }
 
 // While a Device Mux of this build runs, another one started (koko
-// device-mux, as a command that saw none would start it) finds the lock
-// taken, waits for it as long as a start may take, and exits, leaving the
-// first one serving: it opens no Device Connection and takes no socket.
+// device-mux, as a command that saw none would start it, or the loser of a
+// race to start) finds the lock taken and the socket there, and exits at
+// once, leaving the first one serving: it opens no Device Connection and
+// takes no socket. It does not wait out the time a start may take, in
+// which koko disconnect could stop the first and leave it running on its
+// own, unseen by that koko disconnect (#181).
 func aSecondDeviceMuxOfTheBuildExitsAtItsLock(t *testing.T) {
-	const start = 200 * time.Millisecond
+	// Far longer than the test waits, so a second Device Mux that waits for
+	// the lock fails it.
+	const start = time.Hour
 	_, fwd, d := muxDevice(t, timing.Timings{DeviceMuxStart: start})
 	ran := make(chan harness.Result, 1)
 	t.Cleanup(func() { <-ran }) // the test's context, which ends first, stops it
-	began := time.Now()
 	go func() { ran <- d.KokoEnv([]string{"KOKO_LOG_LEVEL=debug"}, devicemux.Arg) }()
 	var r harness.Result
 	select {
 	case r = <-ran:
 		ran <- r
 	case <-time.After(10 * time.Second):
-		t.Fatalf("a second Device Mux ran on beside the first; the first logged:\n%s", d.MuxLog())
+		t.Fatalf("a second Device Mux was still running after 10 s, waiting for the lock of the first, which serves; the first logged:\n%s", d.MuxLog())
 	}
 	if r.Status != 0 || r.Stdout != "" || strings.Contains(r.Stderr, "device mux started") || !strings.Contains(r.Stderr, "another Device Mux of this build runs") {
 		t.Errorf("the second Device Mux exited %d, stdout %q, and logged %q; want 0, having found the lock taken", r.Status, r.Stdout, r.Stderr)
-	}
-	if took := time.Since(began); took < start {
-		t.Errorf("the second Device Mux exited after %v, before waiting %v for the lock", took, start)
 	}
 	d.Koko("space", "ls", "--json").WantSuccess(t)
 	if n := fwd.Conns(); n != 2 {

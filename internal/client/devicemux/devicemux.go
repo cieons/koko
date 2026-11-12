@@ -69,12 +69,13 @@ var (
 // Run runs a Device Mux until it has had nothing connected for
 // timing.DeviceMuxIdle, the koko server revokes the device's Device Session,
 // the device is no longer joined, or ctx ends; then it removes its socket.
-// When another Device Mux of its build holds the lock, it waits up to
-// timing.DeviceMuxStart for that one to exit, and returns nil if it does
-// not. It fails only when it cannot start.
+// When another Device Mux of its build holds the lock, it returns nil at
+// once if that one serves, and otherwise waits up to
+// timing.DeviceMuxStart for it to exit, returning nil if it does not. It
+// fails only when it cannot start.
 func Run(ctx context.Context, c Config) error {
 	t := c.Timings.Resolve()
-	lock, err := takeLock(ctx, lockPath(c.Socket), t.DeviceMuxStart)
+	lock, err := takeLock(ctx, lockPath(c.Socket), c.Socket, t.DeviceMuxStart)
 	if err != nil || lock == nil {
 		if lock == nil && err == nil {
 			c.Log.Debug("another Device Mux of this build runs", "socket", c.Socket)
@@ -100,8 +101,15 @@ func Run(ctx context.Context, c Config) error {
 		return fmt.Errorf("make the Device Mux's host key: %w", err)
 	}
 
-	ctx, stop := context.WithCancelCause(ctx)
-	defer stop(nil)
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	// It closes its socket as it stops, before it refuses any command, so
+	// a Device Mux that finds the lock taken and the socket accepting knows
+	// that the holder serves (takeLock).
+	stop := func(cause error) {
+		cancel(cause)
+		_ = ln.Close()
+	}
 	m := &deviceMux{
 		Config: c, timings: t, ctx: ctx, stop: stop, hostKey: hostKey,
 		commands: map[*commandConn]struct{}{},
@@ -131,16 +139,20 @@ func Run(ctx context.Context, c Config) error {
 }
 
 // takeLock takes the lock at path, waiting up to wait for a Device Mux of
-// the same build that is exiting. It returns nil, and no error, when the
-// lock stays taken.
-func takeLock(ctx context.Context, path string, wait time.Duration) (*os.File, error) {
+// the same build that is exiting, which has closed its socket. It returns
+// nil, and no error, when the lock stays taken, and at once when the
+// socket accepts a connection: the holder serves, as the winner of a race
+// to start does. A loser that waited on would take the lock should koko
+// disconnect stop the winner meanwhile, and run with nothing to carry,
+// after a koko disconnect that could not see it (#181).
+func takeLock(ctx context.Context, path, socket string, wait time.Duration) (*os.File, error) {
 	deadline := time.Now().Add(wait)
 	for {
 		f, err := tryLock(path)
 		if f != nil || err != nil {
 			return f, err
 		}
-		if time.Now().After(deadline) {
+		if serving(ctx, socket) || time.Now().After(deadline) {
 			return nil, nil
 		}
 		select {
@@ -151,12 +163,26 @@ func takeLock(ctx context.Context, path string, wait time.Duration) (*os.File, e
 	}
 }
 
+// serving tells whether a Device Mux accepts connections at socket: its
+// file alone is there from before it listens. The connection closes at
+// once, which the Device Mux takes for a command that left.
+func serving(ctx context.Context, socket string) bool {
+	d := net.Dialer{Timeout: time.Second}
+	nc, err := d.DialContext(ctx, "unix", socket)
+	if err != nil {
+		return false
+	}
+	_ = nc.Close()
+	return true
+}
+
 // deviceMux is a running Device Mux.
 type deviceMux struct {
 	Config
 	timings timing.Timings
 	// ctx ends when the Device Mux stops, with why as its cause.
-	ctx     context.Context
+	ctx context.Context
+	// stop stops it, with why as ctx's cause, and closes its socket.
 	stop    context.CancelCauseFunc
 	hostKey ssh.Signer
 	wg      sync.WaitGroup
