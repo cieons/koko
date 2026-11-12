@@ -15,8 +15,10 @@ The WebSocket carries koko's resumable stream (ADR 0021), with an end in the
 page, and inside it records of terminal data, resizes and the shell's exit.
 When the WebSocket drops, the SSH Session is Detached for 15 minutes, against
 a device's 1 minute, and the page Resumes it byte-exactly on a new WebSocket
-while the page stays open. A Sign-in holds at most 16 SSH Sessions at once,
-attached or Detached. Files move over SFTP on the same Host connection,
+while the page stays open. The terminal is one page of tabs, each its own
+SSH Session, to the same Host or to different ones, which stays open while
+the person moves about the web UI. A Sign-in holds at most 16 SSH Sessions
+at once, attached or Detached, across all its tabs. Files move over SFTP on the same Host connection,
 through the web front's own endpoints beside the terminal: a directory
 listing, uploads in chunks, and downloads through a one-time token. Each
 file moved is logged with its path, size and outcome.
@@ -54,6 +56,9 @@ the cookie checked at the handshake says it, with no inner SSH.
   to be assembled in the page's memory.
 - **A path field for files:** less to build, but paths are hard to type on a
   phone. The Owner chose a listing.
+- **One terminal per page, several terminals as several browser tabs:**
+  less to build, but on a phone switching browser tabs is slow, and each
+  would load the emulator again. The Owner chose tabs within the page.
 - **64 SSH Sessions per Sign-in, as a Device Session has:** one rule, but
   four times the worst case, and a browser's are held fifteen times longer.
 
@@ -80,9 +85,10 @@ the cookie checked at the handshake says it, with no inner SSH.
   has no window: a page that names another version is told to reload.
   `tunnel@koko` and `web@koko` keep their revisions, since `koko web`
   carries the WebSocket's bytes as they are.
-- A reload, or a tab the system discarded, loses the page's state: its SSH
-  Session is held Detached for the grace and counts against the limit, and
-  the new page starts another. Replaying a screen after a reload is later;
-  tmux on the Host covers it.
+- A reload, or a browser tab the system discarded, loses the page's state.
+  The page keeps its tabs' SSH Session ids in `sessionStorage`, so the new
+  page first ends the old SSH Sessions, then opens each tab's Host again as
+  a new one. Replaying a screen after a reload is later; tmux on the Host
+  covers it.
 - koko gains two dependencies, `github.com/coder/websocket` and
   `github.com/pkg/sftp`, each the standard choice for what it does in Go.
