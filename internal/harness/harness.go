@@ -35,6 +35,7 @@ import (
 	"github.com/cieons/koko/internal/server"
 	"github.com/cieons/koko/internal/server/filesystem"
 	"github.com/cieons/koko/internal/server/seal"
+	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/server/updatecheck"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/release"
@@ -316,7 +317,7 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		opt(&o)
 	}
 	if o.dataDir == "" {
-		o.dataDir = t.TempDir()
+		o.dataDir = newDataDir(t)
 	}
 	if o.rootKeyFile == "" {
 		o.rootKeyFile = NewRootKeyFile(t)
@@ -374,6 +375,49 @@ func Start(t testing.TB, opts ...Option) *Harness {
 	h.startCalls = h.countCalls()
 	return h
 }
+
+// newDataDir makes the data directory of a koko server Start starts on none
+// given: a temporary directory holding koko.db as a first start leaves it,
+// migrated to this binary's schema and holding nothing. The migration's
+// steps, one transaction each, were most of a start under the race
+// detector, and a package such as the access matrix starts hundreds (#186),
+// so they run once per test process and each data directory gets a copy. A
+// test of a first start or of a migration gives its own with DataDir.
+func newDataDir(t testing.TB) string {
+	t.Helper()
+	db, err := migratedStore()
+	if err != nil {
+		t.Fatalf("migrate a new koko.db: %v", err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, store.FileName), db, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// migratedStore is a new koko.db once the store has migrated it and closed,
+// made once per test process.
+var migratedStore = sync.OnceValues(func() ([]byte, error) {
+	dir, err := os.MkdirTemp("", "koko-store-")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	s, err := store.Open(context.Background(), dir)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.Close(); err != nil {
+		return nil, err
+	}
+	// Closing the store checkpoints its WAL into koko.db and removes it; a
+	// WAL left beside it would hold steps a copy of koko.db alone lacks.
+	if _, err := os.Lstat(filepath.Join(dir, store.FileName+"-wal")); err == nil {
+		return nil, errors.New("closing the store left its WAL beside koko.db")
+	}
+	return os.ReadFile(filepath.Join(dir, store.FileName))
+})
 
 // Stop stops the koko server before the test ends, such as to start another
 // on its data directory.

@@ -257,7 +257,8 @@ variables keep parallel tests apart.
 ## The S1 harness
 
 [`harness.Start`](../../internal/harness/harness.go) starts a real koko server
-in the test process (a temporary data directory, a Root Key file made for the
+in the test process (a temporary data directory holding a new `koko.db`,
+migrated once per test process and copied, a Root Key file made for the
 test by `harness.NewRootKeyFile`, a temporary socket in a short path for
 macOS's 104-byte limit, a loopback TCP port of the system's choosing,
 logging at debug level) and initialises it over the socket, with the Owner
