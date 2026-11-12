@@ -44,6 +44,7 @@ func (c *chunks) Read(p []byte) (int, error) {
 // SSH Session that ends frees its place.
 func TestTheLimitCountsByTheCallersID(t *testing.T) {
 	g := New(nil, nil, time.Now, timing.Timings{}, slog.New(slog.DiscardHandler))
+	t.Cleanup(g.Close)
 	a := admission{who: access.Identity{User: api.User{Name: "alice"}}, host: host.Reach{ID: "host_1", Name: "web1"}}
 	register := func(c op.Caller, client string) (*tunnel, *refusal) {
 		t.Helper()

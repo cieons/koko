@@ -100,7 +100,9 @@ which keeps a Sign-in's browser and system apart in place of its label:
   most once a minute. [`access.SignIns`](../../internal/server/access/access.go),
   the one way a Sign-in is read, answers one past its expiry as ended then,
   `expired`; the web front records it so the first time its cookie comes
-  back, and logs it.
+  back, and logs it. Expiry publishes nothing, so the Gateway reads the
+  Sign-in of each web terminal every minute and ends an expired one's
+  ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
 - **Ending**: by its browser signing out, by being revoked, by the User's
   Password being set or removed, and by the User being Removed. Ending is
   immediate: every call reads the Sign-in in its own transaction. Once the

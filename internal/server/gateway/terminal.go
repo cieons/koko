@@ -48,6 +48,11 @@ type TerminalCaller struct {
 	// Addr is where the page came from: on the web listener, the client's
 	// address the listener counts; through koko web, its connection's.
 	Addr net.Addr
+	// WebURL, on the web listener, is the Web URL the web front checked the
+	// page's Host and Origin against; a Web URL changed since refuses an
+	// open, as the change ends the terminals already open. It is empty
+	// through koko web.
+	WebURL string
 }
 
 // TerminalSocket is a web terminal's WebSocket, once the web front has read
@@ -101,7 +106,7 @@ func (g *Gateway) OpenTerminal(c TerminalCaller, s TerminalSocket, hostName stri
 // Sign-in, or the 65th of a Device Session, dials no Host.
 func (g *Gateway) serveTerminal(c TerminalCaller, s TerminalSocket, hostName string, cols, rows uint32) {
 	seen := g.withdrawalsTaken()
-	a, err := g.admit(context.Background(), c.Caller, hostName)
+	a, err := g.admit(context.Background(), c.Caller, hostName, c.WebURL)
 	if err != nil {
 		g.log.Error("open a web terminal", slices.Concat([]any{"client", clientBrowser}, callerAttrs(c.Caller), []any{"addr", c.Addr, "name", hostName, "err", err})...)
 		s.Refuse(wire.TerminalRefusal(api.CodeInternal.Name, "the koko server could not open this SSH Session; its log says why"))

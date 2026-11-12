@@ -56,7 +56,7 @@ func (f *Front) listenerTerminal(r *http.Request, webURL string) terminalWay {
 			if err != nil {
 				return gateway.TerminalCaller{}, f.terminalRefusal(r, err)
 			}
-			return gateway.TerminalCaller{Caller: op.Caller{SignIn: id}, Addr: pageAddr(clientAddress(r))}, nil
+			return gateway.TerminalCaller{Caller: op.Caller{SignIn: id}, Addr: pageAddr(clientAddress(r)), WebURL: webURL}, nil
 		},
 	}
 }

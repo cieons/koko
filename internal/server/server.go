@@ -354,6 +354,7 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 		webListen:   srv.WebAddress(),
 		updates:     srv.updates,
 		upgrade:     cfg.Upgrade,
+		changes:     &changes,
 		log:         log,
 	})
 	front.Register(a)

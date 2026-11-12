@@ -6,9 +6,13 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/coder/websocket"
 
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
@@ -235,4 +239,79 @@ func TestAChangeThatKeepsAccessEndsNoTerminal(t *testing.T) {
 	if log := h.Log(); strings.Contains(log, `msg="ssh session ended"`) {
 		t.Errorf("the log says an SSH Session ended:\n%s", log)
 	}
+}
+
+// A Sign-in that expires, 7 days after it was last used, publishes nothing:
+// the Gateway's sweep finds it on the koko server's clock and ends its
+// terminals, the live one with its notice and the Detached one alike, and a
+// later resume is refused. A Sign-in whose terminal Resumed meanwhile, and
+// one that opened a terminal meanwhile, each of which moved its Last used
+// time, go on.
+func TestAnExpiredSignInsTerminalsEnd(t *testing.T) {
+	t.Parallel()
+	h := startTerminals(t, harness.Timings(timing.Timings{SignInCheck: 20 * time.Millisecond}))
+	terminalHost(t, h, "web1", []string{"space=bob"})
+	b := h.SignIn("bob")
+	live, detached := openLiveAndDetached(t, h, b, "web1")
+	owner := h.SignIn(harness.Owner)
+	used := owner.TerminalPage().Open("web1", 80, 24)
+	used.Type([]byte("exec cat\n"))
+	other := signInAgain(t, h, harness.Owner)
+
+	h.Advance(6 * 24 * time.Hour)
+	used.Drop()
+	if a := owner.TerminalPage().Resume(used); a.Refused != "" {
+		t.Fatalf("the resume was refused: %s", deref(a.Message))
+	}
+	opened := other.TerminalPage().Open("web1", 80, 24)
+	opened.Type([]byte("exec cat\n"))
+	h.Advance(2 * 24 * time.Hour)
+	wantNotice(t, h, live, detached, "access to web1 was withdrawn: this browser's Sign-in has expired; this SSH Session is closed.", "signin expired")
+	// The sweep that ended bob's read the Owner's Sign-ins too.
+	wantKept(t, used, "resumed meanwhile")
+	wantKept(t, opened, "opened meanwhile")
+	wantRefused(t, b.TerminalPage().Resume(detached), api.CodeSignInRequired.Name, signedOut)
+}
+
+// A Web URL change ends every terminal that came through the web listener,
+// the live one with its notice and the Detached one alike, and a resume at
+// the new address is refused saying why; setting the same Web URL again
+// ends none.
+func TestAWebURLChangeEndsTheListenersTerminals(t *testing.T) {
+	t.Parallel()
+	h := startTerminals(t)
+	terminalHost(t, h, "web1", []string{"space=bob"})
+	b := h.SignIn("bob")
+	live, detached := openLiveAndDetached(t, h, b, "web1")
+
+	h.Koko("server", "set", "web_url="+harness.WebURL).WantSuccess(t)
+	wantKept(t, live, "after the same Web URL")
+
+	// A page at the old address whose WebSocket the web listener took
+	// before the change, and which sends its open after it.
+	opening, _, err := b.TerminalPage().Dial()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const moved = "https://koko.example.org"
+	h.Koko("server", "set", "web_url="+moved).WantSuccess(t)
+	const notice = "the Web URL changed; this SSH Session is closed. Sign in at the new address."
+	wantNotice(t, h, live, detached, notice, "web url changed")
+	p := b.TerminalPage()
+	p.Host, p.Origin = strings.TrimPrefix(moved, "https://"), moved
+	wantRefused(t, p.Resume(detached), wire.TerminalResumeRefused, "the Web URL changed")
+
+	if err := opening.Write(t.Context(), websocket.MessageText, []byte(`{"protocol": 1, "open": "web1", "cols": 80, "rows": 24}`)); err != nil {
+		t.Fatal(err)
+	}
+	_, msg, err := opening.Read(t.Context())
+	var a wire.TerminalAnswer
+	if err == nil {
+		err = json.Unmarshal(msg, &a)
+	}
+	if err != nil {
+		t.Fatalf("read the answer to the open sent after the change: %v", err)
+	}
+	wantRefused(t, a, wire.TerminalAccessRefused, "the Web URL changed; this SSH Session did not start. Sign in at the new address.")
 }

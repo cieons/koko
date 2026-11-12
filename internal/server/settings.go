@@ -54,6 +54,9 @@ type settings struct {
 	updates *updatecheck.Checker
 	// upgrade is where it learns how it is upgraded.
 	upgrade Upgrade
+	// changes is the access-change signal, which a change of the Web URL is
+	// published on, so that the web listener's terminals end.
+	changes *access.Signal
 	log     *slog.Logger
 }
 
@@ -102,7 +105,7 @@ func (s *settings) set(ctx context.Context, tx store.Tx, _ op.Caller, req api.Se
 			return api.ServerSetResponse{}, err
 		}
 	}
-	if err := setWebURL(ctx, tx, req); err != nil {
+	if err := s.setWebURL(ctx, tx, req); err != nil {
 		return api.ServerSetResponse{}, err
 	}
 	turnedOff := false
@@ -326,9 +329,31 @@ func updateCheckJSON(on bool, r updatecheck.Result) api.UpdateCheck {
 	return u
 }
 
-// setWebURL sets or clears the Web URL as req names it: web_url is the one
+// setWebURL sets or clears the Web URL as req names it, and once the call
+// commits, the access-change signal says it changed, when it did, so that
+// every terminal that came through the web listener ends: a page there is
+// signed out, its cookie the old address's.
+func (s *settings) setWebURL(ctx context.Context, tx store.Tx, req api.ServerSetRequest) error {
+	before, _, err := deployment.WebURL(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if err := writeWebURL(ctx, tx, req); err != nil {
+		return err
+	}
+	after, _, err := deployment.WebURL(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if after != before {
+		s.changes.Publish(ctx, access.Change{WebURL: true})
+	}
+	return nil
+}
+
+// writeWebURL sets or clears the Web URL as req names it: web_url is the one
 // setting --unset clears, since a koko server always has a Server Address.
-func setWebURL(ctx context.Context, tx store.Tx, req api.ServerSetRequest) error {
+func writeWebURL(ctx context.Context, tx store.Tx, req api.ServerSetRequest) error {
 	for _, k := range req.Unset {
 		switch {
 		case k == "address":

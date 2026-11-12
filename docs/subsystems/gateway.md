@@ -367,6 +367,8 @@ the Tunnel out of the registry.
 | Its Sign-in was revoked (`signin.revoke`) | `access to web1 was withdrawn: this browser's Sign-in was revoked; this SSH Session is closed.` | `signin revoked` |
 | The Password was set or changed, ending the User's other Sign-ins | `access to web1 was withdrawn: the Password was changed; this SSH Session is closed.` | `password changed` |
 | The Password was removed (`password.remove`) | `access to web1 was withdrawn: the Password was removed; this SSH Session is closed.` | `password removed` |
+| Its Sign-in expired, 30 days from its start or 7 from its last use | `access to web1 was withdrawn: this browser's Sign-in has expired; this SSH Session is closed.` | `signin expired` |
+| The Web URL changed, for a web terminal on the web listener | `the Web URL changed; this SSH Session is closed. Sign in at the new address.` | `web url changed` |
 | The Host was Retired | `access to web1 was withdrawn: web1 was Retired; this SSH Session is closed.` | `host retired` |
 | The Host went back to Registered | `access to web1 was withdrawn; this SSH Session is closed.` | `host registered` |
 | Its Relay is no longer Managed | `access to web1 was withdrawn: web1's Relay gw is no longer Managed; this SSH Session is closed.`, the Relay unnamed to a caller who cannot see it | `relay registered`, `relay retired` |
@@ -413,6 +415,27 @@ SSH Session that ends gives its notice as any ending does
   resume of a web terminal whose Sign-in has ended never reaches the
   Gateway: the web front refuses it first, with `signin_required`
   ([the web front](web-front.md#the-web-terminals-websocket)).
+- **A Sign-in's expiry** publishes nothing, so the Gateway sweeps for it
+  (`sweepSignIns`): every `timing.SignInCheck` (1 minute) one read-only
+  transaction reads the Sign-in of each web terminal through
+  `access.SignIns`, on the koko server's clock, and each ended one ends its
+  SSH Sessions as its record says it ended, `signin expired` for an
+  expired one. A read that fails ends nothing and is logged; the next sweep
+  reads again. Opening or Resuming a terminal moves its Sign-in's Last
+  used time, as the web front's cookie check does for a call; keys typed do
+  not, so a terminal attached for 7 days without a drop ends with its
+  Sign-in.
+- **A Web URL change** (`WebURL`, published by `server.set` only when the
+  stored address changes or is cleared) signs out every page on the web
+  listener, so every Sign-in's SSH Session ends at once (`web url
+  changed`). No check of access tells the Web URL, so the web front hands
+  the Gateway the Web URL it checked the page against
+  (`TerminalCaller.WebURL`): an open whose Web URL has changed since, as
+  from a page that upgraded its WebSocket before the change, is refused
+  with `access_refused`, `the Web URL changed; this SSH Session did not
+  start. Sign in at the new address.`, and one admitted across the change
+  ends once registered. Terminals through `koko web`, at its own address,
+  go on.
 - **Any other change** names the Hosts it may have put out of a caller's
   reach (`host.move` to another Space, `host.retire`, and `host.set` sending
   a Managed Host back to Registered), or the live Device Sessions and
@@ -786,10 +809,18 @@ the log lines, with no cookie in them.
 holds a live and a Detached terminal across each change that withdraws a
 Sign-in's access: signing out, `signin.revoke`, the Password changed (the
 changing Sign-in's own terminal going on), `password.remove`,
-`user.remove`, `space.member.remove`, `host.move`, `host.retire` and a
-Relay back to Registered; each ends with its notice and log reason, and a
-later resume is refused, with `signin_required` once the Sign-in has ended
-and saying why otherwise. Changes that keep access end none.
+`user.remove`, `space.member.remove`, `host.move`, `host.retire`, a Relay
+back to Registered, the Sign-in's expiry (the clock hook past it, the
+sweep's interval shortened), with a Sign-in that Resumed or opened a
+terminal meanwhile going on, and a Web URL change, the same Web URL set
+again ending none and an open sent after the change from a WebSocket
+upgraded before it refused; each
+ends with its notice and log reason, and a later resume is refused, with
+`signin_required` once the Sign-in has ended and saying why otherwise.
+Changes that keep access end none.
+[`cli/web_terminal_access_test.go`](../../internal/client/cli/web_terminal_access_test.go)
+keeps a terminal through `koko web` across a Web URL change that ends a
+Sign-in's.
 [`cli/web_terminal_test.go`](../../internal/client/cli/web_terminal_test.go)
 does so through `koko web` (`h.Background`): as the Local caller with
 `localhost` and `127.0.0.1` Origins, 256 KiB each way through its

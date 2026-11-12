@@ -2,9 +2,12 @@ package gateway
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
+	"time"
 
 	"github.com/cieons/koko/internal/server/access"
 	"github.com/cieons/koko/internal/server/host"
@@ -16,9 +19,10 @@ import (
 // Withdraw ends each live SSH Session that the committed change c withdrew
 // access from, since one goes on only while a new one would be allowed (P0
 // spec: reach). Each of a Device Session c Revoked, or of a Sign-in it
-// ended, ends at once; each to a Host c names, through a Relay when c names
-// any Host, or of a caller it narrowed, ends once a read of the record finds
-// that a new one would now be refused (recheck). The channel
+// ended, ends at once, and so does each of a Sign-in when c changed the
+// Web URL; each to a Host c names, through a Relay when c names any Host,
+// or of a caller it narrowed, ends once a read of the record finds that a
+// new one would now be refused (recheck). The channel
 // it returns is closed once the Revoked Device Sessions' SSH Sessions have
 // given their notice and ended, so that their Device Connections close only
 // after. It never blocks, since the access-change signal calls it before
@@ -33,6 +37,9 @@ func (g *Gateway) Withdraw(c access.Change) <-chan struct{} {
 		return told
 	}
 	g.withdrawals++
+	if c.WebURL {
+		g.webURLChanged = g.withdrawals
+	}
 	var revoked []chan struct{}
 	var recheck []*tunnel
 	for _, t := range g.tunnels {
@@ -48,6 +55,8 @@ func (g *Gateway) Withdraw(c access.Change) <-chan struct{} {
 			revoked = append(revoked, t.done)
 		case t.caller.SignIn != "" && slices.Contains(c.SignIns, t.caller.SignIn):
 			t.end(signInEnding(t, c.SignInEnd))
+		case t.caller.SignIn != "" && c.WebURL:
+			t.end(errWebURLChanged)
 		case t.caller.ID() != "" && slices.Contains(c.Narrowed, t.caller.ID()), slices.Contains(c.Hosts, t.hostID),
 			// Any Host c names may be the Relay this SSH Session passes
 			// through, or the one its Host has had since, which only a read
@@ -191,6 +200,77 @@ func signInEnding(t *tunnel, reason string) *ending {
 		return withdrawn(t, "signin expired", "this browser's Sign-in has expired")
 	}
 	return withdrawn(t, "access withdrawn", "")
+}
+
+// errWebURLChanged ends the SSH Session of a Sign-in, which came through the
+// web listener, once the Web URL has changed: its page is signed out, its
+// cookie the old address's.
+var errWebURLChanged = &ending{
+	reason: "web url changed",
+	notice: "the Web URL changed; this SSH Session is closed. Sign in at the new address.",
+	why:    "the Web URL changed",
+}
+
+// sweepSignIns checks the Sign-ins of the web terminals every
+// timing.SignInCheck until the Gateway closes (checkSignIns): a Sign-in's
+// expiry, 30 days from its start or 7 from its last use, is no change any
+// call publishes.
+func (g *Gateway) sweepSignIns() {
+	tick := time.NewTicker(g.timings.SignInCheck)
+	defer tick.Stop()
+	for {
+		select {
+		case <-g.stopped:
+			return
+		case <-tick.C:
+		}
+		g.checkSignIns()
+	}
+}
+
+// checkSignIns reads the Sign-in of each web terminal in the registry, in
+// one read-only transaction on the koko server's clock, and ends the SSH
+// Sessions of each that has ended, as its record says it ended
+// (signInEnding): one that expired, or ended by a change the Gateway
+// somehow missed. A read that fails ends nothing, since it tells nothing,
+// and is logged; the next sweep reads again.
+func (g *Gateway) checkSignIns() {
+	g.mu.Lock()
+	of := map[string][]*tunnel{}
+	for _, t := range g.tunnels {
+		if t.caller.SignIn != "" && t.hostID != "" {
+			of[t.caller.SignIn] = append(of[t.caller.SignIn], t)
+		}
+	}
+	g.mu.Unlock()
+	if len(of) == 0 {
+		return
+	}
+	ids, err := json.Marshal(slices.Collect(maps.Keys(of)))
+	if err != nil {
+		g.log.Error("check the Sign-ins of the web terminals", "err", err)
+		return
+	}
+	ctx := g.readContext(context.Background())
+	var found []api.SignIn
+	err = g.store.Read(ctx, func(tx store.Tx) (err error) {
+		// One argument, a JSON array of the ids as text, holds any number
+		// of them.
+		found, err = access.SignIns(ctx, tx, op.Now(ctx), "s.id IN (SELECT value FROM json_each(?))", string(ids))
+		return err
+	})
+	if err != nil {
+		g.log.Error("check the Sign-ins of the web terminals", "err", err)
+		return
+	}
+	for _, si := range found {
+		if si.EndedAt == "" {
+			continue
+		}
+		for _, t := range of[si.ID] {
+			t.end(signInEnding(t, si.EndReason))
+		}
+	}
 }
 
 // revokedEnding ends the SSH Session in the Tunnel t of a Revoked Device

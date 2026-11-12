@@ -119,9 +119,12 @@ web front ends their `koko web` cookies.
 | `SignIns`, `SignInEnd` | The Sign-ins the change ended, and why, as their records say: `signed_out`, `revoked`, `password_changed`, `password_removed` or `user_removed` | signing out, `signin.revoke`, a Password set or changed (the User's other Sign-ins), `password.remove`, `user.remove` ([Sign-ins](signin.md#sign-ins)) |
 | `Narrowed` | The live Device Sessions and Sign-ins of each User taken out of a Space | `space.member.remove` |
 | `Hosts` | The Hosts the change may have put out of a caller's reach | `host.move`, `host.retire`, `host.set` sending a Host back to Registered |
+| `WebURL` | The Web URL set to another address or cleared, which signs out every page on the web listener | `server.set` |
 
 `Narrowed` names each caller by `op.Caller.ID`, its Sign-in's id or its
 Device Session's, the one helper every consumer matches a caller with.
+A Sign-in's expiry publishes nothing: no call makes it, and the Gateway
+finds it in a sweep ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
 
 ## The access matrix
 

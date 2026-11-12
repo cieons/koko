@@ -90,7 +90,13 @@ type Gateway struct {
 	// withdrawals counts the access changes Withdraw took, so that a Tunnel
 	// admitted across one is checked again once it is in the registry.
 	withdrawals uint64
-	wg          sync.WaitGroup
+	// webURLChanged is the count of withdrawals at the last change of the
+	// Web URL, which no check of access tells: a Sign-in's web terminal
+	// admitted across it ends once registered.
+	webURLChanged uint64
+	// stopped is closed once the Gateway closes, which stops sweepSignIns.
+	stopped chan struct{}
+	wg      sync.WaitGroup
 }
 
 // maxSSHSessions is how many SSH Sessions one Device Session may have open
@@ -114,9 +120,10 @@ const (
 // New returns a Gateway that reads the record in st, opens the koko server's
 // keys with rootKey, reads a Sign-in's expiry on clock, the koko server's,
 // connects to Hosts as timings say (the zero Timings is the product's), and
-// logs each SSH Session to log.
+// logs each SSH Session to log. Until it closes, it looks for web terminals
+// whose Sign-in has expired every timing.SignInCheck (sweepSignIns).
 func New(st *store.Store, rootKey *seal.RootKey, clock func() time.Time, timings timing.Timings, log *slog.Logger) *Gateway {
-	return &Gateway{
+	g := &Gateway{
 		store:       st,
 		rootKey:     rootKey,
 		connector:   hostconn.Connector{Timings: timings},
@@ -126,7 +133,10 @@ func New(st *store.Store, rootKey *seal.RootKey, clock func() time.Time, timings
 		tunnels:     map[tunnelID]*tunnel{},
 		ended:       map[tunnelID]endedTunnel{},
 		sshSessions: map[string]int{},
+		stopped:     make(chan struct{}),
 	}
+	g.wg.Go(g.sweepSignIns)
+	return g
 }
 
 // readContext is ctx for a read that asks the access check about a caller,
@@ -277,6 +287,9 @@ func (g *Gateway) Open(c *transport.Connection, nch ssh.NewChannel) {
 // which ends a connection too stalled to take it, must follow in time.
 func (g *Gateway) Close() {
 	g.mu.Lock()
+	if !g.closed {
+		close(g.stopped)
+	}
 	g.closed = true
 	for _, t := range g.tunnels {
 		t.end(errStopping)
@@ -306,7 +319,7 @@ func (g *Gateway) serve(c *transport.Connection, nch ssh.NewChannel) {
 	sshName := p.SSHName
 	hostName := wire.TunnelHost(sshName)
 	seen := g.withdrawalsTaken()
-	a, err := g.admit(c.Context(), caller, hostName)
+	a, err := g.admit(c.Context(), caller, hostName, "")
 	if errors.Is(err, errNotInitialised) {
 		g.log.Info("tunnel refused", append(from, "name", sshName, "err", err)...)
 		_ = nch.Reject(ssh.ConnectionFailed, err.Error())
@@ -355,8 +368,9 @@ func (g *Gateway) serve(c *transport.Connection, nch ssh.NewChannel) {
 // returns the refusal: maxBrowserSSHSessions for a Sign-in, maxSSHSessions
 // for a Device Session. Withdraw could not see one admitted across an access
 // change, a change it took after the first seen, so register has it checked
-// again. It fails once the Gateway is closing, or for a web terminal once
-// CloseTerminals has ended them.
+// again, and ends a Sign-in's admitted across a change of the Web URL,
+// which no check of access tells. It fails once the Gateway is closing, or
+// for a web terminal once CloseTerminals has ended them.
 func (g *Gateway) register(t *tunnel, a admission, seen uint64) (*refusal, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -386,7 +400,10 @@ func (g *Gateway) register(t *tunnel, a admission, seen uint64) (*refusal, bool)
 	if r := a.host.Relay; r != nil {
 		t.relayID = r.ID
 	}
-	if g.withdrawals != seen {
+	switch {
+	case t.caller.SignIn != "" && g.webURLChanged > seen:
+		t.end(errWebURLChanged)
+	case g.withdrawals != seen:
 		g.wg.Go(func() { g.recheck([]*tunnel{t}) })
 	}
 	return nil, true
@@ -458,9 +475,10 @@ var errNotInitialised = errors.New("the koko server is not initialised, so it ha
 // whether the caller may start a new SSH Session to the Host named hostName:
 // the access check passes and the Host and its Relay, if any, are Managed. An unknown name, a Host the
 // caller may not reach and a Retired Host, which holds no name, get the same
-// refusal, byte for byte. It fails only on an error of the koko server's
-// own.
-func (g *Gateway) admit(ctx context.Context, caller op.Caller, hostName string) (admission, error) {
+// refusal, byte for byte. A web terminal's page that the web listener
+// checked against webURL, when not empty, is refused once the Web URL is
+// another. It fails only on an error of the koko server's own.
+func (g *Gateway) admit(ctx context.Context, caller op.Caller, hostName, webURL string) (admission, error) {
 	var a admission
 	ctx = g.readContext(ctx)
 	err := g.store.Read(ctx, func(tx store.Tx) error {
@@ -476,6 +494,20 @@ func (g *Gateway) admit(ctx context.Context, caller op.Caller, hostName string) 
 		}
 		if a.kokoKey, err = ssh.NewSignerFromKey(keys.Koko); err != nil {
 			return fmt.Errorf("use the koko key: %w", err)
+		}
+		if webURL != "" {
+			current, _, err := deployment.WebURL(ctx, tx)
+			if err != nil {
+				return err
+			}
+			if current != webURL {
+				// The page is signed out: its cookie is the old address's.
+				a.refused = &refusal{
+					banner: "koko: the Web URL changed; this SSH Session did not start. Sign in at the new address.\n",
+					code:   wire.TerminalAccessRefused, reason: "web url changed",
+				}
+				return nil
+			}
 		}
 		if name.Check(hostName) != nil {
 			// Not a Host name, such as a Host's id: no SSH Name names it.

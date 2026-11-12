@@ -33,6 +33,10 @@ type Change struct {
 	// caller's reach: one moved to another Space, Retired, or sent back to
 	// Registered. Each SSH Session to one is checked again.
 	Hosts []string
+	// WebURL says the change set the Web URL to another address, or
+	// cleared it: every SSH Session that came through the web listener, a
+	// Sign-in's, ends, since its page is signed out.
+	WebURL bool
 }
 
 // Signal is the access-change signal (P0 spec: people and Spaces): once a
