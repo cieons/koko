@@ -24,6 +24,8 @@ end](#the-typescript-end), against the Gateway's Go end.
 | `Detach()` | device | Takes the stream off its channel and returns its received offset, for the resume payload. |
 | `Resume(ch, sent)` | device | Attaches `ch` after the Gateway accepted a resume whose payload carried `sent`. |
 | `AcceptResume(ch, peer)` | Gateway | Attaches `ch`, given the device's offset `peer` from the resume payload. The last attach wins: the stream leaves its current channel. |
+| `AcceptResumeAnswering(ch, peer, answer)` | Gateway | As `AcceptResume`, but gives its own offset to `answer`, which carries it outside the stream, as a web terminal's JSON answer does; nothing is written on `ch` before the frames. A failed answer leaves the stream Detached. |
+| `ResumeAnswered(ch, sent, peer)` | page | As `Resume`, with the Gateway's offset `peer` given from outside the stream; the Go page of the S1 tests (`harness.WebTerminal`) Resumes so. |
 
 The stream has no timers. The 5 s resume exchange and the grace belong to its
 callers, who close the channel to abort an exchange or `Close` the stream. So
@@ -52,7 +54,9 @@ its channel is lost, and the Gateway keeps a refused resume's reason instead.
 On a resume, the device's received offset travels in the `tunnel@koko` open
 payload. The Gateway answers with its own as one uvarint, the first bytes it
 writes on the new channel, and both ends then resend from the offset the
-other gave.
+other gave. A web terminal's offsets both travel in the WebSocket's JSON
+first message and answer instead, so its stream holds frames alone and
+does not start with a Tunnel id ([the web front](web-front.md#the-web-terminals-websocket)).
 
 The frames and the resume answer are covered by `tunnel@koko`'s revision
 ([API](api.md#revisions), [ADR 0049](../adr/0049-the-cli-and-the-koko-server-work-together-within-a-window-of-versions.md)):

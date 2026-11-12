@@ -152,7 +152,7 @@ A one-time, time-limited link the Owner issues that lets one User set their Pass
 _Avoid_: reset link, magic link, invite link
 
 **Sign-in**:
-One browser signed in with a User's Password, until it signs out, expires or is revoked; it is not a Device Session and never reaches a Host.
+One browser signed in with a User's Password, until it signs out, expires or is revoked; it is not a Device Session, and it reaches a Host only through the Web terminal.
 _Avoid_: web session, session (alone), login, cookie
 
 **Device Session**:
@@ -164,7 +164,7 @@ A Device Session that can never connect again, kept as history; its key can neve
 _Avoid_: logged out, expired, deleted
 
 **Last used**:
-When a Device Session's Device Connection last opened a channel (a command, an SSH Session, a browser connection), kept to the minute; staying connected does not count.
+When a Device Session's Device Connection last opened a channel (a command, an SSH Session, a browser connection), or a Sign-in last made a call or opened or Resumed a Web terminal, kept to the minute; staying connected, and keys typed, do not count.
 _Avoid_: last seen, last active, last login
 
 **Local caller**:
@@ -196,13 +196,17 @@ One SSH connection through the Gateway to a Host.
 _Avoid_: session (alone), connection
 
 **Tunnel**:
-What carries one SSH Session from the CLI to the Gateway, inside a channel on a Device Connection or over the Unix socket; it outlives a dropped Device Connection by Resuming on a new one.
+What carries one SSH Session to the Gateway: from the CLI, inside a channel on a Device Connection or over the Unix socket, or from the Web terminal, over a WebSocket; it outlives a dropped connection by Resuming on a new one. The WebSocket carries the Tunnel and is not it.
 _Avoid_: websocket, channel, stream
 
 **Detached**:
-A Tunnel that has lost its Device Connection, whose SSH Session the Gateway holds for a short grace period so the device can Resume it.
+A Tunnel that has lost its connection, a Device Connection or a browser's WebSocket, whose SSH Session the Gateway holds for a grace period so the device or the page can Resume it.
 _Avoid_: suspended, orphaned, disconnected
 
 **Resume**:
-To carry a Detached Tunnel, and the SSH Session inside it, onto a new Device Connection of the same Device Session.
+To carry a Detached Tunnel, and the SSH Session inside it, onto a new connection of the same Device Session or Sign-in.
 _Avoid_: reattach, reconnect, roam
+
+**Web terminal**:
+The Web UI's page that opens an SSH Session to one Host in a browser.
+_Avoid_: console, web shell, web SSH

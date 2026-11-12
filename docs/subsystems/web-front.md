@@ -99,7 +99,9 @@ request on a `web@koko` channel in this order:
 1. **The Host header** must be `localhost:<port>` or `127.0.0.1:<port>`, with
    the channel's port (for port 80 browsers leave `:80` out, and so may the
    header). Any other Host gets no answer: the connection is closed without
-   a response. This defeats DNS rebinding.
+   a response. This defeats DNS rebinding. `/terminal/socket` then goes to
+   [the web terminal's WebSocket](#the-web-terminals-websocket), which
+   checks the rest itself.
 2. **A Revoked Device Session.** A request on a connection of a Device
    Session Revoked since the koko server started is refused with `revoked`
    (`401`): a page says the Device Session was revoked, and an API call gets
@@ -164,9 +166,12 @@ default, is off: a koko server without it listens on nothing new.
   socket listens. Its start log line, just before `koko server started`, is
   `web listener` with `listen=` its bound address, or `off`, and `web_url=`
   the Web URL, or that none is set.
-- **At shutdown** it is closed first, before the Gateway's notices: it
-  stops accepting and waits up to 5 s for its calls in flight, then cuts
-  them ([`Server.Close`](../../internal/server/server.go)).
+- **At shutdown** the web terminals end first, each with the Gateway's
+  restart notice and its WebSocket closed, since the listener's shutdown
+  does not track a WebSocket ([the Gateway](gateway.md#the-web-terminal)).
+  The listener is closed next, before the Tunnels' notices: it stops
+  accepting and waits up to 5 s for its calls in flight, then cuts them
+  ([`Server.Close`](../../internal/server/server.go)).
 - **`server.show`** names its bound address as `web_listen`, `null` while it
   is off ([initialisation](initialisation.md#the-deployment-afterwards)).
 
@@ -192,13 +197,15 @@ endpoints set the Sign-in cookie, and only they and `/v1/` read it.
    `bad_origin` (403) from its headers alone, before its body is read or
    anything is counted. An API path and an `/auth/` endpoint get the error
    object, any other path a page.
-5. **`/auth/`** is the web front's own endpoints, which sign a browser in,
+5. **`/terminal/socket`** is [the web terminal's
+   WebSocket](#the-web-terminals-websocket).
+6. **`/auth/`** is the web front's own endpoints, which sign a browser in,
    set a Password and sign out ([Sign-ins](signin.md#the-auth-endpoints)).
-6. **`/v1/`** goes to the API as the live Sign-in the `__Host-koko` cookie
+7. **`/v1/`** goes to the API as the live Sign-in the `__Host-koko` cookie
    names (`op.Caller.SignIn`), moving its Last used time; without one it is
    answered `signin_required` (401) without reaching the API
    ([`Front.serveSignedIn`](../../internal/server/web/listener.go)).
-7. **Every other path** serves the web UI's files as `web@koko` does, the
+8. **Every other path** serves the web UI's files as `web@koko` does, the
    same code path (`Front.serveFile`).
 
 Refusals, `/auth/` and API answers carry `Cache-Control: no-store`. The
@@ -213,7 +220,7 @@ address.
 | Code | Status | When |
 | --- | --- | --- |
 | `signin_required` | 401 | A call on the web listener came without a live Sign-in, or as one that has ended. |
-| `bad_origin` | 403 | A `POST` on the web listener came without an `Origin` header equal to the Web URL. |
+| `bad_origin` | 403 | A `POST` on the web listener, or a web terminal's WebSocket on either way in, came without the `Origin` header of a page of this koko server. |
 
 ### The headers every answer carries
 
@@ -305,6 +312,77 @@ in the database:
   ([`deployment.CookieKey`](../../internal/server/deployment/cookie.go),
   [the Seal](seal.md)). The web front loads it once per process.
 
+## The web terminal's WebSocket
+
+`GET /terminal/socket` ([`web.TerminalPath`](../../internal/server/web/terminal.go)),
+a WebSocket handshake ([RFC 6455](https://www.rfc-editor.org/rfc/rfc6455)),
+on the web listener and on `web@koko` alike, where the page at `/terminal`
+opens its SSH Sessions
+([ADR 0053](../adr/0053-a-browser-opens-ssh-sessions-through-a-websocket-to-the-gateway.md);
+P1 spec: a terminal in the web UI, "The terminal endpoint"). After the
+checks every request gets, the 503 pages and the Host check on the
+listener, or the Host guard on `web@koko`, the web front answers in this
+order (`Front.serveTerminal`):
+
+1. **Another method** gets a `405` page, and **a `GET` that is no
+   WebSocket upgrade** (`Connection: upgrade` and `Upgrade: websocket`) a
+   `426` page.
+2. **The Origin** must be the Web URL on the listener, or on `web@koko`
+   `http://localhost:<port>` or `http://127.0.0.1:<port>` with the channel's
+   port (without it for port 80). Any other, or none, gets a `403` page
+   (`bad_origin`) before the cookie is read: the defence against
+   cross-site WebSocket hijacking, since `SameSite=Lax` keeps the cookie
+   off a cross-site handshake but same-site is wider than same-origin.
+3. **Accepted** with [`github.com/coder/websocket`](https://github.com/coder/websocket)'s
+   `Accept`, compression off, no subprotocol and a read limit of 64 KiB a
+   message. The answer carries the way in's headers and no CORS header. On
+   the listener `http.Server` gives the connection up to it; on `web@koko`
+   the channel's connection is given up the same way.
+4. **The first message**: one text message of JSON, at most 4 KiB, within
+   `timing.FirstMessage` (10 s) of the upgrade
+   ([`wire.TerminalFirst`](../../internal/shared/wire/terminalfirst.go)).
+   None in time, binary, larger or no JSON closes the WebSocket with status
+   1008 and no answer.
+
+| Page sends | Answered with one text message |
+| --- | --- |
+| `{"protocol": 1, "open": "web1", "cols": 120, "rows": 36}` | `{"tunnel": "<32 hex>"}` once the Host has been dialled and its shell has started, or a refusal |
+| `{"protocol": 1, "resume": "<32 hex>", "offset": 4096}` | `{"offset": 2048}`, the koko server's received offset, or `{"refused": "resume_refused", "message": "<why>"}`, the message empty for an id the Gateway holds nothing of for this caller |
+| `{"protocol": 1, "end": "<32 hex>"}` | `{"ended": true}` once the Gateway has ended that SSH Session of this caller as the client's close, or had none, then a close with status 1000 |
+
+A browser reports a refused upgrade as an error alone, so every refusal
+but the two above is the first message's answer, `{"refused": "<code>",
+"message": "<text>"}`, and then a close with status 1008; the page then
+makes no further attempt. The web front answers these itself, in this
+order, before the Gateway sees the message:
+
+| Code | When |
+| --- | --- |
+| `reload_page` | `protocol` is not this koko server's (`wire.TerminalProtocol`): `this page is out of date: reload it`. |
+| `signin_required` | On the listener, no live Sign-in; the check moves its Last used time, as a call does. |
+| `revoked` | On `web@koko`, the connection's Device Session was Revoked, as for every request there. |
+| `cookie_required` | On `web@koko`, no valid cookie of this `koko web`. |
+
+A message that asks for no one thing, an open at a size outside 1 to
+4,096, or an id that is not 32 lowercase hex characters is then closed with
+1008 and no answer. The [Gateway](gateway.md#the-web-terminal) answers the
+rest: an open's refusals carry `unknown_host`, `host_registered`,
+`relay_registered`, `access_refused`, `ssh_session_limit`,
+`host_unreachable`, `host_key_mismatch`, `login_refused`,
+`host_connection_failed` or `shell_refused`, with the Gateway's banner
+for it, and a failure of the koko server's own `internal_error`. Once
+accepted, every message either way is binary, and their bytes are one
+resumable stream (`websocket.NetConn`) carrying terminal records; a text
+message then closes the WebSocket with status 1003, `NetConn`'s own. While
+the koko server stops, a new one is closed at once.
+
+The caller is the live Sign-in on the listener, and on `web@koko` the
+connection's Device Session or the Local caller with its run of `koko
+web`. No secret is in the URL: the cookie authenticates, and the SSH
+Session's id travels inside the WebSocket. A refusal is logged at debug
+level as `web terminal refused` with its reason and the client's address,
+never with the cookie.
+
 ## The port-owner lookup
 
 [`portowner.Lookup`](../../internal/shared/portowner/portowner.go), in the
@@ -368,6 +446,15 @@ and user. It is per OS ([rule 13](code-layout.md#rules-for-working-in-parallel))
   `signin_required`; every answer's headers and `no-store` on
   refusals; the client's address in the log; and the start log naming the
   Web URL.
+- [`terminal_test.go`](../../internal/server/web/terminal_test.go), S1
+  against the web listener with a Go page (`harness.TerminalPage`): a `GET`
+  that is no upgrade answered `426`; another Origin, none and the Web URL
+  on another scheme or port refused `403` before the upgrade; `reload_page`,
+  `signin_required` without a cookie and for an ended Sign-in, each closed
+  with 1008; a malformed first message, a binary one, one over 4 KiB and
+  none within `timing.FirstMessage` closed with 1008 and no answer; and no
+  Host dialled for any of them. What follows the first message is the
+  Gateway's ([its tests](gateway.md#verifying)).
 - [`run_checks_test.go`](../../internal/server/kokod/run_checks_test.go):
   a taken web listener address refused naming the process holding it;
   [`kokod_test.go`](../../internal/server/kokod/kokod_test.go):

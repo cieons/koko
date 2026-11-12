@@ -70,7 +70,7 @@ func (g *Gateway) Withdraw(c access.Change) <-chan struct{} {
 // (withdrawal). A read that fails ends them all, as it would refuse a new
 // one, saying the log tells why.
 func (g *Gateway) recheck(ts []*tunnel) {
-	ctx := context.Background()
+	ctx := g.readContext(context.Background())
 	ends := make([]*ending, len(ts))
 	err := g.store.Read(ctx, func(tx store.Tx) error {
 		for i, t := range ts {

@@ -63,6 +63,13 @@ func (c *Conn) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// Quiet returns how long nothing has arrived on c: since bytes last did, or
+// since c was made. A watch of its own reads it, as the Gateway's of a web
+// terminal's WebSocket, which carries no SSH connection to probe.
+func (c *Conn) Quiet() time.Duration {
+	return time.Since(c.start) - time.Duration(c.last.Load())
+}
+
 // Watch watches sc, the SSH connection over c, until done closes, and
 // returns nil then. Once nothing has arrived on c for probe it sends sc a
 // probe, and each time a value arrives on probeNow (nil for never) it sends

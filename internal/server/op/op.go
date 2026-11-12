@@ -84,6 +84,14 @@ func Now(ctx context.Context) time.Time {
 	return t
 }
 
+// AtTime returns ctx carrying now, to the second in UTC, as Now returns a
+// call's time: for a read outside any call that asks the access check about
+// a caller, such as the Gateway's admission of an SSH Session, which reads
+// a Sign-in's expiry on the koko server's clock.
+func AtTime(ctx context.Context, now time.Time) context.Context {
+	return context.WithValue(ctx, nowKey{}, now.UTC().Truncate(time.Second))
+}
+
 type afterTxKey struct{}
 
 // AfterTx has f run once the transaction of the call ctx belongs to has

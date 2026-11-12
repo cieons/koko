@@ -37,6 +37,7 @@ import (
 
 	"github.com/cieons/koko/internal/server/access"
 	"github.com/cieons/koko/internal/server/deployment"
+	"github.com/cieons/koko/internal/server/gateway"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/signin"
@@ -44,6 +45,7 @@ import (
 	"github.com/cieons/koko/internal/server/transport"
 	"github.com/cieons/koko/internal/server/webui"
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/timing"
 )
 
 // tokenParam is the query parameter that carries koko web's token.
@@ -61,13 +63,18 @@ type Front struct {
 	// signins answers the web listener's /auth/ endpoints and its Sign-in
 	// cookies.
 	signins *signin.Service
+	// gateway opens the web terminals' SSH Sessions (terminal.go).
+	gateway *gateway.Gateway
 	files   fs.FS
 	store   *store.Store
 	rootKey *seal.RootKey
 	log     *slog.Logger
 	// clock is the koko server's clock, which a token's expiry is read on.
 	clock func() time.Time
-	runs  *runs
+	// timings are the P0 timings, resolved: how long a web terminal's first
+	// message may take among them.
+	timings timing.Timings
+	runs    *runs
 
 	// keyMu guards key, the cookie key once loaded or made.
 	keyMu sync.Mutex
@@ -76,10 +83,14 @@ type Front struct {
 
 // New returns the web front, which hands authenticated /v1/ requests to api,
 // signs koko web's cookies with the cookie key kept in st under rootKey,
-// signs browsers in on the web listener through signins, and reads a
-// token's expiry on clock, the koko server's.
-func New(api http.Handler, signins *signin.Service, st *store.Store, rootKey *seal.RootKey, clock func() time.Time, log *slog.Logger) *Front {
-	return &Front{api: api, signins: signins, files: webui.FS(), store: st, rootKey: rootKey, log: log, clock: clock, runs: newRuns()}
+// signs browsers in on the web listener through signins, hands web
+// terminals to gw, reads a token's expiry on clock, the koko server's, and
+// waits as timings say (the zero Timings is the product's).
+func New(api http.Handler, signins *signin.Service, gw *gateway.Gateway, st *store.Store, rootKey *seal.RootKey, clock func() time.Time, timings timing.Timings, log *slog.Logger) *Front {
+	return &Front{
+		api: api, signins: signins, gateway: gw, files: webui.FS(), store: st, rootKey: rootKey,
+		log: log, clock: clock, timings: timings.Resolve(), runs: newRuns(),
+	}
 }
 
 // Register registers the web area's operation.
@@ -124,6 +135,11 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// own traffic: it gets no answer at all.
 		f.log.Debug("web request refused", "reason", "host", "host", r.Host)
 		noAnswer(w)
+		return
+	}
+	if r.URL.Path == TerminalPath {
+		// Its refusals but the Origin's come in its first answer.
+		f.serveTerminal(w, r, f.kokoWebTerminal(r, conn, port))
 		return
 	}
 	sub, state := f.runs.subject(conn)

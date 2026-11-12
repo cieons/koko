@@ -52,6 +52,9 @@ func (f *Front) serveListener(w http.ResponseWriter, r *http.Request) {
 		f.log.Debug("web listener request refused", "reason", "origin", "client", clientAddress(r))
 		refuseOnListener(w, r, api.CodeBadOrigin, "this request came from no page of "+webURL+", so it was refused")
 		return
+	case r.URL.Path == TerminalPath:
+		f.serveTerminal(w, r, f.listenerTerminal(r, webURL))
+		return
 	case isAuth(r):
 		f.serveAuth(w, r)
 		return

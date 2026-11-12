@@ -124,7 +124,7 @@ func shell(t *testing.T, c *ssh.Client) (say func(command string) string) {
 func wantResumed(t *testing.T, h *harness.Harness, attachWins bool) {
 	t.Helper()
 	started := waitServerLog(t, h, `msg="ssh session started" tunnel=(\S+) .* addr=(\S+)\n`)
-	resumed := waitServerLog(t, h, `msg="ssh session resumed" tunnel=(\S+) device_session=\S+ addr=(\S+)\n`)
+	resumed := waitServerLog(t, h, `msg="ssh session resumed" tunnel=(\S+) client=ssh device_session=\S+ addr=(\S+)\n`)
 	if resumed[1] != started[1] || resumed[2] == started[2] {
 		t.Errorf("the koko server logged the Tunnel %s Resumed from %s, want the Tunnel %s from a new address, not %s", resumed[1], resumed[2], started[1], started[2])
 	}

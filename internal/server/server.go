@@ -290,9 +290,13 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	// front hands it the web listener's /auth/ requests and Sign-in
 	// cookies.
 	signins := signin.New(st, key, clock, log)
+	// The Gateway takes every tunnel@koko channel, and the web terminals the
+	// web front hands it; it opens the host key and the koko key with the
+	// Root Key, and logs in to Hosts.
+	gw := gateway.New(st, key, clock, cfg.Timings, log)
 	// The web area's front holds the runs of koko web, so it registers its
 	// operation itself, below.
-	front := web.New(a, signins, st, key, clock, log)
+	front := web.New(a, signins, gw, st, key, clock, cfg.Timings, log)
 	version := cmp.Or(cfg.Version, build.Read().Version)
 	// Each connection is reported every operation registered below, the
 	// operations and channels above revision 1, and the oldest koko this
@@ -302,9 +306,6 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	}
 	t := transport.New(a, front, report, log)
 	t.UseTimings(cfg.Timings)
-	// The Gateway takes every tunnel@koko channel; it opens the host key and
-	// the koko key with the Root Key, and logs in to Hosts.
-	gw := gateway.New(st, key, cfg.Timings, log)
 	t.HandleTunnels(gw)
 	tcp := &tcpListener{addr: cfg.Listen, transport: t, devices: device.NewAuthenticator(st, clock, log)}
 	srv := &Server{store: st, transport: t, gateway: gw, tcp: tcp, web: webLn, api: a, stopNotice: cfg.Timings.Resolve().StopNotice}
@@ -439,10 +440,15 @@ func (s *Server) WebAddress() string {
 	return s.web.address()
 }
 
-// Close stops the web listener, waiting for its calls in flight, then ends
-// every SSH Session, telling each that the koko server is restarting, stops
-// serving, waits for calls in flight to end, and closes the store.
+// Close ends every web terminal's SSH Session, then stops the web listener,
+// waiting for its calls in flight, then ends every other SSH Session,
+// telling each that the koko server is restarting, stops serving, waits for
+// calls in flight to end, and closes the store.
 func (s *Server) Close() error {
+	// The listener's shutdown does not track a WebSocket, which it has given
+	// up, so the Gateway first gives each web terminal its notice and
+	// closes its WebSocket, cutting one too stalled to take it.
+	s.gateway.CloseTerminals()
 	var webErr error
 	if s.web != nil {
 		webErr = s.web.close()

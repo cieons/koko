@@ -100,15 +100,20 @@ func forwardTarget(kind string, payload []byte) (target string, ok bool) {
 // clientClosed ends an SSH Session whose client closed its connection.
 var clientClosed = &ending{reason: "client closed"}
 
-// hostEnding says why the Host's connection ended, once it has: the
-// connector found the Host or its Relay silent, or one of them, or the
-// network beneath, ended it. Each notice names the leg that broke: the Host,
-// or its Relay, as relayName names it.
+// hostEnding says why the Host's connection ended, once it has.
 func (s *sshSession) hostEnding() *ending {
-	broken := s.host.Broken()
-	leg, lost, closed := s.hostName, "Host leg lost", "Host closed"
+	return hostEnding(s.host, s.hostName, s.relayName)
+}
+
+// hostEnding says why host, the connection to the Host named hostName,
+// ended, once it has: the connector found the Host or its Relay silent, or
+// one of them, or the network beneath, ended it. Each notice names the leg
+// that broke: the Host, or its Relay, as relayName names it.
+func hostEnding(host *hostconn.Conn, hostName, relayName string) *ending {
+	broken := host.Broken()
+	leg, lost, closed := hostName, "Host leg lost", "Host closed"
 	if _, ok := errors.AsType[*hostconn.RelayError](broken); ok {
-		leg, lost, closed = s.relayName, "Relay leg lost", "Relay closed"
+		leg, lost, closed = relayName, "Relay leg lost", "Relay closed"
 	}
 	if e, ok := errors.AsType[*liveness.DeadError](broken); ok {
 		why := fmt.Sprintf("lost the connection to %s (no answer for %s s)", leg, strconv.FormatFloat(e.Quiet.Seconds(), 'f', -1, 64))

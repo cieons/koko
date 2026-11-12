@@ -107,6 +107,8 @@ type settings struct {
 	clientAliveCountMax int
 	// subsystems are the commands that serve each subsystem, by name.
 	subsystems map[string]string
+	// refused are the session requests the Host refuses (RefuseRequests).
+	refused []string
 }
 
 // Subsystem lets a session ask for the subsystem name, which the Host runs
@@ -173,6 +175,13 @@ func StallFirst(n int) Option {
 // answers.
 func ClientAlive(interval time.Duration, countMax int) Option {
 	return func(s *settings) { s.clientAliveInterval, s.clientAliveCountMax = interval, countMax }
+}
+
+// RefuseRequests makes the Host refuse each session request of the types
+// given, such as "pty-req" or "shell", as an sshd whose policy forbids
+// them does. It still records them.
+func RefuseRequests(types ...string) Option {
+	return func(s *settings) { s.refused = append(s.refused, types...) }
 }
 
 // Start starts a Host on a loopback port. It stops when the test ends.
@@ -576,6 +585,10 @@ func (h *Host) session(nch ssh.NewChannel, open *openSessions) {
 		var cmd *exec.Cmd
 		for r := range reqs {
 			h.record(Request{Type: r.Type, Payload: r.Payload})
+			if slices.Contains(h.settings.refused, r.Type) {
+				_ = r.Reply(false, nil)
+				continue
+			}
 			var argv []string
 			ok := false
 			switch r.Type {

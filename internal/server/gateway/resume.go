@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"maps"
+	"slices"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -68,9 +69,9 @@ func (g *Gateway) holdLocked(t *tunnel) {
 	default:
 		return
 	}
-	g.log.Info("ssh session detached", "tunnel", t.id, "device_session", deviceSession(t.caller))
+	g.log.Info("ssh session detached", append(t.named(), callerAttrs(t.caller)...)...)
 	t.detached = time.Now()
-	t.grace = time.AfterFunc(g.timings.Grace, func() { t.end(errGraceOver) })
+	t.grace = time.AfterFunc(t.holdFor, func() { t.end(errGraceOver) })
 }
 
 // stopGraceLocked stops the Tunnel's grace, if it runs. t.mu is held.
@@ -83,11 +84,12 @@ func (t *tunnel) stopGraceLocked() {
 }
 
 // endedTunnel is how a Tunnel that has left the registry ended, kept for a
-// resume of the Device Session that opened it until until.
+// resume of the caller who opened it, from the same client, until until.
 type endedTunnel struct {
-	deviceSession string
-	ending        *ending
-	until         time.Time
+	key    callerKey
+	client string
+	ending *ending
+	until  time.Time
 }
 
 // keepEnding keeps how the Tunnel t ended, when its ending has a notice,
@@ -99,23 +101,26 @@ func (g *Gateway) keepEnding(t *tunnel, until time.Time) {
 	now := time.Now()
 	maps.DeleteFunc(g.ended, func(_ tunnelID, e endedTunnel) bool { return !now.Before(e.until) })
 	if e := endingOf(context.Cause(t.ctx)); e.why != "" && now.Before(until) {
-		g.ended[t.id] = endedTunnel{deviceSession: t.caller.DeviceSession, ending: e, until: until}
+		g.ended[t.id] = endedTunnel{key: t.key(), client: t.client, ending: e, until: until}
 	}
 }
 
-// resumable returns the Tunnel id names, when it is one of deviceSession's
-// that has not ended, or else how one of deviceSession's ended, if the
-// Gateway still knows: nil for both when it holds no such Tunnel.
-func (g *Gateway) resumable(id tunnelID, deviceSession string) (*tunnel, *ending) {
+// resumable returns the Tunnel id names, when it is one of the caller key's
+// from client that has not ended and carries a stream, or else how one of
+// theirs ended, if the Gateway still knows: nil for both when it holds no
+// such Tunnel. A Tunnel of another client is no such Tunnel: a Tunnel of
+// the CLI's never Resumes on a WebSocket, nor a web terminal on a
+// tunnel@koko channel.
+func (g *Gateway) resumable(id tunnelID, key callerKey, client string) (*tunnel, *ending) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if t := g.tunnels[id]; t != nil && t.caller.DeviceSession == deviceSession {
+	if t := g.tunnels[id]; t != nil && t.key() == key && t.client == client && t.stream != nil {
 		if t.ctx.Err() != nil {
 			return nil, endingOf(context.Cause(t.ctx))
 		}
 		return t, nil
 	}
-	if e, ok := g.ended[id]; ok && e.deviceSession == deviceSession && time.Now().Before(e.until) {
+	if e, ok := g.ended[id]; ok && e.key == key && e.client == client && time.Now().Before(e.until) {
 		return nil, e.ending
 	}
 	return nil, nil
@@ -146,8 +151,8 @@ func (g *Gateway) recheckResume(t *tunnel) *ending {
 // the Gateway knows.
 func (g *Gateway) resume(c *transport.Connection, nch ssh.NewChannel, p wire.TunnelPayload) {
 	id := tunnelID(p.ID)
-	attrs := []any{"tunnel", id, "device_session", deviceSession(c.Caller()), "addr", c.RemoteAddr()}
-	t, ended := g.resumable(id, c.Caller().DeviceSession)
+	attrs := slices.Concat([]any{"tunnel", id, "client", clientSSH}, callerAttrs(c.Caller()), []any{"addr", c.RemoteAddr()})
+	t, ended := g.resumable(id, callerKey{id: callerID(c.Caller())}, clientSSH)
 	if t != nil {
 		ended = g.recheckResume(t)
 	}

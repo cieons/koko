@@ -133,9 +133,12 @@ The device area also answers the TCP listener's join step
 ([`device.Authenticator`](../../internal/server/device/join.go)), which
 `server.Start` hands the transport ([the Device Connection](device-connection.md)).
 The Gateway is no area: it serves no operation but takes the transport's
-`tunnel@koko` channels, so `server.Start` makes it with the store, the Root
-Key and the timing-constants hook, hands it the transport
-(`transport.Server.HandleTunnels`), and closes it before the transport, so
+`tunnel@koko` channels and the web front's web terminals, so `server.Start`
+makes it with the store, the Root Key, the koko server's clock and the
+timing-constants hook, hands it the transport
+(`transport.Server.HandleTunnels`) and the web front (`web.New`), ends its
+web terminals before the web listener closes, and closes it before the
+transport, so
 each SSH Session gets the restart notice before its Device Connection
 closes, waiting at most `timing.StopNotice` for a connection too stalled to
 take it ([the Gateway](gateway.md#when-an-ssh-session-ends)).

@@ -5,7 +5,8 @@ key, which never leaves the koko server
 ([ADR 0002](../adr/0002-every-ssh-session-ends-at-the-gateway.md)). Each SSH
 Session rides in a Tunnel: one `tunnel@koko` channel carrying a
 [resumable stream](resumable-stream.md)
-([ADR 0021](../adr/0021-an-ssh-session-survives-a-network-drop-by-resuming-its-tunnel.md)).
+([ADR 0021](../adr/0021-an-ssh-session-survives-a-network-drop-by-resuming-its-tunnel.md)),
+or a [web terminal](#the-web-terminal)'s WebSocket carrying one.
 The Gateway is [`internal/server/gateway`](../../internal/server/gateway)
 (server-only); the device end of a Tunnel is
 [`internal/client/tunnel`](../../internal/client/tunnel/tunnel.go)
@@ -66,10 +67,13 @@ For each `tunnel@koko` channel ([`Gateway.Open`](../../internal/server/gateway/g
    is allowed when the caller may act in the Host's Space and the Host and
    its [Relay](#relay), if any, are Managed.
 3. It accepts the channel, puts the Tunnel in the registry under a new id,
-   and sends the id. An allowed SSH Session of a Device Session counts
-   against its limit, 64 at once, attached or Detached (`maxSSHSessions`),
-   from then until its Tunnel ends; the 65th is refused, and dials no Host.
-   The Local caller has no Device Session and no limit.
+   and sends the id. An allowed SSH Session counts against its caller's
+   limit, by the caller's id (`callerID`), attached or Detached, from then
+   until its Tunnel ends: a Device Session holds 64 at once
+   (`maxSSHSessions`), from the CLI and `koko web`'s
+   [web terminal](#the-web-terminal) together, and a Sign-in 16
+   (`maxBrowserSSHSessions`); one more is refused, and dials no Host. The
+   Local caller has no limit.
 4. When the SSH Session is allowed, it dials the Host through the
    [Host connector](host-connector.md), as the Host Account with the koko key
    and the Host's pinned host key, through its Relay if any, while the
@@ -87,7 +91,7 @@ For each `tunnel@koko` channel ([`Gateway.Open`](../../internal/server/gateway/g
 | The Host is Registered | `koko: web1 is Registered: koko logs in to it only once it is Enrolled, with koko host enroll web1.` |
 | Its Relay is not Managed | `koko: web1's Relay gw is Registered: koko passes through it only once it is Enrolled, with koko host enroll gw.` |
 | The access check refuses the caller, such as a Revoked Device Session | `koko: ` and the refusal's message |
-| The Device Session has 64 SSH Sessions open | `koko: this Device Session already has 64 SSH Sessions open, the most koko allows; this SSH Session did not start.` |
+| The Device Session has 64 SSH Sessions open | `koko: this Device Session already has 64 SSH Sessions open, the most koko allows; this SSH Session did not start.`, or for a Sign-in's web terminal `koko: this Sign-in already has 16 SSH Sessions open, …` |
 | Another user name, such as `root@web1.koko` | `koko: web1 is reached as its Host Account "deploy"; leave out "root@".` |
 | The Host is down: the connector's 3 attempts each met a network error | `koko: web1 is down or unreachable: koko could not connect to it; this SSH Session did not start.` |
 | The Host's host key is not the pinned one | `koko: the host key of web1 does not match the one pinned at Enroll (pinned SHA256:…, offered SHA256:…); koko did not log in. If web1 was rebuilt, pin its new key with koko host enroll web1 --host-key <the fingerprint its provider shows>, or with --replace-host-key, which trusts whatever key it offers.` |
@@ -176,6 +180,83 @@ any reply as the answer, and a Detached client could not give one before
 sshd gave up on it. On the connection, the Host's client refuses it as any
 global request of the Host's.
 
+## The web terminal
+
+A second way into the Gateway beside `Open`
+([`terminal.go`](../../internal/server/gateway/terminal.go);
+[ADR 0053](../adr/0053-a-browser-opens-ssh-sessions-through-a-websocket-to-the-gateway.md),
+P1 spec: a terminal in the web UI). The web front reads a page's first
+message on the WebSocket of `/terminal/socket`
+([the web front](web-front.md#the-web-terminals-websocket)) and hands the
+WebSocket over (`TerminalSocket`) with the caller (`TerminalCaller`): the
+Sign-in, or on `web@koko` the Device Session or the Local caller and its
+run of `koko web`, and the page's address.
+
+- **The same registry.** A web terminal's SSH Session is a Tunnel in the
+  registry, with its id, caller, admission, Host and Relay ids and
+  ending, so `Close`, `Withdraw`, `recheck`, `keepEnding` and the limit
+  serve it unchanged. Two fields tell it apart: its client (`ssh` or
+  `browser`) and its grace.
+- **Opening** (`OpenTerminal`). It is admitted as a Tunnel is (`admit`,
+  the same refusals in the same order) and counted against its caller's
+  limit. The Gateway then dials the Host through the Host connector, opens
+  one `session` channel, sends a `pty-req` (`TERM` `xterm-256color`, the
+  page's columns and rows, pixel sizes 0, and the mode `IUTF8`, opcode 42,
+  so a line editor erases a whole Chinese character) and a `shell`, and
+  only then answers the page with the SSH Session's id. Every refusal is
+  that answer instead: the code the page tests and the banner a Tunnel's
+  client gets, without `koko: ` and the newline, so an unseen Host gets
+  the bytes of an unknown name. The Host refusing the session, its
+  `pty-req` or its `shell` (its sshd policy) is `shell_refused`: `web1
+  refused a shell with a terminal for its Host Account "deploy"; this SSH
+  Session did not start.`
+- **The relay** (`terminalShell`). The resumable stream runs on the
+  WebSocket's binary messages and carries terminal records
+  ([`wire/terminal.go`](../../internal/shared/wire/terminal.go)). The
+  Host's stdout and stderr become data records, merged as a pty merges
+  them; data records go to the shell's stdin, resize records become a
+  `window-change`, pixel sizes 0, and the page's half-close the stdin's
+  EOF. The Host's requests on the channel are refused, its
+  `keepalive@openssh.com` among them, but for `exit-status` and
+  `exit-signal`, which become records after the last output; the stream
+  then closes with no reason (`shell ended`). Records from the Host's two
+  streams, a notice and the exit record take turns. An ending with a notice
+  writes it as a data line, `\r\nkoko: <notice>\r\n`, then closes the
+  stream with the notice as its reason. Bytes from the page that are no
+  record, or an exit record from it, end the SSH Session (`malformed
+  record`), the stream's close saying why. The page's close frame is the
+  client's close (`client closed`).
+- **Detach and Resume** (`ResumeTerminal`), as a Tunnel's
+  ([below](#detach-and-resume)): the WebSocket closing Detaches it, for
+  `timing.BrowserGrace` (15 minutes), and its ending is kept as long. A
+  resume is taken only from the caller who opened it, the same Sign-in,
+  Device Session or run of `koko web`, and only once `recheckResume`
+  passes; the Gateway answers with its received offset in the answer, not
+  in the stream (`resumable.Stream.AcceptResumeAnswering`). The last
+  attach wins. A resume of a Tunnel's id on a WebSocket, or of a web
+  terminal's on `tunnel@koko`, is refused as an unknown id.
+- **Ending on purpose** (`EndTerminal`). A page's `end` ends that SSH
+  Session of the same caller as the client's close, cutting the WebSocket
+  it may still seem to be on, since the page that held it is gone, and is
+  answered once it has ended, so the old SSH Session no longer counts
+  against the limit. Another caller's `end` ends nothing.
+- **Liveness** (`watchSocket`). A page can neither send nor see a
+  WebSocket's pings, so liveness is in the stream. The Gateway reads when
+  the page's last byte arrived from a `liveness.Conn` around the
+  WebSocket, and notes when the stream last sent: after `timing.ServerProbe`
+  (15 s) without sending it asks the stream for an acknowledgement-only
+  frame (`resumable.Stream.Probe`), and after `timing.ServerDead` (45 s)
+  without a byte from the page it cuts the WebSocket, which Detaches the
+  SSH Session. The page does the same with the same values. The 15-second
+  traffic also keeps nginx, which cuts a quiet connection at 60 s by
+  default, from cutting a terminal.
+- **Stopping** (`CloseTerminals`). The web listener's shutdown does not
+  track a WebSocket, which it has given up, so `server.Close` first has the
+  Gateway end every web terminal with the restart notice, which closes its
+  WebSocket, and refuse new ones; a WebSocket still at it after
+  `timing.StopNotice` (5 s), a page too stalled to take the notice, is cut.
+  The web listener follows, then the Tunnels and the transport, as below.
+
 ## Detach and Resume
 
 Only the device's leg Resumes
@@ -189,9 +270,10 @@ the Gateway's side is [`resume.go`](../../internal/server/gateway/resume.go).
   Session and the Host connection carry on: what the Host sends waits in the
   stream's replay buffer, which blocks the relay once full
   ([the resumable stream](resumable-stream.md)), and the Host's keepalives
-  are answered as above. The grace, `timing.Grace` (1 minute), starts then;
-  when it runs out, the Tunnel ends (`grace over`). A Detached Tunnel still
-  counts against its Device Session's 64.
+  are answered as above. The grace, `timing.Grace` (1 minute), or a web
+  terminal's `timing.BrowserGrace` (15 minutes), starts then; when it runs
+  out, the Tunnel ends (`grace over`). A Detached Tunnel still counts
+  against its caller's limit.
 - **A resume** is a `tunnel@koko` channel whose payload names the Tunnel
   and carries the device's received offset. The Gateway takes it from the
   Device Session that opened the Tunnel only, on any of its connections,
@@ -252,7 +334,9 @@ the Tunnel out of the registry.
 
 | End | Notice | `reason` in the log |
 | --- | --- | --- |
-| The client closed its connection | none | `client closed` |
+| The client closed its connection, or a web terminal's page its stream or ended it | none | `client closed` |
+| A web terminal's shell ended, with its exit record | none | `shell ended` |
+| A web terminal's page sent bytes that are no record | none; the stream's close says why | `malformed record` |
 | The Host leg broke: the [Host connector](host-connector.md#keeping-a-connection-alive) heard nothing for 60 s, its probes unanswered | `lost the connection to web1 (no answer for 60 s); this SSH Session has ended.` | `Host leg lost` |
 | The Host, or the network beneath, closed its connection | `web1 closed the connection.` | `Host closed` |
 | The Relay leg broke, as the Host leg's rows above | `lost the connection to web1's Relay gw (no answer for 60 s); this SSH Session has ended.`, or `web1's Relay gw closed the connection.`, the Relay unnamed to a caller who cannot see it | `Relay leg lost`, `Relay closed` |
@@ -273,7 +357,8 @@ the Tunnel's stream is off its channel, which a stalled client's never
 takes them from.
 
 On a clean stop, [`server.Close`](../../internal/server/server.go) first
-closes the Gateway, which ends every Tunnel with the restart notice, and
+ends the web terminals ([above](#the-web-terminal)), then closes the web
+listener, then the Gateway, which ends every Tunnel with the restart notice, and
 only then the transport, which closes the Device Connections, so `koko
 tunnel` exits at once rather than taking the stop for a drop. A connection
 too stalled to take its Tunnel's close within `timing.StopNotice` (5 s) is
@@ -326,14 +411,21 @@ SSH Session that ends gives its notice as any ending does
 
 ## Logging
 
-One line per event, never an exec's command text:
+One line per event, never an exec's command text. Every line about an SSH
+Session names it by `tunnel`, then `client`: `ssh` for a Tunnel of the
+CLI's, `browser` for a [web terminal](#the-web-terminal). Who it came from
+is `device_session`, the Device Session's id or `unix socket`, or for a
+Sign-in's web terminal `signin`, the Sign-in's id; a web terminal through
+`koko web` keeps `device_session`. A web terminal's `addr` is the page's:
+the client's address as the web listener counts it (the last
+`X-Forwarded-For` entry), or `koko web`'s connection's.
 
-- `ssh session started`: `tunnel`, `user`, `device_session` (the Device
-  Session's id, or `unix socket`), `host`, `host_id`, `relay` and `relay_id`
+- `ssh session started`: `tunnel`, `client`, `user`, `device_session` or
+  `signin`, `host`, `host_id`, `relay` and `relay_id`
   for a Host with a Relay, whether or not the caller can see it, and `addr`,
   where the connection came from.
-- `ssh session request`: `tunnel`, `host` and `request`, once per SSH
-  Session for each kind: `shell`, `exec` (never its text), `subsystem` with
+- `ssh session request`: `tunnel`, `client`, `host` and `request`, once per SSH
+  Session for each kind: `shell` (a web terminal's, once its shell starts), `exec` (never its text), `subsystem` with
   `subsystem`, its name, and each forward's `target`: `-L` with the address
   on the Host's side a `direct-tcpip` (`-L` or `-D`) or
   `direct-streamlocal@openssh.com` channel opens, `-R` with the address a
@@ -343,27 +435,30 @@ One line per event, never an exec's command text:
   `bytes_from_device` and `bytes_to_device` (the Tunnel's bytes each way),
   `exit_status` and `exit_signal` when the Host sent them, and `reason`, as
   the table above says.
-- `ssh session refused`: `tunnel`, `name` (the SSH Name asked for),
-  `device_session`, `addr` and `reason`: `unknown host`, the access check's
+- `ssh session refused`: `tunnel`, `client`, `name` (the SSH Name asked for),
+  `device_session` or `signin`, `addr` and `reason`: `unknown host`, the access check's
   code, `host registered`, `relay registered`, `ssh session limit`, `user name` with `ssh_user`,
-  the name asked for; and at warning level, since the Owner may have to act,
+  the name asked for, `shell refused` with `request` or `err`; and at warning level, since the Owner may have to act,
   `host unreachable`, `login refused` or `host connection failed` with
   `err`, and `host key mismatch` with `pinned` and `offered`, the two
-  fingerprints, and the Relay's own ([Relay](#relay)). A client that leaves before its `none` is logged at debug
+  fingerprints, and the Relay's own ([Relay](#relay)). A client that leaves before its `none`, or a page before its answer, is logged at debug
   level as `ssh session ended before it started`.
-- `ssh session detached`: `tunnel` and `device_session`, when the grace
-  starts.
-- `ssh session resumed`: `tunnel`, `device_session` and `addr`, where the
+- `ssh session detached`: `tunnel`, `client` and `device_session` or
+  `signin`, when the grace starts.
+- `ssh session resumed`: `tunnel`, `client`, `device_session` or `signin`,
+  and `addr`, where the
   resume came from: on TCP, a new address at each Device Connection.
 - `ssh session resume refused`: `tunnel` (the id the resume named),
-  `device_session`, `addr` and `reason`: how the Tunnel ended, as its
+  `client`, `device_session` or `signin`, `addr` and `reason`: how the Tunnel ended, as its
   `ssh session ended` line says, or `unknown tunnel`; `ssh session
   resume failed`, the same with `err`, for one that failed once accepted.
 - `tunnel refused`: `device_session`, `addr` and `err`, for a payload the
   Gateway does not take, and with `name` before initialisation.
 - `open a Tunnel`, at error level, with `device_session`, `addr`, `name`
   and `err`, when the koko server could not read what admitting a Tunnel
-  needs; the channel is refused saying the log tells why.
+  needs; the channel is refused saying the log tells why. `open a web
+  terminal` is the same for a web terminal, which is answered
+  `internal_error`.
 - `access checked again`, at debug level, with `ssh_sessions`, how many
   live SSH Sessions an access change had checked again, and `ended`, how
   many of them it ended.
@@ -628,5 +723,27 @@ same line and exiting 255.
 [`gateway/relay_test.go`](../../internal/server/gateway/relay_test.go)
 writes lines on a session channel's stderr from several goroutines beside
 its EOF, which `go test -race` fails unless they take turns.
+[`gateway/terminal_test.go`](../../internal/server/gateway/terminal_test.go)
+writes a web terminal's records from the Host's stdout and stderr beside a
+notice while the stream's buffer fills, which fails unless they take
+turns, each whole and the notice last; and counts SSH Sessions by the
+caller's id, 16 for a Sign-in, 64 for a Device Session from both clients,
+none for the Local caller.
+[`web/terminal_test.go`](../../internal/server/web/terminal_test.go)
+drives the web terminal on the web listener with a Go page
+(`harness.TerminalPage`, `harness.WebTerminal`) against in-process Hosts:
+the `pty-req` and `shell` as the Host Account, 4 MiB each way byte for
+byte, a resize as a `window-change`, the exit status and signal records;
+each refusal of an open with its code and banner, an unseen and a Retired
+Host as an unknown name, without a dial; the 17th SSH Session of a
+Sign-in, and one more once an `end` is answered; a resume that wins over a
+WebSocket a stalled path still holds and one after a drop, byte for byte,
+and another Sign-in's refused; an idle WebSocket kept by both ends'
+probes, a stalled one Detached no sooner than `ServerDead` after its last
+byte, and a cut one at once, each Resumed byte for byte
+(`harness.Forward`); the page's close, an `end` and another caller's, and
+`BrowserGrace`; a malformed record; the restart notice before the web
+listener closes, while a call in flight holds it, and a stalled page cut
+at `StopNotice`; and the log lines, with no cookie in them.
 [`wire/tunnel_test.go`](../../internal/shared/wire/tunnel_test.go) pins the
 `open` and `resume` payloads' bytes.

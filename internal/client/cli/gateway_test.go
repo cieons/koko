@@ -74,7 +74,7 @@ func TestTheGatewayTakesOnlyKokoAndTheHostAccountAsTheUserName(t *testing.T) {
 	if want := "koko: web1 is reached as its Host Account \"deploy\"; leave out \"root@\".\n"; err == nil || banner != want {
 		t.Errorf("ssh root@web1.koko got the banner %q (%v), want %q and a refusal", banner, err, want)
 	}
-	waitServerLog(t, h, `level=INFO msg="ssh session refused" tunnel=[0-9a-f]{32} name=web1.koko device_session="unix socket" addr=\S+ reason="user name" ssh_user=root\n`)
+	waitServerLog(t, h, `level=INFO msg="ssh session refused" tunnel=[0-9a-f]{32} client=ssh name=web1.koko device_session="unix socket" addr=\S+ reason="user name" ssh_user=root\n`)
 }
 
 // When the Gateway cannot log in to a Host, the banner says why: the Host is
@@ -108,14 +108,14 @@ func TestTheGatewaySaysWhyItCouldNotLogInToTheHost(t *testing.T) {
 
 	wantRefused(t, h.Koko("exec", "down", "true"),
 		"koko: down is down or unreachable: koko could not connect to it; this SSH Session did not start.\n")
-	waitServerLog(t, h, `level=WARN msg="ssh session refused" tunnel=[0-9a-f]{32} name=down device_session="unix socket" addr=\S+ reason="host unreachable" err=".*after 3 attempts`)
+	waitServerLog(t, h, `level=WARN msg="ssh session refused" tunnel=[0-9a-f]{32} client=ssh name=down device_session="unix socket" addr=\S+ reason="host unreachable" err=".*after 3 attempts`)
 
 	wantRefused(t, h.Koko("exec", "rebuilt", "true"), fmt.Sprintf(
 		"koko: the host key of rebuilt does not match the one pinned at Enroll (pinned %s, offered %s); koko did not log in. "+
 			"If rebuilt was rebuilt, pin its new key with koko host enroll rebuilt --host-key <the fingerprint its provider shows>, "+
 			"or with --replace-host-key, which trusts whatever key it offers.\n",
 		fingerprint(pinned), fingerprint(rebuilt)))
-	waitServerLog(t, h, `level=WARN msg="ssh session refused" tunnel=[0-9a-f]{32} name=rebuilt device_session="unix socket" addr=\S+ reason="host key mismatch" `+
+	waitServerLog(t, h, `level=WARN msg="ssh session refused" tunnel=[0-9a-f]{32} client=ssh name=rebuilt device_session="unix socket" addr=\S+ reason="host key mismatch" `+
 		`pinned=`+regexp.QuoteMeta(fingerprint(pinned))+` offered=`+regexp.QuoteMeta(fingerprint(rebuilt))+`\n`)
 	if rebuilt.Conns() != 1 || len(rebuilt.Logins()) != 0 {
 		t.Errorf("the rebuilt Host got %d connections and the logins %+v, want 1 and none", rebuilt.Conns(), rebuilt.Logins())
@@ -123,7 +123,7 @@ func TestTheGatewaySaysWhyItCouldNotLogInToTheHost(t *testing.T) {
 
 	wantRefused(t, h.Koko("exec", "revoked", "true"),
 		"koko: revoked refused the koko key for its Host Account \"deploy\"; this SSH Session did not start.\n")
-	waitServerLog(t, h, `level=WARN msg="ssh session refused" tunnel=[0-9a-f]{32} name=revoked device_session="unix socket" addr=\S+ reason="login refused" err=`)
+	waitServerLog(t, h, `level=WARN msg="ssh session refused" tunnel=[0-9a-f]{32} client=ssh name=revoked device_session="unix socket" addr=\S+ reason="login refused" err=`)
 	if got := revoked.Logins()[logins:]; len(got) != 1 {
 		t.Errorf("the Host that refused the koko key got the logins %+v, want one", got)
 	}
@@ -158,7 +158,7 @@ func TestADeviceSessionHasAtMost64SSHSessions(t *testing.T) {
 	if got := host.Conns(); got != conns {
 		t.Errorf("the 65th SSH Session made %d connections to the Host, want none", got-conns)
 	}
-	waitServerLog(t, h, `level=INFO msg="ssh session refused" tunnel=[0-9a-f]{32} name=web1 device_session=\S+ addr=\S+ reason="ssh session limit"\n`)
+	waitServerLog(t, h, `level=INFO msg="ssh session refused" tunnel=[0-9a-f]{32} client=ssh name=web1 device_session=\S+ addr=\S+ reason="ssh session limit"\n`)
 
 	if out, err := openSession(t, sshOver(t, h.Join(harness.Owner).Proxy(nil, "tunnel", "web1"), "web1", pinned)).Output("echo reached"); err != nil || string(out) != "reached\n" {
 		t.Errorf("another Device Session printed %q (%v), want it to reach web1", out, err)
@@ -414,7 +414,7 @@ func TestTheGatewayLogsEachKindOfRequestOnce(t *testing.T) {
 		`request=-R target=127\.0\.0\.1:0`,
 		`request=-R target=` + regexp.QuoteMeta(filepath.Join(sockets, "r.sock")),
 	} {
-		want := `level=INFO msg="ssh session request" tunnel=` + id + ` host=web1 ` + line + `\n`
+		want := `level=INFO msg="ssh session request" tunnel=` + id + ` client=ssh host=web1 ` + line + `\n`
 		waitServerLog(t, h, want)
 		if n := len(regexp.MustCompile(want).FindAllString(h.Log(), -1)); n != 1 {
 			t.Errorf("the log holds %d lines matching %s, want 1", n, want)

@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -280,6 +281,29 @@ func TestWatchAnswersEndsAConnectionOnceItsProbesGoUnanswered(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("WatchAnswers did not end a connection whose probes go unanswered within 5 s")
 	}
+}
+
+// Quiet counts from when bytes last arrived on the Conn, or from its start
+// before any did.
+func TestQuietCountsFromTheLastBytesThatArrived(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a, b := net.Pipe()
+		defer func() { _ = b.Close() }()
+		c := liveness.NewConn(a)
+		defer func() { _ = c.Close() }()
+		time.Sleep(3 * time.Second)
+		if q := c.Quiet(); q != 3*time.Second {
+			t.Errorf("Quiet before any byte is %v, want 3s since the Conn's start", q)
+		}
+		go func() { _, _ = b.Write([]byte("x")) }()
+		if _, err := c.Read(make([]byte, 1)); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Second)
+		if q := c.Quiet(); q != time.Second {
+			t.Errorf("Quiet is %v, want 1s since the byte arrived", q)
+		}
+	})
 }
 
 // Watch returns nil once the connection it watches has ended.

@@ -282,6 +282,67 @@ func TestResumeCarriesOnAfterACut(t *testing.T) {
 	})
 }
 
+// A web terminal's resume carries each end's received offset outside the
+// stream: the Gateway gives its own to an answer of its own, writing
+// nothing on the channel before the frames, and the device takes it as
+// given. What either end wrote while Detached then arrives once. An answer
+// that fails leaves the stream Detached.
+func TestAResumeAnsweredOutsideTheStreamCarriesOn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a, b := net.Pipe()
+		dev, gw := start(t, a, b)
+		if _, err := dev.Write([]byte("before ")); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		readN(t, gw, 7)
+		_ = a.Close()
+		<-dev.Detached()
+		<-gw.Detached()
+		toGW, toDev := write(dev, "after the cut"), write(gw, "and back")
+
+		sent := dev.Detach()
+		_, failed := net.Pipe()
+		if err := gw.AcceptResumeAnswering(failed, sent, func(uint64) error { return errors.New("the page left") }); err == nil {
+			t.Error("a resume whose answer failed attached")
+		}
+		select {
+		case <-gw.Detached():
+		default:
+			t.Error("a resume whose answer failed left the stream on its channel")
+		}
+
+		a, b = net.Pipe()
+		answer := make(chan uint64, 1)
+		accepted := make(chan error, 1)
+		go func() {
+			accepted <- gw.AcceptResumeAnswering(b, sent, func(own uint64) error {
+				answer <- own
+				return nil
+			})
+		}()
+		if err := dev.ResumeAnswered(a, sent, <-answer); err != nil {
+			t.Fatalf("device resume: %v", err)
+		}
+		if err := <-accepted; err != nil {
+			t.Fatalf("gateway accept resume: %v", err)
+		}
+		if got := readN(t, gw, 13); got != "after the cut" {
+			t.Errorf("gw read %q after the resume, want after the cut", got)
+		}
+		if got := readN(t, dev, 8); got != "and back" {
+			t.Errorf("dev read %q after the resume, want and back", got)
+		}
+		for _, err := range []error{<-toGW, <-toDev} {
+			if err != nil {
+				t.Errorf("write while Detached: %v", err)
+			}
+		}
+		if err := dev.ResumeAnswered(newBlackHole(), sent+1, 0); err == nil {
+			t.Error("a resume naming an offset the device has not received attached")
+		}
+	})
+}
+
 // blackHole is a channel whose far end has gone silent: it takes every write
 // and delivers nothing until it is closed.
 type blackHole struct {

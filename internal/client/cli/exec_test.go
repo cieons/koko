@@ -88,7 +88,7 @@ func TestExecOnAJoinedDeviceIsLoggedWithoutItsCommand(t *testing.T) {
 		t.Fatalf("exit status %d, stdout %q, stderr %q; want 7 and the word count", r.Status, r.Stdout, r.Stderr)
 	}
 
-	fields := ` user=alice device_session=` + laptopID + ` host=web1 host_id=` + hostID
+	fields := ` client=ssh user=alice device_session=` + laptopID + ` host=web1 host_id=` + hostID
 	started := waitServerLog(t, h, `level=INFO msg="ssh session started" tunnel=([0-9a-f]{32})`+fields+` addr=127\.0\.0\.1:\d+\n`)
 	ended := waitServerLog(t, h, `level=INFO msg="ssh session ended" tunnel=([0-9a-f]{32})`+fields+
 		` duration=\d\S*s bytes_from_device=[1-9]\d* bytes_to_device=[1-9]\d* exit_status=7 reason="client closed"\n`)
@@ -193,7 +193,7 @@ func TestExecExits255WhenKokoItselfFails(t *testing.T) {
 	if got := host.Conns(); got != conns {
 		t.Errorf("web1 received %d connections, want none", got-conns)
 	}
-	waitServerLog(t, h, `level=WARN msg="ssh session refused" tunnel=[0-9a-f]{32} name=web2 device_session="unix socket" addr=\S+ reason="host unreachable" err=`)
+	waitServerLog(t, h, `level=WARN msg="ssh session refused" tunnel=[0-9a-f]{32} client=ssh name=web2 device_session="unix socket" addr=\S+ reason="host unreachable" err=`)
 }
 
 // A command a signal ends has no exit status: koko exec exits 255, as ssh

@@ -172,12 +172,22 @@ may, but:
 
 - `web.start` is refused with `device_only` (403): a Sign-in runs no `koko
   web`;
-- `server.set` stays `local_only`;
-- it opens no Tunnel and no SSH Session, having no Device Connection.
-  `device.add` for its own User stays allowed: `koko join` spends that code
-  on a computer. A Join Code a Sign-in issues names it in the log's
-  `added_by`, but the new Device Session's `added_by` is left out, as for
-  the Unix socket's.
+- `server.set` stays `local_only`.
+
+`device.add` for its own User stays allowed: `koko join` spends that code
+on a computer. A Join Code a Sign-in issues names it in the log's
+`added_by`, but the new Device Session's `added_by` is left out, as for the
+Unix socket's.
+
+A Sign-in also opens SSH Sessions, through the web terminal's WebSocket
+([the web front](web-front.md#the-web-terminals-websocket)), by the Space
+membership rules a device follows
+([ADR 0053](../adr/0053-a-browser-opens-ssh-sessions-through-a-websocket-to-the-gateway.md)):
+at most 16 at once, attached or Detached, across all its tabs, Resumed only
+from the same Sign-in ([the Gateway](gateway.md#the-web-terminal)). Opening
+and Resuming one moves its Last used time, at most once a minute, as a call
+does; keys typed do not. The terminal is the web front's own endpoint, as
+`/auth/` is, so no operation is added and the access matrix gains no row.
 
 `user.current` answers the Sign-in as `signin`, `{"id", "client",
 "browser", "system", "started_at", "expires_at"}`, `browser` and `system`

@@ -169,11 +169,35 @@ func (s *Stream) Resume(ch io.ReadWriteCloser, received uint64) error {
 // from the resume payload: it answers with its own, a uvarint before any
 // frame, and resends from the device's. attach says how it fails.
 func (s *Stream) AcceptResume(ch io.ReadWriteCloser, peerReceived uint64) error {
+	return s.AcceptResumeAnswering(ch, peerReceived, func(own uint64) error {
+		_, err := ch.Write(appendOffset(nil, own))
+		return err
+	})
+}
+
+// AcceptResumeAnswering attaches ch at the Gateway as AcceptResume does, but
+// gives its own received offset to answer, which carries it to the other
+// end outside the stream, as a web terminal's answer to its resume does,
+// before any frame is sent on ch.
+func (s *Stream) AcceptResumeAnswering(ch io.ReadWriteCloser, peerReceived uint64, answer func(own uint64) error) error {
 	return s.attach(ch, func(_ *byteReader, own uint64) (uint64, error) {
-		if _, err := ch.Write(appendOffset(nil, own)); err != nil {
+		if err := answer(own); err != nil {
 			return 0, fmt.Errorf("answer with this end's received offset: %w", err)
 		}
 		return peerReceived, nil
+	})
+}
+
+// ResumeAnswered attaches ch at the device, once the Gateway accepted a
+// resume that carried received, the offset Detach returned, and answered
+// outside the stream with peer, its own received offset, as a web
+// terminal's answer does: it resends from peer. attach says how it fails.
+func (s *Stream) ResumeAnswered(ch io.ReadWriteCloser, received, peer uint64) error {
+	return s.attach(ch, func(_ *byteReader, own uint64) (uint64, error) {
+		if received != own {
+			return 0, fmt.Errorf("resume: the request carried offset %d, but this end has received %d", received, own)
+		}
+		return peer, nil
 	})
 }
 

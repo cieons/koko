@@ -107,6 +107,10 @@ const (
 	// SignInCheck is how often the Gateway looks for web terminals whose
 	// Sign-in has expired, to end their SSH Sessions.
 	SignInCheck = time.Minute
+	// FirstMessage bounds how long the web front waits for a web
+	// terminal's first message once its WebSocket is upgraded: a page sends
+	// it at once, and an upgrade that sends none holds nothing for long.
+	FirstMessage = 10 * time.Second
 	// ResumeExchange bounds how long the device waits for the koko server's
 	// answer to a resume once its channel opened; past it, the device tries
 	// again, on the next Device Connection should this one have died.
@@ -164,6 +168,7 @@ type Timings struct {
 	Grace                time.Duration
 	BrowserGrace         time.Duration
 	SignInCheck          time.Duration
+	FirstMessage         time.Duration
 	ResumeExchange       time.Duration
 	ResumeGiveUp         time.Duration
 	PassOn               time.Duration
@@ -203,6 +208,7 @@ func (t Timings) Resolve() Timings {
 	t.Grace = cmp.Or(t.Grace, Grace)
 	t.BrowserGrace = cmp.Or(t.BrowserGrace, BrowserGrace)
 	t.SignInCheck = cmp.Or(t.SignInCheck, SignInCheck)
+	t.FirstMessage = cmp.Or(t.FirstMessage, FirstMessage)
 	t.ResumeExchange = cmp.Or(t.ResumeExchange, ResumeExchange)
 	t.ResumeGiveUp = cmp.Or(t.ResumeGiveUp, ResumeGiveUp)
 	t.PassOn = cmp.Or(t.PassOn, PassOn)
