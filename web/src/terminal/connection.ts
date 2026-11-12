@@ -1,3 +1,4 @@
+import { forgetSession, keepSessions, keptSessions } from "./kept";
 import { encodeRecord, MalformedRecord, maxRecord, maxSide, RecordReader, type TerminalRecord, terminalProtocol } from "./records";
 import { Stream, StreamError, type StreamSocket } from "./stream";
 
@@ -98,34 +99,71 @@ export interface Handlers {
   onOutput(bytes: Uint8Array): void | Promise<void>;
 }
 
-/** keptKey is where sessionStorage keeps the ids of the page's SSH Sessions, as a JSON array. */
-const keptKey = "koko.terminal.sessions";
+// A browser tab duplicated from this one starts with a copy of its
+// sessionStorage, and so with the ids of SSH Sessions this document still
+// holds. So a document holds a Web Lock named after each SSH Session it
+// holds, for as long as it does; the browser lets the locks go with the
+// document. A new document ends only the kept ids no other document holds:
+// a reload's or a restored tab's, whose document has gone. The ids another
+// document holds are that document's, and the copy forgets them.
 
-/** keptSessions is the ids sessionStorage keeps: none when it cannot be read. */
-function keptSessions(): string[] {
+/** lockPrefix begins the name of the Web Lock a document holds for each SSH Session it holds. */
+const lockPrefix = "koko.terminal.";
+
+/** locks is the browser's Web Locks, if it has them: every browser the web UI supports does, in a secure context. */
+function locks(): LockManager | undefined {
+  return "locks" in navigator ? navigator.locks : undefined;
+}
+
+/**
+ * holdSession tells this browser's other documents that this one holds the
+ * SSH Session of that id, until the function it returns is called or the
+ * document goes.
+ */
+function holdSession(id: string): () => void {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  locks()
+    ?.request(lockPrefix + id, () => held)
+    .catch(() => {});
+  return release;
+}
+
+/**
+ * heldElsewhere is the ids of the SSH Sessions other documents of this
+ * browser hold, or null when the browser cannot tell.
+ */
+async function heldElsewhere(): Promise<Set<string> | null> {
+  const manager = locks();
+  if (!manager) {
+    return null;
+  }
   try {
-    const kept: unknown = JSON.parse(window.sessionStorage.getItem(keptKey) ?? "[]");
-    return Array.isArray(kept) ? kept.filter((id) => typeof id === "string") : [];
+    const { held = [] } = await manager.query();
+    return new Set(held.flatMap(({ name = "" }) => (name.startsWith(lockPrefix) ? [name.slice(lockPrefix.length)] : [])));
   } catch {
-    return [];
+    return null;
   }
 }
 
-/** keepSessions writes the kept ids as change makes them. */
-function keepSessions(change: (ids: string[]) => string[]): void {
-  try {
-    const ids = change(keptSessions());
-    if (ids.length > 0) {
-      window.sessionStorage.setItem(keptKey, JSON.stringify(ids));
-    } else {
-      window.sessionStorage.removeItem(keptKey);
-    }
-  } catch {
-    // A browser that refuses storage keeps no ids, and a reload ends none.
+/**
+ * endLeft ends the SSH Sessions an earlier document of this browser tab
+ * left, and forgets the kept ids it may not end: those another document
+ * holds, and every one when the browser cannot tell whose they are, which
+ * the Gateway then ends at the grace.
+ */
+async function endLeft(dial: () => TerminalSocket): Promise<void> {
+  const kept = keptSessions();
+  if (kept.length === 0) {
+    return;
   }
+  const elsewhere = await heldElsewhere();
+  const ours = elsewhere === null ? [] : kept.filter((id) => !elsewhere.has(id));
+  keepSessions((ids) => ids.filter((id) => ours.includes(id)));
+  await Promise.all(ours.map((id) => endSession(dial, id)));
 }
-
-const forgetSession = (id: string) => keepSessions((ids) => ids.filter((kept) => kept !== id));
 
 /**
  * Answered is the koko server's answer to a first message, with the
@@ -238,7 +276,8 @@ function endSession(dial: () => TerminalSocket, id: string): Promise<void> {
  * its first, it ends the SSH Sessions an earlier document of this browser
  * tab left: a reload, or a tab the browser discarded and restored, lost
  * their streams, and sessionStorage kept their ids, so they stop counting
- * against the caller's limit before the tabs open again.
+ * against the caller's limit before the tabs open again. A browser tab
+ * duplicated from a live one leaves that one's SSH Sessions alone.
  */
 export class Terminals {
   private readonly dial: () => TerminalSocket;
@@ -249,12 +288,21 @@ export class Terminals {
   }
 
   /**
+   * endEarlier ends the SSH Sessions an earlier document of this browser
+   * tab left, once; the first open waits for it, and a page may start it
+   * sooner, as one that has no terminal to open yet.
+   */
+  endEarlier(): Promise<void> {
+    this.earlierEnded ??= endLeft(this.dial);
+    return this.earlierEnded;
+  }
+
+  /**
    * open opens an SSH Session to the Host of that name, with a pty of that
    * size, and returns its connection, which starts as connecting.
    */
   open(host: string, size: Size, handlers: Handlers): Connection {
-    this.earlierEnded ??= Promise.all(keptSessions().map((id) => endSession(this.dial, id))).then(() => {});
-    return new Connection(this.dial, this.earlierEnded, host, size, handlers);
+    return new Connection(this.dial, this.endEarlier(), host, size, handlers);
   }
 }
 
@@ -277,6 +325,8 @@ export class Connection {
   private socket: TerminalSocket | null = null;
   private stream: Stream | null = null;
   private id = "";
+  /** release lets go of the Web Lock that says this document holds the SSH Session. */
+  private release = () => {};
   /** exit is the shell's end, once its record has come. */
   private exit: Ending | null = null;
 
@@ -379,6 +429,7 @@ export class Connection {
     this.giveUp?.();
     this.giveUp = null;
     this.discard();
+    this.release();
     this.setState(state);
   }
 
@@ -431,6 +482,7 @@ export class Connection {
         }
         this.id = id;
         keepSessions((ids) => [...ids, id]);
+        this.release = holdSession(id);
         const stream = new Stream(this.carry(answered.socket));
         this.stream = stream;
         this.watch();

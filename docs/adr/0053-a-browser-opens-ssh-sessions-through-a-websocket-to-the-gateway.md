@@ -90,5 +90,12 @@ the cookie checked at the handshake says it, with no inner SSH.
   page first ends the old SSH Sessions, then opens each tab's Host again as
   a new one. Replaying a screen after a reload is later; tmux on the Host
   covers it.
+- A browser tab duplicated from a live one starts with a copy of its
+  `sessionStorage`, ids and all, and must leave that one's SSH Sessions
+  alone (the router's rule, 2026-11-12). Each document holds a Web Lock
+  named after each SSH Session it holds, which the browser lets go with
+  the document, so a new document ends only the kept ids no live document
+  holds, and forgets the rest. A browser that cannot tell, having no Web
+  Locks, ends none, and the Gateway ends them at the grace.
 - koko gains two dependencies, `github.com/coder/websocket` and
   `github.com/pkg/sftp`, each the standard choice for what it does in Go.

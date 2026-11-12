@@ -15,14 +15,51 @@ const id = "0123456789abcdef0123456789abcdef";
 const keptKey = "koko.terminal.sessions";
 const kept = () => JSON.parse(sessionStorage.getItem(keptKey) ?? "[]") as string[];
 
+/**
+ * FakeLocks is the browser's Web Locks, which every document a test plays
+ * shares, as the documents of one browser do.
+ */
+class FakeLocks {
+  readonly held = new Set<string>();
+  /** queues holds, for each lock asked for, when its last request lets it go. */
+  private readonly queues = new Map<string, Promise<void>>();
+
+  /** request runs callback once the lock is free, and holds it until callback's promise settles. */
+  request(name: string, callback: () => Promise<void>): Promise<void> {
+    const granted = (this.queues.get(name) ?? Promise.resolve()).then(() => {
+      this.held.add(name);
+      return callback().finally(() => this.held.delete(name));
+    });
+    this.queues.set(
+      name,
+      granted.catch(() => {}),
+    );
+    return granted;
+  }
+
+  async query(): Promise<LockManagerSnapshot> {
+    return { held: [...this.held].map((name) => ({ name, mode: "exclusive" })), pending: [] };
+  }
+}
+
+let locks = new FakeLocks();
+
+/** withoutLocks makes the browser one without Web Locks. */
+function withoutLocks(): void {
+  Reflect.deleteProperty(navigator, "locks");
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ now: start });
+  locks = new FakeLocks();
+  Object.defineProperty(navigator, "locks", { configurable: true, value: locks });
 });
 
 afterEach(() => {
   vi.useRealTimers();
   sessionStorage.clear();
   show(true);
+  withoutLocks();
 });
 
 /** show makes the page shown or hidden, and tells it so. */
@@ -676,6 +713,7 @@ test("a new page ends the SSH Sessions the page before it left, then opens its o
   }
   pagehide(false);
   expect(kept()).toEqual([first, second]);
+  await passed(); // the browser lets the leaving document's locks go
 
   const after = terminals();
   const page = await opening(after);
@@ -731,4 +769,45 @@ test("a kept id the koko server does not answer for is kept, and the page opens 
   const unreadable = await opening(terminals());
   latest(unreadable.sockets).opened();
   expect(latest(unreadable.sockets).first).toMatchObject({ open: "web1" });
+});
+
+test("a document holds a Web Lock for each SSH Session it holds, until the SSH Session ends", async () => {
+  const { connection } = await connected();
+  expect([...locks.held]).toEqual([`koko.terminal.${id}`]);
+  connection.end();
+  await passed();
+  expect([...locks.held]).toEqual([]);
+});
+
+test("a browser tab duplicated from a live one leaves that one's SSH Sessions alone, and opens its own", async () => {
+  // The browser tab duplicated: the copy starts with its sessionStorage,
+  // which keeps the id of an SSH Session the original still holds.
+  const original = await connected();
+  expect(kept()).toEqual([id]);
+
+  const copy = terminals();
+  const page = await opening(copy);
+  expect(copy.sockets, "no end for the original's SSH Session").toHaveLength(1);
+  latest(copy.sockets).opened();
+  expect(latest(copy.sockets).first).toEqual({ protocol: 1, open: "web1", cols: 120, rows: 36 });
+  expect(kept(), "the copy forgets the original's id").toEqual([]);
+  const own = "f".repeat(32);
+  latest(copy.sockets).answer({ tunnel: own });
+  await passed();
+  expect(page.state()).toEqual({ status: "connected" });
+  expect(kept()).toEqual([own]);
+
+  expect(original.socket.closed).toBe(false);
+  expect(original.socket.framesSent).toEqual([]);
+  expect(original.state()).toEqual({ status: "connected" });
+});
+
+test("a document that cannot tell whose the kept ids are ends none of them and forgets them", async () => {
+  withoutLocks();
+  sessionStorage.setItem(keptKey, JSON.stringify(["1".repeat(32)]));
+  const { sockets } = await opening(terminals());
+  expect(sockets).toHaveLength(1);
+  latest(sockets).opened();
+  expect(latest(sockets).first).toMatchObject({ open: "web1" });
+  expect(kept()).toEqual([]);
 });
