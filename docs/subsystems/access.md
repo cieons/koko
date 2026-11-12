@@ -133,11 +133,16 @@ calls every API operation as each kind of caller, over a real Device
 Connection or the Unix socket, and checks the answer the operation's row
 states.
 
-- **The callers**, each acting in a target Space of a fresh koko server: the
-  Owner through a Device Session and the Local caller, in the shared Space
-  `ops`; a Member of `ops`; a Member in their own Personal Space; a
-  Member outside `ops`; and the Owner and a Member of `ops` through a
-  Sign-in, calling on the web listener as a browser does (`h.SignIn`).
+- **The callers**, each acting in a target Space of a koko server of its
+  own: the Owner through a Device Session and the Local caller, in the
+  shared Space `ops`; a Member of `ops`; a Member in their own Personal
+  Space; a Member outside `ops`; and the Owner and a Member of `ops` through
+  a Sign-in, calling on the web listener as a browser does (`h.SignIn`).
+  Each call's koko server starts on a copy of a template: the data
+  directory of a koko server stopped once it held the matrix's Users, `ops`
+  unless for a twin, and the caller's Sign-in. So the matrix records them,
+  and hashes a Sign-in's Password, once per template rather than once per
+  call (#186).
 - **The answers:** `allowed` (the call succeeds), `ownerOnly`, `localOnly`,
   `unknown` (byte for byte the answer to the same call on a koko server where
   the target Space was never recorded), and `allowedBut(code)` for a call the

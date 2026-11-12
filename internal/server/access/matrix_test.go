@@ -9,6 +9,7 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"net/http"
+	"os"
 	"slices"
 	"testing"
 
@@ -168,7 +169,9 @@ func TestEveryOperationHasRowsInTheAccessMatrix(t *testing.T) {
 
 // Each operation, called as each caller, gets the answer its row states.
 func TestAccessMatrix(t *testing.T) {
-	for _, r := range slices.Concat(areaRows...) {
+	rows := slices.Concat(areaRows...)
+	templates := newTemplates(t, rows)
+	for _, r := range rows {
 		for _, c := range callers {
 			want, ok := r.want[c]
 			if !ok {
@@ -176,10 +179,10 @@ func TestAccessMatrix(t *testing.T) {
 			}
 			t.Run(fmt.Sprintf("%s as %s", r, c), func(t *testing.T) {
 				t.Parallel()
-				status, body := newFixture(t, true, c).send(c, r)
+				status, body := newFixture(t, templates[keyOf(true, c)], c).send(c, r)
 				switch {
 				case want.unknown:
-					twinStatus, twinBody := newFixture(t, false, c).send(c, r)
+					twinStatus, twinBody := newFixture(t, templates[keyOf(false, c)], c).send(c, r)
 					if twinStatus == http.StatusOK {
 						t.Fatalf("with no %s recorded the call succeeded: %s", c.target(), twinBody)
 					}
@@ -205,34 +208,108 @@ func TestAccessMatrix(t *testing.T) {
 // fixture is a koko server with the matrix's records: the Owner alice; the
 // Members bob, carol and dave, who has not joined; and, unless the twin of a
 // call answered as unknown, the shared Space ops with the Member bob. For a
-// caller through a Sign-in, its web listener is on.
+// caller through a Sign-in, its web listener is on and its User is signed
+// in.
 type fixture struct {
 	t *testing.T
 	h *harness.Harness
 	// withTarget says ops is recorded.
 	withTarget bool
+	// cookie is the Sign-in cookie of a caller through a Sign-in.
+	cookie string
 }
 
-func newFixture(t *testing.T, withTarget bool, c caller) *fixture {
-	t.Helper()
-	var opts []harness.Option
+// A template is the data directory of a stopped koko server holding a
+// fixture's records, and its Root Key file. Each fixture starts its koko
+// server on a copy, so the matrix records them, and hashes a Sign-in's
+// Password, once per template rather than once per fixture: hundreds of
+// times, which took the package to its time limit on CI (#186).
+type template struct {
+	dataDir, rootKey string
+	// withTarget says ops is recorded.
+	withTarget bool
+	// cookie is the Sign-in cookie of the template's User signed in.
+	cookie string
+}
+
+// templateKey names a template: whether ops is recorded, and the User
+// signed in in a browser, or "" for none. A Sign-in sets the Web URL, which
+// password.link's row needs unset for every other caller, so a template
+// with a Sign-in serves only the callers through it.
+type templateKey struct {
+	withTarget bool
+	signedIn   string
+}
+
+// keyOf is the key of the template c's fixture starts from, with ops
+// recorded or not.
+func keyOf(withTarget bool, c caller) templateKey {
+	k := templateKey{withTarget: withTarget}
 	if c.signedIn() {
+		k.signedIn = c.user()
+	}
+	return k
+}
+
+// newTemplates makes every template the fixtures of rows start from.
+func newTemplates(t *testing.T, rows []row) map[templateKey]template {
+	t.Helper()
+	templates := map[templateKey]template{}
+	add := func(k templateKey) {
+		if _, ok := templates[k]; !ok {
+			templates[k] = newTemplate(t, k)
+		}
+	}
+	for _, r := range rows {
+		for c, want := range r.want {
+			add(keyOf(true, c))
+			if want.unknown {
+				add(keyOf(false, c))
+			}
+		}
+	}
+	return templates
+}
+
+func newTemplate(t *testing.T, k templateKey) template {
+	t.Helper()
+	tmpl := template{dataDir: t.TempDir(), rootKey: harness.NewRootKeyFile(t), withTarget: k.withTarget}
+	opts := []harness.Option{harness.DataDir(tmpl.dataDir), harness.RootKeyFile(tmpl.rootKey)}
+	if k.signedIn != "" {
 		opts = append(opts, harness.WebListen("127.0.0.1:0"))
 	}
 	h := harness.Start(t, opts...)
 	for _, u := range []string{"bob", "carol", "dave"} {
 		h.Koko("user", "invite", u).WantSuccess(t)
 	}
-	if withTarget {
+	if k.withTarget {
 		h.Koko("space", "add", targetSpace).WantSuccess(t)
 		h.Koko("space", "member", "add", targetSpace, "bob").WantSuccess(t)
 	}
-	return &fixture{t: t, h: h, withTarget: withTarget}
+	if k.signedIn != "" {
+		tmpl.cookie = h.SignIn(k.signedIn).Cookie
+	}
+	h.Stop()
+	return tmpl
+}
+
+// newFixture starts c's fixture on a copy of tmpl.
+func newFixture(t *testing.T, tmpl template, c caller) *fixture {
+	t.Helper()
+	dataDir := t.TempDir()
+	if err := os.CopyFS(dataDir, os.DirFS(tmpl.dataDir)); err != nil {
+		t.Fatalf("copy the template's data directory: %v", err)
+	}
+	opts := []harness.Option{harness.NoInit(), harness.DataDir(dataDir), harness.RootKeyFile(tmpl.rootKey)}
+	if c.signedIn() {
+		opts = append(opts, harness.WebListen("127.0.0.1:0"))
+	}
+	return &fixture{t: t, h: harness.Start(t, opts...), withTarget: tmpl.withTarget, cookie: tmpl.cookie}
 }
 
 // send makes r's call as c, joining a device of c's User for it, or
-// signing them in in a browser, after r's setup where c's target Space is
-// recorded.
+// calling from a browser holding its Sign-in, after r's setup where c's
+// target Space is recorded.
 func (f *fixture) send(c caller, r row) (int, []byte) {
 	f.t.Helper()
 	if r.setup != nil && (f.withTarget || c.target() != targetSpace) {
@@ -246,7 +323,9 @@ func (f *fixture) send(c caller, r row) (int, []byte) {
 	case c == local:
 		return f.h.Send(r.op, body)
 	case c.signedIn():
-		return f.h.SignIn(c.user()).Send(r.op, body)
+		b := f.h.Browser()
+		b.Cookie = f.cookie
+		return b.Send(r.op, body)
 	}
 	return f.h.Join(c.user()).Send(r.op, body)
 }
