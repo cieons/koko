@@ -58,7 +58,7 @@ func sshRefuses(path string) error {
 		return nil
 	}
 	if !trusted(owner) {
-		return fmt.Errorf("OpenSSH for Windows refuses ~/%s, which %s owns, and then reaches no host at all: make the file yours, such as with icacls \"%s\" /setowner *%s",
+		return fmt.Errorf("OpenSSH for Windows refuses ~/%s, which %s owns, and then reaches no host at all: run icacls \"%s\" /setowner *%s to make the file yours",
 			userConfig, accountOf(owner), path, me)
 	}
 	dacl, _, err := sd.DACL()
@@ -74,7 +74,7 @@ func sshRefuses(path string) error {
 			continue
 		}
 		if sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart)); !trusted(sid) {
-			return fmt.Errorf("OpenSSH for Windows refuses ~/%s, which %s may write, and then reaches no host at all: take that access away, such as with icacls \"%s\" /inheritance:d /remove:g *%s",
+			return fmt.Errorf("OpenSSH for Windows refuses ~/%s, which %s may write, and then reaches no host at all: run icacls \"%s\" /inheritance:d /remove:g *%s to take that access away",
 				userConfig, accountOf(sid), path, sid)
 		}
 	}

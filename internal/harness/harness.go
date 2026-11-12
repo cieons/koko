@@ -649,13 +649,14 @@ func (d *Device) environ(extra ...string) []string {
 // NewDevice returns a device that has not joined a koko server. Its HOME,
 // the socket path it finds empty, and its LOCALAPPDATA, where Windows keeps
 // koko's runtime directory and Linux and macOS read nothing, are temporary.
+// On Windows it has the test's PATH too (osEnv).
 func NewDevice(t testing.TB) *Device {
 	t.Helper()
 	return &Device{
 		t:      t,
 		home:   t.TempDir(),
 		runner: cli.Runner{SocketPath: filepath.Join(ShortTempDir(t), "koko.sock")},
-		env:    []string{"LOCALAPPDATA=" + ShortTempDir(t)},
+		env:    append([]string{"LOCALAPPDATA=" + ShortTempDir(t)}, osEnv()...),
 	}
 }
 

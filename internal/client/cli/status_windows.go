@@ -22,10 +22,10 @@ func sshClientWarnings(inv *Invocation) (home, client *string) {
 	// HOME is read here only to say that ssh may read it; koko's own files
 	// are under the profile directory (ADR 0051).
 	if h := inv.getenv("HOME"); h != "" && !sameDir(h, profile) {
-		home = new(fmt.Sprintf("HOME is %s, not the profile directory %s, where koko writes its files, so ssh may read another configuration than koko's: unset HOME, or set it to %s", h, profile, profile))
+		home = new(fmt.Sprintf("HOME is %s, not the profile directory %s, where koko writes its files, so ssh may read another configuration than koko's: unset HOME, or set it to the profile directory", h, profile))
 	}
 	if !onPath("ssh", inv.getenv("PATH"), inv.getenv("PATHEXT")) {
-		client = new("no ssh is on PATH, so ssh cannot reach Hosts through koko: add the OpenSSH client as an administrator, with Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0")
+		client = new("no ssh is on PATH, so ssh cannot reach Hosts through koko: run Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0 as an administrator to add the OpenSSH client")
 	}
 	return home, client
 }

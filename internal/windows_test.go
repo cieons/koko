@@ -45,10 +45,15 @@ func goSources(t *testing.T, visit func(path, text string)) {
 // The CLI reads the home directory in one place, cli.Invocation's home,
 // through the one name devicefiles.HomeVar gives it on each OS: no other
 // file of the CLI names HOME as a variable to read, since on Windows the
-// home is USERPROFILE and HOME is never read (ADR 0051).
+// home is USERPROFILE and HOME is never read for one (ADR 0051). The one
+// other reader is koko status on Windows, which reads HOME to say that ssh
+// may read another home than the profile directory koko writes under.
 func TestOnlyTheHomeRuleReadsHOME(t *testing.T) {
 	t.Parallel()
-	const rule = "internal/client/devicefiles/private_unix.go"
+	const (
+		rule          = "internal/client/devicefiles/private_unix.go"
+		sshHomeReader = "internal/client/cli/status_windows.go"
+	)
 	found := false
 	goSources(t, func(path, text string) {
 		ofTheCLI := strings.HasPrefix(path, "internal/client/") || strings.HasPrefix(path, "cmd/koko/")
@@ -59,7 +64,7 @@ func TestOnlyTheHomeRuleReadsHOME(t *testing.T) {
 		if strings.Contains(text, "UserHomeDir(") || path != "internal/client/cli/cli.go" && strings.Contains(text, "getenv(devicefiles.HomeVar)") {
 			t.Errorf("%s finds the home directory by itself: read it through cli.Invocation's home", path)
 		}
-		if !strings.Contains(text, `"HOME"`) {
+		if !strings.Contains(text, `"HOME"`) || path == sshHomeReader {
 			return
 		}
 		if path == rule {

@@ -49,6 +49,8 @@ type statusOut struct {
 		LearnedAt     string           `json:"learned_at"`
 	} `json:"revocation"`
 	IncludeWarning       *string   `json:"include_warning"`
+	HomeWarning          *string   `json:"home_warning"`
+	SSHClientWarning     *string   `json:"ssh_client_warning"`
 	NamesReadAsAddresses *[]string `json:"names_read_as_addresses"`
 }
 
