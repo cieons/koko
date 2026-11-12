@@ -35,7 +35,8 @@ type connectOut struct {
 // kokoConnect runs koko connect --json through run with args after it,
 // which must succeed, and returns what it printed, parsed and as written
 // with the koko server's version replaced by a placeholder, then each of
-// the old, new pairs, in order.
+// the old, new pairs, in order, a path in any of the forms it takes in JSON
+// (harness.Paths).
 func kokoConnect(t *testing.T, run func(...string) harness.Result, args []string, oldNew ...string) (connectOut, string) {
 	t.Helper()
 	r := run(append([]string{"connect", "--json"}, args...)...)
@@ -45,7 +46,7 @@ func kokoConnect(t *testing.T, run func(...string) harness.Result, args []string
 		t.Fatalf("connect --json printed %q: %v", r.Stdout, err)
 	}
 	out := versionField.ReplaceAllString(r.Stdout, `"$1": "<version>"`)
-	return c, strings.NewReplacer(oldNew...).Replace(out)
+	return c, harness.Paths(out, oldNew...)
 }
 
 // fingerprints are the fingerprints of host keys written as in
@@ -65,7 +66,7 @@ func fingerprints(t *testing.T, keys []string) []string {
 
 // muxSocket is the socket of the device's Device Mux of this build.
 func muxSocket(d *harness.Device) string {
-	return filepath.Join(d.RuntimeDir(), "koko", devicemux.Name(build.Read())+".sock")
+	return filepath.Join(d.MuxDir(), devicemux.Name(build.Read())+".sock")
 }
 
 // koko connect reaches the koko server as any command does, starting the

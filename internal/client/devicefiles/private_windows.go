@@ -1,6 +1,7 @@
 package devicefiles
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -63,8 +64,124 @@ func setPrivate(path string) error {
 	if err != nil {
 		return err
 	}
+	acl, err := privateACL(all, fi.IsDir())
+	if err != nil {
+		return err
+	}
+	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		me, nil, acl, nil)
+}
+
+// MkdirPrivate makes the directory dir private to this OS user from the
+// moment it exists, as restrict leaves koko's own directory: its owner is
+// this user, and its access control list a protected one with full control
+// for this user, SYSTEM and Administrators, passed on to what is made in
+// it. No other process can find it open in between, as after os.Mkdir and
+// restrict. It fails wrapping fs.ErrExist when something is at dir.
+func MkdirPrivate(dir string) error {
+	me, all, err := principals()
+	if err != nil {
+		return err
+	}
+	acl, err := privateACL(all, true)
+	if err != nil {
+		return err
+	}
+	sd, err := windows.NewSecurityDescriptor()
+	if err == nil {
+		err = sd.SetOwner(me, false)
+	}
+	if err == nil {
+		err = sd.SetDACL(acl, true, false)
+	}
+	if err == nil {
+		err = sd.SetControl(windows.SE_DACL_PROTECTED, windows.SE_DACL_PROTECTED)
+	}
+	if err != nil {
+		return fmt.Errorf("make %s private to this user: %w", dir, err)
+	}
+	p, err := windows.UTF16PtrFromString(dir)
+	if err != nil {
+		return &fs.PathError{Op: "mkdir", Path: dir, Err: err}
+	}
+	sa := windows.SecurityAttributes{SecurityDescriptor: sd}
+	sa.Length = uint32(unsafe.Sizeof(sa))
+	if err := windows.CreateDirectory(p, &sa); err != nil {
+		// ERROR_ALREADY_EXISTS matches fs.ErrExist.
+		return &fs.PathError{Op: "mkdir", Path: dir, Err: err}
+	}
+	return nil
+}
+
+// closedToOthers says why no principal but this user, SYSTEM and
+// Administrators may reach into the directory at path is untrue, or returns
+// nil when it holds, where Linux and macOS ask for mode 0700: its access
+// control list is protected, so it takes nothing from its parent, and each
+// entry that allows any access, its own or one passed on to what the
+// directory holds, names one of the three. An entry that denies access is
+// no way in. A list koko cannot read through is not closed.
+func closedToOthers(path string, _ fs.FileInfo) error {
+	_, all, err := principals()
+	if err != nil {
+		return fmt.Errorf("cannot be checked: %w", err)
+	}
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return fmt.Errorf("cannot be checked: %w", err)
+	}
+	control, _, err := sd.Control()
+	if err != nil {
+		return fmt.Errorf("cannot be checked: %w", err)
+	}
+	if control&windows.SE_DACL_PROTECTED == 0 {
+		return errors.New("takes access from the directory it is in: its access control list is not protected")
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return fmt.Errorf("cannot be checked: %w", err)
+	}
+	if dacl == nil {
+		return errors.New("has no access control list, which lets everyone in")
+	}
+	for i := range uint32(dacl.AceCount) {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		if err := windows.GetAce(dacl, i, &ace); err != nil {
+			return fmt.Errorf("cannot be checked: entry %d of its access control list: %w", i, err)
+		}
+		switch ace.Header.AceType {
+		case windows.ACCESS_DENIED_ACE_TYPE:
+			continue
+		case windows.ACCESS_ALLOWED_ACE_TYPE:
+		default:
+			// Only these two are laid out as ACCESS_ALLOWED_ACE is.
+			return fmt.Errorf("has an access control entry of type %d, which koko does not read", ace.Header.AceType)
+		}
+		if sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart)); !slices.ContainsFunc(all, sid.Equals) {
+			return fmt.Errorf("lets %s in", accountOf(sid))
+		}
+	}
+	return nil
+}
+
+// accountOf names the principal sid as Windows shows it, such as
+// BUILTIN\Users, with its SID.
+func accountOf(sid *windows.SID) string {
+	account, domain, _, err := sid.LookupAccount("")
+	switch {
+	case err != nil:
+		return sid.String()
+	case domain != "":
+		account = domain + `\` + account
+	}
+	return fmt.Sprintf("%s (%s)", account, sid)
+}
+
+// privateACL is the access control list of a private file or directory:
+// full control for each of all, passed on to what a directory holds.
+func privateACL(all []*windows.SID, dir bool) (*windows.ACL, error) {
 	var inherit uint32 = windows.NO_INHERITANCE
-	if fi.IsDir() {
+	if dir {
 		inherit = windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT
 	}
 	entries := make([]windows.EXPLICIT_ACCESS, 0, len(all))
@@ -82,11 +199,9 @@ func setPrivate(path string) error {
 	}
 	acl, err := windows.ACLFromEntries(entries, nil)
 	if err != nil {
-		return fmt.Errorf("build its access control list: %w", err)
+		return nil, fmt.Errorf("build its access control list: %w", err)
 	}
-	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
-		me, nil, acl, nil)
+	return acl, nil
 }
 
 // isPrivate tells whether the file at path is as restrict leaves one, where

@@ -13,7 +13,6 @@ import (
 	"github.com/cieons/koko/internal/client/cli"
 	"github.com/cieons/koko/internal/client/devicemux"
 	"github.com/cieons/koko/internal/client/serverconn"
-	"github.com/cieons/koko/internal/harness/skip"
 	"github.com/cieons/koko/internal/shared/timing"
 )
 
@@ -34,16 +33,16 @@ type muxes struct {
 // once it joins. Each Device Mux it starts runs in the test process, where
 // koko would start one in the background (cli.Runner.StartDeviceMux), as
 // `koko device-mux` with the device's environment: a temporary runtime
-// directory as TMPDIR and XDG_RUNTIME_DIR, and timings as the
-// timing-constants hook (the zero Timings for the product's). They log to
-// MuxLog, and stop when the test ends.
+// directory as TMPDIR and XDG_RUNTIME_DIR, and as LOCALAPPDATA, where
+// Windows keeps it, and timings as the timing-constants hook (the zero
+// Timings for the product's). They log to MuxLog, and stop when the test
+// ends.
 func NewMuxDevice(t testing.TB, timings timing.Timings) *Device {
 	t.Helper()
-	skip.OnWindows(t, "no Device Mux runs on Windows until #153, so the device's commands would go direct")
 	d := NewDevice(t)
 	m := &muxes{runtime: ShortTempDir(t), log: &syncBuffer{}}
 	d.muxes = m
-	d.env = []string{"TMPDIR=" + m.runtime, "XDG_RUNTIME_DIR=" + m.runtime}
+	d.env = []string{"TMPDIR=" + m.runtime, "XDG_RUNTIME_DIR=" + m.runtime, "LOCALAPPDATA=" + m.runtime}
 	d.runner.Timings = timings
 	d.runner.StartDeviceMux = d.startMux
 	t.Cleanup(func() { m.stop(t) })
@@ -150,6 +149,18 @@ func (d *Device) RuntimeDir() string {
 	return d.muxes.runtime
 }
 
+// MuxDir returns the directory of a NewMuxDevice's Device Muxes, their
+// sockets, locks and logs, which koko makes in its runtime directory:
+// koko/ on Linux and macOS, koko\run\ on Windows (devicemux.RuntimeDir).
+func (d *Device) MuxDir() string {
+	d.t.Helper()
+	dir, err := devicemux.RuntimeDir(func(key string) string { return lookup(d.environ(), key) })
+	if err != nil {
+		d.t.Fatalf("find the Device Mux directory: %v", err)
+	}
+	return dir
+}
+
 // MuxLog returns what the Device Muxes of a NewMuxDevice have logged so far.
 func (d *Device) MuxLog() string {
 	return d.muxes.log.String()
@@ -164,7 +175,7 @@ func (d *Device) DialMux() serverconn.Conn {
 	if err != nil {
 		d.t.Fatalf("find the Device Mux socket: %v", err)
 	}
-	conn, _, err := devicemux.Dial(d.t.Context(), socket, d.home)
+	conn, _, err := devicemux.Dial(d.t.Context(), socket, d.home, d.runner.Timings)
 	if err != nil {
 		d.t.Fatalf("connect to the Device Mux: %v", err)
 	}
@@ -187,7 +198,7 @@ func (d *Device) HoldMux() serverconn.Conn {
 	}
 	m := d.muxes
 	for deadline := time.Now().Add(waitFor); ; time.Sleep(5 * time.Millisecond) {
-		conn, _, err := devicemux.Dial(d.t.Context(), socket, d.home)
+		conn, _, err := devicemux.Dial(d.t.Context(), socket, d.home, d.runner.Timings)
 		if err == nil {
 			d.t.Cleanup(func() { _ = conn.Close() })
 			return conn

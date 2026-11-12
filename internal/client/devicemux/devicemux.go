@@ -37,6 +37,7 @@ import (
 	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/shared/build"
+	"github.com/cieons/koko/internal/shared/liveness"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -416,10 +417,12 @@ func (m *deviceMux) dropped(d *deviceConn, err error) {
 // watchSignals probes the Device Connection at once each time the device
 // wakes from sleep or its network routes change, or, while the Device Mux
 // reconnects, tries again at once, until the Device Mux stops. It tells a
-// wake by the clocks: every timing.WakeCheck it compares how far the wall
-// clock moved with how far the monotonic clock did, which stands still
-// while the device sleeps. A route watch the OS will not give is logged
-// and done without.
+// wake by the clocks, looking every timing.WakeCheck (slept): on Linux and
+// macOS by how much further the wall clock moved than the monotonic one,
+// which stands still while the device sleeps, and on Windows, whose
+// monotonic clock runs on, by how much longer than timing.WakeCheck the gap
+// between two looks was. A route watch the OS will not give is logged and
+// done without.
 func (m *deviceMux) watchSignals() {
 	wake, routes := m.timings.Wake, m.timings.RouteChange
 	var ticks <-chan time.Time
@@ -442,9 +445,9 @@ func (m *deviceMux) watchSignals() {
 			return
 		case <-ticks:
 			now := time.Now()
-			slept := now.Round(0).Sub(last.Round(0)) - now.Sub(last)
+			asleep := slept(last, now, m.timings.WakeCheck)
 			last = now
-			if slept <= m.timings.WakeCheck {
+			if asleep <= m.timings.WakeCheck {
 				continue
 			}
 			why = "wake"
@@ -499,10 +502,19 @@ func (m *deviceMux) accept(ln net.Listener) {
 
 // serve carries one command's connection until it ends.
 func (m *deviceMux) serve(nc net.Conn) {
-	if uid, err := peerUID(nc); err != nil || uid != os.Getuid() {
-		m.Log.Warn("refused a connection from another OS user", "uid", uid, "err", err)
+	if err := sameUser(nc); err != nil {
+		m.Log.Warn("refused a connection from another OS user", "err", err)
 		_ = nc.Close()
 		return
+	}
+	var watched *liveness.Conn
+	if watchLocal {
+		// The command may close its end, or exit, without this end ever
+		// seeing it: the handshake gets the time a command gives it, and
+		// the connection is watched once it is up (watchCommand).
+		watched = liveness.NewConn(nc)
+		nc = watched
+		_ = nc.SetDeadline(time.Now().Add(m.timings.CommandWait + m.timings.DeviceMuxStart))
 	}
 	c := m.join(nc)
 	if c == nil {
@@ -548,6 +560,10 @@ func (m *deviceMux) serve(nc net.Conn) {
 	}
 	defer func() { _ = conn.Close() }()
 	m.wg.Go(func() { ssh.DiscardRequests(reqs) })
+	if watched != nil {
+		_ = nc.SetDeadline(time.Time{})
+		m.wg.Go(func() { m.watchCommand(watched, conn) })
+	}
 
 	m.mu.Lock()
 	c.ssh = conn
@@ -565,6 +581,23 @@ func (m *deviceMux) serve(nc net.Conn) {
 			continue
 		}
 		m.wg.Go(func() { m.carry(nch) })
+	}
+}
+
+// watchCommand watches a command's connection conn, over watched, until it
+// ends, where the OS may never tell the Device Mux that the command closed
+// it or exited (watchLocal): it probes the command once nothing has come
+// from it for timing.LocalProbe, and closes the connection once a probe has
+// gone unanswered for timing.LocalAnswer, so the command leaves.
+func (m *deviceMux) watchCommand(watched *liveness.Conn, conn ssh.Conn) {
+	ended := make(chan struct{})
+	m.wg.Go(func() {
+		_ = conn.Wait()
+		close(ended)
+	})
+	if err := watched.WatchAnswers(conn, m.timings.LocalProbe, m.timings.LocalAnswer, ended); err != nil {
+		m.Log.Info("closed a command's connection that stopped answering", "err", err)
+		_ = conn.Close()
 	}
 }
 

@@ -53,7 +53,7 @@ func TestKokoDisconnectStopsTheDeviceMuxAndCountsWhatItEnded(t *testing.T) {
 	held := []serverconn.Conn{d.DialMux(), d.DialMux()}
 
 	out, raw := kokoDisconnect(t, d)
-	harness.Golden(t, "disconnect.json", strings.ReplaceAll(raw, muxSocket(d), "<socket>"))
+	harness.Golden(t, "disconnect.json", harness.Paths(raw, muxSocket(d), "<socket>"))
 	if len(out.DeviceMuxes) != 1 || out.DeviceMuxes[0].Socket != muxSocket(d) || out.DeviceMuxes[0].CommandsEnded != 2 || out.CommandsEnded != 2 {
 		t.Errorf("disconnect printed %+v, want the Device Mux with the 2 commands it carried", out)
 	}
@@ -107,7 +107,7 @@ func TestKokoDisconnectStopsTheDeviceMuxOfEveryBuild(t *testing.T) {
 	})
 	var conn serverconn.Conn
 	eventually(t, "the other build's Device Mux answers", func() bool {
-		c, _, err := devicemux.Dial(t.Context(), other, d.Home())
+		c, _, err := devicemux.Dial(t.Context(), other, d.Home(), timing.Timings{})
 		conn = c
 		return err == nil
 	})

@@ -12,6 +12,7 @@ import (
 
 	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/client/serverconn"
+	"github.com/cieons/koko/internal/shared/timing"
 )
 
 // ErrNotRunning says no Device Mux answers at a socket: none runs, one is
@@ -220,22 +221,33 @@ func (e *errorJSON) decode() error {
 // state and why (State.Err), which Dial returns as its error. One that
 // carries the device of another home answers with an error wrapping
 // ErrOtherHome. When no Device Mux answers at socket, the error wraps
-// ErrNotRunning.
-func Dial(ctx context.Context, socket, home string) (serverconn.Conn, State, error) {
+// ErrNotRunning. On Windows the connection probes the Device Mux, with
+// timings' LocalProbe and LocalAnswer, and ends when a probe goes
+// unanswered (watchLocal).
+func Dial(ctx context.Context, socket, home string, timings timing.Timings) (serverconn.Conn, State, error) {
 	var d net.Dialer
 	nc, err := d.DialContext(ctx, "unix", socket)
 	if err != nil {
 		return nil, State{}, fmt.Errorf("%w at %s: %w", ErrNotRunning, socket, err)
 	}
 	var banner string
-	conn, err := serverconn.Handshake(ctx, nc, socket, &ssh.ClientConfig{
+	cfg := &ssh.ClientConfig{
 		User:            home,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // its private directory is its pin
 		BannerCallback: func(message string) error {
 			banner = message
 			return nil
 		},
-	})
+	}
+	var conn serverconn.Conn
+	if watchLocal {
+		// The Device Mux may close its end, or exit, without the command
+		// ever seeing it.
+		t := timings.Resolve()
+		conn, err = serverconn.HandshakeLocal(ctx, nc, socket, cfg, t.LocalProbe, t.LocalAnswer)
+	} else {
+		conn, err = serverconn.Handshake(ctx, nc, socket, cfg)
+	}
 	st, stErr := parseState(banner)
 	switch {
 	case errors.Is(stErr, ErrOtherHome):

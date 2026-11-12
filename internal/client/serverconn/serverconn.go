@@ -112,6 +112,25 @@ func Handshake(ctx context.Context, nc net.Conn, addr string, cfg *ssh.ClientCon
 	return c, nil
 }
 
+// HandshakeLocal runs Handshake over nc, a connection to a peer on this
+// machine, such as the Device Mux, and watches the connection it returns:
+// once nothing has come from the peer for probe it probes it, and once a
+// probe has gone unanswered for answer it closes the connection, whose Wait
+// then returns a *liveness.DeadError (liveness.Conn.WatchAnswers). So the
+// connection ends even where the OS never tells this end that the peer
+// closed it, as a Unix socket on Windows may not.
+func HandshakeLocal(ctx context.Context, nc net.Conn, addr string, cfg *ssh.ClientConfig, probe, answer time.Duration) (Conn, error) {
+	lc := liveness.NewConn(nc)
+	c, err := handshake(ctx, lc, addr, cfg)
+	if err != nil {
+		return nil, err
+	}
+	go c.watchWith(func(done <-chan struct{}) error {
+		return lc.WatchAnswers(c.client, probe, answer, done)
+	})
+	return c, nil
+}
+
 func handshake(ctx context.Context, nc net.Conn, addr string, cfg *ssh.ClientConfig) (*sshConn, error) {
 	stop := context.AfterFunc(ctx, func() { _ = nc.Close() })
 	defer stop()
@@ -490,7 +509,16 @@ func isClosed(ch <-chan struct{}) bool {
 // watch watches the connection's liveness over lc until it ends, and closes
 // it, noting why, when nothing has come from the koko server for too long.
 func (c *sshConn) watch(lc *liveness.Conn, probe, dead time.Duration, probeNow <-chan struct{}) {
-	err := lc.Watch(c.client, probe, dead, probeNow, c.requestsDone)
+	c.watchWith(func(done <-chan struct{}) error {
+		return lc.Watch(c.client, probe, dead, probeNow, done)
+	})
+}
+
+// watchWith runs watch, one of liveness.Conn's watches, until the
+// connection ends, and closes it, noting why, when the watch declares it
+// dead.
+func (c *sshConn) watchWith(watch func(done <-chan struct{}) error) {
+	err := watch(c.requestsDone)
 	if err == nil {
 		return
 	}

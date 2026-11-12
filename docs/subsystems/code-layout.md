@@ -22,7 +22,9 @@ no row, or when either depends (directly or not) on a group it may not use.
 
 A package that holds only tests is in no group, since only non-test
 dependencies count: so far the real-OpenSSH test's
-[`internal/client/openssh`](#the-real-openssh-test).
+[`internal/client/openssh`](#the-real-openssh-test), and
+[`internal/client/muxprocess`](../../internal/client/muxprocess/muxprocess_test.go),
+which runs a real Device Mux process.
 
 | Program | May not depend on |
 | --- | --- |
@@ -209,9 +211,8 @@ its own only when an agent would act on it differently.
     (`sockerr`), the terminal (`golang.org/x/term` already splits it per OS,
     so koko adds no files of its own), and signal forwarding. A ticket that
     adds one writes the Linux, macOS and Windows implementations
-    ([ADR 0051](../adr/0051-on-windows-the-cli-is-a-device-with-the-same-files-in-the-same-places.md));
-    the seam that still returns "not supported on Windows" (the Device
-    Mux) gets its own in the tickets of
+    ([ADR 0051](../adr/0051-on-windows-the-cli-is-a-device-with-the-same-files-in-the-same-places.md)),
+    as every seam has since the tickets of
     [#151](https://github.com/cieons/koko/issues/151). `make cross` compiles
     `windows/amd64`, `make lint` lints it, and the `windows` CI job runs the
     client group's tests there
@@ -237,6 +238,8 @@ A hook is a field of the product's own configuration that no flag or
 environment variable exposes, and that `cmd/koko` never sets but from a
 value linked in at build time, which only a test's own build links in: so
 far the socket path, for [the real-OpenSSH test](#the-real-openssh-test).
+`internal/client/muxprocess` sets the socket path in a `cli.Runner` of
+its own, in its test binary, which stands in for `cmd/koko`.
 Its zero value means the product's constant. Fields rather than package
 variables keep parallel tests apart.
 
@@ -325,8 +328,9 @@ line in process, and whose own koko `m.KokoAt(file)` writes, under
 `m.Home()` or its root, for `koko update`.
 
 Devices: `harness.NewDevice(t)` is a device that has not joined, with a HOME
-of its own and nothing at its socket path, so it reaches a koko server only
-over a Device Connection; `d.Koko(args...)` and `d.KokoStdin(stdin,
+and a `LOCALAPPDATA` of its own, the latter where Windows keeps koko's
+runtime directory, and nothing at its socket path, so it reaches a koko
+server only over a Device Connection; `d.Koko(args...)` and `d.KokoStdin(stdin,
 args...)` run command lines on it, `d.Background(env, args...)` one that
 runs until it is stopped, such as a `koko exec` holding its SSH Session
 open, `d.Home()` is its HOME, and `d.Dial()`
@@ -338,8 +342,10 @@ no Device Mux, so its commands take the direct path.
 [`harness.NewMuxDevice(t, timings)`](../../internal/harness/devicemux.go)
 is such a device whose commands go through a Device Mux once it joins: each
 one it starts runs in the test process as `koko device-mux`, with a
-temporary runtime directory (`TMPDIR` and `XDG_RUNTIME_DIR`, `d.RuntimeDir()`)
-and `timings` as its timing hook, logs to `d.MuxLog()` and stops when the
+temporary runtime directory (`TMPDIR`, `XDG_RUNTIME_DIR` and `LOCALAPPDATA`,
+`d.RuntimeDir()`, in which `d.MuxDir()` is the directory koko makes for
+its Device Muxes, `koko` there, `koko\run` on Windows) and `timings` as its
+timing hook, logs to `d.MuxLog()` and stops when the
 test ends; `d.KillMux()` stops those running as a crash would, as their
 commands and the koko server see it, their connections closed with
 nothing sent first. `d.KokoEnv(env, args...)` runs a command line with more

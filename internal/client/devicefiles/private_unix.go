@@ -21,6 +21,23 @@ func restrict(path string, mode fs.FileMode) error {
 	return nil
 }
 
+// MkdirPrivate makes the directory dir, mode 0700, so it is private to this
+// OS user from the moment it exists. It fails wrapping fs.ErrExist when
+// something is at dir.
+func MkdirPrivate(dir string) error {
+	return os.Mkdir(dir, 0o700)
+}
+
+// closedToOthers says why no OS user but this one may reach into the
+// directory fi describes is untrue, or returns nil when it holds: its mode
+// is 0700.
+func closedToOthers(_ string, fi fs.FileInfo) error {
+	if perm := fi.Mode().Perm(); perm != 0o700 {
+		return fmt.Errorf("has mode %04o, not 0700", perm)
+	}
+	return nil
+}
+
 // isPrivate tells whether the file fi describes is as restrict leaves one
 // of koko's files: mode 0600.
 func isPrivate(_ string, fi fs.FileInfo) bool {

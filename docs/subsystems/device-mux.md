@@ -39,8 +39,8 @@ then, on a joined device, this build's Device Mux
 (`serverconn.DialDevice`), with the same code, and logs one debug line on
 stderr (`opening a direct Device Connection`, with the reason, when
 `KOKO_LOG_LEVEL=debug`), when no Device Mux can carry it: `KOKO_DIRECT=1`
-is set, the runtime directory is refused, the OS has no Device Mux yet
-(Windows, P1), the Device Mux of its build carries another home's device
+is set, the runtime directory is refused, the OS has no Device Mux (none
+but Linux, macOS and Windows), the Device Mux of its build carries another home's device
 ([one device, one home](#the-local-protocol)), or the Device Mux it
 started exited, as in a sandbox that lets it start but not listen, or did
 not answer in time. A runner without `StartDeviceMux`, as in most S1 tests,
@@ -66,17 +66,44 @@ none.
   foreground ([`Runner.runDeviceMux`](../../internal/client/cli/devicemux.go)).
   It is no command of the tree: help, completion and `koko skill` never
   list it. [`devicemux.Spawn`](../../internal/client/devicemux/socket.go)
-  starts the running binary with it, in a session of its own (no
-  controlling terminal, so no hang-up or Ctrl-C reaches it), stdin from
-  `/dev/null`, working directory `/`, the command's environment, and stdout
-  and stderr appended to the log beside its socket, emptied first past
-  1 MiB. Nothing is installed as a service.
+  starts the running binary with it, detached (`startDetached`, per OS in
+  `sys_unix.go` and `sys_windows.go`), stdin from the null device, the
+  command's environment, and stdout and stderr appended to the log beside
+  its socket, emptied first past 1 MiB. On Linux and macOS it runs in a
+  session of its own (no controlling terminal, so no hang-up or Ctrl-C
+  reaches it), working directory `/`. On Windows it starts with
+  `DETACHED_PROCESS` and `CREATE_NEW_PROCESS_GROUP` (no console, so
+  neither Ctrl-C nor the closing of the console that started it reaches
+  it), working directory the root of the Windows directory's drive, and
+  asks for `CREATE_BREAKAWAY_FROM_JOB`, to outlive a job object that ends
+  its processes when it closes, as some terminals' and CI runners' do; a
+  job that forbids breaking away refuses that start, and it starts again
+  inside the job. Nothing is installed as a service.
 - **The runtime directory** ([`devicemux.Socket`](../../internal/client/devicemux/socket.go),
-  per OS in `dir_linux.go` and `dir_darwin.go`): `$XDG_RUNTIME_DIR/koko/` on
-  Linux, `$TMPDIR/koko/` on macOS, and `/tmp/koko-<uid>/` without that
-  variable. koko makes it with mode 0700 and refuses it, so commands go
-  direct, unless it is a directory (not a symlink) this OS user owns with
-  mode 0700.
+  per OS in `platform_unix.go` and `platform_windows.go`):
+  `$XDG_RUNTIME_DIR/koko/` on Linux, `$TMPDIR/koko/` on macOS, and
+  `/tmp/koko-<uid>/` without that variable; on Windows
+  `%LOCALAPPDATA%\koko\run\`, local to the machine since a socket must not
+  roam with a domain profile, and none without `LOCALAPPDATA`. koko makes
+  it private to the user from the moment it exists
+  ([`devicefiles.MkdirPrivate`](../../internal/client/devicefiles/private_windows.go)):
+  mode 0700, or on Windows this user as owner and a protected access
+  control list with full control for this user, `SYSTEM` and
+  `Administrators`, passed on to the socket made in it, given at its
+  creation so no racing command finds it open (`%LOCALAPPDATA%\koko`
+  above it takes the user's own list); the lock and the log are made
+  private as koko's own files are
+  ([`devicefiles.MakePrivate`](../../internal/client/devicefiles/devicefiles.go)):
+  mode 0600, or that list of their own, protected. It refuses
+  it, so commands go direct, unless it is a directory (not a symlink or a
+  junction) this OS user owns (on Windows, or `Administrators` for an
+  elevated process) and no other can reach into
+  ([`devicefiles.CheckPrivateDir`](../../internal/client/devicefiles/devicefiles.go)):
+  mode 0700, or on Windows a protected list whose every entry that allows
+  access, its own or one passed on to what it holds, names one of the three
+  principals; an entry that denies access is no way in, and one of a type
+  koko does not read refuses the directory. A Device Mux checks it again at
+  each start.
 - **The name** ([`devicemux.Name`](../../internal/client/devicemux/socket.go))
   carries the build: the version, then the first 12 characters of the VCS
   revision unless the version holds them already (a pseudo-version does),
@@ -84,18 +111,30 @@ none.
   `v0.3.0-1a2b3c4d5e6f.sock`, `.lock` and `.log`. A CLI reaches only a
   Device Mux of its own build, so the local protocol needs no compatibility
   rules; after an upgrade the old one serves what it carries and idles out.
-  A socket path past 103 bytes (a Unix socket's limit on macOS is 104) is
-  refused, and the command goes direct.
+  A socket path past 103 bytes (a Unix socket's limit on macOS is 104, on
+  Linux and Windows 108) is refused, and the command goes direct; Windows
+  takes a path of 103 bytes. A profile path of ordinary length leaves room:
+  `C:\Users\alice\AppData\Local\koko\run\v0.5.0-1a2b3c4d5e6f.sock` is 62
+  bytes.
 - **One per build** ([`devicemux.Run`](../../internal/client/devicemux/devicemux.go)):
-  a Device Mux takes an exclusive `flock` on its `.lock` file first, never
-  removed, which the kernel releases when the process ends, so one that
-  crashed holds none. One that finds it taken retries for up to
-  `timing.DeviceMuxStart`, for one that is exiting, then exits 0 without
-  touching the socket. Holding the lock, it removes any socket left behind,
-  listens, and opens its Device Connection at once.
-- **Same user only.** Each connection's peer credentials (`SO_PEERCRED` on
-  Linux, `LOCAL_PEERCRED` on macOS: `peerUIDOf` in `platform_linux.go` and
-  `platform_darwin.go`) must name this OS user, or it is closed and logged.
+  a Device Mux takes an exclusive lock on its `.lock` file first, never
+  removed, which the OS releases when the process ends, so one that crashed
+  holds none: `flock` on Linux and macOS, and on Windows `LockFileEx`,
+  exclusive and failing at once, as Go's own toolchain locks a file
+  (`tryLock` in `sys_unix.go` and `sys_windows.go`). One that finds it
+  taken retries for up to `timing.DeviceMuxStart`, for one that is exiting,
+  then exits 0 without touching the socket. Holding the lock, it removes
+  any socket left behind, listens, and opens its Device Connection at once.
+- **Same user only** (`sameUser`, per OS in `platform_unix.go` and
+  `platform_windows.go`). On Linux and macOS each connection's peer
+  credentials (`SO_PEERCRED` on Linux, `LOCAL_PEERCRED` on macOS:
+  `peerUIDOf` in `platform_linux.go` and `platform_darwin.go`) must name
+  this OS user, or it is closed and logged. Windows gives a Unix socket no
+  peer credentials, so there every connection is admitted: the runtime
+  directory is the only gate, since connecting to a socket takes write
+  access to its file, which the directory passes on to this user, `SYSTEM`
+  and `Administrators` alone
+  ([ADR 0051](../adr/0051-on-windows-the-cli-is-a-device-with-the-same-files-in-the-same-places.md)).
 
 ## The local protocol
 
@@ -106,6 +145,33 @@ The koko server's own SSH, as on its Unix socket
 - A command connects to the socket and pins no host key: the socket's
   private directory is its pin. The Device Mux's host key is made in memory
   at each start. Authentication is `none`.
+- **Watched on Windows.** There the end of a Unix socket that reads can
+  miss the other end's close when it is writing itself as the close comes,
+  and then waits for ever ([the `windows` job](release.md#the-windows-job)):
+  a command writing as its Device Mux stops or exits, or a Device Mux
+  passing on what the koko server sends as a command exits. The Device Mux
+  never half-closes a command's connection, which is where the end went
+  unseen first: it closes it outright. Still, every wait on the
+  connection ends only with it: a command's `Conn.Wait`, on which `koko
+  web`, `koko tunnel` and `koko exec` learn that it ended, and the reads
+  and opens of its channels; and the Device Mux's wait for a command to
+  leave, on which its idle exit and the channels it carries for the
+  command hang. So on Windows (`watchLocal`) both ends watch the connection
+  ([`liveness.Conn.WatchAnswers`](../../internal/shared/liveness/liveness.go)):
+  once nothing has come from the other end for `timing.LocalProbe` (2 s),
+  an end probes it with `keepalive@openssh.com`, and once a probe has gone
+  unanswered for `timing.LocalAnswer` (5 s) it closes the connection. The
+  command's side ([`serverconn.HandshakeLocal`](../../internal/client/serverconn/serverconn.go))
+  then fails with `no answer for <time>` from `Conn.Wait`, as for a dead
+  Device Connection, and the Device Mux's side
+  (`deviceMux.watchCommand`) lets the command leave, so it can idle out. A
+  silence alone is never counted: a process on the same machine answers
+  whenever it is asked, and Windows' monotonic clock runs on while the
+  machine sleeps, so a sleep would read as a silence. The Device Mux's
+  side of the handshake is bounded by `timing.CommandWait` and
+  `timing.DeviceMuxStart`, the longest a command waits for it. On Linux and
+  macOS, whose sockets always tell each end of the other's close, neither
+  end probes.
 - **One device, one home.** A device is an OS user's home (P0 spec: reach,
   "One koko server per device"), and a Device Mux carries only the device
   of the home it was started in. The SSH user name is the command's
@@ -191,15 +257,37 @@ through the timing-constants hook.
   connection dead and closes it, which drops it with the error `no answer
   for <time>`. The koko server probes from its side too
   ([the Device Connection](device-connection.md#the-tcp-listener)).
-- **Probing at once.** On a wake from sleep, which it tells by the wall
-  clock having moved more than `timing.WakeCheck` (1 s) further than the
-  monotonic clock between two looks a `WakeCheck` apart, and on a change of
-  the device's routes (a routing socket on macOS, netlink on Linux:
-  `watchRoutes` in `route_darwin.go` and `route_linux.go`, none elsewhere),
-  it probes at once; that probe has `DeviceDead - DeviceProbe` (10 s) to be
-  answered, as a probe sent after `DeviceProbe` has. Tests inject both
-  signals through `timing.Timings.Wake` and `RouteChange`. While it
-  reconnects, either signal makes it try again at once.
+- **Probing at once.** On a wake from sleep and on a change of the
+  device's routes it probes at once; that probe has `DeviceDead -
+  DeviceProbe` (10 s) to be answered, as a probe sent after `DeviceProbe`
+  has. Tests inject both signals through `timing.Timings.Wake` and
+  `RouteChange`. While it reconnects, either signal makes it try again at
+  once.
+  - **A wake** is told by the clocks, looking every `timing.WakeCheck`
+    (1 s): `slept`, per OS in `platform_unix.go` and `platform_windows.go`.
+    On Linux and macOS the monotonic clock stands still while the device
+    sleeps, so a wake is the wall clock having moved more than `WakeCheck`
+    further than the monotonic one between two looks. On Windows it does
+    not: Go's monotonic clock there is the interrupt time, which the
+    runtime reads raw from `KUSER_SHARED_DATA` (`_INTERRUPT_TIME` in
+    `runtime/time_windows.h`, read by `nanotime1` in
+    `sys_windows_amd64.s`), and that count runs on through sleep and
+    hibernation, as only the unbiased interrupt time does not
+    ([`QueryUnbiasedInterruptTime`](https://learn.microsoft.com/en-us/windows/win32/api/realtimeapiset/nf-realtimeapiset-queryunbiasedinterrupttime)).
+    So on Windows a wake is the gap between two looks alone having been
+    more than `WakeCheck` longer than `WakeCheck`, and the liveness probe
+    still ends a dead Device Connection within `timing.DeviceDead`. The
+    same clock times the Device Connection's silence there, so after a
+    sleep longer than `DeviceDead` the liveness watch counts the sleep as
+    silence and ends the Device Connection as the device wakes, rather
+    than probing it first; the Device Mux then reconnects at once, and its
+    Tunnels Resume.
+  - **A route change** is told by the OS (`watchRoutes`): a routing socket
+    on macOS (`route_darwin.go`), netlink on Linux (`route_linux.go`), and
+    on Windows `NotifyRouteChange2` and `NotifyUnicastIpAddressChange`, for
+    IPv4 and IPv6, both cancelled when the Device Mux stops
+    (`route_windows.go`). Windows calls one callback, made once for the
+    process, which wakes every route watch the process holds.
 - **Reconnecting.** When its Device Connection drops, and when it starts, it
   tries to open one at once. While tries fail and something waits for a
   Device Connection (a command connecting, a channel opening), it tries
@@ -299,7 +387,9 @@ connection dropped` (server, error, such as `no answer for 15s`), the
 revocation cleanup done or failed, `refreshed the bare names` (names, how
 many, and `rewrote`, whether it wrote the file) or `cannot refresh the
 bare names` (error), `refused a connection from another OS
-user`, `koko disconnect stops the device mux` (commands), and `device mux
+user` (error, naming the peer's OS user), `closed a command's connection
+that stopped answering` (on Windows: error, such as `no answer for 7s`),
+`koko disconnect stops the device mux` (commands), and `device mux
 stopped` with its reason; at debug level, `probing the Device Connection
 at once` (reason: wake or route change) and `no route-change watch`.
 
@@ -346,9 +436,11 @@ at once` (reason: wake or route change) and `no route-change watch`.
 
 The peer-credential refusal of another OS user, and a runtime directory
 another user owns, are not tested: both need a second OS user, which a
-test run as one user cannot be, and a hook to fake one would be a fifth
-test-only hook (code layout, rule 10). `peerUID` reading the connecting
-user's id is tested.
+test run as one user cannot be, and a hook to fake one would be a sixth
+test-only hook (code layout, rule 10). `sameUser` admitting a connection
+of this user is tested, by its peer credentials on Linux and macOS. A
+wake on Windows is not: no CI runner sleeps; the rule is read from Go's
+source (above) and its arithmetic tested.
 - [`tunnel_test.go`](../../internal/client/cli/tunnel_test.go): `koko
   tunnel`'s Tunnel riding the Device Mux's Device Connection, and an open SSH
   Session keeping the Device Mux from idling out.
@@ -362,9 +454,30 @@ user's id is tested.
   status` connected (golden) and reconnecting, and `null` on the direct
   path.
 - [`devicemux` package tests](../../internal/client/devicemux): the name,
-  the macOS path limit, the runtime directory, the peer credentials, a
-  command handed the report of the next Device Connection, and what the
-  koko server sent before a revocation reaching the command in full, and
-  a command that does not read keeping the Device Mux no longer than
-  `timing.PassOn`
-  ([`revoke_test.go`](../../internal/client/devicemux/revoke_test.go)).
+  the macOS path limit, a path of 103 bytes listening on every OS, the
+  runtime directory, the same-user check, a command handed the report of
+  the next Device Connection, and what the koko server sent before a
+  revocation reaching the command in full, and a command that does not
+  read keeping the Device Mux no longer than `timing.PassOn`
+  ([`revoke_test.go`](../../internal/client/devicemux/revoke_test.go));
+  200 commands writing as the Device Mux stops each seeing their
+  connection end, and 200 commands closing as the Device Mux writes to
+  them each leaving it, so it idles out
+  ([`end_test.go`](../../internal/client/devicemux/end_test.go)), which on
+  Windows is where an end the socket missed shows; a socket a crashed
+  Device Mux left replaced by the next one
+  ([`socket_test.go`](../../internal/client/devicemux/socket_test.go)); and
+  on Windows, the Device Mux letting go of a command that answers no
+  probe, and a command ending its connection to a Device Mux that answers
+  none ([`watch_windows_test.go`](../../internal/client/devicemux/watch_windows_test.go)),
+  which no missed end, too rare to wait for, could test, and the route
+  watch registering and cancelling twice in one process, and the wake rule
+  ([`route_windows_test.go`](../../internal/client/devicemux/route_windows_test.go)).
+- [`muxprocess`](../../internal/client/muxprocess/muxprocess_test.go), a
+  package of its own: `koko join` run as a real process, the test binary
+  standing in for koko, starts a real Device Mux process through
+  `devicemux.Spawn`, which answers once `koko join` has exited and carries
+  `koko status`; `koko disconnect` stops it.
+- The `cli` and `devicemux` tests above run on Windows as they are, in the
+  [`windows` job](release.md#the-windows-job); there the runtime-directory
+  refusal is a list that lets `Everyone` in.

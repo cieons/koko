@@ -21,7 +21,6 @@ import (
 
 	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/client/devicemux"
-	"github.com/cieons/koko/internal/harness/skip"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -53,7 +52,21 @@ func TestACommandGetsTheReportOfTheNextDeviceConnection(t *testing.T) {
 // and what the Device Mux logs.
 func runMux(t *testing.T, srv *reporter, timings timing.Timings) (home, socket string, muxLog *syncBuffer) {
 	t.Helper()
-	skip.OnWindows(t, "no Device Mux runs on Windows until #153")
+	dir, err := os.MkdirTemp("", "koko-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	socket = filepath.Join(dir, "mux.sock")
+	home, muxLog = runMuxAt(t, srv, timings, socket)
+	return home, socket, muxLog
+}
+
+// runMuxAt joins a device in a new home to srv and runs its Device Mux on
+// socket until the test ends. It returns the home and what the Device Mux
+// logs.
+func runMuxAt(t *testing.T, srv *reporter, timings timing.Timings, socket string) (home string, muxLog *syncBuffer) {
+	t.Helper()
 	home = t.TempDir()
 	_, key, _ := ed25519.GenerateKey(rand.Reader)
 	staged, err := devicefiles.Stage(home, key)
@@ -69,12 +82,6 @@ func runMux(t *testing.T, srv *reporter, timings timing.Timings) (home, socket s
 	}); err != nil {
 		t.Fatal(err)
 	}
-	dir, err := os.MkdirTemp("", "koko-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	socket = filepath.Join(dir, "mux.sock")
 	muxLog = &syncBuffer{}
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -87,7 +94,7 @@ func runMux(t *testing.T, srv *reporter, timings timing.Timings) (home, socket s
 			t.Errorf("the Device Mux failed: %v", err)
 		}
 	})
-	return home, socket, muxLog
+	return home, muxLog
 }
 
 // dial connects to the Device Mux at socket, for the device whose home is
@@ -96,11 +103,12 @@ func dial(t *testing.T, socket, home string) interface {
 	Report(context.Context) (wire.Report, error)
 	OpenChannel(context.Context, string, []byte) (io.ReadWriteCloser, error)
 	Wait() error
+	Close() error
 } {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		conn, st, err := devicemux.Dial(t.Context(), socket, home)
+		conn, st, err := devicemux.Dial(t.Context(), socket, home, timing.Timings{})
 		if err == nil {
 			if !st.Connected {
 				t.Fatalf("the Device Mux answered %+v without an error", st)
@@ -141,10 +149,17 @@ func waitReport(t *testing.T, conn interface {
 // waitLog waits until the Device Mux has logged substr, at most 10 s.
 func waitLog(t *testing.T, muxLog *syncBuffer, substr string) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	waitLogWithin(t, muxLog, substr, 10*time.Second)
+}
+
+// waitLogWithin waits until the Device Mux has logged substr, at most
+// within.
+func waitLogWithin(t *testing.T, muxLog *syncBuffer, substr string, within time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(within)
 	for !strings.Contains(muxLog.String(), substr) {
 		if time.Now().After(deadline) {
-			t.Fatalf("the Device Mux did not log %q within 10 s; it logged:\n%s", substr, muxLog)
+			t.Fatalf("the Device Mux did not log %q within %v; it logged:\n%s", substr, within, muxLog)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}

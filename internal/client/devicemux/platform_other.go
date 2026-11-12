@@ -1,17 +1,30 @@
-//go:build !linux && !darwin
+//go:build !linux && !darwin && !windows
 
 package devicemux
 
 import (
 	"fmt"
+	"net"
 	"runtime"
+	"time"
 )
 
-// runtimeVar is empty outside Linux and macOS, where no Device Mux runs yet
-// (Windows is P1): commands there open their own Device Connection.
-const runtimeVar = ""
+// runtimeDir: no Device Mux runs outside Linux, macOS and Windows, so
+// commands there open their own Device Connection.
+func runtimeDir(func(string) string) (string, error) {
+	return "", fmt.Errorf("the Device Mux is not supported on %s", runtime.GOOS)
+}
 
-// peerUIDOf cannot read a peer's credentials outside Linux and macOS.
-func peerUIDOf(uintptr) (int, error) {
-	return 0, fmt.Errorf("the Device Mux is not supported on %s yet", runtime.GOOS)
+func makeRuntimeDir(string) error {
+	return fmt.Errorf("the Device Mux is not supported on %s", runtime.GOOS)
+}
+
+const watchLocal = false
+
+func sameUser(net.Conn) error {
+	return fmt.Errorf("the Device Mux is not supported on %s", runtime.GOOS)
+}
+
+func slept(last, now time.Time, _ time.Duration) time.Duration {
+	return now.Round(0).Sub(last.Round(0)) - now.Sub(last)
 }

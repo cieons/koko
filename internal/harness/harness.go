@@ -646,14 +646,16 @@ func (d *Device) environ(extra ...string) []string {
 	return slices.Concat([]string{HomeEnv(d.home)}, d.env, extra)
 }
 
-// NewDevice returns a device that has not joined a koko server. Its HOME
-// and the socket path it finds empty are temporary.
+// NewDevice returns a device that has not joined a koko server. Its HOME,
+// the socket path it finds empty, and its LOCALAPPDATA, where Windows keeps
+// koko's runtime directory and Linux and macOS read nothing, are temporary.
 func NewDevice(t testing.TB) *Device {
 	t.Helper()
 	return &Device{
 		t:      t,
 		home:   t.TempDir(),
 		runner: cli.Runner{SocketPath: filepath.Join(ShortTempDir(t), "koko.sock")},
+		env:    []string{"LOCALAPPDATA=" + ShortTempDir(t)},
 	}
 }
 

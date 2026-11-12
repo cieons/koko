@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cieons/koko/internal/harness/skip"
 	"github.com/cieons/koko/internal/shared/build"
 )
 
@@ -47,60 +46,97 @@ func TestTheSocketPathFitsMacOSsLimit(t *testing.T) {
 
 // Socket refuses a path too long for a Unix socket, so commands go direct.
 func TestSocketRefusesAPathTooLong(t *testing.T) {
-	skip.OnWindows(t, "the Device Mux has no runtime directory on Windows until #153")
 	long := filepath.Join(t.TempDir(), strings.Repeat("d", 100))
 	if err := os.Mkdir(long, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	env := map[string]string{"TMPDIR": long, "XDG_RUNTIME_DIR": long}
+	env := map[string]string{"TMPDIR": long, "XDG_RUNTIME_DIR": long, "LOCALAPPDATA": long}
 	if _, err := Socket(func(k string) string { return env[k] }); err == nil || !strings.Contains(err.Error(), "past the 103") {
 		t.Errorf("Socket in %s = %v, want it refused as too long", long, err)
 	}
 }
 
-// The runtime directory is the OS's per-user one: $XDG_RUNTIME_DIR on
-// Linux, $TMPDIR on macOS, and /tmp/koko-<uid> without it.
-func TestTheRuntimeDirectory(t *testing.T) {
-	skip.OnWindows(t, "the Device Mux has no runtime directory on Windows until #153")
-	env := map[string]string{"XDG_RUNTIME_DIR": "/run/user/1000", "TMPDIR": "/var/folders/x/T/"}
-	got, err := runtimeDir(func(k string) string { return env[k] })
-	want := map[string]string{"linux": "/run/user/1000/koko", "darwin": "/var/folders/x/T/koko"}[runtime.GOOS]
-	if err != nil || got != want {
-		t.Errorf("runtimeDir = %q, %v, want %q", got, err, want)
-	}
-	got, err = runtimeDir(func(string) string { return "" })
-	if want := fmt.Sprintf("/tmp/koko-%d", os.Getuid()); err != nil || got != want {
-		t.Errorf("runtimeDir without the variable = %q, %v, want %q", got, err, want)
-	}
-}
-
-// The peer-credential check reads the OS user of the process that
-// connected: this one's, here.
-func TestPeerUIDIsTheConnectingUser(t *testing.T) {
-	skip.OnWindows(t, "Windows gives a Unix socket no peer credentials: the private directory is the Device Mux's only gate there (ADR 0051)")
+// A socket path of the longest length Socket allows, 103 bytes, takes a
+// listener and a connection, on Windows as on Linux and macOS.
+func TestASocketPathOf103BytesListens(t *testing.T) {
 	dir, err := os.MkdirTemp("", "koko-")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	var lc net.ListenConfig
-	ln, err := lc.Listen(t.Context(), "unix", filepath.Join(dir, "s.sock"))
+	pad := maxSocketPath - len(dir) - len(string(filepath.Separator)) - len(".sock")
+	if pad < 1 {
+		t.Fatalf("the temporary directory %s is too long a path to hold a socket of %d bytes", dir, maxSocketPath)
+	}
+	name := strings.Repeat("s", pad) + ".sock"
+	path := filepath.Join(dir, name)
+	if len(path) != maxSocketPath {
+		t.Fatalf("%s is %d bytes, want %d", path, len(path), maxSocketPath)
+	}
+	nc, _ := connect(t, path)
+	if _, err := nc.Write([]byte("x")); err != nil {
+		t.Errorf("write on a socket at a path of %d bytes: %v", len(path), err)
+	}
+}
+
+// The runtime directory is the OS's per-user one: $XDG_RUNTIME_DIR on
+// Linux, $TMPDIR on macOS, and /tmp/koko-<uid> without it; on Windows,
+// %LOCALAPPDATA%\koko\run, and none without LOCALAPPDATA.
+func TestTheRuntimeDirectory(t *testing.T) {
+	env := map[string]string{"XDG_RUNTIME_DIR": "/run/user/1000", "TMPDIR": "/var/folders/x/T/", "LOCALAPPDATA": `C:\Users\alice\AppData\Local`}
+	got, err := runtimeDir(func(k string) string { return env[k] })
+	want := map[string]string{"linux": "/run/user/1000/koko", "darwin": "/var/folders/x/T/koko", "windows": `C:\Users\alice\AppData\Local\koko\run`}[runtime.GOOS]
+	if err != nil || got != want {
+		t.Errorf("runtimeDir = %q, %v, want %q", got, err, want)
+	}
+	got, err = runtimeDir(func(string) string { return "" })
+	if runtime.GOOS == "windows" {
+		if err == nil || !strings.Contains(err.Error(), "LOCALAPPDATA is not set") {
+			t.Errorf("runtimeDir without LOCALAPPDATA = %q, %v, want it refused", got, err)
+		}
+		return
+	}
+	if want := fmt.Sprintf("/tmp/koko-%d", os.Getuid()); err != nil || got != want {
+		t.Errorf("runtimeDir without the variable = %q, %v, want %q", got, err, want)
+	}
+}
+
+// The same-user check admits a connection from a process of this OS user:
+// on Linux and macOS by its peer credentials, and on Windows, which gives a
+// Unix socket none, every connection, the runtime directory being the
+// only gate there (ADR 0051).
+func TestTheSameUserCheckAdmitsThisUser(t *testing.T) {
+	dir, err := os.MkdirTemp("", "koko-")
 	if err != nil {
 		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	_, nc := connect(t, filepath.Join(dir, "s.sock"))
+	if err := sameUser(nc); err != nil {
+		t.Errorf("sameUser = %v, want this OS user's connection admitted", err)
+	}
+}
+
+// connect listens on a Unix socket at path and connects to it, and returns
+// both ends of the connection, closed when the test ends.
+func connect(t *testing.T, path string) (dialled, accepted net.Conn) {
+	t.Helper()
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "unix", path)
+	if err != nil {
+		t.Fatalf("listen on %s (%d bytes): %v", path, len(path), err)
 	}
 	t.Cleanup(func() { _ = ln.Close() })
 	var d net.Dialer
-	c, err := d.DialContext(t.Context(), "unix", ln.Addr().String())
+	dialled, err = d.DialContext(t.Context(), "unix", path)
+	if err != nil {
+		t.Fatalf("connect to %s (%d bytes): %v", path, len(path), err)
+	}
+	t.Cleanup(func() { _ = dialled.Close() })
+	accepted, err = ln.Accept()
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = c.Close() })
-	nc, err := ln.Accept()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = nc.Close() })
-	if uid, err := peerUID(nc); err != nil || uid != os.Getuid() {
-		t.Errorf("peerUID = %d, %v, want %d", uid, err, os.Getuid())
-	}
+	t.Cleanup(func() { _ = accepted.Close() })
+	return dialled, accepted
 }

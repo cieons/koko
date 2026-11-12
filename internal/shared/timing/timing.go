@@ -81,10 +81,12 @@ const (
 	// up, and hold up the tries after it, an address koko connect saved
 	// among them.
 	DeviceConnectAttempt = 10 * time.Second
-	// WakeCheck is how often the Device Mux compares the wall clock with the
-	// monotonic clock, which stands still while the device sleeps: the wall
-	// clock having moved more than WakeCheck further than the monotonic one
-	// since the last look is a wake.
+	// WakeCheck is how often the Device Mux looks at the clocks for a wake:
+	// on Linux and macOS, whose monotonic clock stands still while the
+	// device sleeps, the wall clock having moved more than WakeCheck further
+	// than the monotonic one since the last look is a wake; on Windows,
+	// whose monotonic clock runs on, the gap since the last look having been
+	// more than WakeCheck longer than WakeCheck is.
 	WakeCheck = time.Second
 	// BareNameRefresh is how long the Device Mux waits after it refreshed
 	// the bare names in koko's ssh_config, which it does first once it holds
@@ -115,6 +117,16 @@ const (
 	// Device Mux waits for the Tunnels it carries to pass on their close
 	// frames.
 	PassOn = 5 * time.Second
+	// LocalProbe is how long a command's connection to its Device Mux goes
+	// without a byte from the other end, on Windows, before that end probes
+	// it with keepalive@openssh.com, and LocalAnswer how long the probe then
+	// has to be answered before the end declares the connection dead and
+	// closes it. Both ends watch it there, since a Unix socket on Windows
+	// may never tell one end that the other closed it; a peer on the same
+	// machine answers at once, so a silence alone is never counted
+	// (liveness.Conn.WatchAnswers).
+	LocalProbe  = 2 * time.Second
+	LocalAnswer = 5 * time.Second
 )
 
 // Timings is the timing-constants hook. Each field is named after its
@@ -144,6 +156,8 @@ type Timings struct {
 	ResumeExchange       time.Duration
 	ResumeGiveUp         time.Duration
 	PassOn               time.Duration
+	LocalProbe           time.Duration
+	LocalAnswer          time.Duration
 
 	// Wake and RouteChange stand in for the Device Mux's watches of the
 	// device waking from sleep and of a change of its network routes: each
@@ -179,6 +193,8 @@ func (t Timings) Resolve() Timings {
 	t.ResumeExchange = cmp.Or(t.ResumeExchange, ResumeExchange)
 	t.ResumeGiveUp = cmp.Or(t.ResumeGiveUp, ResumeGiveUp)
 	t.PassOn = cmp.Or(t.PassOn, PassOn)
+	t.LocalProbe = cmp.Or(t.LocalProbe, LocalProbe)
+	t.LocalAnswer = cmp.Or(t.LocalAnswer, LocalAnswer)
 	return t
 }
 

@@ -408,7 +408,10 @@ job ends at 20.
 **How long it takes.** `internal/client/cli` took 138 to 233 s in five
 runs on 2026-11-11 and 2026-11-12, and every other package under 2 s; the
 job took 4 to 6 minutes. The same package takes 168 to 218 s in the Ubuntu
-job, which runs it under the race detector. If it passes 5 minutes on
+job, which runs it under the race detector. With the Device Mux's tests
+running on Windows too ([#153](https://github.com/cieons/koko/issues/153)),
+`internal/client/cli` took 156 and 172 s in two runs on 2026-11-12, and
+`internal/client/devicemux` about 6 s. If it passes 5 minutes on
 Windows, the next ticket that adds tests there says so before it adds
 them.
 
@@ -467,7 +470,15 @@ with, so the golden files compare on Windows too.
   a path only tests take on Windows, so
   `TestWebEndsWhenTheKokoServerStops` is left out there. The Device Mux on
   Windows ([#153](https://github.com/cieons/koko/issues/153)) listens on a
-  Unix socket and has to hold without relying on that end of stream.
+  Unix socket, so there both ends of a command's connection to it probe
+  the other once it goes quiet and close it once a probe goes unanswered
+  ([the Device Mux](device-mux.md#the-local-protocol)). How rare it is:
+  #153 probed plain `net` sockets on the runner, the reading end writing
+  all the while, and no end went unseen in 4,000 connections the peer
+  closed, 4,000 it half-closed and then closed, and 400 whose peer
+  process exited. It is rarer than #152's one sighting in 400 suggested,
+  but `koko web` over SSH met it, and whatever brings it about, the probe
+  bounds it.
 
 ## The real-systemd check
 

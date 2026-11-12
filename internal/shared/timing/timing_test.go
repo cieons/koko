@@ -36,6 +36,8 @@ func TestZeroTimingsAreTheProductsConstants(t *testing.T) {
 		ResumeExchange:       5 * time.Second,
 		ResumeGiveUp:         2 * time.Minute,
 		PassOn:               5 * time.Second,
+		LocalProbe:           2 * time.Second,
+		LocalAnswer:          5 * time.Second,
 	}
 	if got != want {
 		t.Errorf("Timings{}.Resolve() = %+v, want %+v", got, want)
@@ -69,6 +71,8 @@ func TestASetTimingReplacesOnlyItsConstant(t *testing.T) {
 		ResumeExchange:       5 * time.Second,
 		ResumeGiveUp:         2 * time.Minute,
 		PassOn:               5 * time.Second,
+		LocalProbe:           2 * time.Second,
+		LocalAnswer:          5 * time.Second,
 	}
 	if got != want {
 		t.Errorf("Resolve() = %+v, want %+v", got, want)

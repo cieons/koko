@@ -190,6 +190,31 @@ func (s *Staged) stage(key ed25519.PrivateKey) error {
 	return err
 }
 
+// MakePrivate makes the file at path private to this OS user, as koko
+// makes its own files: mode 0600 on Linux and macOS, and on Windows this
+// user as its owner and a protected access control list for this user,
+// SYSTEM and Administrators.
+func MakePrivate(path string) error {
+	return restrict(path, 0o600)
+}
+
+// CheckPrivateDir says why the directory at path, whose Lstat is fi, is
+// not one that no other OS user can reach into, or returns nil when it is:
+// a directory, not a link, that this user owns, of mode 0700 on Linux and
+// macOS, and on Windows with a protected access control list that lets no
+// principal but this user, SYSTEM and Administrators in. Its error reads
+// after the directory's name, as in "has mode 0755, not 0700", for the
+// caller to name it.
+func CheckPrivateDir(path string, fi fs.FileInfo) error {
+	switch {
+	case !fi.IsDir():
+		return errors.New("is not a directory")
+	case !ownedByMe(path, fi):
+		return errors.New("belongs to another user")
+	}
+	return closedToOthers(path, fi)
+}
+
 // makeDir makes ~/.ssh and ~/.ssh/koko/ under home, private to this user
 // (mode 0700), when they are missing, and makes koko's own directory, never
 // a ~/.ssh that was there, private even when it was there already. It

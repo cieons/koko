@@ -199,7 +199,7 @@ func TestStatusWhenTheKokoServerIsUnreachable(t *testing.T) {
 func statusShowsTheDeviceMux(t *testing.T) {
 	h, _, d := muxDevice(t, timing.Timings{CommandWait: 200 * time.Millisecond})
 	c := readClientConfig(t, d)
-	socket := filepath.Join(d.RuntimeDir(), "koko", devicemux.Name(build.Read())+".sock")
+	socket := filepath.Join(d.MuxDir(), devicemux.Name(build.Read())+".sock")
 	s, out := status(t, d.Koko, c.ServerAddress, "<server address>", socket, "<socket>")
 	harness.Golden(t, "status-device-mux.json", out)
 	if m := s.DeviceMux; m == nil || m.Socket != socket || m.State != "connected" || m.LastError != nil || s.ServerVersion == nil {

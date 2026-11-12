@@ -5,7 +5,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +15,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/client/devicemux"
 	"github.com/cieons/koko/internal/client/serverconn"
 	"github.com/cieons/koko/internal/harness"
@@ -195,7 +198,8 @@ func aDeviceMuxThatExitsAtOnceSendsTheCommandDirect(t *testing.T) {
 	d := harness.NewMuxDevice(t, timing.Timings{DeviceMuxStart: start})
 	// A directory at its socket's path, which it cannot remove, stops every
 	// Device Mux at its start.
-	socket := filepath.Join(d.RuntimeDir(), "koko", devicemux.Name(build.Read())+".sock")
+	socket := filepath.Join(d.MuxDir(), devicemux.Name(build.Read())+".sock")
+	makeMuxDir(t, d)
 	mustDo(t, os.MkdirAll(filepath.Join(socket, "in-the-way"), 0o700))
 	d.Koko("join", deviceAdd(t, h, "laptop").Code).WantSuccess(t)
 
@@ -245,7 +249,7 @@ func theDeviceMuxIdlesOutWithNothingConnected(t *testing.T) {
 
 	_ = held.Close()
 	waitLogs(t, d, idledOut, stops+1)
-	socket := filepath.Join(d.RuntimeDir(), "koko", devicemux.Name(build.Read())+".sock")
+	socket := filepath.Join(d.MuxDir(), devicemux.Name(build.Read())+".sock")
 	if _, err := os.Lstat(socket); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("the Device Mux left its socket %s behind (%v)", socket, err)
 	}
@@ -306,19 +310,26 @@ func TestRevokingTheDeviceInUseThroughTheDeviceMux(t *testing.T) {
 	d.Koko("space", "ls", "--json").WantError(t, 1, "revoked")
 }
 
-// A runtime directory koko cannot trust (another mode than 0700, a symlink,
-// a file) keeps the Device Mux from starting: koko join still joins, and
-// each command opens its own Device Connection, saying why in one debug
-// line when KOKO_LOG_LEVEL=debug asks for it. KOKO_DIRECT=1 does the same.
+// A runtime directory koko cannot trust (one other users can reach into: of
+// mode 0755 on Linux and macOS, or whose access control list lets Everyone
+// in on Windows; a symlink; a file) keeps the Device Mux from starting:
+// koko join still joins, and each command opens its own Device Connection,
+// saying why in one debug line when KOKO_LOG_LEVEL=debug asks for it.
+// KOKO_DIRECT=1 does the same.
 func TestTheDirectPath(t *testing.T) {
 	t.Parallel()
+	othersIn := "has mode 0755, not 0700"
+	if runtime.GOOS == "windows" {
+		othersIn = "(S-1-1-0) in" // Everyone, by its name in any language"
+	}
 	for name, c := range map[string]struct {
 		spoil func(t *testing.T, dir string)
 		why   string
 	}{
-		"mode 0755": {func(t *testing.T, dir string) {
-			mustDo(t, os.Mkdir(dir, 0o700), os.Chmod(dir, 0o755))
-		}, "has mode 0755, not 0700"},
+		"open to other users": {func(t *testing.T, dir string) {
+			mustDo(t, devicefiles.MkdirPrivate(dir))
+			harness.LetOthersIn(t, dir)
+		}, othersIn},
 		"a symlink": {func(t *testing.T, dir string) {
 			mustDo(t, os.Symlink(t.TempDir(), dir))
 		}, "is not a directory"},
@@ -329,7 +340,9 @@ func TestTheDirectPath(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			h, fwd, _, _ := initThrough(t)
 			d := harness.NewMuxDevice(t, timing.Timings{})
-			c.spoil(t, filepath.Join(d.RuntimeDir(), "koko"))
+			// On Windows the directory is koko\run in the runtime directory.
+			mustDo(t, os.MkdirAll(filepath.Dir(d.MuxDir()), 0o700))
+			c.spoil(t, d.MuxDir())
 			d.Koko("join", deviceAdd(t, h, "laptop").Code).WantSuccess(t)
 			d.Koko("space", "ls", "--json").WantSuccess(t)
 			wantDirect(t, d.KokoEnv([]string{"KOKO_LOG_LEVEL=debug"}, "space", "ls", "--json"), c.why)
@@ -349,16 +362,25 @@ func TestTheDirectPath(t *testing.T) {
 }
 
 // wantDirect fails the test unless the command succeeded and logged one
-// debug line on stderr, saying it opened a direct Device Connection and why.
+// debug line on stderr, saying it opened a direct Device Connection and why,
+// as the log quotes it: a Windows path's backslashes doubled.
 func wantDirect(t *testing.T, r harness.Result, why string) {
 	t.Helper()
 	if r.Status != 0 || r.Stdout == "" {
 		t.Fatalf("exit status %d, stdout %q, stderr %q, want success", r.Status, r.Stdout, r.Stderr)
 	}
+	quoted := strings.Trim(strconv.Quote(why), `"`)
 	lines := strings.Split(strings.TrimSuffix(r.Stderr, "\n"), "\n")
-	if len(lines) != 1 || !strings.Contains(lines[0], `level=DEBUG msg="opening a direct Device Connection"`) || !strings.Contains(lines[0], why) {
+	if len(lines) != 1 || !strings.Contains(lines[0], `level=DEBUG msg="opening a direct Device Connection"`) || !strings.Contains(lines[0], quoted) {
 		t.Errorf("stderr is %q, want one debug line saying the command went direct because %s", r.Stderr, why)
 	}
+}
+
+// makeMuxDir makes the directory of the device's Device Muxes as koko makes
+// it, private to this OS user.
+func makeMuxDir(t *testing.T, d *harness.Device) {
+	t.Helper()
+	mustDo(t, os.MkdirAll(filepath.Dir(d.MuxDir()), 0o700), devicefiles.MkdirPrivate(d.MuxDir()))
 }
 
 func mustDo(t *testing.T, errs ...error) {
