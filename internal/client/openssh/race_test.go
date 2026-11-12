@@ -1,4 +1,4 @@
-//go:build unix && race
+//go:build race
 
 package openssh_test
 

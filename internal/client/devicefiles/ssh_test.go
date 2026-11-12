@@ -27,8 +27,9 @@ var openSSH73 = []string{
 // identical but for their names, so that no line passes 1 KiB; every name
 // is there once. The file opens with a comment and then its Host line, no
 // directive above it, uses only keywords OpenSSH 7.3 knows, names the koko
-// binary and the known_hosts file by absolute, double-quoted paths, passes
-// %h single-quoted, and has mode 0600.
+// binary by its absolute, double-quoted path, and the known_hosts file so
+// too on Linux and macOS and under ~ on Windows, passes %h single-quoted,
+// and has mode 0600.
 func TestKokosSSHConfigSplitsALongNameList(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, ".ssh", "koko"), 0o700); err != nil {
@@ -51,7 +52,7 @@ func TestKokosSSHConfigSplitsALongNameList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	harness.Golden(t, "ssh_config-split", harness.Paths(string(b), koko, "<koko>", home, "<home>"))
+	harness.Golden(t, "ssh_config-split"+goldenSuffix, harness.Paths(string(b), koko, "<koko>", home, "<home>"))
 
 	var hosts []string
 	var bodies [][]string
@@ -77,7 +78,7 @@ func TestKokosSSHConfigSplitsALongNameList(t *testing.T) {
 				t.Errorf("ProxyCommand %s, want %s", args, want)
 			}
 		case "UserKnownHostsFile":
-			if want := `"` + filepath.ToSlash(filepath.Join(home, ".ssh", "koko", "known_hosts")) + `"`; args != want {
+			if want := wantKnownHosts(home); args != want {
 				t.Errorf("UserKnownHostsFile %s, want %s", args, want)
 			}
 		}
@@ -103,18 +104,17 @@ func TestKokosSSHConfigSplitsALongNameList(t *testing.T) {
 // that is this very binary, such as a package manager's link that outlives
 // an upgrade, and by the path the OS gives for the binary otherwise.
 func TestKokosSSHConfigRunsKokoByItsPathOnPATH(t *testing.T) {
-	skip.OnWindows(t, "the koko a PATH lookup finds is koko.exe on Windows, which #155 writes koko's ssh_config for")
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
 	linked := t.TempDir()
-	link := filepath.Join(linked, "koko")
+	link := filepath.Join(linked, kokoFile)
 	if err := os.Symlink(self, link); err != nil {
 		t.Fatal(err)
 	}
 	another := t.TempDir()
-	if err := os.WriteFile(filepath.Join(another, "koko"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(another, kokoFile), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
@@ -137,30 +137,23 @@ func TestKokosSSHConfigRunsKokoByItsPathOnPATH(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if want := "\n  ProxyCommand \"" + c.want + "\" tunnel '%h'\n"; !strings.Contains(string(b), want) {
+		if want := "\n  ProxyCommand \"" + filepath.ToSlash(c.want) + "\" tunnel '%h'\n"; !strings.Contains(string(b), want) {
 			t.Errorf("with PATH=%s, koko's ssh_config is\n%s\nwith no line %q", c.path, b, want)
 		}
 	}
 }
 
-// A home directory whose path ssh or its shell would read as something else
-// inside double quotes, and a name that is not a Host's, are refused, and
-// no ssh_config is written.
+// A name that is not a Host's is refused, and no ssh_config is written.
 func TestKokosSSHConfigRefusesWhatSSHWouldMisread(t *testing.T) {
-	for name, c := range map[string]struct {
-		home  string
-		names []string
-	}{
-		"a $ in the home directory":  {home: "a$HOME"},
-		"a %h in the home directory": {home: "a%h"},
-		"a name with a space":        {home: "ok", names: []string{"web1 db1"}},
-		"a pattern for a name":       {home: "ok", names: []string{"*"}},
+	for name, names := range map[string][]string{
+		"a name with a space":  {"web1 db1"},
+		"a pattern for a name": {"*"},
 	} {
-		home := filepath.Join(t.TempDir(), c.home)
+		home := t.TempDir()
 		if err := os.MkdirAll(filepath.Join(home, ".ssh", "koko"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := devicefiles.WriteSSHConfig(home, c.names); err == nil {
+		if _, err := devicefiles.WriteSSHConfig(home, names); err == nil {
 			t.Errorf("%s: koko wrote its ssh_config", name)
 		}
 		if _, err := os.Stat(filepath.Join(home, ".ssh", "koko", "ssh_config")); err == nil {
@@ -169,19 +162,58 @@ func TestKokosSSHConfigRefusesWhatSSHWouldMisread(t *testing.T) {
 	}
 }
 
-// A home directory whose path holds a double quote is refused too.
-func TestKokosSSHConfigRefusesAQuoteInTheHome(t *testing.T) {
-	skip.OnWindows(t, "no path on Windows holds a double quote, so no home directory there does")
-	home := filepath.Join(t.TempDir(), `a"b`)
-	if err := os.MkdirAll(filepath.Join(home, ".ssh", "koko"), 0o700); err != nil {
+// A home directory whose path ssh or its shell would read as something else
+// inside double quotes, in the known_hosts path koko's ssh_config names, is
+// refused, and no ssh_config is written.
+func TestKokosSSHConfigRefusesAHomeSSHWouldMisread(t *testing.T) {
+	skip.OnWindows(t, "koko's ssh_config names known_hosts under ~ on Windows, so the home directory's path is not in it, and no path there holds a double quote")
+	for name, dir := range map[string]string{
+		"a $ in the home directory":  "a$HOME",
+		"a %h in the home directory": "a%h",
+		"a double quote in the home": `a"b`,
+	} {
+		home := filepath.Join(t.TempDir(), dir)
+		if err := os.MkdirAll(filepath.Join(home, ".ssh", "koko"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := devicefiles.WriteSSHConfig(home, nil); err == nil {
+			t.Errorf("%s: koko wrote its ssh_config under %s", name, home)
+		}
+		if _, err := os.Stat(filepath.Join(home, ".ssh", "koko", "ssh_config")); err == nil {
+			t.Errorf("%s: an ssh_config is there under %s", name, home)
+		}
+	}
+}
+
+// For a home directory whose name holds a space, with koko where install
+// puts it, ~/.local/bin, koko's ssh_config runs koko by its double-quoted
+// path, written with forward slashes on Windows, and names known_hosts by
+// its double-quoted path on Linux and macOS and under ~ on Windows.
+func TestKokosSSHConfigForAHomeWithASpace(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := devicefiles.WriteSSHConfig(home, nil); err == nil {
-		t.Errorf("koko wrote its ssh_config under %s", home)
+	profiles := t.TempDir()
+	home := filepath.Join(profiles, "Alice Smith")
+	bin := filepath.Join(home, ".local", "bin")
+	for _, d := range []string{bin, filepath.Join(home, ".ssh", "koko")} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, err := os.Stat(filepath.Join(home, ".ssh", "koko", "ssh_config")); err == nil {
-		t.Errorf("an ssh_config is there under %s", home)
+	if err := os.Symlink(self, filepath.Join(bin, kokoFile)); err != nil {
+		t.Fatal(err)
 	}
+	t.Setenv("PATH", bin)
+	if _, err := devicefiles.WriteSSHConfig(home, []string{"web1"}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(home, ".ssh", "koko", "ssh_config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness.Golden(t, "ssh_config-home-with-a-space"+goldenSuffix, harness.Paths(string(b), profiles, "<profiles>"))
 }
 
 // AddressNames lists, in the file's order, the bare names in koko's
@@ -226,13 +258,12 @@ func TestAddressNamesAreTheNamesSSHReadsAsAnIPv4Address(t *testing.T) {
 // PATH does, or an old build's after an upgrade, keeps it. A file that names
 // no koko gets this binary.
 func TestARefreshKeepsTheKokoTheFileRuns(t *testing.T) {
-	skip.OnWindows(t, "the koko a PATH lookup finds is koko.exe on Windows, which #155 writes koko's ssh_config for")
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
 	linked := t.TempDir()
-	link := filepath.Join(linked, "koko")
+	link := filepath.Join(linked, kokoFile)
 	if err := os.Symlink(self, link); err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +272,7 @@ func TestARefreshKeepsTheKokoTheFileRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(home, ".ssh", "koko", "ssh_config")
-	proxy := func(koko string) string { return "\n  ProxyCommand \"" + koko + "\" tunnel '%h'\n" }
+	proxy := func(koko string) string { return "\n  ProxyCommand \"" + filepath.ToSlash(koko) + "\" tunnel '%h'\n" }
 
 	t.Setenv("PATH", linked)
 	if _, err := devicefiles.WriteSSHConfig(home, []string{"web1"}); err != nil {

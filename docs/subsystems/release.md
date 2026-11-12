@@ -565,9 +565,22 @@ for Linux, and is tested there and on macOS. The web UI's build and
 Vitest, which do not differ by OS. Lint, which `make lint` runs for
 `GOOS=windows` in the other two jobs. The race detector, which needs a C
 toolchain everywhere but on macOS; the Linux and macOS jobs run the same Go
-code under it, but for the per-OS files. The real OpenSSH test
-(`internal/client/openssh`) builds for Unix only until
-[#155](https://github.com/cieons/koko/issues/155).
+code under it, but for the per-OS files.
+
+**The real OpenSSH test on Windows**
+([#155](https://github.com/cieons/koko/issues/155);
+[code layout](code-layout.md#the-real-openssh-test)) builds `koko.exe`,
+joins under a profile directory named `Alice Smith`, and runs OpenSSH for
+Windows (`ssh`, `scp`, `sftp`, a local forward) and Git for Windows' `ssh`
+and `scp` through `koko tunnel` and a real Device Mux. It settled the
+spec's last open point on 2026-11-12: OpenSSH for Windows 9.5p2 starts the
+ProxyCommand's double-quoted koko path written with forward slashes, a
+space in it, so the fallback to single backslashes was not needed; Git
+for Windows' OpenSSH 10.6p1 runs the same line through its `sh`. Git's
+client reads the `~` of `UserKnownHostsFile` from `HOME`, and from
+`USERPROFILE` when `HOME` is unset: a run without `HOME` passed too.
+`internal/client/openssh` took 13 to 17 s in four runs on the runner, and
+`internal/client/cli` 199 to 212 s beside it.
 
 **The harness on Windows.** The CLI's tests start the koko server in the
 test process, as on macOS; `kokod` itself still refuses to start there.

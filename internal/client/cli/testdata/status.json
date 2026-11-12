@@ -14,5 +14,7 @@
   "device_mux": null,
   "revocation": null,
   "include_warning": null,
+  "home_warning": null,
+  "ssh_client_warning": null,
   "names_read_as_addresses": []
 }
