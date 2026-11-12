@@ -800,6 +800,15 @@ test("a browser tab duplicated from a live one leaves that one's SSH Sessions al
   expect(original.socket.closed).toBe(false);
   expect(original.socket.framesSent).toEqual([]);
   expect(original.state()).toEqual({ status: "connected" });
+
+  // Once the original lets its SSH Session go, as a browser tab closed whose
+  // close may never have arrived, the copy makes sure it is ended.
+  const sockets = copy.sockets.length;
+  original.connection.end();
+  await passed();
+  expect(copy.sockets).toHaveLength(sockets + 1);
+  latest(copy.sockets).opened();
+  expect(latest(copy.sockets).first).toEqual({ protocol: 1, end: id });
 });
 
 test("a document that cannot tell whose the kept ids are ends none of them and forgets them", async () => {
@@ -810,4 +819,20 @@ test("a document that cannot tell whose the kept ids are ends none of them and f
   latest(sockets).opened();
   expect(latest(sockets).first).toMatchObject({ open: "web1" });
   expect(kept()).toEqual([]);
+});
+
+test("a reload whose earlier document still held its locks when asked ends its SSH Sessions once they are let go", async () => {
+  await connected();
+  pagehide(false); // the next document asks before the browser lets this one's locks go
+
+  const after = terminals();
+  await opening(after);
+  const firsts = after.sockets.map((socket) => {
+    socket.opened();
+    return socket.first;
+  });
+  expect(firsts).toEqual([
+    { protocol: 1, open: "web1", cols: 120, rows: 36 },
+    { protocol: 1, end: id },
+  ]);
 });

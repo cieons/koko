@@ -94,8 +94,11 @@ the cookie checked at the handshake says it, with no inner SSH.
   `sessionStorage`, ids and all, and must leave that one's SSH Sessions
   alone (the router's rule, 2026-11-12). Each document holds a Web Lock
   named after each SSH Session it holds, which the browser lets go with
-  the document, so a new document ends only the kept ids no live document
-  holds, and forgets the rest. A browser that cannot tell, having no Web
+  the document, so a new document ends at once only the kept ids no live
+  document holds. It ends each of the rest once the document holding it
+  lets it go without ending it: a browser tab closed whose close never
+  arrived, or the document before a reload whose locks the browser let go
+  only after the new one asked. A browser that cannot tell, having no Web
   Locks, ends none, and the Gateway ends them at the grace.
 - koko gains two dependencies, `github.com/coder/websocket` and
   `github.com/pkg/sftp`, each the standard choice for what it does in Go.

@@ -150,9 +150,12 @@ async function heldElsewhere(): Promise<Set<string> | null> {
 
 /**
  * endLeft ends the SSH Sessions an earlier document of this browser tab
- * left, and forgets the kept ids it may not end: those another document
+ * left, and forgets the kept ids it may not end now: those another document
  * holds, and every one when the browser cannot tell whose they are, which
- * the Gateway then ends at the grace.
+ * the Gateway then ends at the grace. An id another document holds is
+ * ended once that document lets it go without ending it, as when it is
+ * closed and its close never arrived, or when it is the document before a
+ * reload whose locks the browser had not yet let go.
  */
 async function endLeft(dial: () => TerminalSocket): Promise<void> {
   const kept = keptSessions();
@@ -162,6 +165,11 @@ async function endLeft(dial: () => TerminalSocket): Promise<void> {
   const elsewhere = await heldElsewhere();
   const ours = elsewhere === null ? [] : kept.filter((id) => !elsewhere.has(id));
   keepSessions((ids) => ids.filter((id) => ours.includes(id)));
+  for (const id of kept.filter((each) => elsewhere?.has(each))) {
+    locks()
+      ?.request(lockPrefix + id, () => endSession(dial, id))
+      .catch(() => {});
+  }
   await Promise.all(ours.map((id) => endSession(dial, id)));
 }
 
