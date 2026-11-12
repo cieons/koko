@@ -129,6 +129,7 @@ export default {
   "host.page.breadcrumb": "当前位置",
   "host.page.more": "{name} 的更多操作",
   "host.page.reach": "访问方式",
+  "host.page.openTerminal": "打开终端",
   "host.page.sshCommand": "SSH 命令",
   "host.page.reachManaged": "在已加入本 koko 服务器的设备上执行。koko 以 {account} 账户登录；主机的密钥始终由 koko 保管。",
   "host.page.reachRegistered": "koko 尚无法登录该主机。请在装有 koko 命令行工具的设备上执行接入：",

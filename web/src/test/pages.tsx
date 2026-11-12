@@ -6,6 +6,7 @@ import { type User, UserCurrent } from "../api/user";
 import { App } from "../App";
 import { routes } from "../routes";
 import { loadPage } from "../shell/lazyPage";
+import { WorkspaceLayer } from "../terminal/routes";
 import type { FakeApi } from "./fakeApi";
 
 // Helpers for the tests of the web UI's pages, which run the whole app, its
@@ -18,7 +19,7 @@ import type { FakeApi } from "./fakeApi";
 // never for its module to load. The hook's limit is a ceiling for a slow
 // runner, not a wait: it ends as soon as the pages have loaded.
 beforeAll(async () => {
-  await Promise.all(routes.map((route) => loadPage(route.page)));
+  await Promise.all([...routes.map((route) => loadPage(route.page)), loadPage(WorkspaceLayer)]);
 }, 60_000);
 
 /** preferLanguages makes the browser prefer these languages for one test. */

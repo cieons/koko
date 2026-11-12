@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { FakeLocks } from "../test/terminal";
 import { type ConnectionState, type TerminalSocket, Terminals, timing } from "./connection";
 import { encodeRecord, RecordReader, type TerminalRecord } from "./records";
 import { encodeFrame, type Frame, FrameReader } from "./stream";
@@ -14,33 +15,6 @@ const start = Date.parse("2026-11-12T12:00:00Z");
 const id = "0123456789abcdef0123456789abcdef";
 const keptKey = "koko.terminal.sessions";
 const kept = () => JSON.parse(sessionStorage.getItem(keptKey) ?? "[]") as string[];
-
-/**
- * FakeLocks is the browser's Web Locks, which every document a test plays
- * shares, as the documents of one browser do.
- */
-class FakeLocks {
-  readonly held = new Set<string>();
-  /** queues holds, for each lock asked for, when its last request lets it go. */
-  private readonly queues = new Map<string, Promise<void>>();
-
-  /** request runs callback once the lock is free, and holds it until callback's promise settles. */
-  request(name: string, callback: () => Promise<void>): Promise<void> {
-    const granted = (this.queues.get(name) ?? Promise.resolve()).then(() => {
-      this.held.add(name);
-      return callback().finally(() => this.held.delete(name));
-    });
-    this.queues.set(
-      name,
-      granted.catch(() => {}),
-    );
-    return granted;
-  }
-
-  async query(): Promise<LockManagerSnapshot> {
-    return { held: [...this.held].map((name) => ({ name, mode: "exclusive" })), pending: [] };
-  }
-}
 
 let locks = new FakeLocks();
 

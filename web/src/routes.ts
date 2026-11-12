@@ -4,6 +4,7 @@ import { signinRoutes } from "./pages/signin/routes";
 import { spaceRoutes } from "./pages/space/routes";
 import { userRoutes } from "./pages/user/routes";
 import type { Route } from "./shell/router";
+import { terminalRoutes } from "./terminal/routes";
 
 /**
  * routes are the web UI's pages, in the order the frame links its places
@@ -11,4 +12,11 @@ import type { Route } from "./shell/router";
  * see. Each area lists its pages in pages/<area>/routes.ts and adds one line
  * here.
  */
-export const routes: Route[] = [...hostRoutes, ...secretRoutes, ...spaceRoutes, ...userRoutes, ...signinRoutes];
+export const routes: Route[] = [
+  ...hostRoutes,
+  ...secretRoutes,
+  ...spaceRoutes,
+  ...userRoutes,
+  ...signinRoutes,
+  ...terminalRoutes,
+];

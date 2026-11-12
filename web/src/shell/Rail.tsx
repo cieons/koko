@@ -4,6 +4,8 @@ import { type RefObject, useCallback, useEffect, useRef, useState } from "react"
 import { Link } from "react-aria-components";
 
 import type { MessageKey } from "../i18n/catalogues";
+import { PhoneTerminalButton, TerminalSection } from "../terminal/RailSection";
+import { terminalPath } from "../terminal/workspace";
 import { useMedia, usePhone } from "../ui/phone";
 import type { Caller } from "./caller";
 import { AccountPanel, LanguageChoice, ModeChoice } from "./controls";
@@ -15,8 +17,8 @@ import { type Route, useLocation } from "./router";
 // places, and at its foot the account, Language and Appearance. It folds to
 // icons, and under 1280 pixels it is folded and opens over the page for a
 // moment. On a phone it gives way to a top row and a bar of places at the
-// foot. The terminal's section (#177) goes between the places and the foot,
-// and its tab button first in the phone's bar.
+// foot. The terminal's section goes between the places and the foot, outside
+// the places' navigation, and its button first in the phone's bar.
 
 /** wideQuery is a window wide enough for the rail to stand open beside the page: 1280 pixels. */
 const wideQuery = "(width >= 80rem)";
@@ -141,8 +143,8 @@ function Wordmark({ className = "" }: { className?: string }) {
 /**
  * Rail is the frame on a desktop: the banner down the start edge, holding
  * the places the caller may see, the one the URL is in raised and marked
- * (aria-current), and at its foot the account, once user.current has
- * answered, Language and Appearance. Open it names each place beside its
+ * (aria-current), the terminal's section once user.current has answered,
+ * and at its foot the account, Language and Appearance. Open it names each place beside its
  * icon; folded it shows the icons alone, each named by its place. Over the
  * page it lies on the backdrop, which a click closes.
  */
@@ -196,6 +198,7 @@ export function Rail({ places, caller, rail }: { places: readonly Route[]; calle
             })}
           </nav>
         )}
+        {caller && <TerminalSection open={open} onTerminal={pathname === terminalPath} />}
         <div
           className={`mt-auto flex shrink-0 items-center gap-0.5 border-t border-line pt-3 ${open ? "" : "flex-col"}`}
         >
@@ -225,9 +228,10 @@ export function PhoneTop({ caller }: { caller: Caller | undefined }) {
 }
 
 /**
- * PhoneBar is the bar at the foot of a phone's frame: each place the caller
- * may see as its icon over its name, the one the URL is in raised and
- * marked (aria-current), above the safe area.
+ * PhoneBar is the bar at the foot of a phone's frame: the terminal's
+ * button first, then each place the caller may see as its icon over its
+ * name, the one the URL is in raised and marked (aria-current), above the
+ * safe area.
  */
 export function PhoneBar({ places }: { places: readonly Route[] }) {
   const t = useT();
@@ -238,6 +242,7 @@ export function PhoneBar({ places }: { places: readonly Route[] }) {
       className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-background/90 px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] backdrop-blur-xl"
     >
       <div className="mx-auto flex max-w-md items-stretch gap-1.5">
+        <PhoneTerminalButton />
         {places.map((r) => {
           const Icon = r.icon;
           const current = inPlace(pathname, r);

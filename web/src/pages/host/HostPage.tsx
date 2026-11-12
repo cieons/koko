@@ -1,6 +1,7 @@
 import { Button, buttonVariants, Link } from "@heroui/react";
-import { ChevronRight, Pencil, Plus } from "lucide-react";
+import { ChevronRight, Pencil, Plus, SquareTerminal } from "lucide-react";
 import { lazy, type ReactNode, type RefObject, Suspense, useRef, useState } from "react";
+import { Link as RouterLink } from "react-aria-components";
 import { flushSync } from "react-dom";
 
 import {
@@ -244,7 +245,8 @@ function HostView({ host, services, service, error, reload }: HostViewProps) {
 }
 
 /**
- * Reaching is how to reach the Host, by its state: Managed, the ssh line;
+ * Reaching is how to reach the Host, by its state: Managed, Open terminal,
+ * which adds a tab for it to the terminal workspace, over the ssh line;
  * Registered, the line that enrolls it; Retired, that it can no longer be
  * reached. Under them, its address, port, Host Account, Relay and pin.
  */
@@ -254,6 +256,13 @@ function Reaching({ host }: { host: Host }) {
     <Sheet title={t("host.page.reach")}>
       {host.state === "managed" && (
         <>
+          <RouterLink
+            href={`${hostPathOf(host.name)}/terminal`}
+            className={`${buttonVariants({ variant: "secondary" })} mb-4 no-underline`}
+          >
+            <SquareTerminal aria-hidden className="size-4" />
+            {t("host.page.openTerminal")}
+          </RouterLink>
           <CommandLine command={`ssh ${host.name}`} label={t("host.page.sshCommand")} />
           <p className="mt-3 max-w-[66ch] text-sm text-muted">
             {t("host.page.reachManaged", { account: host.account })}

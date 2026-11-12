@@ -10,6 +10,10 @@ import { ApiError, observeCalls } from "../client";
 import type { MessageKey } from "../i18n/catalogues";
 import { Page as PageHead } from "../ui/Page";
 import { usePhone } from "../ui/phone";
+import { useTerminalKeys } from "../terminal/keys";
+import { CloseQuestion } from "../terminal/RailSection";
+import { WorkspaceLayer } from "../terminal/routes";
+import { resetWorkspace, startWorkspace, terminalPath, useWorkspace } from "../terminal/workspace";
 import { Loading, LoadFailed } from "../ui/states";
 import { CallerContext, callerOf } from "./caller";
 import { useRead } from "./data";
@@ -93,6 +97,15 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
   const places = caller ? visible.filter((r) => r.nav) : [];
   const main = useRef<HTMLElement>(null);
   useFocusMainAfterVisit(main);
+  const { pathname } = useLocation();
+  const onTerminal = pathname === terminalPath;
+  const { loaded: terminalLoaded } = useWorkspace();
+  useTerminalKeys(onTerminal);
+  // The terminal workspace lives as long as the frame: a document's, or until signing out.
+  useEffect(() => {
+    startWorkspace(window.location.pathname, window.location.search);
+    return resetWorkspace;
+  }, []);
 
   const skip = (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
@@ -117,14 +130,14 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
           {phone ? <PhoneTop caller={caller} /> : <Rail places={places} caller={caller} rail={rail} />}
           {/* The room beside the rail; while the rail lies over it, the page takes no input. */}
           <div className="ps-[var(--rail-w)]" inert={rail.state === "over"}>
-            {notice && <NoticeBar notice={notice} />}
+            {notice && !onTerminal && <NoticeBar notice={notice} />}
             <main
               id="main"
               ref={main}
               tabIndex={-1}
-              className="mx-auto w-full max-w-[76rem] px-4 pb-28 outline-none md:px-8 md:pb-16"
+              className={onTerminal ? "outline-none" : "mx-auto w-full max-w-[76rem] px-4 pb-28 outline-none md:px-8 md:pb-16"}
             >
-              {caller?.owner && <ReleaseNotice />}
+              {caller?.owner && !onTerminal && <ReleaseNotice />}
               {caller ? (
                 <Page routes={visible} places={places} />
               ) : notice ? null : userCurrent.error !== undefined ? (
@@ -134,9 +147,14 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
               ) : (
                 <Loading />
               )}
+              {/* The terminal workspace: kept from the first terminal on, shown on its page alone, which its notice heads. */}
+              {caller && terminalLoaded && (
+                <WorkspaceLayer shown={onTerminal} notice={onTerminal && notice ? <NoticeBar notice={notice} /> : null} />
+              )}
             </main>
           </div>
           {phone && places.length > 0 && <PhoneBar places={places} />}
+          <CloseQuestion />
         </div>
       </ReleaseProvider>
     </CallerContext>

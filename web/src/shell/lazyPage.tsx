@@ -5,7 +5,7 @@ import { useT } from "./i18n";
 import type { PageProps } from "./router";
 
 /** loaders holds, for each lazy page, the function that loads its chunk, once. */
-const loaders = new WeakMap<ComponentType<PageProps>, () => Promise<unknown>>();
+const loaders = new WeakMap<object, () => Promise<unknown>>();
 
 /**
  * lazyPage is a page whose code loads, as a chunk of its own, the first
@@ -16,7 +16,17 @@ const loaders = new WeakMap<ComponentType<PageProps>, () => Promise<unknown>>();
  * place instead of leaving the frame empty. loadPage loads it ahead of time.
  */
 export function lazyPage(load: () => Promise<ComponentType<PageProps>>): ComponentType<PageProps> {
-  let loading: Promise<ComponentType<PageProps>> | undefined;
+  return lazyPart(load);
+}
+
+/**
+ * lazyPart is a part of the web UI that is not a page but loads as one
+ * does, a chunk of its own, the first time it is shown, with the same
+ * Loading and the same failure: the terminal workspace, which the frame
+ * keeps mounted across pages.
+ */
+export function lazyPart<P extends object>(load: () => Promise<ComponentType<P>>): ComponentType<P> {
+  let loading: Promise<ComponentType<P>> | undefined;
   const loadOnce = () => (loading ??= load());
   const Page = lazy(async () => {
     try {
@@ -25,7 +35,7 @@ export function lazyPage(load: () => Promise<ComponentType<PageProps>>): Compone
       throw new ChunkNotLoaded(cause);
     }
   });
-  function LazyPage(props: PageProps) {
+  function LazyPage(props: P) {
     return (
       <LoadFailure>
         <Suspense fallback={<Loading />}>
@@ -43,7 +53,7 @@ export function lazyPage(load: () => Promise<ComponentType<PageProps>>): Compone
  * first render does not wait on its chunk; for any other page it does
  * nothing. Page tests load every page this way before they run (test/pages.tsx).
  */
-export async function loadPage(page: ComponentType<PageProps>): Promise<void> {
+export async function loadPage<P>(page: ComponentType<P>): Promise<void> {
   await loaders.get(page)?.();
 }
 

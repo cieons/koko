@@ -138,6 +138,60 @@ func TestTheBuiltWebUIStaysWithinItsSizeBudget(t *testing.T) {
 	}
 }
 
+// The web terminal's emulator (ADR 0054) keeps within kokod's CSP: its
+// ghostty core is a WebAssembly file of the build, compiled from the page's
+// own origin, never inlined; nothing in the build makes a blob: URL; and the
+// chunk that loads the core adds no <style> element. That chunk loads with
+// the terminal, not with the first page.
+func TestTheBuiltWebTerminalLoadsItsCoreAsAFileAndAddsNoStyleElement(t *testing.T) {
+	if !webui.Built() {
+		t.Skip("this binary carries the placeholder page; make webui builds the web UI")
+	}
+	cores, err := fs.Glob(webui.FS(), "assets/ghostty-vt-*.wasm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cores) != 1 {
+		t.Fatalf("the build holds the ghostty cores %q, want one assets/ghostty-vt-*.wasm", cores)
+	}
+	core := path.Base(cores[0])
+	first, err := firstLoad(webui.FS())
+	if err != nil {
+		t.Fatal(err)
+	}
+	styleElement := regexp.MustCompile("<style|createElement\\(\\s*[`'\"]style[`'\"]\\s*\\)")
+	var loaders []string
+	err = fs.WalkDir(webui.FS(), ".", func(name string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || path.Ext(name) == ".wasm" {
+			return err
+		}
+		data, err := fs.ReadFile(webui.FS(), name)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(data, []byte("blob:")) {
+			t.Errorf("%s holds a blob: URL, which the CSP refuses", name)
+		}
+		if !bytes.Contains(data, []byte(core)) {
+			return nil
+		}
+		loaders = append(loaders, name)
+		if path.Ext(name) == ".js" && styleElement.Match(data) {
+			t.Errorf("%s, which loads the ghostty core, adds a <style> element: %q", name, styleElement.Find(data))
+		}
+		if slices.Contains(first, name) {
+			t.Errorf("%s, which loads the ghostty core, is in the first load", name)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk the build: %v", err)
+	}
+	if len(loaders) == 0 {
+		t.Errorf("no file of the build names %s", core)
+	}
+}
+
 // sizeOnDisk is the size of every file of fsys.
 func sizeOnDisk(fsys fs.FS) (int64, error) {
 	var total int64

@@ -130,6 +130,7 @@ export default {
   "host.page.breadcrumb": "Breadcrumb",
   "host.page.more": "More actions for {name}",
   "host.page.reach": "Reaching it",
+  "host.page.openTerminal": "Open terminal",
   "host.page.sshCommand": "SSH command",
   "host.page.reachManaged": "From a device that has joined this koko server. koko logs in as {account}; no key of the Host leaves koko.",
   "host.page.reachRegistered": "koko cannot log in to this Host yet. Enroll it from a device that has the CLI:",

@@ -180,7 +180,7 @@ test("a Member gets no place only the Owner may open, and its path shows Page no
   expect(screen.queryByText("access page")).toBeNull();
 });
 
-test("on a phone a top row holds the wordmark, Language, Appearance and the account, and the places are in a bar at the foot", async () => {
+test("on a phone a top row holds the wordmark, Language, Appearance and the account, and the terminal and the places are in a bar at the foot", async () => {
   setViewportWidth(390);
   const api = fakeApi();
   asDevice(api, alice);
@@ -198,9 +198,10 @@ test("on a phone a top row holds the wordmark, Language, Appearance and the acco
   expect(top.queryByRole("navigation")).toBeNull();
   expect(screen.queryByRole("button", { name: /side bar$/ })).toBeNull();
   expect(rail()).toBe("none");
-  expect(places()).toEqual(["Hosts", "Secrets*", "Access"]);
+  // The terminal's button starts the bar, where the terminal's key bar starts.
+  expect(places()).toEqual(["Terminal", "Hosts", "Secrets*", "Access"]);
   const nav = screen.getByRole("navigation", { name: "Main" });
-  expect(nav.querySelectorAll("a > svg[aria-hidden='true']")).toHaveLength(3);
+  expect(nav.querySelectorAll("a > svg[aria-hidden='true']")).toHaveLength(4);
   expect((await openAccount("alice")).textContent).toBe("aliceOwnerThrough koko web on laptopAccount");
 
   act(() => setViewportWidth(1280));

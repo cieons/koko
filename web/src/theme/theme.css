@@ -322,6 +322,16 @@
     box-shadow: var(--island-shadow);
   }
 
+  /*
+   * What else is raised as an island: the terminal's island beside the
+   * rail, its active tab in the rail, and a Host's card in the empty
+   * workspace.
+   */
+  .island {
+    background: var(--surface);
+    box-shadow: var(--island-shadow);
+  }
+
   /* Type roles. */
   .t-display {
     font-size: 1.75rem;
@@ -421,9 +431,13 @@
       outline: 1px solid CanvasText;
     }
 
-    /* The rail's end edge, which in colour is only the page meeting the page. */
+    /* The rail's end edge, which in colour is only the page meeting the page; and an island's edge. */
     .rail {
       border-inline-end: 1px solid CanvasText;
+    }
+
+    .island:not([role="tab"]) {
+      outline: 1px solid CanvasText;
     }
 
     /* Not on what only a script focuses, such as the main region after a navigation. */
@@ -433,6 +447,7 @@
     }
 
     .place[aria-current="page"],
+    .island[role="tab"],
     .tabs__tab[aria-selected="true"],
     .toggle-button[data-selected="true"] {
       forced-color-adjust: none;
