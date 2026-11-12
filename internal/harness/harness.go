@@ -239,19 +239,35 @@ func SocketPath(path string) Option {
 
 // FreeAddr returns a loopback address with a TCP port that nothing listened
 // on a moment ago, for Listen or as an address where nothing answers. A test
-// running in parallel never takes its port meanwhile: the port lies below
-// those the OS picks for a listener on port 0 or an outgoing connection
-// (from 32768 on Linux, 49152 on macOS), and FreeAddr returns none twice in
-// one test process.
+// running in parallel never takes its port meanwhile, though the port stays
+// free until the test's own process, such as koko web, binds it: the port
+// lies below those the OS picks for a listener on port 0 or an outgoing
+// connection (from 32768 on Linux, 49152 on macOS), FreeAddr returns none
+// twice in one test process, and until the test ends it holds the UDP port
+// of the same number, which FreeAddr in another test process, such as
+// another package's or another checkout's, then passes over.
 func FreeAddr(t testing.TB) string {
 	t.Helper()
+	return freeAddr(t, freePorts)
+}
+
+func freeAddr(t testing.TB, ports *portSeq) string {
+	t.Helper()
 	for range freePortTries {
-		addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(freePorts.next()))
+		addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(ports.next()))
 		var lc net.ListenConfig
-		ln, err := lc.Listen(t.Context(), "tcp", addr)
+		// TCP and UDP ports are apart, so the reservation leaves the TCP
+		// port to whatever the test binds there.
+		reserved, err := lc.ListenPacket(t.Context(), "udp4", addr)
 		if err != nil {
-			continue // something outside this process holds it
+			continue // another test process reserved it, or something else holds it
 		}
+		ln, err := lc.Listen(t.Context(), "tcp4", addr)
+		if err != nil {
+			_ = reserved.Close()
+			continue // something outside the test processes holds it
+		}
+		t.Cleanup(func() { _ = reserved.Close() })
 		if err := ln.Close(); err != nil {
 			t.Fatal(err)
 		}
