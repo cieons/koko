@@ -7,6 +7,9 @@ serves both ends: the device's, in `koko tunnel` and `koko exec`, and the
 Gateway's. It knows nothing of SSH, Tunnels or Device Connections: it runs on
 any `io.ReadWriteCloser`, owns that channel and closes it when it comes off.
 
+A web terminal's page runs a second implementation, [the TypeScript
+end](#the-typescript-end), against the Gateway's Go end.
+
 ## The interface
 
 | Call | Who | What it does |
@@ -81,7 +84,38 @@ its Tunnel opened at, any that some koko in the window speaks.
 | The other end's close frame | Ends with `*PeerClosedError` carrying the reason. `Read` first returns what arrived before it; once the other end has half-closed, `Read` returns `io.EOF` and only `Err` tells of the close. |
 | `CloseWithReason` | Ends with `ErrClosed`, after sending what was unsent and the close frame. An attach in progress fails. |
 
+## The TypeScript end
+
+A web terminal's page speaks the stream to the Gateway over a WebSocket
+([ADR 0053](../adr/0053-a-browser-opens-ssh-sessions-through-a-websocket-to-the-gateway.md)),
+so the web UI has an end of its own:
+[`Stream`](../../web/src/terminal/stream.ts), a port of `resumable.Stream`'s
+behaviour. The frames, the acknowledgements, the 2 MiB replay buffer and
+each row of the table above are the same. What differs is what a page's
+single thread asks for:
+
+| Go | TypeScript | Why |
+| --- | --- | --- |
+| `New(ch)` on an `io.ReadWriteCloser` | `new Stream(socket)` on anything with `send` and `onmessage` | A WebSocket's messages arrive whole; a frame may span them. A `send` that throws is the socket's failure. |
+| `Read`, `Write` and `CloseWrite` block | `read`, `write` and `closeWrite` return promises | `read` resolves with the next bytes, or `null` for the other end's half-close; `write` resolves once its bytes are in the replay buffer. `ended` resolves with why the stream ended. |
+| `Resume`, `AcceptResume` | `resume(socket, peerReceived)` | The terminal carries each end's offset in its first messages' JSON, so nothing is exchanged on the stream itself. |
+| The stream closes its channel | The caller closes the socket | The stream only stops using a socket it leaves. After a failed send it stays on the socket, to read what arrived before, until its caller, told of the WebSocket's close, calls `detach`. |
+| `CloseWithReason` waits for the channel | `close(reason)` returns at once | A WebSocket's `send` never blocks, so the close frame is handed over before `close` returns. |
+
+Its caller is [`connection.ts`](../../web/src/terminal/connection.ts), the
+page's end of a terminal's SSH Session: the first messages, the terminal
+records ([`records.ts`](../../web/src/terminal/records.ts)), liveness, the
+backoff and the grace.
+
 ## Verify
+
+`cd web && node_modules/.bin/vitest run src/terminal` runs the TypeScript
+end. `stream.test.ts` reads `frames.golden` (the `tunnel@koko 1` section)
+and `wire/testdata/terminal.golden` from the repository and encodes and
+decodes each line, so a change to the Go end's frames or records that the
+TypeScript end does not match fails there. It also moves a few MiB each way
+over in-memory sockets cut at random bytes, logging its seed, and checks the
+full buffer, the half-close, the close frame and each failure in the table.
 
 `go test ./internal/shared/resumable` runs the stream over in-memory channels
 in `testing/synctest` bubbles. It moves a few MiB each way over channels cut

@@ -21,8 +21,14 @@ export default defineConfig({
     assetsInlineLimit: 0,
   },
   server: {
-    // The static checks read kokod's CSP (static.test.ts), outside web/.
-    fs: { allow: [".", decodeURIComponent(new URL("../internal/server/web", import.meta.url).pathname)] },
+    // Tests read files outside web/: the static checks kokod's CSP
+    // (static.test.ts), and the terminal's stream the golden files that pin
+    // its Go end (stream.test.ts).
+    fs: {
+      allow: [".", "../internal/server/web", "../internal/shared/resumable/testdata", "../internal/shared/wire/testdata"].map(
+        (path) => decodeURIComponent(new URL(path, import.meta.url).pathname),
+      ),
+    },
   },
   test: {
     environment: "jsdom",
