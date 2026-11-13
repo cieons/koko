@@ -157,6 +157,11 @@ type Config struct {
 	// new koko release finds the latest. The zero Source is GitHub's (ADR
 	// 0041). No flag or environment variable sets it.
 	Releases release.Source
+	// Emulator is the emulator hook, for tests only: how the koko server
+	// waits for the web terminals' emulator to compile and learns which
+	// engine runs it, to log at its start. Nil means vt.Engine. No flag or
+	// environment variable sets it.
+	Emulator func(context.Context) (string, error)
 }
 
 // The default bound of the web terminals' emulators together: a quarter of
@@ -183,11 +188,16 @@ func terminalMemory(cfg Config) int {
 	return int(min(machine/terminalMemoryShare, maxTerminalMemory))
 }
 
-// logEmulator logs once, at start, which of wazero's engines runs the web
-// terminals' emulator, the compiler or the interpreter and why, which is
-// about 100 times slower, and their memory's bound.
-func logEmulator(log *slog.Logger, bound int) {
-	engine, err := vt.Engine()
+// logEmulator waits, until ctx ends, for the web terminals' emulator to
+// compile, which the koko server serves meanwhile, and logs once which of
+// wazero's engines runs it, the compiler or the interpreter and why, which
+// is about 100 times slower, and their memory's bound; or why it failed,
+// which only the web terminals then refuse for.
+func logEmulator(ctx context.Context, engineOf func(context.Context) (string, error), log *slog.Logger, bound int) {
+	engine, err := engineOf(ctx)
+	if ctx.Err() != nil {
+		return
+	}
 	if err != nil {
 		log.Error("web terminal emulator unavailable", "err", err)
 		return
@@ -238,6 +248,9 @@ type Server struct {
 	closing  bool
 	revoking sync.WaitGroup
 	telling  sync.WaitGroup
+	// stopEmulatorLog ends logEmulator's wait, which emulatorLog tracks.
+	stopEmulatorLog context.CancelFunc
+	emulatorLog     sync.WaitGroup
 }
 
 // Start opens the data directory, loads the Root Key, opens the koko
@@ -346,7 +359,6 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	// Root Key, and logs in to Hosts.
 	bound := terminalMemory(cfg)
 	gw := gateway.New(st, key, clock, cfg.Timings, bound, log)
-	logEmulator(log, bound)
 	// The web area's front holds the runs of koko web, so it registers its
 	// operation itself, below.
 	front := web.New(a, signins, gw, st, key, clock, cfg.Timings, log)
@@ -363,6 +375,15 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	tcp := &tcpListener{addr: cfg.Listen, transport: t, devices: device.NewAuthenticator(st, clock, log)}
 	srv := &Server{store: st, transport: t, gateway: gw, tcp: tcp, web: webLn, api: a, stopNotice: cfg.Timings.Resolve().StopNotice, log: log}
 	webHeld = true
+	// The emulator compiles in the background: only a web terminal waits
+	// for it.
+	emulatorCtx, stopEmulatorLog := context.WithCancel(context.Background())
+	srv.stopEmulatorLog = stopEmulatorLog
+	engineOf := cfg.Emulator
+	if engineOf == nil {
+		engineOf = vt.Engine
+	}
+	srv.emulatorLog.Go(func() { logEmulator(emulatorCtx, engineOf, log, bound) })
 	var updateCheck bool
 	if err := st.Read(ctx, func(tx store.Tx) (err error) {
 		updateCheck, err = deployment.UpdateCheck(ctx, tx)
@@ -507,6 +528,8 @@ func (s *Server) WebAddress() string {
 // telling each that the koko server is restarting, stops serving, waits for
 // calls in flight to end, and closes the store.
 func (s *Server) Close() error {
+	s.stopEmulatorLog()
+	s.emulatorLog.Wait()
 	// The listener's shutdown does not track a WebSocket, which it has given
 	// up, so the Gateway first gives each web terminal its notice and
 	// closes its WebSocket, cutting one too stalled to take it.

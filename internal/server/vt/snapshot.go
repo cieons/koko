@@ -177,7 +177,7 @@ const afterSaved = "\x1b7\x1b[H\x1b[0m"
 // while the alternate screen stays. Ghostty's decoder is slow on combining
 // marks: a screen of them at the largest grid takes seconds.
 func (t *Terminal) fromCopy(encoded []byte, alternate bool, altModes []uint16) (saved, primary []byte, err error) {
-	c, err := instantiate(t.ctx, t.cols, t.rows)
+	c, err := instantiate(t.ctx, engines, t.cols, t.rows)
 	if err != nil {
 		return nil, nil, err
 	}

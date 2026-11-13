@@ -41,9 +41,44 @@ type engine struct {
 	kind    string // which of wazero's engines runs the module, for Engine
 }
 
-// loadEngine checks the module against its pin and compiles it on first
-// use, about 150 ms, and gives every later caller the same engine.
-var loadEngine = sync.OnceValues(func() (*engine, error) {
+// compilation is the engine's compile, which runs once, in the
+// background, from the first call that waits for it, so that no caller
+// holds up more than its own wait: about 150 ms, but seconds on a loaded
+// machine.
+type compilation struct {
+	compile func() (*engine, error)
+	once    sync.Once
+	done    chan struct{} // closed once engine and err are set
+	engine  *engine
+	err     error
+}
+
+func newCompilation(compile func() (*engine, error)) *compilation {
+	return &compilation{compile: compile, done: make(chan struct{})}
+}
+
+// engines is the process's one compilation of the engine.
+var engines = newCompilation(compileEngine)
+
+// wait starts the compile if nothing has yet, and waits for it until ctx
+// ends.
+func (c *compilation) wait(ctx context.Context) (*engine, error) {
+	c.once.Do(func() {
+		go func() {
+			c.engine, c.err = c.compile()
+			close(c.done)
+		}()
+	})
+	select {
+	case <-c.done:
+		return c.engine, c.err
+	case <-ctx.Done():
+		return nil, fmt.Errorf("wait for libghostty-vt to compile: %w", context.Cause(ctx))
+	}
+}
+
+// compileEngine checks the module against its pin and compiles it.
+func compileEngine() (*engine, error) {
 	if err := checkPin(wasm); err != nil {
 		return nil, err
 	}
@@ -61,7 +96,7 @@ var loadEngine = sync.OnceValues(func() (*engine, error) {
 	}
 	e.kind = fmt.Sprintf("interpreter, since the compiler failed: %v", err)
 	return e, nil
-})
+}
 
 // checkPin checks a module against the SHA-256 ghostty-vt.wasm.sum pins.
 func checkPin(module []byte) error {
@@ -97,11 +132,11 @@ func compile(config wazero.RuntimeConfig) (*engine, error) {
 	return &engine{runtime: runtime, ghostty: ghostty, bridge: bridge}, nil
 }
 
-// Engine loads the emulator, if no Terminal has yet, and says which of
-// wazero's engines runs it: "compiler", or "interpreter" and why, for the
-// koko server to log once at its start.
-func Engine() (string, error) {
-	e, err := loadEngine()
+// Engine starts the emulator's compile, if nothing has yet, waits for it
+// until ctx ends, and says which of wazero's engines runs it: "compiler",
+// or "interpreter" and why, for the koko server to log once it is ready.
+func Engine(ctx context.Context) (string, error) {
+	e, err := engines.wait(ctx)
 	if err != nil {
 		return "", err
 	}

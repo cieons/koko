@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 var update = flag.Bool("update", false, "rewrite testdata/snapshot.golden")
@@ -30,12 +31,50 @@ func TestTheModuleIsThePinnedRelease(t *testing.T) {
 // The tests' machines all run wazero's compiler: CI's Linux and Windows
 // amd64 and macOS arm64 runners, as kokod's linux/amd64 and linux/arm64.
 func TestTheCompilerRunsTheModule(t *testing.T) {
-	kind, err := Engine()
+	kind, err := Engine(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if kind != "compiler" {
 		t.Errorf("the engine is %q, want the compiler", kind)
+	}
+}
+
+// A Terminal opened while the engine compiles waits for the compile and
+// then works, and one whose context ends first gives up with its cause,
+// leaving the compile to finish for the next (#222).
+func TestATerminalWaitsForTheEngineToCompile(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	held := newCompilation(func() (*engine, error) {
+		<-release
+		return engines.wait(context.Background())
+	})
+
+	gone := errors.New("the page left")
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cancel(gone)
+	if _, err := held.newTerminal(ctx, 80, 24); !errors.Is(err, gone) {
+		t.Errorf("a Terminal whose context ended returned %v, want its cause", err)
+	}
+
+	waited := make(chan error, 1)
+	go func() {
+		term, err := held.newTerminal(t.Context(), 80, 24)
+		if err == nil {
+			_, err = term.Write([]byte("ready"))
+			_ = term.Close()
+		}
+		waited <- err
+	}()
+	select {
+	case err := <-waited:
+		t.Fatalf("a Terminal returned %v before the compile ended", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	if err := <-waited; err != nil {
+		t.Fatalf("a Terminal opened during the compile: %v", err)
 	}
 }
 
@@ -455,7 +494,7 @@ func fill(t *testing.T, term *Terminal) {
 // with their history full, as one User's Workspace at its limit, and finds
 // their memory freed once they are closed.
 func TestSixteenTerminalsAreFreedOnClose(t *testing.T) {
-	if _, err := loadEngine(); err != nil {
+	if _, err := engines.wait(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	before := heapInUse()

@@ -117,13 +117,19 @@ const (
 )
 
 // New starts a terminal of cols by rows, held to MaxCols by MaxRows, with
-// Scrollback lines of history. Cancelling ctx ends the call under way, as
+// Scrollback lines of history, once the emulator has compiled, which it
+// waits for until ctx ends. Cancelling ctx ends the call under way, as
 // soon as it next steps into the core, and fails the Terminal.
 func New(ctx context.Context, cols, rows int) (*Terminal, error) {
+	return engines.newTerminal(ctx, cols, rows)
+}
+
+// newTerminal is New on the engine c compiles.
+func (c *compilation) newTerminal(ctx context.Context, cols, rows int) (*Terminal, error) {
 	if cols < 1 || rows < 1 {
 		return nil, fmt.Errorf("new terminal: size %dx%d out of range", cols, rows)
 	}
-	t, err := instantiate(ctx, min(cols, MaxCols), min(rows, MaxRows))
+	t, err := instantiate(ctx, c, min(cols, MaxCols), min(rows, MaxRows))
 	if err != nil {
 		return nil, fmt.Errorf("new terminal: %w", err)
 	}
@@ -135,9 +141,10 @@ func New(ctx context.Context, cols, rows int) (*Terminal, error) {
 }
 
 // instantiate makes an instance of Ghostty's module with the bridge's
-// callbacks in its table, and no terminal in it yet.
-func instantiate(ctx context.Context, cols, rows int) (*Terminal, error) {
-	e, err := loadEngine()
+// callbacks in its table, and no terminal in it yet, on the engine c
+// compiles.
+func instantiate(ctx context.Context, c *compilation, cols, rows int) (*Terminal, error) {
+	e, err := c.wait(ctx)
 	if err != nil {
 		return nil, err
 	}

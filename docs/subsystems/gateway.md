@@ -850,12 +850,14 @@ attachment's `attachment`, its id.
   `client`, `tab` and `err`, when an SSH Session's emulator fails and is
   made anew; at error level when the new one fails too, and the SSH
   Session ends.
-- `web terminal emulator`, once at start: `engine`, which of wazero's
-  engines runs the emulator, the compiler or the interpreter and why
-  ([the emulator](vt.md#the-module-and-the-runtime)), and
-  `memory_bound_mib`, the memory budget. `web terminal emulator
+- `web terminal emulator`, once the emulator has compiled, in the
+  background from the koko server's start, which serves meanwhile:
+  `engine`, which of wazero's engines runs the emulator, the compiler or
+  the interpreter and why ([the emulator](vt.md#the-module-and-the-runtime)),
+  and `memory_bound_mib`, the memory budget. `web terminal emulator
   unavailable`, at error level with `err`, when the emulator could not be
-  loaded.
+  compiled; every web terminal then fails to open, logged as `open a web
+  terminal` with that error.
 - `web terminal found dead` and `workspace socket found dead`, at debug
   level with `quiet`, when the Gateway cuts a silent WebSocket;
   `workspace socket closed`, at debug level with `reason="malformed

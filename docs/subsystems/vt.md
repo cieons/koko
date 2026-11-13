@@ -21,7 +21,7 @@ Gateway's loop of each web terminal SSH Session owns one `Terminal`
 | `Snapshot()` | VT bytes that draw the terminal on a cleared emulator of its size ([below](#the-snapshot)). |
 | `Memory()` | The bytes the terminal holds: its core's linear memory and the kept primary screen ([below](#the-snapshot)). A failed or closed `Terminal` holds none. |
 | `Close()` | Frees the instance and its memory. |
-| `Engine()` | Which of wazero's engines runs the module, for the koko server to log once at start (`web terminal emulator`, [the Gateway's log](gateway.md#logging)). |
+| `Engine(ctx)` | Waits for the module to compile, until `ctx` ends, and says which of wazero's engines runs it, for the koko server to log once it has compiled (`web terminal emulator`, [the Gateway's log](gateway.md#logging)). |
 
 - **One goroutine uses a `Terminal`.** Another may only cancel the context
   given to `New`. Cancelling ends a `Write` within its next 4 KiB and any
@@ -43,7 +43,7 @@ Gateway's loop of each web terminal SSH Session owns one `Terminal`
 - **The module** is [`ghostty-vt.wasm`](../../internal/server/vt/ghostty-vt.wasm),
   libghostty-vt's release file named in
   [`ghostty-vt.wasm.sum`](../../internal/server/vt/ghostty-vt.wasm.sum) with
-  its SHA-256. It is embedded in `kokod`, and `loadEngine` checks it against
+  its SHA-256. It is embedded in `kokod`, and `compileEngine` checks it against
   the pin before compiling it.
   - `make vt-wasm` fetches it from `release.files.ghostty.org` and checks it.
   - Pinning a new release starts with verifying its `SHA256SUMS` against
@@ -54,9 +54,12 @@ Gateway's loop of each web terminal SSH Session owns one `Terminal`
   - The module imports nothing. [`abi.go`](../../internal/server/vt/abi.go)
     holds the parts of its C API that koko calls, as wasm32 sees them.
 - **The engine** ([`engine.go`](../../internal/server/vt/engine.go)) is one
-  wazero runtime per process, made on the first `New`.
-  - It compiles the module in about 150 ms. Each `Terminal` is an instance,
-    made in about 1 ms.
+  wazero runtime per process, compiled once, in the background, from the
+  first `Engine` or `New`; the koko server calls `Engine` at its start and
+  serves meanwhile.
+  - It compiles the module in about 150 ms, and in seconds on a loaded
+    machine. A `New` meanwhile waits for it until its context ends. Each
+    `Terminal` is an instance, made in about 1 ms.
   - wazero caps each instance at 128 MiB (`memoryLimitPages`). A core fails
     first, at `memoryBound`, 96 MiB, after the call that passed it, so
     Ghostty's own allocations never fail at the cap.
@@ -72,7 +75,7 @@ Gateway's loop of each web terminal SSH Session owns one `Terminal`
     the callbacks find it. An address out of range panics in a callback,
     which wazero returns as the call's error.
 - **The compiler.** wazero's compiler writes machine code to memory and then
-  executes it, and the interpreter is about 100 times slower. `loadEngine`
+  executes it, and the interpreter is about 100 times slower. `compileEngine`
   tries the compiler first and falls back to the interpreter; `Engine` says
   which runs, and why. The unit sets neither `MemoryDenyWriteExecute=` nor
   `SystemCallFilter=` (`TestTheUnitLetsTheEmulatorCompile`).

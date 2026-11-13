@@ -91,6 +91,7 @@ type options struct {
 	releases    *Releases
 	version     string
 	upgrade     server.Upgrade
+	emulator    func(context.Context) (string, error)
 }
 
 // Mountinfo makes the koko server read the machine's mounts from path, a
@@ -166,6 +167,13 @@ func UpdateCheck(r *Releases) Option {
 // (upgrade_way none). For kokod run, its KOKO_IMAGE names the image.
 func Upgrade(u server.Upgrade) Option {
 	return func(o *options) { o.upgrade = u }
+}
+
+// Emulator makes the koko server learn which engine runs the web
+// terminals' emulator from engine, which it waits on at its start in place
+// of the emulator's compile, such as one a test holds.
+func Emulator(engine func(context.Context) (string, error)) Option {
+	return func(o *options) { o.emulator = engine }
 }
 
 // Version makes the koko server report v as its version, and upgrade from
@@ -356,6 +364,7 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		Releases:    releases,
 		Upgrade:     o.upgrade,
 		Version:     o.version,
+		Emulator:    o.emulator,
 	})
 	if err != nil {
 		t.Fatalf("start the koko server: %v", err)
