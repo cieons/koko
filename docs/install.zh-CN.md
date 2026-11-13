@@ -158,6 +158,26 @@ Move-Item koko-windows-amd64.exe "$env:USERPROFILE\.local\bin\koko.exe"
 
   两种情况下，主机上的 shell 运行的均为 `echo 'a  b'`。Windows PowerShell 5.1 向任何程序传递参数时都会丢弃参数内的双引号，单引号在 cmd 中不具有分组作用，因此其他写法无法按原样传递。
 
+### Shell 补全
+
+`koko completion` 输出 bash 和 zsh 的补全脚本，用于补全 koko 的命令、参数及其取值；在 zsh 中还会显示每个参数的说明。请在 shell 的启动文件中加载该脚本：
+
+- bash：在 `~/.bashrc` 中加入下行（同样适用于 Windows 上的 Git Bash）：
+
+  ```sh
+  eval "$(koko completion bash)"
+  ```
+
+- zsh：在 `~/.zshrc` 中 `compinit` 之后加入下行：
+
+  ```sh
+  eval "$(koko completion zsh)"
+  ```
+
+  也可将脚本保存为 `$fpath` 中某一目录下的 `_koko` 文件。保存的脚本须在 `koko update` 之后重新生成；以 `eval` 方式加载的脚本始终与已安装的 koko 一致。
+
+目前不提供 PowerShell 和 fish 的补全脚本。
+
 ### 离线安装
 
 在无法访问 GitHub 的机器上，`koko server install` 无法下载 `kokod`，会给出相应提示并指出 `--kokod`，且不写入任何内容。此时需使用复制到该机器上的文件安装 koko 服务器。先在可访问 GitHub 的机器上，从同一个发布版本下载与目标机器架构相符的 `koko-linux-<arch>`、`kokod-linux-<arch>` 和 `SHA256SUMS`，以下以 amd64 为例：

@@ -471,7 +471,7 @@ func completeIn(t *testing.T, shell string, queries [][]string) [][]string {
 . "$1"
 while IFS= read -r line; do
 	eval "set -- $line"
-	echo $(_koko_complete "$@")
+	echo $(_koko_complete names "$@")
 done`
 	args := []string{"--noprofile", "--norc", "-c", driver, "complete", path}
 	if shell == "zsh" {
@@ -588,6 +588,58 @@ func TestCompletionCompletesEveryCommandFromTheTree(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// In zsh, the script offers each command's flags with their summaries, as
+// koko help shows them, through zsh's _describe.
+func TestCompletionInZshDescribesEveryFlag(t *testing.T) {
+	t.Parallel()
+	sh, err := exec.LookPath("zsh")
+	if err != nil {
+		t.Skipf("zsh is not installed: %v", err)
+	}
+	script, _, _ := runOffline(t, "completion", "zsh")
+	path := filepath.Join(t.TempDir(), "koko-completion")
+	if err := os.WriteFile(path, []byte(script), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// _describe -t flags flag <array> prints the array it is given.
+	driver := strings.Builder{}
+	driver.WriteString(`compdef() { :; }
+_describe() { printf '%s\n' "${(@P)4}"; }
+. "$1"
+`)
+	var want []string
+	for _, c := range Tree() {
+		var lines []string
+		for _, f := range c.flags() {
+			lines = append(lines, "--"+f.Name+":"+f.Summary)
+		}
+		if c.takesJSON() {
+			lines = append(lines, "--json:"+jsonFlagSummary)
+		}
+		if len(lines) == 0 {
+			continue
+		}
+		words := slices.Concat([]string{"koko"}, c.words(), []string{"--"})
+		fmt.Fprintf(&driver, "words=(%s); CURRENT=%d; _koko; echo ---\n", shellJoin(words), len(words))
+		want = append(want, strings.Join(lines, "\n")+"\n")
+	}
+	cmd := exec.CommandContext(t.Context(), sh, "-f", "-c", driver.String(), "complete", path)
+	cmd.Env = []string{"HOME=" + t.TempDir(), "PATH=" + os.Getenv("PATH")}
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("zsh with the completion script: %v", err)
+	}
+	got := strings.Split(string(out), "---\n")
+	if len(got) != len(want)+1 {
+		t.Fatalf("zsh answered %d queries of %d: %q", len(got)-1, len(want), out)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("zsh offers\n%s\nwant\n%s", got[i], want[i])
+		}
 	}
 }
 

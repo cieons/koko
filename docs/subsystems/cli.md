@@ -428,15 +428,20 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
   of Git Bash (there is no PowerShell script), loaded with `eval
   "$(koko completion bash)"`, or for zsh after `compinit` or saved as
   `_koko` in `$fpath`. The script holds the tree as case tables
-  (`_koko_next`, `_koko_flags`, `_koko_value`, `_koko_arg`) and one walk over
-  the words typed (`_koko_complete`), all in what bash 3.2 and zsh share,
-  and completes command words, flags (`--json` among them, for each command
-  that takes it), a flag's
+  (`_koko_next`, `_koko_flags`, `_koko_flag_help`, `_koko_value`,
+  `_koko_arg`) and one walk over the words typed (`_koko_complete`), all in
+  what bash 3.2 and zsh share, and completes command words, flags (`--json`
+  among them, for each command that takes it; zsh's driver asks for them
+  `described`, as `--flag:summary` lines for its `_describe`, so each shows
+  its summary as `koko help` does, where bash's asks for `names`, since bash
+  shows no description), a flag's
   choices, a file or directory for a flag whose value is a `file` or `dir`,
   and an argument's choices; it completes no record name, which only the
   koko server knows, and a flag's value only after a space, not after
   `--name=`. A shell is one entry of `shellScripts`, its head and driver.
-  Its tests run the script in bash, and in zsh where it is installed.
+  Its tests run the script in bash, and in zsh where it is installed. The
+  install guide says how to load it ([shell
+  completion](../install.md#shell-completion)); there is no script for fish.
 
 ## `koko update`
 

@@ -279,6 +279,30 @@ above does not.
   single quotes group nothing in cmd, so the other ways round do not
   arrive as written.
 
+### Shell completion
+
+`koko completion` prints a script that completes koko's commands, flags
+and their values in bash and zsh; zsh also shows what each flag does. Load
+it from the shell's start-up file:
+
+- bash, in `~/.bashrc` (Git Bash on Windows too):
+
+  ```sh
+  eval "$(koko completion bash)"
+  ```
+
+- zsh, in `~/.zshrc`, after `compinit`:
+
+  ```sh
+  eval "$(koko completion zsh)"
+  ```
+
+  It may also be saved as `_koko` in a directory of `$fpath`. A saved
+  script is written again after `koko update`; the `eval` line always
+  matches the koko installed.
+
+There is no completion script for PowerShell or fish.
+
 ### Offline
 
 On a machine that cannot reach GitHub, `koko server install` cannot

@@ -104,6 +104,10 @@ func butNoJSON(cs []commandJSON, quote string) string {
 	return "but " + strings.Join(noJSON, " and ") + " "
 }
 
+// jsonFlagSummary says what --json does, which every command but those that
+// take no flag takes without listing it.
+const jsonFlagSummary = "Print the result as JSON"
+
 // help writes one command in full, for people.
 func (c commandJSON) help(w io.Writer) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
@@ -135,7 +139,7 @@ func (c commandJSON) help(w io.Writer) error {
 		for _, f := range c.Flags {
 			_, _ = fmt.Fprintf(tw, "  %s\t%s%s\n", f.Flag, f.Summary, f.details())
 		}
-		_, _ = fmt.Fprintf(tw, "  --json\tPrint the result as JSON\n")
+		_, _ = fmt.Fprintf(tw, "  --json\t%s\n", jsonFlagSummary)
 	}
 	if c.Filters != nil {
 		var fields []string

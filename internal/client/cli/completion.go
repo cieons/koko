@@ -58,6 +58,8 @@ func completion(_ context.Context, in *Input) (completionJSON, error) {
 //     a noun;
 //   - _koko_flags: the flags of the command at the path, --json among them
 //     for a command that takes it;
+//   - _koko_flag_help: the same flags, one line each as --flag:summary, as
+//     koko help shows them, for a shell that shows a flag's description;
 //   - _koko_value: for a flag that takes a value, its choices, or :file,
 //     :dir or :value (any value) when it has none; nothing for one that
 //     takes no value;
@@ -68,6 +70,7 @@ func completion(_ context.Context, in *Input) (completionJSON, error) {
 func writeCompletionTables(b *strings.Builder, tree []Command) {
 	next := map[string][]string{}
 	flags := map[string][]string{}
+	flagHelp := map[string]string{}
 	values := map[string]string{}
 	args := map[string]string{}
 	for i := range tree {
@@ -80,14 +83,20 @@ func writeCompletionTables(b *strings.Builder, tree []Command) {
 			}
 		}
 		path := c.Path()
-		if c.takesJSON() {
-			flags[path] = []string{"--json"}
-		}
+		var described []string
 		for _, f := range c.flags() {
 			flags[path] = append(flags[path], "--"+f.Name)
+			described = append(described, "--"+f.Name+":"+f.Summary)
 			if !f.Bool {
 				values[path+" --"+f.Name] = flagValues(f)
 			}
+		}
+		if c.takesJSON() {
+			flags[path] = append(flags[path], "--json")
+			described = append(described, "--json:"+jsonFlagSummary)
+		}
+		if len(described) > 0 {
+			flagHelp[path] = strings.Join(described, "\n")
 		}
 		for j, a := range c.Args {
 			if len(a.Choices) > 0 {
@@ -97,6 +106,7 @@ func writeCompletionTables(b *strings.Builder, tree []Command) {
 	}
 	writeCase(b, "_koko_next", "the words that can follow a command path", `"$1"`, joinWords(next))
 	writeCase(b, "_koko_flags", "the flags of a command", `"$1"`, joinWords(flags))
+	writeCase(b, "_koko_flag_help", "the flags of a command, a line --flag:summary each", `"$1"`, flagHelp)
 	writeCase(b, "_koko_value", "the values of a command's flag: choices, or :file, :dir or :value", `"$1 $2"`, values)
 	writeCase(b, "_koko_arg", "the choices of a command's argument, by its index from 1", `"$1 $2"`, args)
 }
@@ -126,7 +136,7 @@ func joinWords(m map[string][]string) map[string]string {
 func writeCase(b *strings.Builder, name, about, subject string, cases map[string]string) {
 	fmt.Fprintf(b, "\n# %s prints %s.\n%s() {\n\tcase %s in\n", name, about, name, subject)
 	for _, k := range slices.Sorted(maps.Keys(cases)) {
-		fmt.Fprintf(b, "\t%s) echo %s ;;\n", shellJoin([]string{k}), shellJoin([]string{cases[k]}))
+		fmt.Fprintf(b, "\t%s) printf '%%s\\n' %s ;;\n", shellJoin([]string{k}), shellJoin([]string{cases[k]}))
 	}
 	b.WriteString("\tesac\n}\n")
 }
@@ -153,10 +163,12 @@ _koko_is_next() {
 }
 
 # _koko_complete prints what can take the place of the last of the words
-# given, the words after koko: words, or :file, :dir or :value for a flag's
-# value.
+# given after $1, the words after koko: words, or :file, :dir or :value for
+# a flag's value. $1 says how it prints flags: names, as words, or
+# described, a line --flag:summary each.
 _koko_complete() {
-	local cmd= n=0 value= w
+	local how=$1 cmd= n=0 value= w
+	shift
 	while [ $# -gt 1 ]; do
 		w=$1
 		shift
@@ -178,7 +190,13 @@ _koko_complete() {
 		return
 	fi
 	case $1 in
-	-*) _koko_flags "$cmd" ;;
+	-*)
+		if [ "$how" = described ]; then
+			_koko_flag_help "$cmd"
+		else
+			_koko_flags "$cmd"
+		fi
+		;;
 	*)
 		if [ "$n" -eq 0 ]; then
 			_koko_next "$cmd"
@@ -192,7 +210,7 @@ _koko_complete() {
 const bashDriver = `
 _koko() {
 	local cur=${COMP_WORDS[COMP_CWORD]} out
-	out=$(_koko_complete "${COMP_WORDS[@]:1:COMP_CWORD}")
+	out=$(_koko_complete names "${COMP_WORDS[@]:1:COMP_CWORD}")
 	case $out in
 	:file | :dir)
 		local IFS=$'\n'
@@ -210,11 +228,16 @@ complete -F _koko koko
 const zshDriver = `
 _koko() {
 	local out
-	out=$(_koko_complete "${(@)words[2,CURRENT]}")
+	local -a described
+	out=$(_koko_complete described "${(@)words[2,CURRENT]}")
 	case $out in
 	:file) _files ;;
 	:dir) _files -/ ;;
 	:value) ;;
+	--*:*)
+		described=("${(@f)out}")
+		_describe -t flags flag described
+		;;
 	*) compadd -- ${=out} ;;
 	esac
 }
