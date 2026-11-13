@@ -193,9 +193,10 @@ func aBrowsersGraceLeavesATunnelsAsItIs(t *testing.T) {
 
 // Through koko web on a joined device, a dropped Device Connection ends the
 // web terminal's WebSocket on it: after a cut the koko server Detaches its
-// SSH Session, after a stall the device's new Device Connection wins over
-// the one the koko server still holds. Either way the page Resumes through
-// koko web once the Device Mux has reconnected, byte for byte.
+// SSH Session, or a quick Resume comes first, after a stall the device's new
+// Device Connection wins over the one the koko server still holds. Either
+// way the page Resumes through koko web once the Device Mux has reconnected,
+// byte for byte.
 func aWebTerminalThroughKokoWebResumesAcrossADrop(t *testing.T) {
 	for _, f := range faults {
 		t.Run(f.name, func(t *testing.T) {
@@ -221,9 +222,8 @@ func aWebTerminalThroughKokoWebResumesAcrossADrop(t *testing.T) {
 				t.Errorf("after %s the terminal got %q, want each line once", f.name, out)
 			}
 			waitServerLog(t, s.h, `msg="ssh session resumed" tunnel=`+term.ID+` client=browser device_session=\S+ addr=\S+\n`)
-			detached := strings.Contains(s.h.Log(), `msg="ssh session detached" tunnel=`+term.ID+` `)
-			if detached == f.attachWins {
-				t.Errorf("after %s the SSH Session was Detached: %t, want %t", f.name, detached, !f.attachWins)
+			if f.attachWins && strings.Contains(s.h.Log(), `msg="ssh session detached" tunnel=`+term.ID+` `) {
+				t.Errorf("after %s the koko server Detached the SSH Session, want the Resume to take it off the channel it still held:\n%s", f.name, s.h.Log())
 			}
 		})
 	}
