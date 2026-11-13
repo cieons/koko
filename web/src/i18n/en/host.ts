@@ -181,6 +181,6 @@ export default {
   "error.host_was_managed": "The Host has been Managed, so koko keeps its record and never deletes it.",
   "error.host_retired": "The Host is Retired: it takes only changes to its Attributes and Note, and moves.",
   "error.invalid_relay":
-    "That Host cannot be a Relay here: a Relay is a Managed Host other than this one, and is exactly one hop.",
+    "That Host cannot be a Relay here: a Relay is a Managed Host other than this one, and a chain of Relays never loops or passes through more than 4.",
   "error.relay_in_use": "The Host is the Relay of a Host that is not Retired, so it cannot be Retired yet.",
 };

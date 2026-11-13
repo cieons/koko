@@ -357,6 +357,14 @@ func add(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostAddRequ
 	if len(req.Hosts) == 0 {
 		return api.HostAddResponse{}, api.CodeInvalidRequest.Errorf("name at least one Host to add")
 	}
+	// A new Host is Registered, so no Host of the batch is another's Relay,
+	// and the links the batch reads stay as they were.
+	var l links
+	if slices.ContainsFunc(req.Hosts, func(n api.NewHost) bool { return n.Relay != nil }) {
+		if l, err = readLinks(ctx, tx); err != nil {
+			return api.HostAddResponse{}, err
+		}
+	}
 	resp := api.HostAddResponse{Hosts: make([]api.Host, 0, len(req.Hosts))}
 	var faults []api.ItemError
 	first := map[string]int{}
@@ -367,7 +375,7 @@ func add(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostAddRequ
 			continue
 		}
 		first[n.Name] = i
-		h, err := insert(ctx, tx, who, n)
+		h, err := insert(ctx, tx, who, n, l)
 		if e, ok := errors.AsType[*api.Error](err); ok && len(req.Hosts) > 1 {
 			faults = append(faults, api.ItemError{Index: i, Code: e.Code, Message: e.Message})
 			continue
@@ -385,8 +393,8 @@ func add(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostAddRequ
 }
 
 // insert records one new Host, Registered, in the Space it names or the
-// caller's Personal Space.
-func insert(ctx context.Context, tx store.Tx, who access.Identity, n api.NewHost) (api.Host, error) {
+// caller's Personal Space, checking its Relay, if any, against l.
+func insert(ctx context.Context, tx store.Tx, who access.Identity, n api.NewHost, l links) (api.Host, error) {
 	if err := name.Check(n.Name); err != nil {
 		return api.Host{}, api.CodeInvalidName.Errorf("invalid Host name: %v", err)
 	}
@@ -411,7 +419,7 @@ func insert(ctx context.Context, tx store.Tx, who access.Identity, n api.NewHost
 	}
 	var relayID sql.NullString
 	if v.relay != nil {
-		r, err := relayFor(ctx, tx, who, h.ID, h.Name, *v.relay, nil)
+		r, err := relayFor(ctx, tx, who, h.ID, h.Name, *v.relay, l, nil)
 		if err != nil {
 			return api.Host{}, err
 		}
@@ -460,14 +468,15 @@ func checkFree(ctx context.Context, tx store.Tx, hostName string) error {
 
 // relayFor returns the Host ref names, by its name or its id, as the Relay
 // of the Host named hostName whose id is hostID, refusing one that cannot
-// be (P0 spec: the record, "Relay"): a Host the caller cannot see, as one
-// that does not exist; the Host itself; a Host that is not Managed, a
-// Retired one among them; one that has a Relay itself; and any Relay at all
-// for a Host that is the Relay of a Host that is not Retired, since a Relay
-// is exactly one hop: of a Host outside batch, the ids of the Hosts a batch
-// gives the same Relay, which no longer use this one once it is applied. A
-// refusal names no Host the caller cannot see.
-func relayFor(ctx context.Context, tx store.Tx, who access.Identity, hostID, hostName, ref string, batch []string) (stored, error) {
+// be (ADR 0055): a Host the caller cannot see, as one that does not exist;
+// the Host itself; a Host that is not Managed, a Retired one among them;
+// one whose chain holds the Host, which would loop; and one that would make
+// koko pass through more than MaxRelays to reach the Host or a Host behind
+// it that is not Retired. It checks the chains against l, the links as they
+// were before the write, with every Host of batch, the ids of the Hosts the
+// write gives this same Relay, no longer behind the Host. A refusal names no
+// Host the caller cannot see, and gives no count of Relays.
+func relayFor(ctx context.Context, tx store.Tx, who access.Identity, hostID, hostName, ref string, l links, batch []string) (stored, error) {
 	r, err := find(ctx, tx, who, ref)
 	if e, ok := errors.AsType[*api.Error](err); ok {
 		return stored{}, &api.Error{Code: e.Code, Message: fmt.Sprintf("the Relay of %s: %s", hostName, e.Message)}
@@ -483,18 +492,23 @@ func relayFor(ctx context.Context, tx store.Tx, who access.Identity, hostID, hos
 	case r.State != api.HostManaged:
 		return stored{}, api.CodeInvalidRelay.Errorf(
 			"%s is Registered, and a Relay must be Managed: Enroll it first, with koko host enroll %s", r.Name, r.Name)
-	case r.relay != nil:
-		return stored{}, api.CodeInvalidRelay.Errorf(
-			"%s has a Relay itself, and a Relay is exactly one hop: koko does not pass through two", r.Name)
 	}
-	used, err := usedAsRelay(ctx, tx, hostID, batch)
+	up, err := l.chain(r.ID)
+	if err != nil {
+		return stored{}, fmt.Errorf("read the chain of Relays of %s: %w", r.Name, err)
+	}
 	switch {
-	case err != nil:
-		return stored{}, err
-	case used:
+	case slices.Contains(up, hostID):
 		return stored{}, api.CodeInvalidRelay.Errorf(
-			"%s is the Relay of a Host that is not Retired, and a Relay is exactly one hop, so it takes no Relay itself; koko host ls relay=%s lists those you can see",
-			hostName, hostName)
+			"%s cannot take %s as its Relay: koko reaches %s through %s, and a chain of Relays never loops", hostName, r.Name, r.Name, hostName)
+	case len(up)+1 > MaxRelays:
+		return stored{}, api.CodeInvalidRelay.Errorf(
+			"%s cannot take %s as its Relay: koko would pass through more than %d Relays to reach %s, the most it passes through",
+			hostName, r.Name, MaxRelays, hostName)
+	case len(up)+1+l.deepest(hostID, MaxRelays-len(up)-1, batch) > MaxRelays:
+		return stored{}, api.CodeInvalidRelay.Errorf(
+			"%s cannot take %s as its Relay: koko would pass through more than %d Relays to reach a Host behind %s; koko host ls relay=%s lists the Hosts you can see that use %s as their Relay",
+			hostName, r.Name, MaxRelays, hostName, hostName, hostName)
 	}
 	return r, nil
 }
@@ -691,9 +705,17 @@ func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequ
 		}
 		return api.HostSetResponse{}, api.CodeInvalidRequest.Errorf("name at least one field, Attribute or Note of %s to change", of)
 	}
+	// The chains are checked against the links as they were before any
+	// Host of the batch is written (ADR 0050, ADR 0055).
+	var l links
+	if req.Relay != nil {
+		if l, err = readLinks(ctx, tx); err != nil {
+			return api.HostSetResponse{}, err
+		}
+	}
 	batch := n.ids()
 	hosts, err := n.each("changed", func(h stored) (api.Host, error) {
-		return setOne(ctx, tx, who, h, req, batch, changes)
+		return setOne(ctx, tx, who, h, req, l, batch, changes)
 	})
 	switch {
 	case err != nil:
@@ -705,10 +727,11 @@ func set(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequ
 }
 
 // setOne changes the Host h as host.set's req says, and answers it as the
-// change left it, batch being the ids of the Hosts the request changes. A
+// change left it, l being the links before the request and batch the ids
+// of the Hosts it changes. A
 // Retired Host keeps its address, port and Host Account as they were. A Managed Host whose Host Account changes goes back to
 // Registered, which it announces on changes, so its SSH Sessions end.
-func setOne(ctx context.Context, tx store.Tx, who access.Identity, h stored, req api.HostSetRequest, batch []string, changes *access.Signal) (api.Host, error) {
+func setOne(ctx context.Context, tx store.Tx, who access.Identity, h stored, req api.HostSetRequest, l links, batch []string, changes *access.Signal) (api.Host, error) {
 	v := values{address: req.Address, port: req.Port, account: req.Account, relay: req.Relay, attributes: req.Attributes, note: req.Note}
 	if h.State == api.HostRetired && (v.address != nil || v.port != nil || v.account != nil || v.relay != nil ||
 		slices.Contains(req.Unset, "port") || slices.Contains(req.Unset, "relay")) {
@@ -759,12 +782,17 @@ func setOne(ctx context.Context, tx store.Tx, who access.Identity, h stored, req
 	if v.note != nil {
 		h.Note = *v.note
 	}
-	// A new Relay keeps access, so it publishes nothing: a live SSH Session
-	// goes on through the Relay it started through.
+	// A new Relay is checked for being Managed, but the Relays beyond it
+	// are not, so the Host's chain may now hold one that is not: the change
+	// is announced, and each live SSH Session through the Host goes on only
+	// while a new one would be allowed, through the chain it started through.
 	if v.relay != nil {
-		r, err := relayFor(ctx, tx, who, h.ID, h.Name, *v.relay, batch)
+		r, err := relayFor(ctx, tx, who, h.ID, h.Name, *v.relay, l, batch)
 		if err != nil {
 			return api.Host{}, err
+		}
+		if r.ID != h.relayID().String {
+			changes.Publish(ctx, access.Change{Hosts: []string{h.ID}})
 		}
 		h.relay = &relayLink{id: r.ID}
 	}

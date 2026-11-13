@@ -348,7 +348,7 @@ test("Edit refuses a wrong value before the call, sends nothing when nothing cha
   fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
   await waitFor(() =>
     expect(alerts()).toContain(
-      "That Host cannot be a Relay here: a Relay is a Managed Host other than this one, and is exactly one hop.",
+      "That Host cannot be a Relay here: a Relay is a Managed Host other than this one, and a chain of Relays never loops or passes through more than 4.",
     ),
   );
   expect(api.requests(HostSet)).toEqual([{ host: "host_web1", address: "192.0.2.10" }]);

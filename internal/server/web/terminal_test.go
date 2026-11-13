@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/harness/sshhost"
+	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/resumable"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
@@ -350,6 +352,68 @@ func TestEachRefusalOfAnOpenIsItsAnswer(t *testing.T) {
 	for _, reason := range []string{"unknown_host", `"host registered"`, `"relay registered"`, `"host unreachable"`, `"host key mismatch"`, `"login refused"`, `"shell refused"`, `"host connection failed"`} {
 		waitLog(t, h, `msg="ssh session refused" tunnel=[0-9a-f]{32} client=browser name=\S+ signin=signin_\w+ addr=192\.0\.2\.10 reason=`+reason)
 	}
+}
+
+// A web terminal reaches a Host behind a chain of two Relays, web1 then
+// db1, and its Files panel lists the Host's files through it, for the Owner
+// and for bob, who sees web1 but not db1. A refusal at either hop has the
+// code it has at one Relay and the banner's text, which names the Relay
+// only to a caller who can see it and every Relay between it and the Host:
+// to bob, both are "app1's Relay". The log names the Relay and its hop.
+func TestATerminalReachesAHostThroughAChainOfRelays(t *testing.T) {
+	t.Parallel()
+	h := startTerminals(t, harness.Timings(timing.Timings{HostConnectWait: time.Millisecond}))
+	for _, space := range []string{"apps", "edge"} {
+		h.Koko("space", "add", space).WantSuccess(t)
+		h.Koko("space", "member", "add", space, "bob").WantSuccess(t)
+	}
+	web1 := terminalHost(t, h, "web1", []string{"space=edge"})
+	terminalHost(t, h, "db1", []string{"relay=web1"})
+	app1 := terminalHost(t, h, "app1", []string{"space=apps", "relay=db1"}, sshhost.SFTP())
+	writeFile(t, app1.Home(), "behind-two.txt", "deep")
+
+	owner, bob := h.SignIn(harness.Owner), h.SignIn("bob")
+	for _, b := range []*harness.Browser{owner, bob} {
+		w := b.TerminalPage().Open("app1", 80, 24)
+		w.Type([]byte("echo $((6 * 7))\n"))
+		w.WaitOutput("42")
+		listed := wantFiles[api.FilesListResponse](t, list(t, b, w.ID, ""))
+		if !slices.ContainsFunc(listed.Entries, func(e api.FileEntry) bool { return e.Name == "behind-two.txt" }) {
+			t.Errorf("the Files panel lists %+v, want app1's behind-two.txt", listed.Entries)
+		}
+	}
+
+	refuse := func(b *harness.Browser, code, message string) {
+		t.Helper()
+		w, a := b.TerminalPage().TryOpen("app1", 80, 24)
+		if w != nil {
+			t.Error("opening app1 was answered with an SSH Session")
+			return
+		}
+		wantRefused(t, a, code, message)
+	}
+	h.Koko("host", "set", "db1", "account=ops").WantSuccess(t)
+	refuse(owner, wire.TerminalRelayRegistered, "app1's Relay db1 is Registered: koko passes through it only once it is Enrolled, with koko host enroll db1.")
+	refuse(bob, wire.TerminalRelayRegistered, "app1's Relay is Registered: koko passes through it only once it is Enrolled.")
+	waitLog(t, h, `msg="ssh session refused" .* client=browser name=app1 .* reason="relay registered" relay=db1 relay_id=host_\w+ hop=2\n`)
+	h.Koko("host", "set", "db1", "account="+sshhost.Account).WantSuccess(t)
+	h.KokoStdin(hostPassword, "host", "enroll", "db1", "--password-stdin").WantSuccess(t)
+
+	_, deadPort, err := net.SplitHostPort(harness.FreeAddr(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.Koko("host", "set", "web1", "port="+deadPort).WantSuccess(t)
+	refuse(owner, wire.TerminalHostUnreachable, "app1's Relay web1 is down or unreachable: koko could not connect to it; this SSH Session did not start.")
+	refuse(bob, wire.TerminalHostUnreachable, "app1's Relay is down or unreachable: koko could not connect to it; this SSH Session did not start.")
+	waitLog(t, h, `msg="ssh session refused" .* client=browser name=app1 .* reason="relay unreachable" relay=web1 relay_id=host_\w+ hop=1 err=`)
+	h.Koko("host", "set", "web1", "port="+strconv.Itoa(web1.Port())).WantSuccess(t)
+
+	if err := os.WriteFile(filepath.Join(web1.Home(), ".ssh", "authorized_keys"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	refuse(owner, wire.TerminalLoginRefused, `app1's Relay web1 refused the koko key for its Host Account "deploy"; this SSH Session did not start.`)
+	refuse(bob, wire.TerminalLoginRefused, "app1's Relay refused the koko key; this SSH Session did not start.")
 }
 
 // notSSH listens on a loopback port where a server answers SSH's version

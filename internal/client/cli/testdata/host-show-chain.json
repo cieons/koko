@@ -1,0 +1,18 @@
+{
+  "id": "host_<1>",
+  "name": "app1",
+  "space": "apps",
+  "address": "127.0.0.1",
+  "port": <port>,
+  "account": "deploy",
+  "relay": {
+    "id": "host_<2>",
+    "name": "db1"
+  },
+  "state": "managed",
+  "host_key": "SHA256:<fingerprint>",
+  "attributes": {},
+  "note": null,
+  "created_at": "<time>",
+  "updated_at": "<time>"
+}

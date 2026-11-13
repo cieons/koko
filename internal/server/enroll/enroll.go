@@ -4,9 +4,9 @@
 // supplies, or that a Secret the caller can read holds, never with the koko
 // key, checks the host key the Host offers, appends the koko key to the Host
 // Account's authorized_keys and changes nothing else there, then records the
-// pin and the Managed state. A Host with a Relay is reached through it, as
-// the Gateway reaches it: the koko server logs in to the Relay with the koko
-// key, checking the Relay's pin.
+// pin and the Managed state. A Host with a Relay is reached through its
+// chain of Relays, as the Gateway reaches it: the koko server logs in to
+// each Relay with the koko key, checking each Relay's pin.
 //
 // The login runs before the write's transaction (op.HandlePrepared), so a
 // slow Host holds up no other write, and a dropped caller cancels nothing.
@@ -76,9 +76,12 @@ func (e *enroller) prepare(ctx context.Context, read op.Read, caller op.Caller, 
 		kokoKey ssh.Signer
 	)
 	// Who is calling comes first, so a Revoked Device Session learns
-	// nothing else, whatever it sent.
+	// nothing else, whatever it sent. A chain the record holds broken is
+	// refused where a Relay that is not Managed would be.
 	err := read(func(tx store.Tx) (err error) {
-		if who, h, err = host.ReachOf(ctx, tx, caller, req.Host); err != nil {
+		who, h, err = host.ReachOf(ctx, tx, caller, req.Host)
+		broken, isBroken := errors.AsType[*host.BrokenChainError](err)
+		if err != nil && !isBroken {
 			return err
 		}
 		if in, err = e.inputOf(ctx, tx, caller, req); err != nil {
@@ -87,20 +90,27 @@ func (e *enroller) prepare(ctx context.Context, read op.Read, caller op.Caller, 
 		if err := enrollable(h, req); err != nil {
 			return err
 		}
+		if isBroken {
+			return broken
+		}
 		if err := relayUsable(h); err != nil {
 			return err
 		}
 		kokoKey, err = deployment.KokoSigner(ctx, tx, e.rootKey)
 		return err
 	})
+	if broken, ok := errors.AsType[*host.BrokenChainError](err); ok {
+		return loggedIn{}, e.failed(who, h, api.CodeHostUnreachable.Errorf("koko could not connect to %s; the koko server's log says why", h.Name),
+			"reason", "relay chain broken", "read_relay_ids", strings.Join(broken.IDs, ","))
+	}
 	if err != nil {
 		return loggedIn{}, err
 	}
 	target := hostconn.Target{Address: h.Address, Port: h.Port, Account: h.Account, Login: in.login, Pin: pinFor(h, req)}
-	var relays []hostconn.Target
-	if r := h.Relay; r != nil {
+	relays := make([]hostconn.Target, len(h.Relays))
+	for i, r := range h.Relays {
 		// A Relay is always Managed: koko logs in to it as the Gateway does.
-		relays = []hostconn.Target{{Address: r.Address, Port: r.Port, Account: r.Account, Login: hostconn.KeyLogin(kokoKey), Pin: hostconn.PinKey(r.Pin)}}
+		relays[i] = hostconn.Target{Address: r.Address, Port: r.Port, Account: r.Account, Login: hostconn.KeyLogin(kokoKey), Pin: hostconn.PinKey(r.Pin)}
 	}
 	conn, err := e.connector.Connect(ctx, target, relays)
 	if err != nil {
@@ -240,15 +250,17 @@ func enrollable(h host.Reach, req api.HostEnrollRequest) error {
 	return fmt.Errorf("enroll %s: a Host in the state %q cannot be Enrolled", h.Name, h.State)
 }
 
-// relayUsable refuses to Enroll a Host whose Relay is not Managed, since
-// koko passes through a Relay only with the koko key. It names the Relay
-// only to a caller who can see it.
+// relayUsable refuses to Enroll a Host whose chain holds a Relay that is not
+// Managed, since koko passes through a Relay only with the koko key, naming
+// the one nearest the koko server, and only to a caller who can follow the
+// links to it.
 func relayUsable(h host.Reach) error {
-	r := h.Relay
-	switch {
-	case r == nil || r.State == api.HostManaged:
+	i := slices.IndexFunc(h.Relays, func(r *host.Relay) bool { return r.State != api.HostManaged })
+	if i < 0 {
 		return nil
-	case r.Seen:
+	}
+	r := h.Relays[i]
+	if r.Seen {
 		return api.CodeInvalidRelay.Errorf(
 			"%s is not Managed, and koko passes through a Relay only once it is Enrolled: Enroll %s first, with koko host enroll %s", r.Of(h.Name), r.Name, r.Name)
 	}
@@ -271,10 +283,10 @@ func pinFor(h host.Reach, req api.HostEnrollRequest) hostconn.Pin {
 // connectRefusal is the caller's answer to a failed login to the Host with
 // in. The connector's errors name the Host's address and Host Account,
 // which the caller may see: they can act on the Host. A failure on the leg
-// to its Relay is relayRefusal's.
+// to a Relay of its chain is relayConnectRefusal's.
 func connectRefusal(h host.Reach, req api.HostEnrollRequest, in input, err error) *api.Error {
-	if _, ok := errors.AsType[*hostconn.RelayError](err); ok && h.Relay != nil {
-		return relayConnectRefusal(h, err)
+	if r := failedRelay(h, err); r != nil {
+		return relayConnectRefusal(h, r, err)
 	}
 	if m, ok := errors.AsType[*hostconn.HostKeyMismatchError](err); ok {
 		if req.HostKey != nil {
@@ -293,14 +305,13 @@ func connectRefusal(h host.Reach, req api.HostEnrollRequest, in input, err error
 }
 
 // relayConnectRefusal is the caller's answer when koko could not log in to
-// the Relay of the Host h with the koko key, so it could not reach h:
+// the Relay r of the Host h's chain with the koko key, so it could not reach h:
 // refused with CodeHostUnreachable, as is a Host koko cannot reach, since
 // host_key and replace_host_key, which unexpected_host_key names, pin the
 // Host's key and not its Relay's. It names the Relay, its fingerprints and
-// its Host Account only to a caller who can see it, and the connector's
-// error, which names addresses, never: connectFailure logs it.
-func relayConnectRefusal(h host.Reach, err error) *api.Error {
-	r := h.Relay
+// its Host Account only to a caller who can follow the links to it, and the
+// connector's error, which names addresses, never: connectFailure logs it.
+func relayConnectRefusal(h host.Reach, r *host.Relay, err error) *api.Error {
 	relay := r.Of(h.Name)
 	m, mismatch := errors.AsType[*hostconn.HostKeyMismatchError](err)
 	var why string
@@ -323,11 +334,22 @@ func relayConnectRefusal(h host.Reach, err error) *api.Error {
 }
 
 // connectFailure is what the log adds about a failed login to the Host h
-// with err: for a failure on its Relay's leg, which the refusal tells
-// without addresses, the Relay and the connector's error.
+// with err: for a failure on a Relay's leg, which the refusal tells without
+// addresses, the Relay, its place in the chain from 1, and the connector's
+// error.
 func connectFailure(h host.Reach, err error) []any {
-	if _, ok := errors.AsType[*hostconn.RelayError](err); ok && h.Relay != nil {
-		return []any{"relay", h.Relay.Name, "relay_id", h.Relay.ID, "cause", err}
+	if e, ok := errors.AsType[*hostconn.RelayError](err); ok && e.Hop < len(h.Relays) {
+		r := h.Relays[e.Hop]
+		return []any{"relay", r.Name, "relay_id", r.ID, "hop", e.Hop + 1, "cause", err}
+	}
+	return nil
+}
+
+// failedRelay is the Relay of the Host h's chain on whose leg the connector
+// failed with err, or nil for a failure on the Host's own leg.
+func failedRelay(h host.Reach, err error) *host.Relay {
+	if e, ok := errors.AsType[*hostconn.RelayError](err); ok && e.Hop < len(h.Relays) {
+		return h.Relays[e.Hop]
 	}
 	return nil
 }

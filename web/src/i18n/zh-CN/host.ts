@@ -178,6 +178,6 @@ export default {
   "error.invalid_value": "某个字段、属性或备注的值不符合其规则。",
   "error.host_was_managed": "该主机曾经接入，因此 koko 保留其记录，不予删除。",
   "error.host_retired": "该主机已下线，仅可修改其属性和备注，或移至其他空间。",
-  "error.invalid_relay": "该主机不能在此作为中继：中继须为另一台已接入的主机，且仅限一跳。",
+  "error.invalid_relay": "该主机不能在此作为中继：中继须为另一台已接入的主机，且中继链不得成环，所经中继不得超过 4 个。",
   "error.relay_in_use": "该主机是一台未下线主机的中继，因此暂不能下线。",
 } satisfies Record<keyof typeof en, string>;

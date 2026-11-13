@@ -318,10 +318,11 @@ var (
 	// changes to its Attributes and Note, and moves.
 	CodeHostRetired = Code{"host_retired", http.StatusConflict}
 	// CodeInvalidRelay: the Host named as a Relay cannot be one: it is the
-	// Host itself, it is not Managed, or it has a Relay itself; or the Host
-	// given a Relay is the Relay of a Host that is not Retired. A Relay is
-	// exactly one hop. host.enroll refuses with it a Host whose Relay is not
-	// Managed, which koko cannot pass through.
+	// Host itself, it is not Managed, its chain of Relays passes through the
+	// Host, which would loop, or koko would pass through more than 4 Relays
+	// to reach the Host or a Host behind it. host.enroll refuses with it a
+	// Host whose chain holds a Relay that is not Managed, which koko cannot
+	// pass through.
 	CodeInvalidRelay = Code{"invalid_relay", http.StatusConflict}
 	// CodeRelayInUse: host.retire of a Host that a Host that is not Retired
 	// uses as its Relay. The message names neither that Host nor how many.

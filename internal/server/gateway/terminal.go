@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/cieons/koko/internal/server/host"
 	"github.com/cieons/koko/internal/server/hostconn"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/shared/api"
@@ -180,16 +181,15 @@ func (g *Gateway) serveTerminal(c TerminalCaller, s TerminalSocket, hostName str
 	g.attachTerminal(t, s, resumable.New(sc), sc)
 
 	started := time.Now()
-	who := sessionAttrs(t, a)
-	g.log.Info("ssh session started", slices.Concat(who, []any{"addr", t.from})...)
+	g.log.Info("ssh session started", startedAttrs(t, a)...)
 	g.log.Info("ssh session request", "tunnel", t.id, "client", t.client, "host", a.host.Name, "request", "shell")
 	shell.stream = t.stream
 	end := shell.relay(t.ctx)
 	t.end(end)
-	g.log.Info("ssh session ended", slices.Concat(who, []any{
+	g.log.Info("ssh session ended", slices.Concat(sessionAttrs(t, a), []any{
 		"duration", time.Since(started).Round(time.Millisecond),
 		"bytes_from_device", shell.read.Load(), "bytes_to_device", shell.written.Load(),
-	}, shell.exit(), []any{"reason", end.reason})...)
+	}, shell.exit(), end.attrs, []any{"reason", end.reason})...)
 }
 
 // ResumeTerminal Resumes the web terminal's SSH Session id on the WebSocket
@@ -384,21 +384,17 @@ func (t *tunnel) cut() {
 }
 
 // startShell dials the Host a admitted for the web terminal t, through its
-// Relay if any, and starts a shell there on one session channel with a pty
+// chain of Relays, and starts a shell there on one session channel with a pty
 // of cols columns and rows rows, asking for TERM xterm-256color and IUTF8,
 // so that a shell's line editor erases a whole Chinese character. It returns
 // the refusal of a Host the connector could not log in to, or that refused
 // the session, its pty or its shell, and fails on t's end.
 func (g *Gateway) startShell(t *tunnel, a admission, cols, rows uint32) (*terminalShell, *refusal, error) {
-	var relays []hostconn.Target
-	if r := a.host.Relay; r != nil {
-		relays = []hostconn.Target{kokoTarget(r.Reach, a.kokoKey)}
-	}
-	conn, err := g.connector.Connect(t.ctx, kokoTarget(a.host, a.kokoKey), relays)
+	conn, err := g.connector.Connect(t.ctx, kokoTarget(a.host, a.kokoKey), kokoTargets(a.host.Relays, a.kokoKey))
 	if err != nil {
 		return nil, connectRefusal(a.host, err), nil
 	}
-	sh := &terminalShell{host: conn, hostName: a.host.Name, relayName: relayName(a.host)}
+	sh := &terminalShell{host: conn, hostName: a.host.Name, relays: a.host.Relays}
 	// A Host that answers neither the open nor a request would hold the
 	// SSH Session's end, as when the koko server stops: the end closes the
 	// connection, which fails them.
@@ -443,16 +439,15 @@ func (g *Gateway) startShell(t *tunnel, a admission, cols, rows uint32) (*termin
 var ttyModes = []byte{42, 0, 0, 0, 1, 0}
 
 // terminalShell is a web terminal's shell on the Host: one session channel
-// on the Gateway's connection to the Host named hostName, through the Relay
-// relayName names, if any, relayed to and from the terminal records of a
-// resumable stream.
+// on the Gateway's connection to the Host named hostName, through its chain
+// relays, relayed to and from the terminal records of a resumable stream.
 type terminalShell struct {
-	host      *hostconn.Conn
-	hostName  string
-	relayName string
-	ch        ssh.Channel
-	reqs      <-chan *ssh.Request
-	stream    *resumable.Stream
+	host     *hostconn.Conn
+	hostName string
+	relays   []*host.Relay
+	ch       ssh.Channel
+	reqs     <-chan *ssh.Request
+	stream   *resumable.Stream
 	// files are the SSH Session's files on the Host (files.go), which end
 	// before the Host connection closes; nil before the shell started.
 	files *terminalFiles
@@ -514,7 +509,7 @@ func (sh *terminalShell) relay(ctx context.Context) *ending {
 		<-requests
 		// A channel the Host's connection took down sees it broken.
 		if sh.host.Broken() != nil {
-			ended <- hostEnding(sh.host, sh.hostName, sh.relayName)
+			ended <- hostEnding(sh.host, sh.hostName, sh.relays)
 			return
 		}
 		ended <- errShellEnded

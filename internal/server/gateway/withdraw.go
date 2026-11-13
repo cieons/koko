@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/cieons/koko/internal/server/access"
@@ -113,12 +114,13 @@ func (g *Gateway) recheck(ts []*tunnel) {
 
 // withdrawal tells whether the live SSH Session in the Tunnel t may go on:
 // whether its caller would be allowed a new one to its Host, which it reads
-// by the Host's id, so that a rename changes nothing: the Host and its
-// Relay, if any, Managed. It returns nil when they would, and otherwise how
-// the SSH Session ends. A Host the caller can no longer see is withdrawn
+// by the Host's id, so that a rename changes nothing: the Host and every
+// Relay of its chain Managed. It returns nil when they would, and otherwise
+// how the SSH Session ends. A Host the caller can no longer see is withdrawn
 // without a word more, so the line tells nothing of where it went, and a
-// Relay they cannot see is "its Relay". It fails only on an error of the
-// koko server's own.
+// Relay they cannot follow the links to is "its Relay". A chain the record
+// holds broken ends it as a check that failed, with the ids read in the
+// log. It fails only on an error of the koko server's own.
 func withdrawal(ctx context.Context, tx store.Tx, t *tunnel) (*ending, error) {
 	who, h, err := host.ReachOf(ctx, tx, t.caller, t.hostID)
 	if e, ok := errors.AsType[*api.Error](err); ok {
@@ -130,12 +132,18 @@ func withdrawal(ctx context.Context, tx store.Tx, t *tunnel) (*ending, error) {
 		}
 		return withdrawn(t, "access withdrawn", ""), nil
 	}
-	if err != nil {
+	broken, isBroken := errors.AsType[*host.BrokenChainError](err)
+	if err != nil && !isBroken {
 		return nil, err
 	}
 	switch h.State {
 	case api.HostManaged:
-		return relayWithdrawal(ctx, tx, t, who, h.Relay)
+		if isBroken {
+			e := checkFailed(t)
+			e.reason, e.attrs = "relay chain broken", []any{"read_relay_ids", strings.Join(broken.IDs, ",")}
+			return e, nil
+		}
+		return relayWithdrawal(ctx, tx, t, who, h.Relays)
 	case api.HostRetired:
 		return withdrawn(t, "host retired", t.hostName+" was Retired"), nil
 	}
@@ -143,23 +151,28 @@ func withdrawal(ctx context.Context, tx store.Tx, t *tunnel) (*ending, error) {
 }
 
 // relayWithdrawal tells whether the live SSH Session in the Tunnel t to a
-// Managed Host may go on as far as Relays go: both the Relay it passes
-// through, which a change of the Host's Relay since leaves as it was, and
-// the Host's Relay now, current, which a new one would pass through, must
-// be Managed. A Relay that is not ends it, named only to a caller who can
-// see it.
-func relayWithdrawal(ctx context.Context, tx store.Tx, t *tunnel, who access.Identity, current *host.Relay) (*ending, error) {
-	relays := []*host.Relay{current}
-	if t.relayID != "" && (current == nil || current.ID != t.relayID) {
-		used, err := host.RelayByID(ctx, tx, who, t.relayID)
+// Managed Host may go on as far as Relays go: every Relay of the chain it
+// passes through, which a change of a Relay since leaves as it was, and of
+// the Host's chain now, current, which a new one would pass through, must
+// be Managed. The first that is not, in the chain it started through first
+// and nearest the koko server first in each, ends it, named only to a
+// caller who can follow the links of its chain to it.
+func relayWithdrawal(ctx context.Context, tx store.Tx, t *tunnel, who access.Identity, current []*host.Relay) (*ending, error) {
+	chains := [][]*host.Relay{current}
+	if len(t.relayIDs) > 0 && !slices.Equal(t.relayIDs, host.IDs(current)) {
+		started, err := host.RelaysByID(ctx, tx, who, t.relayIDs)
 		if err != nil {
 			return nil, err
 		}
-		relays = append(relays, used)
+		chains = [][]*host.Relay{started, current}
 	}
-	for _, r := range relays {
-		if r != nil && r.State != api.HostManaged {
-			return withdrawn(t, "relay "+r.State, r.Of(t.hostName)+" is no longer Managed"), nil
+	for _, chain := range chains {
+		for hop, r := range chain {
+			if r.State != api.HostManaged {
+				e := withdrawn(t, "relay "+r.State, r.Of(t.hostName)+" is no longer Managed")
+				e.attrs = relayAttrs(r, hop)
+				return e, nil
+			}
 		}
 	}
 	return nil, nil

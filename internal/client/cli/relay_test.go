@@ -109,13 +109,13 @@ func TestAHostIsEnrolledAndReachedThroughItsRelay(t *testing.T) {
 	if n := relayedTo(relay, host); n != 2 {
 		t.Errorf("the Relay carried %d connections to web1, want 2: Enroll's and the SSH Session's", n)
 	}
-	waitServerLog(t, h, `msg="ssh session started" .* host=web1 host_id=host_\w+ relay=gw relay_id=`+gwID+` addr=`)
+	waitServerLog(t, h, `msg="ssh session started" .* host=web1 host_id=host_\w+ relay=gw relay_id=`+gwID+` relays=gw relay_ids=`+gwID+` addr=`)
 }
 
 // A Relay is set only when it can be one: a Managed Host the setter can
-// see, other than the Host itself, with no Relay of its own, on a Host that
-// is no Relay itself. Each refusal changes nothing; a value that names no
-// Host is refused before any call. A Relay is cleared with --unset relay.
+// see, other than the Host itself, whose chain does not pass through the
+// Host. Each refusal changes nothing; a value that names no Host is refused
+// before any call. A Relay is cleared with --unset relay.
 func TestARelayIsSetOnlyWhenItCanBeOne(t *testing.T) {
 	t.Parallel()
 	h := harness.Start(t)
@@ -135,8 +135,7 @@ func TestARelayIsSetOnlyWhenItCanBeOne(t *testing.T) {
 		{[]string{"host", "set", "web2", "relay=fresh"}, "invalid_relay", "fresh is Registered, and a Relay must be Managed: Enroll it first, with koko host enroll fresh"},
 		{[]string{"host", "set", "web2", "relay=" + goneID}, "invalid_relay", "gone (" + goneID + ") is Retired, and a Retired Host is never a Relay"},
 		{[]string{"host", "set", "spare", "relay=spare"}, "invalid_relay", "spare cannot be its own Relay"},
-		{[]string{"host", "set", "web2", "relay=web1"}, "invalid_relay", "web1 has a Relay itself, and a Relay is exactly one hop"},
-		{[]string{"host", "set", "gw", "relay=spare"}, "invalid_relay", "gw is the Relay of a Host that is not Retired"},
+		{[]string{"host", "set", "gw", "relay=web1"}, "invalid_relay", "gw cannot take web1 as its Relay: koko reaches web1 through gw, and a chain of Relays never loops"},
 		{[]string{"host", "set", "web2", "relay=nowhere"}, "unknown_host", `the Relay of web2: no Host is named "nowhere"`},
 		{[]string{"host", "add", "web3", "address=203.0.113.3", "account=deploy", "relay=fresh"}, "invalid_relay", "fresh is Registered"},
 	} {
@@ -302,7 +301,7 @@ func TestTheGatewaySaysWhyItCouldNotPassThroughTheRelay(t *testing.T) {
 			"or with --replace-host-key, which trusts whatever key it offers.\n", fingerprint(relay), fingerprint(rebuilt)))
 	wantRefused(t, laptop.Koko("exec", "web1", "true"),
 		"koko: the host key of web1's Relay does not match the one pinned at Enroll; koko did not log in.\n")
-	waitServerLog(t, h, `level=WARN msg="ssh session refused" .* name=web1 .* reason="relay host key mismatch" relay_id=host_\w+ pinned=`)
+	waitServerLog(t, h, `level=WARN msg="ssh session refused" .* name=web1 .* reason="relay host key mismatch" relay=gw relay_id=host_\w+ hop=1 pinned=`)
 	msg := h.KokoStdin(hostPassword, "host", "enroll", "web1", "--password-stdin", "--replace-host-key", "--json").WantError(t, 1, "host_unreachable")
 	if !strings.Contains(msg, "the host key of web1's Relay gw does not match the one pinned at Enroll (pinned") {
 		t.Errorf("Enroll through a Relay whose host key changed is refused with %q, want the Relay's mismatch", msg)
@@ -321,7 +320,7 @@ func TestTheGatewaySaysWhyItCouldNotPassThroughTheRelay(t *testing.T) {
 	if want := "koko could not reach web1 through its Relay, so it did not log in to web1: web1's Relay is down or unreachable"; msg != want {
 		t.Errorf("bob's Enroll through a Relay that is down is refused with %q, want %q", msg, want)
 	}
-	waitServerLog(t, h, `msg="enroll failed" host=web1 .* code=host_unreachable .* relay=gw relay_id=host_\w+ cause=`)
+	waitServerLog(t, h, `msg="enroll failed" host=web1 .* code=host_unreachable .* relay=gw relay_id=host_\w+ hop=1 cause=`)
 
 	h.Koko("host", "set", "gw", "port="+gwPort).WantSuccess(t)
 	if err := os.WriteFile(filepath.Join(relay.Home(), ".ssh", "authorized_keys"), nil, 0o600); err != nil {
@@ -342,7 +341,7 @@ func TestTheGatewaySaysWhyItCouldNotPassThroughTheRelay(t *testing.T) {
 		"koko: web1's Relay gw is Registered: koko passes through it only once it is Enrolled, with koko host enroll gw.\n")
 	wantRefused(t, laptop.Koko("exec", "web1", "true"),
 		"koko: web1's Relay is Registered: koko passes through it only once it is Enrolled.\n")
-	waitServerLog(t, h, `msg="ssh session refused" .* name=web1 .* reason="relay registered"\n`)
+	waitServerLog(t, h, `msg="ssh session refused" .* name=web1 .* reason="relay registered" relay=gw relay_id=host_\w+ hop=1\n`)
 	msg = h.KokoStdin(hostPassword, "host", "enroll", "web1", "--password-stdin", "--replace-host-key", "--json").WantError(t, 1, "invalid_relay")
 	if !strings.Contains(msg, "web1's Relay gw is not Managed") {
 		t.Errorf("Enroll through a Registered Relay is refused with %q, want it to say so", msg)

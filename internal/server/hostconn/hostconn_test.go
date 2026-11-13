@@ -680,6 +680,62 @@ func TestBrokenNamesTheLegNearestTheKokoServer(t *testing.T) {
 	}
 }
 
+// A Relay that stops answering is the one Broken names, dead for HostDead,
+// once the Host's leg has ended: every leg after it, whose bytes it carries,
+// falls silent with it, and one found dead first, as the Host's is when the
+// Host fell silent first, ends only once its close has passed through the
+// Relay, which it never does, so with the Relay's own end. A Host that stops
+// answering behind a chain that lives is the Host's.
+func TestBrokenNamesTheRelayThatWentSilent(t *testing.T) {
+	// dead is long enough that a leg still answering is never taken for
+	// silent under load.
+	const relays, probe, dead = 2, 20 * time.Millisecond, 1500 * time.Millisecond
+	c := hostconn.Connector{Timings: timing.Timings{HostProbe: probe, HostDead: dead}}
+	for frozen := range relays + 1 {
+		t.Run("hop "+strconv.Itoa(frozen), func(t *testing.T) {
+			t.Parallel()
+			chain := startChain(t, relays, nil)
+			conn, err := c.Connect(t.Context(), chain.hostTarget(), chain.relayTargets())
+			if err != nil {
+				t.Fatalf("Connect: %v", err)
+			}
+			t.Cleanup(func() { _ = conn.Close() })
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				_ = conn.Wait()
+			}()
+
+			chain.host.Freeze()
+			t.Cleanup(chain.host.Thaw)
+			if frozen < relays {
+				// Long enough for each leg beneath the Host's to hear its own
+				// probe answered after the Host's last byte.
+				time.Sleep(10 * probe)
+				chain.relays[frozen].Freeze()
+				t.Cleanup(chain.relays[frozen].Thaw)
+			}
+
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the Host's leg did not end within 10 s")
+			}
+			broken := conn.Broken()
+			if d, ok := errors.AsType[*liveness.DeadError](broken); !ok || d.Quiet != dead {
+				t.Errorf("Broken = %v, want no answer for %v", broken, dead)
+			}
+			relay, isRelay := errors.AsType[*hostconn.RelayError](broken)
+			switch {
+			case frozen == relays && isRelay:
+				t.Errorf("a silent Host behind a live chain: Broken = %v at hop %d, want the Host's", broken, relay.Hop)
+			case frozen < relays && (!isRelay || relay.Hop != frozen):
+				t.Errorf("a silent Relay at hop %d: Broken = %v, want a RelayError at its hop", frozen, broken)
+			}
+		})
+	}
+}
+
 // Closing the connection to a Host behind a chain closes every leg, and
 // Broken says nothing of it.
 func TestClosingAChainClosesEveryLeg(t *testing.T) {

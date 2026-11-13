@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/cieons/koko/internal/server/host"
 	"github.com/cieons/koko/internal/server/hostconn"
 	"github.com/cieons/koko/internal/shared/liveness"
 	"github.com/cieons/koko/internal/shared/resumable"
@@ -23,14 +24,13 @@ import (
 
 // sshSession is one SSH Session the Gateway relays: the client's connection
 // inside its Tunnel on one side, the Gateway's own to the Host named
-// hostName on the other, through the Relay a message names as relayName
-// (host.Relay.Of), empty for none. stream is the Tunnel's, which the SSH
-// Session's end closes.
+// hostName on the other, through its chain relays, none for a Host without
+// a Relay. stream is the Tunnel's, which the SSH Session's end closes.
 type sshSession struct {
-	host      *hostconn.Conn
-	hostName  string
-	relayName string
-	stream    *resumable.Stream
+	host     *hostconn.Conn
+	hostName string
+	relays   []*host.Relay
+	stream   *resumable.Stream
 	// log logs the SSH Session's requests, with its Tunnel and Host.
 	log *slog.Logger
 
@@ -102,25 +102,29 @@ var clientClosed = &ending{reason: "client closed"}
 
 // hostEnding says why the Host's connection ended, once it has.
 func (s *sshSession) hostEnding() *ending {
-	return hostEnding(s.host, s.hostName, s.relayName)
+	return hostEnding(s.host, s.hostName, s.relays)
 }
 
-// hostEnding says why host, the connection to the Host named hostName,
-// ended, once it has: the connector found the Host or its Relay silent, or
-// one of them, or the network beneath, ended it. Each notice names the leg
-// that broke: the Host, or its Relay, as relayName names it.
-func hostEnding(host *hostconn.Conn, hostName, relayName string) *ending {
-	broken := host.Broken()
+// hostEnding says why conn, the connection to the Host named hostName
+// through its chain relays, ended, once it has: the connector found the Host
+// or a Relay silent, or one of them, or the network beneath, ended it. Each
+// notice names the leg that broke: the Host, or the Relay nearest the koko
+// server whose leg ended, named only to a caller who can follow the links
+// to it, which the log names with its hop.
+func hostEnding(conn *hostconn.Conn, hostName string, relays []*host.Relay) *ending {
+	broken := conn.Broken()
 	leg, lost, closed := hostName, "Host leg lost", "Host closed"
-	if _, ok := errors.AsType[*hostconn.RelayError](broken); ok {
-		leg, lost, closed = relayName, "Relay leg lost", "Relay closed"
+	var attrs []any
+	if e, ok := errors.AsType[*hostconn.RelayError](broken); ok && e.Hop < len(relays) {
+		r := relays[e.Hop]
+		leg, lost, closed, attrs = r.Of(hostName), "Relay leg lost", "Relay closed", relayAttrs(r, e.Hop)
 	}
 	if e, ok := errors.AsType[*liveness.DeadError](broken); ok {
 		why := fmt.Sprintf("lost the connection to %s (no answer for %s s)", leg, strconv.FormatFloat(e.Quiet.Seconds(), 'f', -1, 64))
-		return &ending{reason: lost, notice: why + "; this SSH Session has ended.", why: why}
+		return &ending{reason: lost, notice: why + "; this SSH Session has ended.", why: why, attrs: attrs}
 	}
 	why := leg + " closed the connection"
-	return &ending{reason: closed, notice: why + ".", why: why}
+	return &ending{reason: closed, notice: why + ".", why: why, attrs: attrs}
 }
 
 // forwardRequests are the client's global requests the Gateway passes on to
