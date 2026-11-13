@@ -234,7 +234,6 @@ function AddDevice({ user, onAdded, onClose }: { user: string; onAdded: () => vo
   return (
     <IssueDialog
       title={own ? t("device.add") : t("device.add.titleFor", { name: user })}
-      lead={t("device.add.lead")}
       submit={t("device.add.submit")}
       pending={add.pending}
       changed={device !== "" || validFor !== defaultValidFor}

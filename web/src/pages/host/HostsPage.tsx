@@ -7,7 +7,7 @@ import { type Host, HostList, type HostListResponse } from "../../api/host";
 import { type Service, ServiceList, type ServiceListResponse } from "../../api/service";
 import { type Space, SpaceList, type SpaceListResponse } from "../../api/space";
 import { type Read, useRead } from "../../shell/data";
-import { useCount, useT } from "../../shell/i18n";
+import { useT } from "../../shell/i18n";
 import { type RememberedList, ResetView, type RememberedView, useRememberedView } from "../../shell/rememberedView";
 import { Choice, listSearchClass, SearchChoice } from "../../ui/fields";
 import { Page } from "../../ui/Page";
@@ -51,7 +51,6 @@ const AddHost = lazy(() => import("./HostForm").then((m) => ({ default: m.AddHos
  */
 export function HostsPage() {
   const t = useT();
-  const count = useCount();
   const view = useRememberedView(listOf);
   const page = readListPage(view.params, defaults);
   const setPage = (next: ListPage, replace = false) => view.setParams(writeListPage(next, defaults), { replace });
@@ -69,19 +68,11 @@ export function HostsPage() {
       {t("host.add.open")}
     </Button>
   );
-  const lead =
-    inUse && services.data
-      ? t("host.list.lead", {
-          hosts: count("host.count.hosts", inUse.length),
-          spaces: count("host.count.spaces", new Set(inUse.map((h) => h.space)).size),
-          services: count("host.count.services", services.data.services.length),
-        })
-      : undefined;
   const asDefault = page.q === "" && page.space === "" && page.list.filters.length === 0 && !page.list.all;
   return (
-    <Page title={t("host.list.title")} lead={lead} actions={add}>
+    <Page title={t("host.list.title")} actions={add}>
       {recorded?.length === 0 && asDefault ? (
-        <EmptyState title={t("host.list.empty")} lead={t("host.list.emptyLead")} action={add} />
+        <EmptyState title={t("host.list.empty")} action={add} />
       ) : (
         <InPanel read={joined(attrs, spaces, hosts, services)}>
           {([a, s, h, v]) => (

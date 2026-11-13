@@ -65,7 +65,7 @@ test("a User without a Password is told so, and offered no Remove Password", asy
   await asOwner("/access/people/carol");
 
   const panel = await openPanel("carol");
-  expect(within(panel).getByText("carol has no Password and cannot sign in from a browser.")).toBeDefined();
+  expect(within(panel).getByText("No Password is set.")).toBeDefined();
   expect(within(panel).queryByRole("button", { name: "Remove Password" })).toBeNull();
   expect(await within(panel).findByText("No browser is signed in as carol.")).toBeDefined();
 });
@@ -77,11 +77,7 @@ test("Issue Password Link, valid for the time chosen, shows the link once with C
 
   fireEvent.click(within(panel).getByRole("button", { name: "Issue Password Link" }));
   const dialog = await screen.findByRole("dialog", { name: "Password Link for bob" });
-  expect(
-    within(dialog).getByText(
-      "The link lets bob set a Password in a browser, once. An earlier link that was not used stops working.",
-    ),
-  ).toBeDefined();
+  expect(within(dialog).getByText("An earlier link that was not used stops working.")).toBeDefined();
   expect(within(dialog).getByRole("radio", { name: "15 minutes" }).getAttribute("aria-checked")).toBe("true");
   await expectAccessible();
   chooseValidFor(dialog, "7 days");
@@ -145,7 +141,7 @@ test("Remove Password asks first, then the panel shows no Password and Access no
 
   expect(await screen.findByText("The Password of bob is removed.")).toBeDefined();
   expect(api.requests(PasswordRemove)).toEqual([{ user: "bob" }]);
-  expect(await within(panel).findByText("bob has no Password and cannot sign in from a browser.")).toBeDefined();
+  expect(await within(panel).findByText("No Password is set.")).toBeDefined();
   expect(within(panel).queryByRole("button", { name: "Remove Password" })).toBeNull();
   await waitFor(() => expect(document.activeElement?.textContent).toBe("Password"));
   await waitFor(() => expect(screen.getByRole("link", { name: /^bob/ }).textContent).not.toContain("Password set"));

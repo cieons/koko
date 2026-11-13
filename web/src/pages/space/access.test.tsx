@@ -336,7 +336,7 @@ test("on a phone the lists are the same, and membership changes in either panel"
   fireEvent.click(await within(ops).findByRole("button", { name: "Take bob out of ops" }));
   expect(await screen.findByText("bob is no longer a Member of ops.")).toBeDefined();
   expect(api.requests(SpaceMemberRemove)).toEqual([{ space: "ops", users: ["bob"] }]);
-  await waitFor(() => expect(within(ops).getByText("No Member yet. Only the Owner and the Administrators see what this Space holds.")).toBeDefined());
+  await waitFor(() => expect(within(ops).getByText("No Member yet.")).toBeDefined());
 });
 
 // A Space's panel.
@@ -451,7 +451,7 @@ test("a refused Add Members says why under the field, keeps the Users picked and
   const alert = await within(shown).findByRole("alert");
   expect(alert.textContent).toBe("That User was Removed.");
   // In place: right under the field, above the Members.
-  expect(alert.compareDocumentPosition(within(shown).getByText("No Member yet. Only the Owner and the Administrators see what this Space holds.")))
+  expect(alert.compareDocumentPosition(within(shown).getByText("No Member yet.")))
     .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   expect(within(shown).getAllByRole("row").map((r) => r.textContent)).toEqual(["erin", "frank"]);
   expect(api.requests(SpaceMemberAdd)).toEqual([{ space: "web", users: ["erin", "frank"] }]);
@@ -525,7 +525,7 @@ test("Take out keeps the focus in the Members: on the next one, the one before f
   await waitFor(() =>
     expect(document.activeElement).toBe(within(shown).getByRole("button", { name: /Add Members$/ })),
   );
-  expect(within(shown).getByText("No Member yet. Only the Owner and the Administrators see what this Space holds.")).toBeDefined();
+  expect(within(shown).getByText("No Member yet.")).toBeDefined();
   expect(api.requests(SpaceMemberRemove)).toEqual([
     { space: "ops", users: ["bob"] },
     { space: "ops", users: ["erin"] },
@@ -604,7 +604,7 @@ test("a Personal Space's panel shows its counts, says it takes no Members, and o
   await at("/access/spaces/bob");
 
   const shown = await screen.findByRole("dialog", { name: "bob" });
-  expect(await within(shown).findByText("A Personal Space belongs to bob alone and takes no Members.")).toBeDefined();
+  expect(await within(shown).findByText("A Personal Space takes no Members.")).toBeDefined();
   expect(within(shown).getByText("Personal Space of bob")).toBeDefined();
   expect(within(shown).getByRole("link", { name: "Hosts in bob: 1" })).toBeDefined();
   for (const name of ["Rename", "Remove Space", "Add"]) {
@@ -622,10 +622,6 @@ test("a Member's Access lists their Spaces, each opening its panel read-only, wi
   await screen.findByRole("link", { name: /^ops/ });
   const links = within(screen.getByRole("main")).getAllByRole("link", { name: /Secrets/ });
   expect(links.map((l) => l.textContent)).toEqual(["bobPersonal Space1 Host · 0 Secrets", "ops1 Member · 3 Hosts · 3 Secrets"]);
-  expect(screen.getByText("The Spaces bob can act in, with their Members.")).toBeDefined();
-  expect(
-    screen.getByRole("link", { name: "The devices of bob are listed on the Account page." }).getAttribute("href"),
-  ).toBe("/account");
   for (const name of ["Invite", "Add Space"]) {
     expect(screen.queryByRole("button", { name })).toBeNull();
   }

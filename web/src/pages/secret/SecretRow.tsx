@@ -326,7 +326,6 @@ export function ValueField({
       rows={6}
       code
       autoFocus={autoFocus}
-      description={t("secret.value.help")}
       validate={(v) => (v === "" ? t("secret.valueRequired") : undefined)}
     />
   );
@@ -372,7 +371,7 @@ function Move({ secret, spaces, onDone, onCancel }: ChangeProps & { spaces: read
   return (
     <FormDialog
       title={t("secret.move.title", { name: qualified(secret) })}
-      lead={t("secret.move.lead", { space: secret.space })}
+      lead={t("secret.move.lead")}
       submit={t("secret.move")}
       pending={move.pending}
       changed={target !== null}

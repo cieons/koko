@@ -56,7 +56,6 @@ export default {
   "shell.pageNotLoaded": "无法加载此页面，请刷新浏览器页面后重试。",
   "shell.view.reset": "重置视图",
   "shell.notFound.title": "页面不存在",
-  "shell.notFound.description": "此地址不对应本 koko 服务器的任何页面。",
   "shell.notFound.home": "前往{page}",
   "shell.notice.stopped.title": "koko web 未在运行",
   "shell.notice.stopped.description": "请重新运行 koko web，然后返回此页面。",

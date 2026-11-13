@@ -66,7 +66,7 @@ export function SecretsPage() {
   const { mode, select, overlays } = useSecretSelectMode({ secrets: secrets ?? [], spaces: spaces.data?.spaces ?? [] });
   // With no Secret yet, the empty state offers Add Secret, once.
   return (
-    <Page title={t("secret.title")} lead={t("secret.lead")} actions={secrets?.length === 0 ? undefined : add}>
+    <Page title={t("secret.title")} actions={secrets?.length === 0 ? undefined : add}>
       {list.error !== undefined && (
         <Sheet list className="mb-6">
           <LoadFailed error={list.error} retry={list.reload} />
@@ -79,7 +79,7 @@ export function SecretsPage() {
           </Sheet>
         )
       ) : secrets.length === 0 ? (
-        <EmptyState title={t("secret.empty.title")} lead={t("secret.empty.lead")} action={add} />
+        <EmptyState title={t("secret.empty.title")} action={add} />
       ) : (
         <>
           <div className="mb-5 flex flex-wrap items-center gap-2.5">
@@ -321,7 +321,6 @@ function AddSecret({
   return (
     <FormDialog
       title={t("secret.add")}
-      lead={t("secret.add.lead")}
       submit={t("secret.add")}
       size="md"
       pending={add.pending}

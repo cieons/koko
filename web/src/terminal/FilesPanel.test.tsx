@@ -474,7 +474,6 @@ test("a Host without SFTP says so as one panel, and a tab whose SSH Session has 
   const socket = await connected("file:///home/alice");
   const column = openFiles();
   await within(column).findByText("web1 offers no SFTP, which koko moves files through.");
-  expect(within(column).getByText("The terminal is unaffected.")).toBeDefined();
   expect(within(column).queryByRole("button", { name: "Upload" })).toBeNull();
   // Home is not tried: no directory of this Host can be listed.
   expect(api.requests(FilesList)).toHaveLength(1);

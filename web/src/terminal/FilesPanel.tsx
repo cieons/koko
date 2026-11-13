@@ -268,10 +268,9 @@ function Directory({ tab, tunnel, dropped, onTaken }: DirectoryProps) {
 
   if (error instanceof ApiError && error.code === CodeSFTPUnavailable) {
     return (
-      <div role="alert" className="flex flex-col gap-1">
-        <p className="t-name">{t("terminal.files.unavailable", { host: tab.host })}</p>
-        <p className="text-muted">{t("terminal.files.unavailableLead")}</p>
-      </div>
+      <p role="alert" className="t-name">
+        {t("terminal.files.unavailable", { host: tab.host })}
+      </p>
     );
   }
 

@@ -17,10 +17,8 @@ first place of the frame, so `/` goes to it. Anyone sees it: it lists
 what `host.list` answers the caller, so a Member sees the Hosts of their
 Spaces alone, as `koko host ls` shows them.
 
-- **The head**: "Hosts", the line "9 Hosts in 3 Spaces, running 12
-  Services." counted from `host.list` with `all` and `service.list` with
-  no term (the Hosts in use, the Spaces they are in, every Service), and
-  **Add Host**. With no Host recorded, Retired ones included, and nothing
+- **The head**: "Hosts" and **Add Host**, with no line under the title,
+  since the tabs below carry the counts. With no Host recorded, Retired ones included, and nothing
   in the URL, the page is one panel saying so, with Add Host.
 - **The controls**, in one row: the Hosts and Services tabs with their
   counts; the search; the Space select, a searchable choice with "All

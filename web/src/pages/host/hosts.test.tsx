@@ -68,7 +68,6 @@ test("the Hosts host.list answers, grouped by Space, a panel each in the default
   renderAt("/hosts");
 
   await screen.findByRole("table", { name: "ops" });
-  expect(screen.getByText("3 Hosts in 2 Spaces, running 2 Services.")).toBeDefined();
   expect(groups()).toEqual(["dev1", "ops2"]);
   expect(headers("ops")).toEqual(["Name", "Provider and region", "Address", "Price", "Expires", "State"]);
   expect(cells("ops")).toEqual([
@@ -145,7 +144,6 @@ test("with every Host Retired, the page is not empty: its controls show the Reti
 
   expect(await screen.findByText("No Host matches this view.")).toBeDefined();
   expect(screen.queryByText("No Host is recorded yet")).toBeNull();
-  expect(screen.getByText("0 Hosts in 0 Spaces, running 0 Services.")).toBeDefined();
   await pick("State", "All, with Retired");
   expect(await screen.findByRole("link", { name: "web1" })).toBeDefined();
 });
@@ -159,7 +157,6 @@ test("a Member sees the Hosts of their Spaces, and no Space select with one Spac
 
   await screen.findByRole("table", { name: "ops" });
   expect(screen.queryByRole("combobox", { name: "Space" })).toBeNull();
-  expect(screen.getByText("1 Host in 1 Space, running 0 Services.")).toBeDefined();
 });
 
 test("with no Host, the page says none is recorded and offers Add Host", async () => {
@@ -188,7 +185,6 @@ test("300 Hosts list as 3 do, in their Spaces' panels", async () => {
   await screen.findByRole("table", { name: "ops" });
   expect(cells("dev")).toHaveLength(100);
   expect(cells("ops")).toHaveLength(200);
-  expect(screen.getByText("300 Hosts in 2 Spaces, running 0 Services.")).toBeDefined();
   await expectAccessible();
 }, 30_000);
 

@@ -110,7 +110,6 @@ export function Invite({
   return (
     <IssueDialog
       title={t("user.invite")}
-      lead={t("user.invite.lead")}
       submit={t("user.invite")}
       pending={invite.pending || adding}
       changed={name !== "" || method !== defaultMethod || validFor !== defaultValidFor || spaces.length > 0}
@@ -187,7 +186,6 @@ export function Invite({
           placeholder={t("user.invite.spacesPlaceholder")}
           searchLabel={t("space.access.search.spaces")}
           noMatch={t("space.access.noSpace")}
-          description={t("user.invite.spacesHint")}
         />
       )}
     </IssueDialog>

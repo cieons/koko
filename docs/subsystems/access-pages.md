@@ -47,7 +47,7 @@ its name and "30 Members · 40 Hosts · 0 Secrets". The summary sits beside
 the name on a desktop and under it on a phone. Nothing that matches the
 search shows "No User matches this search." or "No Space matches this
 search." with Clear the search; with no shared Space, the Spaces tab says
-so, and what a Space is for. The Spaces tab is `view=spaces` in the URL,
+so. The Spaces tab is `view=spaces` in the URL,
 the search `q=`, replaced as it is typed, and "Show Removed Users", shown
 under the People, is `all=1`; the browser remembers them together as
 Access's view, as it remembers a list's
@@ -66,8 +66,7 @@ so a panel's close still finds the link that opened it.
 **A Member's Access** lists their Personal Space and the Spaces they belong
 to, each with its summary ("Personal Space" and its counts, or "3 Members
 · 4 Hosts · 1 Secret"), a link to its panel read-only, which names the
-Members, and
-says their devices are on Account.
+Members.
 
 **A Space's panel** shows its counts of Hosts, Retired Hosts and Secrets,
 each a link to its list narrowed to the Space (`/hosts?filter=space%3D<name>`,
@@ -79,13 +78,14 @@ no Members.
 (or Removed); how many of the shared Spaces they are a Member of, **Add to
 a Space**, a searchable choice of the shared Spaces they are not in (or,
 in every one, a line saying so), and those they are in, each a link to its
-panel with **Take out**; for the Owner and an Administrator, that the
-Owner and the Administrators see every Space; their Personal Space's
+panel with **Take out**; for the Owner and an Administrator, "Every
+Space" in place of those; their Personal Space's
 counts with a link to its Hosts; their devices; their Password, with Issue
 Password Link and Remove Password; their Browser Sign-ins; for the Owner,
 **Make an Administrator** for a Member or **Make a Member** for an
 Administrator; and Remove User. It finds the User in `user.list` with
-`all`, so a Removed User's panel opens too, and says so.
+`all`, so a Removed User's panel opens too, its subtitle saying when they
+were Removed, with nothing under it.
 
 Who may act on whom is the koko server's rule (ADR 0056), which
 [`mayActOn`](../../web/src/shell/caller.tsx) mirrors: anyone on

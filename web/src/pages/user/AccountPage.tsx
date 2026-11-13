@@ -115,7 +115,6 @@ function ThisBrowser() {
         onChange={(m) => setMode(m as Mode)}
         options={modes.map((m) => ({ id: m, label: t(`shell.mode.${m}`) }))}
       />
-      <p className="t-label">{t("user.account.browserNote")}</p>
     </Sheet>
   );
 }

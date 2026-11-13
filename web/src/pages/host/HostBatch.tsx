@@ -116,7 +116,6 @@ function MoveHosts({ hosts, spaces, onClose }: DialogProps & { spaces: readonly 
   return (
     <BatchDialog
       title={title}
-      lead={t("batch.host.move.lead")}
       kind={t("host.list.title")}
       items={moving.map(hostItem)}
       leftOut={staying > 0 ? count("batch.host.move.staying", staying, { space: to }) : undefined}
@@ -184,7 +183,7 @@ function AttributeOfHosts({ hosts, attrs, clock, onClose }: DialogProps & { attr
           ? t("batch.host.attribute.title", { things: things(n) })
           : t(removing ? "batch.host.unset.title" : "batch.host.set.title", { things: things(n), key })
       }
-      lead={t(removing ? "batch.host.unset.lead" : "batch.host.set.lead")}
+      lead={removing ? t("batch.host.unset.lead") : undefined}
       kind={t("host.list.title")}
       items={changing.map(hostItem)}
       leftOut={(targets) => {

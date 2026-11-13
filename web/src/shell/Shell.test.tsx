@@ -428,7 +428,6 @@ test("a path with no page shows Page not found in the frame, with a link to the 
   renderShell("/nowhere");
 
   expect(await screen.findByRole("heading", { level: 1, name: "Page not found" })).toBeDefined();
-  expect(screen.getByText("This address leads to no page of this koko server.")).toBeDefined();
   await waitFor(() => expect(document.title).toBe("Page not found · koko"));
   await expectAccessible();
   fireEvent.click(screen.getByRole("link", { name: "Go to Hosts" }));

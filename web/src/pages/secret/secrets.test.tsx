@@ -415,7 +415,7 @@ test("a value that is not UTF-8 shows as its base64, marked so, and both Copy bu
 
   const shown = await show("ops/db-password", "/wAB");
 
-  expect(shown.textContent).toContain("This value is not UTF-8 text. It is shown in base64");
+  expect(shown.textContent).toContain("Not UTF-8 text: shown and copied as base64.");
   fireEvent.click(within(shown).getByRole("button", { name: "Copy" }));
   await waitFor(() => expect(writeText.mock.calls).toEqual([["/wAB"]]));
   fireEvent.click(screen.getByRole("button", { name: "Copy the value of ops/db-password" }));
@@ -556,7 +556,7 @@ test("Move never asks, and offers the caller's other Spaces to search", async ()
 
   await chooseRowAction("More actions for ops/db-password", "Move");
   const form = screen.getByRole("dialog", { name: "Move ops/db-password" });
-  expect(form.textContent).toContain("It is in ops.");
+  expect(form.textContent).toContain("Only the Members of the Space it moves to, the Owner and the Administrators can then show it.");
   await searchAndChoose("Move to", "", "web", ["bobPersonal Space", "web"]);
   await expectAccessible();
   fireEvent.click(within(form).getByRole("button", { name: "Move" }));

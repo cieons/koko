@@ -3,10 +3,9 @@
 export default {
   "service.add": "Add Service",
   "service.on": "Service on {host}",
-  "service.nameHint": "Unique on its Host.",
-  "service.portsHint": "Separated by commas. A port without a protocol is TCP.",
+  "service.portsHint": "Such as 80, 443, 53/udp.",
   "service.portsRule": "Write each port as a number from 1 to 65535, followed by /tcp, /udp or nothing for TCP.",
-  "service.readOnly": "Its Host is Retired, so this Service is kept as it was and cannot be changed.",
+  "service.readOnly": "Its Host is Retired, so this Service cannot be changed.",
   "service.noAttributes": "No Attribute is recorded.",
   "service.save": "Save",
   "service.added": "{name} is recorded.",

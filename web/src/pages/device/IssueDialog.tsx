@@ -50,8 +50,8 @@ export function ValidForChoice({ value, onChange }: { value: ValidFor; onChange:
 export interface IssueDialogProps {
   /** title names the first step, such as "Invite" or "Add device". */
   title: string;
-  /** lead says under the title what is issued. */
-  lead: string;
+  /** lead says under the title what the screen cannot, such as an earlier link that stops working. */
+  lead?: string;
   /** submit labels the button that issues. */
   submit: string;
   /** pending says the issuing calls run: the button shows so and takes no second press. */
@@ -102,7 +102,7 @@ export function IssueDialog(props: IssueDialogProps) {
       <Modal.CloseTrigger aria-label={t("shell.close")} />
       <Modal.Header>
         <Modal.Heading className="t-title">{title}</Modal.Heading>
-        {!done && <p className="t-label mt-1">{props.lead}</p>}
+        {!done && props.lead !== undefined && <p className="t-label mt-1">{props.lead}</p>}
       </Modal.Header>
     </>
   );

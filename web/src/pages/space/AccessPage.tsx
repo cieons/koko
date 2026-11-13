@@ -10,7 +10,7 @@ import { Initial } from "../../shell/controls";
 import { useRead, useWrite } from "../../shell/data";
 import { type Count, type Translate, useCount, useT } from "../../shell/i18n";
 import { type RememberedList, ResetView, useRememberedView } from "../../shell/rememberedView";
-import { accountPage, navigate, type PageProps, useLocation } from "../../shell/router";
+import { navigate, type PageProps, useLocation } from "../../shell/router";
 import { Field, listSearchClass } from "../../ui/fields";
 import { FormDialog } from "../../ui/FormDialog";
 import { notify } from "../../ui/notify";
@@ -114,7 +114,6 @@ function OwnerAccess({ panel, close: closePanel }: { panel?: Panel; close: () =>
   return (
     <Page
       title={t("shell.place.access")}
-      lead={t("space.access.lead")}
       actions={
         <>
           <Button variant="secondary" onPress={() => setDialog("space")}>
@@ -275,7 +274,7 @@ function Lists({
       <Tabs.Panel id="spaces" className="p-0">
         {spaces.length === 0 ? (
           <Sheet>
-            <p className="max-w-[60ch] text-muted">{t("space.access.noSharedLead")}</p>
+            <p className="text-muted">{t("space.access.noShared")}</p>
           </Sheet>
         ) : found.length === 0 ? (
           <NoMatch message={t("space.access.noSpace")} clear={t("space.access.search.clear")} onClear={clear} />
@@ -428,16 +427,13 @@ function SpaceRows({ spaces }: { spaces: readonly SpaceDetail[] }) {
 
 /**
  * MemberAccess is a Member's Access: their Personal Space and the Spaces
- * they belong to, each opening its panel read-only, and where their own
- * devices are.
+ * they belong to, each opening its panel read-only.
  */
 function MemberAccess({ panel, close }: { panel?: Panel; close: () => void }) {
   const t = useT();
-  const caller = useCaller();
   const spaces = useRead(SpaceList, {});
-  const name = caller.user.name;
   return (
-    <Page title={t("shell.place.access")} lead={t("space.access.memberLead", { name })}>
+    <Page title={t("shell.place.access")}>
       {spaces.error !== undefined && (
         <Sheet list className="mb-6">
           <LoadFailed error={spaces.error} retry={spaces.reload} />
@@ -452,9 +448,6 @@ function MemberAccess({ panel, close }: { panel?: Panel; close: () => void }) {
           </Sheet>
         )
       )}
-      <p className="t-label mt-6 max-w-[60ch]">
-        <Link href={accountPage}>{t("space.access.memberNote", { name })}</Link>
-      </p>
       {panel?.kind === "space" && <SpacePanel name={panel.name} onChanged={spaces.reload} onClose={close} />}
     </Page>
   );
@@ -468,7 +461,6 @@ function AddSpace({ onAdded, onCancel }: { onAdded: () => void; onCancel: () => 
   return (
     <FormDialog
       title={t("space.add")}
-      lead={t("space.add.lead")}
       submit={t("space.add")}
       pending={add.pending}
       changed={name !== ""}

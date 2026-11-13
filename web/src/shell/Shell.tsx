@@ -255,11 +255,11 @@ function Page({ routes, places }: { routes: readonly Route[]; places: readonly R
   return <PageComponent params={match.params} />;
 }
 
-/** NotFound is the frame, a title, one sentence and a link to the first place, when there is one. */
+/** NotFound is the frame, a title and a link to the first place, when there is one. */
 function NotFound({ first }: { first: Route | undefined }) {
   const t = useT();
   return (
-    <PageHead title={t("shell.notFound.title")} lead={t("shell.notFound.description")}>
+    <PageHead title={t("shell.notFound.title")}>
       {first?.nav && (
         <Link href={first.path} className={buttonVariants({ variant: "secondary" })}>
           {t("shell.notFound.home", { page: t(first.nav) })}

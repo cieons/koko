@@ -76,18 +76,18 @@ export function Loaded<T>({ read, children }: { read: Read<T>; children: (data: 
 export interface EmptyStateProps {
   /** title says what is missing, such as "No Host is recorded yet". */
   title: string;
-  /** lead is a sentence saying what the thing is for. */
-  lead: string;
+  /** lead is a sentence the screen cannot say otherwise, such as where to add one when it has no action. */
+  lead?: string;
   /** action adds the first one. */
   action?: ReactNode;
 }
 
-/** EmptyState is one panel: a line saying what is missing, what it is for, and the action that adds one. */
+/** EmptyState is one panel: a line saying what is missing, and the action that adds one. */
 export function EmptyState({ title, lead, action }: EmptyStateProps) {
   return (
     <Sheet className="flex flex-col items-start gap-3 md:p-10">
       <h2 className="t-title">{title}</h2>
-      <p className="max-w-[60ch] text-muted">{lead}</p>
+      {lead !== undefined && <p className="max-w-[60ch] text-muted">{lead}</p>}
       {action !== undefined && <div className="mt-2">{action}</div>}
     </Sheet>
   );

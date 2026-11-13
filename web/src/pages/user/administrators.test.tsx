@@ -57,7 +57,6 @@ function subtitle(panel: HTMLElement): string | undefined {
 test("the Owner makes a Member an Administrator once a confirmation lists their live devices, who added each, and their Sign-ins", async () => {
   const { api, panel } = await panelOf("bob");
   expect(subtitle(panel)).toBe("Member · Added 2026-11-02");
-  expect(within(panel).getByText(/^An Administrator does everything the Owner does/)).toBeDefined();
 
   fireEvent.click(within(panel).getByRole("button", { name: "Make an Administrator" }));
   const dialog = await screen.findByRole("alertdialog", { name: "Make bob an Administrator" });
@@ -78,7 +77,7 @@ test("the Owner makes a Member an Administrator once a confirmation lists their 
   expect(await screen.findByText("bob is now an Administrator.")).toBeDefined();
   expect(api.requests(UserPromote)).toEqual([{ name: "bob" }]);
   await waitFor(() => expect(subtitle(panel)).toBe("Administrator · Added 2026-11-02"));
-  expect(within(panel).getByText("The Owner and Administrators see every Space.")).toBeDefined();
+  expect(within(panel).getByText("Every Space")).toBeDefined();
   expect(within(panel).queryByRole("combobox", { name: "Add to a Space" })).toBeNull();
   expect(within(panel).getByRole("button", { name: "Make a Member" })).toBeDefined();
 });
@@ -110,7 +109,10 @@ test("the confirmation's Make an Administrator waits until the devices and Sign-
 test("the Owner makes an Administrator a Member at once, without asking, and the focus stays on the button", async () => {
   const { api, panel } = await panelOf("eve");
   expect(subtitle(panel)).toBe("Administrator · Added 2026-11-02");
-  expect(within(panel).getByText("The Owner and Administrators see every Space.")).toBeDefined();
+  expect(within(panel).getByText("Every Space")).toBeDefined();
+  // Make a Member asks nothing, so the panel says what it ends beside it.
+  const consequence = /^As a Member, eve acts only in .* their SSH Sessions to other Hosts end\.$/;
+  expect(within(panel).getByText(consequence)).toBeDefined();
   const button = within(panel).getByRole("button", { name: "Make a Member" });
   button.focus();
 
@@ -122,6 +124,8 @@ test("the Owner makes an Administrator a Member at once, without asking, and the
   await waitFor(() => expect(subtitle(panel)).toBe("Member · Added 2026-11-02"));
   expect(await within(panel).findByRole("combobox", { name: "Add to a Space" })).toBeDefined();
   expect(button.textContent).toBe("Make an Administrator");
+  // Make an Administrator asks first, and its confirmation says what follows.
+  expect(within(panel).queryByText(consequence)).toBeNull();
   expect(document.activeElement).toBe(button);
   await expectAccessible();
 });
@@ -168,10 +172,10 @@ test("an Administrator sees the Owner's role, Spaces, devices and Sign-ins, with
   const { panel } = await panelOf("alice", eve);
 
   expect(subtitle(panel)).toBe("Owner · Added 2026-11-01");
-  expect(within(panel).getByText("The Owner and Administrators see every Space.")).toBeDefined();
+  expect(within(panel).getByText("Every Space")).toBeDefined();
   expect(await within(panel).findByText("laptop")).toBeDefined();
   expect(within(panel).getByText("Safari on macOS")).toBeDefined();
-  expect(within(panel).getByText("alice has no Password and cannot sign in from a browser.")).toBeDefined();
+  expect(within(panel).getByText("No Password is set.")).toBeDefined();
   expect(buttons(panel)).toEqual([]);
   await expectAccessible();
 });

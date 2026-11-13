@@ -207,7 +207,6 @@ test("Move asks once for the Space, leaves out the Hosts in it already, and move
 
   act("Move");
   const dialog = await screen.findByRole("dialog", { name: "Move 3 Hosts" });
-  expect(dialog.textContent).toContain("Each Host moves with its Attributes, Note and Services, under the same name.");
   await expectAccessible();
   fireEvent.click(within(dialog).getByRole("button", { name: "Move 3 Hosts" }));
   expect(await screen.findByText("Choose the Space to move it to.")).toBeDefined();

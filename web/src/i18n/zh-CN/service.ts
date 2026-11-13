@@ -5,10 +5,9 @@ import type en from "../en/service";
 export default {
   "service.add": "添加服务",
   "service.on": "{host} 上的服务",
-  "service.nameHint": "在所属主机上唯一。",
-  "service.portsHint": "以逗号分隔。未注明协议的端口视为 TCP。",
+  "service.portsHint": "如 80, 443, 53/udp。",
   "service.portsRule": "每个端口须为 1 至 65535 之间的数字，其后为 /tcp、/udp，或不加后缀表示 TCP。",
-  "service.readOnly": "其主机已下线，该服务按原样保留，不可修改。",
+  "service.readOnly": "其主机已下线，该服务不可修改。",
   "service.noAttributes": "尚未记录属性。",
   "service.save": "保存",
   "service.added": "已记录 {name}。",

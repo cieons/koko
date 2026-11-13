@@ -303,7 +303,7 @@ test("a Service on a Retired Host, reached through the Host's id, shows read-onl
 
   renderAt("/hosts/host_9/services/nginx");
   const panel = await screen.findByRole("dialog", { name: "nginx" });
-  expect(await within(panel).findByText("Its Host is Retired, so this Service is kept as it was and cannot be changed.")).toBeDefined();
+  expect(await within(panel).findByText("Its Host is Retired, so this Service cannot be changed.")).toBeDefined();
   expect(api.requests(ServiceShow)).toEqual([{ host: "host_9", name: "nginx" }]);
   expect(panel.textContent).toContain("443/tcp");
   expect(panel.textContent).toContain("tieredge");

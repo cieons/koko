@@ -62,7 +62,7 @@ export function HostPage({ params }: PageProps) {
   if (show.data === undefined) {
     if (show.error instanceof ApiError && show.error.code === CodeUnknownHost) {
       return (
-        <Page title={t("host.unknown.title")} lead={t("host.unknown.lead", { ref: named })}>
+        <Page title={t("host.unknown.title")}>
           <Link href="/hosts" className={buttonVariants({ variant: "secondary" })}>
             {t("host.unknown.back")}
           </Link>
@@ -270,9 +270,6 @@ function Reaching({ host, path }: { host: Host; path: readonly HostRelay[] }) {
             {t("host.page.openTerminal")}
           </RouterLink>
           <CommandLine command={`ssh ${host.name}`} label={t("host.page.sshCommand")} />
-          <p className="mt-3 max-w-[66ch] text-sm text-muted">
-            {t("host.page.reachManaged", { account: host.account })}
-          </p>
         </>
       )}
       {host.state === "registered" && (
@@ -518,7 +515,6 @@ function MoveHost({
   return (
     <FormDialog
       title={t("host.move.title", { name: host.name })}
-      lead={t("host.move.lead", { space: host.space })}
       submit={t("host.move.submit")}
       pending={move.pending}
       changed={space !== null}

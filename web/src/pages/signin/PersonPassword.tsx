@@ -45,7 +45,7 @@ export function PersonPassword({ user, acts, onChanged }: { user: User; acts: bo
       </h3>
       <p className="text-muted">
         {set === undefined
-          ? t("signin.person.none", { name: user.name })
+          ? t("signin.person.none")
           : t("signin.person.setOn", { date: formatDate(set) })}
       </p>
       {acts && (
@@ -95,7 +95,7 @@ function IssueLink({ user, onClose }: { user: User; onClose: () => void }) {
   return (
     <IssueDialog
       title={t("signin.link.title", { name: user.name })}
-      lead={t("signin.link.lead", { name: user.name })}
+      lead={t("signin.link.lead")}
       submit={t("signin.link.issue")}
       pending={issue.pending}
       changed={validFor !== defaultValidFor}

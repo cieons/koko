@@ -74,9 +74,7 @@ export function PersonPanel({ name, shared, membership, onChanged, onClose }: Pe
         {() =>
           user === undefined ? (
             <AlertLine>{t("error.unknown_user")}</AlertLine>
-          ) : user.removed_at !== undefined ? (
-            <p className="text-muted">{t("user.removedLead")}</p>
-          ) : (
+          ) : user.removed_at !== undefined ? null : (
             <Person
               user={user}
               shared={shared}
@@ -140,7 +138,7 @@ function Person({
       <section className="flex flex-col gap-3">
         <h3 className="t-heading">{t("user.spaces")}</h3>
         {user.role !== "member" ? (
-          <p className="text-muted">{t("space.access.seesAll")}</p>
+          <p className="text-muted">{t("space.access.everySpace")}</p>
         ) : shared === undefined ? null : shared.length === 0 ? (
           <p className="text-muted">{t("space.access.noShared")}</p>
         ) : (
@@ -161,7 +159,6 @@ function Person({
       {caller.owner && !owner && <Role user={user} onChanged={onRole} />}
       {acts && !owner && !self && (
         <section className="mt-2 flex flex-col items-start gap-3 border-t border-line pt-6">
-          <p className="t-label max-w-[52ch]">{t("user.remove.lead")}</p>
           <Button variant="danger-soft" onPress={() => setRemoving(true)}>
             {t("user.remove.button", { name: user.name })}
           </Button>
@@ -311,7 +308,8 @@ export function PersonalSpace({ name }: { name: string }) {
  * Role is the Owner's change of a User's role, one button that keeps the
  * focus as the role changes: Make an Administrator for a Member, which asks
  * first (Promote), and Make a Member for an Administrator, which does not,
- * as Take out does not. A refusal shows in place.
+ * as Take out does not, so the panel says beside it what it ends. A refusal
+ * shows in place.
  */
 function Role({ user, onChanged }: { user: User; onChanged: () => void }) {
   const t = useT();
@@ -325,7 +323,7 @@ function Role({ user, onChanged }: { user: User; onChanged: () => void }) {
   };
   return (
     <section className="mt-2 flex flex-col items-start gap-3 border-t border-line pt-6">
-      <p className="t-label max-w-[52ch]">{t(administrator ? "user.demote.lead" : "user.promote.lead", { name })}</p>
+      {administrator && <p className="t-label max-w-[52ch]">{t("user.demote.lead", { name })}</p>}
       <Button
         variant="secondary"
         isPending={demote.pending}

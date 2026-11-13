@@ -225,15 +225,12 @@ function useVisualViewport(layer: RefObject<HTMLDivElement | null>, on: boolean)
   }, [layer, on]);
 }
 
-/** EmptyWorkspace is the workspace with no tab: what a terminal is, up to eight Managed Hosts to open one to, and the switcher. */
+/** EmptyWorkspace is the workspace with no tab: its title, up to eight Managed Hosts to open one to, and the switcher. */
 function EmptyWorkspace({ hosts }: { hosts: readonly Host[] | undefined }) {
   const t = useT();
   return (
     <div className="flex h-full flex-col items-start justify-center gap-6 overflow-y-auto p-6 md:p-12">
-      <div className="flex flex-col gap-2">
-        <h1 className="t-display">{t("terminal.empty.title")}</h1>
-        <p className="max-w-[60ch] text-muted">{t("terminal.empty.lead")}</p>
-      </div>
+      <h1 className="t-display">{t("terminal.empty.title")}</h1>
       {hosts && hosts.length > 0 && (
         <ul className="grid w-full max-w-3xl grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-2">
           {hosts.slice(0, 8).map((host) => (

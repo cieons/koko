@@ -63,19 +63,21 @@ test("Loaded shows the answer once there is one, the failure without one, and bo
   expect(alerts()).toEqual(["The koko server failed unexpectedly. Its log records the cause."]);
 });
 
-test("EmptyState says what is missing, what it is for, and offers the action that adds one", async () => {
-  renderIn(
-    <EmptyState
-      title="No Host is recorded yet"
-      lead="koko keeps each Host's address and is the one door for reaching it."
-      action={<button type="button">Add Host</button>}
-    />,
+test("EmptyState says what is missing and offers the action that adds one, with no sentence of its own", async () => {
+  const { container } = renderIn(
+    <EmptyState title="No Host is recorded yet" action={<button type="button">Add Host</button>} />,
   );
 
   expect(screen.getByRole("heading", { level: 2, name: "No Host is recorded yet" })).toBeDefined();
-  expect(screen.getByText("koko keeps each Host's address and is the one door for reaching it.")).toBeDefined();
   expect(screen.getByRole("button", { name: "Add Host" })).toBeDefined();
+  expect(container.querySelector("p")).toBeNull();
   await expectAccessible();
+});
+
+test("EmptyState says what its screen cannot, where it has no action", () => {
+  renderIn(<EmptyState title="No Service is recorded yet" lead="Services are added on a Host's page." />);
+
+  expect(screen.getByText("Services are added on a Host's page.")).toBeDefined();
 });
 
 test("NoMatch says nothing matches the view, and its button clears it", async () => {

@@ -121,7 +121,6 @@ function ServiceFields({
         label={t("host.key.name")}
         value={values.name}
         onChange={set("name")}
-        description={t("service.nameHint")}
         validate={(v) => (validName(v.trim()) ? undefined : t("host.form.nameRule"))}
         code
         autoFocus={adding}

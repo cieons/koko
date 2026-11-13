@@ -78,6 +78,15 @@ parts of it, which are stand-ins:
    warns or sums costs.
 6. The server's address appears only where a person copies it, such as in
    a Password Link.
+7. Avoid unnecessary secondary labels and descriptions; let the layout do
+   the explaining (#212). A lead, hint, description, empty-state sentence
+   or secondary label stays only when the screen cannot say it through its
+   structure, headings and controls: the consequence of an irreversible
+   action (a rename that breaks old SSH names, a value replaced with no
+   history, a Removal that revokes devices), why a link no longer works,
+   why a control is disabled, or a format a field takes that cannot be
+   seen. Data in a row's second line (when it changed, its counts) is not
+   such text.
 
 ## Tokens
 
@@ -248,7 +257,8 @@ page whose body is a table or a list (Hosts, Secrets and Access) fills the
 room left beside the rail. Every other page is a column, 76rem at most,
 that starts at the rail, so the room left over is at its end; text that
 reads as prose keeps its own limit in `ch` on both. A page is
-a title (`t-display`), an optional line under it, and its one or two
+a title (`t-display`), a line under it only where the page says what its
+layout cannot (Account's, how this browser got in), and its one or two
 actions to the right of the title. A detail page has a breadcrumb above
 the title. With the rail open a page at 1280px wide gets about 1030px, and
 at 1100px wide with the rail folded about 1020px. A page's own layout keys
@@ -394,8 +404,9 @@ The preview's mock answers at once, so these are specified here:
   second press.
 - **Failed to load**: the panel shows the koko server's message and a
   "Try again" button. `signin_required` goes to `/signin?next=<this page>`.
-- **Empty**: one panel with a line saying what is missing, a sentence
-  saying what the thing is for, and the action that adds one.
+- **Empty**: one panel with a line saying what is missing and the action
+  that adds one; a sentence under it only where the screen offers no such
+  action, to say where one is added.
 - **No match**: one panel with "No Host matches this view." and "Clear the
   search and filters".
 - **A refused write**: the message in place, the form kept as typed.
@@ -437,7 +448,7 @@ released, so it needs no redirect.
 
 ### Hosts (`/hosts`)
 
-- Title "Hosts"; under it "9 Hosts in 3 Spaces, running 12 Services.";
+- Title "Hosts", with no line under it, since the tabs carry the counts;
   action **Add Host** (primary).
 - One row of controls: the Hosts / Services tabs with their counts; a
   search field that grows; a Space select ("All Spaces" first), shown when
@@ -530,7 +541,7 @@ released, so it needs no redirect.
 - A URL whose view the list does not take (an unknown key, a comparison
   the key does not allow) shows one panel that names the term at fault and
   offers "Go to the default view". The preview does not show this state.
-- Empty: "No Host is recorded yet", one sentence, **Add Host**.
+- Empty: "No Host is recorded yet" and **Add Host**.
 
 ### The Services view (`/hosts?view=services`)
 
@@ -580,19 +591,18 @@ CLI resolves one in a write.
   one under the other below that.
 - Two thirds, left:
   - **Reaching it**. Managed: **Open terminal**, a secondary button
-    linking to `/hosts/<name>/terminal`, over `$ ssh <name>` with Copy,
-    then "From a device
-    that has joined this koko server. koko logs in as <account>; no key of
-    the Host leaves koko." Registered: "koko cannot log in to this Host
-    yet. Enroll it from a device that has the CLI:" and
-    `$ koko host enroll <name>` with Copy. Retired: one muted sentence.
+    linking to `/hosts/<name>/terminal`, over `$ ssh <name>` with Copy.
+    Registered: "Enroll it from a device with the CLI:" and
+    `$ koko host enroll <name>` with Copy. Retired: "It can no longer be
+    reached.", muted.
     Under a hairline: Address, Port, Host Account, Relay (the path koko
     dials, `web1 → db1`, each Relay a link by its id, the part you cannot
     see as "A Relay you cannot see"), Pinned host key (its fingerprint, or
     "Not pinned"), each a label over a value in the code face.
   - **Attributes**: a grid of label over value, four across: Provider,
     Region, Price, Billing cycle, Expires, Renews automatically, Provider
-    account, then every other key. No Attribute: one sentence.
+    account, then every other key. No Attribute: "No Attribute is
+    recorded."
 - One third, right:
   - **Services**: name and ports per row; a row opens the Service's panel;
     **Add Service**.
@@ -623,7 +633,7 @@ Retired is reached through the Host's id, and its panel offers no action.
 
 ### Secrets (`/secrets`)
 
-- Title, one line, **Add Secret**. A search field and the Space select.
+- Title and **Add Secret**. A search field and the Space select.
 - One panel per Space. A row: the name, "Changed <ago>", then **Copy**,
   **Show** and a menu (Set a new value, Rename, Move, Delete).
 - The search and the Space select live in the URL (`q=<text>`, as today,
@@ -770,7 +780,7 @@ takes uploads into it (spec #169, "Files over SFTP"):
 - **States:** loading rows while the tab connects or a directory loads;
   a refusal in place, the Host's own words beneath, with Try again; a Host
   without SFTP as one line in place of the panel ("web1 offers no SFTP,
-  which koko moves files through." over "The terminal is unaffected.");
+  which koko moves files through.");
   "The SSH Session has ended." in place of a listing once it has.
 - **On a phone** the panel is a side panel from the bottom, titled "Files
   on web1".
@@ -847,8 +857,8 @@ tabs and the Managed Hosts the caller can see.
       replaces an unanswered one.
 - **Closing** a tab whose shell runs asks first, as End SSH Session does;
   one still connecting, refused or ended closes at once.
-- **An empty workspace:** "No terminal is open" (`t-display`), the line
-  saying what a terminal is, up to eight Managed Hosts as raised cards
+- **An empty workspace:** "No terminal is open" (`t-display`), up to
+  eight Managed Hosts as raised cards
   (name over Space; one opens a tab), and "Search every Managed Host" with
   the chord, which opens the switcher.
 - **One tree for every form.** The workspace keeps its terminals in one
@@ -918,7 +928,7 @@ Session is SSH 会话.
 
 For the Owner and an Administrator:
 
-- Title, one line, actions **Add Space** and **Invite** (primary).
+- Title, and the actions **Add Space** and **Invite** (primary).
 - One row of controls: the tabs **People** and **Spaces**, each with its
   count; one search field that grows and narrows the list shown by name;
   **Reset view**. The tab is `view=spaces` in the URL for the Spaces, the
@@ -936,7 +946,7 @@ For the Owner and an Administrator:
   Removed Users last.
 - Nothing matching the search: one panel with "No User matches this
   search." or "No Space matches this search." and **Clear the search**.
-  No shared Space: the Spaces tab says so, and what a Space is for.
+  No shared Space: the Spaces tab says so.
 - "Show Removed Users" under the People adds them, struck through; it is
   `all=1` in the URL.
 - Membership is changed in the panels, never in the lists.
@@ -976,8 +986,7 @@ For the Owner and an Administrator:
 For a Member: their Personal Space and the Spaces they belong to as one
 list, each with its summary ("Personal Space" and its counts, or "3
 Members · 4 Hosts · 1 Secret"), each opening its panel read-only, which
-names the Members, and a line
-that their own devices and Sign-ins are on the Account page. A Member gets
+names the Members. A Member gets
 no person's panel: `/access/people/<name>` shows "Page not found" to them.
 
 ### Invite (dialog, two steps)
@@ -1023,7 +1032,7 @@ languages as buttons.
 
 ### Page not found
 
-The frame, a title, one sentence and a link to Hosts.
+The frame, a title and a link to Hosts.
 
 ## Accessibility and checks
 

@@ -48,8 +48,8 @@ export interface BatchDialogProps<R> {
   danger?: boolean;
   /** title names the action and how many records it acts on, such as "Move 20 Hosts". */
   title: (count: number) => string;
-  /** lead says what the action does, and for a confirmation what is lost. */
-  lead: ReactNode;
+  /** lead says what is lost: always for a confirmation, for a form only where something is. */
+  lead?: ReactNode;
   /** kind names the records over their list, such as "Hosts". */
   kind: string;
   /** items are the records the action acts on: those selected, without the ones it leaves out. */
@@ -170,9 +170,11 @@ export function BatchDialog<R>(props: BatchDialogProps<R>) {
   } else {
     body = (
       <>
-        <p id={leadId} className="text-muted">
-          {props.lead}
-        </p>
+        {props.lead !== undefined && (
+          <p id={leadId} className="text-muted">
+            {props.lead}
+          </p>
+        )}
         {props.children}
         {targets.length > 0 && <Targets kind={props.kind} items={targets} />}
         {note !== undefined && note !== null && note !== false && <p className="text-sm text-muted">{note}</p>}
@@ -225,7 +227,7 @@ export function BatchDialog<R>(props: BatchDialogProps<R>) {
       onOpenChange={(open) => open || write.pending || cancel()}
     >
       <D.Container size={danger ? "sm" : "md"}>
-        <D.Dialog aria-label={danger ? undefined : heading} aria-describedby={refused ? undefined : leadId}>
+        <D.Dialog aria-label={danger ? undefined : heading} aria-describedby={refused || props.lead === undefined ? undefined : leadId}>
           {danger ? (
             content
           ) : (

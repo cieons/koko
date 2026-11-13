@@ -41,7 +41,7 @@ export function SignInPage() {
   };
 
   return (
-    <Door title={t("signin.title")} lead={t("signin.lead")}>
+    <Door title={t("signin.title")}>
       <Form label={t("signin.title")} onSubmit={() => void submit()} className="flex flex-col gap-4">
         {error !== undefined && <AlertLine>{refusalText(t, count, error)}</AlertLine>}
         <Field

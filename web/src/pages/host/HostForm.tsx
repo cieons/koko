@@ -137,7 +137,6 @@ export function HostFields({ values, onChange, spaces, relays, relayNow, editing
                 label={t("host.key.space")}
                 value={values.space}
                 onChange={(v) => v !== null && set("space")(v)}
-                description={t("host.form.spaceHint")}
                 options={spaces.map((s) => ({
                   id: s.name,
                   label: s.name,
@@ -151,7 +150,6 @@ export function HostFields({ values, onChange, spaces, relays, relayNow, editing
             label={t("host.key.address")}
             value={values.address}
             onChange={set("address")}
-            description={t("host.form.addressHint")}
             validate={(v) => (v.trim() === "" ? t("host.form.required") : undefined)}
             isDisabled={fixed}
             code
@@ -159,7 +157,7 @@ export function HostFields({ values, onChange, spaces, relays, relayNow, editing
           />
         </div>
       </Group>
-      <Group title={t("host.form.reach")} lead={t("host.form.reachLead")}>
+      <Group title={t("host.form.reach")}>
         <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
           <Field
             label={t("host.key.account")}
@@ -186,7 +184,6 @@ export function HostFields({ values, onChange, spaces, relays, relayNow, editing
               label={t("host.key.relay")}
               value={values.relay === "" ? noRelay : values.relay}
               onChange={(v) => set("relay")(v === null || v === noRelay ? "" : v)}
-              description={t("host.form.relayHint")}
               options={relayOptions}
               isDisabled={fixed}
               className="sm:col-span-2"
@@ -194,7 +191,7 @@ export function HostFields({ values, onChange, spaces, relays, relayNow, editing
           )}
         </div>
       </Group>
-      <Group title={t("host.form.purchase")} lead={t("host.form.purchaseLead")}>
+      <Group title={t("host.form.purchase")}>
         <div className="grid gap-4 sm:grid-cols-6">
           <Field
             label={t("host.key.provider")}
@@ -255,7 +252,6 @@ export function HostFields({ values, onChange, spaces, relays, relayNow, editing
             label={t("host.key.provider_account")}
             value={values.provider_account}
             onChange={set("provider_account")}
-            description={t("host.form.providerAccountHint")}
             validate={ofItsType("provider_account")}
             className="sm:col-span-6"
           />
@@ -267,7 +263,6 @@ export function HostFields({ values, onChange, spaces, relays, relayNow, editing
           label={t("host.key.note")}
           value={values.note}
           onChange={set("note")}
-          description={t("host.form.noteHint")}
           multiline
           rows={4}
         />
@@ -351,7 +346,6 @@ export function AddHost({ spaces, hosts, attrs = [], onClose }: AddHostProps) {
   return (
     <SidePanel
       title={t("host.add.title")}
-      subtitle={t("host.add.lead")}
       wide
       onSubmit={submit}
       changed={differs(values, opened)}

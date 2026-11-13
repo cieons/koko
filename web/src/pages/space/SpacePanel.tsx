@@ -80,7 +80,7 @@ export function SpacePanel({ name, membership, onChanged, onClose }: SpacePanelP
             <section className="flex flex-col gap-3">
               <h3 className="t-heading">{t("space.members")}</h3>
               {space.personal ? (
-                <p className="text-muted">{t("space.personalLead", { name: space.name })}</p>
+                <p className="text-muted">{t("space.personalLead")}</p>
               ) : (
                 <>
                   {editable && membership && (
@@ -132,7 +132,6 @@ export function SpacePanel({ name, membership, onChanged, onClose }: SpacePanelP
                       ))}
                     </ul>
                   )}
-                  <p className="t-label">{t("space.members.ownerNote")}</p>
                 </>
               )}
             </section>

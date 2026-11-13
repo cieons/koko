@@ -201,9 +201,7 @@ test("a Password Link's page takes the secret out of the URL at once, and says w
   expect(window.location.hash).toBe("");
   expect(window.location.pathname).toBe("/password");
   expect(api.requests(AuthLink)).toEqual([{ link: secret }]);
-  expect(
-    screen.getByText("For bob, the User name to sign in with. The Password signs in to the Web UI and never reaches a Host."),
-  ).toBeDefined();
+  expect(screen.getByText("For bob.")).toBeDefined();
   expect(field("New Password").getAttribute("autocomplete")).toBe("new-password");
   expect(field("New Password, again").getAttribute("autocomplete")).toBe("new-password");
   expect(screen.queryByRole("button", { name: /^Language:/ })).toBeNull(); // no frame
@@ -218,7 +216,7 @@ test("a second Password Link opened on the page is read in turn and taken out of
   type("New Password", "typed for the first link");
   window.location.hash = "SECONDLINKSECONDLINKSECOND";
 
-  expect(await screen.findByText(/^For carol,/)).toBeDefined();
+  expect(await screen.findByText("For carol.")).toBeDefined();
   expect(field("New Password").value).toBe("");
   expect(window.location.hash).toBe("");
   expect(api.requests(AuthLink)).toEqual([{ link: secret }, { link: "SECONDLINKSECONDLINKSECOND" }]);

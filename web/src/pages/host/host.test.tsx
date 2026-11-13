@@ -166,7 +166,7 @@ test("a Managed Host's page: the breadcrumb, how to reach it, its pin, Attribute
 
   const reach = screen.getByRole("region", { name: "Reaching it" });
   expect(within(reach).getByRole("group", { name: "SSH command" }).textContent).toContain("ssh web1");
-  expect(reach.textContent).toContain("koko logs in as deploy");
+  expect(reach.textContent).not.toContain("koko logs in as");
   fireEvent.click(within(reach).getByRole("button", { name: "Copy" }));
   await waitFor(() => expect(writeText).toHaveBeenCalledWith("ssh web1"));
   expect(fact("Reaching it", "Address")).toBe("web1.example.com");
@@ -242,7 +242,7 @@ test("a Registered Host's page copies koko host enroll, names a Relay you cannot
 
   await openHost("/hosts/db2", "db2");
   const reach = screen.getByRole("region", { name: "Reaching it" });
-  expect(reach.textContent).toContain("koko cannot log in to this Host yet.");
+  expect(reach.textContent).toContain("Enroll it from a device with the CLI:");
   fireEvent.click(within(within(reach).getByRole("group", { name: "Enroll command" })).getByRole("button", { name: "Copy" }));
   await waitFor(() => expect(writeText).toHaveBeenCalledWith("koko host enroll db2"));
   expect(fact("Reaching it", "Relay")).toBe("A Relay you cannot see");
@@ -353,7 +353,6 @@ test("a Host no one can see shows as one that does not exist", async () => {
 
   renderAt("/hosts/web9");
   expect(await screen.findByRole("heading", { level: 1, name: "No such Host" })).toBeDefined();
-  expect(screen.getByText("No Host you can see has the name or id web9.")).toBeDefined();
   expect(screen.getByRole("link", { name: "Go to Hosts" }).getAttribute("href")).toBe("/hosts");
   await expectAccessible();
 });
@@ -587,7 +586,7 @@ test("a Retired Host's page: Rename and Retire disabled, no Add Service, Edit of
   api.on(HostRemove, () => ({ host: old }));
 
   await openHost("/hosts/host_9", "old");
-  expect(screen.getByRole("region", { name: "Reaching it" }).textContent).toContain("This Host is Retired.");
+  expect(screen.getByRole("region", { name: "Reaching it" }).textContent).toContain("It can no longer be reached.");
   const services = screen.getByRole("region", { name: "Services" });
   expect(within(services).queryByRole("button", { name: "Add Service" })).toBeNull();
   expect(within(services).getByRole("link", { name: /nginx/ }).getAttribute("href")).toBe("/hosts/host_9/services/nginx");
