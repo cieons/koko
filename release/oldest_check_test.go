@@ -18,6 +18,8 @@ import (
 type history struct {
 	t   *testing.T
 	dir string
+	// env is added to the environment of the scripts run.
+	env []string
 }
 
 func newHistory(t *testing.T) *history {
@@ -75,6 +77,7 @@ func (h *history) run(name string, args ...string) (status int, stdout, stderr s
 	cmd := exec.CommandContext(h.t.Context(), "sh", append([]string{script}, args...)...)
 	cmd.Dir = h.dir
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	cmd.Env = append(cmd.Env, h.env...)
 	var out, errs strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &errs
 	err = cmd.Run()

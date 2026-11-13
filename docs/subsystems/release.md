@@ -477,11 +477,13 @@ release whose `Oldest` is in a form the script cannot read, refused. A
 test keeps `compat.Oldest` on the one line of `compat.go` that the script,
 `skew-pairs.sh` and the real-systemd workflow read.
 [`release/skew_pairs_test.go`](../../release/skew_pairs_test.go) runs
-`skew-pairs.sh` on such a repository too: the pairs of a commit after a
-release and of a release's own tag, one release that is both the previous
-one and `compat.Oldest`'s listed once, the previous release found by
-version and never a pre-release, and no pair for a release that is not
-there yet or is below `compat.Oldest`. No test runs `skew-check.sh`, which
+`skew-pairs.sh` on such a repository too, with a fake `gh` that lists the
+published releases: the pairs of a commit after a release and of a
+release's own tag, one release that is both the previous one and
+`compat.Oldest`'s listed once, the previous release found by version and
+never a pre-release, no pair for a release that is not there yet, is not
+yet published or is below `compat.Oldest`, and a failure to list the
+releases failing the script. No test runs `skew-check.sh`, which
 needs Docker and the network: [the skew check](#the-skew-check) is its
 run. [The container check](#the-container-check) runs what
 `make image` builds: its index's platforms and binaries, and, by running
@@ -898,13 +900,18 @@ as its matrix; a pair is a CLI and a kokod, each a release's tag or
 
 The previous release is the highest release tag, without a pre-release
 part, in the commit's history and not on the commit itself, so a release's
-tag is checked against the release before it. `compat.Oldest` is read from
-its one line in `compat.go`. When the two are one release, its pairs are
-listed once. A release that is not there yet has no pair, as
-`compat.Oldest`'s on the commits that lead to the minor release it names,
-and neither has a previous release below `compat.Oldest`, which the build
-turns away; the script says so on stderr, and a commit with no pair runs
-the build job alone.
+tag is checked against the release before it. A tag counts only once its
+GitHub Release is published, as `gh release list --exclude-drafts` lists
+it: a tag is pushed before the release workflow builds and publishes its
+binaries and image, so a push to `main` during a release's run pairs with
+the release before it. A failure to list the releases fails the build
+job. `compat.Oldest` is read from its one line in `compat.go`. When the
+two are one release, its pairs are listed once. A release that is not
+there yet has no pair, as `compat.Oldest`'s on the commits that lead to
+the minor release it names, nor has one not yet published, and neither
+has a previous release below `compat.Oldest`, which the build turns away;
+the script says so on stderr, and a commit with no pair runs the build
+job alone.
 
 **The workflow.** Its **build** job runs `make dist` and `make image`
 once, as the release's build job does, lists the pairs, and uploads

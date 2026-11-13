@@ -33,8 +33,13 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # gh lists the published releases: only they have their binaries
+      # and image.
       - name: List the pairs
         id: pairs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           pairs=$(release/skew-pairs.sh)
           echo "pairs=$pairs" >>"$GITHUB_OUTPUT"
