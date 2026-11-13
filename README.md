@@ -7,9 +7,9 @@
 koko is self-hosted. It keeps the record of servers rented across
 providers, and it is the one door people and AI agents use to reach them.
 
-**Status:** v0.4.0, the first release in which the CLI installs in its
-user's own directory without `sudo` and upgrades itself with `koko update`.
-It provides the features listed below and is still at an early stage.
+**Status:** koko provides the features listed below and is still at an
+early stage. The [releases](https://github.com/cieons/koko/releases) list
+each version and what it changed.
 
 ## Installing
 
