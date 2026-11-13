@@ -2,7 +2,8 @@
 
 How a browser signs in to the web UI on the web listener, at the Web URL
 ([ADR 0043](../adr/0043-a-browser-signs-in-with-a-password-set-through-a-password-link.md)):
-each User's one Password, the Password Links the Owner issues to set it,
+each User's one Password, the Password Links the Owner or an
+Administrator issues to set it,
 the Sign-ins, the web front's `/auth/` endpoints, the rate limits, and what
 a Sign-in may do. The source is
 [`internal/server/signin`](../../internal/server/signin/signin.go), with the
@@ -43,9 +44,13 @@ which keeps a Sign-in's browser and system apart in place of its label:
 - **Setting a Password**, through a link or by the current one, ends every
   other Sign-in of the User (`password_changed`), voids their unused
   Password Links, and starts their name's count of failed sign-ins again.
-- **`password.remove`** (`koko password rm <user>`, Owner only, irreversible
-  tier) deletes the Password, ends the User's Sign-ins (`password_removed`)
-  and voids their unused link, keeping the User and their devices. A User
+- **`password.remove`** (`koko password rm <user>`, the Owner or an
+  Administrator, irreversible tier) deletes the Password, ends the User's
+  Sign-ins (`password_removed`) and voids their unused link, keeping the
+  User and their devices. A Member is refused with `owner_only` before the
+  name is read, and an Administrator naming the Owner or another
+  Administrator with `owner_only` once it is
+  ([`Identity.MayActOn`](../../internal/server/access/access.go)). A User
   without one is refused with `no_password` (409), changing nothing.
 
 ## Password Links
@@ -55,15 +60,22 @@ which keeps a Sign-in's browser and system apart in place of its label:
   its SHA-256. It sits in the fragment, which no browser sends, so it reaches
   no proxy log and no `Referer`.
 - **Issuing** ([`Service.IssueLink`](../../internal/server/signin/signin.go)),
-  by the Owner alone, for any User not Removed, the Owner included:
+  by the Owner or an Administrator, for any User not Removed, the Owner
+  included:
   `user.invite` with `web: true` (`koko user invite <name> --web`) creates
   the User with a link instead of a Join Code; `password.link` (`koko
   password link <user>`) issues one for an existing User. A Member is
-  refused with `owner_only` before the name is read. Both take `valid_for`
+  refused with `owner_only` before the name is read; an Administrator
+  issues one for a Member or for themselves, and is refused with
+  `owner_only` for the Owner or another Administrator. Both take `valid_for`
   in seconds, 60 to 604,800 (`api.Validity`, 15 minutes by default), and
   are refused with `web_url_unset` (409) while the Web URL is not set.
 - **One live link per User**: issuing one voids the User's earlier unused
-  one, and Removing a User voids theirs.
+  one, and Removing a User voids theirs and those they issued for others.
+- **A change of role** voids links ([Users](users.md#administrators)):
+  promoting a User voids their unused links issued by anyone but the Owner
+  and the User, and demoting an Administrator voids the unused links they
+  issued for other Users.
 - **Spending one**: `POST /auth/link` answers whom an unspent link is for,
   spending nothing; `POST /auth/password` with the link spends it, sets the
   Password and signs this browser in. A link used already is refused with
@@ -112,16 +124,19 @@ which keeps a Sign-in's browser and system apart in place of its label:
   terminals end at once, live and Detached, each with its notice
   ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
 - **`signin.list`** (`koko signin ls [--user <u>] [--all]`, read tier)
-  answers the caller's own Sign-ins, everyone's for the Owner, without the
-  ended ones unless `all`; a Member naming another User gets none. Its
+  answers the caller's own Sign-ins, everyone's for the Owner or an
+  Administrator, without the ended ones unless `all`; a Member naming
+  another User gets none. Its
   `--json` is a bare array of `{"id", "user", "client", "address",
   "started_at", "last_used_at", "expires_at", "ended_at", "end_reason"}`,
   the last two `null` while it is live; `address` is the client's when the
   Sign-in was last used.
 - **`signin.revoke`** (`koko signin revoke <id>`, irreversible tier) ends a
-  live Sign-in, anyone's own and anyone's for the Owner, and answers it as
-  it left it; an ended one is answered as it is. Another User's, for a
-  Member, is refused with `unknown_signin` (404), as an id no Sign-in holds.
+  live Sign-in, anyone's own, anyone's for the Owner and any Member's for
+  an Administrator, and answers it as it left it; an ended one is answered
+  as it is. Another User's, for a Member, is refused with `unknown_signin`
+  (404), as an id no Sign-in holds; the Owner's or another
+  Administrator's, for an Administrator, with `owner_only`.
 
 ## The `/auth/` endpoints
 
@@ -273,7 +288,13 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-set-a-passw
 
 Removing a User ([Users](users.md#removing)) ends their live Sign-ins
 (`user_removed`), deletes their Password and voids their unused links in its
-one transaction ([`Service.Remove`](../../internal/server/signin/signin.go)).
+one transaction ([`Service.Remove`](../../internal/server/signin/signin.go)),
+and the unused links they issued for others
+([`Service.VoidLinksIssuedBy`](../../internal/server/signin/signin.go)), as
+demoting an Administrator does; promoting a User voids theirs issued by
+anyone but the Owner and them
+([`Service.VoidLinksOthersIssuedFor`](../../internal/server/signin/signin.go),
+[Users](users.md#administrators)).
 A User who set a Password, or had a Sign-in, has used koko, so they are
 Removed, not deleted; deleting one who never did takes their Password Links
 with them. `user.list` gains `password_set_at`.
@@ -317,7 +338,10 @@ or an `/auth/` body.
   an open Sign-in still working, a name no User holds, and the count
   started again by a sign-in and by a link; the 7 and 30 days and Last used
   moving once a minute; every way a Sign-in ends; Password Links refused,
-  voided, spent and expired; the Password rule; what a Sign-in may do; the
+  voided, spent and expired; the Password rule; what a Sign-in may do; an
+  Administrator's Sign-in listing every Sign-in, revoking a Member's,
+  removing their Password and issuing them a link, and refused each on the
+  Owner and another Administrator; the
   log lines and no secret in them; removing a User invited for the web.
 - [`internal/server/signin/hash_test.go`](../../internal/server/signin/hash_test.go):
   the hash sealed, absent in plain from the data directory, of the stated

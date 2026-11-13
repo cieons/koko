@@ -73,8 +73,10 @@ var (
 	// CodeLocalOnly: the operation answers only the Local caller, over the
 	// koko server's Unix socket.
 	CodeLocalOnly = Code{"local_only", http.StatusForbidden}
-	// CodeOwnerOnly: only the Owner may do what the call asks, such as
-	// issuing a Join Code for another User's device.
+	// CodeOwnerOnly: only the Owner or an Administrator may do what the
+	// call asks, such as issuing a Join Code for another User's device; or
+	// only the Owner may, since it acts on the Owner or an Administrator,
+	// such as promoting a User or revoking an Administrator's device.
 	CodeOwnerOnly = Code{"owner_only", http.StatusForbidden}
 	// CodeIdempotencyKeyReused: the caller's Idempotency-Key came with
 	// another request within the last 10 minutes; a retry sends the same

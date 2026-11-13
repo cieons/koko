@@ -244,9 +244,9 @@ The koko server learns of new koko releases by itself
   `latest` and `error` are `null` until the Owner checks at once.
   `update_check=on` starts them again, the first a random 2 to 5 minutes
   later, as at a start.
-- **`server.check_update`** (Owner only, the Local caller and the Owner's
-  Sign-in included; a read, as it changes no record) checks at once, with
-  `update_check` on or off, since the Owner asked. Callers who come while a
+- **`server.check_update`** (the Owner or an Administrator, the Local
+  caller and their Sign-ins included; a read, as it changes no record)
+  checks at once, with `update_check` on or off, since they asked. Callers who come while a
   check is in flight share it, and one request goes out. It answers
   `{"update_check": {...}, "version": "<the koko server's>"}`, or a check
   that failed with `update_check_failed` (502), whose message names what
@@ -305,8 +305,8 @@ restart it`.
 
 ### Asking for an upgrade
 
-**`server.upgrade`** (a write, Owner only, the Local caller and the Owner's
-Sign-in included; [`settings.upgradeTo`](../../internal/server/settings.go))
+**`server.upgrade`** (a write, the Owner or an Administrator, the Local
+caller and their Sign-ins included; [`settings.upgradeTo`](../../internal/server/settings.go))
 asks the upgrade helper to upgrade the koko server
 ([ADR 0048](../adr/0048-the-koko-server-upgrades-itself-through-a-root-helper-that-takes-only-a-newer-releases-version.md)).
 Its request is `{"version": "vX.Y.Z"}`, the version optional. In this

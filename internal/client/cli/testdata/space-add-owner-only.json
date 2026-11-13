@@ -1,6 +1,6 @@
 {
   "error": {
     "code": "owner_only",
-    "message": "only the Owner adds Spaces"
+    "message": "only the Owner or an Administrator adds Spaces"
   }
 }

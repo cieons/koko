@@ -141,7 +141,7 @@ export interface SpaceMemberRemoveResponse {
 }
 
 /**
- * SpaceAdd records a shared Space. Only the Owner adds one; a name
+ * SpaceAdd records a shared Space. Only the Owner or an Administrator adds one; a name
  * another Space holds is refused with CodeNameTaken.
  */
 export const SpaceAdd: Op<SpaceAddRequest, SpaceAddResponse> = {
@@ -173,8 +173,8 @@ export const SpaceShow: Op<SpaceShowRequest, SpaceShowResponse> = {
 
 /**
  * SpaceRename gives a shared Space a new name, which no Space may hold
- * (CodeNameTaken); its id, Members and records stay. Only the Owner
- * renames, and a Personal Space is refused with CodePersonalSpace.
+ * (CodeNameTaken); its id, Members and records stay. Only the Owner or
+ * an Administrator renames, and a Personal Space is refused with CodePersonalSpace.
  */
 export const SpaceRename: Op<SpaceRenameRequest, SpaceRenameResponse> = {
   name: "space.rename",
@@ -184,7 +184,7 @@ export const SpaceRename: Op<SpaceRenameRequest, SpaceRenameResponse> = {
 
 /**
  * SpaceRemove removes a shared Space with its memberships. Only the
- * Owner removes; a Space that holds any record is refused with
+ * Owner or an Administrator removes; a Space that holds any record is refused with
  * CodeSpaceNotEmpty, and a Personal Space with CodePersonalSpace.
  */
 export const SpaceRemove: Op<SpaceRemoveRequest, SpaceRemoveResponse> = {
@@ -196,7 +196,7 @@ export const SpaceRemove: Op<SpaceRemoveRequest, SpaceRemoveResponse> = {
 /**
  * SpaceMemberAdd makes Users Members of a Space, all or none: a name no
  * User holds is refused with CodeUnknownUser and adds nobody. Only the
- * Owner changes Members, and a Personal Space is refused with
+ * Owner or an Administrator changes Members, and a Personal Space is refused with
  * CodePersonalSpace.
  */
 export const SpaceMemberAdd: Op<SpaceMemberAddRequest, SpaceMemberAddResponse> = {
@@ -207,7 +207,8 @@ export const SpaceMemberAdd: Op<SpaceMemberAddRequest, SpaceMemberAddResponse> =
 
 /**
  * SpaceMemberRemove takes Users out of a Space, all or none, as
- * SpaceMemberAdd adds them. Only the Owner changes Members.
+ * SpaceMemberAdd adds them. Only the Owner or an Administrator changes
+ * Members.
  */
 export const SpaceMemberRemove: Op<SpaceMemberRemoveRequest, SpaceMemberRemoveResponse> = {
   name: "space.member.remove",

@@ -281,8 +281,8 @@ export const ServerSet: Op<ServerSetRequest, ServerSetResponse> = {
 /**
  * ServerCheckUpdate checks for a new koko release at once, with the
  * update_check setting on or off, sharing a check already in flight. It
- * is for the Owner only, the Local caller included, and changes no
- * record. A check that fails is refused with CodeUpdateCheckFailed, and
+ * is for the Owner or an Administrator only, the Local caller included,
+ * and changes no record. A check that fails is refused with CodeUpdateCheckFailed, and
  * server.show's update_check names it too.
  */
 export const ServerCheckUpdate: Op<ServerCheckUpdateRequest, ServerCheckUpdateResponse> = {
@@ -294,7 +294,7 @@ export const ServerCheckUpdate: Op<ServerCheckUpdateRequest, ServerCheckUpdateRe
 /**
  * ServerUpgrade asks the upgrade helper to upgrade the koko server to a
  * newer release (ADR 0048): the one the request names, or the latest. It
- * is for the Owner only, the Local caller included. A koko server not
+ * is for the Owner or an Administrator only, the Local caller included. A koko server not
  * installed with systemd and the helper is refused with
  * CodeUpgradeUnsupported, a version that is not a release newer than
  * its own with CodeInvalidRequest, and a second upgrade while one runs

@@ -8,7 +8,10 @@ import type { CurrentSignIn, PasswordLink } from "./signin";
 export interface User {
   id: string;
   name: string;
-  /** Role is "owner" for the Owner and "member" for every other User. */
+  /**
+   * Role is "owner" for the Owner, "administrator" for an Administrator
+   * and "member" for every other User (RoleOwner, ...).
+   */
   role: string;
   /** CreatedAt is RFC 3339 in UTC to the second. */
   created_at: string;
@@ -106,6 +109,28 @@ export interface UserRemoveResponse {
   user: User;
 }
 
+/** UserPromoteRequest names a Member to make an Administrator. */
+export interface UserPromoteRequest {
+  name: string;
+}
+
+/** UserPromoteResponse is the User user.promote names, as it left them. */
+export interface UserPromoteResponse {
+  /** User is in user.list's shape, its role "administrator". */
+  user: User;
+}
+
+/** UserDemoteRequest names an Administrator to make a Member again. */
+export interface UserDemoteRequest {
+  name: string;
+}
+
+/** UserDemoteResponse is the User user.demote names, as it left them. */
+export interface UserDemoteResponse {
+  /** User is in user.list's shape, its role "member". */
+  user: User;
+}
+
 /**
  * UserInvite creates a Member with their Personal Space and issues their
  * first Join Code, or with Web their first Password Link, in one
@@ -133,7 +158,7 @@ export const UserCurrent: Op<UserCurrentRequest, UserCurrentResponse> = {
 
 /**
  * UserList lists the Users, without the Removed ones unless All asks
- * for them. Only the Owner lists Users.
+ * for them. Only the Owner or an Administrator lists Users.
  */
 export const UserList: Op<UserListRequest, UserListResponse> = {
   name: "user.list",
@@ -150,13 +175,44 @@ export const UserList: Op<UserListRequest, UserListResponse> = {
  * Sessions issued, ends their Sign-ins, deletes their Password, voids
  * their unused Password Links, takes them out of every Space,
  * and turns their Personal Space into an ordinary shared Space with no
- * Members, which only the Owner sees. Once it commits, their Device
- * Sessions' Device Connections close. Only the Owner removes Users, and
- * the Owner is never removed (CodeOwnerNotRemovable).
+ * Members, which the Owner and the Administrators see; an
+ * Administrator's role goes with them. Once it commits, their Device
+ * Sessions' Device Connections close. Only the Owner or an
+ * Administrator removes Users, only the Owner removes an Administrator
+ * (CodeOwnerOnly), and the Owner is never removed
+ * (CodeOwnerNotRemovable).
  */
 export const UserRemove: Op<UserRemoveRequest, UserRemoveResponse> = {
   name: "user.remove",
   path: "/v1/user.remove",
+  write: true,
+};
+
+/**
+ * UserPromote makes a Member an Administrator, and in the same
+ * transaction voids their unused Join Codes and Password Links issued
+ * by anyone but the Owner and the User themselves. Only the Owner
+ * promotes (CodeOwnerOnly); the Owner is refused with
+ * CodeOwnerNotRemovable, a Removed User with CodeUserRemoved. An
+ * Administrator is answered as they are.
+ */
+export const UserPromote: Op<UserPromoteRequest, UserPromoteResponse> = {
+  name: "user.promote",
+  path: "/v1/user.promote",
+  write: true,
+};
+
+/**
+ * UserDemote makes an Administrator a Member again, and in the same
+ * transaction voids the unused Join Codes and Password Links they
+ * issued for other Users. Once it commits, their SSH Sessions to Hosts
+ * outside the Spaces they still act in end. Only the Owner demotes
+ * (CodeOwnerOnly); the Owner is refused with CodeOwnerNotRemovable, a
+ * Removed User with CodeUserRemoved. A Member is answered as they are.
+ */
+export const UserDemote: Op<UserDemoteRequest, UserDemoteResponse> = {
+  name: "user.demote",
+  path: "/v1/user.demote",
   write: true,
 };
 
@@ -170,7 +226,7 @@ export const CodeUnknownUser = "unknown_user";
 export const CodeUserRemoved = "user_removed";
 
 /**
- * CodeOwnerNotRemovable: the call would delete or Remove the Owner,
- * whom the koko server always keeps.
+ * CodeOwnerNotRemovable: the call would delete, Remove or change the
+ * role of the Owner, whom the koko server always keeps as they are.
  */
 export const CodeOwnerNotRemovable = "owner_not_removable";

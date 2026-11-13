@@ -1,6 +1,6 @@
 {
   "error": {
     "code": "owner_only",
-    "message": "only the Owner removes Users"
+    "message": "only the Owner or an Administrator removes Users"
   }
 }

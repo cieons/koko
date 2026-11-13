@@ -32,6 +32,7 @@ var steps = []string{
 	"signins.sql",
 	"signins_browser_system.sql",
 	"deployment_update_check.sql",
+	"administrators.sql",
 }
 
 //go:embed migrations/*.sql

@@ -81,15 +81,19 @@ func (s *Service) Register(a *op.API, changes *access.Signal) {
 }
 
 // link is password.link: a Password Link for a User who is not Removed.
-// Only the Owner issues one, and a Member is refused before the name is
-// read.
+// Only the Owner or an Administrator issues one, and a Member is refused
+// before the name is read; only the Owner issues one for the Owner or an
+// Administrator other than the caller.
 func (s *Service) link(ctx context.Context, tx store.Tx, caller op.Caller, req api.PasswordLinkRequest) (api.PasswordLinkResponse, error) {
-	who, err := access.OwnerOnly(ctx, tx, caller, "issues Password Links")
+	who, err := access.Administers(ctx, tx, caller, "issues Password Links")
 	if err != nil {
 		return api.PasswordLinkResponse{}, err
 	}
 	u, err := user.Active(ctx, tx, req.User)
 	if err != nil {
+		return api.PasswordLinkResponse{}, err
+	}
+	if err := who.MayActOn(u, "issues a Password Link for"); err != nil {
 		return api.PasswordLinkResponse{}, err
 	}
 	l, err := s.IssueLink(ctx, tx, who, u, req.ValidFor)
@@ -140,15 +144,19 @@ func (s *Service) IssueLink(ctx context.Context, tx store.Tx, who access.Identit
 
 // removePassword is password.remove: it deletes a User's Password, ends
 // their Sign-ins and voids their unused Password Link, keeping the User and
-// their devices. Only the Owner removes one, and a Member is refused before
-// the name is read.
+// their devices. Only the Owner or an Administrator removes one, and a
+// Member is refused before the name is read; only the Owner removes the
+// Owner's or another Administrator's.
 func (s *Service) removePassword(ctx context.Context, tx store.Tx, caller op.Caller, req api.PasswordRemoveRequest) (api.PasswordRemoveResponse, error) {
-	who, err := access.OwnerOnly(ctx, tx, caller, "removes Passwords")
+	who, err := access.Administers(ctx, tx, caller, "removes Passwords")
 	if err != nil {
 		return api.PasswordRemoveResponse{}, err
 	}
 	u, err := user.ByName(ctx, tx, req.User)
 	if err != nil {
+		return api.PasswordRemoveResponse{}, err
+	}
+	if err := who.MayActOn(u, "removes the Password of"); err != nil {
 		return api.PasswordRemoveResponse{}, err
 	}
 	res, err := tx.ExecContext(ctx, "DELETE FROM passwords WHERE user_id = ?", u.ID)
@@ -174,8 +182,8 @@ func (s *Service) removePassword(ctx context.Context, tx store.Tx, caller op.Cal
 }
 
 // list is signin.list: the caller's own Sign-ins, and everyone's for the
-// Owner, of the one User req.User names when it names one; the ended ones
-// only with req.All.
+// Owner or an Administrator, of the one User req.User names when it names
+// one; the ended ones only with req.All.
 func (s *Service) list(ctx context.Context, tx store.Tx, caller op.Caller, req api.SignInListRequest) (api.SignInListResponse, error) {
 	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
@@ -183,11 +191,11 @@ func (s *Service) list(ctx context.Context, tx store.Tx, caller op.Caller, req a
 	}
 	of := req.User
 	switch {
-	case !who.IsOwner() && of != "" && of != who.User.Name:
+	case !who.Administers() && of != "" && of != who.User.Name:
 		// Another User's Sign-ins are none of a Member's: as for a User
 		// with none, whether or not the name is a User's.
 		return api.SignInListResponse{SignIns: []api.SignIn{}}, nil
-	case !who.IsOwner():
+	case !who.Administers():
 		of = who.User.Name
 	case of != "":
 		if _, err := user.ByName(ctx, tx, of); err != nil {
@@ -208,8 +216,9 @@ func (s *Service) list(ctx context.Context, tx store.Tx, caller op.Caller, req a
 }
 
 // revoke is signin.revoke: it ends the Sign-in req.ID names, the caller's
-// own or, for the Owner, anyone's, and answers it as it left it. One that
-// has ended already is answered as it is, unchanged. Another User's, for a
+// own or, for the Owner or an Administrator, anyone's whom they may act on
+// (access.Identity.MayActOn), and answers it as it left it. One that has
+// ended already is answered as it is, unchanged. Another User's, for a
 // Member, is refused as an id no Sign-in holds.
 func (s *Service) revoke(ctx context.Context, tx store.Tx, caller op.Caller, req api.SignInRevokeRequest) (api.SignInRevokeResponse, error) {
 	who, err := access.Who(ctx, tx, caller)
@@ -217,7 +226,7 @@ func (s *Service) revoke(ctx context.Context, tx store.Tx, caller op.Caller, req
 		return api.SignInRevokeResponse{}, err
 	}
 	now := op.Now(ctx)
-	found, err := access.SignIns(ctx, tx, now, "s.id = ?1 AND (?2 OR u.id = ?3)", req.ID, who.IsOwner(), who.User.ID)
+	found, err := access.SignIns(ctx, tx, now, "s.id = ?1 AND (?2 OR u.id = ?3)", req.ID, who.Administers(), who.User.ID)
 	if err != nil {
 		return api.SignInRevokeResponse{}, err
 	}
@@ -225,6 +234,13 @@ func (s *Service) revoke(ctx context.Context, tx store.Tx, caller op.Caller, req
 		return api.SignInRevokeResponse{}, api.CodeUnknownSignIn.Errorf("no Sign-in is %q", req.ID)
 	}
 	si := found[0]
+	of, err := user.ByName(ctx, tx, si.User)
+	if err != nil {
+		return api.SignInRevokeResponse{}, err
+	}
+	if err := who.MayActOn(of, "revokes the Sign-ins of"); err != nil {
+		return api.SignInRevokeResponse{}, err
+	}
 	if si.EndedAt != "" {
 		return api.SignInRevokeResponse{SignIn: si}, nil
 	}
@@ -320,15 +336,35 @@ func (s *Service) end(ctx context.Context, tx store.Tx, ids []string, now time.T
 // voidLinks voids, at now, every valid Password Link of the User userID,
 // and says how many.
 func voidLinks(ctx context.Context, tx store.Tx, userID string, now time.Time) (int64, error) {
+	return voidLinksWhere(ctx, tx, now, "user_id = ?2", userID)
+}
+
+// VoidLinksOthersIssuedFor voids u's valid Password Links issued by anyone
+// but the Owner and u themselves, as promoting u does, and says how many.
+// The Unix socket, which acts as the Owner, issues with no issued_by.
+func (s *Service) VoidLinksOthersIssuedFor(ctx context.Context, tx store.Tx, u api.User) (int64, error) {
+	return voidLinksWhere(ctx, tx, op.Now(ctx), access.IssuedForUserByOthers, u.ID)
+}
+
+// VoidLinksIssuedBy voids the valid Password Links u issued for other
+// Users, from any of their Device Sessions or Sign-ins, as demoting or
+// Removing u does, and says how many.
+func (s *Service) VoidLinksIssuedBy(ctx context.Context, tx store.Tx, u api.User) (int64, error) {
+	return voidLinksWhere(ctx, tx, op.Now(ctx), access.IssuedByUserForOthers, u.ID)
+}
+
+// voidLinksWhere voids, at now, every valid Password Link the SQL
+// condition where selects, which reads userID as ?2, and says how many.
+func voidLinksWhere(ctx context.Context, tx store.Tx, now time.Time, where, userID string) (int64, error) {
 	stamp := now.Format(time.RFC3339)
 	res, err := tx.ExecContext(ctx, `UPDATE password_links SET voided_at = ?1
-		WHERE user_id = ?2 AND used_at IS NULL AND voided_at IS NULL AND expires_at > ?1`, stamp, userID)
+		WHERE `+where+` AND used_at IS NULL AND voided_at IS NULL AND expires_at > ?1`, stamp, userID)
 	if err != nil {
-		return 0, fmt.Errorf("void the Password Links of %s: %w", userID, err)
+		return 0, fmt.Errorf("void the Password Links for %s: %w", userID, err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return 0, fmt.Errorf("void the Password Links of %s: %w", userID, err)
+		return 0, fmt.Errorf("void the Password Links for %s: %w", userID, err)
 	}
 	return n, nil
 }

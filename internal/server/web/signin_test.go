@@ -523,6 +523,61 @@ func TestWhatASignInMayDo(t *testing.T) {
 	}
 }
 
+// An Administrator through a Sign-in reads every User's Sign-ins, and
+// revokes a Member's, removes their Password and issues them a Password
+// Link; the same acts on the Owner or another Administrator are refused
+// with owner_only and change nothing.
+func TestAnAdministratorsSignInActsOnMembersOnly(t *testing.T) {
+	t.Parallel()
+	h := startSignIns(t)
+	for _, u := range []string{"carol", "dave"} {
+		h.Koko("user", "promote", u).WantSuccess(t)
+	}
+	admin := h.SignIn("carol")
+	others := map[string]*harness.Browser{"bob": h.SignIn("bob"), harness.Owner: h.SignIn(harness.Owner), "dave": h.SignIn("dave")}
+	ids := map[string]string{}
+	for u := range others {
+		ids[u] = signInID(t, h, u)
+	}
+
+	status, body := admin.Send(api.SignInList, []byte("{}"))
+	var listed api.SignInListResponse
+	if err := json.Unmarshal(body, &listed); status != http.StatusOK || err != nil || len(listed.SignIns) != 4 {
+		t.Errorf("signin.list from carol's Sign-in answered %d %s, want the 4 Sign-ins of every User", status, body)
+	}
+	for u, whom := range map[string]string{harness.Owner: "the Owner", "dave": "another Administrator"} {
+		for _, c := range []struct {
+			op   api.Operation
+			body string
+			does string
+		}{
+			{api.SignInRevoke, fmt.Sprintf(`{"id": %q}`, ids[u]), "revokes the Sign-ins of"},
+			{api.PasswordRemove, fmt.Sprintf(`{"user": %q}`, u), "removes the Password of"},
+			{api.PasswordLinkIssue, fmt.Sprintf(`{"user": %q}`, u), "issues a Password Link for"},
+		} {
+			status, body := admin.Send(c.op, []byte(c.body))
+			wantCode(t, status, string(body), api.CodeOwnerOnly.Name)
+			if want := "only the Owner " + c.does + " " + whom; !strings.Contains(string(body), want) {
+				t.Errorf("%s of %s from carol's Sign-in answered %s, want it to say %q", c.op.Info().Name, u, body, want)
+			}
+		}
+		wantSignedIn(t, others[u], u)
+	}
+	for _, c := range []struct {
+		op   api.Operation
+		body string
+	}{
+		{api.PasswordLinkIssue, `{"user": "bob"}`},
+		{api.SignInRevoke, fmt.Sprintf(`{"id": %q}`, ids["bob"])},
+		{api.PasswordRemove, `{"user": "bob"}`},
+	} {
+		if status, body := admin.Send(c.op, []byte(c.body)); status != http.StatusOK {
+			t.Errorf("%s from carol's Sign-in answered %d %s", c.op.Info().Name, status, body)
+		}
+	}
+	wantSignedOut(t, others["bob"])
+}
+
 // The log names each event of signing in, without a Password, a link's
 // secret or a cookie in any line.
 func TestTheSignInLogLines(t *testing.T) {

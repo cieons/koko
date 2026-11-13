@@ -123,7 +123,7 @@ func TestUserRemoveRemovesAUserWhoJoined(t *testing.T) {
 	for _, want := range []string{
 		`msg="device revoked" user=bob device=desktop device_session=` + desktopID + ` revoked_by="unix socket"`,
 		`msg="device revoked" user=bob device=device-1 device_session=` + laptopID + ` revoked_by="unix socket"`,
-		`msg="user removed" user=bob user_id=` + inv.User.ID + ` device_sessions_revoked=2 join_codes_voided=2 signins_ended=0 password_links_voided=0 removed_by="unix socket"`,
+		`msg="user removed" user=bob user_id=` + inv.User.ID + ` role=member device_sessions_revoked=2 join_codes_voided=2 signins_ended=0 password_links_voided=0 removed_by="unix socket"`,
 	} {
 		if !strings.Contains(log, want) {
 			t.Errorf("the log holds no line with %s:\n%s", want, log)
@@ -240,7 +240,7 @@ func TestUserRemoveForPeople(t *testing.T) {
 	r = h.Koko("user", "remove", "carol")
 	r.WantSuccess(t)
 	if want := "Removed carol (" + carol.User.ID + "): their Device Sessions are revoked and they are in no Space. " +
-		"Their Personal Space carol is now a Space with no Members that only the Owner sees.\n"; r.Stdout != want {
+		"Their Personal Space carol is now a Space with no Members that only the Owner and the Administrators see.\n"; r.Stdout != want {
 		t.Errorf("user remove carol printed %q, want %q", r.Stdout, want)
 	}
 }

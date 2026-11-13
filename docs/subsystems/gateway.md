@@ -408,7 +408,7 @@ the Tunnel out of the registry.
 | The Host was Retired | `access to web1 was withdrawn: web1 was Retired; this SSH Session is closed.` | `host retired` |
 | The Host went back to Registered | `access to web1 was withdrawn; this SSH Session is closed.` | `host registered` |
 | A Relay of the chain it started through, or of its Host's chain now, is no longer Managed | `access to web1 was withdrawn: web1's Relay gw is no longer Managed; this SSH Session is closed.`, the Relay unnamed to a caller who cannot follow the links to it | `relay registered`, `relay retired` |
-| The caller can no longer act in the Host's Space: they were taken out of it, or it was moved to one they cannot act in | `access to web1 was withdrawn; this SSH Session is closed.` | `access withdrawn` |
+| The caller can no longer act in the Host's Space: they were taken out of it, it was moved to one they cannot act in, or they were demoted from Administrator and are no Member of it | `access to web1 was withdrawn; this SSH Session is closed.` | `access withdrawn` |
 | The koko server could not read the record to check access again | `the koko server could not check access to web1, so this SSH Session is closed; its log says why.` | `access check failed` |
 | Its Host's chain of Relays is broken in the record | the same | `relay chain broken` |
 
@@ -477,8 +477,8 @@ SSH Session that ends gives its notice as any ending does
   reach (`host.move` to another Space, `host.retire`, and `host.set` sending
   a Managed Host back to Registered or giving it another Relay, whose own
   chain may hold one that is not Managed), or the live Device Sessions and
-  Sign-ins of each User `space.member.remove` took out of a Space, by the
-  caller's id (`op.Caller.ID`). When a change names any Host, the Gateway
+  Sign-ins of each User `space.member.remove` took out of a Space or
+  `user.demote` demoted, by the caller's id (`op.Caller.ID`). When a change names any Host, the Gateway
   checks every live SSH Session again, since a named Host may be the Relay
   one passes through or the one its Host was given since it started, even
   when it started with none; when it narrows callers, it checks each SSH
@@ -875,7 +875,7 @@ the log lines, with no cookie in them.
 holds a live and a Detached terminal across each change that withdraws a
 Sign-in's access: signing out, `signin.revoke`, the Password changed (the
 changing Sign-in's own terminal going on), `password.remove`,
-`user.remove`, `space.member.remove`, `host.move`, `host.retire`, a Relay
+`user.remove`, `space.member.remove`, `user.demote`, `host.move`, `host.retire`, a Relay
 back to Registered, the Sign-in's expiry (the clock hook past it, the
 sweep's interval shortened), with a Sign-in that Resumed or opened a
 terminal meanwhile going on, and a Web URL change, the same Web URL set

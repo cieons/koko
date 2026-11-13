@@ -1,8 +1,9 @@
 # The access check and Spaces
 
 Who a call acts as, what it may do, and the Spaces and memberships that
-decide it. The rule is [ADR 0011](../adr/0011-access-is-space-membership.md)
-and [ADR 0008](../adr/0008-local-callers-act-as-the-owner.md); the source is
+decide it. The rule is [ADR 0011](../adr/0011-access-is-space-membership.md),
+[ADR 0008](../adr/0008-local-callers-act-as-the-owner.md) and, for the
+Administrators, [ADR 0056](../adr/0056-one-owner-and-administrators-who-act-on-everything-but-the-owner-and-each-other.md); the source is
 [`internal/server/access`](../../internal/server/access/access.go) and
 [`internal/server/space`](../../internal/server/space/space.go).
 
@@ -10,7 +11,12 @@ and [ADR 0008](../adr/0008-local-callers-act-as-the-owner.md); the source is
 
 [`access`](../../internal/server/access/access.go) is the one place that
 decides access. No other package reads roles or memberships to decide what a
-caller may do. Every answer is read from the current records, inside the
+caller may do. A User's role, as the API answers it, is one SQL expression,
+[`access.Role`](../../internal/server/access/access.go): `owner` for the
+Owner, `administrator` for a User with a row in `administrators`, and
+`member` for every other, a Removed User among them. `access.Who`,
+`user.ByName`, `user.list` and every other read of a User select it, so no
+other package reads `administrators`. Every answer is read from the current records, inside the
 call's transaction, so a change (a membership, a revocation) holds from the
 next call, and a live SSH Session lasts only while a new one would be allowed
 ([the Gateway](gateway.md#access-during-a-live-ssh-session)). Every
@@ -21,8 +27,9 @@ operation asks who is calling, even one every caller may make, such as
 | Question | Answer |
 | --- | --- |
 | Who is calling | `access.Who(ctx, tx, caller)`: an `Identity`, the User and the Device Session or the Sign-in the call came on, or the Owner with neither for the Local caller. A Revoked Device Session is refused with `revoked`; so is a Removed User's, since Removing revokes each of theirs ([Users](users.md#removing)). An ended Sign-in, a Removed User's among them, is refused with `signin_required` ([Sign-ins](signin.md)). `Identity.By` names the caller in log lines |
-| Is this caller the Owner | `Identity.IsOwner()`; `access.OwnerOnly(ctx, tx, caller, does)` also refuses anyone else with `owner_only`, "only the Owner `<does>`" |
-| Which Spaces can this caller act in | `Identity.Spaces(ctx, tx)`, the one place the rule is written: every Space for the Owner; for any other User their own Personal Space and each Space they are a Member of. A `Scope` whose `Has(spaceID)` filters lists and counts |
+| Is this caller the Owner, or an Administrator | `Identity.IsOwner()`, `Identity.IsAdministrator()`, and `Identity.Administers()` for either; `access.Administers(ctx, tx, caller, does)` also refuses anyone else with `owner_only`, "only the Owner or an Administrator `<does>`", and `access.OwnerOnly(ctx, tx, caller, does)` anyone but the Owner, "only the Owner `<does>`" |
+| May this caller act on this User | `Identity.MayActOn(target, does)`, the one rule for a call that acts on a User's role or credentials: anyone acts on themselves, the Owner on anyone, and an Administrator on any Member. Anything else is refused with `owner_only`, "only the Owner `<does>` the Owner" or "… another Administrator" |
+| Which Spaces can this caller act in | `Identity.Spaces(ctx, tx)`, the one place the rule is written: every Space, Personal Spaces included, for the Owner and the Administrators; for any other User their own Personal Space and each Space they are a Member of. A `Scope` whose `Has(spaceID)` filters lists and counts |
 | Can this caller act in this Space | `Identity.CanAct(ctx, tx, spaceID)`, by that rule |
 
 Nothing else grants access: no Attribute, no per-record grant, no role on a
@@ -37,13 +44,31 @@ membership.
   through it, and leaves records in an unseen Space out of every list, count
   and filter through `Identity.Spaces`. A record the call names no Space for
   goes to the caller's Personal Space, which `space.Personal` returns.
-- **Owner-only before anything else.** An operation only the Owner may make
-  asks `access.OwnerOnly` before it reads anything the call names, so a Member
-  gets the same `owner_only` for a name that is taken, free, unseen or
-  unknown, and learns nothing about the records. `space.add`, `space.rename`,
-  `space.remove`, `space.member.add`, `space.member.remove`, `user.invite`,
-  `user.list`, `user.remove`, `password.link` and `password.remove` do so. `device.add` is anyone's for their own User; naming another User is
-  refused with `owner_only` before that User is looked up.
+- **The gate before anything else.** An operation only the Owner or an
+  Administrator may make asks `access.Administers` before it reads anything
+  the call names, so a Member gets the same `owner_only` for a name that is
+  taken, free, unseen or unknown, and learns nothing about the records.
+  `space.add`, `space.rename`, `space.remove`, `space.member.add`,
+  `space.member.remove`, `user.invite`, `user.list`, `user.remove`,
+  `password.link`, `password.remove`, `server.check_update` and
+  `server.upgrade` do so. `user.promote` and `user.demote` ask
+  `access.OwnerOnly` the same way ([Users](users.md#administrators)).
+  `server.set` stays the Local caller's alone (`local_only`), the Owner's
+  devices included. `device.add` is anyone's for their own User; naming
+  another User is refused with `owner_only` before that User is looked up,
+  unless the caller `Administers()`.
+- **Acting on another User.** `Identity.MayActOn` is asked once the User a
+  call acts on is read, which reveals nothing, since an Administrator lists
+  every User and their role. It governs `user.remove`, `device.add` naming a
+  User, `device.revoke` and `signin.revoke` of another User's,
+  `password.link` and `password.remove`. `device.revoke` asks it before it
+  reads the device. `user.remove` refuses the Owner with
+  `owner_not_removable` first, whoever calls, and an Administrator's own
+  Removal with `owner_only`, as only the Owner removes an Administrator.
+- **Reading is not acting.** `device.list`, `signin.list` and `user.list`
+  answer an Administrator every User's records, the Owner's included, as
+  they answer the Owner. A Member naming another User's Device Sessions is
+  refused with `owner_only`, and gets no Sign-ins of another User's.
 
 ## Spaces and memberships
 
@@ -52,13 +77,14 @@ membership.
   `personal` say which: a Space is Personal exactly while `user_id` is set.
   Removing a User turns their Personal Space into an ordinary shared Space
   with no Members by clearing it ([Users](users.md#removing)), so only the
-  Owner sees it, and can rename it, give it Members, move its records out
-  and remove it once empty.
+  Owner and the Administrators see it, and can rename it, give it Members,
+  move its records out and remove it once empty.
 - A membership is a row of `memberships` (a Space and a User, no role). It
   goes with its Space when the Space is removed, and with its User when a
   User who never joined is deleted (`ON DELETE CASCADE`).
-- The Owner can be made a Member like any User. It changes nothing the Owner
-  can do, since the Owner acts in every Space, and `space show` lists them.
+- The Owner, or an Administrator, can be made a Member like any User. It
+  changes nothing they can do, since they act in every Space, and `space
+  show` lists them. An Administrator demoted keeps their memberships.
 - **Names.** A new User's name must be free among Users and Spaces (the user
   area checks it). A Space's new name, on `space.add` or `space.rename`, is
   checked against Spaces only: `name_taken`.
@@ -117,7 +143,7 @@ web front ends their `koko web` cookies.
 | --- | --- | --- |
 | `Revoked`, `Removed` | The Device Sessions the change Revoked, and whether they were a Removed User's | `device.revoke`, `user.remove` |
 | `SignIns`, `SignInEnd` | The Sign-ins the change ended, and why, as their records say: `signed_out`, `revoked`, `password_changed`, `password_removed` or `user_removed` | signing out, `signin.revoke`, a Password set or changed (the User's other Sign-ins), `password.remove`, `user.remove` ([Sign-ins](signin.md#sign-ins)) |
-| `Narrowed` | The live Device Sessions and Sign-ins of each User taken out of a Space | `space.member.remove` |
+| `Narrowed` | The live Device Sessions and Sign-ins of each User taken out of a Space, or demoted from Administrator (`access.Callers`) | `space.member.remove`, `user.demote` |
 | `Hosts` | The Hosts the change may have put out of a caller's reach | `host.move`, `host.retire`, `host.set` sending a Host back to Registered |
 | `WebURL` | The Web URL set to another address or cleared, which signs out every page on the web listener | `server.set` |
 
@@ -136,14 +162,22 @@ states.
 - **The callers**, each acting in a target Space of a koko server of its
   own: the Owner through a Device Session and the Local caller, in the
   shared Space `ops`; a Member of `ops`; a Member in their own Personal
-  Space; a Member outside `ops`; and the Owner and a Member of `ops` through
-  a Sign-in, calling on the web listener as a browser does (`h.SignIn`).
+  Space; a Member outside `ops`; the Owner and a Member of `ops` through
+  a Sign-in, calling on the web listener as a browser does (`h.SignIn`);
+  and an Administrator, eve, who is a Member of no shared Space, through a
+  Device Session and through a Sign-in, in `ops`. Every row gives each
+  caller its answer explicitly. The records hold a second Administrator,
+  frank, and a Sign-in each of the Owner and frank, for the rows that name
+  them; a row whose request needs such a record's id gives `requestIn`,
+  which reads the fixture.
   Each call's koko server starts on a copy of a template: the data
   directory of a koko server stopped once it held the matrix's Users, `ops`
   unless for a twin, and the caller's Sign-in. So the matrix records them,
   and hashes a Sign-in's Password, once per template rather than once per
   call (#186).
-- **The answers:** `allowed` (the call succeeds), `ownerOnly`, `localOnly`,
+- **The answers:** `allowed` (the call succeeds), `ownerOnly` (the code
+  `owner_only`, whether only the Owner or only the Owner or an
+  Administrator may make the call), `localOnly`,
   `unknown` (byte for byte the answer to the same call on a koko server where
   the target Space was never recorded), and `allowedBut(code)` for a call the
   access check lets through and the operation refuses by a rule of its own.
@@ -177,6 +211,18 @@ states.
   [`TestAnEndedSignInIsRefusedByEveryOperation`](../../internal/server/revoked_test.go)
   calls every registered operation as that caller beneath it.
 
+## The limit: the koko server's own machine
+
+The Unix socket is open to every local account, and its caller is the
+Owner ([ADR 0008](../adr/0008-local-callers-act-as-the-owner.md)). An
+Administrator acts in every Space, so when the koko server's own machine, or
+the machine running its container, is a Managed Host, an Administrator can
+open an SSH Session to it and call koko there as the Owner, acting on the
+Owner and on other Administrators after all. koko does not prevent it, as it
+does not stop anyone with a shell there: an Owner who makes Administrators
+keeps that machine out of koko's record, or accepts that an Administrator
+who reaches it is the Owner's equal ([ADR 0056](../adr/0056-one-owner-and-administrators-who-act-on-everything-but-the-owner-and-each-other.md)).
+
 ## Verifying
 
 - The matrix above, and its Revoked and Removed User's Device Sessions and
@@ -187,6 +233,11 @@ states.
   with each Space's Members and counts, and shows over their own Device
   Connection; a membership change holding
   from the next call; unseen equals unknown; the Owner-only refusals.
+- [`internal/client/cli/user_admin_test.go`](../../internal/client/cli/user_admin_test.go):
+  an Administrator's acts on Members, each act on the Owner or another
+  Administrator refused with `owner_only` and changing nothing, and an
+  Administrator reading every record, the Owner's Personal Space's Hosts
+  and Secrets included ([Users](users.md#administrators)).
 - [`internal/server/space/space_test.go`](../../internal/server/space/space_test.go):
   counts and the `space_not_empty` refusal through stand-in Holdings;
   `space.list` answering each Space as `space.show` does, and a Member's

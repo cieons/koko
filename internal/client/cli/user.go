@@ -57,6 +57,28 @@ var userCommands = []Command{
 		Op:        api.UserRemove,
 		Run:       action(userRemove),
 	},
+	{
+		Noun:    "user",
+		Verb:    "promote",
+		Summary: "Make a Member an Administrator, who sees and acts in every Space and manages every Member",
+		Args:    []Arg{{Name: "user"}},
+		// It hands over every Space and Secret, which no demotion takes
+		// back (ADR 0056).
+		Tier:      Irreversible,
+		OwnerOnly: true,
+		Op:        api.UserPromote,
+		Run:       action(userPromote),
+	},
+	{
+		Noun:      "user",
+		Verb:      "demote",
+		Summary:   "Make an Administrator a Member again, ending their SSH Sessions outside their own Spaces",
+		Args:      []Arg{{Name: "user"}},
+		Tier:      Reversible,
+		OwnerOnly: true,
+		Op:        api.UserDemote,
+		Run:       action(userDemote),
+	},
 }
 
 // userJSON is a User in the CLI's own --json. removed_at is null while the
@@ -87,6 +109,8 @@ var userMappings = []mapping{
 	{api: reflect.TypeFor[api.User](), cli: reflect.TypeFor[userJSON]()},
 	{api: reflect.TypeFor[api.UserListResponse]()},
 	{api: reflect.TypeFor[api.UserRemoveResponse](), cli: reflect.TypeFor[userRemoval]()},
+	{api: reflect.TypeFor[api.UserPromoteResponse]()},
+	{api: reflect.TypeFor[api.UserDemoteResponse]()},
 }
 
 // userList is what user ls prints: every User listed, as a bare array.
@@ -175,7 +199,7 @@ func (r userRemoval) Human(w io.Writer) error {
 		return err
 	}
 	_, err := fmt.Fprintf(w, "Removed %s (%s): their Device Sessions are revoked and they are in no Space. "+
-		"Their Personal Space %s is now a Space with no Members that only the Owner sees.\n", u.Name, u.ID, u.Name)
+		"Their Personal Space %s is now a Space with no Members that only the Owner and the Administrators see.\n", u.Name, u.ID, u.Name)
 	return err
 }
 
@@ -185,4 +209,33 @@ func userRemove(ctx context.Context, in *Input) (userRemoval, error) {
 		return userRemoval{}, err
 	}
 	return userRemoval{Outcome: resp.Outcome, User: userFromAPI(resp.User)}, nil
+}
+
+// roleChange is what user promote and user demote print: the User as the
+// call left them, in user ls's shape.
+type roleChange userJSON
+
+func (r roleChange) Human(w io.Writer) error {
+	if r.Role == api.RoleAdministrator {
+		_, err := fmt.Fprintf(w, "%s (%s) is an Administrator: they see and act in every Space, read every Secret and manage every Member.\n", r.Name, r.ID)
+		return err
+	}
+	_, err := fmt.Fprintf(w, "%s (%s) is a Member: they act in their Personal Space and the Spaces they are a Member of.\n", r.Name, r.ID)
+	return err
+}
+
+func userPromote(ctx context.Context, in *Input) (roleChange, error) {
+	resp, err := in.Call(ctx, api.UserPromote, api.UserPromoteRequest{Name: in.Arg("user")})
+	if err != nil {
+		return roleChange{}, err
+	}
+	return roleChange(userFromAPI(resp.User)), nil
+}
+
+func userDemote(ctx context.Context, in *Input) (roleChange, error) {
+	resp, err := in.Call(ctx, api.UserDemote, api.UserDemoteRequest{Name: in.Arg("user")})
+	if err != nil {
+		return roleChange{}, err
+	}
+	return roleChange(userFromAPI(resp.User)), nil
 }

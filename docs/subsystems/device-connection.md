@@ -482,11 +482,15 @@ for months.
 
 `koko device revoke <device>` or `<user>/<device>` (`device.revoke`,
 [`revoker.revoke`](../../internal/server/device/session.go)) revokes one live
-Device Session: a User any of their own, the one in use included, and the
-Owner anyone's. A Member naming another User's gets `unknown_device`, the
-answer for one that is not there, byte for byte. The Owner's own last live
-Device Session needs `--last` (`last_device_session` without it), since the
-Owner then adds a device only over the Unix socket.
+Device Session: a User any of their own, the one in use included, the
+Owner anyone's, and an Administrator any Member's. A Member naming another
+User's gets `unknown_device`, the answer for one that is not there, byte for
+byte; an Administrator naming the Owner's or another Administrator's gets
+`owner_only`, before the device is read
+([the access check](access.md#the-four-questions)). The Owner's own last
+live Device Session needs `--last` (`last_device_session` without it), since
+the Owner then adds a device only over the Unix socket; an Administrator's
+needs none, since the Owner can add them one.
 
 In one transaction it sets the revoked time, which keeps the record, its name
 in `koko device ls --all` and its key for ever, and voids the Join Codes the
@@ -542,10 +546,13 @@ the bare names at once ([the bare-name refresh](device-mux.md#the-bare-name-refr
   `move` (both Spaces), `retire` and `remove` (of a Host not Retired) name
   the Spaces they changed; `space.member.add` and `space.member.remove`
   name the Users they added or took out, none for a User who was a Member
-  already or was not one. Nothing else changes which Host names a User
-  sees: `host.set` and `host.enroll` change no name, Retired is terminal,
-  a Space that holds a Host is not removed, and the Hosts of a Removed User
-  stay with the Owner, who saw them already.
+  already or was not one; `user.promote` and `user.demote` name the User
+  whose role they changed, none for a retry
+  ([Users](users.md#administrators)). Nothing else changes which Host
+  names a User sees: `host.set` and `host.enroll` change no name, Retired
+  is terminal, a Space that holds a Host is not removed, and the Hosts of a
+  Removed User stay with the Owner and the Administrators, who saw them
+  already.
 - **Who is told.** `server.Start` subscribes the koko server's
   `tellHostsChanged` ([`hostlist.go`](../../internal/server/hostlist.go)),
   which, beside the call so that it waits for no read, reads for each

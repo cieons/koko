@@ -1,6 +1,6 @@
 {
   "error": {
     "code": "owner_only",
-    "message": "only the Owner invites Users"
+    "message": "only the Owner or an Administrator invites Users"
   }
 }

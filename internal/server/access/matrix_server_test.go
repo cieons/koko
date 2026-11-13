@@ -12,6 +12,7 @@ var serverRows = []row{
 			ownerDevice: localOnly, local: allowedBut(api.CodeAlreadyInitialised),
 			member: localOnly, personal: localOnly, outsider: localOnly,
 			ownerSignIn: localOnly, memberSignIn: localOnly,
+			adminDevice: localOnly, adminSignIn: localOnly,
 		},
 	},
 	{
@@ -26,6 +27,7 @@ var serverRows = []row{
 		want: map[caller]answer{
 			ownerDevice: localOnly, local: allowed, member: localOnly, personal: localOnly, outsider: localOnly,
 			ownerSignIn: localOnly, memberSignIn: localOnly,
+			adminDevice: localOnly, adminSignIn: localOnly,
 		},
 	},
 	{
@@ -37,6 +39,7 @@ var serverRows = []row{
 			ownerDevice: allowedBut(api.CodeUpdateCheckFailed), local: allowedBut(api.CodeUpdateCheckFailed),
 			member: ownerOnly, personal: ownerOnly, outsider: ownerOnly,
 			ownerSignIn: allowedBut(api.CodeUpdateCheckFailed), memberSignIn: ownerOnly,
+			adminDevice: allowedBut(api.CodeUpdateCheckFailed), adminSignIn: allowedBut(api.CodeUpdateCheckFailed),
 		},
 	},
 	{
@@ -48,6 +51,7 @@ var serverRows = []row{
 			ownerDevice: allowedBut(api.CodeUpgradeUnsupported), local: allowedBut(api.CodeUpgradeUnsupported),
 			member: ownerOnly, personal: ownerOnly, outsider: ownerOnly,
 			ownerSignIn: allowedBut(api.CodeUpgradeUnsupported), memberSignIn: ownerOnly,
+			adminDevice: allowedBut(api.CodeUpgradeUnsupported), adminSignIn: allowedBut(api.CodeUpgradeUnsupported),
 		},
 	},
 }

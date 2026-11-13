@@ -1,0 +1,8 @@
+{
+  "id": "user_<1>",
+  "name": "bob",
+  "role": "administrator",
+  "created_at": "<time>",
+  "removed_at": null,
+  "password_set_at": null
+}

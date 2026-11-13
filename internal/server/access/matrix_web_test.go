@@ -10,6 +10,7 @@ var webRows = []row{
 		want: map[caller]answer{
 			ownerDevice: allowed, local: allowed, member: allowed, personal: allowed, outsider: allowed,
 			ownerSignIn: allowedBut(api.CodeDeviceOnly), memberSignIn: allowedBut(api.CodeDeviceOnly),
+			adminDevice: allowed, adminSignIn: allowedBut(api.CodeDeviceOnly),
 		},
 	},
 }

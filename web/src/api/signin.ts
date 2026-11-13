@@ -135,7 +135,9 @@ export interface SignInRevokeResponse {
 /**
  * PasswordLinkIssue issues a Password Link for a User who is not Removed,
  * the Owner included, voiding their earlier unused one. Only the Owner
- * issues one, and a Member is refused before the name is read. It is
+ * or an Administrator issues one, and a Member is refused before the
+ * name is read; only the Owner issues one for the Owner or another
+ * Administrator (CodeOwnerOnly). It is
  * refused with CodeWebURLUnset while the Web URL is not set, and a
  * ValidFor outside 60 to 604,800 seconds with CodeInvalidValue.
  */
@@ -149,7 +151,8 @@ export const PasswordLinkIssue: Op<PasswordLinkRequest, PasswordLinkResponse> = 
  * PasswordRemove removes a User's Password, ends their Sign-ins and
  * voids their unused Password Link, keeping the User and their
  * devices. A User without a Password is refused with CodeNoPassword.
- * Only the Owner removes one.
+ * Only the Owner or an Administrator removes one, and only the Owner
+ * removes the Owner's or another Administrator's (CodeOwnerOnly).
  */
 export const PasswordRemove: Op<PasswordRemoveRequest, PasswordRemoveResponse> = {
   name: "password.remove",
@@ -159,7 +162,7 @@ export const PasswordRemove: Op<PasswordRemoveRequest, PasswordRemoveResponse> =
 
 /**
  * SignInList lists the caller's own Sign-ins, and everyone's for the
- * Owner, without the ended ones unless All asks for them.
+ * Owner or an Administrator, without the ended ones unless All asks for them.
  */
 export const SignInList: Op<SignInListRequest, SignInListResponse> = {
   name: "signin.list",
@@ -168,9 +171,11 @@ export const SignInList: Op<SignInListRequest, SignInListResponse> = {
 };
 
 /**
- * SignInRevoke ends a live Sign-in: anyone's own, and anyone's for the
- * Owner. Another User's, for a Member, is refused with
- * CodeUnknownSignIn, as an id no Sign-in holds.
+ * SignInRevoke ends a live Sign-in: anyone's own, anyone's for the
+ * Owner, and any Member's for an Administrator. Another User's, for a
+ * Member, is refused with CodeUnknownSignIn, as an id no Sign-in holds,
+ * and the Owner's or another Administrator's, for an Administrator, with
+ * CodeOwnerOnly.
  */
 export const SignInRevoke: Op<SignInRevokeRequest, SignInRevokeResponse> = {
   name: "signin.revoke",

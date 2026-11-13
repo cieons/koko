@@ -201,7 +201,7 @@ type link struct {
 func readLink(ctx context.Context, tx store.Tx, secret string, now time.Time) (link, error) {
 	var l link
 	var removed, used, voided sql.NullString
-	err := tx.QueryRowContext(ctx, `SELECT l.id, u.id, u.name, u.role, u.created_at, u.removed_at, l.expires_at, l.used_at, l.voided_at
+	err := tx.QueryRowContext(ctx, `SELECT l.id, u.id, u.name, `+access.Role+`, u.created_at, u.removed_at, l.expires_at, l.used_at, l.voided_at
 		FROM password_links l JOIN users u ON u.id = l.user_id WHERE l.secret_hash = ?`, linkHash(secret)).
 		Scan(&l.id, &l.user.ID, &l.user.Name, &l.user.Role, &l.user.CreatedAt, &removed, &l.expiresAt, &used, &voided)
 	invalid := api.CodeLinkInvalid.Errorf("this Password Link has expired or is no longer valid: ask the Owner for a new one")

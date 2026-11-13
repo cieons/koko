@@ -1,6 +1,6 @@
 {
   "error": {
     "code": "owner_only",
-    "message": "only the Owner issues a Join Code for another User's device; name no User to issue one for your own"
+    "message": "only the Owner or an Administrator issues a Join Code for another User's device; name no User to issue one for your own"
   }
 }

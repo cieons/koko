@@ -41,6 +41,10 @@ type row struct {
 	// request is the call's JSON body, given the name of the Space the
 	// caller acts in: the target (see caller).
 	request func(target string) any
+	// requestIn, set in place of request, makes the body from the
+	// fixture's records too, such as the id of a Sign-in its template
+	// holds.
+	requestIn func(f *fixture, target string) any
 	// want is each caller's answer; a row states every caller's.
 	want map[caller]answer
 	// setup, when set, records what the call needs before it is made, as
@@ -78,27 +82,41 @@ const (
 	ownerSignIn
 	// memberSignIn is bob, a Member of ops, through a Sign-in, in ops.
 	memberSignIn
+	// adminDevice is eve, an Administrator and a Member of no shared
+	// Space, through a Device Session, in ops.
+	adminDevice
+	// adminSignIn is eve, an Administrator, through a Sign-in, in ops.
+	adminSignIn
 )
 
-var callers = []caller{ownerDevice, local, member, personal, outsider, ownerSignIn, memberSignIn}
+var callers = []caller{ownerDevice, local, member, personal, outsider, ownerSignIn, memberSignIn, adminDevice, adminSignIn}
 
 func (c caller) String() string {
 	return [...]string{
 		"the Owner's device", "the Local caller", "a Member of the Space",
 		"the User whose Personal Space it is", "a Member outside the Space",
 		"the Owner's Sign-in", "a Member of the Space's Sign-in",
+		"an Administrator's device", "an Administrator's Sign-in",
 	}[c]
 }
 
 // user is the User the caller acts as; the Local caller acts as the Owner.
 func (c caller) user() string {
-	return [...]string{harness.Owner, harness.Owner, "bob", "carol", "carol", harness.Owner, "bob"}[c]
+	return [...]string{harness.Owner, harness.Owner, "bob", "carol", "carol", harness.Owner, "bob", administrator, administrator}[c]
 }
 
 // signedIn tells whether the caller calls through a Sign-in.
 func (c caller) signedIn() bool {
-	return c == ownerSignIn || c == memberSignIn
+	return c == ownerSignIn || c == memberSignIn || c == adminSignIn
 }
+
+// administrator is the Administrator the Administrators' callers act as,
+// and otherAdministrator the other Administrator of the fixture, whom only
+// the Owner acts on.
+const (
+	administrator      = "eve"
+	otherAdministrator = "frank"
+)
 
 // target is the Space the caller acts in.
 func (c caller) target() string {
@@ -123,7 +141,8 @@ type answer struct {
 var (
 	// allowed: the call succeeds.
 	allowed = answer{}
-	// ownerOnly: only the Owner may make the call.
+	// ownerOnly: only the Owner, or only the Owner or an Administrator, may
+	// make the call: the code owner_only.
 	ownerOnly = answer{code: api.CodeOwnerOnly.Name}
 	// localOnly: only the Local caller may make the call.
 	localOnly = answer{code: api.CodeLocalOnly.Name}
@@ -137,17 +156,29 @@ func allowedBut(code api.Code) answer {
 	return answer{code: code.Name}
 }
 
-// ownerOnlyAnswers is the answers to an operation only the Owner may make:
-// a Member is refused whatever the call names.
+// administersAnswers is the answers to an operation only the Owner or an
+// Administrator may make, on a Member if it acts on a User: a Member is
+// refused whatever the call names.
+var administersAnswers = map[caller]answer{
+	ownerDevice: allowed, local: allowed, member: ownerOnly, personal: ownerOnly, outsider: ownerOnly,
+	ownerSignIn: allowed, memberSignIn: ownerOnly,
+	adminDevice: allowed, adminSignIn: allowed,
+}
+
+// ownerOnlyAnswers is the answers to a call only the Owner may make, such
+// as one that acts on the Owner or another Administrator: anyone else is
+// refused whatever the call names.
 var ownerOnlyAnswers = map[caller]answer{
 	ownerDevice: allowed, local: allowed, member: ownerOnly, personal: ownerOnly, outsider: ownerOnly,
 	ownerSignIn: allowed, memberSignIn: ownerOnly,
+	adminDevice: ownerOnly, adminSignIn: ownerOnly,
 }
 
 // anyoneAnswers is the answers to an operation every caller may make.
 var anyoneAnswers = map[caller]answer{
 	ownerDevice: allowed, local: allowed, member: allowed, personal: allowed, outsider: allowed,
 	ownerSignIn: allowed, memberSignIn: allowed,
+	adminDevice: allowed, adminSignIn: allowed,
 }
 
 // Every operation has a row, and every row states each caller's answer.
@@ -206,10 +237,11 @@ func TestAccessMatrix(t *testing.T) {
 }
 
 // fixture is a koko server with the matrix's records: the Owner alice; the
-// Members bob, carol and dave, who has not joined; and, unless the twin of a
-// call answered as unknown, the shared Space ops with the Member bob. For a
-// caller through a Sign-in, its web listener is on and its User is signed
-// in.
+// Members bob, carol and dave, who has not joined; the Administrators eve
+// and frank, who have not joined either; a Sign-in each of alice and frank;
+// and, unless the twin of a call answered as unknown, the shared Space ops
+// with the Member bob. For a caller through a Sign-in, its web listener is
+// on and its User is signed in; for any other the Web URL is not set.
 type fixture struct {
 	t *testing.T
 	h *harness.Harness
@@ -217,6 +249,9 @@ type fixture struct {
 	withTarget bool
 	// cookie is the Sign-in cookie of a caller through a Sign-in.
 	cookie string
+	// signIns are the ids of the Sign-ins of alice and frank, and of the
+	// caller's User through a Sign-in, by User.
+	signIns map[string]string
 }
 
 // A template is the data directory of a stopped koko server holding a
@@ -230,6 +265,8 @@ type template struct {
 	withTarget bool
 	// cookie is the Sign-in cookie of the template's User signed in.
 	cookie string
+	// signIns are the ids of the template's Sign-ins, by User.
+	signIns map[string]string
 }
 
 // templateKey names a template: whether ops is recorded, and the User
@@ -273,24 +310,51 @@ func newTemplates(t *testing.T, rows []row) map[templateKey]template {
 
 func newTemplate(t *testing.T, k templateKey) template {
 	t.Helper()
-	tmpl := template{dataDir: t.TempDir(), rootKey: harness.NewRootKeyFile(t), withTarget: k.withTarget}
-	opts := []harness.Option{harness.DataDir(tmpl.dataDir), harness.RootKeyFile(tmpl.rootKey)}
-	if k.signedIn != "" {
-		opts = append(opts, harness.WebListen("127.0.0.1:0"))
-	}
-	h := harness.Start(t, opts...)
-	for _, u := range []string{"bob", "carol", "dave"} {
+	tmpl := template{dataDir: t.TempDir(), rootKey: harness.NewRootKeyFile(t), withTarget: k.withTarget, signIns: map[string]string{}}
+	h := harness.Start(t, harness.DataDir(tmpl.dataDir), harness.RootKeyFile(tmpl.rootKey), harness.WebListen("127.0.0.1:0"))
+	for _, u := range []string{"bob", "carol", "dave", administrator, otherAdministrator} {
 		h.Koko("user", "invite", u).WantSuccess(t)
+	}
+	for _, u := range []string{administrator, otherAdministrator} {
+		h.Koko("user", "promote", u).WantSuccess(t)
 	}
 	if k.withTarget {
 		h.Koko("space", "add", targetSpace).WantSuccess(t)
 		h.Koko("space", "member", "add", targetSpace, "bob").WantSuccess(t)
 	}
-	if k.signedIn != "" {
-		tmpl.cookie = h.SignIn(k.signedIn).Cookie
+	// Setting a User's Password ends their other Sign-ins, so each User is
+	// signed in once, the caller's among them.
+	signIn := []string{harness.Owner, otherAdministrator}
+	if k.signedIn != "" && !slices.Contains(signIn, k.signedIn) {
+		signIn = append(signIn, k.signedIn)
+	}
+	for _, u := range signIn {
+		b := h.SignIn(u)
+		tmpl.signIns[u] = signInID(t, b)
+		if u == k.signedIn {
+			tmpl.cookie = b.Cookie
+		}
+	}
+	if k.signedIn == "" {
+		// password.link's rows need the Web URL unset for every caller
+		// but those through a Sign-in, whose browser sets it.
+		if _, err := h.Call(api.ServerSet, api.ServerSetRequest{Unset: []string{"web_url"}}); err != nil {
+			t.Fatalf("clear the Web URL: %v", err)
+		}
 	}
 	h.Stop()
 	return tmpl
+}
+
+// signInID is the id of the Sign-in b holds.
+func signInID(t *testing.T, b *harness.Browser) string {
+	t.Helper()
+	status, body := b.Send(api.UserCurrent, []byte(`{}`))
+	var resp api.UserCurrentResponse
+	if err := json.Unmarshal(body, &resp); status != http.StatusOK || err != nil || resp.SignIn == nil {
+		t.Fatalf("user.current from a browser signed in: %d %s", status, body)
+	}
+	return resp.SignIn.ID
 }
 
 // newFixture starts c's fixture on a copy of tmpl.
@@ -304,7 +368,7 @@ func newFixture(t *testing.T, tmpl template, c caller) *fixture {
 	if c.signedIn() {
 		opts = append(opts, harness.WebListen("127.0.0.1:0"))
 	}
-	return &fixture{t: t, h: harness.Start(t, opts...), withTarget: tmpl.withTarget, cookie: tmpl.cookie}
+	return &fixture{t: t, h: harness.Start(t, opts...), withTarget: tmpl.withTarget, cookie: tmpl.cookie, signIns: tmpl.signIns}
 }
 
 // send makes r's call as c, joining a device of c's User for it, or
@@ -315,7 +379,13 @@ func (f *fixture) send(c caller, r row) (int, []byte) {
 	if r.setup != nil && (f.withTarget || c.target() != targetSpace) {
 		r.setup(f, c.target())
 	}
-	body, err := json.Marshal(r.request(c.target()))
+	var req any
+	if r.requestIn != nil {
+		req = r.requestIn(f, c.target())
+	} else {
+		req = r.request(c.target())
+	}
+	body, err := json.Marshal(req)
 	if err != nil {
 		f.t.Fatalf("encode the request of %s: %v", r, err)
 	}

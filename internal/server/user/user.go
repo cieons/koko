@@ -1,6 +1,7 @@
 // Package user is the user area of the koko server: the Users, of whom
-// exactly one is the Owner and every other a Member, each with a Personal
-// Space (P0 spec: people and Spaces).
+// exactly one is the Owner, any number are Administrators and every other
+// is a Member, each with a Personal Space (P0 spec: people and Spaces, ADR
+// 0056).
 package user
 
 import (
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/cieons/koko/internal/server/access"
+	"github.com/cieons/koko/internal/server/hostlist"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/space"
 	"github.com/cieons/koko/internal/server/store"
@@ -42,18 +44,30 @@ type Browsers interface {
 	// Remove ends u's Sign-ins, deletes their Password and voids their
 	// unused Password Links, as by names the caller, and counts them.
 	Remove(ctx context.Context, tx store.Tx, u api.User, by string) (signInsEnded, linksVoided int64, err error)
+	// VoidLinksOthersIssuedFor voids u's unused Password Links issued by
+	// anyone but the Owner and u themselves, as promoting u does, and
+	// counts them.
+	VoidLinksOthersIssuedFor(ctx context.Context, tx store.Tx, u api.User) (int64, error)
+	// VoidLinksIssuedBy voids the unused Password Links u issued for other
+	// Users, as demoting or Removing u does, and counts them.
+	VoidLinksIssuedBy(ctx context.Context, tx store.Tx, u api.User) (int64, error)
 }
 
 // Register adds the user operations to the API; issue issues an invited
 // User's first Join Code, browsers their first Password Link and their
 // part in removing them, and holdings count what the areas record in the
 // Personal Space of a User being deleted, which must hold nothing. Each
-// User Removed is announced on changes and logged to log once it commits.
-func Register(a *op.API, issue IssueFunc, browsers Browsers, holdings []space.Holding, changes *access.Signal, log *slog.Logger) {
+// User Removed or demoted is announced on changes, each promoted or demoted
+// on lists, and each Removed, promoted or demoted is logged to log, once it
+// commits.
+func Register(a *op.API, issue IssueFunc, browsers Browsers, holdings []space.Holding, changes *access.Signal, lists *hostlist.Signal, log *slog.Logger) {
 	a.Handle(api.UserInvite, invite(issue, browsers))
 	a.Handle(api.UserCurrent, current)
 	a.Handle(api.UserList, list)
 	a.Handle(api.UserRemove, remover{browsers: browsers, holdings: holdings, changes: changes, log: log}.remove)
+	r := roles{browsers: browsers, changes: changes, lists: lists, log: log}
+	a.Handle(api.UserPromote, r.promote)
+	a.Handle(api.UserDemote, r.demote)
 }
 
 // current is user.current: who the call acts as.
@@ -73,43 +87,55 @@ func current(ctx context.Context, tx store.Tx, caller op.Caller, _ api.UserCurre
 }
 
 // list is user.list: the Users by name, each with when they set their
-// Password, the Removed ones only with req.All. Only the Owner lists Users.
+// Password, the Removed ones only with req.All. Only the Owner or an
+// Administrator lists Users.
 func list(ctx context.Context, tx store.Tx, caller op.Caller, req api.UserListRequest) (api.UserListResponse, error) {
-	if _, err := access.OwnerOnly(ctx, tx, caller, "lists Users"); err != nil {
+	if _, err := access.Administers(ctx, tx, caller, "lists Users"); err != nil {
 		return api.UserListResponse{}, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT u.id, u.name, u.role, u.created_at, u.removed_at, p.set_at
-		FROM users u LEFT JOIN passwords p ON p.user_id = u.id
-		WHERE ? OR u.removed_at IS NULL ORDER BY u.name`, req.All)
+	users, err := listed(ctx, tx, "? OR u.removed_at IS NULL", req.All)
 	if err != nil {
-		return api.UserListResponse{}, fmt.Errorf("list the Users: %w", err)
+		return api.UserListResponse{}, err
+	}
+	return api.UserListResponse{Users: users}, nil
+}
+
+// listed returns the Users the SQL condition where selects with args, by
+// name, as user.list answers them: each with when they set their Password.
+// The condition reads the User as u.
+func listed(ctx context.Context, tx store.Tx, where string, args ...any) ([]api.User, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT u.id, u.name, `+access.Role+`, u.created_at, u.removed_at, p.set_at
+		FROM users u LEFT JOIN passwords p ON p.user_id = u.id
+		WHERE `+where+` ORDER BY u.name`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list the Users: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	var resp api.UserListResponse
+	var users []api.User
 	for rows.Next() {
 		var u api.User
 		var removed, passwordSet sql.NullString
 		err := rows.Scan(&u.ID, &u.Name, &u.Role, &u.CreatedAt, &removed, &passwordSet)
 		u.RemovedAt, u.PasswordSetAt = removed.String, passwordSet.String
 		if err != nil {
-			return api.UserListResponse{}, fmt.Errorf("list the Users: %w", err)
+			return nil, fmt.Errorf("list the Users: %w", err)
 		}
-		resp.Users = append(resp.Users, u)
+		users = append(users, u)
 	}
 	if err := rows.Err(); err != nil {
-		return api.UserListResponse{}, fmt.Errorf("list the Users: %w", err)
+		return nil, fmt.Errorf("list the Users: %w", err)
 	}
-	return resp, nil
+	return users, nil
 }
 
 // invite is user.invite: in one transaction it creates the Member with their
 // Personal Space, and issues their first Join Code, whose device the Invite
 // does not name, or with req.Web their first Password Link. Only the Owner
-// invites, and a Member is refused before the name is checked, so the
-// refusal says nothing of who holds it.
+// or an Administrator invites, and a Member is refused before the name is
+// checked, so the refusal says nothing of who holds it.
 func invite(issue IssueFunc, browsers Browsers) op.Func[api.UserInviteRequest, api.UserInviteResponse] {
 	return func(ctx context.Context, tx store.Tx, caller op.Caller, req api.UserInviteRequest) (api.UserInviteResponse, error) {
-		who, err := access.OwnerOnly(ctx, tx, caller, "invites Users")
+		who, err := access.Administers(ctx, tx, caller, "invites Users")
 		if err != nil {
 			return api.UserInviteResponse{}, err
 		}
@@ -188,11 +214,12 @@ type remover struct {
 
 // remove is user.remove: it deletes a User who never used koko and Removes
 // anyone else, the least permanent outcome the records allow, and says
-// which. Only the Owner removes Users, and a Member is refused before the
-// name is read. The Owner is never removed, and a Removed User is not
-// removed again.
+// which. Only the Owner or an Administrator removes Users, and a Member is
+// refused before the name is read; only the Owner removes an
+// Administrator (access.Identity.MayActOn), themselves included. The Owner
+// is never removed, whoever asks, and a Removed User is not removed again.
 func (r remover) remove(ctx context.Context, tx store.Tx, caller op.Caller, req api.UserRemoveRequest) (api.UserRemoveResponse, error) {
-	who, err := access.OwnerOnly(ctx, tx, caller, "removes Users")
+	who, err := access.Administers(ctx, tx, caller, "removes Users")
 	if err != nil {
 		return api.UserRemoveResponse{}, err
 	}
@@ -205,6 +232,13 @@ func (r remover) remove(ctx context.Context, tx store.Tx, caller op.Caller, req 
 		return api.UserRemoveResponse{}, api.CodeOwnerNotRemovable.Errorf("%s is the Owner, who is never deleted or Removed", u.Name)
 	case u.RemovedAt != "":
 		return api.UserRemoveResponse{}, api.CodeUserRemoved.Errorf("%s was Removed already, at %s", u.Name, u.RemovedAt)
+	}
+	if err := who.MayActOn(u, "removes"); err != nil {
+		return api.UserRemoveResponse{}, err
+	}
+	if u.Role == api.RoleAdministrator && !who.IsOwner() {
+		// An Administrator does not step down by themselves (ADR 0056).
+		return api.UserRemoveResponse{}, api.CodeOwnerOnly.Errorf("only the Owner removes an Administrator")
 	}
 	// A User who never used koko has never had a Device Session, Revoked
 	// ones included, and never set a Password.
@@ -233,10 +267,12 @@ func (r remover) remove(ctx context.Context, tx store.Tx, caller op.Caller, req 
 
 // removeJoined Removes u, a User who used koko, and returns them Removed.
 // In the call's transaction it revokes every Device Session they hold, voids
-// their valid Join Codes and those their Device Sessions issued, ends their
-// Sign-ins, deletes their Password and voids their unused Password Links,
-// takes them out of every Space, passes their Personal Space to the Owner,
-// and marks them Removed, keeping the record so their name is never used again. Once
+// their valid Join Codes and those their Device Sessions and Sign-ins
+// issued, ends their Sign-ins, deletes their Password and voids their
+// unused Password Links and those they issued, takes away an
+// Administrator's role, takes them out of every Space, passes their
+// Personal Space to the Owner and the Administrators, and marks them
+// Removed, keeping the record so their name is never used again. Once
 // it commits, each revocation and the removal are logged, by being what
 // removed them, and the access-change signal names the Device Sessions it
 // Revoked, as a Removed User's, so their SSH Sessions end and their Device
@@ -248,7 +284,7 @@ func (r remover) removeJoined(ctx context.Context, tx store.Tx, u api.User, by s
 		return api.User{}, err
 	}
 	voided, err := tx.ExecContext(ctx, `UPDATE join_codes SET voided_at = ?1
-		WHERE (user_id = ?2 OR issued_by IN (SELECT id FROM device_sessions WHERE user_id = ?2))
+		WHERE (user_id = ?2 OR `+access.IssuedByUser+`)
 		AND used_at IS NULL AND voided_at IS NULL AND expires_at > ?1`, now, u.ID)
 	if err != nil {
 		return api.User{}, fmt.Errorf("void the Join Codes of %s: %w", u.Name, err)
@@ -261,7 +297,14 @@ func (r remover) removeJoined(ctx context.Context, tx store.Tx, u api.User, by s
 	if err != nil {
 		return api.User{}, err
 	}
-	if err := space.PassToOwner(ctx, tx, u); err != nil {
+	issuedLinks, err := r.browsers.VoidLinksIssuedBy(ctx, tx, u)
+	if err != nil {
+		return api.User{}, err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM administrators WHERE user_id = ?", u.ID); err != nil {
+		return api.User{}, fmt.Errorf("take the role of %s: %w", u.Name, err)
+	}
+	if err := space.PassToAdministrators(ctx, tx, u); err != nil {
 		return api.User{}, err
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE users SET removed_at = ? WHERE id = ?", now, u.ID); err != nil {
@@ -270,12 +313,12 @@ func (r remover) removeJoined(ctx context.Context, tx store.Tx, u api.User, by s
 	ids := make([]string, 0, len(revoked))
 	for _, d := range revoked {
 		ids = append(ids, d.ID)
-		r.afterCommit(ctx, "device revoked", "user", d.User, "device", d.Device, "device_session", d.ID, "revoked_by", by)
+		afterCommit(ctx, r.log, "device revoked", "user", d.User, "device", d.Device, "device_session", d.ID, "revoked_by", by)
 	}
-	r.afterCommit(ctx, "user removed", "user", u.Name, "user_id", u.ID, "device_sessions_revoked", len(revoked),
-		"join_codes_voided", codes, "signins_ended", signIns, "password_links_voided", links, "removed_by", by)
+	afterCommit(ctx, r.log, "user removed", "user", u.Name, "user_id", u.ID, "role", u.Role, "device_sessions_revoked", len(revoked),
+		"join_codes_voided", codes, "signins_ended", signIns, "password_links_voided", links+issuedLinks, "removed_by", by)
 	r.changes.Publish(ctx, access.Change{Revoked: ids, Removed: true})
-	u.RemovedAt = now
+	u.RemovedAt, u.Role = now, api.RoleMember
 	return u, nil
 }
 
@@ -303,12 +346,12 @@ func revokeAll(ctx context.Context, tx store.Tx, u api.User, now string) ([]api.
 	return revoked, nil
 }
 
-// afterCommit logs msg with attrs once the call's transaction has committed,
-// and never when it rolls back.
-func (r remover) afterCommit(ctx context.Context, msg string, attrs ...any) {
+// afterCommit logs msg with attrs to log once the call's transaction has
+// committed, and never when it rolls back.
+func afterCommit(ctx context.Context, log *slog.Logger, msg string, attrs ...any) {
 	op.AfterTx(ctx, func(committed bool) {
 		if committed {
-			r.log.Info(msg, attrs...)
+			log.Info(msg, attrs...)
 		}
 	})
 }
@@ -330,7 +373,7 @@ func (r remover) delete(ctx context.Context, tx store.Tx, u api.User, by string)
 	if _, err := tx.ExecContext(ctx, "DELETE FROM users WHERE id = ?", u.ID); err != nil {
 		return fmt.Errorf("delete the User %s: %w", u.Name, err)
 	}
-	r.afterCommit(ctx, "user deleted", "user", u.Name, "user_id", u.ID, "deleted_by", by)
+	afterCommit(ctx, r.log, "user deleted", "user", u.Name, "user_id", u.ID, "deleted_by", by)
 	return nil
 }
 
@@ -355,7 +398,7 @@ func ByName(ctx context.Context, tx store.Tx, userName string) (api.User, error)
 	if err := name.Check(userName); err != nil {
 		return api.User{}, api.CodeInvalidName.Errorf("invalid User name: %v", err)
 	}
-	u, err := scan(tx.QueryRowContext(ctx, "SELECT id, name, role, created_at, removed_at FROM users WHERE name = ?", userName))
+	u, err := scan(tx.QueryRowContext(ctx, "SELECT u.id, u.name, "+access.Role+", u.created_at, u.removed_at FROM users u WHERE u.name = ?", userName))
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return api.User{}, api.CodeUnknownUser.Errorf("no User is named %q", userName)

@@ -51,8 +51,12 @@ call it inside their own transaction. It:
 1. finds the User: the one named, or the caller's own, which is its Device
    Session's User, or the Owner for the Local caller (ADR 0008,
    [`access.Who`](../../internal/server/access/access.go)). Only the Owner
-   names another User: anyone else is refused with `owner_only` (403) before
-   the name is looked up, so the refusal says nothing of who exists. A name
+   or an Administrator names another User: anyone else is refused with
+   `owner_only` (403) before the name is looked up, so the refusal says
+   nothing of who exists. Once the User is read, an Administrator naming
+   the Owner or another Administrator is refused with `owner_only` too
+   ([`Identity.MayActOn`](../../internal/server/access/access.go)), so a
+   stolen Administrator credential plants no device under their names. A name
    that is not a User name is refused with `invalid_name`, one no User
    holds with `unknown_user` (404), and a Removed User with `user_removed`
    (409, [Users](users.md#removing));

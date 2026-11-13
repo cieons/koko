@@ -3,6 +3,7 @@ package device
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -16,8 +17,8 @@ import (
 )
 
 // list is device.list: the caller's own Device Sessions, or for the Owner
-// every User's or the one User's req.User names; Revoked ones only with
-// req.All.
+// or an Administrator every User's or the one User's req.User names;
+// Revoked ones only with req.All.
 func list(ctx context.Context, tx store.Tx, caller op.Caller, req api.DeviceListRequest) (api.DeviceListResponse, error) {
 	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
@@ -25,9 +26,9 @@ func list(ctx context.Context, tx store.Tx, caller op.Caller, req api.DeviceList
 	}
 	of := req.User
 	switch {
-	case !who.IsOwner():
+	case !who.Administers():
 		if of != "" && of != who.User.Name {
-			return api.DeviceListResponse{}, api.CodeOwnerOnly.Errorf("only the Owner lists another User's Device Sessions; name no User to list your own")
+			return api.DeviceListResponse{}, api.CodeOwnerOnly.Errorf("only the Owner or an Administrator lists another User's Device Sessions; name no User to list your own")
 		}
 		of = who.User.Name
 	case of != "":
@@ -53,6 +54,8 @@ type revoker struct {
 // revoked time, which keeps the record and its key for ever, and voids the
 // valid Join Codes it issued; the Device Sessions it added stay. A Member
 // revokes only their own: another User's is answered as an unknown one.
+// The Owner or an Administrator revokes those of anyone they may act on
+// (access.Identity.MayActOn), which is asked before the device is read.
 // Once it commits, the revocation is logged and the access-change signal
 // names the Device Session, so its Device Connections close.
 func (r revoker) revoke(ctx context.Context, tx store.Tx, caller op.Caller, req api.DeviceRevokeRequest) (api.DeviceRevokeResponse, error) {
@@ -69,8 +72,20 @@ func (r revoker) revoke(ctx context.Context, tx store.Tx, caller op.Caller, req 
 	}
 	named := of + "/" + req.Device
 	unknown := api.CodeUnknownDevice.Errorf("no live Device Session is named %q", named)
-	if of != who.User.Name && !who.IsOwner() {
-		return api.DeviceRevokeResponse{}, unknown
+	if of != who.User.Name {
+		if !who.Administers() {
+			return api.DeviceRevokeResponse{}, unknown
+		}
+		target, err := user.ByName(ctx, tx, of)
+		if e, ok := errors.AsType[*api.Error](err); ok && e.Code == api.CodeUnknownUser.Name {
+			return api.DeviceRevokeResponse{}, unknown
+		}
+		if err != nil {
+			return api.DeviceRevokeResponse{}, err
+		}
+		if err := who.MayActOn(target, "revokes the Device Sessions of"); err != nil {
+			return api.DeviceRevokeResponse{}, err
+		}
 	}
 	found, err := access.DeviceSessions(ctx, tx, "u.name = ? AND d.device = ? AND d.revoked_at IS NULL", of, req.Device)
 	if err != nil {

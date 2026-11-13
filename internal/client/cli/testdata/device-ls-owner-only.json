@@ -1,6 +1,6 @@
 {
   "error": {
     "code": "owner_only",
-    "message": "only the Owner lists another User's Device Sessions; name no User to list your own"
+    "message": "only the Owner or an Administrator lists another User's Device Sessions; name no User to list your own"
   }
 }

@@ -65,6 +65,7 @@ var enrollRows = []row{
 		want: map[caller]answer{
 			ownerDevice: allowed, local: allowed, member: unseenSpace, personal: unseenSpace, outsider: unknown,
 			ownerSignIn: allowed, memberSignIn: unseenSpace,
+			adminDevice: allowed, adminSignIn: allowed,
 		},
 	},
 }

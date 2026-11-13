@@ -137,11 +137,12 @@ func (s *settings) set(ctx context.Context, tx store.Tx, _ op.Caller, req api.Se
 	return api.ServerSetResponse{Server: srv}, nil
 }
 
-// checkUpdate checks for a new koko release at once, for the Owner, with
-// the update_check setting on or off, since the Owner asked. A check that
-// fails is refused with update_check_failed, naming what failed.
+// checkUpdate checks for a new koko release at once, for the Owner or an
+// Administrator, with the update_check setting on or off, since they
+// asked. A check that fails is refused with update_check_failed, naming
+// what failed.
 func (s *settings) checkUpdate(ctx context.Context, tx store.Tx, caller op.Caller, _ api.ServerCheckUpdateRequest) (api.ServerCheckUpdateResponse, error) {
-	if _, err := access.OwnerOnly(ctx, tx, caller, "checks for a new koko release"); err != nil {
+	if _, err := access.Administers(ctx, tx, caller, "checks for a new koko release"); err != nil {
 		return api.ServerCheckUpdateResponse{}, err
 	}
 	on, err := deployment.UpdateCheck(ctx, tx)
@@ -161,13 +162,14 @@ func (s *settings) checkUpdate(ctx context.Context, tx store.Tx, caller op.Calle
 }
 
 // prepareUpgrade decides, outside the write's transaction, what
-// server.upgrade asks the upgrade helper for (ADR 0048): the Owner only; a
-// koko server the helper upgrades; the release req names, or the latest
-// the check found, or one a check made now finds, which may take a request
-// to GitHub; and a release newer than this koko server's.
+// server.upgrade asks the upgrade helper for (ADR 0048): the Owner or an
+// Administrator only; a koko server the helper upgrades; the release req
+// names, or the latest the check found, or one a check made now finds,
+// which may take a request to GitHub; and a release newer than this koko
+// server's.
 func (s *settings) prepareUpgrade(ctx context.Context, read op.Read, caller op.Caller, req api.ServerUpgradeRequest) (string, error) {
 	err := read(func(tx store.Tx) error {
-		_, err := access.OwnerOnly(ctx, tx, caller, "upgrades the koko server")
+		_, err := access.Administers(ctx, tx, caller, "upgrades the koko server")
 		return err
 	})
 	if err != nil {
@@ -205,7 +207,7 @@ func (s *settings) prepareUpgrade(ctx context.Context, read op.Read, caller op.C
 // helper's path unit waits for, through a temporary file renamed into
 // place, and logs who asked.
 func (s *settings) upgradeTo(ctx context.Context, tx store.Tx, caller op.Caller, _ api.ServerUpgradeRequest, to string) (api.ServerUpgradeResponse, error) {
-	who, err := access.OwnerOnly(ctx, tx, caller, "upgrades the koko server")
+	who, err := access.Administers(ctx, tx, caller, "upgrades the koko server")
 	if err != nil {
 		return api.ServerUpgradeResponse{}, err
 	}

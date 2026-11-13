@@ -352,7 +352,7 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	issuer := device.NewIssuer(joinTarget(key, tcp.port))
 	rootKeyFile := cmp.Or(cfg.RootKeySource, cfg.RootKeyPath)
 	device.Register(a, issuer, &changes, log)
-	user.Register(a, issuer.Issue, signins, holdings, &changes, log)
+	user.Register(a, issuer.Issue, signins, holdings, &changes, &lists, log)
 	signins.Register(a, &changes)
 	registerServer(a, key, issuer, tcp, log)
 	registerSettings(a, &settings{

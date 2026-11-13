@@ -1,15 +1,18 @@
 // Package access is the access check: the one place that decides who a
 // call acts as and what it may do (P0 spec: people and Spaces, "The access
-// check"). It answers four questions: who is calling (Who), whether they are
-// the Owner (Identity.IsOwner, and OwnerOnly, which refuses anyone else), whether
-// they can act in a Space (Identity.CanAct), and which Spaces they can act in
-// (Identity.Spaces). It answers from the current records on every call,
-// inside the call's transaction, so a change, such as a membership or a
-// revocation, takes effect on the next call. No other package reads roles or
-// memberships to decide what a caller may do. It also carries the
-// access-change signal (Signal), which tells the parts of the koko server
-// that hold access open, such as Device Connections, when a committed change
-// withdrew it.
+// check", and ADR 0056). It answers four questions: who is calling (Who),
+// whether they are the Owner or an Administrator (Identity.IsOwner,
+// Identity.Administers, and OwnerOnly and Administers, which refuse anyone
+// else, with Identity.MayActOn for a call that acts on another User),
+// whether they can act in a Space (Identity.CanAct), and which Spaces they
+// can act in (Identity.Spaces). It answers from the current records on every
+// call, inside the call's transaction, so a change, such as a membership or
+// a revocation, takes effect on the next call. No other package reads roles
+// or memberships to decide what a caller may do, and none reads the
+// administrators table: each reads a User's role through Role. It also
+// carries the access-change signal (Signal), which tells the parts of the
+// koko server that hold access open, such as Device Connections, when a
+// committed change withdrew it.
 package access
 
 import (
@@ -62,9 +65,74 @@ func (i Identity) Issuer() *string {
 	return new(i.By())
 }
 
+// Role is the SQL expression of the API's role of the User a query reads as
+// u (ADR 0056): "owner" for the Owner, "administrator" for a User with a row
+// in administrators, and "member" for every other, a Removed User among
+// them, since Removing deletes the row. It is the one place the role is
+// computed, so every read of a User answers it alike.
+const Role = `CASE WHEN u.role = 'owner' THEN 'owner'
+	WHEN EXISTS (SELECT 1 FROM administrators a WHERE a.user_id = u.id) THEN 'administrator'
+	ELSE 'member' END`
+
+// Conditions on a Join Code or a Password Link, as their records hold them
+// (user_id, the User it is for, and issued_by, the Device Session or Sign-in
+// that issued it, NULL for the Unix socket, which acts as the Owner), about
+// the User whose id the query gives as ?2. A change of that User's role or
+// their Removal voids the codes and links they select (ADR 0056).
+const (
+	// IssuedByUser selects those the User issued, from any of their Device
+	// Sessions or Sign-ins, live or not.
+	IssuedByUser = `issued_by IN (SELECT id FROM device_sessions WHERE user_id = ?2
+		UNION ALL SELECT id FROM signins WHERE user_id = ?2)`
+	// IssuedByUserForOthers selects those the User issued for other Users.
+	IssuedByUserForOthers = `user_id != ?2 AND ` + IssuedByUser
+	// IssuedForUserByOthers selects those issued for the User by anyone but
+	// the Owner and the User themselves.
+	IssuedForUserByOthers = `user_id = ?2 AND issued_by IS NOT NULL AND issued_by NOT IN (
+		SELECT d.id FROM device_sessions d JOIN users o ON o.id = d.user_id WHERE o.role = 'owner' OR o.id = ?2
+		UNION ALL SELECT s.id FROM signins s JOIN users o ON o.id = s.user_id WHERE o.role = 'owner' OR o.id = ?2)`
+)
+
 // IsOwner tells whether the call acts as the Owner.
 func (i Identity) IsOwner() bool {
 	return i.User.Role == api.RoleOwner
+}
+
+// IsAdministrator tells whether the call acts as an Administrator.
+func (i Identity) IsAdministrator() bool {
+	return i.User.Role == api.RoleAdministrator
+}
+
+// Administers tells whether the call acts as the Owner or an
+// Administrator, who see every Space and do what only they may, such as
+// inviting Users.
+func (i Identity) Administers() bool {
+	return i.IsOwner() || i.IsAdministrator()
+}
+
+// MayActOn is the one rule for a call that acts on target's role or
+// credentials, such as revoking their Device Sessions: anyone acts on
+// themselves, the Owner on anyone, and an Administrator on any Member. An
+// Administrator acting on the Owner or another Administrator is refused
+// with CodeOwnerOnly, naming whom only the Owner acts on. does says what
+// the call does to target, as in "revokes the Device Sessions of". It is
+// asked once target is read, which reveals nothing, since an Administrator
+// lists every User and their role. Every call that names another User
+// turns a Member away before it reads them (Administers, or an answer as
+// for an unknown record), so the last refusal, of a Member acting on
+// another User, is only a guard.
+func (i Identity) MayActOn(target api.User, does string) error {
+	switch {
+	case target.ID == i.User.ID, i.IsOwner():
+		return nil
+	case target.Role == api.RoleOwner:
+		return api.CodeOwnerOnly.Errorf("only the Owner %s the Owner", does)
+	case target.Role == api.RoleAdministrator:
+		return api.CodeOwnerOnly.Errorf("only the Owner %s another Administrator", does)
+	case i.IsAdministrator():
+		return nil
+	}
+	return api.CodeOwnerOnly.Errorf("only the Owner or an Administrator %s another User", does)
 }
 
 // Who answers who is calling: it turns a Device Connection's Device Session,
@@ -77,7 +145,7 @@ func (i Identity) IsOwner() bool {
 func Who(ctx context.Context, tx store.Tx, c op.Caller) (Identity, error) {
 	switch {
 	case c.Local:
-		u, err := scanUser(tx.QueryRowContext(ctx, "SELECT id, name, role, created_at FROM users WHERE role = ?", api.RoleOwner))
+		u, err := scanUser(tx.QueryRowContext(ctx, "SELECT u.id, u.name, "+Role+", u.created_at FROM users u WHERE u.role = ?", api.RoleOwner))
 		if err != nil {
 			return Identity{}, fmt.Errorf("read the Owner, whom the Local caller acts as: %w", err)
 		}
@@ -94,7 +162,7 @@ func Who(ctx context.Context, tx store.Tx, c op.Caller) (Identity, error) {
 		if d.RevokedAt != "" {
 			return Identity{}, api.CodeRevoked.Errorf("the Device Session %q of this device was revoked", d.Device)
 		}
-		u, err := scanUser(tx.QueryRowContext(ctx, `SELECT u.id, u.name, u.role, u.created_at
+		u, err := scanUser(tx.QueryRowContext(ctx, `SELECT u.id, u.name, `+Role+`, u.created_at
 			FROM device_sessions d JOIN users u ON u.id = d.user_id WHERE d.id = ?`, d.ID))
 		if err != nil {
 			return Identity{}, fmt.Errorf("read the User of the Device Session %s: %w", d.ID, err)
@@ -112,7 +180,7 @@ func Who(ctx context.Context, tx store.Tx, c op.Caller) (Identity, error) {
 		if s.EndedAt != "" {
 			return Identity{}, api.CodeSignInRequired.Errorf("this browser's Sign-in has ended: sign in again")
 		}
-		u, err := scanUser(tx.QueryRowContext(ctx, `SELECT u.id, u.name, u.role, u.created_at
+		u, err := scanUser(tx.QueryRowContext(ctx, `SELECT u.id, u.name, `+Role+`, u.created_at
 			FROM signins s JOIN users u ON u.id = s.user_id WHERE s.id = ?`, s.ID))
 		if err != nil {
 			return Identity{}, fmt.Errorf("read the User of the Sign-in %s: %w", s.ID, err)
@@ -123,10 +191,11 @@ func Who(ctx context.Context, tx store.Tx, c op.Caller) (Identity, error) {
 }
 
 // OwnerOnly answers who is calling, as Who does, and refuses with
-// CodeOwnerOnly a caller who is not the Owner. An Owner-only operation asks
-// it before it reads anything the call names, so the refusal is the same
-// whatever the call names and tells a Member nothing about the records. does
-// says what only the Owner does, as in "adds Spaces".
+// CodeOwnerOnly a caller who is not the Owner. An Owner-only operation, such
+// as user.promote, asks it before it reads anything the call names, so the
+// refusal is the same whatever the call names and tells the caller nothing
+// about the records. does says what only the Owner does, as in "promotes
+// Users".
 func OwnerOnly(ctx context.Context, tx store.Tx, c op.Caller, does string) (Identity, error) {
 	who, err := Who(ctx, tx, c)
 	if err != nil {
@@ -134,6 +203,23 @@ func OwnerOnly(ctx context.Context, tx store.Tx, c op.Caller, does string) (Iden
 	}
 	if !who.IsOwner() {
 		return Identity{}, api.CodeOwnerOnly.Errorf("only the Owner %s", does)
+	}
+	return who, nil
+}
+
+// Administers answers who is calling, as Who does, and refuses with
+// CodeOwnerOnly a caller who is neither the Owner nor an Administrator. An
+// operation only they make asks it before it reads anything the call
+// names, so the refusal is the same whatever the call names and tells a
+// Member nothing about the records. does says what only they do, as in
+// "adds Spaces".
+func Administers(ctx context.Context, tx store.Tx, c op.Caller, does string) (Identity, error) {
+	who, err := Who(ctx, tx, c)
+	if err != nil {
+		return Identity{}, err
+	}
+	if !who.Administers() {
+		return Identity{}, api.CodeOwnerOnly.Errorf("only the Owner or an Administrator %s", does)
 	}
 	return who, nil
 }
@@ -151,7 +237,7 @@ func (i Identity) CanAct(ctx context.Context, tx store.Tx, spaceID string) (bool
 // Scope is the Spaces a caller can act in, for lists and counts: a record in
 // a Space outside it is left out, as if it did not exist.
 type Scope struct {
-	// all is the Owner's scope: every Space.
+	// all is the scope of the Owner and the Administrators: every Space.
 	all bool
 	ids map[string]bool
 }
@@ -162,11 +248,12 @@ func (s Scope) Has(spaceID string) bool {
 }
 
 // Spaces answers which Spaces the caller can act in, by the one rule (ADR
-// 0011): the Owner acts in every Space, and any other User in their own
-// Personal Space and in each Space they are a Member of. Nothing else, such
-// as an Attribute, grants access.
+// 0011, ADR 0056): the Owner and the Administrators act in every Space,
+// Personal Spaces included, and any other User in their own Personal Space
+// and in each Space they are a Member of. Nothing else, such as an
+// Attribute, grants access.
 func (i Identity) Spaces(ctx context.Context, tx store.Tx) (Scope, error) {
-	if i.IsOwner() {
+	if i.Administers() {
 		return Scope{all: true}, nil
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT id FROM spaces WHERE user_id = ?1
@@ -229,6 +316,31 @@ func DeviceSessions(ctx context.Context, tx store.Tx, where string, args ...any)
 		return nil, fmt.Errorf("read Device Sessions: %w", err)
 	}
 	return list, nil
+}
+
+// Callers returns the ids (op.Caller.ID) of the live Device Sessions and
+// Sign-ins of the User whose id is userID, at now, as Change.Narrowed names
+// them: a change that narrows what the User can act in publishes them, so
+// that each of their SSH Sessions is checked again.
+func Callers(ctx context.Context, tx store.Tx, userID string, now time.Time) ([]string, error) {
+	sessions, err := DeviceSessions(ctx, tx, "u.id = ? AND d.revoked_at IS NULL", userID)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, d := range sessions {
+		ids = append(ids, d.ID)
+	}
+	signIns, err := SignIns(ctx, tx, now, "u.id = ? AND s.ended_at IS NULL", userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, si := range signIns {
+		if si.EndedAt == "" {
+			ids = append(ids, si.ID)
+		}
+	}
+	return ids, nil
 }
 
 // How long a Sign-in lasts (ADR 0043): SignInLifetime after it began, or

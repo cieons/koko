@@ -48,7 +48,7 @@ func TestUserInviteIsOneTransaction(t *testing.T) {
 			return api.JoinCode{}, errors.New("no Join Code today")
 		}
 		return api.JoinCode{Device: "device-1"}, nil
-	}, nil, nil, &access.Signal{}, slog.New(slog.DiscardHandler))
+	}, nil, nil, &access.Signal{}, &hostlist.Signal{}, slog.New(slog.DiscardHandler))
 	call := func(path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequestWithContext(op.WithCaller(t.Context(), op.Caller{Local: true}), http.MethodPost, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")

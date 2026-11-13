@@ -34,8 +34,8 @@ func told(h *harness.Harness) int {
 // Device Mux on each of that User's devices, which rewrites the bare names
 // within seconds, long before its BareNameRefresh: a Host recorded in the
 // web UI comes, one moved out of the User's Spaces and one Retired go, and
-// a Space the User is added to or taken out of brings its Hosts or takes
-// them away. A change in a Space the User cannot act in tells their
+// a Space the User is added to or taken out of, or a promotion to
+// Administrator and a demotion, brings Hosts or takes them away. A change in a Space the User cannot act in tells their
 // devices nothing.
 func TestTheDeviceMuxRewritesTheBareNamesWhenTheHostsItsUserSeesChange(t *testing.T) {
 	t.Parallel()
@@ -88,6 +88,14 @@ func TestTheDeviceMuxRewritesTheBareNamesWhenTheHostsItsUserSeesChange(t *testin
 	}, {
 		what: "alice removes bob from staging",
 		do:   func() { h.Koko("space", "member", "rm", "staging", "bob").WantSuccess(t) },
+		want: []string{"db1"},
+	}, {
+		what: "alice makes bob an Administrator, who sees every Space",
+		do:   func() { h.Koko("user", "promote", "bob").WantSuccess(t) },
+		want: []string{"db1", "web2"},
+	}, {
+		what: "alice makes bob a Member again",
+		do:   func() { h.Koko("user", "demote", "bob").WantSuccess(t) },
 		want: []string{"db1"},
 	}, {
 		what: "alice deletes db1",

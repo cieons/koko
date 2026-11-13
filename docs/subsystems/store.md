@@ -41,6 +41,11 @@ its schema version. `Open` applies each step past `PRAGMA user_version` in its
 own `IMMEDIATE` transaction, which reads `user_version` and records the new
 one, so two processes never apply a step twice. The rules for adding a step
 are rule 2 in [code layout](code-layout.md#rules-for-working-in-parallel).
+Foreign keys stay on inside a step's transaction, where `PRAGMA
+foreign_keys = OFF` changes nothing, so a step cannot rebuild a table other
+tables reference, such as `users`: a new kind of value goes in a table of
+its own, as `administrators.sql` holds the Administrators
+([ADR 0056](../adr/0056-one-owner-and-administrators-who-act-on-everything-but-the-owner-and-each-other.md)).
 
 [`upgrade`](../../internal/server/store/migrations.go) runs at every `Open`,
 so an upgrade needs no separate step. By `user_version` against the binary's
@@ -126,6 +131,10 @@ newer schema refused and left as it was, a failed step keeping the steps
 before it and the snapshot, upgrading again after going back, and an
 unreadable snapshot left alone. It also migrates every older schema of
 koko's own steps, which covers each step as it lands.
+[`administrators_test.go`](../../internal/server/store/administrators_test.go)
+runs `administrators.sql` on a database at the schema before it: every
+User, membership, Device Session and Sign-in kept, no Administrator made,
+and the one-Owner index still refusing a second Owner.
 [`peek_test.go`](../../internal/server/store/peek_test.go) shows `Peek`
 finding nothing without a database or in an empty one, reading an older
 schema beside the koko that holds it without migrating or snapshotting it,

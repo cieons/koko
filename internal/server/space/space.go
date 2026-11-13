@@ -61,7 +61,7 @@ func Register(a *op.API, user UserFunc, holdings []Holding, changes *access.Sign
 }
 
 func add(ctx context.Context, tx store.Tx, caller op.Caller, req api.SpaceAddRequest) (api.SpaceAddResponse, error) {
-	if _, err := access.OwnerOnly(ctx, tx, caller, "adds Spaces"); err != nil {
+	if _, err := access.Administers(ctx, tx, caller, "adds Spaces"); err != nil {
 		return api.SpaceAddResponse{}, err
 	}
 	if err := checkFree(ctx, tx, req.Name); err != nil {
@@ -95,7 +95,7 @@ func checkFree(ctx context.Context, tx store.Tx, spaceName string) error {
 // rename is space.rename: a shared Space takes a new name and keeps its id,
 // its Members and what it holds.
 func rename(ctx context.Context, tx store.Tx, caller op.Caller, req api.SpaceRenameRequest) (api.SpaceRenameResponse, error) {
-	who, err := access.OwnerOnly(ctx, tx, caller, "renames Spaces")
+	who, err := access.Administers(ctx, tx, caller, "renames Spaces")
 	if err != nil {
 		return api.SpaceRenameResponse{}, err
 	}
@@ -119,7 +119,7 @@ func rename(ctx context.Context, tx store.Tx, caller op.Caller, req api.SpaceRen
 
 // remove is space.remove: an empty shared Space goes, with its memberships.
 func (s *area) remove(ctx context.Context, tx store.Tx, caller op.Caller, req api.SpaceRemoveRequest) (api.SpaceRemoveResponse, error) {
-	who, err := access.OwnerOnly(ctx, tx, caller, "removes Spaces")
+	who, err := access.Administers(ctx, tx, caller, "removes Spaces")
 	if err != nil {
 		return api.SpaceRemoveResponse{}, err
 	}
@@ -347,22 +347,11 @@ func (s *area) memberRemove(ctx context.Context, tx store.Tx, caller op.Caller, 
 			continue
 		}
 		taken = append(taken, u.ID)
-		live, err := access.DeviceSessions(ctx, tx, "u.id = ? AND d.revoked_at IS NULL", u.ID)
+		callers, err := access.Callers(ctx, tx, u.ID, op.Now(ctx))
 		if err != nil {
 			return api.SpaceMemberRemoveResponse{}, err
 		}
-		for _, d := range live {
-			narrowed = append(narrowed, d.ID)
-		}
-		signIns, err := access.SignIns(ctx, tx, op.Now(ctx), "u.id = ? AND s.ended_at IS NULL", u.ID)
-		if err != nil {
-			return api.SpaceMemberRemoveResponse{}, err
-		}
-		for _, si := range signIns {
-			if si.EndedAt == "" {
-				narrowed = append(narrowed, si.ID)
-			}
-		}
+		narrowed = append(narrowed, callers...)
 	}
 	if len(narrowed) > 0 {
 		s.changes.Publish(ctx, access.Change{Narrowed: narrowed})
@@ -375,11 +364,11 @@ func (s *area) memberRemove(ctx context.Context, tx store.Tx, caller op.Caller, 
 }
 
 // members checks a call that changes the Members of the Space named
-// spaceName: only the Owner makes it, and every User it names must exist,
-// so that a refusal changes nothing. It returns the Space and the Users,
-// each once.
+// spaceName: only the Owner or an Administrator makes it, and every User it
+// names must exist, so that a refusal changes nothing. It returns the Space
+// and the Users, each once.
 func (s *area) members(ctx context.Context, tx store.Tx, caller op.Caller, spaceName string, userNames []string) (api.Space, []api.User, error) {
-	who, err := access.OwnerOnly(ctx, tx, caller, "changes the Members of a Space")
+	who, err := access.Administers(ctx, tx, caller, "changes the Members of a Space")
 	if err != nil {
 		return api.Space{}, nil, err
 	}
@@ -463,16 +452,17 @@ func DeletePersonal(ctx context.Context, tx store.Tx, holdings []Holding, u api.
 	return nil
 }
 
-// PassToOwner takes u, a User being Removed, out of every Space, and turns
-// their Personal Space into an ordinary shared Space with no Members, which
-// only the Owner sees: it keeps its name and what it holds, and the Owner
-// can rename it, give it Members and remove it once it is empty.
-func PassToOwner(ctx context.Context, tx store.Tx, u api.User) error {
+// PassToAdministrators takes u, a User being Removed, out of every Space,
+// and turns their Personal Space into an ordinary shared Space with no
+// Members, which only the Owner and the Administrators see: it keeps its
+// name and what it holds, and they can rename it, give it Members and
+// remove it once it is empty.
+func PassToAdministrators(ctx context.Context, tx store.Tx, u api.User) error {
 	if _, err := tx.ExecContext(ctx, "DELETE FROM memberships WHERE user_id = ?", u.ID); err != nil {
 		return fmt.Errorf("take %s out of every Space: %w", u.Name, err)
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE spaces SET user_id = NULL WHERE user_id = ?", u.ID); err != nil {
-		return fmt.Errorf("pass the Personal Space of %s to the Owner: %w", u.Name, err)
+		return fmt.Errorf("pass the Personal Space of %s to the Owner and the Administrators: %w", u.Name, err)
 	}
 	return nil
 }

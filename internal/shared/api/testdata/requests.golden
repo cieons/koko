@@ -65,6 +65,12 @@ all 1 boolean
 == user.remove 1
 name 1 string
 
+== user.promote 1
+name 1 string
+
+== user.demote 1
+name 1 string
+
 == web.start 1
 
 == host.add 1

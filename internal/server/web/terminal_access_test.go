@@ -195,6 +195,29 @@ func TestLosingAccessEndsATerminal(t *testing.T) {
 	}
 }
 
+// Demoting an Administrator ends their terminals to a Host outside the
+// Spaces they still act in, here the Owner's Personal Space, the live one
+// with its notice and the Detached one alike, and keeps their terminal to
+// a Host in a Space they are a Member of.
+func TestDemotingAnAdministratorEndsTheirTerminalsOutsideTheirSpaces(t *testing.T) {
+	t.Parallel()
+	h := startTerminals(t)
+	h.Koko("user", "promote", "bob").WantSuccess(t)
+	h.Koko("space", "add", "ops").WantSuccess(t)
+	h.Koko("space", "member", "add", "ops", "bob").WantSuccess(t)
+	terminalHost(t, h, "web1", []string{"space=" + harness.Owner})
+	terminalHost(t, h, "web2", []string{"space=ops"})
+	b := h.SignIn("bob")
+	live, detached := openLiveAndDetached(t, h, b, "web1")
+	kept := b.TerminalPage().Open("web2", 80, 24)
+	kept.Type([]byte("echo ready; exec cat\n"))
+	kept.WaitOutput("ready\n")
+
+	h.Koko("user", "demote", "bob").WantSuccess(t)
+	wantNotice(t, h, live, detached, "access to web1 was withdrawn; this SSH Session is closed.", "access withdrawn")
+	wantKept(t, kept, "still here")
+}
+
 // A change that keeps a Sign-in's access ends none of its terminals:
 // renaming the Host, changing its address, port, Note and Attributes,
 // moving it to another Space bob acts in, revoking another of bob's

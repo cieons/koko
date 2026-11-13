@@ -8,6 +8,7 @@ import "github.com/cieons/koko/internal/shared/api"
 var inSpaceAnswers = map[caller]answer{
 	ownerDevice: allowed, local: allowed, member: allowed, personal: allowed, outsider: unknown,
 	ownerSignIn: allowed, memberSignIn: allowed,
+	adminDevice: allowed, adminSignIn: allowed,
 }
 
 // addSecret stores the Secret db-password in the target Space.
@@ -57,6 +58,7 @@ var secretRows = []row{
 			ownerDevice: allowedBut(api.CodeUnknownSecret), local: allowedBut(api.CodeUnknownSecret),
 			member: allowedBut(api.CodeUnknownSecret), personal: allowedBut(api.CodeUnknownSecret), outsider: unknown,
 			ownerSignIn: allowedBut(api.CodeUnknownSecret), memberSignIn: allowedBut(api.CodeUnknownSecret),
+			adminDevice: allowedBut(api.CodeUnknownSecret), adminSignIn: allowedBut(api.CodeUnknownSecret),
 		},
 	},
 	{
@@ -76,6 +78,7 @@ var secretRows = []row{
 			ownerDevice: allowedBut(api.CodeNameTaken), local: allowedBut(api.CodeNameTaken),
 			member: allowedBut(api.CodeNameTaken), personal: allowedBut(api.CodeNameTaken), outsider: unknown,
 			ownerSignIn: allowedBut(api.CodeNameTaken), memberSignIn: allowedBut(api.CodeNameTaken),
+			adminDevice: allowedBut(api.CodeNameTaken), adminSignIn: allowedBut(api.CodeNameTaken),
 		},
 		setup: addSecret,
 	},
@@ -97,6 +100,7 @@ var secretRows = []row{
 			ownerDevice: allowedBut(api.CodeUnknownSecret), local: allowedBut(api.CodeUnknownSecret),
 			member: allowedBut(api.CodeUnknownSecret), personal: allowedBut(api.CodeUnknownSecret), outsider: unknown,
 			ownerSignIn: allowedBut(api.CodeUnknownSecret), memberSignIn: allowedBut(api.CodeUnknownSecret),
+			adminDevice: allowedBut(api.CodeUnknownSecret), adminSignIn: allowedBut(api.CodeUnknownSecret),
 		},
 	},
 	{
@@ -132,6 +136,7 @@ var secretRows = []row{
 		want: map[caller]answer{
 			ownerDevice: allowed, local: allowed, member: unseenSpace, personal: unseenSpace, outsider: unknown,
 			ownerSignIn: allowed, memberSignIn: unseenSpace,
+			adminDevice: allowed, adminSignIn: allowed,
 		},
 		setup: addSecret,
 	},
@@ -145,6 +150,7 @@ var secretRows = []row{
 		want: map[caller]answer{
 			ownerDevice: allowed, local: allowed, member: unseenSpace, personal: unseenSpace, outsider: unseenSpace,
 			ownerSignIn: allowed, memberSignIn: unseenSpace,
+			adminDevice: allowed, adminSignIn: allowed,
 		},
 		setup: func(f *fixture, _ string) { addSecret(f, "dave") },
 	},
@@ -158,6 +164,7 @@ var secretRows = []row{
 			ownerDevice: allowedBut(api.CodeNameTaken), local: allowedBut(api.CodeNameTaken),
 			member: allowedBut(api.CodeNameTaken), personal: allowedBut(api.CodeNameTaken), outsider: unknown,
 			ownerSignIn: allowedBut(api.CodeNameTaken), memberSignIn: allowedBut(api.CodeNameTaken),
+			adminDevice: allowedBut(api.CodeNameTaken), adminSignIn: allowedBut(api.CodeNameTaken),
 		},
 		setup: func(f *fixture, target string) {
 			addSecret(f, target)

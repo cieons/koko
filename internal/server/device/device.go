@@ -72,9 +72,11 @@ func (i *Issuer) add(ctx context.Context, tx store.Tx, caller op.Caller, req api
 // Issue issues, as caller, a Join Code for one new device of the User
 // req.User names, or of the caller's own User when it names none, and binds
 // the device name req.Device to it, or device-<n> when it names none. Only
-// the Owner names another User. The code is valid from the call's time for
-// as long as req.ValidFor chooses, 15 minutes by default (api.Validity). It
-// is returned once: the koko server keeps only the hash of its secret.
+// the Owner or an Administrator names another User, whom they must be able
+// to act on (access.Identity.MayActOn). The code is valid from the call's
+// time for as long as req.ValidFor chooses, 15 minutes by default
+// (api.Validity). It is returned once: the koko server keeps only the hash
+// of its secret.
 //
 // The caller's own User is its Device Session's, or the Owner for the Local
 // caller (ADR 0008). The issuer is recorded: the caller's Device Session or
@@ -90,10 +92,13 @@ func (i *Issuer) Issue(ctx context.Context, tx store.Tx, caller op.Caller, req a
 	}
 	u := who.User
 	if req.User != "" && req.User != u.Name {
-		if !who.IsOwner() {
-			return api.JoinCode{}, api.CodeOwnerOnly.Errorf("only the Owner issues a Join Code for another User's device; name no User to issue one for your own")
+		if !who.Administers() {
+			return api.JoinCode{}, api.CodeOwnerOnly.Errorf("only the Owner or an Administrator issues a Join Code for another User's device; name no User to issue one for your own")
 		}
 		if u, err = user.Active(ctx, tx, req.User); err != nil {
+			return api.JoinCode{}, err
+		}
+		if err := who.MayActOn(u, "issues a Join Code for"); err != nil {
 			return api.JoinCode{}, err
 		}
 	}

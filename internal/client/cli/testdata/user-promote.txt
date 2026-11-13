@@ -1,0 +1,1 @@
+bob (user_<1>) is an Administrator: they see and act in every Space, read every Secret and manage every Member.

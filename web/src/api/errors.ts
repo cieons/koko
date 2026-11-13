@@ -73,8 +73,10 @@ export const CodeNotInitialised = "not_initialised";
 export const CodeLocalOnly = "local_only";
 
 /**
- * CodeOwnerOnly: only the Owner may do what the call asks, such as
- * issuing a Join Code for another User's device.
+ * CodeOwnerOnly: only the Owner or an Administrator may do what the
+ * call asks, such as issuing a Join Code for another User's device; or
+ * only the Owner may, since it acts on the Owner or an Administrator,
+ * such as promoting a User or revoking an Administrator's device.
  */
 export const CodeOwnerOnly = "owner_only";
 

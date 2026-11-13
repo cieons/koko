@@ -91,7 +91,7 @@ export interface DeviceAddResponse {
 export interface DeviceListRequest {
   /**
    * User narrows the list to one User's Device Sessions. Empty means the
-   * caller's own, or every User's for the Owner.
+   * caller's own, or every User's for the Owner or an Administrator.
    */
   user?: string;
   /** All adds the Revoked Device Sessions. */
@@ -127,8 +127,9 @@ export interface DeviceRevokeResponse {
 /**
  * DeviceAdd issues a Join Code, valid for 15 minutes unless ValidFor
  * chooses otherwise, for one new device of the caller's own User or, for
- * the Owner, of any User; a Member naming another User is refused with
- * CodeOwnerOnly. A device name another live device or valid Join Code
+ * the Owner, of any User, and for an Administrator, of any Member; a
+ * Member naming another User, or an Administrator naming the Owner or
+ * another Administrator, is refused with CodeOwnerOnly. A device name another live device or valid Join Code
  * of that User holds is refused with CodeNameTaken, and a ValidFor
  * outside 60 to 604,800 seconds with CodeInvalidValue.
  */
@@ -139,9 +140,9 @@ export const DeviceAdd: Op<DeviceAddRequest, DeviceAddResponse> = {
 };
 
 /**
- * DeviceList lists the caller's own Device Sessions or, for the Owner,
- * every User's; a Member naming another User is refused with
- * CodeOwnerOnly.
+ * DeviceList lists the caller's own Device Sessions or, for the Owner or
+ * an Administrator, every User's; a Member naming another User is
+ * refused with CodeOwnerOnly.
  */
 export const DeviceList: Op<DeviceListRequest, DeviceListResponse> = {
   name: "device.list",
@@ -151,9 +152,11 @@ export const DeviceList: Op<DeviceListRequest, DeviceListResponse> = {
 
 /**
  * DeviceRevoke revokes one live Device Session of the caller's own User
- * or, for the Owner, of any User, in one transaction with voiding the
- * valid Join Codes it issued. A Device Session the caller may not revoke
- * is refused with CodeUnknownDevice, as an unknown one is; the Owner's
+ * or, for the Owner, of any User, and for an Administrator, of any
+ * Member, in one transaction with voiding the valid Join Codes it
+ * issued. A Member naming another User's is refused with
+ * CodeUnknownDevice, as an unknown one is, and an Administrator naming
+ * the Owner's or another Administrator's with CodeOwnerOnly; the Owner's
  * last live one, without Last, with CodeLastDeviceSession. Once it
  * commits, the Device Session's Device Connections close.
  */
