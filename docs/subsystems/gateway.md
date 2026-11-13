@@ -462,9 +462,11 @@ SSH Session that ends gives its notice as any ending does
   reach (`host.move` to another Space, `host.retire`, and `host.set` sending
   a Managed Host back to Registered), or the live Device Sessions and
   Sign-ins of each User `space.member.remove` took out of a Space, by the
-  caller's id (`op.Caller.ID`). The Gateway checks each
-  SSH Session to one of those Hosts, each through any Relay, since a named
-  Host may be its Relay, or of one of those callers again, in one read-only transaction, by the
+  caller's id (`op.Caller.ID`). When a change names any Host, the Gateway
+  checks every live SSH Session again, since a named Host may be the Relay
+  one passes through or the one its Host was given since it started, even
+  when it started with none; when it narrows callers, it checks each SSH
+  Session of theirs. It checks them in one read-only transaction, by the
   rule that admits a new one
   ([`host.ReachOf`](../../internal/server/host/reach.go) by the Host's id,
   so a rename changes nothing, and the Host and its Relay Managed), and ends

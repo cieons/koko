@@ -20,9 +20,9 @@ import (
 // access from, since one goes on only while a new one would be allowed (P0
 // spec: reach). Each of a Device Session c Revoked, or of a Sign-in it
 // ended, ends at once, and so does each of a Sign-in when c changed the
-// Web URL; each to a Host c names, through a Relay when c names any Host,
-// or of a caller it narrowed, ends once a read of the record finds that a
-// new one would now be refused (recheck). The channel
+// Web URL; each, when c names any Host, or each of a caller it narrowed,
+// ends once a read of the record finds that a new one would now be refused
+// (recheck). The channel
 // it returns is closed once the Revoked Device Sessions' SSH Sessions have
 // given their notice and ended, so that their Device Connections close only
 // after. It never blocks, since the access-change signal calls it before
@@ -57,11 +57,12 @@ func (g *Gateway) Withdraw(c access.Change) <-chan struct{} {
 			t.end(signInEnding(t, c.SignInEnd))
 		case t.caller.SignIn != "" && c.WebURL:
 			t.end(errWebURLChanged)
-		case t.caller.ID() != "" && slices.Contains(c.Narrowed, t.caller.ID()), slices.Contains(c.Hosts, t.hostID),
+		case t.caller.ID() != "" && slices.Contains(c.Narrowed, t.caller.ID()),
 			// Any Host c names may be the Relay this SSH Session passes
-			// through, or the one its Host has had since, which only a read
-			// tells: check every SSH Session through a Relay.
-			t.relayID != "" && len(c.Hosts) > 0:
+			// through, or the one its Host has had since, even one that
+			// started with none, which only a read tells: check every SSH
+			// Session.
+			len(c.Hosts) > 0:
 			recheck = append(recheck, t)
 		}
 	}

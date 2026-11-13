@@ -408,6 +408,24 @@ func TestAnSSHSessionGoesOnThroughTheRelayItStartedThrough(t *testing.T) {
 	s.wantEnded("koko: access to web1 was withdrawn: web1's Relay gw3 is no longer Managed; this SSH Session is closed.\n")
 }
 
+// An SSH Session that started with no Relay is checked again when its
+// Host's Relay, given since, goes back to Registered, though the change
+// names neither its Host nor a Relay it passes through: a new SSH Session
+// to the Host would be refused, so it ends.
+func TestAnSSHSessionStartedWithoutARelayEndsWhenItsHostsNewRelayStopsBeingManaged(t *testing.T) {
+	t.Parallel()
+	h := harness.Start(t)
+	managedHost(t, h, "app1")
+	managedHost(t, h, "db1")
+	s := openLiveSSH(t, h, h.Proxy("tunnel", "app1"), "app1")
+
+	h.Koko("host", "set", "app1", "relay=db1").WantSuccess(t)
+	s.wantOpen("after a Relay")
+	h.Koko("host", "set", "db1", "account=ops").WantSuccess(t)
+	s.wantEnded("koko: access to app1 was withdrawn: app1's Relay db1 is no longer Managed; this SSH Session is closed.\n")
+	waitServerLog(t, h, `msg="ssh session ended" .* host=app1 .* reason="relay registered"\n`)
+}
+
 // Enroll records nothing when the Host's Relay changes while it logs in to
 // the Host through the old one.
 func enrollRecordsNothingWhenTheRelayChangesMeanwhile(t *testing.T) {
