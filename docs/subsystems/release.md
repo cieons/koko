@@ -501,9 +501,24 @@ Its `EXPOSE` and labels are checked by hand.
 ## The check workflow
 
 The [check workflow](../../.github/workflows/check.yml) runs `make check`
-on every push to `main`, on every pull request, and on a release's tag. Its
-**check** job runs once on `ubuntu-latest` and once on `macos-latest`, each
-with a limit of 20 minutes:
+on every push to `main`, on every pull request, and on a release's tag.
+
+**What runs when** (the Owner's choice, 2026-11-13,
+[#219](https://github.com/cieons/koko/issues/219)):
+
+| When | What runs |
+| --- | --- |
+| A push to `main`, a pull request | The **check** job on `ubuntu-latest` alone. Its `make lint` lints the build of every OS koko builds for and its `make cross` compiles each, so a macOS-only or Windows-only file is still linted and compiled. A push or pull request that changes only Markdown at the top of the repository and `docs/` runs nothing, since `make check` checks no docs. |
+| The release workflow, on a tag | Every check on every OS: the **check** job on `ubuntu-latest` and `macos-latest`, [the `windows` job](#the-windows-job), [the real-systemd check](#the-real-systemd-check), [the container check](#the-container-check) and [the skew check](#the-skew-check). No release is built unless all pass. |
+| By hand (`workflow_dispatch`) | Any of the five workflows, on the branch chosen; the check workflow on every OS unless `every-os` is cleared. |
+
+The check workflow tells the two apart by its `every-os` input, which the
+release workflow's call and a run by hand have, true unless set, and a push
+has not. A failure only macOS or Windows shows is found at the next
+release, or by a run by hand. `make stress` reproduces a flake under load
+on a development machine ([Tests](../code-standards.md#tests)).
+
+The **check** job has a limit of 20 minutes on each OS:
 
 1. It sets up Go and Node, and takes golangci-lint's binary and the cache
    of its last run from the workflow's cache. Where the cache holds none
@@ -543,8 +558,8 @@ beside the tests.
 ### The `windows` job
 
 The workflow has a second job, `windows`, on `windows-latest`, beside the
-**check** job's two runs, on every push and pull request, and so before a
-release
+**check** job's two runs, on a release's tag and by hand, not on a push
+or pull request
 ([ADR 0051](../adr/0051-on-windows-the-cli-is-a-device-with-the-same-files-in-the-same-places.md)).
 It is what the tickets of
 [#151](https://github.com/cieons/koko/issues/151) build the Windows CLI
@@ -651,9 +666,8 @@ with, so the golden files compare on Windows too.
 ## The real-systemd check
 
 The [systemd workflow](../../.github/workflows/systemd.yml) installs koko
-on a real systemd machine, a fresh `ubuntu-latest` runner, on every push to
-`main`, on every pull request, and on a release's tag before the build job,
-which needs it. It runs `make dist` twice: on the commit, and in a worktree
+on a real systemd machine, a fresh `ubuntu-latest` runner, on a release's
+tag before the build job, which needs it, and by hand. It runs `make dist` twice: on the commit, and in a worktree
 on the commit just before the one that added the latest migration step, so
 that the upgrade from that older build migrates and snapshots (every
 migration step is a file added to `internal/server/store/migrations/`,
@@ -793,9 +807,8 @@ requests and log.
 
 The [container workflow](../../.github/workflows/container.yml) runs
 [the image](#the-image) as its Owner would, through the install docs'
-[`release/compose.yaml`](../../release/compose.yaml), on every push to
-`main`, on every pull request, and on a release's tag before the build job,
-which needs it. It runs once for each platform the image is built for, each
+[`release/compose.yaml`](../../release/compose.yaml), on a release's tag
+before the build job, which needs it, and by hand. It runs once for each platform the image is built for, each
 on a runner of that platform (`ubuntu-24.04` and `ubuntu-24.04-arm`), so
 the image runs natively, with no emulation. Each runs `make dist` and `make
 image` once, as the release's build job does, and loads its own platform's
@@ -902,8 +915,8 @@ of Caddy.
 The CLI and the koko server work together within a window of versions
 ([ADR 0049](../adr/0049-the-cli-and-the-koko-server-work-together-within-a-window-of-versions.md)),
 and the [skew workflow](../../.github/workflows/skew.yml) runs real
-binaries of different versions against each other, on every push to `main`
-and on a release's tag before the build job, which needs it.
+binaries of different versions against each other, on a release's tag
+before the build job, which needs it, and by hand.
 
 **The pairs.** [`release/skew-pairs.sh`](../../release/skew-pairs.sh)
 lists them for the commit checked out, as the JSON list the workflow takes
@@ -918,9 +931,9 @@ part, in the commit's history and not on the commit itself, so a release's
 tag is checked against the release before it. A tag counts only once its
 GitHub Release is published, as `gh release list --exclude-drafts` lists
 it: a tag is pushed before the release workflow builds and publishes its
-binaries and image, so a push to `main` during a release's run pairs with
-the release before it. A failure to list the releases fails the build
-job. `compat.Oldest` is read from its one line in `compat.go`. When the
+binaries and image, so a run by hand on `main` during a release's run
+pairs with the release before it. A failure to list the releases fails
+the build job. `compat.Oldest` is read from its one line in `compat.go`. When the
 two are one release, its pairs are listed once. A release that is not
 there yet has no pair, as `compat.Oldest`'s on the commits that lead to
 the minor release it names, nor has one not yet published, and neither

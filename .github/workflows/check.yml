@@ -1,11 +1,29 @@
 name: check
 
+# A push to main and a pull request run the check job on Linux alone, with
+# lint for every OS koko builds for; one that changes only Markdown at the
+# top and docs/ runs nothing, since make check checks no docs. The release
+# workflow runs it on the tag before building a release, and a run by hand
+# can, on macOS and Windows too: every-os, which a push has not, is true
+# there (docs/subsystems/release.md, "The check workflow").
 on:
   push:
     branches: [main]
+    paths-ignore: ['*.md', 'docs/**']
   pull_request:
-  # The release workflow runs it on the tag before building a release.
+    paths-ignore: ['*.md', 'docs/**']
   workflow_call:
+    inputs:
+      every-os:
+        description: Run on macOS and Windows too
+        type: boolean
+        default: true
+  workflow_dispatch:
+    inputs:
+      every-os:
+        description: Run on macOS and Windows too
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -15,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ fromJSON(inputs.every-os && '["ubuntu-latest", "macos-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     # One group for each ref and OS, so a job waiting for a runner holds up
     # only that OS's jobs of later pushes.
@@ -104,6 +122,7 @@ jobs:
   # GOOS=windows in the jobs above, and no race detector, which would need
   # a C toolchain there (docs/subsystems/release.md).
   windows:
+    if: ${{ inputs.every-os }}
     runs-on: windows-latest
     concurrency:
       group: check-${{ github.ref }}-windows
