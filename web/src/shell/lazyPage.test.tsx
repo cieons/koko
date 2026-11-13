@@ -5,7 +5,7 @@ import { UserCurrent } from "../api/user";
 import { expectAccessible } from "../test/axe";
 import { fakeApi } from "../test/fakeApi";
 import { findAlert } from "../test/pages";
-import { lazyPage, loadPage } from "./lazyPage";
+import { lazyPage, loadPage, wrappingPage } from "./lazyPage";
 import type { PageProps } from "./router";
 import { Shell } from "./Shell";
 
@@ -52,6 +52,22 @@ test("a lazy page loadPage loaded renders without waiting on its chunk, which lo
   expect(screen.getByRole("heading", { name: "Loaded" })).toBeDefined();
   expect(screen.queryByRole("status")).toBeNull();
   await loadPage(page);
+  expect(load).toHaveBeenCalledTimes(1);
+});
+
+test("loadPage of a page wrappingPage wraps around a lazy page loads the lazy page's chunk", async () => {
+  const load = vi.fn(async () => () => <h1>Loaded</h1>);
+  const Page = lazyPage(load);
+  const wrapper = wrappingPage(
+    (props: PageProps) => (
+      <main>
+        <Page {...props} />
+      </main>
+    ),
+    Page,
+  );
+
+  await loadPage(wrapper);
   expect(load).toHaveBeenCalledTimes(1);
 });
 

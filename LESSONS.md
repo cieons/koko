@@ -287,6 +287,19 @@ test page also tried the Resume once, where the page tries again.
 **Seen:** 1 (2026-11-13)
 **Evidence:** check run 43350241168 on 3de18b0; #198
 
+### A helper that prepares every page for the tests reaches a wrapped page too
+
+**Why:** the page tests load every page's chunk before they run (#119),
+through `loadPage(route.page)`, which knows only the components `lazyPage`
+returned. Set a Password's route wraps its lazy page in
+`takingLinkSecret`, so its chunk was never loaded first, and on CI's
+loaded macOS runner its first test gave up on the page's heading while the
+shell still showed Loading, in two runs on `main`. The helper skipped the
+wrapped page without a word; a wrapper now passes the chunk's loader on
+(`wrappingPage`).
+**Seen:** 1 (2026-11-13)
+**Evidence:** check runs 43234548126 and 43358569706; #200
+
 ## Moved to the code standards
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128, #147; check run 42951455550).

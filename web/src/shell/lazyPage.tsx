@@ -57,6 +57,20 @@ export async function loadPage<P>(page: ComponentType<P>): Promise<void> {
   await loaders.get(page)?.();
 }
 
+/**
+ * wrappingPage is wrapper, a component that renders the lazy page page
+ * within it, for a route: loadPage of wrapper loads page's chunk, as
+ * loadPage of page does. Without it, page tests would render the page
+ * before its chunk had loaded.
+ */
+export function wrappingPage<P>(wrapper: ComponentType<P>, page: ComponentType<P>): ComponentType<P> {
+  const load = loaders.get(page);
+  if (load !== undefined) {
+    loaders.set(wrapper, load);
+  }
+  return wrapper;
+}
+
 /** ChunkNotLoaded is why a page's chunk did not load. */
 class ChunkNotLoaded extends Error {
   constructor(cause: unknown) {

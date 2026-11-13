@@ -1,5 +1,6 @@
 import { type ComponentType, createContext, useContext, useEffect, useState } from "react";
 
+import { wrappingPage } from "../../shell/lazyPage";
 import { navigate, type PageProps } from "../../shell/router";
 
 /**
@@ -22,7 +23,7 @@ export function useLinkSecret(): string | undefined {
  * It is part of the first load, and small.
  */
 export function takingLinkSecret(Page: ComponentType<PageProps>): ComponentType<PageProps> {
-  return function TakingLinkSecret(props: PageProps) {
+  return wrappingPage(function TakingLinkSecret(props: PageProps) {
     const [secret, setSecret] = useState<string>();
     useEffect(() => {
       const take = () => {
@@ -43,5 +44,5 @@ export function takingLinkSecret(Page: ComponentType<PageProps>): ComponentType<
         <Page {...props} />
       </LinkSecret>
     );
-  };
+  }, Page);
 }

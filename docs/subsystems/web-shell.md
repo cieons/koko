@@ -176,7 +176,10 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   page, as an alert, that the browser page must be reloaded; any other
   error a page throws goes on past it. `loadPage(page)` loads a lazy
   page's chunk ahead of time, once, so its first render does not wait on
-  it; the page tests load every page so before they run. `lazyPart(load)`
+  it; the page tests load every page so before they run. A route whose
+  page wraps a lazy page, as Set a Password's does, gives the wrapper
+  through `wrappingPage(wrapper, page)`, so that `loadPage` of the wrapper
+  loads the page's chunk. `lazyPart(load)`
   does the same for a part that is no page, with props of its own: the
   terminal's workspace, which the frame keeps mounted across pages.
 - **Page state lives in the URL's query** (`useSearchParams`, and
@@ -755,7 +758,8 @@ alone ([Sign-ins](signin.md#the-web-uis-pages)):
   through koko's router.
 - [`lazyPage.test.tsx`](../../web/src/shell/lazyPage.test.tsx): a lazy
   page's Loading, then the page; a page `loadPage` loaded rendering without
-  waiting on its chunk, which loads once; a chunk that does not load saying
+  waiting on its chunk, which loads once; `loadPage` of a page
+  `wrappingPage` wraps loading its chunk; a chunk that does not load saying
   so in the frame, and axe on it; another error not taken for one.
 - [`states.test.tsx`](../../web/src/ui/states.test.tsx): Loading after 300
   ms and axe; LoadFailed with Try again; `Loaded`'s three cases; the empty
