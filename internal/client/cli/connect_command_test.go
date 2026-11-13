@@ -187,7 +187,6 @@ func aRestoredKokoServerKeepsItsDevicesPins(t *testing.T) {
 	dataDir, rootKey := t.TempDir(), harness.NewRootKeyFile(t)
 	first := harness.Start(t, harness.DataDir(dataDir), harness.RootKeyFile(rootKey))
 	d := first.Join(harness.Owner)
-	d.UseTimings(timing.Timings{CommandWait: 300 * time.Millisecond})
 	d.Koko("space", "add", "ops", "--json").WantSuccess(t)
 	const value = "a value only the Root Key opens"
 	d.KokoStdin(value, "secret", "add", "ops/db-password").WantSuccess(t)
@@ -200,7 +199,9 @@ func aRestoredKokoServerKeepsItsDevicesPins(t *testing.T) {
 	}
 	listen := harness.FreeAddr(t)
 	harness.Start(t, harness.DataDir(restored), harness.RootKeyFile(rootKey), harness.NoInit(), harness.Listen(listen))
-	msg := d.Koko("space", "ls", "--json").WantError(t, 1, "server_unreachable")
+	// Only this command waits for a koko server that never answers, at the
+	// old address; every other one a koko server answers.
+	msg := d.KokoTimed(timing.Timings{CommandWait: 300 * time.Millisecond}, "space", "ls", "--json").WantError(t, 1, "server_unreachable")
 	if !strings.Contains(msg, "koko connect <host:port>") {
 		t.Errorf("a device whose koko server moved is told %q, without koko connect <host:port>", msg)
 	}
