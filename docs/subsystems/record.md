@@ -83,39 +83,82 @@ the retirement ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
 A Relay that a Host that is not Retired uses is not retired: `host.retire`
 refuses it with `relay_in_use`, whose message names no Host, not even to a
 caller who can see them, and points at `koko host ls relay=<relay>`
-([a Relay](#a-relay)).
+([a Relay](#a-relay)). Only a Host's own Relay blocks it, and a batch counts
+only the Hosts outside it, so a whole chain retires in one batch.
 
 ## A Relay
 
 A Host's Relay is the one Host the Gateway passes through to reach it, for a
 Host the koko server cannot reach directly (P0 spec: the record, "Relay").
-`host.add` and `host.set` take it as `relay`, by name or id, and `host.set`
-clears it with `"unset": ["relay"]`; [`relayFor`](../../internal/server/host/host.go)
+A Relay may have a Relay of its own ([ADR 0055](../adr/0055-a-relay-may-have-a-relay-of-its-own.md)):
+a Host's chain is every Relay the Gateway passes through to reach it, in the
+order it dials them, found by following each Host's own `relay` from the
+Host. The P0 rule that a Relay is exactly one hop is lifted; the comment of
+the migration that added `relay_id` still names it, as it was applied.
+`host.add` and `host.set` take a Host's own Relay as `relay`, by name or id,
+and `host.set` clears it with `"unset": ["relay"]`; [`relayFor`](../../internal/server/host/host.go)
 checks it inside the write's transaction, and refuses with
 `invalid_relay` unless said otherwise:
 
 - **The setter must see it**: a Host in a Space they cannot act in is
   refused as one that does not exist, `unknown_host`, its message starting
-  `the Relay of web1: `. A Relay may sit in another Space they can see.
+  `the Relay of web1: `. A Relay may sit in another Space they can see. The
+  Relays beyond it need not be seen: they are its own, set by whoever could
+  act on it.
 - **It is Managed**: a Registered Host is refused, naming `koko host enroll`,
-  and a Retired one too, which only its id names in the request.
-- **Exactly one hop**: not the Host itself, not a Host that has a Relay, and
-  no Relay at all for a Host that is the Relay of a Host that is not Retired.
-  That refusal names no Host and points at `koko host ls relay=<host>`.
+  and a Retired one too, which only its id names in the request. Only the
+  Relay being set is checked; the Gateway checks every Relay of a chain when
+  it uses it.
+- **Not the Host itself**, and **no loop**: `app1 cannot take db1 as its
+  Relay: koko reaches db1 through app1, and a chain of Relays never loops`,
+  when db1's chain holds app1.
+- **At most 4 Relays** (`host.MaxRelays`) for the Host being set, whose chain
+  becomes its Relay's chain and the Relay, and for every Host behind it that
+  is not Retired. The refusal for a Host behind it names neither that Host
+  nor how far behind it sits, and points at `koko host ls relay=<host>`; no
+  refusal gives a count.
 - **A Retired Host** takes no change of Relay, set or cleared: `host_retired`.
 
-The link is the Relay's id, so a rename keeps it, and a move of either Host
-leaves it: the visibility rule is checked only when the Relay is set. A
-Relay later in a Space the reader cannot see is present but unnamed: `null`
-id and name in `--json` ([ADR 0035](../adr/0035-a-relay-is-an-id-and-a-name-both-null-when-unseen.md)),
-`one you cannot see` in `host show` and `(unseen)` in `host ls`, as the
-Gateway calls it "its Relay" ([the Gateway](gateway.md#relay)). As P0
-spec: the record accepts, a refused `invalid_relay` or `relay_in_use` tells
-that some Host uses the Relay, and nothing about that Host.
+Clearing a Relay only shortens chains, and is never refused for one. The
+chains are checked against the links read once before the write
+([`readLinks`](../../internal/server/host/chain.go)): a batch
+(`koko host set --where … relay=db1`) is checked as it would leave them,
+each of its Hosts given the new Relay and so behind none other, and each Host
+at fault is listed whatever its place ([ADR 0030](../adr/0030-a-refused-batch-lists-each-item-at-fault.md),
+[ADR 0050](../adr/0050-a-write-of-several-records-is-applied-all-or-none.md)).
 
-A new Relay, or none, interrupts no live SSH Session; a Relay that stops
-being Managed, as when its Host Account changes, ends every SSH Session
-through it ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
+One walk reads a chain for these rules, for `host.ReachOf` and for Enroll's
+`host.Enrolled` ([`walk`](../../internal/server/host/chain.go)): it follows
+`relay_id` at most 4 links. A chain that loops, or whose fourth Relay has a
+Relay of its own, which the rules never write, is a read that fails
+(`host.BrokenChainError`), never no Relay: the Gateway and Enroll refuse the
+Host behind it, and `relayFor` refuses it as a Relay, with
+`internal_error`. Clearing the Relay of a Host behind it reads no chain, so
+it mends the record.
+
+`host.Reach.Relays` is the chain in dial order. Each Relay is `Seen` only
+when the caller can see it and every Relay between it and the Host, which is
+how far the links show it to them; `Relay.Of` names it so, as `app1's Relay
+web1`, and otherwise as `app1's Relay`.
+
+The link is the Relay's id, so a rename keeps it, and a move of any Host of
+a chain leaves the chain: the visibility rule is checked only when a Relay is
+set. A Relay later in a Space the reader cannot see is present but unnamed:
+`null` id and name in `--json` ([ADR 0035](../adr/0035-a-relay-is-an-id-and-a-name-both-null-when-unseen.md)),
+`one you cannot see` in `host show` and `(unseen)` in `host ls`, as the
+Gateway calls it "its Relay" ([the Gateway](gateway.md#relay)). `relay`,
+`relay=` and `host ls`'s `RELAY` column are a Host's own Relay. As P0 spec:
+the record accepts, a refused `invalid_relay` or `relay_in_use` tells that
+some Host uses the Relay, or that some chain loops or is long, and nothing
+about which Hosts are on it.
+
+A new Relay anywhere in a chain, or none, interrupts no live SSH Session
+while every Relay of the chain it started through, and of its Host's chain
+now, is Managed. One that is not ends it: a Relay that stops being Managed,
+as when its Host Account changes, or one in a new Relay's own chain, which
+`relayFor` does not check; so `host.set` announces a Host given another
+Relay, and the Gateway checks every live SSH Session again
+([the Gateway](gateway.md#access-during-a-live-ssh-session)).
 
 ## A Service
 
@@ -435,6 +478,16 @@ recorded in one `host.add` call, all or none.
   Space they can see, and refused one they cannot; a Relay in use not
   retired; and `relay` read on stdin. The Gateway and Enroll through a Relay
   are in [the Gateway](gateway.md#verifying) and [Enroll](enroll.md#verifying).
+- [`internal/client/cli/chain_test.go`](../../internal/client/cli/chain_test.go):
+  chains of 2 and 4 set one Host at a time, a Relay with Hosts behind it
+  given a Relay, a fifth Relay refused on the Host and on a Relay with Hosts
+  behind it, loops through 1 and 3 hops, `host add` at the limit and past
+  it, `--unset relay` taken; batches through `koko host set --where`, all
+  or none, with a loop and a length listed by place, and a Host of the batch
+  behind none other; the middle Relay not retired and the whole chain
+  retired at once; a Member setting a Relay whose own Relay they cannot see
+  (golden file `host-show-chain.json`); and a chain broken in the store,
+  refused and never read as no Relay, mended by clearing a Relay.
 - [`internal/client/cli/host_retire_test.go`](../../internal/client/cli/host_retire_test.go):
   `koko host retire` with its goldens, a Registered and a Managed Host
   retiring, its name taken by a new Host while its id shows it, `host ls

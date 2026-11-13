@@ -115,7 +115,11 @@ set before the SSH client above it learns of it, so a Relay's end is set
 before the leg after it reads its own, and a channel that ends because its
 connection did already sees it: the Gateway relies on that to tell a broken
 leg from a channel the Host closed
-([the Gateway](gateway.md#when-an-ssh-session-ends)).
+([the Gateway](gateway.md#when-an-ssh-session-ends)). A Relay that stops
+answering silences every leg after it too, and one of those may be found
+dead first, but its close passes through the silent Relay, which never
+answers it, so the Host's connection ends only with the Relay's own leg, and
+`Broken`, read then, names the Relay.
 
 ## Timings in tests
 
@@ -135,6 +139,7 @@ answering, one that closes the connection, and a connection `Close` closed.
 Chains of 1, 2 and 4 Relays show each Relay's one login and its one
 `direct-tcpip` to the next hop; each failure at each hop of a chain of 3
 carries that hop, and `Broken` names the dropped Relay nearest the koko
-server.
+server, and a Relay that stops answering at either hop of a chain of 2, even
+after the Host behind it did.
 [`retryable_test.go`](../../internal/server/hostconn/retryable_test.go)
 covers the network errors loopback cannot cause, such as an unreachable host.

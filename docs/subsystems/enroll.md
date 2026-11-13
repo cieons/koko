@@ -72,25 +72,36 @@ response, without logging in again.
 
 ## Through a Relay
 
-A Host with a [Relay](record.md#a-relay) is Enrolled through it, as the
-Gateway reaches it, since a Host is given a Relay because the koko server
-cannot reach it directly: the koko server logs in to the Relay as its Host
-Account with the koko key, checking the Relay's pin, then to the Host
-through a `direct-tcpip` channel there, with the supplied password or key.
-The caller need not see the Relay.
+A Host with a [Relay](record.md#a-relay) is Enrolled through its whole
+chain of Relays, as the Gateway reaches it, since a Host is given a Relay
+because the koko server cannot reach it directly: the koko server logs in to
+each Relay in turn as its Host Account with the koko key, checking each
+Relay's pin, each through a `direct-tcpip` channel on the one before, then to
+the Host through one on the last, with the supplied password or key. The
+caller need not see any Relay of the chain. A message names a Relay only to
+a caller who can follow the links to it, as the Gateway's do
+([the Gateway](gateway.md#relay)).
 
-- A Relay that is not Managed is refused with `invalid_relay` before any
-  login, since koko logs in to a Relay only with the koko key.
-- A failure on the Relay's leg is refused with `host_unreachable`: `koko
+- A chain that holds a Relay that is not Managed is refused with
+  `invalid_relay` before any login, naming the one nearest the koko server,
+  since koko logs in to a Relay only with the koko key.
+- A chain the record holds broken is refused with `host_unreachable`,
+  `koko could not connect to web1; the koko server's log says why`, before
+  any login, and logged as `enroll failed` with `reason="relay chain
+  broken"` and `read_relay_ids`, the ids read.
+- A failure on a Relay's leg is refused with `host_unreachable`: `koko
   could not reach web1 through its Relay, so it did not log in to web1: `
-  and why, as the Gateway's banner says it ([the Gateway](gateway.md#relay)):
-  the Relay down, its host key not the pinned one, which `--host-key` and
-  `--replace-host-key` on this Enroll do not change, or the koko key
-  refused. It names the Relay, its fingerprints and its Host Account only
-  to a caller who can see it, and never the connector's error, which the
-  `enroll failed` line logs as `cause`, with `relay` and `relay_id`.
-- A Relay changed while Enroll logs in through the old one is refused with
-  `host_changed`.
+  and why, as the Gateway's banner says it, for the Relay at the hop that
+  failed: the Relay down, its host key not the pinned one, which
+  `--host-key` and `--replace-host-key` on this Enroll do not change, or
+  the koko key refused. It names the Relay, its fingerprints and its Host
+  Account only to a caller who can follow the links to it, and never the
+  connector's error, which the `enroll failed` line logs as `cause`, with
+  `relay`, `relay_id` and `hop`, its place in the chain from 1.
+- A chain changed while Enroll logs in through the old one, any Relay of it
+  by ids in order, or broken in the record since, is refused with
+  `host_changed`
+  ([`host.Enrolled`](../../internal/server/host/reach.go)).
 
 ## Reading a Secret
 
@@ -204,6 +215,13 @@ value: the request is kept only as the sealed digest of its
   a Relay whose host key changed, that is down, that refused the koko key,
   or that is Registered, each as the Owner and as a Member who cannot see
   the Relay, and with `host_changed` when the Relay changes meanwhile.
+- [`internal/client/cli/chain_test.go`](../../internal/client/cli/chain_test.go):
+  Enroll through a chain of two Relays, each carrying its connection to the
+  next hop; refused before any login for a Relay of the chain that is not
+  Managed, the one nearest the koko server named; each Relay leg's failure
+  as `host_unreachable` naming the hop by the rule, with `hop` in the log;
+  `host_changed` when a Relay in the middle changes meanwhile; and a chain
+  broken in the store refused with `host_unreachable`.
 - [`internal/server/access/matrix_enroll_test.go`](../../internal/server/access/matrix_enroll_test.go):
   `host.enroll` as each caller, with a password, with a Secret of the Host's
   Space, and with a Secret of a Space the caller cannot act in.

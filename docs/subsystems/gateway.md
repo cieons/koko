@@ -65,7 +65,7 @@ For each `tunnel@koko` channel ([`Gateway.Open`](../../internal/server/gateway/g
    key with the Root Key and asks the access check for the Host by name
    ([`host.ReachOf`](../../internal/server/host/reach.go)). A new SSH Session
    is allowed when the caller may act in the Host's Space and the Host and
-   its [Relay](#relay), if any, are Managed.
+   every [Relay](#relay) of its chain are Managed.
 3. It accepts the channel, puts the Tunnel in the registry under a new id,
    and sends the id. An allowed SSH Session counts against its caller's
    limit, by the caller's id (`callerID`), attached or Detached, from then
@@ -76,7 +76,7 @@ For each `tunnel@koko` channel ([`Gateway.Open`](../../internal/server/gateway/g
    Local caller has no limit.
 4. When the SSH Session is allowed, it dials the Host through the
    [Host connector](host-connector.md), as the Host Account with the koko key
-   and the Host's pinned host key, through its Relay if any, while the
+   and the Host's pinned host key, through its chain of Relays, while the
    client's SSH handshake runs.
 5. The client's `none` takes the SSH user name `koko`, which koko's
    ssh_config and `koko exec` ask for, or the Host Account's own name, and
@@ -89,7 +89,8 @@ For each `tunnel@koko` channel ([`Gateway.Open`](../../internal/server/gateway/g
 | --- | --- |
 | No Host the caller can see has the name: none has it, it is in a Space the caller cannot act in, or the SSH Name is not a Host name. A Retired Host holds no name. | `koko: no Host is named "web1".` |
 | The Host is Registered | `koko: web1 is Registered: koko logs in to it only once it is Enrolled, with koko host enroll web1.` |
-| Its Relay is not Managed | `koko: web1's Relay gw is Registered: koko passes through it only once it is Enrolled, with koko host enroll gw.` |
+| A Relay of its chain is not Managed, the one nearest the koko server named | `koko: web1's Relay gw is Registered: koko passes through it only once it is Enrolled, with koko host enroll gw.` |
+| Its chain of Relays is broken in the record ([a Relay](record.md#a-relay)) | `koko: koko could not connect to web1; this SSH Session did not start.` |
 | The access check refuses the caller, such as a Revoked Device Session | `koko: ` and the refusal's message |
 | The Device Session has 64 SSH Sessions open | `koko: this Device Session already has 64 SSH Sessions open, the most koko allows; this SSH Session did not start.`, or for a Sign-in's web terminal `koko: this Sign-in already has 16 SSH Sessions open, …` |
 | Another user name, such as `root@web1.koko` | `koko: web1 is reached as its Host Account "deploy"; leave out "root@".` |
@@ -98,8 +99,8 @@ For each `tunnel@koko` channel ([`Gateway.Open`](../../internal/server/gateway/g
 | The Host refused the koko key | `koko: web1 refused the koko key for its Host Account "deploy"; this SSH Session did not start.` |
 | The connector failed otherwise | `koko: koko could not connect to web1; this SSH Session did not start.` |
 
-A failure on the leg to the Host's Relay gets the Host's banner for the same
-failure, with the Relay in the Host's place ([Relay](#relay)).
+A failure on the leg to a Relay of the Host's chain gets the Host's banner
+for the same failure, with that Relay in the Host's place ([Relay](#relay)).
 
 The first row is the same byte for byte for a name nobody holds and for a
 Host the caller cannot see, whatever user name they ask for, so the Gateway
@@ -111,29 +112,42 @@ key mismatch or a refused key costs one connection.
 
 ## Relay
 
-A Host may have one [Relay](record.md#a-relay), a Managed Host the Gateway
-passes through to reach it: the Host connector logs in to the Relay as its
-Host Account with the koko key, checking the Relay's pin, then reaches the
-Host through a `direct-tcpip` channel there
-([the Host connector](host-connector.md#connecting)). The caller need not
-see the Relay. A message names it as `web1's Relay gw` only to a caller who
-can see it, and as `web1's Relay` to one who cannot
+A Host may have a [Relay](record.md#a-relay), a Managed Host the Gateway
+passes through to reach it, and a Relay may have a Relay of its own, so a
+Host's chain may hold up to 4 ([ADR 0055](../adr/0055-a-relay-may-have-a-relay-of-its-own.md)).
+The Host connector logs in to each Relay of the chain in turn, as its Host
+Account with the koko key, checking its pin, each through a `direct-tcpip`
+channel on the one before, then reaches the Host through one on the last
+([the Host connector](host-connector.md#connecting)). Each SSH Session opens
+its own connection at every hop. The caller need not see any Relay of the
+chain. A message names a Relay as `web1's Relay gw` only to a caller who can
+follow the links to it, seeing it and every Relay between it and the Host,
+and as `web1's Relay` to anyone else
 ([`host.Relay.Of`](../../internal/server/host/reach.go)), who learns
-neither its fingerprints nor its Host Account:
+neither its fingerprints, its Host Account nor its place in the chain. A
+Member who sees app1 and web1 but not db1, app1's own Relay, reads
+`app1's Relay` for web1 too: the record never told them app1's chain holds
+it. Each failure below is the Relay's at the hop that failed
+([`RelayError.Hop`](host-connector.md#connecting)):
 
-| When | Banner, to a caller who can see the Relay | To one who cannot |
+| When | Banner, to a caller who can follow the links to the Relay | To anyone else |
 | --- | --- | --- |
 | The Relay is down | `koko: web1's Relay gw is down or unreachable: koko could not connect to it; this SSH Session did not start.` | the same, `web1's Relay` |
 | Its host key is not the pinned one | `koko: the host key of web1's Relay gw does not match the one pinned at Enroll (pinned SHA256:…, offered SHA256:…); koko did not log in. If gw was rebuilt, pin its new key with koko host enroll gw --host-key <…>, or with --replace-host-key, which trusts whatever key it offers.` | `koko: the host key of web1's Relay does not match the one pinned at Enroll; koko did not log in.` |
 | It refused the koko key | `koko: web1's Relay gw refused the koko key for its Host Account "deploy"; this SSH Session did not start.` | `koko: web1's Relay refused the koko key; this SSH Session did not start.` |
 | The connector failed otherwise | `koko: koko could not connect to web1's Relay gw; this SSH Session did not start.` | the same, `web1's Relay` |
 
-Each is logged as `ssh session refused` at warning level with `relay_id`
-and the reason `relay unreachable`, `relay host key mismatch` (with `pinned`
-and `offered`), `relay login refused` or `relay connection failed`. A
-failure past the Relay, such as the Host refusing the channel's connection,
-is the Host's own. The Relay's connection has the Host's probes, retries and
-ends ([when an SSH Session ends](#when-an-ssh-session-ends)).
+Each is logged as `ssh session refused` at warning level with `relay`,
+`relay_id` and `hop`, the Relay's place in the chain from 1, and the reason
+`relay unreachable`, `relay host key mismatch` (with `pinned` and
+`offered`), `relay login refused` or `relay connection failed`. A refused
+`direct-tcpip` open on a Relay is the next hop's network error, so a failure
+past the last Relay, such as the Host refusing the channel's connection, is
+the Host's own. Each Relay's connection has the Host's probes, retries and
+ends ([when an SSH Session ends](#when-an-ssh-session-ends)), and the whole
+dial is bounded by `timing.HostConnect` (45 s). A chain the record holds
+broken is refused with `host_connection_failed`'s banner and logged at
+warning level as `relay chain broken`, with `read_relay_ids`, the ids read.
 
 ## Relaying
 
@@ -193,7 +207,7 @@ Sign-in, or on `web@koko` the Device Session or the Local caller and its
 run of `koko web`, and the page's address.
 
 - **The same registry.** A web terminal's SSH Session is a Tunnel in the
-  registry, with its id, caller, admission, Host and Relay ids and
+  registry, with its id, caller, admission, Host id, the ids of its chain and
   ending, so `Close`, `Withdraw`, `recheck`, `keepEnding` and the limit
   serve it unchanged. Two fields tell it apart: its client (`ssh` or
   `browser`) and its grace.
@@ -380,7 +394,7 @@ the Tunnel out of the registry.
 | The run of `koko web` a Local caller's web terminal came through ended | none | `koko web ended` |
 | The Host leg broke: the [Host connector](host-connector.md#keeping-a-connection-alive) heard nothing for 60 s, its probes unanswered | `lost the connection to web1 (no answer for 60 s); this SSH Session has ended.` | `Host leg lost` |
 | The Host, or the network beneath, closed its connection | `web1 closed the connection.` | `Host closed` |
-| The Relay leg broke, as the Host leg's rows above | `lost the connection to web1's Relay gw (no answer for 60 s); this SSH Session has ended.`, or `web1's Relay gw closed the connection.`, the Relay unnamed to a caller who cannot see it | `Relay leg lost`, `Relay closed` |
+| A Relay's leg broke, as the Host leg's rows above: the leg nearest the koko server that ended, which takes every leg after it down with it | `lost the connection to web1's Relay gw (no answer for 60 s); this SSH Session has ended.`, or `web1's Relay gw closed the connection.`, the Relay unnamed to a caller who cannot follow the links to it | `Relay leg lost`, `Relay closed` |
 | The koko server stops cleanly, as for an upgrade | `the koko server is restarting; this SSH Session has ended.` | `server stopping` |
 | The Tunnel stayed Detached for the whole grace | none | `grace over` |
 | Its Device Session was Revoked | `access to web1 was withdrawn: this device's Device Session was Revoked; this SSH Session is closed.` | `revoked` |
@@ -393,9 +407,10 @@ the Tunnel out of the registry.
 | The Web URL changed, for a web terminal on the web listener | `the Web URL changed; this SSH Session is closed. Sign in at the new address.` | `web url changed` |
 | The Host was Retired | `access to web1 was withdrawn: web1 was Retired; this SSH Session is closed.` | `host retired` |
 | The Host went back to Registered | `access to web1 was withdrawn; this SSH Session is closed.` | `host registered` |
-| Its Relay is no longer Managed | `access to web1 was withdrawn: web1's Relay gw is no longer Managed; this SSH Session is closed.`, the Relay unnamed to a caller who cannot see it | `relay registered`, `relay retired` |
+| A Relay of the chain it started through, or of its Host's chain now, is no longer Managed | `access to web1 was withdrawn: web1's Relay gw is no longer Managed; this SSH Session is closed.`, the Relay unnamed to a caller who cannot follow the links to it | `relay registered`, `relay retired` |
 | The caller can no longer act in the Host's Space: they were taken out of it, or it was moved to one they cannot act in | `access to web1 was withdrawn; this SSH Session is closed.` | `access withdrawn` |
 | The koko server could not read the record to check access again | `the koko server could not check access to web1, so this SSH Session is closed; its log says why.` | `access check failed` |
+| Its Host's chain of Relays is broken in the record | the same | `relay chain broken` |
 
 A channel the Host's connection took down is left open for the notice
 (`Conn.Broken` tells it from one the Host closed), and its EOF and close
@@ -460,7 +475,8 @@ SSH Session that ends gives its notice as any ending does
   go on.
 - **Any other change** names the Hosts it may have put out of a caller's
   reach (`host.move` to another Space, `host.retire`, and `host.set` sending
-  a Managed Host back to Registered), or the live Device Sessions and
+  a Managed Host back to Registered or giving it another Relay, whose own
+  chain may hold one that is not Managed), or the live Device Sessions and
   Sign-ins of each User `space.member.remove` took out of a Space, by the
   caller's id (`op.Caller.ID`). When a change names any Host, the Gateway
   checks every live SSH Session again, since a named Host may be the Relay
@@ -469,14 +485,19 @@ SSH Session that ends gives its notice as any ending does
   Session of theirs. It checks them in one read-only transaction, by the
   rule that admits a new one
   ([`host.ReachOf`](../../internal/server/host/reach.go) by the Host's id,
-  so a rename changes nothing, and the Host and its Relay Managed), and ends
-  each one it would now refuse. A Relay sent back to Registered, or Retired
-  once no Host uses it, ends every SSH Session still passing through it,
-  and so does the Host's Relay now when it stops being Managed: a Host
-  given another Relay, or none, keeps its live SSH Sessions on the Relay
-  they started through while both are Managed
-  ([`relayWithdrawal`](../../internal/server/gateway/withdraw.go)). A Retired Host is named as such only to a caller who
-  can still see it.
+  so a rename changes nothing, and the Host and every Relay of its chain
+  Managed), and ends each one it would now refuse. Each SSH Session keeps
+  the chain it was dialled through (the registry's `relayIDs`): every Relay
+  of it, and of the Host's chain now, must stay Managed, and the first that
+  is not ends it, in the chain it started through first, nearest the koko
+  server first in each
+  ([`relayWithdrawal`](../../internal/server/gateway/withdraw.go)). So a
+  Relay sent back to Registered, or Retired once no Host uses it, ends every
+  SSH Session still passing through it, wherever it sits in the chain, and
+  a change of any Relay's own Relay, or of the Host's, keeps a live SSH
+  Session on the chain it started through while every Relay of both is
+  Managed. A Retired Host is named as such only to a caller who can still
+  see it.
 - **The notice names the Host** by the name the SSH Session was opened
   with, and says nothing more for a Host the caller can no longer see, so it
   tells of no later name and of no Space.
@@ -503,9 +524,10 @@ the client's address as the web listener counts it (the last
 `X-Forwarded-For` entry), or `koko web`'s connection's.
 
 - `ssh session started`: `tunnel`, `client`, `user`, `device_session` or
-  `signin`, `host`, `host_id`, `relay` and `relay_id`
-  for a Host with a Relay, whether or not the caller can see it, and `addr`,
-  where the connection came from.
+  `signin`, `host`, `host_id`, and for a Host with a Relay `relay` and
+  `relay_id`, its own Relay, then `relays` and `relay_ids`, the chain's
+  names and ids in dial order, comma-separated, whether or not the caller
+  can see them; and `addr`, where the connection came from.
 - `ssh session request`: `tunnel`, `client`, `host` and `request`, once per SSH
   Session for each kind: `shell` (a web terminal's, once its shell starts), `exec` (never its text), `subsystem` with
   `subsystem`, its name, and each forward's `target`: `-L` with the address
@@ -521,17 +543,22 @@ the client's address as the web listener counts it (the last
   `outcome`: `done`, `cancelled`, or `failed` with `err`. A listing is not
   logged, and no line holds a cookie, a download token or a file's
   content.
-- `ssh session ended`: the same as the start but `addr`, then `duration`,
-  `bytes_from_device` and `bytes_to_device` (the Tunnel's bytes each way),
-  `exit_status` and `exit_signal` when the Host sent them, and `reason`, as
-  the table above says.
+- `ssh session ended`: the same as the start but the Host's own Relay and
+  `addr`, then `duration`, `bytes_from_device` and `bytes_to_device` (the
+  Tunnel's bytes each way), `exit_status` and `exit_signal` when the Host
+  sent them; for an ending on a Relay, its leg's or its state's, that Relay
+  as `relay` and `relay_id` with its `hop`, from 1, so `relay` names the
+  Relay that ended it, never another; for a broken chain `read_relay_ids`, the
+  ids read; and `reason`, as the table above says.
 - `ssh session refused`: `tunnel`, `client`, `name` (the SSH Name asked for),
   `device_session` or `signin`, `addr` and `reason`: `unknown host`, the access check's
   code, `host registered`, `relay registered`, `ssh session limit`, `user name` with `ssh_user`,
   the name asked for, `shell refused` with `request` or `err`; and at warning level, since the Owner may have to act,
   `host unreachable`, `login refused` or `host connection failed` with
   `err`, and `host key mismatch` with `pinned` and `offered`, the two
-  fingerprints, and the Relay's own ([Relay](#relay)). A client that leaves before its `none`, or a page before its answer, is logged at debug
+  fingerprints, and a Relay's own with `relay`, `relay_id` and `hop`
+  ([Relay](#relay)), as is `relay registered`, and `relay chain broken`
+  with `read_relay_ids`. A client that leaves before its `none`, or a page before its answer, is logged at debug
   level as `ssh session ended before it started`.
 - `ssh session detached`: `tunnel`, `client` and `device_session` or
   `signin`, when the grace starts.
@@ -782,6 +809,13 @@ with their line once the Relay goes back to Registered, or once it closes
 the connection; and one that goes on through its Relay when its Host gets
 another, until that Relay is Retired or the new one goes back to
 Registered.
+[`chain_test.go`](../../internal/client/cli/chain_test.go) does the same
+through a chain of two Relays, as the Owner and as Members who see none,
+one or all of them, each refusal at each hop with its banner and its log
+line's `hop`; live SSH Sessions ended once a Relay in the middle goes back to
+Registered, closes its leg or stops answering, and kept across a change of
+a Relay's own Relay until a Relay of either chain stops being Managed; and a
+chain broken in the record, refused and never read as no Relay.
 [`resume_test.go`](../../internal/client/cli/resume_test.go) drops the
 Device Connection beneath an SSH Session with a
 [`harness.Forward`](../../internal/harness/forward.go), cut, which both

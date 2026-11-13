@@ -34,7 +34,7 @@ The one host key koko accepts from a Host, pinned when it is first Enrolled and 
 _Avoid_: known host, trusted key, fingerprint (alone)
 
 **Relay**:
-A Host the Gateway passes through to reach another Host.
+A Host the Gateway passes through to reach another Host. A Relay may have a Relay of its own, so the Gateway may pass through several to reach a Host.
 _Avoid_: jump host, bastion
 
 **Retired**:
