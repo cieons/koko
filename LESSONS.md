@@ -320,6 +320,18 @@ are bounded now as well, and log what they gave up on.
 **Evidence:** 6aa4712 (#215), 40f8f36 (#216); run 43443594550, attempt 2;
 #221
 
+### A test that fails a count of calls counts only calls it alone makes
+
+**Why:** a Shell test failed the next two calls of any operation, meant
+for a write and its retry, but the frame's release check for an Owner
+could come between them and take one, so the retry was answered and the
+notice that koko web had stopped never showed. Run alone, the test failed
+every time; in its file it passed, except once on CI's loaded runner.
+Fail every call until the test lets them through again, or count only
+once the frame's own reads are done.
+**Seen:** 1 (2026-11-13)
+**Evidence:** run 43443594550, attempt 1; #221
+
 ## Moved to the code standards
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128, #147; check run 42951455550).

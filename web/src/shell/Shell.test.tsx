@@ -721,8 +721,11 @@ test("a refusal shows koko web runs again, so the notice that it stopped goes", 
     throw refusal(CodeNameTaken, 409);
   });
   renderShell("/write", writeRoutes);
-  api.drop(2);
-  fireEvent.click(await screen.findByRole("button", { name: "revoke phone" }));
+  const revoke = await screen.findByRole("button", { name: "revoke phone" });
+  // Every call fails until drop(0), not a count of them: the frame's own
+  // reads, such as the release check's, would take a count's turns.
+  api.drop();
+  fireEvent.click(revoke);
   await screen.findByText("koko web is not running");
 
   api.drop(0);
