@@ -57,7 +57,9 @@ irreversible tier: it prints a credential, its token.
    `timing.CommandWait` for it ([the Device Mux](device-mux.md)). A browser
    connection whose channel cannot open gets `502 Bad Gateway` with a
    plain-text body naming the failure, as stderr does, not a reset
-   ([`badGateway`](../../internal/client/cli/web.go)). A running
+   ([`badGateway`](../../internal/client/cli/web.go)). It gets it only
+   once `koko web` has read its request, since a browser fails a call
+   whose answer came before the request was under way. A running
    `koko web` is a command connected to the Device Mux, so it keeps the
    Device Mux from idling out, with or without a browser connection open.
 6. **The end** ([`webEnded`](../../internal/client/cli/web.go)). It runs
@@ -563,7 +565,8 @@ and user. It is per OS ([rule 13](code-layout.md#rules-for-working-in-parallel))
   ends, revoked: a 16 MB answer the browser reads only after the end
   reaching it in full, and a browser that reads nothing keeping the
   forwarder no longer than `timing.PassOn`; and over one that opens no
-  channel, a browser's call getting `502 Bad Gateway` in plain text.
+  channel, a browser's call getting `502 Bad Gateway` in plain text, and a
+  connection that ends without a request getting no answer.
 - `web.start`'s rows in the [access matrix](access.md), `device_only` for a
   Sign-in among them, and its refusal of a Revoked Device Session in
   [`revoked_test.go`](../../internal/server/revoked_test.go).

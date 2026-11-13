@@ -81,6 +81,26 @@ func TestKokoWebAnswersAConnectionItCannotCarryWithBadGateway(t *testing.T) {
 	}
 }
 
+// koko web answers a browser connection it cannot carry only once it has
+// read the request: an answer sent before it reaches a browser whose request
+// is not yet under way, which takes it for one on an idle connection and
+// fails the call. A connection that ends without a request gets no answer.
+func TestKokoWebAnswersAConnectionItCannotCarryOnlyOnceItHasTheRequest(t *testing.T) {
+	t.Parallel()
+	_, port := serveForwarder(t, refusingConn{ended: t.Context().Done()}, timing.PassOn)
+	c := dialBrowser(t, port)
+	if err := c.(*net.TCPConn).CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(c)
+	if err != nil {
+		t.Fatalf("read koko web's answer to a connection that sent no request: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("koko web answered a connection that sent no request with %q, want nothing", got)
+	}
+}
+
 // serveForwarder runs koko web's forwarder over conn on a port of its own,
 // letting each browser connection pass on what the koko server sent for
 // passOn once conn ends, and returns what serve returns and the port.

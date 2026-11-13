@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -312,18 +313,26 @@ func (f forwarder) pipe(ctx context.Context, c net.Conn) {
 }
 
 // badGatewayWait bounds how long koko web takes over a browser connection it
-// cannot carry: to answer it and to read what the browser sends until it
-// closes.
+// cannot carry: to read its request, answer it and read what the browser
+// sends until it closes.
 const badGatewayWait = 5 * time.Second
 
 // badGateway answers the browser connection c, which koko web could not
 // carry to the koko server for err, with 502 Bad Gateway and a plain-text
 // body, so a browser's console and a reverse proxy's log say what happened.
-// It then reads what the browser sent until the browser closes, within
-// badGatewayWait: a connection closed with its request unread is reset,
-// and the reset can take the answer with it.
+// It answers only once it has read the request's head: a browser takes an
+// answer that comes before its request is under way for one on an idle
+// connection and fails the call, so a connection that ends without a
+// request gets no answer. It then reads what the browser sends until the
+// browser closes, within badGatewayWait: a connection closed with what the
+// browser sent unread is reset, and the reset can take the answer with it.
 func badGateway(c net.Conn, err error) {
 	_ = c.SetDeadline(time.Now().Add(badGatewayWait))
+	br := bufio.NewReader(c)
+	req, rerr := http.ReadRequest(br)
+	if rerr != nil {
+		return
+	}
 	body := fmt.Sprintf("koko web could not carry this connection to the koko server: %v\n", err)
 	res := &http.Response{
 		StatusCode: http.StatusBadGateway,
@@ -337,6 +346,7 @@ func badGateway(c net.Conn, err error) {
 		ContentLength: int64(len(body)),
 		Body:          io.NopCloser(strings.NewReader(body)),
 		Close:         true,
+		Request:       req,
 	}
 	if res.Write(c) != nil {
 		return
@@ -344,5 +354,5 @@ func badGateway(c net.Conn, err error) {
 	if hc, ok := c.(interface{ CloseWrite() error }); ok {
 		_ = hc.CloseWrite()
 	}
-	_, _ = io.Copy(io.Discard, c)
+	_, _ = io.Copy(io.Discard, br)
 }
