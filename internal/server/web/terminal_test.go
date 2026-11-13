@@ -100,25 +100,29 @@ func TestTheTerminalRefusesBeforeTheUpgrade(t *testing.T) {
 	host := terminalHost(t, h, "web1", nil)
 	conns := host.Conns()
 
-	a := send(t, h, request{method: http.MethodGet, path: "/terminal/socket", host: "koko.example.com", origin: webURL})
-	wantPage(t, a, http.StatusUpgradeRequired, "web terminal's WebSocket")
-	wantSecurityHeaders(t, a.Header)
-	if a.Header.Get("Upgrade") != "websocket" {
-		t.Errorf("the 426 answer's Upgrade header is %q, want websocket", a.Header.Get("Upgrade"))
+	for _, path := range []string{"/terminal/socket", "/terminal/workspace"} {
+		a := send(t, h, request{method: http.MethodGet, path: path, host: "koko.example.com", origin: webURL})
+		wantPage(t, a, http.StatusUpgradeRequired, "web terminal's WebSocket")
+		wantSecurityHeaders(t, a.Header)
+		if a.Header.Get("Upgrade") != "websocket" {
+			t.Errorf("%s: the 426 answer's Upgrade header is %q, want websocket", path, a.Header.Get("Upgrade"))
+		}
 	}
 
 	for _, origin := range []string{"https://evil.example", "", "http://koko.example.com", "https://koko.example.com:8443"} {
 		p := h.SignIn(harness.Owner).TerminalPage()
 		p.Origin = origin
-		c, refused, err := p.Dial()
-		if err == nil {
-			_ = c.CloseNow()
-			t.Errorf("a WebSocket from the Origin %q was accepted", origin)
-			continue
-		}
-		if refused.Response == nil || refused.StatusCode != http.StatusForbidden || refused.Header.Get("Content-Security-Policy") == "" ||
-			!strings.Contains(refused.Body, "came from no page of this koko server") {
-			t.Errorf("a WebSocket from the Origin %q was refused with %+v, want a 403 page with the listener's headers", origin, refused)
+		for name, dial := range map[string]func() (*websocket.Conn, harness.Answer, error){"terminal": p.Dial, "Workspace": p.DialWorkspaceSocket} {
+			c, refused, err := dial()
+			if err == nil {
+				_ = c.CloseNow()
+				t.Errorf("a %s socket from the Origin %q was accepted", name, origin)
+				continue
+			}
+			if refused.Response == nil || refused.StatusCode != http.StatusForbidden || refused.Header.Get("Content-Security-Policy") == "" ||
+				!strings.Contains(refused.Body, "came from no page of this koko server") {
+				t.Errorf("a %s socket from the Origin %q was refused with %+v, want a 403 page with the listener's headers", name, origin, refused)
+			}
 		}
 	}
 	if got := host.Conns(); got != conns {
@@ -127,52 +131,67 @@ func TestTheTerminalRefusesBeforeTheUpgrade(t *testing.T) {
 }
 
 // After the upgrade, the first message's answer refuses a page out of date
-// (reload_page), a browser not signed in and one whose Sign-in has ended
-// (signin_required), then the WebSocket closes with status 1008; a
-// malformed first message closes it with 1008 alone. No Host is dialled for
-// any of them.
+// (reload_page), a protocol 1 page among them, a browser not signed in and
+// one whose Sign-in has ended (signin_required), on the terminal socket
+// and the Workspace socket alike, then the WebSocket closes with status
+// 1008; a malformed first message closes it with 1008 alone, protocol 1's
+// open and end among them. No Host is dialled for any of them.
 func TestTheTerminalRefusesInItsFirstAnswer(t *testing.T) {
 	t.Parallel()
 	h := startTerminals(t)
 	host := terminalHost(t, h, "web1", nil)
 	conns := host.Conns()
 	b := h.SignIn(harness.Owner)
-	open := wire.TerminalFirst{Protocol: wire.TerminalProtocol, Open: "web1", Cols: 80, Rows: 24}
+	attach := wire.TerminalFirst{Protocol: wire.TerminalProtocol, Attach: strings.Repeat("0", 32), Cols: 80, Rows: 24}
 
-	stale := open
-	stale.Protocol = wire.TerminalProtocol + 1
-	_, a, status := b.TerminalPage().Exchange(stale)
-	wantRefused(t, a, wire.TerminalReloadPage, "this page is out of date: reload it")
-	if status != websocket.StatusPolicyViolation {
-		t.Errorf("reload_page closed with %d, want 1008", status)
+	for _, protocol := range []int{1, wire.TerminalProtocol + 1} {
+		stale := attach
+		stale.Protocol = protocol
+		_, a, status := b.TerminalPage().Exchange(stale)
+		wantRefused(t, a, wire.TerminalReloadPage, "this page is out of date: reload it")
+		if status != websocket.StatusPolicyViolation {
+			t.Errorf("reload_page closed the terminal socket with %d, want 1008", status)
+		}
+		ws, a, status := b.TerminalPage().DialWorkspace(protocol)
+		if ws != nil {
+			t.Fatalf("a Workspace socket of protocol %d was answered with the Workspace", protocol)
+		}
+		wantRefused(t, a, wire.TerminalReloadPage, "this page is out of date: reload it")
+		if status != websocket.StatusPolicyViolation {
+			t.Errorf("reload_page closed the Workspace socket with %d, want 1008", status)
+		}
 	}
 
-	_, a, status = h.Browser().TerminalPage().Exchange(open)
-	wantRefused(t, a, "signin_required", "this browser is not signed in, or its Sign-in has ended: sign in again")
-	if status != websocket.StatusPolicyViolation {
-		t.Errorf("signin_required closed with %d, want 1008", status)
-	}
 	out := signInAgain(t, h, harness.Owner)
 	page := out.TerminalPage()
 	out.Do(http.MethodPost, "/auth/signout", "{}")
-	_, a, _ = page.Exchange(open)
-	wantRefused(t, a, "signin_required", "this browser is not signed in, or its Sign-in has ended: sign in again")
+	for _, p := range []*harness.TerminalPage{h.Browser().TerminalPage(), page} {
+		_, a, status := p.Exchange(attach)
+		wantRefused(t, a, "signin_required", "this browser is not signed in, or its Sign-in has ended: sign in again")
+		if status != websocket.StatusPolicyViolation {
+			t.Errorf("signin_required closed with %d, want 1008", status)
+		}
+		_, a, _ = p.DialWorkspace(wire.TerminalProtocol)
+		wantRefused(t, a, "signin_required", "this browser is not signed in, or its Sign-in has ended: sign in again")
+	}
 
 	for name, msg := range map[string]string{
-		"not JSON":          "open web1",
-		"two things":        `{"protocol": 1, "open": "web1", "cols": 80, "rows": 24, "end": "` + strings.Repeat("0", 32) + `"}`,
-		"a size of 0":       `{"protocol": 1, "open": "web1", "cols": 0, "rows": 24}`,
-		"an id not hex":     `{"protocol": 1, "resume": "` + strings.Repeat("g", 32) + `", "offset": 0}`,
-		"over 4 KiB":        `{"protocol": 1, "open": "` + strings.Repeat("w", 5000) + `", "cols": 80, "rows": 24}`,
+		"not JSON":          "attach web1",
+		"two things":        `{"protocol": 2, "attach": "` + strings.Repeat("0", 32) + `", "cols": 80, "rows": 24, "resume": "` + strings.Repeat("0", 32) + `"}`,
+		"a size of 0":       `{"protocol": 2, "attach": "` + strings.Repeat("0", 32) + `", "cols": 0, "rows": 24}`,
+		"an id not hex":     `{"protocol": 2, "resume": "` + strings.Repeat("g", 32) + `", "offset": 0}`,
+		"over 4 KiB":        `{"protocol": 2, "attach": "` + strings.Repeat("w", 5000) + `", "cols": 80, "rows": 24}`,
 		"binary, not text":  "",
-		"an id of 31 chars": `{"protocol": 1, "end": "` + strings.Repeat("0", 31) + `"}`,
+		"an id of 31 chars": `{"protocol": 2, "attach": "` + strings.Repeat("0", 31) + `", "cols": 80, "rows": 24}`,
+		"an open":           `{"protocol": 2, "open": "web1", "cols": 80, "rows": 24}`,
+		"an end":            `{"protocol": 2, "end": "` + strings.Repeat("0", 32) + `"}`,
 	} {
 		c, _, err := b.TerminalPage().Dial()
 		if err != nil {
 			t.Fatal(err)
 		}
 		if msg == "" {
-			err = c.Write(t.Context(), websocket.MessageBinary, []byte(`{"protocol": 1, "open": "web1", "cols": 80, "rows": 24}`))
+			err = c.Write(t.Context(), websocket.MessageBinary, []byte(`{"protocol": 2, "attach": "`+strings.Repeat("0", 32)+`", "cols": 80, "rows": 24}`))
 		} else {
 			err = c.Write(t.Context(), websocket.MessageText, []byte(msg))
 		}
@@ -194,20 +213,25 @@ func TestATerminalWithoutAFirstMessageIsClosed(t *testing.T) {
 	t.Parallel()
 	// The first message never comes, so its wait is shortened.
 	h := startTerminals(t, harness.Timings(timing.Timings{FirstMessage: 300 * time.Millisecond}))
-	c, _, err := h.SignIn(harness.Owner).TerminalPage().Dial()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := harness.CloseStatus(t.Context(), c); got != websocket.StatusPolicyViolation {
-		t.Errorf("a WebSocket without a first message closed with %d, want 1008", got)
+	p := h.SignIn(harness.Owner).TerminalPage()
+	for name, dial := range map[string]func() (*websocket.Conn, harness.Answer, error){"terminal": p.Dial, "Workspace": p.DialWorkspaceSocket} {
+		c, _, err := dial()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := harness.CloseStatus(t.Context(), c); got != websocket.StatusPolicyViolation {
+			t.Errorf("a %s socket without a first message closed with %d, want 1008", name, got)
+		}
 	}
 }
 
 // An open runs a shell on the Host as its Host Account, logged in with the
 // koko key, on a session channel with a pty: TERM xterm-256color, the
-// page's size, pixel sizes 0 and IUTF8 on. 4 MiB pass each way byte for
-// byte, a resize becomes a window-change, and the shell's exit status, or
-// the signal that ended it, comes as its record before the stream's close.
+// page's size, pixel sizes 0 and IUTF8 on. 1 MiB passes each way byte for
+// byte, within what the stream's buffer holds so the page never falls
+// behind, a resize of the active page becomes a window-change, and the
+// shell's exit status, or the signal that ended it, comes as its record
+// before the stream's close.
 func TestATerminalRunsAShellOnThePty(t *testing.T) {
 	t.Parallel()
 	h := startTerminals(t)
@@ -244,18 +268,27 @@ func TestATerminalRunsAShellOnThePty(t *testing.T) {
 
 	w.Type([]byte("echo ready; exec cat\n"))
 	w.WaitOutput("ready\n")
-	data := make([]byte, 4<<20)
+	data := make([]byte, 1<<20)
 	_, _ = rand.Read(data)
+	for i, c := range data {
+		// No query for the koko server's emulator to answer into the
+		// shell's stdin, which cat would echo: no escape, no ENQ, no C1.
+		if c &= 0x7f; c == 0x1b || c == 0x05 {
+			c = 'x'
+		}
+		data[i] = c
+	}
 	typed := make(chan error, 1)
 	go func() {
 		_, err := w.Write(data)
 		typed <- err
 	}()
-	if out := w.WaitOutputLen(len("ready\n") + len(data)); !bytes.Equal(out[len("ready\n"):], data) {
-		t.Error("the 4 MiB cat echoed are not those sent")
+	w.WaitOutputLen(len("ready\n") + len(data))
+	if out := w.Live(); !bytes.Equal(out[len("ready\n"):], data) {
+		t.Error("the 1 MiB cat echoed are not those sent")
 	}
 	if err := <-typed; err != nil {
-		t.Errorf("send 4 MiB: %v", err)
+		t.Errorf("send 1 MiB: %v", err)
 	}
 
 	w.Resize(100, 40)
@@ -276,10 +309,14 @@ func TestATerminalRunsAShellOnThePty(t *testing.T) {
 	exits := p.Open("web1", 80, 24)
 	exits.Type([]byte("echo bye; exit 3\n"))
 	wantPeerClosed(t, exits.WaitEnd(), "")
-	if status, signal := exits.Exit(); status == nil || *status != 3 || signal != "" || string(exits.Output()) != "bye\n" {
-		t.Errorf("the shell that exited 3 sent %q, then the status %v and the signal %q", exits.Output(), status, signal)
+	if status, signal := exits.Exit(); status == nil || *status != 3 || signal != "" || string(exits.Live()) != "bye\n" {
+		t.Errorf("the shell that exited 3 sent %q, then the status %v and the signal %q", exits.Live(), status, signal)
 	}
 	waitLog(t, h, `msg="ssh session ended" tunnel=`+exits.ID+` client=browser .* exit_status=3 reason="shell ended"\n`)
+	tab := p.Workspace().WaitTab(exits.Tab, "ended", func(tab wire.WorkspaceTab) bool { return tab.State == wire.TabStateEnded })
+	if e := tab.Ended; e == nil || e.Reason != "shell ended" || e.ExitStatus == nil || *e.ExitStatus != 3 || e.Notice != "" {
+		t.Errorf("the tab of the shell that exited 3 is %+v, want it ended with the exit status", tab)
+	}
 
 	killed := p.Open("web1", 80, 24)
 	killed.Type([]byte("kill -KILL $$\n"))
@@ -444,45 +481,42 @@ func notSSH(t *testing.T) int {
 	return ln.Addr().(*net.TCPAddr).Port
 }
 
-// A Sign-in holds at most 16 SSH Sessions at once: the 17th is refused
-// without a connection to the Host, until one of the 16 ends, as a
-// reloaded page's end of an old one does before it is answered. Another
-// Sign-in of the same User holds its own.
-func TestASignInHoldsAtMost16SSHSessions(t *testing.T) {
+// A Workspace holds at most 16 tabs, whichever page of the User opens
+// them: the 17th is refused without a connection to the Host, until one
+// is closed. Pages of another Sign-in of the same User share the 16.
+func TestAWorkspaceHoldsAtMost16Tabs(t *testing.T) {
 	t.Parallel()
 	h := startTerminals(t)
 	host := terminalHost(t, h, "web1", nil)
 	p := h.SignIn(harness.Owner).TerminalPage()
+	other := signInAgain(t, h, harness.Owner).TerminalPage()
 	open := make([]*harness.WebTerminal, 16)
 	for i := range open {
-		open[i] = p.Open("web1", 80, 24)
+		page := p
+		if i%2 == 1 {
+			page = other
+		}
+		open[i] = page.Open("web1", 80, 24)
 	}
 	conns := host.Conns()
-	_, a := p.TryOpen("web1", 80, 24)
-	wantRefused(t, a, wire.TerminalSSHSessionLimit, "this Sign-in already has 16 SSH Sessions open, the most koko allows; this SSH Session did not start.")
+	for _, page := range []*harness.TerminalPage{p, other} {
+		_, a := page.TryOpen("web1", 80, 24)
+		wantRefused(t, a, wire.TerminalSSHSessionLimit, "this Workspace holds 16 tabs; close one first")
+	}
 	if host.Conns() != conns {
-		t.Error("the 17th SSH Session dialled the Host")
+		t.Error("the 17th tab dialled the Host")
 	}
 	waitLog(t, h, `msg="ssh session refused" tunnel=[0-9a-f]{32} client=browser name=web1 signin=signin_\w+ addr=192\.0\.2\.10 reason="ssh session limit"\n`)
-
-	signInAgain(t, h, harness.Owner).TerminalPage().Open("web1", 80, 24).Type([]byte("echo other\n"))
-
-	// Its place is free once it has left the koko server's registry, a
-	// moment after its end is logged.
-	open[0].Close()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if w, _ := p.TryOpen("web1", 80, 24); w != nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("no SSH Session opened within 10 s of one of the 16 closing")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if n := len(p.Workspace().Tabs()); n != 16 {
+		t.Errorf("the Workspace holds %d tabs, want 16", n)
 	}
 
-	if a, _ := p.End(open[1].ID); !a.Ended {
-		t.Fatalf("the end answered %+v", a)
+	// A page that leaves frees nothing; closing a tab does.
+	open[0].Close()
+	_, a := p.TryOpen("web1", 80, 24)
+	wantRefused(t, a, wire.TerminalSSHSessionLimit, "this Workspace holds 16 tabs; close one first")
+	if a := other.Workspace().CloseTab(open[0].Tab); a.Refused != "" {
+		t.Fatalf("the close was refused: %+v", a)
 	}
 	p.Open("web1", 80, 24)
 }
@@ -498,13 +532,13 @@ func signInAgain(t *testing.T, h *harness.Harness, user string) *harness.Browser
 	return b
 }
 
-// A resume from another address moves an SSH Session off a WebSocket the
-// koko server still holds, which a stalled path keeps, and which is never
-// Detached: the last attach wins. A Detached SSH Session Resumes on a new
-// WebSocket too. Across both, what the shell sent and the keys typed
-// meanwhile arrive once. Another Sign-in's resume of its id is refused
-// with an empty message, and an id the koko server never gave alike.
-func TestATerminalResumesByteForByte(t *testing.T) {
+// A resume from another address moves an attachment off a WebSocket the
+// koko server still holds, which a stalled path keeps: the last attach
+// wins. An attachment whose WebSocket dropped resumes on a new one within
+// the grace. Across both, what the shell sent and the keys typed meanwhile
+// arrive once. Another Sign-in's resume of its id is refused with an empty
+// message, and an id the koko server never gave alike.
+func TestAnAttachmentResumesByteForByte(t *testing.T) {
 	t.Parallel()
 	h := startTerminals(t)
 	terminalHost(t, h, "web1", nil)
@@ -522,116 +556,139 @@ func TestATerminalResumesByteForByte(t *testing.T) {
 	if a := b.TerminalPage().Resume(w); a.Refused != "" {
 		t.Fatalf("the resume was refused: %s", deref(a.Message))
 	}
-	waitLog(t, h, `msg="ssh session resumed" tunnel=`+w.ID+` client=browser signin=signin_\w+ addr=198\.51\.100\.7\n`)
+	waitLog(t, h, `msg="ssh session resumed" tunnel=`+w.ID+` client=browser tab=[0-9a-f]{32} attachment=`+w.Attachment+` signin=signin_\w+ addr=198\.51\.100\.7\n`)
 	w.Type([]byte("after\n"))
-	if out := w.WaitOutput("after\n"); string(out) != "ready\ntyped while cut off\nafter\n" {
-		t.Errorf("across the Resume the terminal got %q, want each line once", out)
-	}
-	if strings.Contains(h.Log(), `msg="ssh session detached" tunnel=`+w.ID) {
-		t.Error("a resume onto another WebSocket Detached the SSH Session")
+	w.WaitOutput("after\n")
+	if out := w.Live(); string(out) != "ready\ntyped while cut off\nafter\n" {
+		t.Errorf("across the resume the terminal got %q, want each line once", out)
 	}
 
 	w.Drop()
-	waitLog(t, h, `msg="ssh session detached" tunnel=`+w.ID+` client=browser signin=signin_\w+\n`)
-	w.Type([]byte("typed while Detached\n"))
+	w.Type([]byte("typed while dropped\n"))
 	if a := b.TerminalPage().Resume(w); a.Refused != "" {
 		t.Fatalf("the resume was refused: %s", deref(a.Message))
 	}
 	w.Type([]byte("again\n"))
-	if out := w.WaitOutput("again\n"); string(out) != "ready\ntyped while cut off\nafter\ntyped while Detached\nagain\n" {
-		t.Errorf("across the second Resume the terminal got %q, want each line once", out)
+	w.WaitOutput("again\n")
+	if out := w.Live(); string(out) != "ready\ntyped while cut off\nafter\ntyped while dropped\nagain\n" {
+		t.Errorf("across the second resume the terminal got %q, want each line once", out)
+	}
+	if strings.Contains(h.Log(), `msg="ssh session detached"`) {
+		t.Error("a resume within the grace detached the page")
 	}
 
 	other := signInAgain(t, h, harness.Owner).TerminalPage()
-	_, a, status := other.Exchange(wire.TerminalFirst{Protocol: wire.TerminalProtocol, Resume: w.ID, Offset: 0})
+	_, a, status := other.Exchange(wire.TerminalFirst{Protocol: wire.TerminalProtocol, Resume: w.Attachment, Offset: 0})
 	wantRefused(t, a, wire.TerminalResumeRefused, "")
 	if status != websocket.StatusPolicyViolation {
 		t.Errorf("the refused resume closed with %d, want 1008", status)
 	}
-	waitLog(t, h, `msg="ssh session resume refused" tunnel=`+w.ID+` client=browser signin=signin_\w+ addr=\S+ reason="unknown tunnel"\n`)
+	waitLog(t, h, `msg="ssh session resume refused" client=browser attachment=`+w.Attachment+` signin=signin_\w+ addr=\S+ reason="unknown attachment"\n`)
 	_, a, _ = other.Exchange(wire.TerminalFirst{Protocol: wire.TerminalProtocol, Resume: strings.Repeat("ab", 16), Offset: 0})
 	wantRefused(t, a, wire.TerminalResumeRefused, "")
 	w.Type([]byte("still\n"))
 	w.WaitOutput("still\n")
 }
 
-// The page's close ends the SSH Session as the client's close, and a later
-// page's end does too, answered once it has ended, a busy shell's whose page
-// is gone included; another Sign-in's end ends nothing, answered alike.
-func TestATerminalEnds(t *testing.T) {
+// A page's close of its stream only detaches it, and its SSH Session goes
+// on. Closing the tab, from any page of the User, ends it, at once though
+// a page attached to a busy shell reads nothing: every page's tab goes,
+// and the log names who closed it. A tab already gone is answered alike.
+func TestClosingATabEndsItsSSHSession(t *testing.T) {
 	t.Parallel()
-	// A call ends each terminal here, so the grace keeps the product's
-	// timing: shortened, it could end a Detached one before the call comes
-	// (#187).
-	h := startTerminals(t)
+	// A page that reads nothing never takes its last records, so the wait
+	// for it is shortened.
+	h := startTerminals(t, harness.Timings(timing.Timings{StopNotice: 200 * time.Millisecond}))
 	terminalHost(t, h, "web1", nil)
 	b := h.SignIn(harness.Owner)
+	p := b.TerminalPage()
+	other := signInAgain(t, h, harness.Owner).TerminalPage()
 
-	closed := b.TerminalPage().Open("web1", 80, 24)
-	closed.Close()
-	waitLog(t, h, `msg="ssh session ended" tunnel=`+closed.ID+` client=browser user=alice signin=signin_\w+ host=web1 host_id=host_\w+ duration=\S+ bytes_from_device=\d+ bytes_to_device=\d+ reason="client closed"\n`)
+	left := p.Open("web1", 80, 24)
+	left.Close()
+	waitLog(t, h, `msg="ssh session detached" tunnel=`+left.ID+` client=browser tab=`+left.Tab+` attachment=`+left.Attachment+` signin=signin_\w+ addr=192\.0\.2\.10 reason="page left"\n`)
+	again := other.Attach(left.ID, 80, 24)
+	again.Type([]byte("echo kept\n"))
+	again.WaitOutput("kept\n")
 
-	kept := b.TerminalPage().Open("web1", 80, 24)
-	a, status := signInAgain(t, h, harness.Owner).TerminalPage().End(kept.ID)
-	if !a.Ended || status != websocket.StatusNormalClosure {
-		t.Errorf("another Sign-in's end answered %+v and closed with %d, want ended and 1000", a, status)
+	if a := other.Workspace().CloseTab(left.Tab); a.Refused != "" {
+		t.Fatalf("the close was refused: %+v", a)
 	}
-	kept.Type([]byte("echo kept\n"))
-	kept.WaitOutput("kept\n")
-
-	a, status = b.TerminalPage().End(kept.ID)
-	if !a.Ended || status != websocket.StatusNormalClosure {
-		t.Errorf("the end answered %+v and closed with %d, want ended and 1000", a, status)
+	wantPeerClosed(t, again.WaitEnd(), "")
+	for _, page := range []*harness.TerminalPage{p, other} {
+		page.Workspace().WaitTabs("no tab", func(tabs []wire.WorkspaceTab) bool { return len(tabs) == 0 })
 	}
-	if !regexp.MustCompile(`msg="ssh session ended" tunnel=` + kept.ID + ` .* reason="client closed"\n`).MatchString(h.Log()) {
-		t.Errorf("the end was answered before the SSH Session ended as the client's close:\n%s", h.Log())
+	waitLog(t, h, `msg="ssh session ended" tunnel=`+left.ID+` client=browser user=alice signin=signin_\w+ host=web1 host_id=host_\w+ tab=`+left.Tab+` duration=\S+ bytes_from_device=\d+ bytes_to_device=\d+ closed_by=signin_\w+ reason="tab closed"\n`)
+	if a := p.Workspace().CloseTab(left.Tab); a.Refused != "" {
+		t.Errorf("the close of a tab already gone was answered %+v", a)
 	}
 
-	// A shell that keeps writing fills the stream's buffer once its page
-	// is gone: an end ends its SSH Session all the same.
-	ended := detachBusy(t, h, b)
-	if a, _ := b.TerminalPage().End(ended.ID); !a.Ended {
-		t.Errorf("the end of a busy terminal answered %+v", a)
+	// A shell that keeps writing to a page that reads nothing fills the
+	// page's buffer: closing its tab ends it all the same, at once.
+	busy := p.Open("web1", 80, 24)
+	watcher := other.Attach(busy.ID, 80, 24)
+	busy.Type([]byte("yes\n"))
+	busy.WaitOutputLen(64 << 10)
+	busy.StopReading()
+	// Past what the stream's buffer and the queue hold for the page that
+	// reads nothing, its writer waits for room.
+	watcher.WaitOutputLen(len(watcher.Output()) + resumable.MaxBuffer + 1<<20)
+	start := time.Now()
+	if a := other.Workspace().CloseTab(busy.Tab); a.Refused != "" {
+		t.Fatalf("the close was refused: %+v", a)
 	}
-	waitLog(t, h, `msg="ssh session ended" tunnel=`+ended.ID+` .* reason="client closed"\n`)
+	waitLog(t, h, `msg="ssh session ended" tunnel=`+busy.ID+` .* reason="tab closed"\n`)
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("closing the tab of a page that reads nothing took %v", took)
+	}
+	// Its stream closed while the page read nothing, which released the
+	// writer waiting for room.
+	wantPeerClosed(t, busy.WaitStreamEnd(), "")
+	busy.ReadAgain()
 }
 
-// An SSH Session Detached for its grace ends, a busy shell's too, and its
-// resume is then refused with an empty message.
-func TestADetachedTerminalEndsAtItsGrace(t *testing.T) {
+// A page whose WebSocket dropped is detached once the grace has passed,
+// a busy shell's too, and its resume is then refused with an empty
+// message; the SSH Session goes on, and a new attach gets it.
+func TestADroppedPageDetachesAtItsGrace(t *testing.T) {
 	t.Parallel()
-	// Nothing but the grace ends these terminals, so it is shortened.
-	h := startTerminals(t, harness.Timings(timing.Timings{BrowserGrace: 200 * time.Millisecond}))
+	// Nothing but the grace detaches these pages, so it is shortened.
+	h := startTerminals(t, harness.Timings(timing.Timings{Grace: 200 * time.Millisecond}))
 	terminalHost(t, h, "web1", nil)
 	b := h.SignIn(harness.Owner)
 
 	held := b.TerminalPage().Open("web1", 80, 24)
 	held.Drop()
-	waitLog(t, h, `msg="ssh session ended" tunnel=`+held.ID+` .* reason="grace over"\n`)
+	waitLog(t, h, `msg="ssh session detached" tunnel=`+held.ID+` .* attachment=`+held.Attachment+` .* reason="page left"\n`)
 	wantRefused(t, b.TerminalPage().Resume(held), wire.TerminalResumeRefused, "")
+	back := b.TerminalPage().Attach(held.ID, 80, 24)
+	back.Type([]byte("echo back\n"))
+	back.WaitOutput("back\n")
 
 	graced := detachBusy(t, h, b)
-	waitLog(t, h, `msg="ssh session ended" tunnel=`+graced.ID+` .* reason="grace over"\n`)
+	waitLog(t, h, `msg="ssh session detached" .* attachment=`+graced.Attachment+` .* reason="page left"\n`)
+	if strings.Contains(h.Log(), `msg="ssh session ended"`) {
+		t.Errorf("a page's drop ended its SSH Session:\n%s", h.Log())
+	}
 }
 
-// detachBusy opens a terminal on web1 whose shell keeps writing, drops its
-// page once 64 KiB of the output has reached it, and returns once the SSH
-// Session is Detached, while the shell's output fills the stream's buffer.
+// detachBusy opens a terminal on web1 whose shell keeps writing, and drops
+// its page once 64 KiB of the output has reached it, while the shell's
+// output fills the stream's buffer.
 func detachBusy(t *testing.T, h *harness.Harness, b *harness.Browser) *harness.WebTerminal {
 	t.Helper()
 	w := b.TerminalPage().Open("web1", 80, 24)
 	w.Type([]byte("yes\n"))
 	w.WaitOutputLen(64 << 10)
 	w.Drop()
-	waitLog(t, h, `msg="ssh session detached" tunnel=`+w.ID+` `)
 	return w
 }
 
 // The Gateway watches a terminal's WebSocket, as the page does: an idle one
 // stays attached, since each end probes the other after a silence, which
 // reaches the page; one whose path stalls is found dead ServerDead after
-// the last byte that reached the koko server, and Detached; one cut is
-// Detached at once. Each Resumes byte for byte.
+// the last byte that reached the koko server, and dropped; one cut is
+// dropped at once. Each attachment resumes byte for byte.
 func TestTheGatewayWatchesATerminalsWebSocket(t *testing.T) {
 	// Not parallel: it holds a terminal idle for a set time.
 	const probe, dead = 100 * time.Millisecond, time.Second
@@ -640,20 +697,22 @@ func TestTheGatewayWatchesATerminalsWebSocket(t *testing.T) {
 	b := h.SignIn(harness.Owner)
 	f := harness.Forward(t, h.WebAddress())
 	p := b.TerminalPage()
-	p.Addr, p.Probe = f.Addr(), probe/2
+	p.Probe = probe / 2
+	p.Workspace() // not through the forwarder, which stalls the terminal socket alone
+	p.Addr = f.Addr()
 	w := p.Open("web1", 80, 24)
 	w.Type([]byte("echo ready; exec cat\n"))
 	w.WaitOutput("ready\n")
 
 	time.Sleep(2*dead + dead/2)
-	if strings.Contains(h.Log(), "ssh session detached") {
-		t.Errorf("an idle terminal whose page probes was Detached:\n%s", h.Log())
+	if strings.Contains(h.Log(), "web terminal dropped") {
+		t.Errorf("an idle terminal whose page probes was dropped:\n%s", h.Log())
 	}
 	passed := f.Stall()
 	if quiet := time.Since(passed.Back); quiet > dead/2 {
 		t.Errorf("the Gateway sent an idle page nothing for %v", quiet)
 	}
-	waitLog(t, h, `msg="ssh session detached" tunnel=`+w.ID+` `)
+	waitLog(t, h, `msg="web terminal found dead" tunnel=`+w.ID+` `)
 	if after := time.Since(passed.Out); after < dead {
 		t.Errorf("the Gateway took the page for dead %v after its last byte, before %v", after, dead)
 	}
@@ -665,11 +724,11 @@ func TestTheGatewayWatchesATerminalsWebSocket(t *testing.T) {
 
 	detaches := func(n int) {
 		t.Helper()
-		line := regexp.MustCompile(`msg="ssh session detached" tunnel=` + w.ID + ` `)
+		line := regexp.MustCompile(`msg="web terminal dropped" tunnel=` + w.ID + ` `)
 		deadline := time.Now().Add(10 * time.Second)
 		for len(line.FindAllString(h.Log(), -1)) < n {
 			if time.Now().After(deadline) {
-				t.Fatalf("the SSH Session was not Detached %d times within 10 s:\n%s", n, h.Log())
+				t.Fatalf("the page was not dropped %d times within 10 s:\n%s", n, h.Log())
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -688,22 +747,25 @@ func TestTheGatewayWatchesATerminalsWebSocket(t *testing.T) {
 		t.Fatalf("the resume after the cut was refused: %s", deref(a.Message))
 	}
 	w.Type([]byte("after\n"))
-	if out := w.WaitOutput("after\n"); string(out) != "ready\nwhile stalled\ncut\nafter\n" {
+	w.WaitOutput("after\n")
+	if out := w.Live(); string(out) != "ready\nwhile stalled\ncut\nafter\n" {
 		t.Errorf("across the drops the terminal got %q, want each line once", out)
 	}
 }
 
-// Stopping the koko server gives each web terminal the restart notice, as a
-// line and as the stream's close, before the web listener closes: while a
-// call in flight is still open on it. A page too stalled to take its notice
-// is cut once StopNotice has passed, a terminal whose Host sits on its
-// session's open ends, and the stop goes on.
+// Stopping the koko server gives each web terminal's page the restart
+// notice, as a line and as the stream's close, and each Workspace socket
+// stopping, before the web listener closes: while a call in flight is still
+// open on it. A page too stalled to take its notice is cut once StopNotice
+// has passed, a terminal whose Host sits on its session's open ends, and
+// the stop goes on.
 func TestStoppingGivesEachTerminalTheRestartNotice(t *testing.T) {
 	t.Parallel()
 	h := startTerminals(t)
 	terminalHost(t, h, "web1", nil)
 	b := h.SignIn(harness.Owner)
-	live := b.TerminalPage().Open("web1", 80, 24)
+	page := b.TerminalPage()
+	live := page.Open("web1", 80, 24)
 	f := harness.Forward(t, h.WebAddress())
 	p := b.TerminalPage()
 	p.Addr = f.Addr()
@@ -715,12 +777,8 @@ func TestStoppingGivesEachTerminalTheRestartNotice(t *testing.T) {
 	loaded := terminalHost(t, h, "loaded", nil)
 	loaded.HoldChannels()
 	opens := len(loaded.Requests())
-	opening, _, err := b.TerminalPage().Dial()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := opening.Write(t.Context(), websocket.MessageText, []byte(`{"protocol": 1, "open": "loaded", "cols": 80, "rows": 24}`)); err != nil {
-		t.Fatal(err)
+	if a := page.Workspace().Open("loaded", 80, 24); a.Tab == "" {
+		t.Fatalf("the open of a Host that holds its channels was answered %+v, want its tab", a)
 	}
 	deadline := time.Now().Add(10 * time.Second)
 	for len(loaded.Requests()) == opens {
@@ -750,8 +808,11 @@ func TestStoppingGivesEachTerminalTheRestartNotice(t *testing.T) {
 	}()
 	const notice = "the koko server is restarting; this SSH Session has ended."
 	wantPeerClosed(t, live.WaitEnd(), notice)
-	if out := string(live.Output()); out != "\r\nkoko: "+notice+"\r\n" {
+	if out := string(live.Live()); out != "\r\nkoko: "+notice+"\r\n" {
 		t.Errorf("the terminal got %q, want the notice on a line of its own", out)
+	}
+	if got := page.Workspace().WaitStopping(); got != "the koko server is restarting" {
+		t.Errorf("the Workspace socket was told %q as the koko server stopped", got)
 	}
 	_ = held.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
 	if _, err := held.Read(make([]byte, 1)); !errors.Is(err, os.ErrDeadlineExceeded) {
@@ -768,41 +829,51 @@ func TestStoppingGivesEachTerminalTheRestartNotice(t *testing.T) {
 	if !regexp.MustCompile(`msg="ssh session ended" tunnel=` + stalled.ID + ` .* reason="server stopping"\n`).MatchString(h.Log()) {
 		t.Errorf("the stalled terminal did not end as the koko server stopped:\n%s", h.Log())
 	}
-	if _, _, err := opening.Read(t.Context()); err == nil {
-		t.Error("the terminal whose Host held its open got an answer as the koko server stopped")
-	}
 }
 
-// Bytes from the page that are no terminal record end the SSH Session: the
-// stream closes saying so.
-func TestAMalformedRecordEndsTheTerminal(t *testing.T) {
+// Bytes from the page that are no terminal record detach that page alone:
+// its stream closes saying so, and the SSH Session goes on.
+func TestAMalformedRecordDetachesThePage(t *testing.T) {
 	t.Parallel()
 	h := startTerminals(t)
 	terminalHost(t, h, "web1", nil)
-	w := h.SignIn(harness.Owner).TerminalPage().Open("web1", 80, 24)
-	w.Send([]byte{0x07, 0x00})
+	p := h.SignIn(harness.Owner).TerminalPage()
+	w := p.Open("web1", 80, 24)
+	w.Send([]byte{0x08, 0x00})
 	err := w.WaitEnd()
 	if e, ok := errors.AsType[*resumable.PeerClosedError](err); !ok || !strings.Contains(e.Reason, "malformed terminal record") {
 		t.Errorf("the stream ended with %v, want a close saying the record is malformed", err)
 	}
-	waitLog(t, h, `msg="ssh session ended" tunnel=`+w.ID+` .* reason="malformed record"\n`)
+	waitLog(t, h, `msg="ssh session detached" tunnel=`+w.ID+` .* attachment=`+w.Attachment+` .* reason="malformed record"\n`)
+	again := p.Attach(w.ID, 80, 24)
+	again.Type([]byte("echo on\n"))
+	again.WaitOutput("on\n")
 }
 
-// The log names a web terminal's SSH Session as the browser's: client,
-// signin and the proxy's address of the page, and no line nor answer holds
-// the cookie.
+// The log names a web terminal's SSH Session as the browser's, with its
+// tab: client, signin and the proxy's address of the page; each page's
+// attach and detach with its attachment; who closed the tab; and no line
+// nor answer holds the cookie.
 func TestTheTerminalLogLines(t *testing.T) {
 	t.Parallel()
 	h := startTerminals(t)
 	terminalHost(t, h, "web1", nil)
 	b := h.SignIn(harness.Owner)
-	w := b.TerminalPage().Open("web1", 80, 24)
+	p := b.TerminalPage()
+	w := p.Open("web1", 80, 24)
 	w.Type([]byte("echo hi\n"))
 	w.WaitOutput("hi\n")
 	w.Close()
-	waitLog(t, h, `level=INFO msg="ssh session started" tunnel=`+w.ID+` client=browser user=alice signin=signin_\w+ host=web1 host_id=host_\w+ addr=192\.0\.2\.10\n`)
+	waitLog(t, h, `level=INFO msg="ssh session detached" tunnel=`+w.ID+` client=browser tab=`+w.Tab+` attachment=`+w.Attachment+` signin=signin_\w+ addr=192\.0\.2\.10 reason="page left"\n`)
+	if a := p.Workspace().CloseTab(w.Tab); a.Refused != "" {
+		t.Fatalf("the close was refused: %+v", a)
+	}
+	waitLog(t, h, `level=DEBUG msg="workspace tab opened" user=user_\w+ tab=`+w.Tab+` host=web1 signin=signin_\w+\n`)
+	waitLog(t, h, `level=INFO msg="ssh session started" tunnel=`+w.ID+` client=browser user=alice signin=signin_\w+ host=web1 host_id=host_\w+ addr=192\.0\.2\.10 tab=`+w.Tab+`\n`)
 	waitLog(t, h, `level=INFO msg="ssh session request" tunnel=`+w.ID+` client=browser host=web1 request=shell\n`)
-	waitLog(t, h, `msg="ssh session ended" tunnel=`+w.ID+` client=browser .* reason="client closed"\n`)
+	waitLog(t, h, `level=INFO msg="ssh session attached" tunnel=`+w.ID+` client=browser tab=`+w.Tab+` attachment=`+w.Attachment+` signin=signin_\w+ addr=192\.0\.2\.10\n`)
+	waitLog(t, h, `level=DEBUG msg="workspace tab closed" user=user_\w+ tab=`+w.Tab+` label=web1 signin=signin_\w+\n`)
+	waitLog(t, h, `msg="ssh session ended" tunnel=`+w.ID+` client=browser .* tab=`+w.Tab+` .* closed_by=signin_\w+ reason="tab closed"\n`)
 	if strings.Contains(h.Log(), b.Cookie) || strings.Contains(string(w.Output()), b.Cookie) {
 		t.Error("the cookie is in the log or the terminal's output")
 	}

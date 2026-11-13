@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,6 +20,11 @@ import (
 // only a new protocol. The TypeScript end's test reads the same file.
 func TestTheTerminalRecordsAreRecordedByProtocol(t *testing.T) {
 	t.Parallel()
+	type malformed struct {
+		what  string
+		bytes []byte
+	}
+	// Protocol 1's records, and the bytes it read as no record.
 	records := []wire.TerminalRecord{
 		{Type: wire.TerminalData, Data: []byte("hi")},
 		{Type: wire.TerminalData},
@@ -30,11 +36,7 @@ func TestTheTerminalRecordsAreRecordedByProtocol(t *testing.T) {
 		{Type: wire.TerminalExitStatus, Status: 4294967295},
 		{Type: wire.TerminalExitSignal, Signal: "KILL"},
 	}
-	malformed := []struct {
-		what  string
-		bytes []byte
-	}{
-		{"an unknown type", []byte{0x04, 0x00}},
+	bad := []malformed{
 		{"a length of 32769", []byte{0x00, 0x81, 0x80, 0x02}},
 		{"a length past a uvarint", []byte{0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f}},
 		{"a resize of 0 columns", []byte{0x01, 0x02, 0x00, 0x18}},
@@ -48,19 +50,51 @@ func TestTheTerminalRecordsAreRecordedByProtocol(t *testing.T) {
 		{"an exit status of 4294967296", []byte{0x02, 0x05, 0x80, 0x80, 0x80, 0x80, 0x10}},
 		{"an exit status with a byte after it", []byte{0x02, 0x02, 0x00, 0x00}},
 	}
-	var lines []string
-	for _, r := range records {
-		b, err := wire.AppendTerminalRecord(nil, r)
-		if err != nil {
-			t.Fatalf("encode %s: %v", described(r, nil), err)
-		}
-		lines = append(lines, fmt.Sprintf("%s: % x\n  read as: %s", described(r, nil), b, decoded(b)))
-	}
-	for _, m := range malformed {
-		lines = append(lines, fmt.Sprintf("%s: % x\n  read as: %s", m.what, m.bytes, decoded(m.bytes)))
+	byProtocol := map[int]struct {
+		records []wire.TerminalRecord
+		bad     []malformed
+	}{
+		1: {records, append([]malformed{{"an unknown type", []byte{0x04, 0x00}}}, bad...)},
+		// Protocol 2 attaches a page to a Workspace's SSH Session.
+		2: {
+			append(slices.Clone(records),
+				wire.TerminalRecord{Type: wire.TerminalReset, Columns: 80, Rows: 24},
+				wire.TerminalRecord{Type: wire.TerminalReset, Columns: 500, Rows: 200},
+				wire.TerminalRecord{Type: wire.TerminalActive, Activity: wire.TerminalActed},
+				wire.TerminalRecord{Type: wire.TerminalActive, Activity: wire.TerminalNowActive},
+				wire.TerminalRecord{Type: wire.TerminalActive, Activity: wire.TerminalNoLongerActive},
+				wire.TerminalRecord{Type: wire.TerminalColors, Foreground: [3]byte{0x0c, 0x0c, 0x0c}, Background: [3]byte{0xff, 0xff, 0xff}},
+				wire.TerminalRecord{Type: wire.TerminalDisplaced},
+			),
+			append(append([]malformed{{"an unknown type", []byte{0x08, 0x00}}}, bad...),
+				malformed{"a reset of 0 columns", []byte{0x04, 0x02, 0x00, 0x18}},
+				malformed{"a reset of 4097 rows", []byte{0x04, 0x03, 0x50, 0x81, 0x20}},
+				malformed{"a reset without rows", []byte{0x04, 0x01, 0x50}},
+				malformed{"an active record of 2", []byte{0x05, 0x01, 0x02}},
+				malformed{"an active record of 2 bytes", []byte{0x05, 0x02, 0x01, 0x00}},
+				malformed{"colours of 5 bytes", []byte{0x06, 0x05, 0x0c, 0x0c, 0x0c, 0xff, 0xff}},
+				malformed{"colours of 7 bytes", []byte{0x06, 0x07, 0x0c, 0x0c, 0x0c, 0xff, 0xff, 0xff, 0x00}},
+				malformed{"a displaced record with a byte", []byte{0x07, 0x01, 0x00}},
+			),
+		},
 	}
 	var sections []frozen.Section
 	for protocol := 1; protocol <= wire.TerminalProtocol; protocol++ {
+		p, ok := byProtocol[protocol]
+		if !ok {
+			t.Fatalf("protocol %d lists no records", protocol)
+		}
+		var lines []string
+		for _, r := range p.records {
+			b, err := wire.AppendTerminalRecord(nil, r)
+			if err != nil {
+				t.Fatalf("encode %s: %v", described(r, nil), err)
+			}
+			lines = append(lines, fmt.Sprintf("%s: % x\n  read as: %s", described(r, nil), b, decoded(b)))
+		}
+		for _, m := range p.bad {
+			lines = append(lines, fmt.Sprintf("%s: % x\n  read as: %s", m.what, m.bytes, decoded(m.bytes)))
+		}
 		sections = append(sections, frozen.Section{Name: fmt.Sprintf("terminal %d", protocol), Text: strings.Join(lines, "\n")})
 	}
 	frozen.Check(t, "terminal.golden", sections, *update)
@@ -83,6 +117,20 @@ func described(r wire.TerminalRecord, err error) string {
 		return fmt.Sprintf("exit status %d", r.Status)
 	case wire.TerminalExitSignal:
 		return "exit signal " + r.Signal
+	case wire.TerminalReset:
+		return fmt.Sprintf("reset %dx%d", r.Columns, r.Rows)
+	case wire.TerminalActive:
+		switch r.Activity {
+		case wire.TerminalNowActive:
+			return "active 1"
+		case wire.TerminalNoLongerActive:
+			return "active 0"
+		}
+		return "active"
+	case wire.TerminalColors:
+		return fmt.Sprintf("colors %x %x", r.Foreground, r.Background)
+	case wire.TerminalDisplaced:
+		return "displaced"
 	}
 	return fmt.Sprintf("type %#x", byte(r.Type))
 }
@@ -160,7 +208,9 @@ func TestARecordOutOfRangeIsNotEncoded(t *testing.T) {
 		{Type: wire.TerminalResize, Columns: 80, Rows: 0},
 		{Type: wire.TerminalResize, Columns: 4097, Rows: 24},
 		{Type: wire.TerminalResize, Columns: 80, Rows: 4097},
-		{Type: 0x04},
+		{Type: wire.TerminalReset, Columns: 0, Rows: 24},
+		{Type: wire.TerminalActive, Activity: 3},
+		{Type: 0x08},
 	} {
 		prefix := []byte("kept")
 		got, err := wire.AppendTerminalRecord(prefix, r)

@@ -148,6 +148,10 @@ func (f *Front) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.serveTerminal(w, r, f.kokoWebTerminal(r, conn, port))
 		return
 	}
+	if r.URL.Path == WorkspacePath {
+		f.serveWorkspace(w, r, f.kokoWebTerminal(r, conn, port))
+		return
+	}
 	if isFiles(r) {
 		// Its Origin check comes before the cookie, and every refusal is
 		// JSON.

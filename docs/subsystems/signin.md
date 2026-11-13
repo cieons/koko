@@ -201,14 +201,16 @@ on a computer. A Join Code a Sign-in issues names it in the log's
 `added_by`, but the new Device Session's `added_by` is left out, as for the
 Unix socket's.
 
-A Sign-in also opens SSH Sessions, through the web terminal's WebSocket
-([the web front](web-front.md#the-web-terminals-websocket)), by the Space
-membership rules a device follows
-([ADR 0053](../adr/0053-a-browser-opens-ssh-sessions-through-a-websocket-to-the-gateway.md)):
-at most 16 at once, attached or Detached, across all its tabs, Resumed only
-from the same Sign-in ([the Gateway](gateway.md#the-web-terminal)). Opening
-and Resuming one moves its Last used time, at most once a minute, as a call
-does; keys typed do not. They go on only while the Sign-in would be
+A Sign-in also opens SSH Sessions in its User's Workspace, through the web
+terminal's sockets ([the web front](web-front.md#the-web-terminals-websocket)),
+by the Space membership rules a device follows
+([ADR 0053](../adr/0053-a-browser-opens-ssh-sessions-through-a-websocket-to-the-gateway.md),
+[ADR 0057](../adr/0057-a-users-web-terminal-tabs-are-one-workspace-held-by-the-koko-server.md)):
+the Workspace holds at most 16 tabs, whichever page opens them, and a page's
+attachment is resumed only from the same Sign-in
+([the Gateway](gateway.md#the-web-terminal)). Each socket's first message
+moves its Last used time, at most once a minute, as a call does; keys typed
+do not. They go on only while the Sign-in would be
 allowed a new one: they end with it, and with a Space change that takes the
 Host out of its User's reach ([the Gateway](gateway.md#access-during-a-live-ssh-session)). The terminal is the web front's own endpoint, as
 `/auth/` is, so no operation is added and the access matrix gains no row.

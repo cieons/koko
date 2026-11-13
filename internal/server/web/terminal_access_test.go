@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coder/websocket"
-
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/timing"
@@ -17,8 +15,8 @@ import (
 )
 
 // openLiveAndDetached opens two terminals to the Host named hostName from
-// the browser b: one it keeps on its WebSocket, and one whose WebSocket
-// drops, which the Gateway holds Detached.
+// the browser b: one it keeps on its WebSocket, and one whose page's
+// WebSocket drops, which the Gateway holds for the page to resume.
 func openLiveAndDetached(t *testing.T, h *harness.Harness, b *harness.Browser, hostName string) (live, detached *harness.WebTerminal) {
 	t.Helper()
 	live = b.TerminalPage().Open(hostName, 80, 24)
@@ -26,13 +24,13 @@ func openLiveAndDetached(t *testing.T, h *harness.Harness, b *harness.Browser, h
 	live.WaitOutput("ready\n")
 	detached = b.TerminalPage().Open(hostName, 80, 24)
 	detached.Drop()
-	waitLog(t, h, `msg="ssh session detached" tunnel=`+detached.ID+` `)
+	waitLog(t, h, `msg="web terminal dropped" tunnel=`+detached.ID+` `)
 	return live, detached
 }
 
 // wantNotice fails the test unless the live terminal ended with notice, on a
-// line of its own and as its stream's close, and the Detached one ended
-// too, each logged with reason.
+// line of its own and as its stream's close, and the dropped one's SSH
+// Session ended too, each logged with reason.
 func wantNotice(t *testing.T, h *harness.Harness, live, detached *harness.WebTerminal, notice, reason string) {
 	t.Helper()
 	wantPeerClosed(t, live.WaitEnd(), notice)
@@ -310,12 +308,9 @@ func TestAWebURLChangeEndsTheListenersTerminals(t *testing.T) {
 	h.Koko("server", "set", "web_url="+harness.WebURL).WantSuccess(t)
 	wantKept(t, live, "after the same Web URL")
 
-	// A page at the old address whose WebSocket the web listener took
-	// before the change, and which sends its open after it.
-	opening, _, err := b.TerminalPage().Dial()
-	if err != nil {
-		t.Fatal(err)
-	}
+	// A page at the old address whose Workspace socket the web listener
+	// took before the change, and which sends its open after it.
+	opening := b.TerminalPage().Workspace()
 
 	const moved = "https://koko.example.org"
 	h.Koko("server", "set", "web_url="+moved).WantSuccess(t)
@@ -325,16 +320,6 @@ func TestAWebURLChangeEndsTheListenersTerminals(t *testing.T) {
 	p.Host, p.Origin = strings.TrimPrefix(moved, "https://"), moved
 	wantRefused(t, p.Resume(detached), wire.TerminalResumeRefused, "the Web URL changed")
 
-	if err := opening.Write(t.Context(), websocket.MessageText, []byte(`{"protocol": 1, "open": "web1", "cols": 80, "rows": 24}`)); err != nil {
-		t.Fatal(err)
-	}
-	_, msg, err := opening.Read(t.Context())
-	var a wire.TerminalAnswer
-	if err == nil {
-		err = json.Unmarshal(msg, &a)
-	}
-	if err != nil {
-		t.Fatalf("read the answer to the open sent after the change: %v", err)
-	}
-	wantRefused(t, a, wire.TerminalAccessRefused, "the Web URL changed; this SSH Session did not start. Sign in at the new address.")
+	a := opening.Open("web1", 80, 24)
+	wantRefused(t, wire.TerminalRefusal(a.Refused, deref(a.Message)), wire.TerminalAccessRefused, "the Web URL changed; this SSH Session did not start. Sign in at the new address.")
 }

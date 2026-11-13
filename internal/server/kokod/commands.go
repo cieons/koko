@@ -76,16 +76,17 @@ func run(ctx context.Context, p *Program, inv *Invocation, line *parsed) error {
 		return err
 	}
 	return p.Serve(ctx, server.Config{
-		Version:       p.ownVersion(),
-		DataDir:       s.DataDir,
-		RootKeyPath:   s.RootKeyPath,
-		RootKeySource: s.RootKeySource,
-		Owner:         s.Owner,
-		Address:       s.Address,
-		Listen:        s.Listen,
-		WebListen:     s.WebListen,
-		LogLevel:      s.LogLevel,
-		Log:           inv.Stderr,
+		Version:        p.ownVersion(),
+		DataDir:        s.DataDir,
+		RootKeyPath:    s.RootKeyPath,
+		RootKeySource:  s.RootKeySource,
+		Owner:          s.Owner,
+		Address:        s.Address,
+		Listen:         s.Listen,
+		WebListen:      s.WebListen,
+		TerminalMemory: s.TerminalMemory,
+		LogLevel:       s.LogLevel,
+		Log:            inv.Stderr,
 		Upgrade: server.Upgrade{
 			HelperUnit:  installer.UpgradePathUnit,
 			OutcomeFile: installer.OutcomeFile,

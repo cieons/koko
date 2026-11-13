@@ -228,6 +228,16 @@ func (t *Terminal) configure() error {
 // Size is the terminal's columns and rows, as New and Resize held them.
 func (t *Terminal) Size() (cols, rows int) { return t.cols, t.rows }
 
+// Memory is the bytes the terminal holds: its core's linear memory and the
+// primary screen Snapshot keeps behind the alternate one. A failed or
+// closed Terminal holds none.
+func (t *Terminal) Memory() int {
+	if t.err != nil || t.mem == nil {
+		return 0
+	}
+	return int(t.mem.Size()) + len(t.primary)
+}
+
 // Write takes the shell's output and returns the replies to the queries
 // it held, for the shell's stdin: device attributes, the cursor's place,
 // mode reports, the colours SetColors gave and the size. On an error it

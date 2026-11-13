@@ -109,6 +109,10 @@ const (
 	// than Grace, since the leg that drops is a browser's, which a phone
 	// put away keeps from reconnecting for minutes.
 	BrowserGrace = 15 * time.Minute
+	// WorkspaceIdle is how long a Workspace's SSH Session goes on with no
+	// page attached, from its last page's detach or from its start, before
+	// the Gateway ends it: a Sign-in's own idle time (spec #213).
+	WorkspaceIdle = 7 * 24 * time.Hour
 	// SignInCheck is how often the Gateway looks for web terminals whose
 	// Sign-in has expired, to end their SSH Sessions.
 	SignInCheck = time.Minute
@@ -178,6 +182,7 @@ type Timings struct {
 	BareNameRefresh      time.Duration
 	Grace                time.Duration
 	BrowserGrace         time.Duration
+	WorkspaceIdle        time.Duration
 	SignInCheck          time.Duration
 	UploadIdle           time.Duration
 	FirstMessage         time.Duration
@@ -220,6 +225,7 @@ func (t Timings) Resolve() Timings {
 	t.BareNameRefresh = cmp.Or(t.BareNameRefresh, BareNameRefresh)
 	t.Grace = cmp.Or(t.Grace, Grace)
 	t.BrowserGrace = cmp.Or(t.BrowserGrace, BrowserGrace)
+	t.WorkspaceIdle = cmp.Or(t.WorkspaceIdle, WorkspaceIdle)
 	t.SignInCheck = cmp.Or(t.SignInCheck, SignInCheck)
 	t.UploadIdle = cmp.Or(t.UploadIdle, UploadIdle)
 	t.FirstMessage = cmp.Or(t.FirstMessage, FirstMessage)

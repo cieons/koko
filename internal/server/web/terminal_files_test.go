@@ -205,12 +205,12 @@ func TestFilesCallsAreTheCallersOwn(t *testing.T) {
 	wantFiles[api.FilesListResponse](t, list(t, b, w.ID, ""))
 }
 
-// Files move while the terminal's WebSocket is Detached, and once its SSH
+// Files move while no page is attached to the terminal, and once its SSH
 // Session has ended with a notice, a files call is ssh_session_ended.
 func TestFilesWhileDetachedAndOnceEnded(t *testing.T) {
 	t.Parallel()
 	h, _, b, w := filesTerminal(t, sshhost.SFTP())
-	w.Drop()
+	w.Close()
 	waitLog(t, h, `msg="ssh session detached" tunnel=`+w.ID+` `)
 	wantFiles[api.FilesListResponse](t, list(t, b, w.ID, ""))
 
@@ -412,8 +412,8 @@ func TestFilesUploadEndsWithItsSSHSession(t *testing.T) {
 	id := startUpload(t, b, w, home, "big.bin", 10, false)
 	chunk(t, h, b, id, 0, []byte("12345"), 5)
 
-	if a, _ := b.TerminalPage().End(w.ID); !a.Ended {
-		t.Fatalf("the end was answered %+v", a)
+	if a := b.TerminalPage().Workspace().CloseTab(w.Tab); a.Refused != "" {
+		t.Fatalf("the close was answered %+v", a)
 	}
 	waitLog(t, h, `msg="file transferred" tunnel=`+w.ID+` .* direction=upload path=`+regexp.QuoteMeta(home)+`/big.bin bytes=5 outcome=failed err="the SSH Session ended"\n`)
 	wantGone(t, home, "big.bin")

@@ -200,17 +200,25 @@ One SSH connection through the Gateway to a Host.
 _Avoid_: session (alone), connection
 
 **Tunnel**:
-What carries one SSH Session to the Gateway: from the CLI, inside a channel on a Device Connection or over the Unix socket, or from the Web terminal, over a WebSocket; it outlives a dropped connection by Resuming on a new one. The WebSocket carries the Tunnel and is not it.
+What carries one SSH Session to the Gateway from the CLI, inside a channel on a Device Connection or over the Unix socket; it outlives a dropped connection by Resuming on a new one. A Web terminal's SSH Session is carried by no Tunnel.
 _Avoid_: websocket, channel, stream
 
 **Detached**:
-A Tunnel that has lost its connection, a Device Connection or a browser's WebSocket, whose SSH Session the Gateway holds for a grace period so the device or the page can Resume it.
+A Tunnel that has lost its connection, such as a Device Connection, whose SSH Session the Gateway holds for a grace period so the device can Resume it.
 _Avoid_: suspended, orphaned, disconnected
 
 **Resume**:
-To carry a Detached Tunnel, and the SSH Session inside it, onto a new connection of the same Device Session or Sign-in.
+To carry a Detached Tunnel, and the SSH Session inside it, onto a new connection of the same Device Session. A page's reconnect of one of its attachments is resuming the attachment, never a Resume of the SSH Session.
 _Avoid_: reattach, reconnect, roam
 
 **Web terminal**:
-The Web UI's page that opens an SSH Session to one Host in a browser.
+The Web UI's page that shows its User's Workspace and opens SSH Sessions to Hosts in it.
 _Avoid_: console, web shell, web SSH
+
+**Workspace**:
+The web terminal's tabs of one User, held by the koko server and the same in every page of the web UI that User has open.
+_Avoid_: session, desktop, layout
+
+**Attach**:
+To show one of a Workspace's SSH Sessions in a page; several pages may be attached to one SSH Session at once, and it goes on with none. "Detach" is its opposite for a page.
+_Avoid_: connect, join, Resume

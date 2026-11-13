@@ -2,9 +2,12 @@ package gateway
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"slices"
 	"sync"
@@ -16,34 +19,34 @@ import (
 	"github.com/cieons/koko/internal/server/host"
 	"github.com/cieons/koko/internal/server/hostconn"
 	"github.com/cieons/koko/internal/server/op"
-	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/liveness"
 	"github.com/cieons/koko/internal/shared/resumable"
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
 // A web terminal's SSH Session (P1 spec: a terminal in the web UI, "The
-// Gateway's terminal SSH Session"; ADR 0053) is a second way into the
-// Gateway beside Open. The web front reads a page's first message on a
-// WebSocket and hands the WebSocket over (TerminalSocket). The Gateway
-// admits the SSH Session as it admits a Tunnel's, counts it against the
-// caller's limit, dials the Host, opens one session channel there with a pty
-// and a shell, answers the page with the SSH Session's id, and then runs the
-// resumable stream on the WebSocket's binary messages, carrying terminal
-// records (wire.TerminalRecord) both ways. It is a tunnel in the registry,
-// of the client clientBrowser, so Close, Withdraw, recheck, keepEnding and
-// the limit serve it as they serve a Tunnel; its grace is
-// timing.BrowserGrace, since the leg that drops is a browser's.
+// Gateway's terminal SSH Session"; ADR 0053, refined by ADR 0057) belongs
+// to its User's Workspace (workspace.go), which opens it in a tab: the
+// Gateway admits it as it admits a Tunnel's, dials the Host, opens one
+// session channel there with a pty and a shell, and holds it, apart from
+// any page, until it ends (session.go). It is a tunnel in the registry,
+// of the client clientBrowser, so Close, Withdraw, recheck and keepEnding
+// serve it as they serve a Tunnel's; it carries no stream of its own and
+// counts against no caller's limit, the Workspace's 16 tabs bounding it.
+// A page attaches to it on a terminal socket the web front hands over
+// (AttachTerminal), and gets a resumable stream of its own carrying
+// terminal records both ways (wire.TerminalRecord), which the page resumes
+// within timing.Grace of a drop (ResumeTerminal).
 
-// TerminalCaller is who opens a web terminal's SSH Session, as the web front
-// found them.
+// TerminalCaller is who a web terminal's page is, as the web front found
+// them.
 type TerminalCaller struct {
 	// Caller is the live Sign-in the cookie names on the web listener; on
 	// web@koko, the Device Session or the Local caller koko web runs as.
 	Caller op.Caller
 	// Run, for the Local caller, names the run of koko web the page came
-	// through, which alone may Resume the SSH Session, and RunEnded is
-	// closed once that run ends, which ends it too.
+	// through, which alone may resume its attachments, and RunEnded is
+	// closed once that run ends, which ends the SSH Sessions it opened.
 	Run      string
 	RunEnded <-chan struct{}
 	// Addr is where the page came from: on the web listener, the client's
@@ -56,9 +59,9 @@ type TerminalCaller struct {
 	WebURL string
 }
 
-// TerminalSocket is a web terminal's WebSocket, once the web front has read
-// its first message: the Gateway answers that message on it, then runs the
-// resumable stream on its binary messages.
+// TerminalSocket is a web terminal's terminal socket, once the web front
+// has read its first message: the Gateway answers that message on it,
+// then runs the attachment's resumable stream on its binary messages.
 type TerminalSocket interface {
 	// Answer sends the answer to the first message, one text message of
 	// JSON.
@@ -74,133 +77,198 @@ type TerminalSocket interface {
 	Cut()
 }
 
-// Why a web terminal's SSH Session ends, besides those a Tunnel shares.
-var (
-	// errShellEnded: the shell ended, and the Host closed its session
-	// channel.
-	errShellEnded = &ending{reason: "shell ended"}
-	// errMalformed: the page sent bytes that are no terminal record.
-	errMalformed = &ending{reason: "malformed record"}
-	// errRunEnded: the run of koko web the Local caller's page came
-	// through ended, and no page can Resume the SSH Session on another.
-	errRunEnded = &ending{reason: "koko web ended"}
-)
+// key is whose the caller c's page is, as an attachment's resume must show.
+func (c TerminalCaller) key() callerKey { return callerKey{id: c.Caller.ID(), run: c.Run} }
 
-// OpenTerminal opens an SSH Session to the Host named hostName for the
-// caller c, with a pty of cols columns and rows rows, on the WebSocket s,
-// and serves it in a goroutine of its own. While the Gateway stops, it cuts
-// s instead.
-func (g *Gateway) OpenTerminal(c TerminalCaller, s TerminalSocket, hostName string, cols, rows uint32) {
+// terminalsOpen tells whether the Gateway takes new web terminals' pages:
+// not once CloseTerminals has ended them.
+func (g *Gateway) terminalsOpen() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return !g.closed && !g.terminalsClosed
+}
+
+// runSession runs the SSH Session s of a Workspace, registered, from its
+// dial until it ends: it starts the shell at the pty's size, runs the
+// loop, and once the SSH Session ends, finishes its pages with how it
+// ended, closes the Host connection and records the ending in its tab.
+// None of that waits for the loop, which may be inside a call into the
+// emulator, or for a page's writer. runEnded, unless nil, ends it once the
+// run of koko web that opened it ends.
+func (g *Gateway) runSession(s *termSession, runEnded <-chan struct{}) {
+	t := s.t
+	defer g.unregister(t)
+	defer t.end(errEnded)
+	if runEnded != nil {
+		g.wg.Go(func() {
+			select {
+			case <-runEnded:
+				t.end(errRunEnded)
+			case <-t.ctx.Done():
+			}
+		})
+	}
+	hostName := s.a.host.Name
+	sh, refused, err := g.startShell(t, s.a, uint32(s.cols), uint32(s.rows))
+	if sh != nil {
+		defer sh.close()
+	}
+	switch {
+	case t.ctx.Err() != nil:
+		// Ended while it opened: its tab closed, the koko server stops, or
+		// its access was withdrawn, which its tab tells.
+		e := endingOf(context.Cause(t.ctx))
+		g.log.Debug("ssh session ended before it started", slices.Concat(s.named(), []any{"name", hostName}, callerAttrs(t.caller), []any{"addr", t.from, "err", e})...)
+		s.w.ended(s, e, nil, "")
+		return
+	case refused != nil:
+		g.logRefused(t, hostName, refused)
+		s.w.refused(s, refused)
+		return
+	case err != nil:
+		g.log.Error("open a web terminal", slices.Concat(s.named(), []any{"name", hostName}, callerAttrs(t.caller), []any{"addr", t.from, "err", err})...)
+		s.w.refused(s, openFailed)
+		return
+	}
+	// Before the tab runs, which gives the pages the id its files calls
+	// name. The files end before the Host connection closes.
+	sh.files = g.newTerminalFiles(sh.host)
+	defer sh.files.end()
+	g.mu.Lock()
+	t.files = sh.files
+	g.mu.Unlock()
+	if err := s.start(sh); err != nil {
+		g.log.Error("open a web terminal", slices.Concat(s.named(), []any{"name", hostName}, callerAttrs(t.caller), []any{"addr", t.from, "err", err})...)
+		s.w.refused(s, openFailed)
+		return
+	}
+
+	started := time.Now()
+	g.log.Info("ssh session started", slices.Concat(startedAttrs(t, s.a), []any{"tab", s.tab})...)
+	g.log.Info("ssh session request", "tunnel", t.id, "client", t.client, "host", hostName, "request", "shell")
+	s.w.running(s)
+	end := s.awaitEnd()
+	// The files end while the Host connection lives, so an upload's partial
+	// file goes; closing it then ends the reads of the channel and its
+	// requests.
+	sh.files.end()
+	sh.close()
+	status, signal := sh.exitState()
+	s.w.ended(s, end, status, signal)
+	g.log.Info("ssh session ended", slices.Concat(sessionAttrs(t, s.a), []any{
+		"tab", s.tab,
+		"duration", time.Since(started).Round(time.Millisecond),
+		"bytes_from_device", s.read.Load(), "bytes_to_device", s.written.Load(),
+	}, sh.exit(), end.attrs, []any{"reason", end.reason})...)
+}
+
+// AttachTerminal attaches the page of the caller c, on the terminal socket
+// s, to the SSH Session id of the caller's User, with the page's box of
+// cols by rows, in a goroutine of its own. While the Gateway stops, it
+// cuts s instead.
+func (g *Gateway) AttachTerminal(c TerminalCaller, s TerminalSocket, id [wire.TunnelIDSize]byte, cols, rows uint32) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.closed || g.terminalsClosed {
 		s.Cut()
 		return
 	}
-	g.wg.Go(func() { g.serveTerminal(c, s, hostName, cols, rows) })
+	g.wg.Go(func() { g.attachTerminal(c, s, tunnelID(id), int(cols), int(rows)) })
 }
 
-// serveTerminal serves one web terminal's SSH Session from its admission
-// until it ends. Every refusal is the answer to the page's open, with the
-// code the page tests and the banner a Tunnel's client would get, so an
-// unseen Host gets an unknown name's bytes; the 17th SSH Session of a
-// Sign-in, or the 65th of a Device Session, dials no Host.
-func (g *Gateway) serveTerminal(c TerminalCaller, s TerminalSocket, hostName string, cols, rows uint32) {
-	seen := g.withdrawalsTaken()
-	a, err := g.admit(context.Background(), c.Caller, hostName, c.WebURL)
-	if err != nil {
-		g.log.Error("open a web terminal", slices.Concat([]any{"client", clientBrowser}, callerAttrs(c.Caller), []any{"addr", c.Addr, "name", hostName, "err", err})...)
-		s.Refuse(wire.TerminalRefusal(api.CodeInternal.Name, "the koko server could not open this SSH Session; its log says why"))
+// attachTerminal attaches a page to the SSH Session id: any live caller of
+// its User may. It answers with the attachment's id, starts its stream on
+// the socket, and hands it to the loop, which sends it a reset and the
+// snapshot, then the live output. An id that names no live SSH Session of
+// the User is refused with unknown_tunnel, one that ended with
+// ssh_session_ended.
+func (g *Gateway) attachTerminal(c TerminalCaller, sock TerminalSocket, id tunnelID, cols, rows int) {
+	u, refused := g.userOf(c)
+	if refused != nil {
+		sock.Refuse(*refused)
 		return
 	}
-	t := g.newTunnel(c.Caller, clientBrowser, c.Addr)
-	t.run, t.holdFor = c.Run, g.timings.BrowserGrace
-	limit, ok := g.register(t, a, seen)
-	if !ok {
-		s.Cut()
-		return
-	}
-	defer g.unregister(t)
-	defer t.end(errEnded)
-	if limit != nil {
-		a.refused = limit
-	}
-	if a.refused != nil {
-		g.logRefused(t, hostName, a.refused)
-		s.Refuse(wire.TerminalRefusal(a.refused.code, a.refused.message()))
-		return
-	}
-	if c.RunEnded != nil {
-		g.wg.Go(func() {
-			select {
-			case <-c.RunEnded:
-				t.end(errRunEnded)
-			case <-t.ctx.Done():
-			}
-		})
-	}
-
-	shell, refused, err := g.startShell(t, a, cols, rows)
-	if shell != nil {
-		defer shell.close()
-	}
-	switch {
-	case t.ctx.Err() != nil:
-		// Ended while it opened: the koko server stops, or its access was
-		// withdrawn, which the page is told.
-		e := endingOf(context.Cause(t.ctx))
-		g.log.Debug("ssh session ended before it started", slices.Concat(t.named(), []any{"name", hostName}, callerAttrs(t.caller), []any{"addr", t.from, "err", e})...)
-		if e.notice == "" || e == errStopping {
-			s.Cut()
-			return
+	s, ended := g.workspaces.workspace(u.ID).sessionOf(id)
+	if s == nil {
+		code, message := wire.TerminalUnknownTunnel, "this User has no open SSH Session with this id"
+		if ended {
+			code, message = wire.TerminalSSHSessionEnded, "this SSH Session has ended"
 		}
-		s.Refuse(wire.TerminalRefusal(wire.TerminalAccessRefused, e.notice))
-		return
-	case refused != nil:
-		g.logRefused(t, hostName, refused)
-		s.Refuse(wire.TerminalRefusal(refused.code, refused.message()))
-		return
-	case err != nil:
-		g.log.Error("open a web terminal", slices.Concat(t.named(), []any{"name", hostName}, callerAttrs(t.caller), []any{"addr", t.from, "err", err})...)
-		s.Refuse(wire.TerminalRefusal(api.CodeInternal.Name, "the koko server could not open this SSH Session; its log says why"))
+		g.log.Debug("ssh session attach refused", slices.Concat([]any{"tunnel", id, "client", clientBrowser}, callerAttrs(c.Caller), []any{"addr", c.Addr, "reason", code})...)
+		sock.Refuse(wire.TerminalRefusal(code, message))
 		return
 	}
-	// Before the answer, which gives the page the id its files calls name.
-	// The files end before the Host connection closes, after the relay or
-	// on a return before it.
-	shell.files = g.newTerminalFiles(shell.host)
-	defer shell.files.end()
-	g.mu.Lock()
-	t.files = shell.files
-	g.mu.Unlock()
-	if err := s.Answer(wire.TerminalAnswer{Tunnel: t.id.String()}); err != nil {
-		g.log.Debug("ssh session ended before it started", slices.Concat(t.named(), []any{"name", hostName}, callerAttrs(t.caller), []any{"addr", t.from, "err", err})...)
+	a := &attachment{
+		s: s, caller: c.Caller, key: c.key(), from: c.Addr,
+		cols: cols, rows: rows, socket: sock,
+		written: make(chan struct{}), wake: make(chan struct{}, 1),
+	}
+	_, _ = rand.Read(a.id[:]) // never fails
+	a.ctx, a.cancel = context.WithCancelCause(s.t.ctx)
+	if err := sock.Answer(wire.TerminalAnswer{Attachment: a.id.String()}); err != nil {
+		a.cancel(err)
+		g.log.Debug("ssh session attach failed", append(a.attrs(), "err", err)...)
 		return
 	}
-	sc := newSocketConn(s.Conn())
-	g.attachTerminal(t, s, resumable.New(sc), sc)
-
-	started := time.Now()
-	g.log.Info("ssh session started", startedAttrs(t, a)...)
-	g.log.Info("ssh session request", "tunnel", t.id, "client", t.client, "host", a.host.Name, "request", "shell")
-	shell.stream = t.stream
-	end := shell.relay(t.ctx)
-	t.end(end)
-	g.log.Info("ssh session ended", slices.Concat(sessionAttrs(t, a), []any{
-		"duration", time.Since(started).Round(time.Millisecond),
-		"bytes_from_device", shell.read.Load(), "bytes_to_device", shell.written.Load(),
-	}, shell.exit(), end.attrs, []any{"reason", end.reason})...)
+	sc := newSocketConn(sock.Conn())
+	g.addAttachment(a, sc, func() { g.watchSocket(a.stream, sock, sc, a.attrs()) })
 }
 
-// ResumeTerminal Resumes the web terminal's SSH Session id on the WebSocket
-// s, from offset, the page's received offset, and serves the resume in a
-// goroutine of its own, as the device's resume of a Tunnel goes (resume.go):
-// it is taken only from the caller c who opened it, the same Sign-in,
-// Device Session or run of koko web, and only once its access holds still
+// addAttachment starts the attachment a's stream on conn, its writer and
+// watch, and watchConn, unless the SSH Session has ended, and hands a to
+// the loop; only then does it read the page's records, so that none comes
+// before it.
+func (g *Gateway) addAttachment(a *attachment, conn net.Conn, watchConn func()) {
+	s := a.s
+	a.stream = resumable.New(conn)
+	// In the Gateway's first, so that the SSH Session's ending, which takes
+	// it out of both, finds it in the Gateway's once it is in its own.
+	g.mu.Lock()
+	g.attachments[a.id] = a
+	g.mu.Unlock()
+	s.mu.Lock()
+	if s.ended {
+		s.mu.Unlock()
+		a.cancel(errEnded)
+		g.forgetAttachment(a, nil)
+		_ = a.stream.CloseWithReason(endingOf(context.Cause(s.t.ctx)).notice)
+		return
+	}
+	s.all[a] = struct{}{}
+	s.mu.Unlock()
+	g.wg.Go(a.run)
+	a.watch()
+	g.wg.Go(watchConn)
+	select {
+	case s.attaches <- a:
+		g.wg.Go(a.read)
+	case <-a.ctx.Done():
+	}
+}
+
+// forgetAttachment takes the ended attachment a out of the Gateway's. When
+// its SSH Session ended with end, which has a notice, it keeps the ending
+// for the grace, so that a resume of a then is refused saying why.
+func (g *Gateway) forgetAttachment(a *attachment, end *ending) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.attachments[a.id] == a {
+		delete(g.attachments, a.id)
+	}
+	if end != nil && end.why != "" {
+		g.ended[a.id] = endedTunnel{key: a.key, client: clientBrowser, ending: end, until: time.Now().Add(g.timings.Grace)}
+	}
+}
+
+// ResumeTerminal resumes the attachment id on the terminal socket s, from
+// offset, the page's received offset, in a goroutine of its own: it is
+// taken only from the caller c who made it, the same Sign-in, Device
+// Session or run of koko web, while it lives, within timing.Grace of its
+// stream's drop, and only once its SSH Session's access holds still
 // (recheckResume). The Gateway answers with its own received offset and
 // moves the stream onto s, off the WebSocket it was on, if any: the last
-// attach wins. Any other resume is refused, saying why the SSH Session
-// ended when the Gateway knows. While the Gateway stops, it cuts s instead.
+// attach wins. Any other resume is refused. While the Gateway stops, it
+// cuts s instead.
 func (g *Gateway) ResumeTerminal(c TerminalCaller, s TerminalSocket, id [wire.TunnelIDSize]byte, offset uint64) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -211,66 +279,116 @@ func (g *Gateway) ResumeTerminal(c TerminalCaller, s TerminalSocket, id [wire.Tu
 	g.wg.Go(func() { g.resumeTerminal(c, s, tunnelID(id), offset) })
 }
 
-func (g *Gateway) resumeTerminal(c TerminalCaller, s TerminalSocket, id tunnelID, offset uint64) {
-	attrs := slices.Concat([]any{"tunnel", id, "client", clientBrowser}, callerAttrs(c.Caller), []any{"addr", c.Addr})
-	t, ended := g.resumable(id, callerKey{id: c.Caller.ID(), run: c.Run}, clientBrowser)
-	if t != nil {
-		ended = g.recheckResume(t)
+func (g *Gateway) resumeTerminal(c TerminalCaller, sock TerminalSocket, id tunnelID, offset uint64) {
+	key := c.key()
+	g.mu.Lock()
+	a := g.attachments[id]
+	if a != nil && (a.key != key || a.ctx.Err() != nil) {
+		a = nil
 	}
-	if t == nil || ended != nil {
-		reason, why := "unknown tunnel", ""
+	var ended *ending
+	if e, ok := g.ended[id]; a == nil && ok && e.key == key && e.client == clientBrowser && time.Now().Before(e.until) {
+		ended = e.ending
+	}
+	g.mu.Unlock()
+	if a != nil {
+		ended = g.recheckResume(a.s.t)
+	}
+	if a == nil || ended != nil {
+		reason, why := "unknown attachment", ""
+		attrs := slices.Concat([]any{"client", clientBrowser, "attachment", id}, callerAttrs(c.Caller), []any{"addr", c.Addr})
 		if ended != nil {
 			reason, why = ended.reason, ended.why
 		}
 		g.log.Info("ssh session resume refused", append(attrs, "reason", reason)...)
-		s.Refuse(wire.TerminalRefusal(wire.TerminalResumeRefused, why))
+		sock.Refuse(wire.TerminalRefusal(wire.TerminalResumeRefused, why))
 		return
 	}
-	sc := newSocketConn(s.Conn())
-	attach := func() error {
-		return t.stream.AcceptResumeAnswering(sc, offset, func(own uint64) error {
-			return s.Answer(wire.TerminalAnswer{Offset: &own})
-		})
+	attrs := slices.Concat(a.s.named(), []any{"attachment", a.id}, callerAttrs(c.Caller), []any{"addr", c.Addr})
+	sc := newSocketConn(sock.Conn())
+	a.mu.Lock()
+	a.resuming++
+	a.mu.Unlock()
+	err := a.stream.AcceptResumeAnswering(sc, offset, func(own uint64) error {
+		return sock.Answer(wire.TerminalAnswer{Offset: &own})
+	})
+	a.mu.Lock()
+	a.resuming--
+	if err != nil {
+		a.holdLocked()
+	} else {
+		a.stopGraceLocked()
+		a.socket = sock
 	}
-	if g.moveOnto(t, attrs, attach, func() { t.socket = s }) {
-		g.wg.Go(func() { g.watchSocket(t, s, sc) })
-	}
-}
-
-// EndTerminal ends the web terminal's SSH Session id of the caller c as the
-// client's close, should the Gateway hold it, and returns once it has
-// ended, so that a page reloaded, which has lost its streams, ends the SSH
-// Sessions of its tabs before it opens new ones, which they would otherwise
-// count against its limit. The page that held it is gone, so the WebSocket
-// it may still seem to be on is cut rather than waited for.
-func (g *Gateway) EndTerminal(c TerminalCaller, id [wire.TunnelIDSize]byte) {
-	// Whether or not its stream is attached yet, or it has ended already.
-	g.mu.Lock()
-	t := g.ownLocked(tunnelID(id), callerKey{id: c.Caller.ID(), run: c.Run}, clientBrowser)
-	g.mu.Unlock()
-	if t == nil {
+	a.mu.Unlock()
+	if err != nil {
+		g.log.Info("ssh session resume failed", append(attrs, "err", err)...)
 		return
 	}
-	t.end(clientClosed)
-	t.cut()
-	<-t.done
+	g.log.Info("ssh session resumed", attrs...)
+	a.watch()
+	g.wg.Go(func() { g.watchSocket(a.stream, sock, sc, attrs) })
 }
 
-// attachTerminal puts the web terminal t's stream, new on sc, the WebSocket
-// s, in its Tunnel, where a resume finds it, has the Tunnel Detached once
-// the stream comes off s, and watches s's liveness.
-func (g *Gateway) attachTerminal(t *tunnel, s TerminalSocket, stream *resumable.Stream, sc *socketConn) {
-	g.mu.Lock()
-	t.stream = stream
-	g.mu.Unlock()
-	t.mu.Lock()
-	t.socket = s
-	t.mu.Unlock()
-	g.watch(t)
-	g.wg.Go(func() { g.watchSocket(t, s, sc) })
+// watch watches the WebSocket the attachment's stream is on now for its
+// end, unless it is watched already: the attachment is then held for
+// timing.Grace, for the page to resume it.
+func (a *attachment) watch() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	attached := a.stream.Detached()
+	if attached == a.watched {
+		return
+	}
+	a.watched = attached
+	a.s.g.wg.Go(func() {
+		select {
+		case <-attached:
+		case <-a.ctx.Done():
+			return
+		}
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		a.holdLocked()
+	})
 }
 
-// socketConn is a web terminal's WebSocket as its stream runs on it: it
+// holdLocked starts the attachment's grace, which ends it with "page left"
+// unless a resume comes first. It does nothing while the stream is on a
+// WebSocket or a resume moves it onto one, once the attachment has ended,
+// or while its grace runs already. a.mu is held.
+func (a *attachment) holdLocked() {
+	if a.resuming > 0 || a.grace != nil || a.ctx.Err() != nil || a.stream.Err() != nil {
+		return
+	}
+	select {
+	case <-a.stream.Detached():
+	default:
+		return
+	}
+	a.s.g.log.Debug("web terminal dropped", a.attrs()...)
+	a.grace = time.AfterFunc(a.s.g.timings.Grace, func() { a.end("page left", nil, "") })
+}
+
+// stopGraceLocked stops the attachment's grace, if it runs. a.mu is held.
+func (a *attachment) stopGraceLocked() {
+	if a.grace != nil {
+		a.grace.Stop()
+		a.grace = nil
+	}
+}
+
+// cut closes the WebSocket the attachment was last on at once.
+func (a *attachment) cut() {
+	a.mu.Lock()
+	s := a.socket
+	a.mu.Unlock()
+	if s != nil {
+		s.Cut()
+	}
+}
+
+// socketConn is a web terminal's WebSocket as a stream runs on it: it
 // notes when bytes last arrived (liveness.Conn) and when the stream last
 // sent, for watchSocket, and tells when the stream has come off it.
 type socketConn struct {
@@ -305,15 +423,16 @@ func (c *socketConn) silent() time.Duration {
 	return time.Since(c.start) - time.Duration(c.sent.Load())
 }
 
-// watchSocket watches the WebSocket s, sc beneath the web terminal t's
-// stream, until the stream comes off it. A page can neither send nor see a
+// watchSocket watches the WebSocket s, sc beneath stream, an attachment's,
+// until the stream comes off it. A page can neither send nor see a
 // WebSocket's pings, so liveness is in the stream: after
 // timing.ServerProbe without sending, the Gateway asks the stream for an
 // acknowledgement-only frame (resumable.Stream.Probe), which also keeps a
 // proxy from cutting a quiet terminal; after timing.ServerDead without a
-// byte from the page, it cuts the WebSocket, which Detaches the SSH
-// Session. The page does the same with the same values.
-func (g *Gateway) watchSocket(t *tunnel, s TerminalSocket, sc *socketConn) {
+// byte from the page, it cuts the WebSocket, which starts the
+// attachment's grace. The page does the same with the same values. attrs
+// name the attachment in the log.
+func (g *Gateway) watchSocket(stream *resumable.Stream, s TerminalSocket, sc *socketConn, attrs []any) {
 	probe, dead := g.timings.ServerProbe, g.timings.ServerDead
 	timer := time.NewTimer(min(probe, dead))
 	defer timer.Stop()
@@ -325,61 +444,71 @@ func (g *Gateway) watchSocket(t *tunnel, s TerminalSocket, sc *socketConn) {
 		}
 		quiet := sc.Quiet()
 		if quiet >= dead {
-			g.log.Debug("web terminal found dead", "tunnel", t.id, "quiet", quiet.Round(time.Millisecond))
+			g.log.Debug("web terminal found dead", append(attrs, "quiet", quiet.Round(time.Millisecond))...)
 			s.Cut()
 			return
 		}
 		next := probe - sc.silent()
 		if next <= 0 {
-			t.stream.Probe()
+			stream.Probe()
 			next = probe
 		}
 		timer.Reset(min(next, dead-quiet))
 	}
 }
 
-// CloseTerminals ends every web terminal's SSH Session, telling each that
-// the koko server is restarting, and refuses new ones. server.Close calls it
-// before the web listener closes, whose shutdown does not track a
-// WebSocket. It waits for each to give its notice and close its WebSocket,
-// and once timing.StopNotice has passed it cuts the WebSockets of those
-// still at it, which a page too stalled to take the notice holds.
+// CloseTerminals ends every web terminal's SSH Session, telling each page
+// that the koko server is restarting, sends stopping on every Workspace
+// socket, and refuses new pages. server.Close calls it before the web
+// listener closes, whose shutdown does not track a WebSocket. It waits for
+// each SSH Session to end and each page to have its notice, and once
+// timing.StopNotice has passed it cuts the WebSockets of those still at
+// it, which a page too stalled to take the notice holds. The tabs keep no
+// ending, so they come back restarted.
 func (g *Gateway) CloseTerminals() {
 	g.mu.Lock()
 	g.terminalsClosed = true
-	var ts []*tunnel
+	var waits []<-chan struct{}
 	for _, t := range g.tunnels {
 		if t.client == clientBrowser {
 			t.end(errStopping)
-			ts = append(ts, t)
+			waits = append(waits, t.done)
 		}
 	}
+	atts := slices.Collect(maps.Values(g.attachments))
 	g.mu.Unlock()
+	for _, a := range atts {
+		waits = append(waits, a.written)
+	}
+	stopping, _ := json.Marshal(wire.WorkspaceStopping{Stopping: "the koko server is restarting"}) // plain
+	var pages []*wsPage
+	for _, w := range g.workspaces.all() {
+		w.mu.Lock()
+		for p := range w.pages {
+			p.stop(stopping)
+			pages = append(pages, p)
+			waits = append(waits, p.done)
+		}
+		w.mu.Unlock()
+	}
 	late := time.NewTimer(g.timings.StopNotice)
 	defer late.Stop()
-	for i, t := range ts {
+	for _, done := range waits {
 		select {
-		case <-t.done:
+		case <-done:
+			continue
 		case <-late.C:
-			for _, t := range ts[i:] {
-				t.cut()
-			}
-			for _, t := range ts[i:] {
-				<-t.done
-			}
-			return
 		}
-	}
-}
-
-// cut closes the WebSocket the web terminal t was last attached to, if any,
-// at once.
-func (t *tunnel) cut() {
-	t.mu.Lock()
-	s := t.socket
-	t.mu.Unlock()
-	if s != nil {
-		s.Cut()
+		for _, a := range atts {
+			a.cut()
+		}
+		for _, p := range pages {
+			p.s.Cut()
+		}
+		for _, done := range waits {
+			<-done
+		}
+		return
 	}
 }
 
@@ -440,36 +569,55 @@ var ttyModes = []byte{42, 0, 0, 0, 1, 0}
 
 // terminalShell is a web terminal's shell on the Host: one session channel
 // on the Gateway's connection to the Host named hostName, through its chain
-// relays, relayed to and from the terminal records of a resumable stream.
+// relays, as an SSH Session's loop uses it (hostShell).
 type terminalShell struct {
 	host     *hostconn.Conn
 	hostName string
 	relays   []*host.Relay
 	ch       ssh.Channel
 	reqs     <-chan *ssh.Request
-	stream   *resumable.Stream
 	// files are the SSH Session's files on the Host (files.go), which end
 	// before the Host connection closes; nil before the shell started.
 	files *terminalFiles
-
-	// writeMu makes the records written into the stream take turns: the
-	// Host's stdout's, its stderr's, the notice and the exit record.
-	// closed is set once the last record is written, after which none is.
-	writeMu sync.Mutex
-	closed  bool
-
-	// read and written count the stream's bytes from and to the page.
-	read, written atomic.Int64
 
 	mu sync.Mutex
 	// exitStatus and exitSignal are what the Host sent to say how the shell
 	// ended.
 	exitStatus *uint32
 	exitSignal string
-	// malformed is why the page's bytes were no record, once they were not.
-	malformed error
 
 	closeOnce sync.Once
+}
+
+var _ hostShell = (*terminalShell)(nil)
+
+func (sh *terminalShell) outputs() []io.Reader { return []io.Reader{sh.ch, sh.ch.Stderr()} }
+
+func (sh *terminalShell) Write(p []byte) (int, error) { return sh.ch.Write(p) }
+
+// windowChange tells the Host the pty's size, its pixel sizes 0.
+func (sh *terminalShell) windowChange(cols, rows int) {
+	_, _ = sh.ch.SendRequest("window-change", false, ssh.Marshal(struct {
+		Columns, Rows, Width, Height uint32
+	}{Columns: uint32(cols), Rows: uint32(rows)}))
+}
+
+func (sh *terminalShell) requests() { sh.hostRequests() }
+
+// ending is why the SSH Session ends once the channel's output and
+// requests have: a channel the Host's connection took down sees it
+// broken.
+func (sh *terminalShell) ending() *ending {
+	if sh.host.Broken() != nil {
+		return hostEnding(sh.host, sh.hostName, sh.relays)
+	}
+	return errShellEnded
+}
+
+func (sh *terminalShell) exitState() (*uint32, string) {
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	return sh.exitStatus, sh.exitSignal
 }
 
 // close closes the session channel, if open, and the connection to the
@@ -481,141 +629,6 @@ func (sh *terminalShell) close() {
 		}
 		_ = sh.host.Close()
 	})
-}
-
-// relay relays the shell to and from the stream until the shell ends, the
-// Host's connection does, the page closes the stream or sends bytes that
-// are no record, or ctx ends with the Tunnel. What the Host sends becomes
-// data records, stdout and stderr merged as a pty merges them; data records
-// from the page go to the shell's stdin, and resize records become a
-// window-change. Once the shell ends it writes its exit record after the
-// last output, then closes the stream with no reason. An ending with a
-// notice writes it as a data line, then closes the stream with it. It
-// returns why the SSH Session ended.
-func (sh *terminalShell) relay(ctx context.Context) *ending {
-	var wg sync.WaitGroup
-	defer wg.Wait()
-	ended := make(chan *ending, 2)
-	var output sync.WaitGroup
-	output.Go(func() { sh.output(sh.ch) })
-	output.Go(func() { sh.output(sh.ch.Stderr()) })
-	requests := make(chan struct{})
-	wg.Go(func() {
-		defer close(requests)
-		sh.hostRequests()
-	})
-	wg.Go(func() {
-		output.Wait()
-		<-requests
-		// A channel the Host's connection took down sees it broken.
-		if sh.host.Broken() != nil {
-			ended <- hostEnding(sh.host, sh.hostName, sh.relays)
-			return
-		}
-		ended <- errShellEnded
-	})
-	wg.Go(func() {
-		if e := sh.input(); e != nil {
-			ended <- e
-		}
-	})
-
-	var end *ending
-	select {
-	case end = <-ended:
-	case <-ctx.Done():
-	}
-	if ctx.Err() != nil {
-		end = endingOf(context.Cause(ctx))
-	}
-	switch {
-	case end == errShellEnded:
-		// A page that takes nothing more, Detached with the buffer full,
-		// holds the exit record back until it Resumes, or until the SSH
-		// Session ends otherwise, which then says why.
-		if !sh.last(sh.exitRecords(), ctx.Done(), &wg) {
-			end = endingOf(context.Cause(ctx))
-		}
-		_ = sh.stream.CloseWithReason(end.notice)
-	case end.notice != "":
-		sh.last(noticeRecord(end.notice), sh.stream.Detached(), &wg)
-		_ = sh.stream.CloseWithReason(end.notice)
-	default:
-		// Nothing more is written. Closing the stream first ends a write
-		// of output waiting for room, which holds the records' turn.
-		reason := ""
-		if end == errMalformed {
-			sh.mu.Lock()
-			reason = sh.malformed.Error()
-			sh.mu.Unlock()
-		}
-		_ = sh.stream.CloseWithReason(reason)
-	}
-	// The files end while the Host connection lives, so an upload's partial
-	// file goes; closing it then ends the reads of the channel, its requests
-	// and the stream.
-	if sh.files != nil {
-		sh.files.end()
-	}
-	sh.close()
-	return end
-}
-
-// output writes what r, the shell's stdout or stderr, sends into the stream
-// as data records, until it ends.
-func (sh *terminalShell) output(r io.Reader) {
-	buf := make([]byte, wire.TerminalMaxRecord)
-	for {
-		n, err := r.Read(buf)
-		if n > 0 {
-			rec, _ := wire.AppendTerminalRecord(nil, wire.TerminalRecord{Type: wire.TerminalData, Data: buf[:n]}) // within its size
-			if !sh.write(rec) {
-				return
-			}
-		}
-		if err != nil {
-			return
-		}
-	}
-}
-
-// write writes the encoded records recs into the stream, after any written
-// before, unless the last has been, and says whether it did.
-func (sh *terminalShell) write(recs []byte) bool {
-	sh.writeMu.Lock()
-	defer sh.writeMu.Unlock()
-	if sh.closed {
-		return false
-	}
-	n, err := sh.stream.Write(recs)
-	sh.written.Add(int64(n))
-	return err == nil
-}
-
-// last writes the encoded records recs as the last the stream carries,
-// after any written before, in a goroutine wg waits for, and says once they
-// are in the stream. It gives up, saying false, once giveUp is closed
-// first: a write of output waiting for room in a full buffer, which a
-// Detached or stalled page never frees, holds the records' turn, and only
-// the stream's close, which the caller makes then, ends it and drops them.
-func (sh *terminalShell) last(recs []byte, giveUp <-chan struct{}, wg *sync.WaitGroup) bool {
-	written := make(chan struct{})
-	wg.Go(func() {
-		defer close(written)
-		sh.writeMu.Lock()
-		defer sh.writeMu.Unlock()
-		if !sh.closed && len(recs) > 0 {
-			n, _ := sh.stream.Write(recs)
-			sh.written.Add(int64(n))
-		}
-		sh.closed = true
-	})
-	select {
-	case <-written:
-		return true
-	case <-giveUp:
-		return false
-	}
 }
 
 // noticeRecord is an ending's notice as a web terminal shows it, in its
@@ -680,53 +693,6 @@ func (sh *terminalShell) hostRequests() {
 		sh.mu.Unlock()
 		if r.WantReply {
 			_ = r.Reply(false, nil)
-		}
-	}
-}
-
-// input reads the page's records from the stream and passes them to the
-// shell: data to its stdin, a resize as a window-change, the pixel sizes 0.
-// The page's half-close passes on as the stdin's EOF. It returns how the
-// SSH Session ends when the page closed the stream (clientClosed) or sent
-// bytes that are no record (errMalformed), or nil once the stream ends
-// otherwise, as when the relay closed it.
-func (sh *terminalShell) input() *ending {
-	r := wire.NewTerminalReader(countingReader{sh.stream, &sh.read})
-	for {
-		rec, err := r.Next()
-		if errors.Is(err, io.EOF) {
-			_ = sh.ch.CloseWrite()
-			return nil
-		}
-		if err == nil && rec.Type != wire.TerminalData && rec.Type != wire.TerminalResize {
-			err = wire.ErrTerminalMalformed
-		}
-		if _, ok := errors.AsType[*resumable.PeerClosedError](err); ok {
-			return clientClosed
-		}
-		if errors.Is(err, wire.ErrTerminalMalformed) || errors.Is(err, io.ErrUnexpectedEOF) {
-			sh.mu.Lock()
-			sh.malformed = errors.Join(resumable.ErrMalformed, err)
-			sh.mu.Unlock()
-			return errMalformed
-		}
-		if err != nil {
-			// The stream ended: closed by the relay, or for an offset
-			// outside its buffer, which a Tunnel's client sees as a close.
-			if errors.Is(err, resumable.ErrOffset) {
-				return clientClosed
-			}
-			return nil
-		}
-		switch rec.Type {
-		case wire.TerminalData:
-			// A Host that has closed the channel fails the write; the
-			// channel's end tells why.
-			_, _ = sh.ch.Write(rec.Data)
-		case wire.TerminalResize:
-			_, _ = sh.ch.SendRequest("window-change", false, ssh.Marshal(struct {
-				Columns, Rows, Width, Height uint32
-			}{Columns: rec.Columns, Rows: rec.Rows}))
 		}
 	}
 }

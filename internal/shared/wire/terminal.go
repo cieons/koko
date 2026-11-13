@@ -14,7 +14,9 @@ import (
 // stream's frames as the terminal uses them. It rises with any change to
 // them; the page and the koko server are one build, so the koko server
 // takes only its own (P1 spec: a terminal in the web UI, "Revisions").
-const TerminalProtocol = 1
+// Protocol 2 attaches a page to a Workspace's SSH Session (spec #213,
+// "The terminal socket and attaching").
+const TerminalProtocol = 2
 
 // TerminalMaxRecord is the most bytes one terminal record's payload holds.
 const TerminalMaxRecord = 32 << 10
@@ -42,20 +44,52 @@ const (
 	// TerminalExitSignal, from the Gateway, carries the name of the signal
 	// that ended the shell, such as KILL.
 	TerminalExitSignal TerminalRecordType = 0x03
+	// TerminalReset, from the Gateway, carries the pty's size, as a resize
+	// does: the page clears its emulator, scrollback included, to that
+	// size, and a snapshot follows as data records.
+	TerminalReset TerminalRecordType = 0x04
+	// TerminalActive, from the page, carries nothing: a person acted in
+	// it. From the Gateway it carries one byte, 1 when the page is the SSH
+	// Session's active page and 0 when it is no longer.
+	TerminalActive TerminalRecordType = 0x05
+	// TerminalColors, from the page, carries its theme's foreground, then
+	// its background, each 3 bytes of RGB.
+	TerminalColors TerminalRecordType = 0x06
+	// TerminalDisplaced, from the Gateway, carries nothing: more pages
+	// attached to the SSH Session than it takes, and this one, the least
+	// recently active, is detached; its stream closes next.
+	TerminalDisplaced TerminalRecordType = 0x07
+)
+
+// TerminalActivity is what a TerminalActive record says: a person's act,
+// from the page, or whether the page is the active page, from the Gateway.
+type TerminalActivity byte
+
+const (
+	// TerminalActed is the page's record: a person acted in it.
+	TerminalActed TerminalActivity = iota
+	// TerminalNowActive and TerminalNoLongerActive are the Gateway's.
+	TerminalNowActive
+	TerminalNoLongerActive
 )
 
 // TerminalRecord is one terminal record. Only its type's fields are set.
 type TerminalRecord struct {
 	Type          TerminalRecordType
-	Data          []byte // TerminalData's
-	Columns, Rows uint32 // TerminalResize's
-	Status        uint32 // TerminalExitStatus's
-	Signal        string // TerminalExitSignal's
+	Data          []byte           // TerminalData's
+	Columns, Rows uint32           // TerminalResize's and TerminalReset's
+	Status        uint32           // TerminalExitStatus's
+	Signal        string           // TerminalExitSignal's
+	Activity      TerminalActivity // TerminalActive's
+	// Foreground and Background are TerminalColors's, as RGB.
+	Foreground, Background [3]byte
 }
 
 // ErrTerminalMalformed is the error for bytes that are no terminal record:
-// an unknown type, a length past TerminalMaxRecord, a resize out of range,
-// or a payload that its length cuts short or that goes on past its fields.
+// an unknown type, a length past TerminalMaxRecord, a resize or reset out
+// of range, an active record's byte other than 0 or 1, colours of other
+// than 6 bytes, or a payload that its length cuts short or that goes on
+// past its fields.
 // The same error refuses to encode such a record.
 var ErrTerminalMalformed = errors.New("malformed terminal record")
 
@@ -66,7 +100,7 @@ func AppendTerminalRecord(buf []byte, r TerminalRecord) ([]byte, error) {
 	switch r.Type {
 	case TerminalData:
 		payload = r.Data
-	case TerminalResize:
+	case TerminalResize, TerminalReset:
 		if err := checkTerminalSize(uint64(r.Columns), uint64(r.Rows)); err != nil {
 			return buf, err
 		}
@@ -75,6 +109,19 @@ func AppendTerminalRecord(buf []byte, r TerminalRecord) ([]byte, error) {
 		payload = binary.AppendUvarint(nil, uint64(r.Status))
 	case TerminalExitSignal:
 		payload = []byte(r.Signal)
+	case TerminalActive:
+		switch r.Activity {
+		case TerminalActed:
+		case TerminalNowActive:
+			payload = []byte{1}
+		case TerminalNoLongerActive:
+			payload = []byte{0}
+		default:
+			return buf, fmt.Errorf("%w: activity %d", ErrTerminalMalformed, r.Activity)
+		}
+	case TerminalColors:
+		payload = append(r.Foreground[:], r.Background[:]...)
+	case TerminalDisplaced:
 	default:
 		return buf, fmt.Errorf("%w: type %#x", ErrTerminalMalformed, byte(r.Type))
 	}
@@ -89,7 +136,7 @@ func AppendTerminalRecord(buf []byte, r TerminalRecord) ([]byte, error) {
 // checkTerminalSize refuses a terminal size out of range.
 func checkTerminalSize(columns, rows uint64) error {
 	if columns < 1 || columns > TerminalMaxSide || rows < 1 || rows > TerminalMaxSide {
-		return fmt.Errorf("%w: a resize to %dx%d, each side being 1 to %d", ErrTerminalMalformed, columns, rows, TerminalMaxSide)
+		return fmt.Errorf("%w: a size of %dx%d, each side being 1 to %d", ErrTerminalMalformed, columns, rows, TerminalMaxSide)
 	}
 	return nil
 }
@@ -115,7 +162,7 @@ func (d *TerminalReader) Next() (TerminalRecord, error) {
 		return TerminalRecord{}, err
 	}
 	rec := TerminalRecord{Type: TerminalRecordType(t)}
-	if rec.Type > TerminalExitSignal {
+	if rec.Type > TerminalDisplaced {
 		return TerminalRecord{}, fmt.Errorf("%w: type %#x", ErrTerminalMalformed, t)
 	}
 	n, err := d.length()
@@ -132,7 +179,7 @@ func (d *TerminalReader) Next() (TerminalRecord, error) {
 	switch rec.Type {
 	case TerminalData:
 		rec.Data = payload
-	case TerminalResize:
+	case TerminalResize, TerminalReset:
 		columns, rest, err := terminalUvarint(payload, "columns")
 		if err != nil {
 			return TerminalRecord{}, err
@@ -159,6 +206,26 @@ func (d *TerminalReader) Next() (TerminalRecord, error) {
 		rec.Status = uint32(status)
 	case TerminalExitSignal:
 		rec.Signal = string(payload)
+	case TerminalActive:
+		switch {
+		case len(payload) == 0:
+			rec.Activity = TerminalActed
+		case len(payload) == 1 && payload[0] == 1:
+			rec.Activity = TerminalNowActive
+		case len(payload) == 1 && payload[0] == 0:
+			rec.Activity = TerminalNoLongerActive
+		default:
+			return TerminalRecord{}, fmt.Errorf("%w: an active record of %d bytes, %x", ErrTerminalMalformed, len(payload), payload)
+		}
+	case TerminalColors:
+		if len(payload) != 6 {
+			return TerminalRecord{}, fmt.Errorf("%w: colours of %d bytes, not 6", ErrTerminalMalformed, len(payload))
+		}
+		rec.Foreground, rec.Background = [3]byte(payload[:3]), [3]byte(payload[3:])
+	case TerminalDisplaced:
+		if err := terminalPayloadEnd(payload); err != nil {
+			return TerminalRecord{}, err
+		}
 	}
 	return rec, nil
 }

@@ -21,10 +21,10 @@
 // The Tunnel registry holds every Tunnel the Gateway accepted, by its id,
 // for as long as it lives: a Tunnel whose channel fails is Detached, and
 // lives for the grace, for the device to Resume it on another channel
-// (resume.go). A web terminal's SSH Session, which a browser opens over a
-// WebSocket the web front hands over, is one more kind of Tunnel in the same
-// registry, with a pty and a shell on the Host and a grace of its own
-// (terminal.go).
+// (resume.go). A web terminal's SSH Session, which a page opens in its
+// User's Workspace (workspace.go), is one more kind of Tunnel in the same
+// registry, with a pty and a shell on the Host, held apart from any page
+// (terminal.go, session.go).
 package gateway
 
 import (
@@ -94,21 +94,28 @@ type Gateway struct {
 	// Web URL, which no check of access tells: a Sign-in's web terminal
 	// admitted across it ends once registered.
 	webURLChanged uint64
+	// attachments are the pages attached to the Workspaces' SSH Sessions,
+	// by their id, until each ends (session.go).
+	attachments map[tunnelID]*attachment
+	// workspaces are the Users' Workspaces (workspace.go).
+	workspaces *Workspaces
+	// budget bounds the memory of the web terminals' emulators together,
+	// and newEmulator makes one (session.go).
+	budget      *vtBudget
+	newEmulator func(ctx context.Context, cols, rows int) (emulator, error)
 	// stopped is closed once the Gateway closes, which stops sweepSignIns.
 	stopped chan struct{}
 	wg      sync.WaitGroup
+	// loops are the web terminals' SSH Sessions' loops (session.go), which
+	// Close waits for only so long.
+	loops sync.WaitGroup
 }
 
 // maxSSHSessions is how many SSH Sessions one Device Session may have open
-// at once, from the CLI and koko web's terminal together, so that one
-// runaway agent cannot exhaust the koko server.
+// at once through Tunnels, so that one runaway agent cannot exhaust the
+// koko server. A Workspace's SSH Sessions count against its 16 tabs
+// instead (maxTabs).
 const maxSSHSessions = 64
-
-// maxBrowserSSHSessions is how many SSH Sessions one Sign-in may hold at
-// once, attached or Detached, across all its tabs: fewer than a Device
-// Session's, since a browser's are held fifteen times longer, and a stolen
-// cookie or a reload loop could otherwise hold many Host connections.
-const maxBrowserSSHSessions = 16
 
 // The clients an SSH Session comes from, as its log lines name them: the
 // CLI's SSH client in a Tunnel, or a browser's web terminal.
@@ -120,9 +127,11 @@ const (
 // New returns a Gateway that reads the record in st, opens the koko server's
 // keys with rootKey, reads a Sign-in's expiry on clock, the koko server's,
 // connects to Hosts as timings say (the zero Timings is the product's), and
-// logs each SSH Session to log. Until it closes, it looks for web terminals
-// whose Sign-in has expired every timing.SignInCheck (sweepSignIns).
-func New(st *store.Store, rootKey *seal.RootKey, clock func() time.Time, timings timing.Timings, log *slog.Logger) *Gateway {
+// logs each SSH Session to log. The web terminals' emulators hold at most
+// terminalMemory bytes together; 0 means no bound. Until it closes, it
+// looks for web terminals whose Sign-in has expired every
+// timing.SignInCheck (sweepSignIns).
+func New(st *store.Store, rootKey *seal.RootKey, clock func() time.Time, timings timing.Timings, terminalMemory int, log *slog.Logger) *Gateway {
 	g := &Gateway{
 		store:       st,
 		rootKey:     rootKey,
@@ -133,11 +142,18 @@ func New(st *store.Store, rootKey *seal.RootKey, clock func() time.Time, timings
 		tunnels:     map[tunnelID]*tunnel{},
 		ended:       map[tunnelID]endedTunnel{},
 		sshSessions: map[string]int{},
+		attachments: map[tunnelID]*attachment{},
+		budget:      newBudget(terminalMemory),
+		newEmulator: newVT,
 		stopped:     make(chan struct{}),
 	}
+	g.workspaces = &Workspaces{g: g, of: map[string]*workspace{}}
 	g.wg.Go(g.sweepSignIns)
 	return g
 }
+
+// Workspaces returns the Users' Workspaces, whose delete user.remove calls.
+func (g *Gateway) Workspaces() *Workspaces { return g.workspaces }
 
 // readContext is ctx for a read that asks the access check about a caller,
 // such as a Sign-in, whose expiry it reads at the koko server's time.
@@ -159,8 +175,13 @@ type tunnel struct {
 	// the CLI's, clientBrowser for a web terminal (terminal.go).
 	client string
 	// run, for a web terminal of the Local caller's, names the run of koko
-	// web it came through, which alone may Resume it.
+	// web it came through.
 	run string
+	// session, for a web terminal, is its SSH Session in a Workspace
+	// (session.go), and seen the count of access changes Withdraw had
+	// taken before its admission.
+	session *termSession
+	seen    uint64
 	// holdFor is the grace: how long the Tunnel is held Detached.
 	holdFor time.Duration
 	// from is the address of the connection the Tunnel came on.
@@ -191,9 +212,6 @@ type tunnel struct {
 	grace    *time.Timer
 	// detached is when the running grace started.
 	detached time.Time
-	// socket, for a web terminal, is the WebSocket its stream was last
-	// attached to, which cut closes at once.
-	socket TerminalSocket
 
 	// files, for a web terminal once its shell has started, are its files
 	// on the Host (files.go). g.mu guards it.
@@ -289,11 +307,14 @@ func (g *Gateway) Open(c *transport.Connection, nch ssh.NewChannel) {
 	g.wg.Go(func() { g.serve(c, nch) })
 }
 
-// Close ends every Tunnel, telling each SSH Session that the koko server is
-// restarting (errStopping), refuses new ones, and waits for the Tunnels'
-// goroutines. Ending a Tunnel closes its stream with the notice, which waits
-// until its channel took the close or failed, so the transport's Close,
-// which ends a connection too stalled to take it, must follow in time.
+// Close ends every Tunnel, telling each SSH Session that the koko server
+// is restarting (errStopping), refuses new ones, and waits for the
+// Tunnels' goroutines. A web terminal's loop inside a call into its
+// emulator, which nothing stops, is waited for timing.StopNotice at most,
+// and logged. Ending a Tunnel closes its stream with the notice, which
+// waits until its channel took the close or failed, so the transport's
+// Close, which ends a connection too stalled to take it, must follow in
+// time.
 func (g *Gateway) Close() {
 	g.mu.Lock()
 	if !g.closed {
@@ -305,6 +326,16 @@ func (g *Gateway) Close() {
 	}
 	g.mu.Unlock()
 	g.wg.Wait()
+	loops := make(chan struct{})
+	go func() {
+		g.loops.Wait()
+		close(loops)
+	}()
+	select {
+	case <-loops:
+	case <-time.After(g.timings.StopNotice):
+		g.log.Warn("web terminal emulator still in a call as the koko server stops", "waited", g.timings.StopNotice)
+	}
 }
 
 // serve serves one Tunnel from its channel open until it ends, or Resumes
@@ -371,15 +402,16 @@ func (g *Gateway) serve(c *transport.Connection, nch ssh.NewChannel) {
 	g.session(t, sshName, a, stopEarlyClose)
 }
 
-// register puts the new Tunnel t in the registry, under its id. One the
-// access check admitted, as a says, counts against its caller's limit
-// (op.Caller.ID), unless the caller holds the most already, when register
-// returns the refusal: maxBrowserSSHSessions for a Sign-in, maxSSHSessions
-// for a Device Session. Withdraw could not see one admitted across an access
-// change, a change it took after the first seen, so register has it checked
-// again, and ends a Sign-in's admitted across a change of the Web URL,
-// which no check of access tells. It fails once the Gateway is closing, or
-// for a web terminal once CloseTerminals has ended them.
+// register puts the new Tunnel t in the registry, under its id. A Tunnel
+// the access check admitted, as a says, counts against its caller's limit
+// (op.Caller.ID), maxSSHSessions, unless the caller holds the most
+// already, when register returns the refusal; a Workspace's SSH Session
+// counts against its tabs instead. Withdraw could not see one admitted
+// across an access change, a change it took after the first seen, so
+// register has it checked again, and ends a Sign-in's admitted across a
+// change of the Web URL, which no check of access tells. It fails once
+// the Gateway is closing, or for a web terminal once CloseTerminals has
+// ended them.
 func (g *Gateway) register(t *tunnel, a admission, seen uint64) (*refusal, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -391,14 +423,10 @@ func (g *Gateway) register(t *tunnel, a admission, seen uint64) (*refusal, bool)
 	if a.refused != nil {
 		return nil, true
 	}
-	if id := t.caller.ID(); id != "" {
-		most, holder := maxSSHSessions, "Device Session"
-		if t.caller.SignIn != "" {
-			most, holder = maxBrowserSSHSessions, "Sign-in"
-		}
-		if g.sshSessions[id] >= most {
+	if id := t.caller.ID(); id != "" && t.session == nil {
+		if g.sshSessions[id] >= maxSSHSessions {
 			return &refusal{
-				banner: fmt.Sprintf("koko: this %s already has %d SSH Sessions open, the most koko allows; this SSH Session did not start.\n", holder, most),
+				banner: fmt.Sprintf("koko: this Device Session already has %d SSH Sessions open, the most koko allows; this SSH Session did not start.\n", maxSSHSessions),
 				reason: "ssh session limit", code: wire.TerminalSSHSessionLimit,
 			}, true
 		}
@@ -486,6 +514,13 @@ var errNotInitialised = errors.New("the koko server is not initialised, so it ha
 // checked against webURL, when not empty, is refused once the Web URL is
 // another. It fails only on an error of the koko server's own.
 func (g *Gateway) admit(ctx context.Context, caller op.Caller, hostName, webURL string) (admission, error) {
+	return g.admitRef(ctx, caller, hostName, hostName, webURL)
+}
+
+// admitRef admits as admit does the Host ref names, by its name or, for a
+// tab's reopen, by its id, which a rename leaves as it is; hostName names
+// it in a refusal.
+func (g *Gateway) admitRef(ctx context.Context, caller op.Caller, ref, hostName, webURL string) (admission, error) {
 	var a admission
 	ctx = g.readContext(ctx)
 	err := g.store.Read(ctx, func(tx store.Tx) error {
@@ -516,12 +551,12 @@ func (g *Gateway) admit(ctx context.Context, caller op.Caller, hostName, webURL 
 				return nil
 			}
 		}
-		if name.Check(hostName) != nil {
+		if ref == hostName && name.Check(hostName) != nil {
 			// Not a Host name, such as a Host's id: no SSH Name names it.
 			a.refused = &refusal{banner: unknownHost(hostName), code: wire.TerminalUnknownHost, reason: "unknown host"}
 			return nil
 		}
-		a.who, a.host, err = host.ReachOf(ctx, tx, caller, hostName)
+		a.who, a.host, err = host.ReachOf(ctx, tx, caller, ref)
 		if e, ok := errors.AsType[*api.Error](err); ok {
 			a.refused = accessRefusal(hostName, e)
 			return nil

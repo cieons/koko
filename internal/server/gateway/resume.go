@@ -180,17 +180,16 @@ func (g *Gateway) resume(c *transport.Connection, nch ssh.NewChannel, p wire.Tun
 		return
 	}
 	g.wg.Go(func() { ssh.DiscardRequests(reqs) })
-	g.moveOnto(t, attrs, func() error { return t.stream.AcceptResume(ch, p.Received) }, nil)
+	g.moveOnto(t, attrs, func() error { return t.stream.AcceptResume(ch, p.Received) })
 }
 
 // moveOnto Resumes the Tunnel t through attach, which moves its stream onto
 // a new channel, off the one it is on, if any, and logs the outcome with
-// attrs. Once on, its grace stops, onto, unless nil, notes what it is on
-// under t.mu, and its new channel is watched for its end; it says so. A
-// failed attach leaves t Detached, its grace running, unless the other
-// end's offset was outside the stream's buffer, which ends the stream and
-// the SSH Session.
-func (g *Gateway) moveOnto(t *tunnel, attrs []any, attach func() error, onto func()) bool {
+// attrs. Once on, its grace stops, and its new channel is watched for its
+// end. A failed attach leaves t Detached, its grace running, unless the
+// other end's offset was outside the stream's buffer, which ends the
+// stream and the SSH Session.
+func (g *Gateway) moveOnto(t *tunnel, attrs []any, attach func() error) {
 	t.mu.Lock()
 	t.resuming++
 	t.mu.Unlock()
@@ -201,16 +200,12 @@ func (g *Gateway) moveOnto(t *tunnel, attrs []any, attach func() error, onto fun
 		g.holdLocked(t)
 	} else {
 		t.stopGraceLocked()
-		if onto != nil {
-			onto()
-		}
 	}
 	t.mu.Unlock()
 	if err != nil {
 		g.log.Info("ssh session resume failed", append(attrs, "err", err)...)
-		return false
+		return
 	}
 	g.log.Info("ssh session resumed", attrs...)
 	g.watch(t)
-	return true
 }

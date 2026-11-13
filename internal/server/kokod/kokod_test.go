@@ -20,6 +20,7 @@ import (
 // command line.
 type settings struct {
 	DataDir, RootKeyPath, RootKeySource, Owner, Address, Listen, WebListen string
+	TerminalMemory                                                         int64
 	LogLevel                                                               slog.Level
 }
 
@@ -36,14 +37,15 @@ func (f *fakeServer) program() kokod.Program {
 		f.calls++
 		_, _ = io.WriteString(c.Log, "level=INFO msg=started\n")
 		f.settings = settings{
-			DataDir:       c.DataDir,
-			RootKeyPath:   c.RootKeyPath,
-			RootKeySource: c.RootKeySource,
-			Owner:         c.Owner,
-			Address:       c.Address,
-			Listen:        c.Listen,
-			WebListen:     c.WebListen,
-			LogLevel:      c.LogLevel,
+			DataDir:        c.DataDir,
+			RootKeyPath:    c.RootKeyPath,
+			RootKeySource:  c.RootKeySource,
+			Owner:          c.Owner,
+			Address:        c.Address,
+			Listen:         c.Listen,
+			WebListen:      c.WebListen,
+			TerminalMemory: c.TerminalMemory,
+			LogLevel:       c.LogLevel,
 		}
 		return f.err
 	}}
@@ -129,8 +131,20 @@ func TestRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
 			withWebListen(defaults, "[::1]:7823"),
 		},
 		{
+			"the terminals' memory as a flag",
+			[]string{credentialsDirectory, "KOKO_TERMINAL_MEMORY=512"},
+			[]string{"--terminal-memory", "1024"},
+			withTerminalMemory(defaults, 1<<30),
+		},
+		{
+			"the terminals' memory in the environment",
+			[]string{credentialsDirectory, "KOKO_TERMINAL_MEMORY=512"},
+			nil,
+			withTerminalMemory(defaults, 512<<20),
+		},
+		{
 			"empty variable is unset",
-			[]string{credentialsDirectory, "KOKO_DATA_DIR=", "KOKO_ROOT_KEY_FILE=", "KOKO_LISTEN=", "KOKO_WEB_LISTEN="},
+			[]string{credentialsDirectory, "KOKO_DATA_DIR=", "KOKO_ROOT_KEY_FILE=", "KOKO_LISTEN=", "KOKO_WEB_LISTEN=", "KOKO_TERMINAL_MEMORY="},
 			nil,
 			defaults,
 		},
@@ -154,6 +168,12 @@ func TestRunTakesItsSettingsFromFlagsThenEnvironment(t *testing.T) {
 // withWebListen is s with the web listener on at addr.
 func withWebListen(s settings, addr string) settings {
 	s.WebListen = addr
+	return s
+}
+
+// withTerminalMemory is s with the terminals' memory bounded at n bytes.
+func withTerminalMemory(s settings, n int64) settings {
+	s.TerminalMemory = n
 	return s
 }
 
@@ -192,6 +212,8 @@ func TestRunRefusesBadSettings(t *testing.T) {
 		{"web listener port by name", []string{credentialsDirectory, "KOKO_WEB_LISTEN=127.0.0.1:http"}, nil, `--web-listen (KOKO_WEB_LISTEN) takes host:port, such as 127.0.0.1:7823, not "127.0.0.1:http"`},
 		{"web listener without a host", []string{credentialsDirectory}, []string{"--web-listen", ":7823"}, `--web-listen (KOKO_WEB_LISTEN) takes host:port, such as 127.0.0.1:7823, not ":7823"`},
 		{"web listener off by word", []string{credentialsDirectory, "KOKO_WEB_LISTEN=off"}, nil, `--web-listen (KOKO_WEB_LISTEN) takes host:port`},
+		{"terminals' memory not a number", []string{credentialsDirectory}, []string{"--terminal-memory", "1GiB"}, `--terminal-memory (KOKO_TERMINAL_MEMORY) takes MiB, 64 to 1048576, not "1GiB"`},
+		{"terminals' memory too small", []string{credentialsDirectory, "KOKO_TERMINAL_MEMORY=8"}, nil, `--terminal-memory (KOKO_TERMINAL_MEMORY) takes MiB, 64 to 1048576, not "8"`},
 		{"Owner without Server Address", []string{credentialsDirectory}, []string{"--owner", "alice"}, "--owner (KOKO_OWNER) needs --address (KOKO_ADDRESS)"},
 		{"Owner without Server Address in the environment", []string{credentialsDirectory, "KOKO_OWNER=alice"}, nil, "--owner (KOKO_OWNER) needs --address (KOKO_ADDRESS)"},
 		{"Server Address without Owner", []string{credentialsDirectory}, []string{"--address", "koko.example.com"}, "--address (KOKO_ADDRESS) needs --owner (KOKO_OWNER)"},

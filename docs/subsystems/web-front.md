@@ -104,8 +104,9 @@ request on a `web@koko` channel in this order:
 1. **The Host header** must be `localhost:<port>` or `127.0.0.1:<port>`, with
    the channel's port (for port 80 browsers leave `:80` out, and so may the
    header). Any other Host gets no answer: the connection is closed without
-   a response. This defeats DNS rebinding. `/terminal/socket` then goes to
-   [the web terminal's WebSocket](#the-web-terminals-websocket), and a path
+   a response. This defeats DNS rebinding. `/terminal/workspace` and
+   `/terminal/socket` then go to
+   [the web terminal's WebSockets](#the-web-terminals-websocket), and a path
    under `/terminal/files/` to [the web terminal's
    files](#the-web-terminals-files), each of which checks the rest itself.
 2. **A Revoked Device Session.** A request on a connection of a Device
@@ -173,8 +174,9 @@ default, is off: a koko server without it listens on nothing new.
   `web listener` with `listen=` its bound address, or `off`, and `web_url=`
   the Web URL, or that none is set.
 - **At shutdown** the web terminals end first, each with the Gateway's
-  restart notice and its WebSocket closed, since the listener's shutdown
-  does not track a WebSocket ([the Gateway](gateway.md#the-web-terminal)).
+  restart notice and its pages' WebSockets closed, and every Workspace
+  socket gets `stopping`, since the listener's shutdown does not track a
+  WebSocket ([the Gateway](gateway.md#the-web-terminal)).
   The listener is closed next, before the Tunnels' notices: it stops
   accepting and waits up to 5 s for its calls in flight, then cuts them
   ([`Server.Close`](../../internal/server/server.go)).
@@ -204,8 +206,8 @@ endpoints set the Sign-in cookie, and only they and `/v1/` read it.
    anything is counted. An API path and an `/auth/` endpoint get the error
    object, any other path a page; a files endpoint gets the error object
    too.
-5. **`/terminal/socket`** is [the web terminal's
-   WebSocket](#the-web-terminals-websocket).
+5. **`/terminal/socket`** and **`/terminal/workspace`** are [the web
+   terminal's WebSockets](#the-web-terminals-websocket).
 6. **`/auth/`** is the web front's own endpoints, which sign a browser in,
    set a Password and sign out ([Sign-ins](signin.md#the-auth-endpoints)).
 7. **`/terminal/files/`** is [the web terminal's
@@ -323,15 +325,27 @@ in the database:
 
 ## The web terminal's WebSocket
 
-`GET /terminal/socket` ([`web.TerminalPath`](../../internal/server/web/terminal.go)),
-a WebSocket handshake ([RFC 6455](https://www.rfc-editor.org/rfc/rfc6455)),
-on the web listener and on `web@koko` alike, where the page at `/terminal`
-opens its SSH Sessions
-([ADR 0053](../adr/0053-a-browser-opens-ssh-sessions-through-a-websocket-to-the-gateway.md);
-P1 spec: a terminal in the web UI, "The terminal endpoint"). After the
-checks every request gets, the 503 pages and the Host check on the
-listener, or the Host guard on `web@koko`, the web front answers in this
-order (`Front.serveTerminal`):
+A page at `/terminal` keeps two kinds of WebSocket
+([`terminal.go`](../../internal/server/web/terminal.go);
+[ADR 0053](../adr/0053-a-browser-opens-ssh-sessions-through-a-websocket-to-the-gateway.md),
+refined by
+[ADR 0057](../adr/0057-a-users-web-terminal-tabs-are-one-workspace-held-by-the-koko-server.md);
+P1 spec: a terminal in the web UI, "The terminal endpoint", and spec
+#213), each a WebSocket handshake
+([RFC 6455](https://www.rfc-editor.org/rfc/rfc6455)) on the web listener
+and on `web@koko` alike:
+
+- **`GET /terminal/workspace`** (`web.WorkspacePath`), the Workspace
+  socket, one per page: its User's Workspace, and its requests to open,
+  reopen and close tabs ([below](#the-workspace-socket)).
+- **`GET /terminal/socket`** (`web.TerminalPath`), the terminal socket,
+  one for each SSH Session the page attaches to
+  ([below](#the-terminal-socket)).
+
+After the checks every request gets, the 503 pages and the Host check on
+the listener, or the Host guard on `web@koko`, the web front answers both
+with the same checks in this order (`Front.acceptSocket`, then
+`Front.admitPage`):
 
 1. **Another method** gets a `405` page, and **a `GET` that is no
    WebSocket upgrade** (`Connection: upgrade` and `Upgrade: websocket`) a
@@ -348,22 +362,21 @@ order (`Front.serveTerminal`):
    the listener `http.Server` gives the connection up to it; on `web@koko`
    the channel's connection is given up the same way.
 4. **The first message**: one text message of JSON, at most 4 KiB, within
-   `timing.FirstMessage` (10 s) of the upgrade
-   ([`wire.TerminalFirst`](../../internal/shared/wire/terminalfirst.go)).
-   None in time, binary, larger or no JSON closes the WebSocket with status
-   1008 and no answer.
-
-| Page sends | Answered with one text message |
-| --- | --- |
-| `{"protocol": 1, "open": "web1", "cols": 120, "rows": 36}` | `{"tunnel": "<32 hex>"}` once the Host has been dialled and its shell has started, or a refusal |
-| `{"protocol": 1, "resume": "<32 hex>", "offset": 4096}` | `{"offset": 2048}`, the koko server's received offset, or `{"refused": "resume_refused", "message": "<why>"}`, the message empty for an id the Gateway holds nothing of for this caller |
-| `{"protocol": 1, "end": "<32 hex>"}` | `{"ended": true}` once the Gateway has ended that SSH Session of this caller as the client's close, or had none, then a close with status 1000 |
+   `timing.FirstMessage` (10 s) of the upgrade. None in time, binary,
+   larger or no JSON closes the WebSocket with status 1008 and no answer.
+5. **The protocol.** A first message naming another `protocol` than this
+   koko server's (`wire.TerminalProtocol`, 2) is refused with
+   `reload_page`, on both sockets, a protocol 1 page's among them; the page
+   and the koko server are one build.
+6. **The caller**: the live Sign-in on the listener, and on `web@koko` the
+   connection's Device Session or the Local caller with its run of `koko
+   web`.
 
 A browser reports a refused upgrade as an error alone, so every refusal
-but the two above is the first message's answer, `{"refused": "<code>",
-"message": "<text>"}`, and then a close with status 1008; the page then
-makes no further attempt. The web front answers these itself, in this
-order, before the Gateway sees the message:
+but the two before the upgrade is the first message's answer,
+`{"refused": "<code>", "message": "<text>"}`, and then a close with
+status 1008; the page then makes no further attempt. The web front answers
+these itself, in this order, before the Gateway sees the message:
 
 | Code | When |
 | --- | --- |
@@ -372,25 +385,101 @@ order, before the Gateway sees the message:
 | `revoked` | On `web@koko`, the connection's Device Session was Revoked, as for every request there. |
 | `cookie_required` | On `web@koko`, no valid cookie of this `koko web`. |
 
-A message that asks for no one thing, an open at a size outside 1 to
-4,096, or an id that is not 32 lowercase hex characters is then closed with
-1008 and no answer. The [Gateway](gateway.md#the-web-terminal) answers the
-rest: an open's refusals carry `unknown_host`, `host_registered`,
-`relay_registered`, `access_refused`, `ssh_session_limit`,
-`host_unreachable`, `host_key_mismatch`, `login_refused`,
-`host_connection_failed` or `shell_refused`, with the Gateway's banner
-for it, and a failure of the koko server's own `internal_error`. Once
-accepted, every message either way is binary, and their bytes are one
-resumable stream (`websocket.NetConn`) carrying terminal records; a text
-message then closes the WebSocket with status 1003, `NetConn`'s own. While
-the koko server stops, a new one is closed at once.
+The first message is then handed to the
+[Gateway](gateway.md#the-web-terminal) with the caller, which answers it.
+While the koko server stops, a new WebSocket is closed at once. No secret
+is in the URL: the cookie authenticates, and the ids travel inside the
+WebSockets. A refusal is logged at debug level as `web terminal refused`
+with its reason and the client's address, never with the cookie.
 
-The caller is the live Sign-in on the listener, and on `web@koko` the
-connection's Device Session or the Local caller with its run of `koko
-web`, whose terminals end when the run's connection closes. No secret is in the URL: the cookie authenticates, and the SSH
-Session's id travels inside the WebSocket. A refusal is logged at debug
-level as `web terminal refused` with its reason and the client's address,
-never with the cookie.
+### The Workspace socket
+
+Every message either way is one text message of JSON
+([`wire/workspace.go`](../../internal/shared/wire/workspace.go)), at most
+4 KiB from the page (`wire.WorkspaceMaxMessage`).
+
+| Page sends | The koko server answers |
+| --- | --- |
+| `{"protocol": 2}`, first | the Workspace, below |
+| `{"request": 7, "open": "web1", "cols": 120, "rows": 36}` | `{"request": 7, "tab": "<32 hex>"}` once the tab is added, its SSH Session `starting`; or `{"request": 7, "refused": "<code>", "message": "<text>"}` |
+| `{"request": 8, "reopen": "<tab>", "cols": 120, "rows": 36}` | the same, for a tab `ended`, `refused` or `restarted`: a new SSH Session in it; a tab `starting` or `running` is answered as it is, and one that is gone with `unknown_tab` |
+| `{"request": 9, "close": "<tab>"}` | `{"request": 9}` once the tab is gone and its SSH Session ending; a tab already gone is answered the same |
+| `{}` | nothing: liveness alone |
+
+The Workspace, sent first and again after every change to every page of
+the User, whole, before the answer to the request that changed it:
+
+```json
+{"tabs": [
+  {"id": "<32 hex>", "host": "web1", "label": "web1", "session": "<32 hex>", "state": "running", "opened_at": "…"},
+  {"id": "<32 hex>", "host": "db2", "label": "db2", "state": "ended", "opened_at": "…",
+   "ended": {"reason": "shell ended", "exit_status": 0}},
+  {"id": "<32 hex>", "host": "web1", "label": "web1 (2)", "state": "refused", "opened_at": "…",
+   "refused": {"code": "host_unreachable", "message": "…"}}
+]}
+```
+
+- **An open's refusals** carry `unknown_host`, `host_registered`,
+  `relay_registered`, `access_refused`, `ssh_session_limit` (the 17th
+  tab), `host_unreachable`, `host_key_mismatch`, `login_refused`,
+  `host_connection_failed` or `shell_refused`, with the Gateway's banner
+  for it, and a failure of the koko server's own `internal_error`. The
+  limit and the admission's refusals answer the request; those of the Host, its chain or
+  its shell come after the answer, in the tab's `refused`
+  ([the Gateway](gateway.md#the-web-terminal)).
+- **A message that is no request**, one asking for none or several of
+  `open`, `reopen` and `close`, one without its `request` number, an open
+  at a size outside 1 to 4,096, or a tab's id that is not 32 lowercase hex
+  characters, closes the socket with status 1008; one over 4 KiB with
+  1009, the WebSocket's own.
+- **Each request acts for its caller as it is now:** a caller that has
+  ended since the first message, such as a revoked Sign-in, changes
+  nothing, and its socket is closed.
+- **Reopening after a restart.** The page reopens its `restarted` tabs in
+  tab order, sending each `reopen` only once the last one's tab has left
+  `starting`, so that the koko server dials their Hosts one by one.
+- **Liveness.** Each end sends `{}` after `timing.ServerProbe` (15 s)
+  without sending, and cuts the WebSocket after `timing.ServerDead` (45 s)
+  without receiving. The first message moves the Sign-in's Last used time;
+  the messages after it do not.
+- **The koko server stopping** sends `{"stopping": "the koko server is
+  restarting"}` and closes the socket.
+
+### The terminal socket
+
+| Page sends | Answered with one text message |
+| --- | --- |
+| `{"protocol": 2, "attach": "<SSH Session id>", "cols": 120, "rows": 36}` | `{"attachment": "<32 hex>"}`, then the stream; or `unknown_tunnel` for an id that names no live SSH Session of the caller's User, `ssh_session_ended` for one that has ended |
+| `{"protocol": 2, "resume": "<attachment id>", "offset": 4096}` | `{"offset": 2048}`, the koko server's received offset, or `{"refused": "resume_refused", "message": "<why>"}`, the message empty for an id the Gateway holds nothing of for this caller |
+
+([`wire.TerminalFirst`](../../internal/shared/wire/terminalfirst.go).) A
+first message that asks for neither or both of `attach` and `resume`, an
+attach at a size outside 1 to 4,096, or an id that is not 32 lowercase hex
+characters is closed with 1008 and no answer; so is one at protocol 2
+that carries protocol 1's `open` or `end`, since a tab is opened and
+closed on the Workspace socket. Once
+accepted, every message either way is binary, and their bytes are the
+attachment's resumable stream (`websocket.NetConn`) carrying terminal
+records ([`wire/terminal.go`](../../internal/shared/wire/terminal.go)): a
+one-byte type, a uvarint length of at most 32 KiB, then the payload. A
+text message then closes the WebSocket with status 1003, `NetConn`'s own.
+
+| Record | Way | Payload |
+| --- | --- | --- |
+| `data` (0x00) | both | bytes typed or pasted, or the shell's output |
+| `resize` (0x01) | page → Gateway | uvarint columns, uvarint rows, each 1 to 4,096: the page's box in cells |
+| `exit status` (0x02) | Gateway → page | the shell's exit status as a uvarint |
+| `exit signal` (0x03) | Gateway → page | the name of the signal that ended the shell |
+| `reset` (0x04) | Gateway → page | uvarint columns, uvarint rows: clear the emulator, scrollback included, to this size; a snapshot follows as data records |
+| `active` (0x05) | page → Gateway | nothing: a person acted in this page |
+| `active` (0x05) | Gateway → page | one byte: 1 when this page is the SSH Session's active page, 0 when it is no longer |
+| `colors` (0x06) | page → Gateway | the theme's foreground, then its background, each 3 bytes of RGB |
+| `displaced` (0x07) | Gateway → page | nothing: more pages attached than the SSH Session takes, and this one, the least recently active, is detached; its stream closes next |
+
+[`wire/testdata/terminal.golden`](../../internal/shared/wire/testdata/terminal.golden)
+holds each record's bytes, and the bytes refused, in a section per
+protocol, which the page's end reads too
+([the resumable stream](resumable-stream.md#verify)).
 
 ## The web terminal's files
 
@@ -416,14 +505,14 @@ JSON with `Cache-Control: no-store` beside the way in's headers:
    `web@koko` `http://localhost:<port>` or `http://127.0.0.1:<port>`, where
    the API needs none since it takes only JSON. Another, or none, is
    `bad_origin` (403), before the cookie or the body is read.
-3. **The caller**, as for the WebSocket: on the listener the live Sign-in,
+3. **The caller**, as for the WebSockets: on the listener the live Sign-in,
    moving its Last used time as a call does, else `signin_required`; on
    `web@koko` `revoked`, then `cookie_required`.
 4. **A JSON endpoint** takes `application/json` of at most 4 KiB
    (`api.MaxFilesBody`), a member it does not know refused.
 5. **The Gateway** takes only the caller who opened the SSH Session, so
    another caller's id is `unknown_tunnel`, as an id of none is. The files
-   move whether the WebSocket is attached or Detached.
+   move whether any page is attached to the SSH Session or none.
 
 | Endpoint | Takes | Answers |
 | --- | --- | --- |
@@ -586,15 +675,19 @@ and user. It is per OS ([rule 13](code-layout.md#rules-for-working-in-parallel))
   against the web listener with a Go page (`harness.TerminalPage`): a `GET`
   that is no upgrade answered `426`; another Origin, none and the Web URL
   on another scheme or port refused `403` before the upgrade; `reload_page`,
-  `signin_required` without a cookie and for an ended Sign-in, each closed
-  with 1008; a malformed first message, a binary one, one over 4 KiB and
-  none within `timing.FirstMessage` closed with 1008 and no answer; and no
-  Host dialled for any of them. What follows the first message is the
+  a protocol 1 page's among them, and `signin_required` without a cookie
+  and for an ended Sign-in, on the terminal socket and the Workspace socket
+  alike, each closed with 1008; a malformed first message, protocol 1's
+  `open` and `end` at protocol 2 among them, a binary one, one over 4 KiB
+  and none within `timing.FirstMessage` closed with 1008 and no answer; and
+  no Host dialled for any of them. What follows the first message is the
   Gateway's ([its tests](gateway.md#verifying)).
+  [`wire/terminal_test.go`](../../internal/shared/wire/terminal_test.go)
+  encodes and decodes each line of `terminal.golden`.
 - [`terminal_files_test.go`](../../internal/server/web/terminal_files_test.go),
   S1 against the web listener and in-process Hosts serving SFTP: the
   listings, a Host without SFTP, every refusal of a files call as JSON,
-  files while Detached and once ended, the uploads and the downloads
+  files with no page attached and once ended, the uploads and the downloads
   ([the Gateway's tests](gateway.md#verifying));
   [`web_terminal_files_test.go`](../../internal/client/cli/web_terminal_files_test.go)
   the Origin check on every files `POST` through `koko web`,

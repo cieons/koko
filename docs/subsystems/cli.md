@@ -661,7 +661,12 @@ statuses ([`settings.go`](../../internal/server/kokod/settings.go)):
 `--data-dir` (`KOKO_DATA_DIR`, default `/var/lib/koko`), `--root-key-file`
 (`KOKO_ROOT_KEY_FILE`, default `$CREDENTIALS_DIRECTORY/root-key`, the file
 systemd's `LoadCredential=root-key` hands the unit), `--listen`
-(`KOKO_LISTEN`, default `:7822`), `--log-level` (`KOKO_LOG_LEVEL`), and
+(`KOKO_LISTEN`, default `:7822`), `--terminal-memory`
+(`KOKO_TERMINAL_MEMORY`, the most the web terminals' emulators hold
+together, in MiB, 64 to 1048576; by default a quarter of the memory the
+koko server may use, at most 2048;
+[the Gateway](gateway.md#the-web-terminal)), `--log-level`
+(`KOKO_LOG_LEVEL`), and
 `--owner` (`KOKO_OWNER`) with `--address` (`KOKO_ADDRESS`), with which a
 fresh koko server initialises itself at start
 ([initialisation at first start](initialisation.md#at-first-start)). It

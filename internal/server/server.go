@@ -39,6 +39,7 @@ import (
 	"github.com/cieons/koko/internal/server/transport"
 	"github.com/cieons/koko/internal/server/updatecheck"
 	"github.com/cieons/koko/internal/server/user"
+	"github.com/cieons/koko/internal/server/vt"
 	"github.com/cieons/koko/internal/server/web"
 	"github.com/cieons/koko/internal/server/webui"
 	"github.com/cieons/koko/internal/shared/api"
@@ -122,6 +123,15 @@ type Config struct {
 	// Upgrade is how the koko server is upgraded, which server.show names
 	// (ADR 0048): kokod run fills it in from the machine.
 	Upgrade Upgrade
+	// TerminalMemory bounds the memory the web terminals' emulators hold
+	// together, across every User, in bytes: 0 means the default,
+	// defaultTerminalMemory of MachineMemory. Once a call passes it, the
+	// largest emulator is dropped and made anew, and its shell goes on.
+	TerminalMemory int64
+	// MachineMemory returns the memory the koko server may use, the
+	// machine's or its container's limit, or 0 when it cannot tell: kokod
+	// run fills it in from the machine. Nil means 0.
+	MachineMemory func() uint64
 	// UpdateClock is the clock the check for a new koko release waits on
 	// (ADR 0048): updatecheck.System on a machine, a fake in tests, which
 	// moves only as the test moves it, so that no test's koko server asks
@@ -147,6 +157,42 @@ type Config struct {
 	// new koko release finds the latest. The zero Source is GitHub's (ADR
 	// 0041). No flag or environment variable sets it.
 	Releases release.Source
+}
+
+// The default bound of the web terminals' emulators together: a quarter of
+// the memory the koko server may use, and at most maxTerminalMemory, which
+// holds about 120 SSH Sessions at 120 by 40 with their history full.
+const (
+	terminalMemoryShare = 4
+	maxTerminalMemory   = 2 << 30
+)
+
+// terminalMemory is the bound of the web terminals' emulators together
+// that cfg gives, or the default.
+func terminalMemory(cfg Config) int {
+	if cfg.TerminalMemory > 0 {
+		return int(cfg.TerminalMemory)
+	}
+	var machine uint64
+	if cfg.MachineMemory != nil {
+		machine = cfg.MachineMemory()
+	}
+	if machine == 0 {
+		return maxTerminalMemory
+	}
+	return int(min(machine/terminalMemoryShare, maxTerminalMemory))
+}
+
+// logEmulator logs once, at start, which of wazero's engines runs the web
+// terminals' emulator, the compiler or the interpreter and why, which is
+// about 100 times slower, and their memory's bound.
+func logEmulator(log *slog.Logger, bound int) {
+	engine, err := vt.Engine()
+	if err != nil {
+		log.Error("web terminal emulator unavailable", "err", err)
+		return
+	}
+	log.Info("web terminal emulator", "engine", engine, "memory_bound_mib", bound>>20)
 }
 
 // Upgrade is where the koko server learns how it is upgraded.
@@ -298,7 +344,9 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	// The Gateway takes every tunnel@koko channel, and the web terminals the
 	// web front hands it; it opens the host key and the koko key with the
 	// Root Key, and logs in to Hosts.
-	gw := gateway.New(st, key, clock, cfg.Timings, log)
+	bound := terminalMemory(cfg)
+	gw := gateway.New(st, key, clock, cfg.Timings, bound, log)
+	logEmulator(log, bound)
 	// The web area's front holds the runs of koko web, so it registers its
 	// operation itself, below.
 	front := web.New(a, signins, gw, st, key, clock, cfg.Timings, log)

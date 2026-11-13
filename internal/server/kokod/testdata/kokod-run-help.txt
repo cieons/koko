@@ -1,4 +1,4 @@
-kokod run [--data-dir <dir>] [--root-key-file <file>] [--owner <user>] [--address <host[:port]>] [--listen <addr>] [--web-listen <host:port>] [--log-level <level>] [--json]
+kokod run [--data-dir <dir>] [--root-key-file <file>] [--owner <user>] [--address <host[:port]>] [--listen <addr>] [--web-listen <host:port>] [--terminal-memory <MiB>] [--log-level <level>] [--json]
 
 Run the koko server in the foreground, as its systemd unit and the image do
 
@@ -9,5 +9,6 @@ Flags:
   --address <host[:port]>   the Server Address devices connect to, with which a fresh koko server initialises itself at start; given with --owner, and not used once initialised (or `KOKO_ADDRESS`)
   --listen <addr>           where devices reach the koko server over TCP, once it is initialised (default :7822; or `KOKO_LISTEN`)
   --web-listen <host:port>  where the koko server serves the web UI over plain HTTP to a reverse proxy, such as 127.0.0.1:7823; off unless given (or `KOKO_WEB_LISTEN`)
+  --terminal-memory <MiB>   the most memory the web terminals' screens hold together, in MiB; a quarter of the machine's memory, at most 2048, unless given (or `KOKO_TERMINAL_MEMORY`)
   --log-level <level>       the lowest level the log on stderr holds (one of debug, info, warn, error; default info; or `KOKO_LOG_LEVEL`)
   --json                    Print a refusal as JSON

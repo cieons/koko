@@ -19,7 +19,6 @@ import (
 // added here in alphabetical order.
 var realTime = []func(*testing.T){
 	aBareNameRefreshNeverMakesTheDeviceMuxReconnect,
-	aBrowsersGraceLeavesATunnelsAsItIs,
 	aBulkTransferThroughKokoExecCarriesOnAcrossADrop,
 	aCommandThatEndsWhileDetachedGivesItsStatusOnTheResume,
 	aCommandWaitsAtMostCommandWaitForTheDeviceConnection,

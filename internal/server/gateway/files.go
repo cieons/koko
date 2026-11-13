@@ -152,7 +152,7 @@ func (g *Gateway) newTerminalFiles(host *hostconn.Conn) *terminalFiles {
 // host_refused for one that refuses its channel. It works while the
 // WebSocket is Detached.
 func (g *Gateway) Files(c TerminalCaller, id [wire.TunnelIDSize]byte) (*Files, error) {
-	key := callerKey{id: c.Caller.ID(), run: c.Run}
+	key := c.key()
 	g.mu.Lock()
 	t := g.ownLocked(tunnelID(id), key, clientBrowser)
 	var tf *terminalFiles

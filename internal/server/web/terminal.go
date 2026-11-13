@@ -21,10 +21,16 @@ import (
 	"github.com/cieons/koko/internal/shared/wire"
 )
 
-// TerminalPath is the web terminal's WebSocket endpoint, on the web listener
+// TerminalPath is the web terminal's terminal socket, on the web listener
 // and on web@koko alike (P1 spec: a terminal in the web UI, "The terminal
-// endpoint"; ADR 0053). The page at /terminal opens it.
+// endpoint"; ADR 0053): the page attaches to one of its Workspace's SSH
+// Sessions on each (spec #213). The page at /terminal opens them.
 const TerminalPath = "/terminal/socket"
+
+// WorkspacePath is the Workspace socket, on the web listener and on
+// web@koko alike, which carries the page's Workspace and its requests
+// (spec #213, "The Workspace socket").
+const WorkspacePath = "/terminal/workspace"
 
 // terminalReadLimit is the most bytes a web terminal's page may send in one
 // WebSocket message; a frame of the resumable stream takes at most a little
@@ -94,57 +100,85 @@ func (f *Front) kokoWebTerminal(r *http.Request, conn *transport.Connection, por
 	}
 }
 
-// serveTerminal answers a request for the web terminal's WebSocket, which
-// the checks every request gets have let through, in this order: a GET
-// that is no WebSocket upgrade gets a 426 page, and a WebSocket from
-// another Origin, or none, a 403 page (bad_origin), before anything else is
-// read. Then the WebSocket is accepted, with compression off and no
-// subprotocol, and its first message read (readFirst). Every other refusal
-// is its answer, followed by a close with status 1008, since a browser
-// shows a page none of a refused upgrade: a page out of date (reload_page),
-// then one that is no one (way.caller). An accepted message goes to the
-// Gateway, which answers it.
-func (f *Front) serveTerminal(w http.ResponseWriter, r *http.Request, way terminalWay) {
+// acceptSocket accepts a request for one of the web terminal's WebSockets,
+// which the checks every request gets have let through, and reads its first
+// message, in this order: a GET that is no WebSocket upgrade gets a 426
+// page, and a WebSocket from another Origin, or none, a 403 page
+// (bad_origin), before anything else is read. Then the WebSocket is
+// accepted, with compression off and no subprotocol, and its first message
+// read (readFirst). It returns the WebSocket and the message, or false once
+// it has answered.
+func (f *Front) acceptSocket(w http.ResponseWriter, r *http.Request, way terminalWay) (*websocket.Conn, []byte, bool) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		way.page(w, http.StatusMethodNotAllowed, "the web terminal's endpoint takes a WebSocket's GET alone")
-		return
+		return nil, nil, false
 	}
 	if !headerHas(r.Header, "Connection", "upgrade") || !headerHas(r.Header, "Upgrade", "websocket") {
 		w.Header().Set("Connection", "Upgrade")
 		w.Header().Set("Upgrade", "websocket")
 		way.page(w, http.StatusUpgradeRequired, "this is the web terminal's WebSocket, which only a page of the web UI opens")
-		return
+		return nil, nil, false
 	}
 	if !way.origin(r.Header.Get("Origin")) {
 		f.log.Debug("web terminal refused", "reason", "origin", "client", clientAddress(r))
 		way.page(w, api.CodeBadOrigin.Status, "this WebSocket came from no page of this koko server, so it was refused")
-		return
+		return nil, nil, false
 	}
 	// The Origin is checked above, more strictly than Accept's own check,
 	// which compares it with the Host alone.
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionDisabled})
 	if err != nil {
 		f.log.Debug("web terminal refused", "reason", "handshake", "client", clientAddress(r), "err", err)
-		return
+		return nil, nil, false
 	}
 	c.SetReadLimit(terminalReadLimit)
-	s := &terminalSocket{c: c}
-
 	first, err := f.readFirst(c)
 	if err != nil {
 		f.log.Debug("web terminal refused", "reason", "first message", "client", clientAddress(r), "err", err)
-		return
+		return nil, nil, false
 	}
-	if first.Protocol != wire.TerminalProtocol {
-		f.log.Debug("web terminal refused", "reason", "protocol", "client", clientAddress(r), "protocol", first.Protocol)
-		s.Refuse(wire.TerminalRefusal(wire.TerminalReloadPage, "this page is out of date: reload it"))
-		return
+	return c, first, true
+}
+
+// admitPage refuses, in its first answer through refuse, a page out of
+// date, whose first message named another protocol (reload_page), then one
+// that is no one (way.caller). It returns who the page is, or false once
+// it has refused.
+func (f *Front) admitPage(r *http.Request, way terminalWay, protocol int, refuse func(wire.TerminalAnswer)) (gateway.TerminalCaller, bool) {
+	if protocol != wire.TerminalProtocol {
+		f.log.Debug("web terminal refused", "reason", "protocol", "client", clientAddress(r), "protocol", protocol)
+		refuse(wire.TerminalRefusal(wire.TerminalReloadPage, "this page is out of date: reload it"))
+		return gateway.TerminalCaller{}, false
 	}
 	caller, refused := way.caller(r.Context())
 	if refused != nil {
 		f.log.Debug("web terminal refused", "reason", refused.Refused, "client", clientAddress(r))
-		s.Refuse(*refused)
+		refuse(*refused)
+		return gateway.TerminalCaller{}, false
+	}
+	return caller, true
+}
+
+// serveTerminal answers a request for the terminal socket (acceptSocket).
+// Every refusal after the upgrade is its first answer, followed by a close
+// with status 1008, since a browser shows a page none of a refused upgrade
+// (admitPage); a first message that asks for no attach or resume is closed
+// so. An accepted message goes to the Gateway, which answers it.
+func (f *Front) serveTerminal(w http.ResponseWriter, r *http.Request, way terminalWay) {
+	c, body, ok := f.acceptSocket(w, r, way)
+	if !ok {
+		return
+	}
+	s := &terminalSocket{c: c}
+	var first wire.TerminalFirst
+	if err := json.Unmarshal(body, &first); err != nil {
+		f.log.Debug("web terminal refused", "reason", "first message", "client", clientAddress(r), "err", err)
+		_ = c.Close(websocket.StatusPolicyViolation, "")
+		return
+	}
+	caller, ok := f.admitPage(r, way, first.Protocol, s.Refuse)
+	if !ok {
 		return
 	}
 	if err := first.Check(); err != nil {
@@ -152,25 +186,42 @@ func (f *Front) serveTerminal(w http.ResponseWriter, r *http.Request, way termin
 		_ = c.Close(websocket.StatusPolicyViolation, "")
 		return
 	}
-	switch {
-	case first.Open != "":
-		f.gateway.OpenTerminal(caller, s, first.Open, first.Cols, first.Rows)
-	case first.Resume != "":
-		id, _ := wire.ParseTerminalID(first.Resume) // checked above
-		f.gateway.ResumeTerminal(caller, s, id, first.Offset)
-	default:
-		id, _ := wire.ParseTerminalID(first.End) // checked above
-		f.gateway.EndTerminal(caller, id)
-		if s.Answer(wire.TerminalAnswer{Ended: true}) == nil {
-			_ = c.Close(websocket.StatusNormalClosure, "")
-		}
+	if first.Attach != "" {
+		id, _ := wire.ParseTerminalID(first.Attach) // checked above
+		f.gateway.AttachTerminal(caller, s, id, first.Cols, first.Rows)
+		return
 	}
+	id, _ := wire.ParseTerminalID(first.Resume) // checked above
+	f.gateway.ResumeTerminal(caller, s, id, first.Offset)
 }
 
-// readFirst reads a web terminal's first message: one text message of JSON,
-// at most wire.TerminalMaxFirst bytes, within timing.FirstMessage of the
+// serveWorkspace answers a request for the Workspace socket, with the
+// terminal socket's checks in their order (acceptSocket, admitPage), and
+// hands an accepted page to the Gateway, which sends it the Workspace.
+func (f *Front) serveWorkspace(w http.ResponseWriter, r *http.Request, way terminalWay) {
+	c, body, ok := f.acceptSocket(w, r, way)
+	if !ok {
+		return
+	}
+	c.SetReadLimit(wire.WorkspaceMaxMessage)
+	s := &workspaceSocket{terminalSocket{c: c}}
+	var first wire.WorkspaceFirst
+	if err := json.Unmarshal(body, &first); err != nil {
+		f.log.Debug("web terminal refused", "reason", "first message", "client", clientAddress(r), "err", err)
+		_ = c.Close(websocket.StatusPolicyViolation, "")
+		return
+	}
+	caller, ok := f.admitPage(r, way, first.Protocol, s.Refuse)
+	if !ok {
+		return
+	}
+	f.gateway.ServeWorkspace(caller, s)
+}
+
+// readFirst reads a web terminal's first message: one text message, at
+// most wire.TerminalMaxFirst bytes, within timing.FirstMessage of the
 // upgrade. Without one, it closes the WebSocket with status 1008.
-func (f *Front) readFirst(c *websocket.Conn) (wire.TerminalFirst, error) {
+func (f *Front) readFirst(c *websocket.Conn) ([]byte, error) {
 	// A timeout of the read's own would close the connection without a
 	// status: the timer closes it with one instead, which ends the read.
 	late := time.AfterFunc(f.timings.FirstMessage, func() {
@@ -186,27 +237,23 @@ func (f *Front) readFirst(c *websocket.Conn) (wire.TerminalFirst, error) {
 	return first, err
 }
 
-// readFirstMessage reads the first message off c and decodes it.
-func readFirstMessage(c *websocket.Conn) (wire.TerminalFirst, error) {
-	var first wire.TerminalFirst
+// readFirstMessage reads the first message off c.
+func readFirstMessage(c *websocket.Conn) ([]byte, error) {
 	typ, msg, err := c.Reader(context.Background())
 	if err != nil {
-		return first, err
+		return nil, err
 	}
 	if typ != websocket.MessageText {
-		return first, errors.New("the first message is not text")
+		return nil, errors.New("the first message is not text")
 	}
 	body, err := io.ReadAll(io.LimitReader(msg, wire.TerminalMaxFirst+1))
 	if err != nil {
-		return first, err
+		return nil, err
 	}
 	if len(body) > wire.TerminalMaxFirst {
-		return first, errors.New("the first message is over " + strconv.Itoa(wire.TerminalMaxFirst) + " bytes")
+		return nil, errors.New("the first message is over " + strconv.Itoa(wire.TerminalMaxFirst) + " bytes")
 	}
-	if err := json.Unmarshal(body, &first); err != nil {
-		return first, errors.Join(wire.ErrTerminalFirst, err)
-	}
-	return first, nil
+	return body, nil
 }
 
 // terminalRefusal is the answer refusing a page that the check of who it is
@@ -295,3 +342,43 @@ func (s *terminalSocket) Conn() net.Conn {
 func (s *terminalSocket) Cut() {
 	_ = s.c.CloseNow()
 }
+
+// workspaceSocket is a page's Workspace socket, as the web front hands it
+// to the Gateway (gateway.WorkspaceSocket): text messages of JSON.
+type workspaceSocket struct {
+	terminalSocket
+}
+
+// Read reads the page's next message, which must be text.
+func (s *workspaceSocket) Read() ([]byte, error) {
+	typ, msg, err := s.c.Read(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	if typ != websocket.MessageText {
+		return nil, errors.New("a Workspace message is not text")
+	}
+	return msg, nil
+}
+
+// Write sends msg as one text message, within answerWait.
+func (s *workspaceSocket) Write(msg []byte) error {
+	ctx, cancel := context.WithTimeout(context.Background(), answerWait)
+	defer cancel()
+	return s.c.Write(ctx, websocket.MessageText, msg)
+}
+
+// Close closes the WebSocket with its closing handshake, which a page that
+// answers none bounds at 5 s, the library's own.
+func (s *workspaceSocket) Close(policyViolation bool) {
+	status := websocket.StatusNormalClosure
+	if policyViolation {
+		status = websocket.StatusPolicyViolation
+	}
+	_ = s.c.Close(status, "")
+}
+
+var (
+	_ gateway.TerminalSocket  = (*terminalSocket)(nil)
+	_ gateway.WorkspaceSocket = (*workspaceSocket)(nil)
+)

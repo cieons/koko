@@ -21,7 +21,7 @@
 # container a Managed Host; ssh web1.koko true, through koko's ssh_config,
 # and koko exec web1 true reach it; against this build's kokod, a web
 # terminal opened through the CLI's koko web, by cmd/skewterm as the page,
-# answers a line and closes, so the forwarder is shown to carry the
+# answers a line and its tab closes, so the forwarder is shown to carry the
 # WebSocket unchanged; and a command that sends what the kokod lacks fails
 # with server_too_old and its message, having changed nothing.
 #
@@ -240,11 +240,11 @@ else
 	done
 	id=$(on_device skewterm "$address" web1) || fail "the web terminal through koko web failed"
 	deadline=$(($(date +%s) + 10))
-	until docker logs "$server" 2>&1 | grep -qE "msg=\"ssh session ended\" tunnel=$id client=browser .* reason=\"client closed\""; do
+	until docker logs "$server" 2>&1 | grep -qE "msg=\"ssh session ended\" tunnel=$id client=browser .* reason=\"tab closed\""; do
 		[ "$(date +%s)" -lt "$deadline" ] || fail "the koko server logged no end of the web terminal's SSH Session $id within 10 s"
 		sleep 0.5
 	done
-	echo "the SSH Session $id answered through koko web $cli_version and ended as its page closed it"
+	echo "the SSH Session $id answered through koko web $cli_version and ended as its page closed its tab"
 fi
 
 step "a command that sends what the kokod lacks fails with server_too_old"

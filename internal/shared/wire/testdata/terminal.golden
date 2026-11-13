@@ -43,3 +43,79 @@ an exit status of 4294967296: 02 05 80 80 80 80 10
   read as: malformed
 an exit status with a byte after it: 02 02 00 00
   read as: malformed
+
+== terminal 2
+data "hi": 00 02 68 69
+  read as: data "hi"
+data "": 00 00
+  read as: data ""
+resize 80x24: 01 02 50 18
+  read as: resize 80x24
+resize 1x1: 01 02 01 01
+  read as: resize 1x1
+resize 4096x4096: 01 04 80 20 80 20
+  read as: resize 4096x4096
+exit status 0: 02 01 00
+  read as: exit status 0
+exit status 255: 02 02 ff 01
+  read as: exit status 255
+exit status 4294967295: 02 05 ff ff ff ff 0f
+  read as: exit status 4294967295
+exit signal KILL: 03 04 4b 49 4c 4c
+  read as: exit signal KILL
+reset 80x24: 04 02 50 18
+  read as: reset 80x24
+reset 500x200: 04 04 f4 03 c8 01
+  read as: reset 500x200
+active: 05 00
+  read as: active
+active 1: 05 01 01
+  read as: active 1
+active 0: 05 01 00
+  read as: active 0
+colors 0c0c0c ffffff: 06 06 0c 0c 0c ff ff ff
+  read as: colors 0c0c0c ffffff
+displaced: 07 00
+  read as: displaced
+an unknown type: 08 00
+  read as: malformed
+a length of 32769: 00 81 80 02
+  read as: malformed
+a length past a uvarint: 00 ff ff ff ff ff ff ff ff ff 7f
+  read as: malformed
+a resize of 0 columns: 01 02 00 18
+  read as: malformed
+a resize of 0 rows: 01 02 50 00
+  read as: malformed
+a resize of 4097 columns: 01 03 81 20 18
+  read as: malformed
+a resize of 4097 rows: 01 03 50 81 20
+  read as: malformed
+a resize without rows: 01 01 50
+  read as: malformed
+a resize whose rows end past its length: 01 02 50 81
+  read as: malformed
+a resize with a byte after its rows: 01 03 50 18 00
+  read as: malformed
+an exit status without a status: 02 00
+  read as: malformed
+an exit status of 4294967296: 02 05 80 80 80 80 10
+  read as: malformed
+an exit status with a byte after it: 02 02 00 00
+  read as: malformed
+a reset of 0 columns: 04 02 00 18
+  read as: malformed
+a reset of 4097 rows: 04 03 50 81 20
+  read as: malformed
+a reset without rows: 04 01 50
+  read as: malformed
+an active record of 2: 05 01 02
+  read as: malformed
+an active record of 2 bytes: 05 02 01 00
+  read as: malformed
+colours of 5 bytes: 06 05 0c 0c 0c ff ff
+  read as: malformed
+colours of 7 bytes: 06 07 0c 0c 0c ff ff ff 00
+  read as: malformed
+a displaced record with a byte: 07 01 00
+  read as: malformed

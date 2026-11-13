@@ -5,9 +5,9 @@ Each web terminal SSH Session's emulator in the koko server ([ADR
 spec #213): Ghostty's VT core, libghostty-vt's WebAssembly module, run by
 wazero. One package, [`vt`](../../internal/server/vt/vt.go), knows Ghostty and
 wazero. It takes the shell's output, answers the queries in it, and gives a
-snapshot that draws the terminal on a page's cleared emulator. Nothing
-outside the package uses it yet; the Gateway's SSH Session loop will own one
-`Terminal` per SSH Session.
+snapshot that draws the terminal on a page's cleared emulator. The
+Gateway's loop of each web terminal SSH Session owns one `Terminal`
+([the Gateway](gateway.md#the-web-terminal)).
 
 ## The interface
 
@@ -19,8 +19,9 @@ outside the package uses it yet; the Gateway's SSH Session loop will own one
 | `Size()` | The size as held. |
 | `SetColors(fg, bg)` | The colours OSC 10 and 11 answer with. |
 | `Snapshot()` | VT bytes that draw the terminal on a cleared emulator of its size ([below](#the-snapshot)). |
+| `Memory()` | The bytes the terminal holds: its core's linear memory and the kept primary screen ([below](#the-snapshot)). A failed or closed `Terminal` holds none. |
 | `Close()` | Frees the instance and its memory. |
-| `Engine()` | Which of wazero's engines runs the module, for the koko server to log once at start. |
+| `Engine()` | Which of wazero's engines runs the module, for the koko server to log once at start (`web terminal emulator`, [the Gateway's log](gateway.md#logging)). |
 
 - **One goroutine uses a `Terminal`.** Another may only cancel the context
   given to `New`. Cancelling ends a `Write` within its next 4 KiB and any
@@ -191,6 +192,19 @@ Measured with ordinary output, the history written past its limit:
   With image viewers in every tab at 500×200 they hold about 1.6 GiB. The
   most they can hold is 16 cores at 96 MiB, each reaching up to 128 MiB
   within a call: 1.5 to 2 GiB.
+- **The budget across cores.** A few Users at that worst could have the
+  koko server killed for running out of memory, which would end every
+  User's shells, so the Gateway bounds every core together
+  ([`budget.go`](../../internal/server/gateway/budget.go)): `kokod run
+  --terminal-memory`, by default a quarter of the memory the koko server
+  may use, at most 2 GiB. It counts each core's `Memory` after each call
+  into it. Once a call takes them past the budget, the largest core that
+  holds at least 8 MiB fails, whichever call passed it: its SSH Session
+  goes on with a new `Terminal`, which says the screen and its history
+  were dropped, and every page attached gets that terminal's snapshot. A
+  core that fails by itself, past `memoryBound` or by a trap, is made anew
+  the same way. Each failure is logged as `web terminal emulator failed`
+  ([the Gateway](gateway.md#the-web-terminal)).
 - **Speed.** The core writes about 180 MB/s of mixed coloured output on one
   core (`BenchmarkWrite`).
 
@@ -224,7 +238,10 @@ Measured with ordinary output, the history written past its limit:
   primary screen. The second leaves and returns within one `Write`, and
   again cut across three.
 - **`TestACorePastItsMemoryBoundFails`** and
-  **`TestCancellingEndsAWriteUnderWay`** check failing.
+  **`TestCancellingEndsAWriteUnderWay`** check failing, and that a failed
+  terminal's `Memory` is none. **`TestSixteenTerminalsAreFreedOnClose`**
+  checks that `Memory` counts what the cores hold, and nothing once
+  closed.
   **`TestASizePastTheLargestGridIsHeldToIt`** checks the clamp.
 - **The rest:** `TestASnapshotChangesNothing`,
   `TestAtLeastScrollbackLinesAreKept`, `TestAQueryIsAnsweredOnce`,

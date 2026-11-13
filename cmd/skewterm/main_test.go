@@ -12,9 +12,9 @@ import (
 	"github.com/cieons/koko/internal/harness/sshhost"
 )
 
-// The skew check's page opens a web terminal through a run of koko web,
-// gets the shell's answer to its line, and closes the SSH Session as the
-// page's tab does: the koko server logs it ended by the client.
+// The skew check's page opens a tab through a run of koko web, attaches to
+// its SSH Session, gets the shell's answer to its line, and closes the tab,
+// which the koko server logs as the SSH Session's end.
 func TestItOpensATerminalThroughKokoWebAndClosesIt(t *testing.T) {
 	t.Parallel()
 	h := harness.Start(t)
@@ -41,10 +41,10 @@ func TestItOpensATerminalThroughKokoWebAndClosesIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ended := regexp.MustCompile(`msg="ssh session ended" tunnel=` + regexp.QuoteMeta(id) + ` client=browser .* reason="client closed"\n`)
+	ended := regexp.MustCompile(`msg="ssh session ended" tunnel=` + regexp.QuoteMeta(id) + ` client=browser .* reason="tab closed"\n`)
 	for deadline := time.Now().Add(10 * time.Second); !ended.MatchString(h.Log()); time.Sleep(10 * time.Millisecond) {
 		if time.Now().After(deadline) {
-			t.Fatalf("the koko server logged no end of the SSH Session %s by the client within 10 s:\n%s", id, h.Log())
+			t.Fatalf("the koko server logged no end of the SSH Session %s by its tab's close within 10 s:\n%s", id, h.Log())
 		}
 	}
 }

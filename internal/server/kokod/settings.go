@@ -95,6 +95,12 @@ var runFlags = []flag{
 		Summary: "where the koko server serves the web UI over plain HTTP to a reverse proxy, such as 127.0.0.1:7823; off unless given",
 	},
 	{
+		Name:    "terminal-memory",
+		Value:   "MiB",
+		Env:     "KOKO_TERMINAL_MEMORY",
+		Summary: "the most memory the web terminals' screens hold together, in MiB; a quarter of the machine's memory, at most 2048, unless given",
+	},
+	{
 		Name:    "log-level",
 		Value:   "level",
 		Env:     "KOKO_LOG_LEVEL",
@@ -124,7 +130,10 @@ type settings struct {
 	// WebListen is the web listener's address, such as 127.0.0.1:7823, or
 	// empty for off.
 	WebListen string
-	LogLevel  slog.Level
+	// TerminalMemory bounds the web terminals' emulators together, in
+	// bytes; 0 means the koko server's default.
+	TerminalMemory int64
+	LogLevel       slog.Level
 }
 
 // readSettings makes the settings of runFlags' values, refusing with an
@@ -157,15 +166,24 @@ func readSettings(value func(name string) string, getenv func(key string) string
 	if host, _, _ := net.SplitHostPort(webListen); webListen != "" && (!isListenAddr(webListen) || host == "") {
 		return settings{}, usagef("--web-listen (KOKO_WEB_LISTEN) takes host:port, such as 127.0.0.1:7823, not %q", webListen)
 	}
+	var terminalMemory int64
+	if v := value("terminal-memory"); v != "" {
+		mib, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || mib < 64 || mib > 1<<20 {
+			return settings{}, usagef("--terminal-memory (KOKO_TERMINAL_MEMORY) takes MiB, 64 to 1048576, not %q", v)
+		}
+		terminalMemory = mib << 20
+	}
 	return settings{
-		DataDir:       value("data-dir"),
-		RootKeyPath:   rootKey,
-		RootKeySource: source,
-		Owner:         owner,
-		Address:       address,
-		Listen:        listen,
-		WebListen:     webListen,
-		LogLevel:      level,
+		TerminalMemory: terminalMemory,
+		DataDir:        value("data-dir"),
+		RootKeyPath:    rootKey,
+		RootKeySource:  source,
+		Owner:          owner,
+		Address:        address,
+		Listen:         listen,
+		WebListen:      webListen,
+		LogLevel:       level,
 	}, nil
 }
 

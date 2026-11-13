@@ -47,6 +47,20 @@ tables reference, such as `users`: a new kind of value goes in a table of
 its own, as `administrators.sql` holds the Administrators
 ([ADR 0056](../adr/0056-one-owner-and-administrators-who-act-on-everything-but-the-owner-and-each-other.md)).
 
+`workspace_tabs.sql` adds the table of each User's web terminal tabs, in
+order
+([ADR 0057](../adr/0057-a-users-web-terminal-tabs-are-one-workspace-held-by-the-koko-server.md)):
+a tab's `id`, its `user_id` (`ON DELETE CASCADE`), its `position`,
+`UNIQUE` within the User's, its `host_id`, its `label`, `opened_by`, the
+Sign-in's or Device Session's id that opened its current SSH Session, or
+NULL for the Unix socket, `opened_at`, and `ended`, NULL while its SSH
+Session is starting or live, else how it ended, or why it did not start,
+as the JSON the page shows. A tab whose `ended` is NULL at a start, after
+a clean stop or a crash, comes back `restarted`. `host_id` has no foreign key,
+so a Host removed from the record leaves its tab. The Gateway's Workspaces
+are its one reader and writer
+([the Gateway](gateway.md#the-web-terminal)).
+
 [`upgrade`](../../internal/server/store/migrations.go) runs at every `Open`,
 so an upgrade needs no separate step. By `user_version` against the binary's
 schema version:
@@ -135,6 +149,9 @@ koko's own steps, which covers each step as it lands.
 runs `administrators.sql` on a database at the schema before it: every
 User, membership, Device Session and Sign-in kept, no Administrator made,
 and the one-Owner index still refusing a second Owner.
+[`workspace_tabs_test.go`](../../internal/server/store/workspace_tabs_test.go)
+runs `workspace_tabs.sql` on a database at the schema before it: every
+record kept, the new table empty, and its rows going with their User.
 [`peek_test.go`](../../internal/server/store/peek_test.go) shows `Peek`
 finding nothing without a database or in an empty one, reading an older
 schema beside the koko that holds it without migrating or snapshotting it,

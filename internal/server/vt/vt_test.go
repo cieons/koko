@@ -473,15 +473,27 @@ func TestSixteenTerminalsAreFreedOnClose(t *testing.T) {
 		terms = append(terms, term)
 	}
 	held := heapInUse()
+	counted := 0
+	for _, term := range terms {
+		counted += term.Memory()
+	}
 	for _, term := range terms {
 		if err := term.Close(); err != nil {
 			t.Fatal(err)
 		}
+		if n := term.Memory(); n != 0 {
+			t.Errorf("a closed terminal counts %d bytes, want none", n)
+		}
 	}
 	after := heapInUse()
 	const mib = 1 << 20
-	t.Logf("16 terminals of 120x40, history full, after a snapshot: %.1f MiB held, %.1f MiB after Close",
-		float64(held-before)/mib, float64(int64(after)-int64(before))/mib)
+	t.Logf("16 terminals of 120x40, history full, after a snapshot: %.1f MiB held, %.1f MiB counted by Memory, %.1f MiB after Close",
+		float64(held-before)/mib, float64(counted)/mib, float64(int64(after)-int64(before))/mib)
+	// Memory counts what the budget across cores bounds: the most of what
+	// the cores hold, and no more than they hold.
+	if h := int64(held - before); int64(counted) < h/2 || int64(counted) > 2*h {
+		t.Errorf("Memory counts %.1f MiB for 16 terminals holding %.1f MiB", float64(counted)/mib, float64(h)/mib)
+	}
 	if grew := int64(after) - int64(before); grew > 4*mib {
 		t.Errorf("after Close the heap is %.1f MiB above where it started, want it freed", float64(grew)/mib)
 	}
@@ -584,6 +596,9 @@ func TestACorePastItsMemoryBoundFails(t *testing.T) {
 	}
 	if !errors.Is(err, errMemoryBound) {
 		t.Fatalf("the flood ended with %v, want errMemoryBound", err)
+	}
+	if n := term.Memory(); n != 0 {
+		t.Errorf("the failed terminal counts %d bytes, want none, its instance freed", n)
 	}
 	if _, err2 := term.Resize(119, 40); err2 != err { //nolint:errorlint // the same error, as it says
 		t.Errorf("Resize after the failure returned %v, want %v", err2, err)

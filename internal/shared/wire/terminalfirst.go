@@ -12,17 +12,18 @@ const TerminalMaxFirst = 4 << 10
 // TerminalFirst is a web terminal's first message: one text message of JSON
 // that the page sends once the WebSocket is upgraded, naming the terminal
 // protocol it speaks (TerminalProtocol) and asking for exactly one thing:
-// to Open an SSH Session to a Host at a size, to Resume one from the offset
-// the page has received of its stream, or to End one (P1 spec: a terminal
-// in the web UI, "The first message").
+// to Attach the page to a Workspace's SSH Session, with the page's box in
+// cells, or to Resume one of its attachments from the offset the page has
+// received of its stream (spec #213, "The terminal socket and attaching").
+// A tab is opened and closed on the Workspace socket, so protocol 1's open
+// and end are no longer asked for here.
 type TerminalFirst struct {
 	Protocol int    `json:"protocol"`
-	Open     string `json:"open,omitzero"`
+	Attach   string `json:"attach,omitzero"`
 	Cols     uint32 `json:"cols,omitzero"`
 	Rows     uint32 `json:"rows,omitzero"`
 	Resume   string `json:"resume,omitzero"`
 	Offset   uint64 `json:"offset,omitzero"`
-	End      string `json:"end,omitzero"`
 }
 
 // ErrTerminalFirst is the error for a first message that asks for no one
@@ -30,57 +31,49 @@ type TerminalFirst struct {
 var ErrTerminalFirst = errors.New("malformed first message")
 
 // Check refuses a first message of this protocol that asks for nothing, for
-// more than one thing, for an Open at a size out of range, or names an SSH
-// Session by anything but its id.
+// both things, for an attach at a size out of range, or names an SSH
+// Session or an attachment by anything but its id.
 func (f TerminalFirst) Check() error {
-	asked := 0
-	for _, s := range []string{f.Open, f.Resume, f.End} {
-		if s != "" {
-			asked++
-		}
-	}
 	switch {
-	case asked != 1:
-		return fmt.Errorf("%w: it asks for %d of open, resume and end, not one", ErrTerminalFirst, asked)
-	case f.Open != "":
+	case (f.Attach == "") == (f.Resume == ""):
+		return fmt.Errorf("%w: it asks for neither or both of attach and resume", ErrTerminalFirst)
+	case f.Attach != "":
 		if f.Cols < 1 || f.Cols > TerminalMaxSide || f.Rows < 1 || f.Rows > TerminalMaxSide {
-			return fmt.Errorf("%w: an open at %dx%d, each side being 1 to %d", ErrTerminalFirst, f.Cols, f.Rows, TerminalMaxSide)
+			return fmt.Errorf("%w: an attach at %dx%d, each side being 1 to %d", ErrTerminalFirst, f.Cols, f.Rows, TerminalMaxSide)
 		}
-	case f.Resume != "":
-		_, err := ParseTerminalID(f.Resume)
+		_, err := ParseTerminalID(f.Attach)
 		return err
 	default:
-		_, err := ParseTerminalID(f.End)
+		_, err := ParseTerminalID(f.Resume)
 		return err
 	}
-	return nil
 }
 
-// ParseTerminalID reads an SSH Session's id as a first message names it:
-// 32 lowercase hex characters, as logs write a Tunnel's id.
+// ParseTerminalID reads an id as the web terminal's messages name an SSH
+// Session, an attachment or a tab: 32 lowercase hex characters, as logs
+// write a Tunnel's id.
 func ParseTerminalID(s string) ([TunnelIDSize]byte, error) {
 	var id [TunnelIDSize]byte
 	if len(s) != hex.EncodedLen(TunnelIDSize) {
-		return id, fmt.Errorf("%w: an SSH Session id of %d characters, not %d", ErrTerminalFirst, len(s), hex.EncodedLen(TunnelIDSize))
+		return id, fmt.Errorf("%w: an id of %d characters, not %d", ErrTerminalFirst, len(s), hex.EncodedLen(TunnelIDSize))
 	}
 	if _, err := hex.Decode(id[:], []byte(s)); err != nil || hex.EncodeToString(id[:]) != s {
-		return id, fmt.Errorf("%w: an SSH Session id that is not lowercase hex", ErrTerminalFirst)
+		return id, fmt.Errorf("%w: an id that is not lowercase hex", ErrTerminalFirst)
 	}
 	return id, nil
 }
 
 // TerminalAnswer is the answer to a first message: one text message of JSON
-// in one of four shapes. An Open is answered with the new SSH Session's id
-// (Tunnel), a Resume with the received offset of the koko server's end
-// (Offset), an End with Ended, and any of them may be Refused with a code
-// and a Message, perhaps empty, for the person. After a refusal the
-// WebSocket closes with status 1008 (policy violation).
+// in one of three shapes. An attach is answered with the new attachment's
+// id (Attachment), a resume with the received offset of the koko server's
+// end (Offset), and either may be Refused with a code and a Message,
+// perhaps empty, for the person. After a refusal the WebSocket closes with
+// status 1008 (policy violation).
 type TerminalAnswer struct {
-	Tunnel  string  `json:"tunnel,omitzero"`
-	Offset  *uint64 `json:"offset,omitzero"`
-	Ended   bool    `json:"ended,omitzero"`
-	Refused string  `json:"refused,omitzero"`
-	Message *string `json:"message,omitzero"`
+	Attachment string  `json:"attachment,omitzero"`
+	Offset     *uint64 `json:"offset,omitzero"`
+	Refused    string  `json:"refused,omitzero"`
+	Message    *string `json:"message,omitzero"`
 }
 
 // TerminalRefusal is the answer that refuses a first message with code,
@@ -105,7 +98,7 @@ const (
 	TerminalRelayRegistered = "relay_registered"
 	// TerminalAccessRefused: the access check refused the caller.
 	TerminalAccessRefused = "access_refused"
-	// TerminalSSHSessionLimit: the caller holds the most SSH Sessions koko
+	// TerminalSSHSessionLimit: the Workspace holds the most tabs koko
 	// allows it.
 	TerminalSSHSessionLimit = "ssh_session_limit"
 	// TerminalHostUnreachable: the Host, or its Relay, is down.
@@ -120,8 +113,14 @@ const (
 	// TerminalShellRefused: the Host refused the session, its pty or its
 	// shell.
 	TerminalShellRefused = "shell_refused"
-	// TerminalResumeRefused: the koko server holds no SSH Session of the
-	// caller's by the id, or it has ended, as the Message says when the
-	// koko server still knows why.
+	// TerminalResumeRefused: the koko server holds no attachment of the
+	// caller's by the id, or its SSH Session has ended, as the Message says
+	// when the koko server still knows why.
 	TerminalResumeRefused = "resume_refused"
+	// TerminalUnknownTunnel: an attach named no live SSH Session of the
+	// caller's User.
+	TerminalUnknownTunnel = "unknown_tunnel"
+	// TerminalSSHSessionEnded: an attach named an SSH Session of the
+	// caller's User that has ended.
+	TerminalSSHSessionEnded = "ssh_session_ended"
 )

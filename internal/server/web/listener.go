@@ -55,6 +55,9 @@ func (f *Front) serveListener(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == TerminalPath:
 		f.serveTerminal(w, r, f.listenerTerminal(r, webURL))
 		return
+	case r.URL.Path == WorkspacePath:
+		f.serveWorkspace(w, r, f.listenerTerminal(r, webURL))
+		return
 	case isAuth(r):
 		f.serveAuth(w, r)
 		return
