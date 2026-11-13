@@ -296,6 +296,12 @@ func aWakeOrARouteChangeProbesTheDeviceConnectionAtOnce(t *testing.T) {
 		ch   chan struct{}
 	}{{"a wake", wake}, {"a route change", routes}} {
 		waitLogs(t, d, `msg="device connection opened"`, i+1)
+		// The path stalls quiet. The Device Mux refreshes the bare names on
+		// each Device Connection it opens, and an answer the forwarder
+		// passed before the stall that arrives after the probe went out
+		// counts as the probe's answer, which leaves the drop to
+		// DeviceDead.
+		waitLogs(t, d, `msg="refreshed the bare names"`, i+1)
 		fwd.Stall()
 		signal.ch <- struct{}{}
 		waitLogs(t, d, `msg="device connection dropped"`, i+1)
