@@ -126,9 +126,11 @@ function Set-ItemProperty {
 `
 
 // ps1Line runs install.ps1 as the install line does, its text given to
-// Invoke-Expression, after the fakes, and then writes down the PATH of the
-// PowerShell session it ran in.
-const ps1Line = `iex ([IO.File]::ReadAllText($env:KOKO_TEST_FAKES)); ` +
+// Invoke-Expression, after the fakes and after removing the variable
+// KOKO_TEST_UNSET names from the session, and then writes down the PATH of
+// the PowerShell session it ran in.
+const ps1Line = `if ($env:KOKO_TEST_UNSET) { Remove-Item -LiteralPath ('Env:' + $env:KOKO_TEST_UNSET) }; ` +
+	`iex ([IO.File]::ReadAllText($env:KOKO_TEST_FAKES)); ` +
 	`try { [IO.File]::ReadAllText($env:KOKO_TEST_SCRIPT) | iex } ` +
 	`finally { [IO.File]::WriteAllText((Join-Path $env:KOKO_TEST_DIR 'session-path.txt'), [string]$env:Path) }`
 
@@ -146,6 +148,10 @@ type winMachine struct {
 	Path []string
 	// Env is added to install.ps1's environment last, such as KOKO_VERSION.
 	Env []string
+	// Unset names a variable the session removes once PowerShell has
+	// started, before install.ps1 runs, such as USERPROFILE: Windows
+	// PowerShell 5.1 does not always start without it.
+	Unset string
 
 	dir string
 }
@@ -310,6 +316,9 @@ func (m *winMachine) run() ps1Result {
 		"KOKO_TEST_ARCH="+m.Arch, "KOKO_TEST_ARCH6432="+m.Arch6432,
 	)
 	cmd.Env = append(cmd.Env, m.Env...)
+	if m.Unset != "" {
+		cmd.Env = append(cmd.Env, "KOKO_TEST_UNSET="+m.Unset)
+	}
 	cmd.WaitDelay = time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -806,13 +815,14 @@ func TestPS1ChecksTheMachinesArchitecture(t *testing.T) {
 }
 
 // A USERPROFILE that is not set, or names no directory, is refused before
-// anything is asked of GitHub.
+// anything is asked of GitHub. Not set is the session's: PowerShell starts
+// with it, and the variable is removed before install.ps1 runs.
 func TestPS1RefusesWithoutAProfileDirectory(t *testing.T) {
 	t.Run("not set", func(t *testing.T) {
 		onEachPowerShell(t, func(t *testing.T, m *winMachine) {
 			m.release("v0.6.0")
 			m.latest("v0.6.0")
-			m.Env = []string{"USERPROFILE="}
+			m.Unset = "USERPROFILE"
 
 			r := m.run()
 
