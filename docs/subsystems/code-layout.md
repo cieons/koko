@@ -447,12 +447,15 @@ process. Every test is one of three kinds:
   Its name starts with a lower-case letter instead of `Test`. It does not
   call `t.Parallel()`. It is added to `realTime` in alphabetical order: one
   line, kept on a rebase conflict as in a central list. `TestRealTime` runs
-  each as a parallel subtest named after it with a capital first letter,
-  such as `TestRealTime/TheGatewayProbesAQuietHost`, which is the name to
-  give `go test -run`. `TestRealTime` itself is serial, so these tests run
-  together before the parallel batch and never share the CPU with it. They
-  mostly wait, so running them together loads them little; their margins
-  still allow for a loaded machine ([LESSONS.md](../../LESSONS.md)).
+  each as a subtest named after it with a capital first letter, such as
+  `TestRealTime/TheGatewayProbesAQuietHost`, which is the name to give
+  `go test -run`. It runs eight at once (`realTimeAtOnce`), each in a
+  goroutine of its own rather than under `t.Parallel()`, whose bound is the
+  number of CPUs: they mostly wait, so the batch takes about as long as its
+  longest test. `TestRealTime` itself is serial, so these tests run together
+  before the parallel batch and never share the CPU with it. Running eight
+  together loads them little; their margins still allow for a loaded machine
+  ([LESSONS.md](../../LESSONS.md)), and all of them at once did not.
 - **A test that calls `t.Chdir` or `t.Setenv`** stays serial, neither
   calling `t.Parallel()` nor going in `realTime`, since Go refuses both in
   a parallel test. Its whole time adds to the package's.
