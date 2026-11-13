@@ -273,6 +273,20 @@ disconnect` and `koko leave` waited for ever: three times on the
 **Seen:** 1 (2026-11-12)
 **Evidence:** check runs 43217674345, 43223196821 and 43225408580; #184
 
+### An error is read for what it says on every way a connection ends, not only on the peer's close
+
+**Why:** `sshconn.Wrap` took io.EOF for x/crypto's "the open never went
+out", which holds only when the peer closed the connection: x/crypto fails
+an open it could not send with whatever error its transport recorded. After
+a stall, the Device Connection's liveness probe closes it itself, so an
+open in the moment before the Device Mux let go of it failed as "use of
+closed network connection", and the Device Mux refused it rather than
+sending it on the next one. A web terminal's Resume through `koko web` was
+reset at its handshake, in about 1 in 100 runs of its test under load. The
+test page also tried the Resume once, where the page tries again.
+**Seen:** 1 (2026-11-13)
+**Evidence:** check run 43350241168 on 3de18b0; #198
+
 ## Moved to the code standards
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128, #147; check run 42951455550).

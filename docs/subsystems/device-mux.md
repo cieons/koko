@@ -227,7 +227,8 @@ The koko server's own SSH, as on its Unix socket
   cut after it went out is refused, since the koko server may have acted on
   it, as on a Tunnel's open; only one that never went out, the Device
   Connection having ended before the Device Mux let go of it, goes on the
-  next one.
+  next one, whether the koko server closed it or the probe found it dead
+  ([`sshconn.Wrap`](../../internal/shared/sshconn/sshconn.go)).
 - **Waiting to Resume.** A command holds a `resuming@koko` channel open on
   the Device Mux while one of its Tunnels waits to Resume
   ([`devicemux.Conn.WaitingToResume`](../../internal/client/devicemux/local.go)).

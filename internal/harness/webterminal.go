@@ -104,6 +104,12 @@ func (p *TerminalPage) Exchange(first wire.TerminalFirst) (*websocket.Conn, wire
 	if err != nil {
 		p.t.Fatalf("open the web terminal's WebSocket: %v", err)
 	}
+	return p.exchangeOn(c, first)
+}
+
+// exchangeOn sends first on c, as Exchange does once it has dialled.
+func (p *TerminalPage) exchangeOn(c *websocket.Conn, first wire.TerminalFirst) (*websocket.Conn, wire.TerminalAnswer, websocket.StatusCode) {
+	p.t.Helper()
 	body, err := json.Marshal(first)
 	if err != nil {
 		p.t.Fatal(err)
@@ -182,11 +188,12 @@ func (p *TerminalPage) TryOpen(host string, cols, rows uint32) (*WebTerminal, wi
 
 // Resume Resumes w on a new WebSocket of the page, which may be another
 // page than the one that opened it, and returns the answer: once accepted,
-// the stream carries on there; a refusal leaves it Detached.
+// the stream carries on there; a refusal leaves it Detached. Like the page,
+// it tries again after a WebSocket that fails to open (redial).
 func (p *TerminalPage) Resume(w *WebTerminal) wire.TerminalAnswer {
 	p.t.Helper()
 	received := w.stream.Detach()
-	c, a, _ := p.Exchange(wire.TerminalFirst{Protocol: wire.TerminalProtocol, Resume: w.ID, Offset: received})
+	c, a, _ := p.exchangeOn(p.redial(), wire.TerminalFirst{Protocol: wire.TerminalProtocol, Resume: w.ID, Offset: received})
 	if a.Refused != "" {
 		return a
 	}
@@ -200,6 +207,28 @@ func (p *TerminalPage) Resume(w *WebTerminal) wire.TerminalAnswer {
 	w.c = c
 	w.mu.Unlock()
 	return a
+}
+
+// redial opens a WebSocket to Resume on as the page does: after one that
+// fails to open, such as one koko web closed when the Device Mux could not
+// carry its channel across a drop, it tries again after 250 ms, doubling
+// the wait up to 5 s (timing.reconnectFirst and timing.reconnectMax in
+// web/src/terminal/connection.ts). It fails the test after 20 s.
+func (p *TerminalPage) redial() *websocket.Conn {
+	p.t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	var wait time.Duration
+	for {
+		c, _, err := p.Dial()
+		if err == nil {
+			return c
+		}
+		if time.Now().After(deadline) {
+			p.t.Fatalf("open the web terminal's WebSocket to Resume for 20 s: %v", err)
+		}
+		wait = min(max(2*wait, 250*time.Millisecond), 5*time.Second)
+		time.Sleep(wait)
+	}
 }
 
 // End sends an end of the SSH Session id from the page, and returns the
