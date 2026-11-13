@@ -17,16 +17,24 @@ var secretCommands = []Command{
 		Verb:    "ls",
 		Summary: "List the names of the Secrets in a Space, or in every Space you can act in, never a value",
 		Args:    []Arg{{Name: "space", Optional: true}},
-		Tier:    Read,
-		Who:     Anyone,
-		Op:      api.SecretList,
-		Run:     action(secretLs),
+		Examples: []string{
+			"koko secret ls",
+			"koko secret ls ops",
+		},
+		Tier: Read,
+		Who:  Anyone,
+		Op:   api.SecretList,
+		Run:  action(secretLs),
 	},
 	{
 		Noun:    "secret",
 		Verb:    "show",
 		Summary: "Print a Secret's value on stdout as stored, to pipe into the command that needs it",
 		Args:    []Arg{{Name: "secret", Qualifier: "space"}},
+		Examples: []string{
+			"koko secret show ops/db-password",
+			"koko secret show ops/tls-key > key.pem",
+		},
 		// It prints a credential (ADR 0019): a Secret's value, which no
 		// other command prints.
 		Tier: Irreversible,
@@ -43,10 +51,15 @@ var secretCommands = []Command{
 			{Name: "from-file", Value: "file", Summary: "read the value from this file, byte for byte"},
 		},
 		ReadsSecret: true,
-		Tier:        Reversible,
-		Who:         Anyone,
-		Op:          api.SecretAdd,
-		Run:         action(secretAdd),
+		Examples: []string{
+			"koko secret add ops/db-password",
+			"koko secret add ops/tls-key --from-file key.pem",
+			"koko secret add ops/api-token < token.txt",
+		},
+		Tier: Reversible,
+		Who:  Anyone,
+		Op:   api.SecretAdd,
+		Run:  action(secretAdd),
 	},
 	{
 		Noun:    "secret",
@@ -57,6 +70,10 @@ var secretCommands = []Command{
 			{Name: "from-file", Value: "file", Summary: "read the value from this file, byte for byte"},
 		},
 		ReadsSecret: true,
+		Examples: []string{
+			"koko secret set ops/db-password",
+			"koko secret set ops/tls-key --from-file key.pem",
+		},
 		// Reversible by the verb rule of ADR 0019, though P0 keeps no value
 		// history (P0 spec: Secrets).
 		Tier: Reversible,
@@ -69,10 +86,13 @@ var secretCommands = []Command{
 		Verb:    "rename",
 		Summary: "Give a Secret a new name within its Space",
 		Args:    []Arg{{Name: "secret", Qualifier: "space"}, {Name: "new-name"}},
-		Tier:    Reversible,
-		Who:     Anyone,
-		Op:      api.SecretRename,
-		Run:     action(secretRename),
+		Examples: []string{
+			"koko secret rename ops/db-password db-root",
+		},
+		Tier: Reversible,
+		Who:  Anyone,
+		Op:   api.SecretRename,
+		Run:  action(secretRename),
 	},
 	{
 		Noun:    "secret",
@@ -80,20 +100,27 @@ var secretCommands = []Command{
 		Summary: "Move the Secrets you name to the Space --to names, each under its name, all or none; you must be able to act in both. koko secret move <space>/<secret> <space> moves one",
 		Args:    []Arg{{Name: "secret", Qualifier: "space", Many: true}},
 		Flags:   []Flag{{Name: "to", Value: "space", Summary: "The Space to move the Secrets to"}},
-		Tier:    Reversible,
-		Who:     Anyone,
-		Op:      api.SecretMove,
-		Run:     action(secretMove),
+		Examples: []string{
+			"koko secret move ops/db-password prod",
+			"koko secret move ops/db-password ops/api-token --to prod",
+		},
+		Tier: Reversible,
+		Who:  Anyone,
+		Op:   api.SecretMove,
+		Run:  action(secretMove),
 	},
 	{
 		Noun:    "secret",
 		Verb:    "rm",
 		Summary: "Delete the Secrets you name and their values, all or none, for good",
 		Args:    []Arg{{Name: "secret", Qualifier: "space", Many: true}},
-		Tier:    Irreversible,
-		Who:     Anyone,
-		Op:      api.SecretRemove,
-		Run:     action(secretRm),
+		Examples: []string{
+			"koko secret rm ops/db-password",
+		},
+		Tier: Irreversible,
+		Who:  Anyone,
+		Op:   api.SecretRemove,
+		Run:  action(secretRm),
 	},
 }
 

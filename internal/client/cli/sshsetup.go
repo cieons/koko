@@ -17,6 +17,9 @@ var sshSetupCommands = []Command{
 		Noun:    "ssh",
 		Verb:    "setup",
 		Summary: "On the koko server's own machine, write koko's ssh_config and the Include line for this OS user, so that ssh <host>.koko reaches Hosts through koko",
+		Examples: []string{
+			"koko ssh setup",
+		},
 		// It writes only koko's own files and the one Include line, which
 		// it writes again on every run (ADR 0019).
 		Tier: Reversible,

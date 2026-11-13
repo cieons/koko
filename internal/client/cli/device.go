@@ -28,6 +28,10 @@ var deviceCommands = []Command{
 			},
 			validFlag("the Join Code"),
 		},
+		Examples: []string{
+			"koko device add laptop",
+			"koko device add --user alice --valid 1h",
+		},
 		// It prints a credential (ADR 0019).
 		Tier: Irreversible,
 		Who:  Anyone,
@@ -50,6 +54,10 @@ var deviceCommands = []Command{
 				Summary: "add the Revoked Device Sessions",
 			},
 		},
+		Examples: []string{
+			"koko device ls",
+			"koko device ls --user alice --all",
+		},
 		Tier: Read,
 		Who:  Anyone,
 		Op:   api.DeviceList,
@@ -66,6 +74,10 @@ var deviceCommands = []Command{
 				Bool:    true,
 				Summary: "confirm revoking the Owner's last Device Session",
 			},
+		},
+		Examples: []string{
+			"koko device revoke laptop",
+			"koko device revoke alice/laptop",
 		},
 		Tier: Irreversible,
 		Who:  Anyone,

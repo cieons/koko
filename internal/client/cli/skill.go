@@ -25,6 +25,10 @@ var skillCommands = []Command{
 		Verb: "skill",
 		Summary: "Print the reference for agents of this koko: its commands by risk tier with their --json shapes, " +
 			"the filter syntax, the Preset Attributes, the error codes and the exit statuses",
+		Examples: []string{
+			"koko skill",
+			"koko skill --json",
+		},
 		Tier: Read,
 		Who:  Anyone,
 		Run:  action(skill),
@@ -37,6 +41,10 @@ var skillCommands = []Command{
 			Name: "dir", Value: "dir",
 			Summary: "The agent's skills directory, in which koko writes koko/SKILL.md; ~/.claude/skills when not given",
 		}},
+		Examples: []string{
+			"koko skill install",
+			"koko skill install --dir .claude/skills",
+		},
 		Tier: Reversible,
 		Who:  Anyone,
 		Run:  action(skillInstall),
@@ -45,17 +53,25 @@ var skillCommands = []Command{
 		Verb:    "help",
 		Summary: "List the commands; show the command the words name in full, with its flags, or list every command they start",
 		Args:    []Arg{{Name: "command", Optional: true, Many: true}},
-		Tier:    Read,
-		Who:     Anyone,
-		Run:     action(help),
+		Examples: []string{
+			"koko help",
+			"koko help host enroll",
+		},
+		Tier: Read,
+		Who:  Anyone,
+		Run:  action(help),
 	},
 	{
 		Verb:    "completion",
 		Summary: "Print the script that completes koko's commands, flags and their values in a shell",
 		Args:    []Arg{{Name: "shell", Choices: completionShells}},
-		Tier:    Read,
-		Who:     Anyone,
-		Run:     action(completion),
+		Examples: []string{
+			"koko completion bash",
+			"koko completion zsh",
+		},
+		Tier: Read,
+		Who:  Anyone,
+		Run:  action(completion),
 	},
 }
 
@@ -115,6 +131,8 @@ type commandJSON struct {
 	// longer are the paths of the longer commands this one's path starts,
 	// which koko help names beside it.
 	longer []string
+	// examples are the command's Examples, which koko help shows.
+	examples []string
 }
 
 // argJSON is a positional argument.
@@ -228,6 +246,7 @@ func commandOf(c *Command) commandJSON {
 		Administrators: c.Who != OwnerAlone,
 		Args:           []argJSON{},
 		Flags:          []flagJSON{},
+		examples:       c.Examples,
 	}
 	for _, a := range c.Args {
 		j.Args = append(j.Args, argJSON{Arg: a.usage(), Choices: orNull(a.Choices)})

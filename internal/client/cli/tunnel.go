@@ -21,6 +21,9 @@ var tunnelCommands = []Command{
 		Summary: "Carry ssh's connection to a Host on stdin and stdout, as the ProxyCommand of koko's ssh_config; not for direct use",
 		Args:    []Arg{{Name: "ssh-name"}},
 		Stdio:   true,
+		Examples: []string{
+			"koko tunnel web1",
+		},
 		// It reaches a Host (ADR 0019).
 		Tier: Irreversible,
 		Who:  Anyone,

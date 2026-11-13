@@ -21,8 +21,12 @@ var statusCommands = []Command{
 	{
 		Verb:    "status",
 		Summary: "Show the koko server this device reaches and as whom, both versions and whether they work together, any revocation, and whether ssh reads koko's ssh_config",
-		Tier:    Read,
-		Who:     Anyone,
+		Examples: []string{
+			"koko status",
+			"koko status --json",
+		},
+		Tier: Read,
+		Who:  Anyone,
 		// Its main operation is none: the koko server's version comes in
 		// the report every connection carries (ADR 0027). For the Owner it
 		// also asks user.current and server.show, for the latest release

@@ -24,6 +24,10 @@ var execCommands = []Command{
 		Summary:       "Run one command on a Host through the Gateway, passing its stdin, stdout, stderr and exit status",
 		Args:          []Arg{{Name: "host"}, {Name: "command", Many: true}},
 		RemoteCommand: true,
+		Examples: []string{
+			"koko exec web1 uptime",
+			"koko exec web1 df -h",
+		},
 		// It reaches a Host (ADR 0019).
 		Tier: Irreversible,
 		Who:  Anyone,

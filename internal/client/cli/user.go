@@ -26,6 +26,10 @@ var userCommands = []Command{
 			},
 			validFlag("the Invite"),
 		},
+		Examples: []string{
+			"koko user invite alice",
+			"koko user invite alice --web --valid 1d",
+		},
 		Tier: Irreversible, // it prints a credential (ADR 0019)
 		Who:  OwnerOrAdministrator,
 		Op:   api.UserInvite,
@@ -42,6 +46,10 @@ var userCommands = []Command{
 				Summary: "add the Removed Users",
 			},
 		},
+		Examples: []string{
+			"koko user ls",
+			"koko user ls --all",
+		},
 		Tier: Read,
 		Who:  OwnerOrAdministrator,
 		Op:   api.UserList,
@@ -52,16 +60,22 @@ var userCommands = []Command{
 		Verb:    "remove",
 		Summary: "Delete a User who never joined, or Remove anyone else, revoking all their access",
 		Args:    []Arg{{Name: "user"}},
-		Tier:    Irreversible,
-		Who:     OwnerOrAdministrator,
-		Op:      api.UserRemove,
-		Run:     action(userRemove),
+		Examples: []string{
+			"koko user remove alice",
+		},
+		Tier: Irreversible,
+		Who:  OwnerOrAdministrator,
+		Op:   api.UserRemove,
+		Run:  action(userRemove),
 	},
 	{
 		Noun:    "user",
 		Verb:    "promote",
 		Summary: "Make a Member an Administrator, who sees and acts in every Space and manages every Member",
 		Args:    []Arg{{Name: "user"}},
+		Examples: []string{
+			"koko user promote alice",
+		},
 		// It hands over every Space and Secret, which no demotion takes
 		// back (ADR 0056).
 		Tier: Irreversible,
@@ -74,10 +88,13 @@ var userCommands = []Command{
 		Verb:    "demote",
 		Summary: "Make an Administrator a Member again, ending their SSH Sessions outside their own Spaces",
 		Args:    []Arg{{Name: "user"}},
-		Tier:    Reversible,
-		Who:     OwnerAlone,
-		Op:      api.UserDemote,
-		Run:     action(userDemote),
+		Examples: []string{
+			"koko user demote alice",
+		},
+		Tier: Reversible,
+		Who:  OwnerAlone,
+		Op:   api.UserDemote,
+		Run:  action(userDemote),
 	},
 }
 

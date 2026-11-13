@@ -41,6 +41,10 @@ var serverCommands = []Command{
 			},
 			kokodFlag,
 		},
+		Examples: []string{
+			"sudo koko server install --owner alice --address koko.example.com",
+			"sudo koko server install --kokod ./kokod",
+		},
 		// It prints a credential, the first Join Code (P0 spec: install and
 		// run), and changes the machine.
 		Tier: Irreversible,
@@ -53,6 +57,9 @@ var serverCommands = []Command{
 		Verb:    "uninstall",
 		Summary: "Stop the koko server on this Linux machine and remove its units, its upgrade helper and kokod, as root; its data, Root Key, system user and koko stay",
 		Flags:   []Flag{kokodFlag},
+		Examples: []string{
+			"sudo koko server uninstall",
+		},
 		// It stops the koko server and removes it from the machine (P0
 		// spec: install and run).
 		Tier: Irreversible,
@@ -64,10 +71,13 @@ var serverCommands = []Command{
 		Noun:    "server",
 		Verb:    "show",
 		Summary: "Show the koko server's Server Address, port, web listener, Web URL, host key, version, Root Key file, data directory, update check and how it upgrades",
-		Tier:    Read,
-		Who:     Anyone,
-		Op:      api.ServerShow,
-		Run:     action(serverShow),
+		Examples: []string{
+			"koko server show",
+		},
+		Tier: Read,
+		Who:  Anyone,
+		Op:   api.ServerShow,
+		Run:  action(serverShow),
 	},
 	{
 		Noun:    "server",
@@ -75,7 +85,12 @@ var serverCommands = []Command{
 		Summary: "Change the Server Address that Join Codes issued from now on carry, the Web URL the web listener answers at, or whether the koko server checks for a new release, on the koko server's machine",
 		Pairs:   true,
 		Unset:   true,
-		Tier:    Reversible,
+		Examples: []string{
+			"koko server set address=koko.example.com",
+			"koko server set web_url=https://koko.example.com",
+			"koko server set --unset web_url",
+		},
+		Tier: Reversible,
 		// Only the Owner, as the Local caller on the koko server's machine,
 		// may run it: the koko server answers it only over its Unix socket.
 		Who: OwnerAlone,

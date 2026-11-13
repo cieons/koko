@@ -145,6 +145,12 @@ func (c commandJSON) help(w io.Writer) error {
 		_, _ = fmt.Fprintf(tw, "\nFilters and sorts on %s, and any Attribute key; koko skill gives the syntax.\n",
 			strings.Join(fields, ", "))
 	}
+	if len(c.examples) > 0 {
+		_, _ = fmt.Fprintln(tw, "\nExamples:")
+		for _, ex := range c.examples {
+			_, _ = fmt.Fprintf(tw, "  %s\n", ex)
+		}
+	}
 	for _, path := range c.longer {
 		_, _ = fmt.Fprintf(tw, "\nkoko %s is a longer command: run koko help %s.\n", path, path)
 	}

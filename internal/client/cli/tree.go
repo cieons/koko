@@ -59,6 +59,10 @@ type Command struct {
 	// as its ProxyCommand: it prints no result, so it takes no flag, not
 	// even --json, and its Run is a quietAction.
 	Stdio bool
+	// Examples are one to three common uses of the command, each a command
+	// line as typed in a shell, which koko help shows. The words after koko,
+	// up to a redirection or pipe, must parse as the command (tree_test.go).
+	Examples []string
 	// Tier is the command's risk tier (ADR 0019). It is required.
 	Tier Tier
 	// Who says who may run the command, for help and koko skill. It is

@@ -26,6 +26,11 @@ var serverUpgradeCommand = Command{
 		{Name: "check", Bool: true, Summary: "check for a new release at once and say what the koko server would upgrade to, and change nothing"},
 		{Name: "version", Value: "vX.Y.Z", Summary: "the release to upgrade to, such as v0.5.0, newer than the koko server's, in place of the latest"},
 	},
+	Examples: []string{
+		"koko server upgrade --check",
+		"koko server upgrade",
+		"koko server upgrade --version v0.5.0",
+	},
 	// It restarts the koko server, which ends every open SSH Session (ADR
 	// 0048); --check only lowers its risk, so the path keeps it here.
 	Tier: Irreversible,

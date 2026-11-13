@@ -393,7 +393,7 @@ func TestSkillCommandsSitInTheirTiers(t *testing.T) {
 }
 
 // koko help lists every command, and koko help <command> shows its usage
-// and each of its flags, all from the tree.
+// and each of its flags, then its examples, all from the tree.
 func TestHelpShowsEveryCommandAndItsFlags(t *testing.T) {
 	t.Parallel()
 	out, errs, status := runOffline(t, "help")
@@ -417,6 +417,9 @@ func TestHelpShowsEveryCommandAndItsFlags(t *testing.T) {
 			if !strings.Contains(detail, "  "+f.usage()) {
 				t.Errorf("koko help %s does not show --%s", c.Path(), f.Name)
 			}
+		}
+		if !strings.Contains(detail, "\nExamples:\n  "+strings.Join(c.Examples, "\n  ")+"\n") {
+			t.Errorf("koko help %s = %q, want its examples", c.Path(), detail)
 		}
 		for _, d := range Tree() {
 			if strings.HasPrefix(d.Path(), c.Path()+" ") && !strings.Contains(detail, "run koko help "+d.Path()) {

@@ -13,6 +13,9 @@ var leaveCommands = []Command{
 	{
 		Verb:    "leave",
 		Summary: "Forget the koko server this device joined, without contacting it, so that the device can join again: stop every Device Mux of this OS user and delete the device's key and files of that koko server",
+		Examples: []string{
+			"koko leave",
+		},
 		// The device's key is gone for good, and with it the Device
 		// Session's only use (ADR 0019).
 		Tier: Irreversible,

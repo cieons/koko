@@ -27,6 +27,11 @@ var updateCommands = []Command{
 			{Name: "check", Bool: true, Summary: "say which release koko update would install, and where, and change nothing"},
 			{Name: "version", Value: "vX.Y.Z", Summary: "the release to install, such as v0.4.0, in place of the latest"},
 		},
+		Examples: []string{
+			"koko update",
+			"koko update --check",
+			"koko update --version v0.5.0",
+		},
 		Tier: Reversible,
 		Who:  Anyone,
 		Run:  action(update),

@@ -22,8 +22,12 @@ var connectCommands = []Command{
 		Verb:    "connect",
 		Summary: "Check that the koko server this device joined answers with its pinned host key, through the Device Mux; given an address, take it as the koko server's new address once it does there",
 		Args:    []Arg{{Name: "host:port", Optional: true}},
-		Tier:    Reversible,
-		Who:     Anyone,
+		Examples: []string{
+			"koko connect koko.example.com:7822",
+			"koko connect",
+		},
+		Tier: Reversible,
+		Who:  Anyone,
 		// It calls no operation: the koko server's version comes in the
 		// report every connection carries (ADR 0027).
 		Run: action(connectDevice),
@@ -31,9 +35,12 @@ var connectCommands = []Command{
 	{
 		Verb:    "disconnect",
 		Summary: "Stop every Device Mux of this OS user, of every build, ending the SSH Sessions and koko web runs they carry for good",
-		Tier:    Reversible,
-		Who:     Anyone,
-		Run:     action(disconnect),
+		Examples: []string{
+			"koko disconnect",
+		},
+		Tier: Reversible,
+		Who:  Anyone,
+		Run:  action(disconnect),
 	},
 }
 

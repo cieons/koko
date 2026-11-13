@@ -98,3 +98,47 @@ func TestCommandTreeEntries(t *testing.T) {
 		}
 	}
 }
+
+// Every command has one to three examples, and the words of each after
+// koko, up to a redirection or pipe, parse as that command; a list's filter
+// terms and sort keys read as it reads them.
+func TestEveryCommandHasExamplesThatParse(t *testing.T) {
+	t.Parallel()
+	tree := Tree()
+	for _, c := range tree {
+		if n := len(c.Examples); n < 1 || n > 3 {
+			t.Errorf("koko %s has %d examples, want one to three", c.Path(), n)
+		}
+		for _, ex := range c.Examples {
+			words := strings.Fields(ex)
+			i := slices.Index(words, "koko")
+			if i < 0 {
+				t.Errorf("koko %s: the example %q runs no koko", c.Path(), ex)
+				continue
+			}
+			argv := words[i+1:]
+			if j := slices.IndexFunc(argv, func(w string) bool { return w == "<" || w == ">" || w == "|" }); j >= 0 {
+				argv = argv[:j]
+			}
+			p, err := parse(tree, argv, noEnv)
+			if err != nil {
+				t.Errorf("koko %s: the example %q is refused: %v", c.Path(), ex, err)
+				continue
+			}
+			if p.cmd.Path() != c.Path() {
+				t.Errorf("koko %s: the example %q is koko %s", c.Path(), ex, p.cmd.Path())
+				continue
+			}
+			if c.Filters == nil {
+				continue
+			}
+			in := &Input{inv: &Invocation{Args: argv}, runner: &Runner{}, line: p}
+			if _, err := readFilters(in); err != nil {
+				t.Errorf("koko %s: the example %q has a bad filter term: %v", c.Path(), ex, err)
+			}
+			if _, err := readSort(in); err != nil {
+				t.Errorf("koko %s: the example %q has a bad sort: %v", c.Path(), ex, err)
+			}
+		}
+	}
+}

@@ -19,6 +19,10 @@ var signinCommands = []Command{
 		Summary: "Issue a Password Link for a User to set their Password in a browser, valid for 15 minutes unless --valid says otherwise",
 		Args:    []Arg{{Name: "user"}},
 		Flags:   []Flag{validFlag("the Password Link")},
+		Examples: []string{
+			"koko password link alice",
+			"koko password link alice --valid 1h",
+		},
 		// It prints a credential (ADR 0019).
 		Tier: Irreversible,
 		Who:  OwnerOrAdministrator,
@@ -30,10 +34,13 @@ var signinCommands = []Command{
 		Verb:    "rm",
 		Summary: "Remove a User's Password and end their Sign-ins, keeping the User and their devices",
 		Args:    []Arg{{Name: "user"}},
-		Tier:    Irreversible,
-		Who:     OwnerOrAdministrator,
-		Op:      api.PasswordRemove,
-		Run:     action(passwordRm),
+		Examples: []string{
+			"koko password rm alice",
+		},
+		Tier: Irreversible,
+		Who:  OwnerOrAdministrator,
+		Op:   api.PasswordRemove,
+		Run:  action(passwordRm),
 	},
 	{
 		Noun:    "signin",
@@ -51,6 +58,10 @@ var signinCommands = []Command{
 				Summary: "add the Sign-ins that have ended",
 			},
 		},
+		Examples: []string{
+			"koko signin ls",
+			"koko signin ls --user alice --all",
+		},
 		Tier: Read,
 		Who:  Anyone,
 		Op:   api.SignInList,
@@ -61,10 +72,13 @@ var signinCommands = []Command{
 		Verb:    "revoke",
 		Summary: "Revoke a Sign-in, signing its browser out at once",
 		Args:    []Arg{{Name: "id"}},
-		Tier:    Irreversible,
-		Who:     Anyone,
-		Op:      api.SignInRevoke,
-		Run:     action(signinRevoke),
+		Examples: []string{
+			"koko signin revoke signin_3f9k2m7q",
+		},
+		Tier: Irreversible,
+		Who:  Anyone,
+		Op:   api.SignInRevoke,
+		Run:  action(signinRevoke),
 	},
 }
 

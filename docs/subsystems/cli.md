@@ -22,7 +22,8 @@ list the only values it takes, its choices), the flags
 who may run it (`Who`, required: `Anyone`, `OwnerOrAdministrator` or
 `OwnerAlone`, [ADR
 0056](../adr/0056-one-owner-and-administrators-who-act-on-everything-but-the-owner-and-each-other.md);
-the koko server enforces it), the API operation it calls and its `Run`, made with `action(f)`
+the koko server enforces it), one to three `Examples`, each a command line as typed in
+a shell, the API operation it calls and its `Run`, made with `action(f)`
 from a function returning the command's `--json` type, which is also its
 shape. Every command takes `--json`, which is not listed, except one with
 `RemoteCommand`, whose last argument is a command it runs on a Host as ssh
@@ -34,7 +35,9 @@ skill` are all generated from the tree
 ([below](#koko-skill-koko-help-and-koko-completion)), so a command added to
 it reaches all four; a command's `Run` gets the tree through its `Input`.
 [`tree_test.go`](../../internal/client/cli/tree_test.go) checks every entry: a
-tier, a summary, a unique path, sound arguments and flags (neither `--json`
+tier, a summary, examples whose words after `koko`, up to a redirection or
+pipe, parse as the command (a list's filter terms and sort keys included), a
+unique path, sound arguments and flags (neither `--json`
 nor `--unset` listed, `--unset` only beside pairs, many words only for
 the last argument, and a repeatable flag with no variable or default), an operation that `api.Operations` lists,
 and for `RemoteCommand` many words last, no flags, pairs, filters, secret
@@ -413,7 +416,7 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
   help <words>` shows the command the words name in full (usage, summary,
   tier, whose "Risk tier" line ends "Only the Owner or an Administrator
   may run it." or "Only the Owner may run it." for such a command, flags with their variables, defaults and choices, the fields a list
-  filters on, and the longer commands its path starts, as `koko skill
+  filters on, its examples, and the longer commands its path starts, as `koko skill
   install` of `koko skill`), or else lists every command whose path starts
   with them. Words that start no command are refused with exit 2, as the
   parser refuses them.

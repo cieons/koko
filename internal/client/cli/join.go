@@ -29,6 +29,10 @@ var joinCommands = []Command{
 			Bool:    true,
 			Summary: "leave ~/.ssh/config alone: ssh then reads koko's ssh_config only once you include it",
 		}},
+		Examples: []string{
+			"koko join \"$JOIN_CODE\"",
+			"koko join - --no-ssh-config",
+		},
 		// It spends a one-time Join Code (P0 spec: overview).
 		Tier: Irreversible,
 		Who:  Anyone,

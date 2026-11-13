@@ -30,6 +30,11 @@ var enrollCommands = []Command{
 			{Name: "replace-host-key", Bool: true, Summary: "Pin whatever host key the Host offers now, in place of the pinned one"},
 		},
 		ReadsSecret: true,
+		Examples: []string{
+			"koko host enroll web1 --key ~/.ssh/id_ed25519",
+			"koko host enroll web1 --secret ops/web1-root",
+			"koko host enroll web1 --password-stdin < password.txt",
+		},
 		// It reaches a Host and changes its authorized_keys (ADR 0019).
 		Tier: Irreversible,
 		Who:  Anyone,

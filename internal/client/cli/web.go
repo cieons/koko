@@ -42,6 +42,10 @@ var webCommands = []Command{
 				Summary: "print the address without opening a browser",
 			},
 		},
+		Examples: []string{
+			"koko web",
+			"koko web --port 8080 --no-open",
+		},
 		// It prints a credential, its one-time token (P0 spec: overview).
 		Tier: Irreversible,
 		Who:  Anyone,
