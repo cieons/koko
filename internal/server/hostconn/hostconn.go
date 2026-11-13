@@ -257,7 +257,8 @@ var ErrLoginRefused = errors.New("login refused")
 
 // ErrUnreachable is a Host or Relay that could not be reached in three
 // attempts, each ended by a network error before the login: refused,
-// unreachable, timed out or reset. It wraps the last attempt's error.
+// unreachable, timed out or reset, wrapping the last attempt's error; or
+// one whose leg Timings.HostConnect cut, the whole Connect taking too long.
 var ErrUnreachable = errors.New("unreachable")
 
 // HostKeyMismatchError is a Host or Relay that offered a host key other than
