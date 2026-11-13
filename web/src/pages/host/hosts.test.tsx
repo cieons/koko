@@ -200,6 +200,8 @@ test("the search narrows the list in the browser by name, address, Space, Host A
   await screen.findByRole("table", { name: "ops" });
   const entries = window.history.length;
   const search = screen.getByRole("searchbox", { name: "Search Hosts" });
+  // No minimum in rem alone, which at 200% text is wider than a phone (jsdom applies no CSS).
+  expect(search.closest("[class*='min-w-']")?.className).toContain("min-w-[min(14rem,100%)]");
 
   const found = (q: string) => {
     fireEvent.change(search, { target: { value: q } });

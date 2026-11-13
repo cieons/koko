@@ -62,6 +62,9 @@ test("Account for a browser signed in with a Password offers to change it, lists
   expect(rest).toEqual([]);
   expect(api.requests(SignInList)).toEqual([{ user: "bob" }]);
   expect(screen.getByRole("button", { name: "Sign out" })).toBeDefined();
+  // One column as wide as the page until there is room for two, not as wide as the widest panel (jsdom applies no CSS).
+  const panels = screen.getByRole("heading", { level: 2, name: "Password" }).closest(".grid");
+  expect(panels?.className).toContain("grid-cols-1 ");
   await expectAccessible();
 });
 

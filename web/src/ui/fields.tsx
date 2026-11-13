@@ -26,6 +26,14 @@ import { useT } from "../shell/i18n";
 // is submitted (Form): validate returns koko's message for a value the
 // field does not take, which shows under the field then.
 
+/**
+ * listSearchClass is the width of a list's search field in its toolbar: it
+ * fills its row, at least 14rem wide, or as wide as the row where that is
+ * narrower: a rem grows with the browser's text size, and at 200% on a
+ * phone 14rem is wider than the screen (#130).
+ */
+export const listSearchClass = "min-w-[min(14rem,100%)] flex-1";
+
 /** Validate is a field's check: koko's message for a value it does not take, or undefined. */
 export type Validate = (value: string) => string | undefined;
 

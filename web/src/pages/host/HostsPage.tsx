@@ -9,7 +9,7 @@ import { type Space, SpaceList, type SpaceListResponse } from "../../api/space";
 import { type Read, useRead } from "../../shell/data";
 import { useCount, useT } from "../../shell/i18n";
 import { type RememberedList, ResetView, type RememberedView, useRememberedView } from "../../shell/rememberedView";
-import { Choice, SearchChoice } from "../../ui/fields";
+import { Choice, listSearchClass, SearchChoice } from "../../ui/fields";
 import { Page } from "../../ui/Page";
 import { usePhone } from "../../ui/phone";
 import { EmptyState } from "../../ui/states";
@@ -240,7 +240,7 @@ function ListArea({
             aria-label={t(tab === "hosts" ? "host.search" : "host.services.search")}
             value={page.q}
             onChange={(q) => setPage({ ...page, q }, true)}
-            className="min-w-56 flex-1"
+            className={listSearchClass}
             fullWidth
           >
             <SearchField.Group>
@@ -263,7 +263,7 @@ function ListArea({
                 }
               }}
               options={[{ id: "*", label: t("host.list.allSpaces") }, ...names.map((n) => ({ id: n, label: n }))]}
-              className="min-w-36 flex-1 md:w-44 md:flex-none"
+              className="min-w-[min(9rem,100%)] flex-1 md:w-44 md:flex-none"
             />
           )}
           {tab === "hosts" && (
@@ -304,7 +304,7 @@ function ListArea({
                   label: k,
                 })),
               ]}
-              className="min-w-48 flex-1 md:w-56 md:flex-none"
+              className="min-w-[min(12rem,100%)] flex-1 md:w-56 md:flex-none"
             />
           )}
           {!phone && (

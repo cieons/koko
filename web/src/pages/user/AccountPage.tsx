@@ -58,9 +58,10 @@ export function AccountPage() {
           <Refusal error={signOut.error} />
         </div>
       )}
-      {/* Two columns once the page's own room allows, beside the rail as on a narrower window. */}
+      {/* Two columns once the page's own room allows, beside the rail as on a narrower window. Until
+          then one column as wide as the page, not as its widest panel, which grows with the text's size. */}
       <div className="@container">
-        <div className="grid items-start gap-5 @4xl:grid-cols-2">
+        <div className="grid grid-cols-1 items-start gap-5 @4xl:grid-cols-2">
           <div className="flex flex-col gap-5">
             <Sheet title={t("signin.password")}>
               {caller.signin ? (

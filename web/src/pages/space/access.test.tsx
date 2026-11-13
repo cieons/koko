@@ -111,6 +111,9 @@ test("the Spaces tab lists the shared Spaces, each with its Members, Hosts and S
 test("the search narrows the list shown by name, as q in the URL, and says so when nothing matches", async () => {
   await at("/access");
   await rows();
+  // No minimum in rem alone, which at 200% text is wider than a phone (jsdom applies no CSS).
+  const box = screen.getByRole("searchbox", { name: "Search people" });
+  expect(box.closest("[class*='min-w-']")?.className).toContain("min-w-[min(14rem,100%)]");
 
   search("Search people", "BO");
   await waitFor(() => expect(where()).toBe("/access?q=BO"));

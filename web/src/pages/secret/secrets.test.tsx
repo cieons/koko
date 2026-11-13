@@ -158,6 +158,8 @@ test("a list that does not load says why, and Try again loads it", async () => {
 test("the search narrows the list by Space or name, kept in the URL in place, and says when nothing matches", async () => {
   await asBob([secret("bob", "token"), secret("ops", "db-password"), secret("web", "tls-key")]);
   const box = screen.getByRole("searchbox", { name: "Search Secrets" });
+  // No minimum in rem alone, which at 200% text is wider than a phone (jsdom applies no CSS).
+  expect(box.closest("[class*='min-w-']")?.className).toContain("min-w-[min(14rem,100%)]");
   const entries = window.history.length;
 
   fireEvent.change(box, { target: { value: "OPS/" } });

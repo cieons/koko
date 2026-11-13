@@ -1042,7 +1042,8 @@ The frame, a title, one sentence and a link to Hosts.
   islands and the phone's tab button are
   drawn in the system's colours ([the web UI build](subsystems/web-ui.md#heroui-and-tailwind)).
 - Checked on the build (#126): 200% text size (no loss of content; on a
-  phone some fields keep their width, #130), forced colours, every modal
+  phone the search fields and Account's panels kept their width then, and
+  give way to the screen's since #130, which no browser has checked), forced colours, every modal
   overlay on iOS Safari 26.3 in the iOS Simulator, and axe over the whole
   Hosts list with 300 Hosts. A screen reader pass has not been run, by the
   Owner's choice.

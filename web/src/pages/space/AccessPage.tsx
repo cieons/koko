@@ -11,7 +11,7 @@ import { useRead, useWrite } from "../../shell/data";
 import { type Count, type Translate, useCount, useT } from "../../shell/i18n";
 import { type RememberedList, ResetView, useRememberedView } from "../../shell/rememberedView";
 import { accountPage, navigate, type PageProps, useLocation } from "../../shell/router";
-import { Field } from "../../ui/fields";
+import { Field, listSearchClass } from "../../ui/fields";
 import { FormDialog } from "../../ui/FormDialog";
 import { notify } from "../../ui/notify";
 import { Page, Sheet } from "../../ui/Page";
@@ -245,7 +245,7 @@ function Lists({
           aria-label={t(view === "people" ? "space.access.search.people" : "space.access.search.spaces")}
           value={q}
           onChange={onSearch}
-          className="min-w-56 flex-1"
+          className={listSearchClass}
           fullWidth
         >
           <SearchField.Group>

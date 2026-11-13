@@ -8,7 +8,7 @@ import { useCaller } from "../../shell/caller";
 import { useRead, useWrite } from "../../shell/data";
 import { useT } from "../../shell/i18n";
 import { type RememberedList, ResetView, useRememberedView } from "../../shell/rememberedView";
-import { Field, SearchChoice } from "../../ui/fields";
+import { Field, listSearchClass, SearchChoice } from "../../ui/fields";
 import { FormDialog } from "../../ui/FormDialog";
 import { notify } from "../../ui/notify";
 import { Page, Sheet } from "../../ui/Page";
@@ -87,7 +87,7 @@ export function SecretsPage() {
               aria-label={t("secret.search")}
               value={query}
               onChange={(q) => refine({ q })}
-              className="min-w-56 flex-1"
+              className={listSearchClass}
               fullWidth
             >
               <SearchField.Group>
