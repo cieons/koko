@@ -225,8 +225,12 @@ func TestKokoDisconnectWaitsForAnAnswerAtMostCommandWait(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			// Nothing a real peer answers waits on the short wait: this
-			// device runs no Device Mux of its own.
+			// Nothing a real peer answers decides the outcome within the
+			// short wait: this device runs no Device Mux of its own, the
+			// silent one never answers, and the stopped one stops as it
+			// takes koko disconnect's connection, before its SSH
+			// handshake, which a loaded machine stretches past 200 ms
+			// (#218).
 			d := harness.NewMuxDevice(t, timing.Timings{CommandWait: 200 * time.Millisecond})
 			d.Koko("disconnect").WantSuccess(t) // makes the runtime directory
 			silent := filepath.Join(d.MuxDir(), "v0.0.1-silent.sock")
@@ -248,12 +252,28 @@ func TestKokoDisconnectCountsABannerWhoseRefusalNeverCame(t *testing.T) {
 	d := harness.NewMuxDevice(t, timing.Timings{CommandWait: 200 * time.Millisecond})
 	d.Koko("disconnect").WantSuccess(t) // makes the runtime directory
 	silent := filepath.Join(d.MuxDir(), "v0.0.1-silent.sock")
-	holdAnswer(t, silent, `{"state":"stopped","commands":3}`, true)
-
-	out, _ := kokoDisconnect(t, d)
-	if len(out.DeviceMuxes) != 1 || out.DeviceMuxes[0].Socket != silent || out.DeviceMuxes[0].CommandsEnded != 3 || out.CommandsEnded != 3 {
-		t.Errorf("disconnect printed %+v, want the Device Mux at %s with its 3 commands", out, silent)
+	// The banner comes after the SSH handshake, which the short wait
+	// counts from before and a loaded machine can stretch past it (#218).
+	// koko disconnect then rightly says the answer never came, and the
+	// test starts again.
+	const tries = 5
+	for range tries {
+		holdAnswer(t, silent, `{"state":"stopped","commands":3}`, true)
+		r := d.Koko("disconnect", "--json")
+		if r.Status != 0 && strings.Contains(r.Stderr, devicemux.ErrUncounted.Error()) {
+			continue
+		}
+		r.WantSuccess(t)
+		var out disconnectOut
+		if err := json.Unmarshal([]byte(r.Stdout), &out, json.RejectUnknownMembers(true)); err != nil {
+			t.Fatalf("disconnect --json printed %q: %v", r.Stdout, err)
+		}
+		if len(out.DeviceMuxes) != 1 || out.DeviceMuxes[0].Socket != silent || out.DeviceMuxes[0].CommandsEnded != 3 || out.CommandsEnded != 3 {
+			t.Errorf("disconnect printed %+v, want the Device Mux at %s with its 3 commands", out, silent)
+		}
+		return
 	}
+	t.Fatalf("the banner never reached koko disconnect within 200ms in %d tries", tries)
 }
 
 // koko leave needs every Device Mux stopped, not their counts, so one that
@@ -278,8 +298,9 @@ func TestKokoLeavePassesOverADeviceMuxThatStoppedWithoutAnswering(t *testing.T) 
 // until the test ends, and answers the authentication koko disconnect
 // opens with banner alone, or with nothing when banner is "", but never
 // with the refusal after it, as when the rest of the answer never reaches
-// koko disconnect. With stops it closes its listener as it is asked, as a
-// Device Mux that stops does.
+// koko disconnect. With stops it closes its listener as it takes the
+// connection, as a Device Mux that stops does, before the SSH handshake,
+// so that koko disconnect's short wait times no step that comes (#218).
 func holdAnswer(t *testing.T, path, banner string, stops bool) {
 	t.Helper()
 	_, key, _ := ed25519.GenerateKey(rand.Reader)
@@ -295,9 +316,6 @@ func holdAnswer(t *testing.T, path, banner string, stops bool) {
 	cfg := &ssh.ServerConfig{
 		NoClientAuth: true,
 		BannerCallback: func(ssh.ConnMetadata) string {
-			if stops {
-				_ = ln.Close()
-			}
 			if banner == "" {
 				<-t.Context().Done()
 			}
@@ -319,6 +337,9 @@ func holdAnswer(t *testing.T, path, banner string, stops bool) {
 			nc, err := ln.Accept()
 			if err != nil {
 				return
+			}
+			if stops {
+				_ = ln.Close()
 			}
 			wg.Go(func() {
 				stop := context.AfterFunc(t.Context(), func() { _ = nc.Close() })
