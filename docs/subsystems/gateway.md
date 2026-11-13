@@ -237,9 +237,11 @@ web`, and the Owner's for the Local caller.
   own. Its label is the Host's name when it was opened, or the lowest
   `web1 (2)` from 2 that no tab holds, and stays when the Host is renamed.
   A new tab goes at the end, and a closed tab's place closes up.
-  `Workspaces.Delete` deletes a User's tabs inside the caller's
-  transaction, offered for `user.remove` to call (#216); nothing calls it
-  yet, so only a User deleted outright takes their tabs with them.
+  `user.remove` deletes a Removed User's tabs inside its transaction
+  (`Workspaces.Delete`); once it commits, the access-change signal has the
+  Gateway forget the Workspace held in memory (`drop`), which cuts its
+  pages, takes no more requests, and deletes again any tab an open added
+  from a request read before the removal.
 - **The Workspace socket** (`ServeWorkspace`) sends the page its Workspace
   first, then again after every change, whole: each tab's `id`, `host` (the
   Host's name now, read as the message is sent, so a renamed Host's tab
@@ -399,11 +401,9 @@ web`, and the Owner's for the Local caller.
   stream closes, with the notice as its reason; a stream off its WebSocket
   is closed at once. The close releases a writer blocked on a stalled
   page's full buffer. The tab then keeps how its SSH Session ended, which
-  every page shows, until a page closes or reopens it. A caller's own end
-  (signing out, a Sign-in's expiry or revocation, a Device Session's
-  revocation, a run of `koko web` ending) ends the SSH Sessions that caller
-  opened, and leaves its pages attached to those another caller opened;
-  #216 refines which of these only detach the caller's pages.
+  every page shows, until a page closes or reopens it. Which endings take
+  back what a caller opened, and which only detach its pages, is in
+  [what only detaches](#what-only-detaches).
 - **The memory budget** (`vtBudget`,
   [`budget.go`](../../internal/server/gateway/budget.go)). The emulators of
   every web terminal SSH Session, across all Users, hold at most
@@ -429,9 +429,9 @@ web`, and the Owner's for the Local caller.
   the Device Session's 64, and its revocation ends those it opened as it
   ends its Tunnels. The Local caller's pages join the Owner's Workspace; an
   attachment of theirs resumes only on the run of `koko web` that made it,
-  and the SSH Sessions a run opened end when its connection does (`koko
-  web ended`); the web front hands the Gateway the run's end
-  (`TerminalCaller.RunEnded`). `koko web` forwards a browser connection's
+  and a run's pages detach when its connection ends (`koko web ended`),
+  while the SSH Sessions it opened go on; the web front hands the Gateway
+  the run's end (`TerminalCaller.RunEnded`). `koko web` forwards a browser connection's
   bytes as they are, so the WebSockets' upgrades and frames pass through
   it unchanged and no channel's revision changes; a dropped Device
   Connection ends the `web@koko` channels on it, and so the WebSockets, and
@@ -565,20 +565,17 @@ registry.
 | A web terminal's shell ended, with its exit record | none | `shell ended` |
 | A web terminal had no page attached for `timing.WorkspaceIdle` (7 days), from its last page's detach or from its start | none | `idle` |
 | A web terminal's emulator failed, and a new one failed too | `the koko server could not keep this terminal's screen, so this SSH Session is closed; its log says why.` | `emulator failed` |
-| The run of `koko web` that opened a Local caller's web terminal ended | none | `koko web ended` |
 | The Host leg broke: the [Host connector](host-connector.md#keeping-a-connection-alive) heard nothing for 60 s, its probes unanswered | `lost the connection to web1 (no answer for 60 s); this SSH Session has ended.` | `Host leg lost` |
 | The Host, or the network beneath, closed its connection | `web1 closed the connection.` | `Host closed` |
 | A Relay's leg broke, as the Host leg's rows above: the leg nearest the koko server that ended, which takes every leg after it down with it | `lost the connection to web1's Relay gw (no answer for 60 s); this SSH Session has ended.`, or `web1's Relay gw closed the connection.`, the Relay unnamed to a caller who cannot follow the links to it | `Relay leg lost`, `Relay closed` |
 | The koko server stops cleanly, as for an upgrade | `the koko server is restarting; this SSH Session has ended.` | `server stopping` |
 | The Tunnel stayed Detached for the whole grace; never a web terminal's | none | `grace over` |
 | Its Device Session was Revoked | `access to web1 was withdrawn: this device's Device Session was Revoked; this SSH Session is closed.` | `revoked` |
-| Its User was Removed | `access to web1 was withdrawn: bob was Removed; this SSH Session is closed.` | `user removed` |
-| The browser that opened a web terminal signed out | `this browser signed out; this SSH Session is closed.` | `signed out` |
-| Its Sign-in was revoked (`signin.revoke`) | `access to web1 was withdrawn: this browser's Sign-in was revoked; this SSH Session is closed.` | `signin revoked` |
-| The Password was set or changed, ending the User's other Sign-ins | `access to web1 was withdrawn: the Password was changed; this SSH Session is closed.` | `password changed` |
-| The Password was removed (`password.remove`) | `access to web1 was withdrawn: the Password was removed; this SSH Session is closed.` | `password removed` |
-| Its Sign-in expired, 30 days from its start or 7 from its last use | `access to web1 was withdrawn: this browser's Sign-in has expired; this SSH Session is closed.` | `signin expired` |
-| The Web URL changed, for a web terminal on the web listener | `the Web URL changed; this SSH Session is closed. Sign in at the new address.` | `web url changed` |
+| Its User was Removed, whoever opened it | `access to web1 was withdrawn: bob was Removed; this SSH Session is closed.` | `user removed` |
+| The Sign-in that opened a web terminal was revoked (`signin.revoke`) | `access to web1 was withdrawn: this browser's Sign-in was revoked; this SSH Session is closed.` | `signin revoked` |
+| The Password was set or changed, ending the User's other Sign-ins, one of which opened a web terminal | `access to web1 was withdrawn: the Password was changed; this SSH Session is closed.` | `password changed` |
+| The Password was removed (`password.remove`), ending the Sign-in that opened a web terminal | `access to web1 was withdrawn: the Password was removed; this SSH Session is closed.` | `password removed` |
+| The Web URL changed, for a web terminal a Sign-in opened, through the web listener | `the Web URL changed; this SSH Session is closed. Sign in at the new address.` | `web url changed` |
 | The Host was Retired | `access to web1 was withdrawn: web1 was Retired; this SSH Session is closed.` | `host retired` |
 | The Host went back to Registered | `access to web1 was withdrawn; this SSH Session is closed.` | `host registered` |
 | A Relay of the chain it started through, or of its Host's chain now, is no longer Managed | `access to web1 was withdrawn: web1's Relay gw is no longer Managed; this SSH Session is closed.`, the Relay unnamed to a caller who cannot follow the links to it | `relay registered`, `relay retired` |
@@ -601,6 +598,61 @@ tunnel` exits at once rather than taking the stop for a drop. A connection
 too stalled to take its Tunnel's close within `timing.StopNotice` (5 s) is
 closed anyway, which ends the Tunnel.
 
+## What only detaches
+
+A web terminal's SSH Session is its User's, whoever opened it (spec #213,
+"What ends an SSH Session, and what only detaches"): the registry keeps
+its opener as its caller, and `workspace_tabs.opened_by` its id, but
+leaving takes back nothing. A caller's end that only detaches cuts that
+caller's pages, their Workspace sockets and their attachments
+([`detach.go`](../../internal/server/gateway/detach.go)), and every SSH
+Session goes on, shown by the User's other pages; the page finds out why as
+it reconnects, from the web front's refusal: it goes to Sign in, or shows
+the shell's words for `revoked` and `cookie_required`. Each attachment cut
+so logs `ssh session detached` with its reason.
+
+| A caller's end | The SSH Sessions it opened | Its pages | `reason` |
+| --- | --- | --- | --- |
+| A browser signs out | go on | detach | `signed out` |
+| A Sign-in expires, found by the sweep, as its cookie comes back, or at a Workspace request | go on | detach | `signin expired` |
+| A run of `koko web` ends, the Local caller's | go on | detach | `koko web ended` |
+| A Sign-in is revoked | end | detach | `signin revoked` |
+| A Device Session is Revoked | end, those it opened through `koko web` | detach | `revoked` |
+| The Password is set or changed, ending the User's other Sign-ins | end, those the ended Sign-ins opened | detach | `password changed` |
+| The Password is removed | end, those every live Sign-in opened | detach | `password removed` |
+| The User is Removed | every one of the User's ends; the Workspace goes | detach | `user removed` |
+| The Web URL changes | end, those a Sign-in opened, through the web listener; those through `koko web` go on | every page on the web listener detaches | `web url changed` |
+
+- **An opener that has already ended takes nothing back later.** A Sign-in
+  that signed out or expired is no longer among those a Password change or
+  removal ends, so what it opened goes on until it ends some other way.
+- **A detach never races its own ending.** An attachment whose SSH
+  Session the same change ended is left to that ending, which gives the
+  page its notice, rather than cut.
+- **A page registered across a change.** An attach or a Workspace socket
+  reads its caller, then registers; a change the Gateway took between the
+  two could not detach it, so once registered, where a later change finds
+  it, it reads its caller again when any change came since (`endedSince`),
+  as `register` does for an SSH Session, before it gets anything: an
+  attachment before it reaches the loop, so no snapshot goes out and
+  nothing it sends reaches the shell, logged `ssh session attach refused`
+  with the reason, and a Workspace socket before its first message. A page
+  on the web listener is read again whatever came, its Web URL against the
+  koko server's, since the Web URL may have changed after the web front
+  checked its Origin.
+- **A request** on the Workspace socket reads its caller first; one that
+  has ended changes nothing, and every page of that caller detaches. The
+  request is checked again under the Workspace's lock against any change
+  since that read, so one in flight as its caller ends changes nothing
+  either. A read that fails fails that request alone.
+- **A resume** reads its caller too, and is refused, its attachment
+  detached, when the caller has ended since.
+- **An expiry the Gateway finds**, by the sweep or as a request's caller,
+  is recorded through the signin service (`RecordExpiriesWith`,
+  `signin.Service.RecordExpiry`), which publishes it as the web front does
+  for a cookie that comes back expired, so every consumer learns of it:
+  the web front cuts that Sign-in's downloads.
+
 ## Access during a live SSH Session
 
 A live SSH Session goes on only while a new one would be allowed (P0 spec:
@@ -617,32 +669,40 @@ SSH Session that ends gives its notice as any ending does
   revocation, or the User's removal when `user.remove` Revoked it, and
   reaches the client before its Device Connections close
   ([revoking](device-connection.md#revoking)).
-- **An ended Sign-in's** web terminals, those it opened, end at once too,
-  with pages attached or none, without a read: the change names the
-  Sign-ins it ended and why (`SignIns`, `SignInEnd`), and each ends with
-  the notice of its end reason ([above](#when-an-ssh-session-ends)): signed
-  out, revoked, the Password changed or removed, the User Removed
-  (`signInEnding`). A check that finds a Sign-in ended some other way, as
-  `recheck` and `recheckResume` read it, ends its SSH Session as its record
-  says it ended (`signInWithdrawal`). An attach or a resume by a Sign-in
-  that has ended never reaches the Gateway: the web front refuses it first,
-  with `signin_required`
+- **A web terminal is checked as its User's.** `recheck` and
+  `recheckResume` read a Workspace's SSH Session's access as its User's
+  (`access.OfUser`, `host.ReachFor`), not its opener's, so an opener that
+  signed out or expired ends nothing. Its opener is read first
+  (`workspaceWho`): a Device Session Revoked, or a Sign-in whose record
+  says it was revoked, ended by a Password change or removal, or ended with
+  its User's removal, ends it, as for an SSH Session admitted across that
+  change; a User Removed ends it as `user removed`.
+- **An ended Sign-in's** pages detach at once, without a read: the change
+  names the Sign-ins it ended and why (`SignIns`, `SignInEnd`). The SSH
+  Sessions it opened end too, each with the notice of its end reason
+  ([above](#when-an-ssh-session-ends)), when that reason takes them back
+  (`takesBack`): revoked, the Password changed or removed, the User
+  Removed (`signInEnding`); signed out and expired take back nothing
+  ([what only detaches](#what-only-detaches)). An attach or a resume by a
+  Sign-in that has ended never reaches the Gateway: the web front refuses
+  it first, with `signin_required`
   ([the web front](web-front.md#the-web-terminals-websocket)).
-- **A Sign-in's expiry** publishes nothing, so the Gateway sweeps for it
+- **A Sign-in's expiry** is published only once its cookie comes back and
+  the web front records it, so the Gateway also sweeps for it
   (`sweepSignIns`): every `timing.SignInCheck` (1 minute) one read-only
-  transaction reads the Sign-in that opened each web terminal through
-  `access.SignIns`, on the koko server's clock, and each ended one ends its
-  SSH Sessions as its record says it ended, `signin expired` for an
-  expired one. A read that fails ends nothing and is logged; the next sweep
-  reads again. The first message of a Workspace socket or a terminal
-  socket moves its Sign-in's Last used time, as the web front's cookie
-  check does for a call; the Workspace socket's requests and keys typed do
-  not, so a Sign-in whose only use for 7 days is a page attached without a
-  drop expires, and ends the SSH Sessions it opened.
+  transaction reads the Sign-in of each page, attached or on its
+  Workspace socket, through `access.SignIns`, on the koko server's clock,
+  and the pages of each ended one detach, `signin expired` for an expired
+  one, which it records so the signal names it. It ends no SSH Session. A read that fails detaches nothing and is
+  logged; the next sweep reads again. The first message of a Workspace
+  socket or a terminal socket moves its Sign-in's Last used time, as the
+  web front's cookie check does for a call; the Workspace socket's requests
+  and keys typed do not, so a Sign-in whose only use for 7 days is a page
+  attached without a drop expires, and its pages detach.
 - **A Web URL change** (`WebURL`, published by `server.set` only when the
   stored address changes or is cleared) signs out every page on the web
-  listener, so every Sign-in's SSH Session ends at once (`web url
-  changed`). No check of access tells the Web URL, so the web front hands
+  listener, so every page there detaches and every SSH Session a Sign-in
+  opened ends at once (`web url changed`). No check of access tells the Web URL, so the web front hands
   the Gateway the Web URL it checked the page against
   (`TerminalCaller.WebURL`): an open or a reopen whose Web URL has changed
   since, as from a page that upgraded its Workspace socket before the
@@ -654,12 +714,13 @@ SSH Session that ends gives its notice as any ending does
 - **Any other change** names the Hosts it may have put out of a caller's
   reach (`host.move` to another Space, `host.retire`, and `host.set` sending
   a Managed Host back to Registered or giving it another Relay, whose own
-  chain may hold one that is not Managed), or the live Device Sessions and
-  Sign-ins of each User `space.member.remove` took out of a Space or
-  `user.demote` demoted, by the caller's id (`op.Caller.ID`). When a change names any Host, the Gateway
+  chain may hold one that is not Managed), or the ids of
+  each User `space.member.remove` took out of a Space or `user.demote`
+  demoted, by the User's id, so a web terminal whose opener has ended is
+  checked too. When a change names any Host, the Gateway
   checks every live SSH Session again, since a named Host may be the Relay
   one passes through or the one its Host was given since it started, even
-  when it started with none; when it narrows callers, it checks each SSH
+  when it started with none; when it narrows Users, it checks each SSH
   Session of theirs. It checks them in one read-only transaction, by the
   rule that admits a new one
   ([`host.ReachOf`](../../internal/server/host/reach.go) by the Host's id,
@@ -682,8 +743,9 @@ SSH Session that ends gives its notice as any ending does
 - **Changes that keep access** publish nothing or pass the check, and
   interrupt nothing: a rename, the address, port, Note and Attributes, a
   move to a Space the caller still acts in, another Device Session's
-  revocation, another Sign-in's ending, and the Password changed from the
-  Sign-in's own browser, which ends only the User's other Sign-ins.
+  revocation, another Sign-in's ending, the end of a Sign-in that only
+  signed out or expired, and the Password changed from the Sign-in's own
+  browser, which ends only the User's other Sign-ins.
 - **An SSH Session admitted across a change**, its admission read before
   the change committed and its Tunnel registered after the Gateway took it,
   is checked again once registered, so none slips between the two.
@@ -722,7 +784,9 @@ attachment's `attachment`, its id.
   `user`, `signin` or `device_session`, `host`, `host_id`, `direction`
   (`upload` or `download`), `path` (the file's absolute path on the Host: a
   download's as asked, an upload's final one), `bytes` (those moved), and
-  `outcome`: `done`, `cancelled`, or `failed` with `err`. A listing is not
+  `outcome`: `done`, `cancelled`, or `failed` with `err`; `signin` or
+  `device_session` names the caller who moved the file, from any page of
+  the User's. A listing is not
   logged, and no line holds a cookie, a download token or a file's
   content.
 - `ssh session ended`: the same as the start but the Host's own Relay and
@@ -752,7 +816,12 @@ attachment's `attachment`, its id.
   `device_session` or `signin`, when the grace starts. For a web terminal
   it means one page detached: `tunnel`, `client`, `tab`, `attachment`,
   `signin` or `device_session`, `addr` and `reason`: `page left`,
-  `malformed record` or `displaced`. A page's WebSocket dropping, which
+  `malformed record`, `displaced`, or its caller's end
+  ([what only detaches](#what-only-detaches)): `signed out`, `signin
+  expired`, `koko web ended`, `revoked`, `signin revoked`, `password
+  changed`, `password removed`, `user removed` or `web url changed`. A
+  Workspace socket cut so is `workspace socket closed` at debug level, with
+  the caller and `reason`. A page's WebSocket dropping, which
   starts its attachment's grace, is `web terminal dropped` at debug level,
   with the same fields but `reason`.
 - `ssh session resumed`: `tunnel`, `client`, `device_session` or `signin`,

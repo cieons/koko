@@ -71,10 +71,9 @@ object.
 - **Demoting**, in one transaction, deletes the row and voids the unused
   Join Codes and Password Links the Administrator issued for other Users,
   from any of their Device Sessions or Sign-ins; those they issued for
-  themselves stay. Once it commits, the access-change signal names their
-  live Device Sessions and Sign-ins in `Narrowed`, so their SSH Sessions and
-  web terminals to Hosts outside the Spaces they still act in end, with
-  `access withdrawn` ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
+  themselves stay. Once it commits, the access-change signal names the
+  User in `Narrowed`, so their SSH Sessions and web terminals to Hosts
+  outside the Spaces they still act in end, with `access withdrawn` ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
   Their memberships stay.
 - **The Owner stays.** The Local caller acts as the Owner, the one `owner`
   row ([ADR 0008](../adr/0008-local-callers-act-as-the-owner.md)): `koko
@@ -120,14 +119,17 @@ The Owner Removes an Administrator directly, with no demotion first.
      it keeps its name and what it holds, only the Owner and the
      Administrators see it, and they can rename it, give it Members, move
      its Hosts and Secrets out and remove it once it is empty;
-  6. marks them Removed, keeping the row.
+  6. deletes their Workspace, the rows of `workspace_tabs`
+     ([`Workspaces.Delete`](../../internal/server/gateway/workspace.go));
+  7. marks them Removed, keeping the row.
 
-  Once it commits, the access-change signal names the Device Sessions it
-  Revoked, as a Removed User's, so their live SSH Sessions end, each with
-  a line naming the removal
+  Once it commits, the access-change signal names the User and the Device
+  Sessions it Revoked, so every live SSH Session of theirs ends, whoever
+  opened it, each with a line naming the removal, their web terminal's
+  pages detach and the Gateway forgets their Workspace
   ([the Gateway](gateway.md#access-during-a-live-ssh-session)), and their
   Device Connections then close ([revoking](device-connection.md#revoking));
-  it also names the Sign-ins it ended, whose web terminals end alike;
+  it also names the Sign-ins it ended, with `user_removed`;
   a later consumer ends their `koko web` cookies through the same Device
   Sessions. Who
   is calling then refuses each of them with `revoked`, by its device's name,

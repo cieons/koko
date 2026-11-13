@@ -333,7 +333,7 @@ func (s *area) memberRemove(ctx context.Context, tx store.Tx, caller op.Caller, 
 	if err != nil {
 		return api.SpaceMemberRemoveResponse{}, err
 	}
-	var narrowed, taken []string
+	var taken []string
 	for _, u := range users {
 		res, err := tx.ExecContext(ctx, "DELETE FROM memberships WHERE space_id = ? AND user_id = ?", sp.ID, u.ID)
 		if err != nil {
@@ -347,16 +347,9 @@ func (s *area) memberRemove(ctx context.Context, tx store.Tx, caller op.Caller, 
 			continue
 		}
 		taken = append(taken, u.ID)
-		callers, err := access.Callers(ctx, tx, u.ID, op.Now(ctx))
-		if err != nil {
-			return api.SpaceMemberRemoveResponse{}, err
-		}
-		narrowed = append(narrowed, callers...)
-	}
-	if len(narrowed) > 0 {
-		s.changes.Publish(ctx, access.Change{Narrowed: narrowed})
 	}
 	if len(taken) > 0 {
+		s.changes.Publish(ctx, access.Change{Narrowed: taken})
 		s.lists.Publish(ctx, hostlist.Change{Users: taken})
 	}
 	d, err := s.detail(ctx, tx, sp)

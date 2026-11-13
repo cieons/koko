@@ -475,8 +475,28 @@ func (s *Service) Check(ctx context.Context, token string, a Attempt) (string, e
 	return si.ID, nil
 }
 
-// recordExpired records si, found expired, as ended at its expiry, and logs
-// it once that commits.
+// RecordExpiry records the Sign-in whose id is id as ended at its expiry,
+// when it is found expired at the koko server's time and its record does
+// not say so yet, as the Gateway finds one whose page is open: once that
+// commits, the access-change signal names it, as for a cookie that comes
+// back expired.
+func (s *Service) RecordExpiry(ctx context.Context, id string) error {
+	var found []api.SignIn
+	err := s.store.Read(ctx, func(tx store.Tx) (err error) {
+		found, err = access.SignIns(ctx, tx, s.now(), "s.id = ?", id)
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("read the Sign-in %s: %w", id, err)
+	}
+	if len(found) != 1 || found[0].EndReason != api.EndExpired {
+		return nil
+	}
+	return s.recordExpired(ctx, found[0])
+}
+
+// recordExpired records si, found expired, as ended at its expiry, and once
+// that commits logs it and has the access-change signal name it.
 func (s *Service) recordExpired(ctx context.Context, si api.SignIn) error {
 	return s.api.Do(ctx, func(ctx context.Context, tx store.Tx) error {
 		res, err := tx.ExecContext(ctx, "UPDATE signins SET ended_at = ?, end_reason = ? WHERE id = ? AND ended_at IS NULL",
@@ -490,6 +510,9 @@ func (s *Service) recordExpired(ctx context.Context, si api.SignIn) error {
 		}
 		if n == 1 {
 			afterCommit(ctx, s.log, "sign-in ended", "user", si.User, "signin", si.ID, "reason", api.EndExpired)
+			// Its pages detach at once, rather than at the Gateway's next
+			// sweep; the SSH Sessions it opened go on.
+			s.changes.Publish(ctx, access.Change{SignIns: []string{si.ID}, SignInEnd: api.EndExpired})
 		}
 		return nil
 	})

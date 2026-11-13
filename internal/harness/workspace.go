@@ -162,6 +162,22 @@ func (ws *WorkspacePage) Send(r wire.WorkspaceRequest) uint64 {
 	return r.Request
 }
 
+// TrySend sends r as Send does, and returns the error of a socket the koko
+// server may have cut already, rather than failing the test.
+func (ws *WorkspacePage) TrySend(r wire.WorkspaceRequest) error {
+	ws.mu.Lock()
+	if r.Request == 0 {
+		ws.next++
+		r.Request = ws.next
+	}
+	ws.mu.Unlock()
+	body, err := json.Marshal(r)
+	if err != nil {
+		return err
+	}
+	return ws.c.Write(ws.t.t.Context(), websocket.MessageText, body)
+}
+
 // SendRaw sends body as one text message.
 func (ws *WorkspacePage) SendRaw(body []byte) {
 	ws.t.t.Helper()

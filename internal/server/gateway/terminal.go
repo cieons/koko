@@ -46,7 +46,8 @@ type TerminalCaller struct {
 	Caller op.Caller
 	// Run, for the Local caller, names the run of koko web the page came
 	// through, which alone may resume its attachments, and RunEnded is
-	// closed once that run ends, which ends the SSH Sessions it opened.
+	// closed once that run ends, which detaches its pages; the SSH
+	// Sessions it opened go on.
 	Run      string
 	RunEnded <-chan struct{}
 	// Addr is where the page came from: on the web listener, the client's
@@ -93,21 +94,11 @@ func (g *Gateway) terminalsOpen() bool {
 // loop, and once the SSH Session ends, finishes its pages with how it
 // ended, closes the Host connection and records the ending in its tab.
 // None of that waits for the loop, which may be inside a call into the
-// emulator, or for a page's writer. runEnded, unless nil, ends it once the
-// run of koko web that opened it ends.
-func (g *Gateway) runSession(s *termSession, runEnded <-chan struct{}) {
+// emulator, or for a page's writer.
+func (g *Gateway) runSession(s *termSession) {
 	t := s.t
 	defer g.unregister(t)
 	defer t.end(errEnded)
-	if runEnded != nil {
-		g.wg.Go(func() {
-			select {
-			case <-runEnded:
-				t.end(errRunEnded)
-			case <-t.ctx.Done():
-			}
-		})
-	}
 	hostName := s.a.host.Name
 	sh, refused, err := g.startShell(t, s.a, uint32(s.cols), uint32(s.rows))
 	if sh != nil {
@@ -181,8 +172,9 @@ func (g *Gateway) AttachTerminal(c TerminalCaller, s TerminalSocket, id [wire.Tu
 // the socket, and hands it to the loop, which sends it a reset and the
 // snapshot, then the live output. An id that names no live SSH Session of
 // the User is refused with unknown_tunnel, one that ended with
-// ssh_session_ended.
+// ssh_session_ended. The attachment detaches as its caller ends.
 func (g *Gateway) attachTerminal(c TerminalCaller, sock TerminalSocket, id tunnelID, cols, rows int) {
+	seen := g.withdrawalsTaken()
 	u, refused := g.userOf(c)
 	if refused != nil {
 		sock.Refuse(*refused)
@@ -211,14 +203,20 @@ func (g *Gateway) attachTerminal(c TerminalCaller, sock TerminalSocket, id tunne
 		return
 	}
 	sc := newSocketConn(sock.Conn())
-	g.addAttachment(a, sc, func() { g.watchSocket(a.stream, sock, sc, a.attrs()) })
+	callerEnded := func() string { return g.endedSince(c, seen) }
+	if g.addAttachment(a, sc, func() { g.watchSocket(a.stream, sock, sc, a.attrs()) }, callerEnded) {
+		g.whenRunEnds(c, a.ctx.Done(), func() { a.detach("koko web ended") })
+	}
 }
 
 // addAttachment starts the attachment a's stream on conn, its writer and
-// watch, and watchConn, unless the SSH Session has ended, and hands a to
-// the loop; only then does it read the page's records, so that none comes
-// before it.
-func (g *Gateway) addAttachment(a *attachment, conn net.Conn, watchConn func()) {
+// watch, and watchConn, unless the SSH Session has ended or its caller
+// has, and hands a to the loop; only then does it read the page's records,
+// so that none comes before it. It says whether it did. ended, unless nil,
+// tells why the caller has ended since it was read, once a is in the
+// Gateway's attachments, where a change from then on finds it to detach:
+// a caller that has ended gets no snapshot and sends nothing to the shell.
+func (g *Gateway) addAttachment(a *attachment, conn net.Conn, watchConn func(), ended func() string) bool {
 	s := a.s
 	a.stream = resumable.New(conn)
 	// In the Gateway's first, so that the SSH Session's ending, which takes
@@ -226,13 +224,23 @@ func (g *Gateway) addAttachment(a *attachment, conn net.Conn, watchConn func()) 
 	g.mu.Lock()
 	g.attachments[a.id] = a
 	g.mu.Unlock()
+	if ended != nil {
+		if reason := ended(); reason != "" {
+			a.cancel(errEnded)
+			g.forgetAttachment(a, nil)
+			a.cut()
+			_ = a.stream.Close()
+			g.log.Debug("ssh session attach refused", append(a.attrs(), "reason", reason)...)
+			return false
+		}
+	}
 	s.mu.Lock()
 	if s.ended {
 		s.mu.Unlock()
 		a.cancel(errEnded)
 		g.forgetAttachment(a, nil)
 		_ = a.stream.CloseWithReason(endingOf(context.Cause(s.t.ctx)).notice)
-		return
+		return false
 	}
 	s.all[a] = struct{}{}
 	s.mu.Unlock()
@@ -244,6 +252,7 @@ func (g *Gateway) addAttachment(a *attachment, conn net.Conn, watchConn func()) 
 		g.wg.Go(a.read)
 	case <-a.ctx.Done():
 	}
+	return true
 }
 
 // forgetAttachment takes the ended attachment a out of the Gateway's. When
@@ -280,6 +289,11 @@ func (g *Gateway) ResumeTerminal(c TerminalCaller, s TerminalSocket, id [wire.Tu
 }
 
 func (g *Gateway) resumeTerminal(c TerminalCaller, sock TerminalSocket, id tunnelID, offset uint64) {
+	seen := g.withdrawalsTaken()
+	if _, refused := g.userOf(c); refused != nil {
+		sock.Refuse(*refused)
+		return
+	}
 	key := c.key()
 	g.mu.Lock()
 	a := g.attachments[id]
@@ -293,6 +307,14 @@ func (g *Gateway) resumeTerminal(c TerminalCaller, sock TerminalSocket, id tunne
 	g.mu.Unlock()
 	if a != nil {
 		ended = g.recheckResume(a.s.t)
+	}
+	if reason := ""; a != nil && ended == nil {
+		// Its caller, read above, may have ended since, by a change that
+		// detached its attachments before this one was found.
+		if reason = g.endedSince(c, seen); reason != "" {
+			a.detach(reason)
+			ended = &ending{reason: reason}
+		}
 	}
 	if a == nil || ended != nil {
 		reason, why := "unknown attachment", ""

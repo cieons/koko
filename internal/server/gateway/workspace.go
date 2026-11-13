@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -74,8 +75,11 @@ type workspace struct {
 	// mu is held by each change, which it applies in turn.
 	mu     sync.Mutex
 	loaded bool
-	tabs   []*wsTab
-	pages  map[*wsPage]struct{}
+	// gone is set once the User was Removed: the Workspace takes no page
+	// and no request.
+	gone  bool
+	tabs  []*wsTab
+	pages map[*wsPage]struct{}
 }
 
 // wsTab is one tab of a Workspace.
@@ -97,14 +101,39 @@ type storedEnd struct {
 
 // Delete deletes the Workspace of the User whose id is userID in tx, for
 // user.remove to call in its transaction. Their SSH Sessions end once it
-// commits, through the access-change signal. The Workspace held in memory
-// stays until then; #216, which calls Delete, drops it once the
-// transaction has committed.
+// commits, through the access-change signal, which drops the Workspace held
+// in memory then (drop), since the transaction may yet roll back.
 func (ws *Workspaces) Delete(ctx context.Context, tx store.Tx, userID string) error {
 	if _, err := tx.ExecContext(ctx, "DELETE FROM workspace_tabs WHERE user_id = ?", userID); err != nil {
 		return fmt.Errorf("delete the Workspace of %s: %w", userID, err)
 	}
 	return nil
+}
+
+// drop forgets the Workspace of the User whose id is userID, once
+// user.remove's Delete has committed: its pages are cut, and it takes no
+// request, so no later load or page sees its tabs. A tab an open added
+// after the Delete, from a request read before the removal, is deleted
+// too.
+func (ws *Workspaces) drop(userID string) {
+	ws.mu.Lock()
+	w := ws.of[userID]
+	delete(ws.of, userID)
+	ws.mu.Unlock()
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.gone = true
+	for p := range w.pages {
+		p.cut("user removed")
+	}
+	ctx := context.Background()
+	err := ws.g.store.Write(ctx, func(tx store.Tx) error { return ws.Delete(ctx, tx, userID) })
+	if err != nil {
+		ws.g.log.Error("drop the Workspace of a User Removed", "user", userID, "err", err)
+	}
 }
 
 // workspace returns the Workspace of the User whose id is userID.
@@ -117,6 +146,14 @@ func (ws *Workspaces) workspace(userID string) *workspace {
 		ws.of[userID] = w
 	}
 	return w
+}
+
+// held returns the Workspace of the User whose id is userID, if one is
+// held, without making one.
+func (ws *Workspaces) held(userID string) *workspace {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	return ws.of[userID]
 }
 
 // all returns every Workspace held.
@@ -222,13 +259,11 @@ func visibleHosts(ctx context.Context, tx store.Tx, userID string, ids []string)
 	if len(ids) == 0 {
 		return names, nil
 	}
-	var u api.User
-	err := tx.QueryRowContext(ctx, "SELECT u.id, u.name, "+access.Role+", u.created_at FROM users u WHERE u.id = ?", userID).
-		Scan(&u.ID, &u.Name, &u.Role, &u.CreatedAt)
+	who, err := access.OfUser(ctx, tx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("read the User %s: %w", userID, err)
+		return nil, err
 	}
-	scope, err := access.Identity{User: u}.Spaces(ctx, tx)
+	scope, err := who.Spaces(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -301,10 +336,21 @@ func openedBy(c TerminalCaller) any {
 
 // handle applies the page p's request r, one at a time with every other
 // change of the Workspace, and answers it after the Workspace it changed.
-func (w *workspace) handle(p *wsPage, r wire.WorkspaceRequest) {
+// Its caller was read live once the access-change signal had been taken
+// seen times: one that has ended since changes nothing, and its page is
+// cut.
+func (w *workspace) handle(p *wsPage, r wire.WorkspaceRequest, seen uint64) {
 	ctx := context.Background()
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.gone || p.isClosing() {
+		// Detached, or its User Removed: its socket is cut.
+		return
+	}
+	if reason := w.ws.g.endedSince(p.c, seen); reason != "" {
+		p.cut(reason)
+		return
+	}
 	var a wire.WorkspaceAnswer
 	switch {
 	case r.Open != "":
@@ -484,7 +530,7 @@ func (w *workspace) startLocked(c TerminalCaller, tab *wsTab, t *tunnel, a admis
 		tab.state = wire.TabStateRestarted
 		return
 	}
-	g.wg.Go(func() { g.runSession(s, c.RunEnded) })
+	g.wg.Go(func() { g.runSession(s) })
 }
 
 // sessionOf returns the Workspace's live SSH Session id, or nil, and
@@ -580,12 +626,20 @@ func (g *Gateway) ServeWorkspace(c TerminalCaller, s WorkspaceSocket) {
 }
 
 func (g *Gateway) serveWorkspace(c TerminalCaller, s WorkspaceSocket) {
+	seen := g.withdrawalsTaken()
 	u, refused := g.userOf(c)
 	if refused != nil {
 		s.Refuse(*refused)
 		return
 	}
-	w := g.workspaces.workspace(u.ID)
+	g.openWorkspace(c, s, u.ID, seen)
+}
+
+// openWorkspace serves the Workspace socket s of the caller c, read live
+// as the User whose id is userID once the access-change signal had been
+// taken seen times, until it ends.
+func (g *Gateway) openWorkspace(c TerminalCaller, s WorkspaceSocket, userID string, seen uint64) {
+	w := g.workspaces.workspace(userID)
 	p := &wsPage{w: w, c: c, s: s, wake: make(chan struct{}, 1), done: make(chan struct{}), start: time.Now()}
 	w.mu.Lock()
 	if err := w.loadLocked(context.Background()); err != nil {
@@ -594,17 +648,28 @@ func (g *Gateway) serveWorkspace(c TerminalCaller, s WorkspaceSocket) {
 		s.Refuse(wire.TerminalRefusal(api.CodeInternal.Name, "the koko server could not read this Workspace; its log says why"))
 		return
 	}
-	if !g.terminalsOpen() {
+	if !g.terminalsOpen() || w.gone {
 		w.mu.Unlock()
 		s.Cut()
 		return
 	}
+	// Among the pages first, where a change from now on finds it to
+	// detach, then checked against any change since its caller was read,
+	// before it gets anything.
 	w.pages[p] = struct{}{}
+	if reason := g.endedSince(c, seen); reason != "" {
+		delete(w.pages, p)
+		w.mu.Unlock()
+		g.log.Debug("workspace socket closed", append(callerAttrs(c.Caller), "reason", reason)...)
+		s.Cut()
+		return
+	}
 	if msg, err := json.Marshal(w.view(context.Background())); err == nil {
 		p.send(msg)
 	}
 	w.mu.Unlock()
 	g.wg.Go(p.write)
+	g.whenRunEnds(c, p.done, func() { p.cut("koko web ended") })
 	p.read()
 	w.mu.Lock()
 	delete(w.pages, p)
@@ -761,14 +826,24 @@ func (p *wsPage) read() {
 			continue // liveness alone
 		}
 		// A request acts for the caller as it is now: one that has ended,
-		// such as a revoked Sign-in, or no longer the Workspace's User,
-		// changes nothing, and the page is closed, to find out why as it
-		// reconnects.
-		if u, refused := p.w.ws.g.userOf(p.c); refused != nil || u.ID != p.w.userID {
-			p.w.ws.g.log.Debug("workspace socket closed", slices.Concat(callerAttrs(p.c.Caller), []any{"reason", "caller ended"})...)
-			p.s.Close(false)
+		// such as a Sign-in found expired, changes nothing, and every page
+		// of the caller detaches, to find out why as it reconnects. A read
+		// that fails fails this request alone.
+		g := p.w.ws.g
+		seen := g.withdrawalsTaken()
+		u, refused := g.userOf(p.c)
+		switch {
+		case refused != nil && refused.Refused == api.CodeInternal.Name:
+			if msg, err := json.Marshal(wire.WorkspaceAnswer{Request: r.Request, Refused: refused.Refused, Message: refused.Message}); err == nil {
+				p.send(msg)
+			}
+			continue
+		case refused != nil || u.ID != p.w.userID:
+			reason := cmp.Or(g.callerEnd(p.c), "access withdrawn")
+			p.cut(reason)
+			g.detachCaller(p.c.Caller, reason)
 			return
 		}
-		p.w.handle(p, r)
+		p.w.handle(p, r, seen)
 	}
 }

@@ -156,7 +156,7 @@ A one-time, time-limited link the Owner or an Administrator issues that lets one
 _Avoid_: reset link, magic link, invite link
 
 **Sign-in**:
-One browser signed in with a User's Password, until it signs out, expires or is revoked; it is not a Device Session, and it reaches a Host only through the Web terminal.
+One browser signed in with a User's Password, until it signs out, expires or is revoked; it is not a Device Session, and it reaches a Host only through the Web terminal. Its signing out or expiry detaches its pages, and its revocation ends the SSH Sessions it opened.
 _Avoid_: web session, session (alone), login, cookie
 
 **Device Session**:

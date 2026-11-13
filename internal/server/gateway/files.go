@@ -161,7 +161,12 @@ func (g *Gateway) Files(c TerminalCaller, id [wire.TunnelIDSize]byte) (*Files, e
 	if refused != nil {
 		return nil, &api.Error{Code: refused.Refused, Message: *refused.Message}
 	}
-	s, ended := g.workspaces.workspace(u.ID).sessionOf(tunnelID(id))
+	// A Workspace not held has no SSH Session, and asking makes none.
+	var s *termSession
+	ended := false
+	if w := g.workspaces.held(u.ID); w != nil {
+		s, ended = w.sessionOf(tunnelID(id))
+	}
 	var tf *terminalFiles
 	if s != nil {
 		g.mu.Lock()

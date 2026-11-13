@@ -103,6 +103,10 @@ type Gateway struct {
 	// and newEmulator makes one (session.go).
 	budget      *vtBudget
 	newEmulator func(ctx context.Context, cols, rows int) (emulator, error)
+	// expiries records a Sign-in the Gateway found expired, as the web
+	// front records one whose cookie comes back, so that the access-change
+	// signal names it (RecordExpiriesWith); nil records none.
+	expiries func(ctx context.Context, signInID string) error
 	// stopped is closed once the Gateway closes, which stops sweepSignIns.
 	stopped chan struct{}
 	wg      sync.WaitGroup
@@ -152,6 +156,32 @@ func New(st *store.Store, rootKey *seal.RootKey, clock func() time.Time, timings
 	return g
 }
 
+// RecordExpiriesWith has the Gateway record each Sign-in it finds expired,
+// by the sweep or at a page's request, through record, which publishes it
+// on the access-change signal once it commits, so that every consumer, the
+// web front's downloads among them, learns of it. server.Start calls it
+// before the koko server serves.
+func (g *Gateway) RecordExpiriesWith(record func(ctx context.Context, signInID string) error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.expiries = record
+}
+
+// recordExpiry records the Sign-in signInID, found expired, unless the
+// Gateway records none. A failure is logged: the Gateway detaches its
+// pages either way.
+func (g *Gateway) recordExpiry(signInID string) {
+	g.mu.Lock()
+	record := g.expiries
+	g.mu.Unlock()
+	if record == nil {
+		return
+	}
+	if err := record(context.Background(), signInID); err != nil {
+		g.log.Error("record a Sign-in's expiry", "signin", signInID, "err", err)
+	}
+}
+
 // Workspaces returns the Users' Workspaces, whose delete user.remove calls.
 func (g *Gateway) Workspaces() *Workspaces { return g.workspaces }
 
@@ -193,9 +223,10 @@ type tunnel struct {
 	// limited says the Tunnel counts against its caller's limit.
 	limited bool
 	// hostID and hostName are the Host the access check admitted the SSH
-	// Session to, by its id and by its name then, and user the name of the
-	// User it acts as; hostID is empty for an SSH Session refused.
-	hostID, hostName, user string
+	// Session to, by its id and by its name then, and userID and user the
+	// id and the name of the User it acts as; hostID is empty for an SSH
+	// Session refused.
+	hostID, hostName, userID, user string
 	// relayIDs are the ids of the chain of Relays it passes through, in
 	// dial order; none for a Host without a Relay.
 	relayIDs []string
@@ -433,7 +464,7 @@ func (g *Gateway) register(t *tunnel, a admission, seen uint64) (*refusal, bool)
 		g.sshSessions[id]++
 		t.limited = true
 	}
-	t.hostID, t.hostName, t.user, t.relayIDs = a.host.ID, a.host.Name, a.who.User.Name, host.IDs(a.host.Relays)
+	t.hostID, t.hostName, t.userID, t.user, t.relayIDs = a.host.ID, a.host.Name, a.who.User.ID, a.who.User.Name, host.IDs(a.host.Relays)
 	switch {
 	case t.caller.SignIn != "" && g.webURLChanged > seen:
 		t.end(errWebURLChanged)

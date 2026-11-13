@@ -1,9 +1,7 @@
 package web_test
 
 import (
-	"encoding/json/v2"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,7 +18,6 @@ import (
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/harness/sshhost"
 	"github.com/cieons/koko/internal/server/vt"
-	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -411,38 +408,6 @@ func TestTheWorkspaceSocketIsWatched(t *testing.T) {
 	}
 	if n := slices.Index(ws.Messages(), "{}"); n < 0 {
 		t.Errorf("the koko server sent a quiet page %q, want {} among them", ws.Messages())
-	}
-}
-
-// A Workspace request acts for the caller as it is now: a page whose
-// Sign-in was revoked is closed at its next request, which changes
-// nothing, though its Workspace socket was open before.
-func TestAWorkspaceRequestActsForTheCallerAsItIsNow(t *testing.T) {
-	t.Parallel()
-	h := startTerminals(t)
-	terminalHost(t, h, "web1", []string{"space=bob"})
-	phone := h.SignIn("bob")
-	desktop := signInAgain(t, h, "bob")
-	stolen := phone.TerminalPage().Workspace()
-	kept := desktop.TerminalPage().Open("web1", 80, 24)
-	stolen.WaitTab(kept.Tab, "shown", func(wire.WorkspaceTab) bool { return true })
-
-	status, body := phone.Send(api.UserCurrent, []byte("{}"))
-	var current api.UserCurrentResponse
-	if err := json.Unmarshal(body, &current); err != nil || status != http.StatusOK || current.SignIn == nil {
-		t.Fatalf("user.current of the phone's Sign-in: %d %s", status, body)
-	}
-	h.Koko("signin", "revoke", current.SignIn.ID).WantSuccess(t)
-	stolen.Send(wire.WorkspaceRequest{Close: kept.Tab})
-	select {
-	case <-stolen.Ended():
-	case <-time.After(10 * time.Second):
-		t.Fatal("the revoked Sign-in's Workspace socket stayed open after its request")
-	}
-	kept.Type([]byte("echo kept\n"))
-	kept.WaitOutput("kept\n")
-	if tabs := desktop.TerminalPage().Workspace().Tabs(); len(tabs) != 1 || tabs[0].ID != kept.Tab {
-		t.Errorf("after the revoked Sign-in's close the Workspace holds %q, want its tab still", labels(tabs))
 	}
 }
 

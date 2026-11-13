@@ -89,9 +89,6 @@ var (
 	// errShellEnded: the shell ended, and the Host closed its session
 	// channel.
 	errShellEnded = &ending{reason: "shell ended"}
-	// errRunEnded: the run of koko web the Local caller's page came
-	// through ended.
-	errRunEnded = &ending{reason: "koko web ended"}
 	// errIdle: no page was attached for timing.WorkspaceIdle.
 	errIdle = &ending{reason: "idle"}
 	// errEmulatorFailed: the emulator failed, and a new one could not be

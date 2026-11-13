@@ -3,6 +3,7 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"io"
 	"log/slog"
@@ -206,14 +207,20 @@ type page struct {
 	held chan struct{}
 }
 
-// attach attaches a page to s.
+// attach attaches a page of the Local caller to s.
 func (tg *testGateway) attach(s *termSession) *page {
+	return tg.attachAs(s, op.Caller{Local: true})
+}
+
+// attachAs attaches a page of the caller c to s.
+func (tg *testGateway) attachAs(s *termSession, c op.Caller) *page {
 	gw, pg := net.Pipe()
-	a := &attachment{s: s, written: make(chan struct{}), wake: make(chan struct{}, 1), cols: 80, rows: 24}
+	a := &attachment{s: s, caller: c, key: callerKey{id: c.ID()}, written: make(chan struct{}), wake: make(chan struct{}, 1), cols: 80, rows: 24}
+	_, _ = rand.Read(a.id[:])
 	a.ctx, a.cancel = context.WithCancelCause(s.t.ctx)
 	p := &page{a: a, stream: resumable.New(pg), ended: make(chan struct{})}
 	go p.read()
-	tg.addAttachment(a, gw, func() {})
+	tg.addAttachment(a, gw, func() {}, nil)
 	return p
 }
 

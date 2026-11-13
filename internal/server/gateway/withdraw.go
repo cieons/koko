@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -19,15 +20,18 @@ import (
 
 // Withdraw ends each live SSH Session that the committed change c withdrew
 // access from, since one goes on only while a new one would be allowed (P0
-// spec: reach). Each of a Device Session c Revoked, or of a Sign-in it
-// ended, ends at once, and so does each of a Sign-in when c changed the
-// Web URL; each, when c names any Host, or each of a caller it narrowed,
-// ends once a read of the record finds that a new one would now be refused
-// (recheck). The channel
-// it returns is closed once the Revoked Device Sessions' SSH Sessions have
-// given their notice and ended, so that their Device Connections close only
-// after. It never blocks, since the access-change signal calls it before
-// the call that made the change answers.
+// spec: reach), and detaches the pages of each caller c ended (detachPages).
+// Each SSH Session of a User c Removed ends at once, and so does each a
+// Device Session c Revoked opened, each a Sign-in c took back opened
+// (takesBack), and when c changed the Web URL, each a Sign-in opened;
+// each, when c names any Host, or each of a User it narrowed, ends once a
+// read of the record finds that a new one would now be refused (recheck).
+// A Sign-in that only signed out or expired takes back nothing it opened
+// (spec #213, "What ends an SSH Session, and what only detaches"). The
+// channel it returns is closed once the SSH Sessions the Revoked Device
+// Sessions opened have given their notice and ended, so that their Device
+// Connections close only after. It never blocks, since the access-change
+// signal calls it before the call that made the change answers.
 func (g *Gateway) Withdraw(c access.Change) <-chan struct{} {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -44,21 +48,20 @@ func (g *Gateway) Withdraw(c access.Change) <-chan struct{} {
 	var revoked []chan struct{}
 	var recheck []*tunnel
 	for _, t := range g.tunnels {
-		switch {
-		case t.hostID == "":
+		if t.hostID == "" {
 			// Refused: its client's "none" gets the banner.
+			continue
+		}
+		switch {
+		case c.Removed != "" && t.userID == c.Removed:
+			t.end(userRemoved(t))
 		case slices.Contains(c.Revoked, t.caller.DeviceSession):
-			if c.Removed {
-				t.end(withdrawn(t, "user removed", t.user+" was Removed"))
-			} else {
-				t.end(revokedEnding(t))
-			}
-			revoked = append(revoked, t.done)
-		case t.caller.SignIn != "" && slices.Contains(c.SignIns, t.caller.SignIn):
+			t.end(revokedEnding(t))
+		case slices.Contains(c.SignIns, t.caller.SignIn) && takesBack(c.SignInEnd):
 			t.end(signInEnding(t, c.SignInEnd))
 		case t.caller.SignIn != "" && c.WebURL:
 			t.end(errWebURLChanged)
-		case t.caller.ID() != "" && slices.Contains(c.Narrowed, t.caller.ID()),
+		case slices.Contains(c.Narrowed, t.userID),
 			// Any Host c names may be the Relay this SSH Session passes
 			// through, or the one its Host has had since, even one that
 			// started with none, which only a read tells: check every SSH
@@ -66,9 +69,20 @@ func (g *Gateway) Withdraw(c access.Change) <-chan struct{} {
 			len(c.Hosts) > 0:
 			recheck = append(recheck, t)
 		}
+		if slices.Contains(c.Revoked, t.caller.DeviceSession) {
+			revoked = append(revoked, t.done)
+		}
 	}
 	if len(recheck) > 0 {
 		g.wg.Go(func() { g.recheck(recheck) })
+	}
+	if ended := pagesEnded(c); ended != nil {
+		g.wg.Go(func() {
+			g.detachPages(ended)
+			if c.Removed != "" {
+				g.workspaces.drop(c.Removed)
+			}
+		})
 	}
 	g.wg.Go(func() {
 		for _, done := range revoked {
@@ -77,6 +91,29 @@ func (g *Gateway) Withdraw(c access.Change) <-chan struct{} {
 		close(told)
 	})
 	return told
+}
+
+// pagesEnded is which pages the change c ends the caller of, as
+// detachPages takes it, or nil for none: those of a User c Removed, of a Device
+// Session it Revoked, of a Sign-in it ended, and when it changed the Web
+// URL, every page on the web listener, a Sign-in's.
+func pagesEnded(c access.Change) func(caller op.Caller, userID string) string {
+	if c.Removed == "" && len(c.Revoked) == 0 && len(c.SignIns) == 0 && !c.WebURL {
+		return nil
+	}
+	return func(caller op.Caller, userID string) string {
+		switch {
+		case c.Removed != "" && userID == c.Removed:
+			return "user removed"
+		case slices.Contains(c.Revoked, caller.DeviceSession):
+			return "revoked"
+		case slices.Contains(c.SignIns, caller.SignIn):
+			return signInReason(c.SignInEnd)
+		case caller.SignIn != "" && c.WebURL:
+			return "web url changed"
+		}
+		return ""
+	}
 }
 
 // recheck checks the access of the live SSH Sessions ts again, in one read
@@ -115,20 +152,30 @@ func (g *Gateway) recheck(ts []*tunnel) {
 // withdrawal tells whether the live SSH Session in the Tunnel t may go on:
 // whether its caller would be allowed a new one to its Host, which it reads
 // by the Host's id, so that a rename changes nothing: the Host and every
-// Relay of its chain Managed. It returns nil when they would, and otherwise
-// how the SSH Session ends. A Host the caller can no longer see is withdrawn
-// without a word more, so the line tells nothing of where it went, and a
-// Relay they cannot follow the links to is "its Relay". A chain the record
-// holds broken ends it as a check that failed, with the ids read in the
-// log. It fails only on an error of the koko server's own.
+// Relay of its chain Managed. A Workspace's SSH Session is checked as its
+// User's, whoever opened it, once its opener is found to have taken
+// nothing back (workspaceWho). It returns nil when they would, and
+// otherwise how the SSH Session ends. A Host the caller can no longer see
+// is withdrawn without a word more, so the line tells nothing of where it
+// went, and a Relay they cannot follow the links to is "its Relay". A chain
+// the record holds broken ends it as a check that failed, with the ids read
+// in the log. It fails only on an error of the koko server's own.
 func withdrawal(ctx context.Context, tx store.Tx, t *tunnel) (*ending, error) {
-	who, h, err := host.ReachOf(ctx, tx, t.caller, t.hostID)
+	var who access.Identity
+	var h host.Reach
+	var err error
+	if t.session != nil {
+		var end *ending
+		if who, end, err = workspaceWho(ctx, tx, t); end != nil || err != nil {
+			return end, err
+		}
+		h, err = host.ReachFor(ctx, tx, who, t.hostID)
+	} else {
+		who, h, err = host.ReachOf(ctx, tx, t.caller, t.hostID)
+	}
 	if e, ok := errors.AsType[*api.Error](err); ok {
-		switch e.Code {
-		case api.CodeRevoked.Name:
+		if e.Code == api.CodeRevoked.Name {
 			return revokedEnding(t), nil
-		case api.CodeSignInRequired.Name:
-			return signInWithdrawal(ctx, tx, t)
 		}
 		return withdrawn(t, "access withdrawn", ""), nil
 	}
@@ -148,6 +195,40 @@ func withdrawal(ctx context.Context, tx store.Tx, t *tunnel) (*ending, error) {
 		return withdrawn(t, "host retired", t.hostName+" was Retired"), nil
 	}
 	return withdrawn(t, "host registered", ""), nil
+}
+
+// workspaceWho is who the Workspace's SSH Session in the Tunnel t acts as,
+// its User, or how it ends: its User Removed, or its opener taken back, a
+// Device Session Revoked or a Sign-in ended in a way that takes back what
+// it opened (takesBack), as when it was admitted across that change. An
+// opener that signed out or expired takes back nothing.
+func workspaceWho(ctx context.Context, tx store.Tx, t *tunnel) (access.Identity, *ending, error) {
+	who, err := access.OfUser(ctx, tx, t.userID)
+	switch {
+	case err != nil:
+		return access.Identity{}, nil, err
+	case who.User.RemovedAt != "":
+		return access.Identity{}, userRemoved(t), nil
+	}
+	switch c := t.caller; {
+	case c.DeviceSession != "":
+		found, err := access.DeviceSessions(ctx, tx, "d.id = ?", c.DeviceSession)
+		if err != nil {
+			return access.Identity{}, nil, err
+		}
+		if len(found) == 1 && found[0].RevokedAt != "" {
+			return access.Identity{}, revokedEnding(t), nil
+		}
+	case c.SignIn != "":
+		found, err := access.SignIns(ctx, tx, op.Now(ctx), "s.id = ?", c.SignIn)
+		if err != nil {
+			return access.Identity{}, nil, err
+		}
+		if len(found) == 1 && found[0].EndedAt != "" && takesBack(found[0].EndReason) {
+			return access.Identity{}, signInEnding(t, found[0].EndReason), nil
+		}
+	}
+	return who, nil, nil
 }
 
 // relayWithdrawal tells whether the live SSH Session in the Tunnel t to a
@@ -178,42 +259,50 @@ func relayWithdrawal(ctx context.Context, tx store.Tx, t *tunnel, who access.Ide
 	return nil, nil
 }
 
-// signInWithdrawal is how the SSH Session in the Tunnel t ends once its
-// Sign-in has ended: as the Sign-in's record says it ended, read at the
-// time of ctx, so that a check that finds it ended, after an access change
-// or before a resume, ends it as the signal would have.
-func signInWithdrawal(ctx context.Context, tx store.Tx, t *tunnel) (*ending, error) {
-	found, err := access.SignIns(ctx, tx, op.Now(ctx), "s.id = ?", t.caller.SignIn)
-	if err != nil {
-		return nil, err
-	}
-	reason := ""
-	if len(found) == 1 {
-		reason = found[0].EndReason
-	}
-	return signInEnding(t, reason), nil
+// signInEnds are what each way a Sign-in ends, as its record names it
+// (api.EndSignedOut, ...), means for the web terminal: reason is the log's,
+// for its pages' detach and, when it takes back the SSH Sessions it opened,
+// for their end, whose notice says why.
+var signInEnds = map[string]struct{ reason, why string }{
+	api.EndSignedOut:       {reason: "signed out"},
+	api.EndExpired:         {reason: "signin expired"},
+	api.EndRevoked:         {reason: "signin revoked", why: "this browser's Sign-in was revoked"},
+	api.EndPasswordChanged: {reason: "password changed", why: "the Password was changed"},
+	api.EndPasswordRemoved: {reason: "password removed", why: "the Password was removed"},
+	api.EndUserRemoved:     {reason: "user removed"},
 }
 
-// signInEnding is how the SSH Session in the Tunnel t ends once its
-// Sign-in has ended for reason, as the Sign-in's record names it
-// (api.EndSignedOut, ...): each with the notice and the log reason of its
-// own, and any other reason as access withdrawn.
+// takesBack tells whether a Sign-in that ended for reason takes back the
+// SSH Sessions it opened: every way but signing out and expiring, which
+// leave them to its User, so that a way added later takes back until it is
+// told otherwise.
+func takesBack(reason string) bool {
+	return reason != api.EndSignedOut && reason != api.EndExpired
+}
+
+// signInReason is the log's reason for a Sign-in that ended for reason.
+func signInReason(reason string) string {
+	return cmp.Or(signInEnds[reason].reason, "access withdrawn")
+}
+
+// signInEnding is how the SSH Session in the Tunnel t ends once the
+// Sign-in that opened it has ended for reason, one that takes it back: with
+// the notice and the log reason of its own, or as access withdrawn for a
+// reason it does not know.
 func signInEnding(t *tunnel, reason string) *ending {
-	switch reason {
-	case api.EndSignedOut:
-		return &ending{reason: "signed out", notice: "this browser signed out; this SSH Session is closed.", why: "this browser signed out"}
-	case api.EndRevoked:
-		return withdrawn(t, "signin revoked", "this browser's Sign-in was revoked")
-	case api.EndPasswordChanged:
-		return withdrawn(t, "password changed", "the Password was changed")
-	case api.EndPasswordRemoved:
-		return withdrawn(t, "password removed", "the Password was removed")
-	case api.EndUserRemoved:
-		return withdrawn(t, "user removed", t.user+" was Removed")
-	case api.EndExpired:
-		return withdrawn(t, "signin expired", "this browser's Sign-in has expired")
+	if reason == api.EndUserRemoved {
+		return userRemoved(t)
+	}
+	if e, ok := signInEnds[reason]; ok && e.why != "" {
+		return withdrawn(t, e.reason, e.why)
 	}
 	return withdrawn(t, "access withdrawn", "")
+}
+
+// userRemoved ends the SSH Session in the Tunnel t once its User was
+// Removed.
+func userRemoved(t *tunnel) *ending {
+	return withdrawn(t, "user removed", t.user+" was Removed")
 }
 
 // errWebURLChanged ends the SSH Session of a Sign-in, which came through the
@@ -225,10 +314,10 @@ var errWebURLChanged = &ending{
 	why:    "the Web URL changed",
 }
 
-// sweepSignIns checks the Sign-ins of the web terminals every
+// sweepSignIns checks the Sign-ins of the web terminal's pages every
 // timing.SignInCheck until the Gateway closes (checkSignIns): a Sign-in's
 // expiry, 30 days from its start or 7 from its last use, is no change any
-// call publishes.
+// call publishes until its cookie comes back.
 func (g *Gateway) sweepSignIns() {
 	tick := time.NewTicker(g.timings.SignInCheck)
 	defer tick.Stop()
@@ -242,27 +331,39 @@ func (g *Gateway) sweepSignIns() {
 	}
 }
 
-// checkSignIns reads the Sign-in of each web terminal in the registry, in
-// one read-only transaction on the koko server's clock, and ends the SSH
-// Sessions of each that has ended, as its record says it ended
-// (signInEnding): one that expired, or ended by a change the Gateway
-// somehow missed. A read that fails ends nothing, since it tells nothing,
-// and is logged; the next sweep reads again.
+// checkSignIns reads the Sign-in of each page attached or on its
+// Workspace socket, in one read-only transaction on the koko server's
+// clock, and detaches the pages of each that has ended, as its record says
+// it ended (signInReason). An expired one is recorded (recordExpiry), so
+// that the access-change signal names it: a Sign-in's expiry is no change
+// any call makes. It ends no SSH Session, since an expiry takes back
+// nothing; every other ending ends what it takes back as the signal names
+// it. A read that fails detaches nothing, since it tells nothing, and is
+// logged; the next sweep reads again.
 func (g *Gateway) checkSignIns() {
+	of := map[string]bool{}
 	g.mu.Lock()
-	of := map[string][]*tunnel{}
-	for _, t := range g.tunnels {
-		if t.caller.SignIn != "" && t.hostID != "" {
-			of[t.caller.SignIn] = append(of[t.caller.SignIn], t)
+	for _, a := range g.attachments {
+		if a.caller.SignIn != "" {
+			of[a.caller.SignIn] = true
 		}
 	}
 	g.mu.Unlock()
+	for _, w := range g.workspaces.all() {
+		w.mu.Lock()
+		for p := range w.pages {
+			if p.c.Caller.SignIn != "" {
+				of[p.c.Caller.SignIn] = true
+			}
+		}
+		w.mu.Unlock()
+	}
 	if len(of) == 0 {
 		return
 	}
 	ids, err := json.Marshal(slices.Collect(maps.Keys(of)))
 	if err != nil {
-		g.log.Error("check the Sign-ins of the web terminals", "err", err)
+		g.log.Error("check the Sign-ins of the web terminal's pages", "err", err)
 		return
 	}
 	ctx := g.readContext(context.Background())
@@ -274,16 +375,20 @@ func (g *Gateway) checkSignIns() {
 		return err
 	})
 	if err != nil {
-		g.log.Error("check the Sign-ins of the web terminals", "err", err)
+		g.log.Error("check the Sign-ins of the web terminal's pages", "err", err)
 		return
 	}
+	ended := map[string]string{}
 	for _, si := range found {
-		if si.EndedAt == "" {
-			continue
+		if si.EndedAt != "" {
+			ended[si.ID] = signInReason(si.EndReason)
 		}
-		for _, t := range of[si.ID] {
-			t.end(signInEnding(t, si.EndReason))
+		if si.EndReason == api.EndExpired {
+			g.recordExpiry(si.ID)
 		}
+	}
+	if len(ended) > 0 {
+		g.detachPages(func(c op.Caller, _ string) string { return ended[c.SignIn] })
 	}
 }
 

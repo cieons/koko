@@ -141,16 +141,17 @@ web front ends their `koko web` cookies.
 
 | Field | What it names | Published by |
 | --- | --- | --- |
-| `Revoked`, `Removed` | The Device Sessions the change Revoked, and whether they were a Removed User's | `device.revoke`, `user.remove` |
-| `SignIns`, `SignInEnd` | The Sign-ins the change ended, and why, as their records say: `signed_out`, `revoked`, `password_changed`, `password_removed` or `user_removed` | signing out, `signin.revoke`, a Password set or changed (the User's other Sign-ins), `password.remove`, `user.remove` ([Sign-ins](signin.md#sign-ins)) |
-| `Narrowed` | The live Device Sessions and Sign-ins of each User taken out of a Space, or demoted from Administrator (`access.Callers`) | `space.member.remove`, `user.demote` |
+| `Revoked`, `Removed` | The Device Sessions the change Revoked, and the id of the User it Removed, whose they were | `device.revoke`, `user.remove` |
+| `SignIns`, `SignInEnd` | The Sign-ins the change ended, and why, as their records say: `signed_out`, `expired`, `revoked`, `password_changed`, `password_removed` or `user_removed` | signing out, the web front finding one expired as its cookie comes back or the Gateway as its page is open, `signin.revoke`, a Password set or changed (the User's other Sign-ins), `password.remove`, `user.remove` ([Sign-ins](signin.md#sign-ins)) |
+| `Narrowed` | The ids of the Users taken out of a Space, or demoted from Administrator | `space.member.remove`, `user.demote` |
 | `Hosts` | The Hosts the change may have put out of a caller's reach | `host.move`, `host.retire`, `host.set` sending a Host back to Registered |
 | `WebURL` | The Web URL set to another address or cleared, which signs out every page on the web listener | `server.set` |
 
-`Narrowed` names each caller by `op.Caller.ID`, its Sign-in's id or its
-Device Session's, the one helper every consumer matches a caller with.
-A Sign-in's expiry publishes nothing: no call makes it, and the Gateway
-finds it in a sweep ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
+`Narrowed` and `Removed` name Users, not callers: a web terminal's SSH
+Session is its User's, whoever opened it, so a Sign-in that has ended
+since must not keep it from being checked. A Sign-in's expiry is published
+only once its cookie comes back; until then the Gateway finds it in a sweep
+([the Gateway](gateway.md#access-during-a-live-ssh-session)).
 
 ## The access matrix
 

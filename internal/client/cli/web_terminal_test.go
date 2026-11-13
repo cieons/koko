@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -44,8 +45,10 @@ func webTerminalPage(t *testing.T, w *kokoWeb) *harness.TerminalPage {
 // a page without the cookie in its first answer. Another run's page and
 // the Owner's Sign-in on the web listener join the Owner's Workspace, and a
 // tab opened in either shows in the other; another run's page attaches to
-// the terminal but cannot resume this run's attachment. The run's
-// terminals end with it.
+// the terminal but cannot resume this run's attachment. A Web URL change
+// ends what the Sign-in opened and detaches its page, and leaves what came
+// through koko web. The run's pages detach as it ends, and what it opened
+// goes on.
 func TestAWebTerminalThroughKokoWeb(t *testing.T) {
 	t.Parallel()
 	h := harness.Start(t, harness.WebListen("127.0.0.1:0"))
@@ -101,7 +104,8 @@ func TestAWebTerminalThroughKokoWeb(t *testing.T) {
 	if tabs := another.Workspace().Tabs(); !slices.ContainsFunc(tabs, func(tab wire.WorkspaceTab) bool { return tab.ID == term.Tab }) {
 		t.Errorf("another run's page holds the Workspace %+v, want the Owner's, with the terminal's tab", tabs)
 	}
-	signedIn := h.SignIn(harness.Owner).TerminalPage().Workspace()
+	listener := h.SignIn(harness.Owner).TerminalPage()
+	signedIn := listener.Workspace()
 	signedIn.WaitTab(term.Tab, "shown", func(wire.WorkspaceTab) bool { return true })
 	opened := signedIn.Open("web1", 80, 24)
 	p.Workspace().WaitTab(opened.Tab, "shown", func(wire.WorkspaceTab) bool { return true })
@@ -110,8 +114,27 @@ func TestAWebTerminalThroughKokoWeb(t *testing.T) {
 	term.WaitOutput("still\n")
 	shown.WaitOutput("still\n")
 
+	onListener := listener.Attach(term.ID, 80, 24)
+	h.Koko("server", "set", "web_url=https://koko.example.org").WantSuccess(t)
+	waitServerLog(t, h, `msg="ssh session detached" tunnel=`+term.ID+` client=browser tab=`+term.Tab+` attachment=`+onListener.Attachment+` .* reason="web url changed"\n`)
+	p.Workspace().WaitTab(opened.Tab, "ended", func(tab wire.WorkspaceTab) bool {
+		return tab.State == wire.TabStateEnded && tab.Ended != nil && tab.Ended.Reason == "web url changed"
+	})
+	select {
+	case <-signedIn.Ended():
+	case <-time.After(10 * time.Second):
+		t.Error("the Sign-in's Workspace socket stayed open after the Web URL changed")
+	}
+	term.Type([]byte("after the Web URL\n"))
+	term.WaitOutput("after the Web URL\n")
+
 	w.Stop()
-	waitServerLog(t, h, `msg="ssh session ended" tunnel=`+term.ID+` client=browser .* reason="koko web ended"\n`)
+	waitServerLog(t, h, `msg="ssh session detached" tunnel=`+term.ID+` client=browser tab=`+term.Tab+` attachment=`+term.Attachment+` .* reason="koko web ended"\n`)
+	shown.Type([]byte("after the run\n"))
+	shown.WaitOutput("after the run\n")
+	if strings.Contains(h.Log(), `msg="ssh session ended" tunnel=`+term.ID+` `) {
+		t.Error("the SSH Session the run opened ended with it")
+	}
 }
 
 // On a joined device, koko web's web terminal acts as its Device Session,
@@ -146,9 +169,10 @@ func TestKokoWebsTerminalCountsAgainstItsWorkspace(t *testing.T) {
 	waitServerLog(t, h, `msg="ssh session refused" tunnel=[0-9a-f]{32} client=ssh name=web1 device_session=\S+ addr=\S+ reason="ssh session limit"\n`)
 }
 
-// Revoking a Device Session ends its web terminal through koko web as it
-// ends its Tunnels: the notice reaches the page, as a line and as the
-// stream's close.
+// Revoking a Device Session ends the web terminal it opened through koko
+// web as it ends its Tunnels: the notice reaches the page, as a line and as
+// the stream's close, and is kept on its tab. Its page's attachment to a
+// terminal the Local caller opened detaches, and that one goes on.
 func TestRevokingADeviceSessionEndsItsWebTerminal(t *testing.T) {
 	t.Parallel()
 	h := harness.Start(t)
@@ -156,6 +180,9 @@ func TestRevokingADeviceSessionEndsItsWebTerminal(t *testing.T) {
 	laptop := h.Join(harness.Owner)
 	p := webTerminalPage(t, startWebThrough(t, laptop.Background, freePort(t)))
 	term := p.Open("web1", 80, 24)
+	localPage := webTerminalPage(t, startWeb(t, h))
+	local := localPage.Open("web1", 80, 24)
+	other := p.Attach(local.ID, 80, 24)
 	h.Koko("device", "revoke", harness.Owner+"/"+readClientConfig(t, laptop).Device, "--last").WantSuccess(t)
 	const notice = "access to web1 was withdrawn: this device's Device Session was Revoked; this SSH Session is closed."
 	if e, ok := errors.AsType[*resumable.PeerClosedError](term.WaitEnd()); !ok || e.Reason != notice {
@@ -165,6 +192,12 @@ func TestRevokingADeviceSessionEndsItsWebTerminal(t *testing.T) {
 		t.Errorf("the terminal got %q, want the notice on a line of its own", out)
 	}
 	waitServerLog(t, h, `msg="ssh session ended" tunnel=`+term.ID+` client=browser .* reason=revoked\n`)
+	waitServerLog(t, h, `msg="ssh session detached" tunnel=`+local.ID+` client=browser tab=\S+ attachment=`+other.Attachment+` .* reason=revoked\n`)
+	localPage.Workspace().WaitTab(term.Tab, "ended with its notice", func(tab wire.WorkspaceTab) bool {
+		return tab.State == wire.TabStateEnded && tab.Ended != nil && tab.Ended.Notice == notice
+	})
+	local.Type([]byte("echo kept\n"))
+	local.WaitOutput("kept\n")
 }
 
 // Through koko web on a joined device, a dropped Device Connection ends the

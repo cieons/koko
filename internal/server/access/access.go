@@ -318,29 +318,20 @@ func DeviceSessions(ctx context.Context, tx store.Tx, where string, args ...any)
 	return list, nil
 }
 
-// Callers returns the ids (op.Caller.ID) of the live Device Sessions and
-// Sign-ins of the User whose id is userID, at now, as Change.Narrowed names
-// them: a change that narrows what the User can act in publishes them, so
-// that each of their SSH Sessions is checked again.
-func Callers(ctx context.Context, tx store.Tx, userID string, now time.Time) ([]string, error) {
-	sessions, err := DeviceSessions(ctx, tx, "u.id = ? AND d.revoked_at IS NULL", userID)
+// OfUser returns the User whose id is userID as an Identity of their own,
+// on no Device Session and no Sign-in, with when they were Removed, if they
+// were: as a Workspace acts, whose SSH Sessions are their User's whoever
+// opened them (spec #213).
+func OfUser(ctx context.Context, tx store.Tx, userID string) (Identity, error) {
+	var u api.User
+	var removed sql.NullString
+	err := tx.QueryRowContext(ctx, `SELECT u.id, u.name, `+Role+`, u.created_at, u.removed_at FROM users u WHERE u.id = ?`, userID).
+		Scan(&u.ID, &u.Name, &u.Role, &u.CreatedAt, &removed)
 	if err != nil {
-		return nil, err
+		return Identity{}, fmt.Errorf("read the User %s: %w", userID, err)
 	}
-	var ids []string
-	for _, d := range sessions {
-		ids = append(ids, d.ID)
-	}
-	signIns, err := SignIns(ctx, tx, now, "u.id = ? AND s.ended_at IS NULL", userID)
-	if err != nil {
-		return nil, err
-	}
-	for _, si := range signIns {
-		if si.EndedAt == "" {
-			ids = append(ids, si.ID)
-		}
-	}
-	return ids, nil
+	u.RemovedAt = removed.String
+	return Identity{User: u}, nil
 }
 
 // How long a Sign-in lasts (ADR 0043): SignInLifetime after it began, or

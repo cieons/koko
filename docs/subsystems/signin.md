@@ -112,17 +112,22 @@ which keeps a Sign-in's browser and system apart in place of its label:
   most once a minute. [`access.SignIns`](../../internal/server/access/access.go),
   the one way a Sign-in is read, answers one past its expiry as ended then,
   `expired`; the web front records it so the first time its cookie comes
-  back, and logs it. Expiry publishes nothing, so the Gateway reads the
-  Sign-in of each web terminal every minute and ends an expired one's
-  ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
+  back, logs it, and has the access-change signal name it, so its web
+  terminal's pages detach. Until then nothing publishes it, so the Gateway
+  also reads the Sign-in of each page every minute, and each page's at its
+  requests, and records an expired one the same way (`RecordExpiry`); the
+  SSH Sessions it opened go on
+  ([the Gateway](gateway.md#what-only-detaches)).
 - **Ending**: by its browser signing out, by being revoked, by the User's
   Password being set or removed, and by the User being Removed. Ending is
   immediate: every call reads the Sign-in in its own transaction. Once the
   call that ends it commits, an `/auth/` endpoint's included, the
   access-change signal names it with its end reason (`access.Change.SignIns`,
   [the access check](access.md#the-access-change-signal)), and its web
-  terminals end at once, live and Detached, each with its notice
-  ([the Gateway](gateway.md#access-during-a-live-ssh-session)).
+  terminal's pages detach at once. Signing out takes back nothing: the SSH
+  Sessions it opened go on, its User's. Every other ending ends the SSH
+  Sessions it opened, each with its notice, in every page attached
+  ([the Gateway](gateway.md#what-only-detaches)).
 - **`signin.list`** (`koko signin ls [--user <u>] [--all]`, read tier)
   answers the caller's own Sign-ins, everyone's for the Owner or an
   Administrator, without the ended ones unless `all`; a Member naming
@@ -210,9 +215,11 @@ the Workspace holds at most 16 tabs, whichever page opens them, and a page's
 attachment is resumed only from the same Sign-in
 ([the Gateway](gateway.md#the-web-terminal)). Each socket's first message
 moves its Last used time, at most once a minute, as a call does; keys typed
-do not. They go on only while the Sign-in would be
-allowed a new one: they end with it, and with a Space change that takes the
-Host out of its User's reach ([the Gateway](gateway.md#access-during-a-live-ssh-session)). The terminal is the web front's own endpoint, as
+do not. They are their User's, checked as the User's: a Space change that
+takes the Host out of the User's reach ends them, whoever opened them, and
+the Sign-in's signing out or expiry only detaches its pages, while its
+revocation, or a Password change or removal that ends it, ends those it
+opened ([the Gateway](gateway.md#what-only-detaches)). The terminal is the web front's own endpoint, as
 `/auth/` is, so no operation is added and the access matrix gains no row.
 
 `user.current` answers the Sign-in as `signin`, `{"id", "client",

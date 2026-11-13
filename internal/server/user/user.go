@@ -53,18 +53,25 @@ type Browsers interface {
 	VoidLinksIssuedBy(ctx context.Context, tx store.Tx, u api.User) (int64, error)
 }
 
+// Workspaces is the Gateway's part in removing a User: their web terminal
+// tabs, which the user area does not read itself (gateway.Workspaces).
+type Workspaces interface {
+	// Delete deletes the Workspace of the User whose id is userID.
+	Delete(ctx context.Context, tx store.Tx, userID string) error
+}
+
 // Register adds the user operations to the API; issue issues an invited
 // User's first Join Code, browsers their first Password Link and their
-// part in removing them, and holdings count what the areas record in the
-// Personal Space of a User being deleted, which must hold nothing. Each
-// User Removed or demoted is announced on changes, each promoted or demoted
-// on lists, and each Removed, promoted or demoted is logged to log, once it
-// commits.
-func Register(a *op.API, issue IssueFunc, browsers Browsers, holdings []space.Holding, changes *access.Signal, lists *hostlist.Signal, log *slog.Logger) {
+// part in removing them, workspaces delete a Removed User's tabs, and
+// holdings count what the areas record in the Personal Space of a User
+// being deleted, which must hold nothing. Each User Removed or demoted is
+// announced on changes, each promoted or demoted on lists, and each
+// Removed, promoted or demoted is logged to log, once it commits.
+func Register(a *op.API, issue IssueFunc, browsers Browsers, workspaces Workspaces, holdings []space.Holding, changes *access.Signal, lists *hostlist.Signal, log *slog.Logger) {
 	a.Handle(api.UserInvite, invite(issue, browsers))
 	a.Handle(api.UserCurrent, current)
 	a.Handle(api.UserList, list)
-	a.Handle(api.UserRemove, remover{browsers: browsers, holdings: holdings, changes: changes, log: log}.remove)
+	a.Handle(api.UserRemove, remover{browsers: browsers, workspaces: workspaces, holdings: holdings, changes: changes, log: log}.remove)
 	r := roles{browsers: browsers, changes: changes, lists: lists, log: log}
 	a.Handle(api.UserPromote, r.promote)
 	a.Handle(api.UserDemote, r.demote)
@@ -206,10 +213,11 @@ func add(ctx context.Context, tx store.Tx, userName, role string) (api.User, err
 // remover answers user.remove, announcing each User Removed on changes and
 // logging what it did to log once it commits.
 type remover struct {
-	browsers Browsers
-	holdings []space.Holding
-	changes  *access.Signal
-	log      *slog.Logger
+	browsers   Browsers
+	workspaces Workspaces
+	holdings   []space.Holding
+	changes    *access.Signal
+	log        *slog.Logger
 }
 
 // remove is user.remove: it deletes a User who never used koko and Removes
@@ -271,12 +279,12 @@ func (r remover) remove(ctx context.Context, tx store.Tx, caller op.Caller, req 
 // issued, ends their Sign-ins, deletes their Password and voids their
 // unused Password Links and those they issued, takes away an
 // Administrator's role, takes them out of every Space, passes their
-// Personal Space to the Owner and the Administrators, and marks them
-// Removed, keeping the record so their name is never used again. Once
-// it commits, each revocation and the removal are logged, by being what
-// removed them, and the access-change signal names the Device Sessions it
-// Revoked, as a Removed User's, so their SSH Sessions end and their Device
-// Connections close.
+// Personal Space to the Owner and the Administrators, deletes their
+// Workspace, and marks them Removed, keeping the record so their name is
+// never used again. Once it commits, each revocation and the removal are
+// logged, by being what removed them, and the access-change signal names
+// the User and the Device Sessions it Revoked, so every SSH Session of
+// theirs ends, their pages detach and their Device Connections close.
 func (r remover) removeJoined(ctx context.Context, tx store.Tx, u api.User, by string) (api.User, error) {
 	now := op.Now(ctx).Format(time.RFC3339)
 	revoked, err := revokeAll(ctx, tx, u, now)
@@ -307,6 +315,9 @@ func (r remover) removeJoined(ctx context.Context, tx store.Tx, u api.User, by s
 	if err := space.PassToAdministrators(ctx, tx, u); err != nil {
 		return api.User{}, err
 	}
+	if err := r.workspaces.Delete(ctx, tx, u.ID); err != nil {
+		return api.User{}, err
+	}
 	if _, err := tx.ExecContext(ctx, "UPDATE users SET removed_at = ? WHERE id = ?", now, u.ID); err != nil {
 		return api.User{}, fmt.Errorf("mark %s Removed: %w", u.Name, err)
 	}
@@ -317,7 +328,7 @@ func (r remover) removeJoined(ctx context.Context, tx store.Tx, u api.User, by s
 	}
 	afterCommit(ctx, r.log, "user removed", "user", u.Name, "user_id", u.ID, "role", u.Role, "device_sessions_revoked", len(revoked),
 		"join_codes_voided", codes, "signins_ended", signIns, "password_links_voided", links+issuedLinks, "removed_by", by)
-	r.changes.Publish(ctx, access.Change{Revoked: ids, Removed: true})
+	r.changes.Publish(ctx, access.Change{Revoked: ids, Removed: u.ID})
 	u.RemovedAt, u.Role = now, api.RoleMember
 	return u, nil
 }

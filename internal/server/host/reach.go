@@ -56,22 +56,36 @@ type Relay struct {
 // record holds broken fails with a *BrokenChainError, returned with who
 // and the Host without its chain, so the refusal can name it.
 func ReachOf(ctx context.Context, tx store.Tx, caller op.Caller, ref string) (access.Identity, Reach, error) {
-	who, h, err := target(ctx, tx, caller, ref)
+	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
 		return access.Identity{}, Reach{}, err
+	}
+	r, err := ReachFor(ctx, tx, who, ref)
+	if _, broken := errors.AsType[*BrokenChainError](err); err != nil && !broken {
+		return access.Identity{}, Reach{}, err
+	}
+	return who, r, err
+}
+
+// ReachFor is ReachOf for who, read already: the Gateway checks a
+// Workspace's SSH Session as its User's, whoever opened it.
+func ReachFor(ctx context.Context, tx store.Tx, who access.Identity, ref string) (Reach, error) {
+	h, err := find(ctx, tx, who, ref)
+	if err != nil {
+		return Reach{}, err
 	}
 	r := h.reach()
 	relays, err := chain(ctx, tx, h)
 	if _, broken := errors.AsType[*BrokenChainError](err); broken {
-		return who, r, err
+		return r, err
 	}
 	if err != nil {
-		return access.Identity{}, Reach{}, err
+		return Reach{}, err
 	}
 	if r.Relays, err = seeChain(ctx, tx, who, relays); err != nil {
-		return access.Identity{}, Reach{}, err
+		return Reach{}, err
 	}
-	return who, r, nil
+	return r, nil
 }
 
 // RelaysByID returns what passing through the Hosts whose ids are ids, a

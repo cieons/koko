@@ -93,15 +93,9 @@ func (r roles) demote(ctx context.Context, tx store.Tx, caller op.Caller, req ap
 		if err != nil {
 			return api.UserDemoteResponse{}, err
 		}
-		narrowed, err := access.Callers(ctx, tx, u.ID, now)
-		if err != nil {
-			return api.UserDemoteResponse{}, err
-		}
 		afterCommit(ctx, r.log, "user demoted", "user", u.Name, "user_id", u.ID, "demoted_by", who.By(),
 			"join_codes_voided", codes, "password_links_voided", links)
-		if len(narrowed) > 0 {
-			r.changes.Publish(ctx, access.Change{Narrowed: narrowed})
-		}
+		r.changes.Publish(ctx, access.Change{Narrowed: []string{u.ID}})
 		r.lists.Publish(ctx, hostlist.Change{Users: []string{u.ID}})
 	}
 	u, err = listedOne(ctx, tx, u)

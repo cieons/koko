@@ -17,25 +17,28 @@ type Change struct {
 	// revoked by itself, or every one of a User Removed. Their SSH Sessions
 	// end, then their Device Connections close.
 	Revoked []string
-	// Removed says the Device Sessions in Revoked are those of a User the
-	// change Removed.
-	Removed bool
+	// Removed is the id of the User the change Removed, whose Device
+	// Sessions are in Revoked: every SSH Session of theirs ends, whoever
+	// opened it, and their Workspace goes.
+	Removed string
 	// SignIns are the ids of the Sign-ins the change ended, and SignInEnd
-	// why, as their records say (api.EndSignedOut, ...): their SSH Sessions
-	// end at once.
+	// why, as their records say (api.EndSignedOut, ...): their pages
+	// detach, and the SSH Sessions they opened end unless they only signed
+	// out or expired.
 	SignIns   []string
 	SignInEnd string
-	// Narrowed are the ids (op.Caller.ID) of the live Device Sessions and
-	// Sign-ins of each User the change took out of a Space: each of their
-	// SSH Sessions is checked again.
+	// Narrowed are the ids of the Users the change took out of a Space or
+	// demoted: each SSH Session of theirs is checked again, whoever opened
+	// it.
 	Narrowed []string
 	// Hosts are the ids of the Hosts the change may have put out of a
 	// caller's reach: one moved to another Space, Retired, or sent back to
 	// Registered. Each SSH Session to one is checked again.
 	Hosts []string
 	// WebURL says the change set the Web URL to another address, or
-	// cleared it: every SSH Session that came through the web listener, a
-	// Sign-in's, ends, since its page is signed out.
+	// cleared it: every SSH Session a Sign-in opened, through the web
+	// listener, ends, and every page there detaches, since it is signed
+	// out.
 	WebURL bool
 }
 
