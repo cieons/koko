@@ -41,18 +41,15 @@ func TestASecretWrittenAsAnArgumentIsRefusedUnrepeated(t *testing.T) {
 	}{
 		{
 			[]string{"secret", "add", "ops/db-password", "hunter2"},
-			"unexpected argument, not repeated here in case it is a secret, which koko never takes as an argument: " +
-				"write koko secret add <space>/<secret>",
+			"unexpected argument, not repeated here in case it is a secret, which koko never takes as an argument",
 		},
 		{
 			[]string{"secret", "add", "ops/db-password", "password=hunter2"},
-			"unexpected argument, not repeated here in case it is a secret, which koko never takes as an argument: " +
-				"write koko secret add <space>/<secret>",
+			"unexpected argument, not repeated here in case it is a secret, which koko never takes as an argument",
 		},
 		{
 			[]string{"host", "enroll", "web-1", "hunter2"},
-			"unexpected argument, not repeated here in case it is a secret, which koko never takes as an argument: " +
-				"write koko host enroll <host>",
+			"unexpected argument, not repeated here in case it is a secret, which koko never takes as an argument",
 		},
 		{
 			[]string{"secret", "add", "ops/db-password", "-hunter2"},

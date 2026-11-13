@@ -513,16 +513,16 @@ func TestKokoTunnelTakesOneSSHNameAndNoFlags(t *testing.T) {
 		says string
 	}{
 		{[]string{"tunnel"}, "koko: koko tunnel needs <ssh-name>\n"},
-		{[]string{"tunnel", "web1", "web2"}, "koko: unexpected argument \"web2\": write koko tunnel <ssh-name>\n"},
+		{[]string{"tunnel", "web1", "web2"}, "koko: unexpected argument \"web2\" for koko tunnel\n"},
 		{[]string{"tunnel", "web1", "--port", "22"}, "koko: unknown flag --port for koko tunnel\n"},
-		{[]string{"tunnel", "--help"}, "koko: there is no --help flag: run koko help tunnel\n"},
 	} {
-		if r := run(tc.args...); r.Status != 2 || r.Stdout != "" || r.Stderr != tc.says {
-			t.Errorf("koko %s: exit status %d, stdout %q, stderr %q; want 2 and %q", strings.Join(tc.args, " "), r.Status, r.Stdout, r.Stderr, tc.says)
+		says := tc.says + "Usage: koko tunnel <ssh-name>\nRun 'koko tunnel --help' for more.\n"
+		if r := run(tc.args...); r.Status != 2 || r.Stdout != "" || r.Stderr != says {
+			t.Errorf("koko %s: exit status %d, stdout %q, stderr %q; want 2 and %q", strings.Join(tc.args, " "), r.Status, r.Stdout, r.Stderr, says)
 		}
 	}
 	msg := run("tunnel", "--json", "web1").WantError(t, 2, "invalid_usage")
-	if want := "koko tunnel takes no flags, not even --json: write koko tunnel <ssh-name>"; msg != want {
+	if want := "koko tunnel takes no flags, not even --json"; msg != want {
 		t.Errorf("koko tunnel --json says %q, want %q", msg, want)
 	}
 

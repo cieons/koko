@@ -166,7 +166,7 @@ func (r *Runner) Run(ctx context.Context, inv Invocation) int {
 	}
 	res, err := p.cmd.Run.run(ctx, in)
 	if err != nil {
-		return writeError(inv.Stderr, err, p.json)
+		return writeError(inv.Stderr, withUsage(err, p.cmd, nil), p.json)
 	}
 	if res == nil {
 		return exitOK

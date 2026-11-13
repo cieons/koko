@@ -43,7 +43,7 @@ func help(_ context.Context, in *Input) (helpList, error) {
 	}
 	if len(l) == 0 {
 		_, path, _, rest := locate(tree, words)
-		return nil, unknownCommand(tree, path, rest)
+		return nil, withUsage(unknownCommand(tree, path, rest), nil, path)
 	}
 	return l, nil
 }

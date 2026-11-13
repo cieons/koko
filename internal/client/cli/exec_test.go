@@ -158,6 +158,8 @@ func TestHelpSaysKokoExecTakesNoFlags(t *testing.T) {
 // failure of its own passes for the remote command's status: a refused
 // command line, a device that has not joined, a Host the Gateway cannot
 // connect to. Each says why in one line, never as JSON.
+const execUsage = "Usage: koko exec <host> <command>...\nRun 'koko exec --help' for more.\n"
+
 func TestExecExits255WhenKokoItselfFails(t *testing.T) {
 	t.Parallel()
 	h := harness.Start(t, harness.Timings(timing.Timings{HostConnectWait: time.Millisecond}))
@@ -175,13 +177,11 @@ func TestExecExits255WhenKokoItselfFails(t *testing.T) {
 		args []string
 		says string
 	}{
-		{h.Koko, []string{"exec"}, "koko: koko exec needs <host>: write koko exec <host> <command>...\n"},
-		{h.Koko, []string{"exec", "web1"}, "koko: koko exec needs <command>...: write koko exec <host> <command>...\n"},
-		{h.Koko, []string{"exec", "--json", "web1", "true"}, "koko: koko exec takes no flags, not even --json: write koko exec <host> <command>...\n"},
-		{h.Koko, []string{"--json", "exec", "web1", "true"}, "koko: koko exec takes no flags, not even --json: write koko exec <host> <command>...\n"},
-		{h.Koko, []string{"exec", "", "true"}, "koko: <host> cannot be empty in koko exec\n"},
-		{h.Koko, []string{"exec", "--help"}, "koko: there is no --help flag: run koko help exec\n"},
-		{h.Koko, []string{"--help", "exec", "web1", "true"}, "koko: there is no --help flag: run koko help exec\n"},
+		{h.Koko, []string{"exec"}, "koko: koko exec needs <host>\n" + execUsage},
+		{h.Koko, []string{"exec", "web1"}, "koko: koko exec needs <command>...\n" + execUsage},
+		{h.Koko, []string{"exec", "--json", "web1", "true"}, "koko: koko exec takes no flags, not even --json\n" + execUsage},
+		{h.Koko, []string{"--json", "exec", "web1", "true"}, "koko: koko exec takes no flags, not even --json\n" + execUsage},
+		{h.Koko, []string{"exec", "", "true"}, "koko: <host> cannot be empty in koko exec\n" + execUsage},
 		{h.Koko, []string{"exec", "web2", "true"}, "koko: web2 is down or unreachable: koko could not connect to it; this SSH Session did not start.\n"},
 	} {
 		wantRefused(t, tc.run(tc.args...), tc.says)

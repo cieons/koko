@@ -33,18 +33,30 @@ type qualifiedName struct {
 }
 
 // parse turns argv into the command it names, with its arguments and flags,
-// or refuses it with a usageError. It never calls the koko server. getenv
-// supplies the KOKO_* equivalents of flags that were not given.
+// or refuses it with a usageError, footed with the command's usage
+// (withUsage). It never calls the koko server. getenv supplies the KOKO_*
+// equivalents of flags that were not given.
+//
+// A command line that asks for help, with --help or -h (helpLine), or that
+// is a group alone, such as koko host or koko itself, is parsed as the koko
+// help command line that answers it.
 func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, error) {
-	if len(argv) == 0 {
-		return nil, usagef("give a command: koko <noun> <verb>, such as koko space ls; koko help lists them")
-	}
 	cmd, path, early, rest := locate(tree, argv)
+	if line, ok := helpLine(tree, cmd, path, early, rest); ok {
+		return parse(tree, line, getenv)
+	}
+	if cmd == nil && len(early) == 0 && len(rest) == 0 {
+		return parse(tree, append([]string{"help"}, path...), getenv)
+	}
+	p, err := parseCommand(tree, cmd, path, early, rest, getenv)
+	return p, withUsage(err, cmd, path)
+}
+
+// parseCommand reads the command line of cmd, which locate found with the
+// path words, the flags written early among them, and the rest.
+func parseCommand(tree []Command, cmd *Command, path, early, rest []string, getenv func(string) string) (*parsed, error) {
 	if cmd != nil && cmd.RemoteCommand {
 		return parseRemote(cmd, early, rest)
-	}
-	if slices.Contains(early, "--help") {
-		return nil, noHelpFlag(path)
 	}
 	if cmd == nil {
 		return nil, unknownCommand(tree, path, rest)
@@ -81,7 +93,7 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 		}
 		if name == "json" {
 			if !cmd.takesJSON() {
-				return nil, usagef("koko %s takes no flags, not even --json: %s", cmd.Path(), usageLine(cmd))
+				return nil, usagef("koko %s takes no flags, not even --json", cmd.Path())
 			}
 			if hasValue {
 				return nil, usagef("--json takes no value")
@@ -94,8 +106,6 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 		}
 		f := cmd.flag(name)
 		switch {
-		case f == nil && name == "help" && !hasValue:
-			return nil, noHelpFlag(path)
 		case f == nil:
 			return nil, usagef("unknown flag --%s for koko %s", name, cmd.Path())
 		case p.flags[name] != "":
@@ -145,10 +155,12 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 	}
 	if len(positional) > len(cmd.Args) && cmd.many() == nil {
 		if cmd.ReadsSecret {
-			return nil, usagef("unexpected argument, not repeated here in case it is a secret, which koko never takes as an argument: %s",
-				usageLine(cmd))
+			return nil, usagef("unexpected argument, not repeated here in case it is a secret, which koko never takes as an argument")
 		}
-		return nil, usagef("unexpected argument %q: %s", positional[len(cmd.Args)], usageLine(cmd))
+		if len(cmd.Args) == 0 {
+			return nil, usagef("unexpected argument %q: koko %s takes no arguments", positional[0], cmd.Path())
+		}
+		return nil, usagef("unexpected argument %q for koko %s", positional[len(cmd.Args)], cmd.Path())
 	}
 	for i, v := range positional {
 		a := cmd.Args[min(i, len(cmd.Args)-1)]
@@ -192,22 +204,19 @@ func parse(tree []Command, argv []string, getenv func(string) string) (*parsed, 
 // arguments before the last, none of them a flag, then every word left, as
 // typed, as its last, where --help reaches the remote command. It refuses a
 // flag before the last argument, early among them, since such a command
-// takes none (--help pointing to koko help), and a missing or empty
-// argument; each refusal exits 255.
+// takes none (--help and -h there ask for its help, helpLine), and a
+// missing or empty argument; each refusal exits 255.
 func parseRemote(cmd *Command, early, rest []string) (*parsed, error) {
 	refuse := func(err error) (*parsed, error) {
 		return nil, &remoteFailure{err: err}
 	}
 	fixed := cmd.Args[:len(cmd.Args)-1]
 	before := slices.Concat(early, rest[:min(len(fixed), len(rest))])
-	if slices.Contains(before, "--help") {
-		return refuse(noHelpFlag(cmd.words()))
-	}
 	if slices.ContainsFunc(before, isFlag) {
-		return refuse(usagef("koko %s takes no flags, not even --json: %s", cmd.Path(), usageLine(cmd)))
+		return refuse(usagef("koko %s takes no flags, not even --json", cmd.Path()))
 	}
 	if len(rest) <= len(fixed) {
-		return refuse(usagef("koko %s needs %s: %s", cmd.Path(), cmd.Args[len(rest)].usage(), usageLine(cmd)))
+		return refuse(usagef("koko %s needs %s", cmd.Path(), cmd.Args[len(rest)].usage()))
 	}
 	p := &parsed{cmd: cmd, args: map[string]string{}, qualified: map[string]qualifiedName{}, flags: map[string]string{}}
 	for i, a := range fixed {
@@ -271,10 +280,62 @@ func locate(tree []Command, argv []string) (cmd *Command, path, early, rest []st
 	return find(tree, path), path, early, argv[i:]
 }
 
-// noHelpFlag refuses --help, where the parser would refuse it as an unknown
-// flag, pointing to koko help for the command path typed.
-func noHelpFlag(path []string) error {
-	return usagef("there is no --help flag: run %s", shellJoin(append([]string{"koko", "help"}, path...)))
+// helpLine tells whether a command line, as locate split it, asks for help
+// with --help or -h, and returns the koko help command line that answers
+// it: koko help with the command path typed, and --json when that was
+// given too. Either may stand anywhere among the words, but not after --,
+// and never as the value of a flag that takes one; for a command with
+// RemoteCommand, only before its last argument, whose words are the remote
+// command's. Words that start no command keep the first word after the
+// path, so that koko help refuses it as an unknown command.
+func helpLine(tree []Command, cmd *Command, path, early, rest []string) ([]string, bool) {
+	anyValue := func(w string) bool { return takesValue(tree, w) }
+	words := rest
+	value := anyValue
+	switch {
+	case cmd != nil && cmd.RemoteCommand:
+		words = rest[:min(len(cmd.Args)-1, len(rest))]
+	case cmd != nil:
+		value = func(w string) bool {
+			name, ok := strings.CutPrefix(w, "--")
+			f := cmd.flag(name)
+			return ok && f != nil && !f.Bool
+		}
+	}
+	if slices.Contains(early, "--") {
+		words = nil
+	}
+	earlyHelp, earlyJSON := askedFor(early, anyValue)
+	restHelp, restJSON := askedFor(words, value)
+	if !earlyHelp && !restHelp {
+		return nil, false
+	}
+	line := append([]string{"help"}, path...)
+	if i := slices.IndexFunc(rest, func(w string) bool { return !isFlag(w) }); cmd == nil && i >= 0 {
+		line = append(line, rest[i])
+	}
+	if earlyJSON || restJSON {
+		line = append(line, "--json")
+	}
+	return line, true
+}
+
+// askedFor tells whether words hold --help or -h, and --json, before any
+// --, leaving out the word after each flag that takes a value.
+func askedFor(words []string, takesValue func(string) bool) (help, json bool) {
+	for i := 0; i < len(words); i++ {
+		switch w := words[i]; {
+		case w == "--":
+			return help, json
+		case w == "--help" || w == "-h":
+			help = true
+		case w == "--json":
+			json = true
+		case takesValue(w):
+			i++
+		}
+	}
+	return help, json
 }
 
 // gone are the commands that left koko, each with the refusal that says
@@ -447,18 +508,6 @@ func (a *Arg) usage() string {
 		return "[" + u + "]"
 	}
 	return u
-}
-
-// usageLine shows how a command is written, such as "koko space add <space>".
-func usageLine(c *Command) string {
-	if len(c.Args) == 0 {
-		return "koko " + c.Path() + " takes no arguments"
-	}
-	line := "koko " + c.Path()
-	for _, a := range c.Args {
-		line += " " + a.usage()
-	}
-	return "write " + line
 }
 
 var shellSafe = regexp.MustCompile(`^[A-Za-z0-9_./:=@%+,-]+$`)

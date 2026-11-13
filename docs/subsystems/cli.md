@@ -57,8 +57,6 @@ arguments and flags, or refuses the command line with exit 2 and the code
   variable), `--json` or a boolean flag given a value, and `--json` to a
   command with `Stdio` (`koko tunnel takes no flags, not even --json`),
   which `koko help` and `koko skill` leave out of the commands that take it;
-- `--help`, before the command path or as an unknown flag after it,
-  pointing to `koko help` and the command path typed;
 - a missing, an empty or an extra argument, so `koko space add "$NAME"` with
   `NAME` unset never reaches the koko server; an optional argument may be
   left out, but given empty it is refused too; an argument that takes many
@@ -71,6 +69,30 @@ arguments and flags, or refuses the command line with exit 2 and the code
   empty value (naming the key, so `region=$REGION` with `REGION` unset never
   clears it), a key given twice, `--unset` of one key twice, and a key both set
   and unset.
+
+For people, a refusal's `koko: <message>` line is followed by the command's
+usage line, as `koko help` begins, and where its help is
+([`withUsage`](../../internal/client/cli/output.go)):
+
+```
+koko: koko host enroll needs <host>
+Usage: koko host enroll <host> [--password-stdin] [--key <file>] [--secret <space/secret>] [--host-key <fingerprint>] [--replace-host-key]
+Run 'koko host enroll --help' for the flags.
+```
+
+Words that name no command end with `Run 'koko host --help' for its
+commands.`, or `Run 'koko --help' for the commands.` at the top; a refusal
+of a command's own `Run` with exit 2 gets the same lines. The error object
+of `--json` holds the message alone.
+
+**Help before parsing.** `--help` or `-h` anywhere among the words, but not
+after `--` and never as the value of a flag that takes one, makes the
+command line `koko help` with the command path typed, and `--json` when
+that was given too ([`helpLine`](../../internal/client/cli/parse.go)): it
+prints that command's help, or a group's commands, exits 0 and contacts no
+koko server. Words after the path that start no command are refused as
+`koko help` refuses them. A group alone, such as `koko host`, `koko space
+member` or `koko` itself, is `koko help` of it too.
 
 A list with `Filters`, such as `host ls` with `api.HostListFields`, reads
 every word holding `=` or `.` as a filter term (`price.gt=10`, `region!=eu`,
@@ -85,8 +107,9 @@ skill` and the refusals.
 A command with `RemoteCommand` ([`parseRemote`](../../internal/client/cli/parse.go))
 takes its arguments before the last as plain words, then every word left, as
 typed, as its last, flags, `--json` and `--help` included: `koko exec web1
-ls -l --json` runs `ls -l --json`. It refuses a flag anywhere before its
-last argument (`--help` pointing to `koko help exec`), and a missing or
+ls -l --json` runs `ls -l --json`. `--help` or `-h` before its first
+argument asks for its help. It refuses a flag anywhere before its
+last argument, and a missing or
 empty argument, with exit 255 rather than 2, so that a refusal never passes
 for the remote command's own status. `koko help` and `koko skill` say so in
 place of its flags, and leave it out of the commands that take `--json`.

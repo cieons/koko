@@ -202,7 +202,7 @@ func TestParseRefusesQualifiedNames(t *testing.T) {
 		{[]string{"device", "revoke", "/laptop"}, `"/laptop" is not [<user>/]<device>: the <user> is empty`},
 		{[]string{"device", "revoke", "alice/"}, `"alice/" is not [<user>/]<device>: the <device> is empty`},
 		{[]string{"device", "revoke", "a/b/c"}, `"a/b/c" is not [<user>/]<device>: a name cannot hold /`},
-		{[]string{"device", "revoke", "a", "b"}, `unexpected argument "b": write koko device revoke [<user>/]<device>`},
+		{[]string{"device", "revoke", "a", "b"}, `unexpected argument "b" for koko device revoke`},
 	} {
 		_, err := parse(writeTree, tc.argv, noEnv)
 		wantRefused(t, err, tc.message)
@@ -271,7 +271,7 @@ func TestParseOptionalArguments(t *testing.T) {
 		message string
 	}{
 		{[]string{"device", "add", ""}, "[<device>] cannot be empty in koko device add"},
-		{[]string{"device", "add", "laptop", "desktop"}, `unexpected argument "desktop": write koko device add [<device>]`},
+		{[]string{"device", "add", "laptop", "desktop"}, `unexpected argument "desktop" for koko device add`},
 		{[]string{"thing", "copy"}, "koko thing copy needs <from>"},
 	} {
 		_, err := parse(optionalTree, tc.argv, noEnv)

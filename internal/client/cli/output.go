@@ -134,6 +134,10 @@ type usageError struct {
 	message string
 	// items, for a batch read on stdin, holds each item at fault.
 	items []api.ItemError
+	// footer is what people read after the message: the usage line of the
+	// command refused and where its help is (withUsage). The error object
+	// of --json leaves it out.
+	footer string
 }
 
 func (e *usageError) Error() string {
@@ -142,6 +146,29 @@ func (e *usageError) Error() string {
 
 func usagef(format string, args ...any) error {
 	return &usageError{message: fmt.Sprintf(format, args...)}
+}
+
+// withUsage gives a usage error in err the footer of the command it
+// refuses: the command's usage line and the pointer to its --help, or for
+// words that name no command, the pointer to the --help of the group they
+// started, such as koko host. A usage error that has a footer keeps it,
+// and any other error is returned as it is.
+func withUsage(err error, cmd *Command, group []string) error {
+	e, ok := errors.AsType[*usageError](err)
+	if !ok || e.footer != "" {
+		return err
+	}
+	switch {
+	case cmd != nil && cmd.takesJSON():
+		e.footer = fmt.Sprintf("Usage: %s\nRun 'koko %s --help' for the flags.", synopsis(cmd), cmd.Path())
+	case cmd != nil:
+		e.footer = fmt.Sprintf("Usage: %s\nRun 'koko %s --help' for more.", synopsis(cmd), cmd.Path())
+	case len(group) > 0:
+		e.footer = fmt.Sprintf("Run 'koko %s --help' for its commands.", strings.Join(group, " "))
+	default:
+		e.footer = "Run 'koko --help' for the commands."
+	}
+	return err
 }
 
 // wantsJSON tells whether a command line asked for --json anywhere, even in
@@ -185,6 +212,9 @@ func writeError(stderr io.Writer, err error, asJSON bool) int {
 		_, _ = stderr.Write(buf.Bytes())
 	} else {
 		_, _ = fmt.Fprintf(stderr, "koko: %s\n", e.Message)
+		if u, ok := errors.AsType[*usageError](err); ok && u.footer != "" {
+			_, _ = fmt.Fprintln(stderr, u.footer)
+		}
 	}
 	return status
 }

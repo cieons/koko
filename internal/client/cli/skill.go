@@ -349,6 +349,9 @@ func (s skillJSON) Human(w io.Writer) error {
 	p("  was not given; without a terminal it fails at once with exit status %d, naming the flag or stdin\n", exitRefused)
 	p("  form. A Secret value is never an argument.\n")
 	p("- A flag not given takes its `KOKO_*` variable, where it lists one, then its default.\n")
+	p("- `--help` or `-h` on any command or group, such as `koko host enroll --help`, prints what\n")
+	p("  `koko help host enroll` prints and exits 0, contacting no koko server; a group alone, such as\n")
+	p("  `koko host`, lists its commands. A refused command line prints, for people, its usage line too.\n")
 	for _, c := range s.Commands {
 		if c.remote {
 			p("- `%s` runs one command on a Host as ssh does: every word after\n", c.Usage)

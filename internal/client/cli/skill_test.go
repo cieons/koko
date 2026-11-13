@@ -134,22 +134,65 @@ func TestHelpJSON(t *testing.T) {
 }
 
 // koko help refuses words that start no command, naming what they could
-// continue with, and --help anywhere points to it.
+// continue with, as --help does after them.
 func TestHelpRefusesWhatIsNoCommand(t *testing.T) {
 	t.Parallel()
-	r := harness.Run(t, offline(t), nil, "help", "host", "frob", "--json")
-	if msg := r.WantError(t, 2, "invalid_usage"); !strings.Contains(msg, "koko host frob is not a command") || !strings.Contains(msg, "ls") {
-		t.Errorf("the refusal %q does not say koko host frob is no command and what koko host takes", msg)
-	}
-	for _, line := range [][]string{{"--help"}, {"host", "ls", "--help"}, {"host", "--help", "ls"}} {
-		r := harness.Run(t, offline(t), nil, append(line, "--json")...)
-		msg := r.WantError(t, 2, "invalid_usage")
-		want := "koko help"
-		if len(line) > 1 {
-			want = "koko help host ls"
+	for _, args := range [][]string{{"help", "host", "frob", "--json"}, {"host", "frob", "--help", "--json"}} {
+		r := harness.Run(t, offline(t), nil, args...)
+		if msg := r.WantError(t, 2, "invalid_usage"); !strings.Contains(msg, "koko host frob is not a command") || !strings.Contains(msg, "ls") {
+			t.Errorf("koko %s: the refusal %q does not say koko host frob is no command and what koko host takes", strings.Join(args, " "), msg)
 		}
-		if !strings.Contains(msg, want) {
-			t.Errorf("koko %s: the refusal %q does not point to %s", strings.Join(line, " "), msg, want)
+	}
+}
+
+// --help and -h, on every command and group of the tree, wherever they
+// stand among its words, print what koko help prints for its path, exit 0,
+// and call no koko server; --json beside them asks for koko help --json.
+func TestHelpFlagsOnEveryCommand(t *testing.T) {
+	t.Parallel()
+	h := harness.Start(t)
+	paths := map[string]bool{"": true}
+	for _, c := range cli.Tree() {
+		words := strings.Fields(c.Path())
+		for i := range words {
+			paths[strings.Join(words[:i+1], " ")] = true
+		}
+	}
+	for path := range paths {
+		words := strings.Fields(path)
+		want := h.Koko(append([]string{"help"}, words...)...)
+		want.WantSuccess(t)
+		for _, line := range [][]string{
+			append(slices.Clone(words), "--help"),
+			append(slices.Clone(words), "-h"),
+			append([]string{"-h"}, words...),
+		} {
+			r := h.Koko(line...)
+			if r.Status != 0 || r.Stdout != want.Stdout || r.Stderr != "" {
+				t.Errorf("koko %s: exit status %d, stdout %q, stderr %q; want 0 and koko help %s", strings.Join(line, " "), r.Status, r.Stdout, r.Stderr, path)
+			}
+		}
+	}
+	for _, tc := range []struct{ line, help []string }{
+		{[]string{"host", "enroll", "web1", "--key", "/k", "-h"}, []string{"host", "enroll"}},
+		{[]string{"host", "--help", "ls"}, []string{"host", "ls"}},
+		{[]string{"skill", "-h", "install"}, []string{"skill", "install"}},
+		{[]string{"host", "ls", "--help", "--json"}, []string{"host", "ls", "--json"}},
+		{[]string{"exec", "-h"}, []string{"exec"}},
+		{[]string{"tunnel", "--help"}, []string{"tunnel"}},
+	} {
+		want := h.Koko(append([]string{"help"}, tc.help...)...)
+		if r := h.Koko(tc.line...); r.Status != 0 || r.Stdout != want.Stdout {
+			t.Errorf("koko %s: exit status %d, stdout %q; want 0 and koko help %s", strings.Join(tc.line, " "), r.Status, r.Stdout, strings.Join(tc.help, " "))
+		}
+	}
+	if n := h.Calls(); n != 0 {
+		t.Errorf("the koko server answered %d call(s) to help", n)
+	}
+	// -h as a flag's value, and --help after --, are not asking for help.
+	for _, line := range [][]string{{"device", "add", "--valid", "-h"}, {"space", "ls", "--", "--help"}, {"space", "--", "ls", "-h"}} {
+		if r := h.Koko(line...); r.Status != 2 || r.Stdout != "" {
+			t.Errorf("koko %s: exit status %d, stdout %q; want the command line refused, not help", strings.Join(line, " "), r.Status, r.Stdout)
 		}
 	}
 }

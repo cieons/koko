@@ -25,7 +25,7 @@ func TestServerRunIsKokodRunNow(t *testing.T) {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			r := harness.Run(t, cli.Runner{}, nil, args...)
 			if !slices.Contains(args, "--json") {
-				if want := "koko: the koko server is kokod now: run kokod run, with the same flags\n"; r.Status != 2 || r.Stdout != "" || r.Stderr != want {
+				if want := "koko: the koko server is kokod now: run kokod run, with the same flags\nRun 'koko server --help' for its commands.\n"; r.Status != 2 || r.Stdout != "" || r.Stderr != want {
 					t.Errorf("status %d, stdout %q, stderr %q; want 2 and %q", r.Status, r.Stdout, r.Stderr, want)
 				}
 				return

@@ -46,22 +46,49 @@ func TestCommandLineRefusals(t *testing.T) {
 	}
 }
 
-func TestNoCommandLineAtAll(t *testing.T) {
+// koko alone, or a group alone, lists the commands as koko help does, and
+// calls no koko server.
+func TestAGroupAloneListsItsCommands(t *testing.T) {
 	t.Parallel()
 	h := harness.Start(t)
-	r := h.Koko()
-	if r.Status != 2 || r.Stdout != "" || !strings.HasPrefix(r.Stderr, "koko: give a command") {
-		t.Errorf("status %d, stdout %q, stderr %q", r.Status, r.Stdout, r.Stderr)
+	for _, args := range [][]string{{}, {"host"}, {"space", "member"}} {
+		r := h.Koko(args...)
+		r.WantSuccess(t)
+		if want := h.Koko(append([]string{"help"}, args...)...).Stdout; r.Stdout != want {
+			t.Errorf("koko %s = %q, want what koko help %[1]s prints, %q", strings.Join(args, " "), r.Stdout, want)
+		}
+	}
+	if n := h.Calls(); n != 0 {
+		t.Errorf("the koko server answered %d call(s) to help", n)
 	}
 }
 
-// Without --json a refusal is one line for people on stderr.
+// Without --json a refusal is a line for people on stderr, then the
+// command's usage line and where its help is.
 func TestRefusalForPeople(t *testing.T) {
 	t.Parallel()
 	h := harness.Start(t)
-	r := h.Koko("space", "ls", "--all")
-	if r.Status != 2 || r.Stdout != "" || r.Stderr != "koko: unknown flag --all for koko space ls\n" {
-		t.Errorf("status %d, stdout %q, stderr %q", r.Status, r.Stdout, r.Stderr)
+	for _, tc := range []struct {
+		args []string
+		says string
+	}{
+		{[]string{"space", "ls", "--all"}, "koko: unknown flag --all for koko space ls\n" +
+			"Usage: koko space ls\n" +
+			"Run 'koko space ls --help' for the flags.\n"},
+		{[]string{"host", "enroll"}, "koko: koko host enroll needs <host>\n" +
+			"Usage: koko host enroll <host> [--password-stdin] [--key <file>] [--secret <space/secret>] [--host-key <fingerprint>] [--replace-host-key]\n" +
+			"Run 'koko host enroll --help' for the flags.\n"},
+		{[]string{"space", "member", "frob"}, "koko: koko space member frob is not a command; koko space member takes add, rm\n" +
+			"Run 'koko space member --help' for its commands.\n"},
+	} {
+		r := h.Koko(tc.args...)
+		if r.Status != 2 || r.Stdout != "" || r.Stderr != tc.says {
+			t.Errorf("koko %s: status %d, stdout %q, stderr %q; want 2 and %q", strings.Join(tc.args, " "), r.Status, r.Stdout, r.Stderr, tc.says)
+		}
+	}
+	r := h.Koko("frob")
+	if r.Status != 2 || !strings.HasPrefix(r.Stderr, "koko: koko frob is not a command") || !strings.HasSuffix(r.Stderr, "\nRun 'koko --help' for the commands.\n") {
+		t.Errorf("koko frob: status %d, stderr %q; want 2, the refusal and the pointer to koko --help", r.Status, r.Stderr)
 	}
 }
 
