@@ -1,3 +1,7 @@
+---
+status: its per-page Resume, kept ids, Web Locks rule and 16 per Sign-in, refined by ADR-0057
+---
+
 # A browser opens SSH Sessions through a WebSocket to the Gateway
 
 The web UI has a web terminal: a page that opens an SSH Session to one Host
