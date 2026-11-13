@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -51,6 +53,32 @@ func TestABrowserThatDoesNotReadKeepsKokoWebForPassOnAtMost(t *testing.T) {
 
 	conn.end()
 	wantRevoked(t, served)
+}
+
+// A browser connection koko web cannot carry to the koko server gets 502
+// Bad Gateway with a plain-text body saying so, not a reset, so a
+// browser's console and a reverse proxy's log say what happened.
+func TestKokoWebAnswersAConnectionItCannotCarryWithBadGateway(t *testing.T) {
+	t.Parallel()
+	_, port := serveForwarder(t, refusingConn{ended: t.Context().Done()}, timing.PassOn)
+	client := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{DisableKeepAlives: true}}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/", port), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("a browser's call through koko web failed, want 502 Bad Gateway: %v", err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read the answer's body: %v", err)
+	}
+	if res.StatusCode != http.StatusBadGateway || res.Header.Get("Content-Type") != "text/plain; charset=utf-8" ||
+		!strings.Contains(string(body), "koko web could not carry this connection to the koko server") {
+		t.Errorf("a browser's call through koko web got %s, %q: %q, want 502 Bad Gateway in plain text saying koko web could not carry it", res.Status, res.Header.Get("Content-Type"), body)
+	}
 }
 
 // serveForwarder runs koko web's forwarder over conn on a port of its own,
@@ -187,3 +215,24 @@ func (ch *answeredChannel) Close() error {
 	ch.close()
 	return nil
 }
+
+// refusingConn is a connection to the koko server that opens no channel,
+// as one whose Device Mux cannot reconnect, and ends at ended.
+type refusingConn struct {
+	ended <-chan struct{}
+}
+
+func (c refusingConn) Report(context.Context) (wire.Report, error) { return wire.Report{}, nil }
+
+func (c refusingConn) OpenChannel(context.Context, string, []byte) (io.ReadWriteCloser, error) {
+	return nil, errors.New("the Device Mux could not reconnect")
+}
+
+func (c refusingConn) Wait() error {
+	<-c.ended
+	return nil
+}
+
+func (c refusingConn) Disconnected() <-chan struct{} { return nil }
+
+func (c refusingConn) Close() error { return nil }

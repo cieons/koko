@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -296,6 +298,7 @@ func (f forwarder) pipe(ctx context.Context, c net.Conn) {
 	if err != nil {
 		if ctx.Err() == nil {
 			_, _ = fmt.Fprintf(f.stderr, "koko: could not carry a browser connection to the koko server: %v\n", err)
+			badGateway(c, err)
 		}
 		return
 	}
@@ -306,4 +309,40 @@ func (f forwarder) pipe(ctx context.Context, c net.Conn) {
 	_ = ch.Close()
 	_ = c.Close()
 	<-done
+}
+
+// badGatewayWait bounds how long koko web takes over a browser connection it
+// cannot carry: to answer it and to read what the browser sends until it
+// closes.
+const badGatewayWait = 5 * time.Second
+
+// badGateway answers the browser connection c, which koko web could not
+// carry to the koko server for err, with 502 Bad Gateway and a plain-text
+// body, so a browser's console and a reverse proxy's log say what happened.
+// It then reads what the browser sent until the browser closes, within
+// badGatewayWait: a connection closed with its request unread is reset,
+// and the reset can take the answer with it.
+func badGateway(c net.Conn, err error) {
+	_ = c.SetDeadline(time.Now().Add(badGatewayWait))
+	body := fmt.Sprintf("koko web could not carry this connection to the koko server: %v\n", err)
+	res := &http.Response{
+		StatusCode: http.StatusBadGateway,
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header: http.Header{
+			"Content-Type":           {"text/plain; charset=utf-8"},
+			"X-Content-Type-Options": {"nosniff"},
+			"Cache-Control":          {"no-store"},
+		},
+		ContentLength: int64(len(body)),
+		Body:          io.NopCloser(strings.NewReader(body)),
+		Close:         true,
+	}
+	if res.Write(c) != nil {
+		return
+	}
+	if hc, ok := c.(interface{ CloseWrite() error }); ok {
+		_ = hc.CloseWrite()
+	}
+	_, _ = io.Copy(io.Discard, c)
 }
