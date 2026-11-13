@@ -49,7 +49,7 @@ test("Sign in is outside the frame, asks for the User name and Password the brow
   expect(field("User name").getAttribute("autocomplete")).toBe("username");
   expect(field("Password").getAttribute("autocomplete")).toBe("current-password");
   expect(field("Password").type).toBe("password");
-  expect(screen.getByText("A lost Password is reset by the Owner, who issues a new Password Link.")).toBeDefined();
+  expect(screen.getByText("A lost Password is reset by the Owner or an Administrator, who issues a new Password Link.")).toBeDefined();
   await waitFor(() => expect(document.title).toBe("Sign in · koko"));
   expect(api.calls).toEqual([]);
   await expectAccessible();

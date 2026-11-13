@@ -25,6 +25,7 @@ import { Shell } from "./Shell";
 
 const alice: User = { id: "user_1", name: "alice", role: "owner", created_at: "2026-11-01T09:00:00Z" };
 const bob: User = { id: "user_2", name: "bob", role: "member", created_at: "2026-11-02T09:00:00Z" };
+const erin: User = { id: "user_5", name: "erin", role: "administrator", created_at: "2026-11-02T10:00:00Z" };
 
 const laptop: DeviceSession = { id: "device_1", user: "bob", device: "laptop", created_at: "2026-11-03T09:00:00Z" };
 
@@ -69,7 +70,7 @@ function AccountPage() {
 const routes: Route[] = [
   { path: "/hosts", page: HostsPage, nav: "shell.place.hosts", icon: Server },
   { path: "/secrets", page: SecretsPage, nav: "shell.place.secrets", icon: KeyRound },
-  { path: "/access", page: AccessPage, nav: "shell.place.access", icon: UsersRound, ownerOnly: true },
+  { path: "/access", page: AccessPage, nav: "shell.place.access", icon: UsersRound, administers: true },
 ];
 
 /** renderShell renders the shell at path. */
@@ -167,7 +168,17 @@ test("a page beneath a place's path is in that place", async () => {
   expect(places()).toEqual(["Hosts*", "Secrets", "Access"]);
 });
 
-test("a Member gets no place only the Owner may open, and its path shows Page not found", async () => {
+test("an Administrator gets the places only the Owner and the Administrators may open, and the account panel names the role", async () => {
+  const api = fakeApi();
+  asDevice(api, erin);
+  renderShell("/access");
+
+  expect(await screen.findByText("access page")).toBeDefined();
+  expect(places()).toEqual(["Hosts", "Secrets", "Access*"]);
+  expect(frameButton("Account: erin").textContent).toBe("erinAdministrator");
+});
+
+test("a Member gets no place only the Owner and the Administrators may open, and its path shows Page not found", async () => {
   const api = fakeApi();
   asDevice(api, bob);
   renderShell("/hosts");
@@ -464,12 +475,12 @@ test("a list page fills the room beside the rail, and every other page keeps its
   expect(main.className).toContain("max-w-[76rem]");
 });
 
-test("a list page only the Owner may open does not fill the room for a Member, who gets Page not found", async () => {
+test("a list page only the Owner and the Administrators may open does not fill the room for a Member, who gets Page not found", async () => {
   const api = fakeApi();
   asDevice(api, bob);
   renderShell("/access", [
     { path: "/hosts", page: HostsPage, nav: "shell.place.hosts", icon: Server, fill: true },
-    { path: "/access", page: AccessPage, nav: "shell.place.access", icon: UsersRound, ownerOnly: true, fill: true },
+    { path: "/access", page: AccessPage, nav: "shell.place.access", icon: UsersRound, administers: true, fill: true },
   ]);
 
   await screen.findByRole("heading", { level: 1, name: "Page not found" });

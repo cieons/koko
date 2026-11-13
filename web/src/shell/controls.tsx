@@ -6,7 +6,7 @@ import { Link, type Placement } from "react-aria-components";
 import { type Language, languages } from "../i18n/catalogues";
 import { Refusal } from "../ui/states";
 import { browserName } from "./browserName";
-import type { Caller } from "./caller";
+import { type Caller, roleName } from "./caller";
 import { type Translate, useLanguageChoice, useT } from "./i18n";
 import { type Mode, modes, useMode } from "./mode";
 import { ServerLine } from "./release";
@@ -158,7 +158,7 @@ function SignOutItem() {
  * The panel holds the initial, the name and role, how this browser reaches
  * koko, and a link to Account, which closes the panel as it is followed;
  * and, for a browser signed in with a Password, Sign out, a refusal of
- * which shows in the panel. For the Owner, the koko server's line comes
+ * which shows in the panel. For the Owner and an Administrator, the koko server's line comes
  * between them: its version, its last check for a release and Check now.
  */
 export function AccountPanel({ caller, full, placement }: { caller: Caller; full: boolean; placement: Placement }) {
@@ -166,7 +166,7 @@ export function AccountPanel({ caller, full, placement }: { caller: Caller; full
   const [open, setOpen] = useState(false);
   const { name } = caller.user;
   const label = t("shell.account", { name });
-  const role = t(caller.owner ? "shell.role.owner" : "shell.role.member");
+  const role = t(roleName(caller.user));
   return (
     <Popover isOpen={open} onOpenChange={setOpen}>
       <Button
@@ -194,7 +194,7 @@ export function AccountPanel({ caller, full, placement }: { caller: Caller; full
               <p className="t-label truncate">{viaText(t, caller)}</p>
             </div>
           </div>
-          {caller.owner && <ServerLine />}
+          {caller.administers && <ServerLine />}
           <div className="border-t border-line p-1.5">
             <Link
               href={accountPage}

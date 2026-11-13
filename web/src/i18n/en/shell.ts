@@ -21,6 +21,7 @@ export default {
   "shell.mode.system": "System",
   "shell.account": "Account: {name}",
   "shell.role.owner": "Owner",
+  "shell.role.administrator": "Administrator",
   "shell.role.member": "Member",
   "shell.via.device": "Through koko web on {device}",
   "shell.via.signin": "Signed in from {client}",

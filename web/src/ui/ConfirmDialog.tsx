@@ -1,5 +1,5 @@
 import { AlertDialog, Button, Input, Label, TextField } from "@heroui/react";
-import { useId, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 
 import { useT } from "../shell/i18n";
 import { Refusal } from "./states";
@@ -17,6 +17,10 @@ export interface ConfirmDialogProps {
    * the web UI's form of the CLI's --last.
    */
   typedName?: string;
+  /** details, when set, are what to read before acting, under the consequence, such as the devices a promotion keeps. */
+  details?: ReactNode;
+  /** waiting keeps the action disabled while details are still read. */
+  waiting?: boolean;
   /** pending says the action's call runs: neither Escape nor a click beside it cancels, and its button takes no second press. */
   pending?: boolean;
   /** error is why the action was refused, if it was, shown in place. */
@@ -42,6 +46,8 @@ export function ConfirmDialog({
   consequence,
   confirm,
   typedName,
+  details,
+  waiting = false,
   pending = false,
   error,
   onConfirm,
@@ -50,7 +56,7 @@ export function ConfirmDialog({
   const t = useT();
   const consequenceId = useId();
   const [typed, setTyped] = useState("");
-  const ready = typedName === undefined || typed === typedName;
+  const ready = !waiting && (typedName === undefined || typed === typedName);
   return (
     <AlertDialog.Backdrop
       isOpen
@@ -68,6 +74,7 @@ export function ConfirmDialog({
             <p id={consequenceId} className="text-muted">
               {consequence}
             </p>
+            {details}
             {typedName !== undefined && (
               <TextField value={typed} onChange={setTyped} autoFocus>
                 <Label>{t("shell.confirm.typeName", { name: typedName })}</Label>

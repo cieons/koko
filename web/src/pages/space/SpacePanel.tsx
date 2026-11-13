@@ -44,7 +44,7 @@ export function SpacePanel({ name, membership, onChanged, onClose }: SpacePanelP
   const caller = useCaller();
   const read = useRead(SpaceShow, { name });
   const detail = read.data?.space;
-  const editable = caller.owner && detail !== undefined && !detail.personal;
+  const editable = caller.administers && detail !== undefined && !detail.personal;
   const [dialog, setDialog] = useState<"rename" | "remove">();
   // After Take out the focus stays in the Members: the next one's Take out, or Add Members once none is left.
   const focus = useRowFocus<HTMLDivElement>(read.data);

@@ -2,7 +2,8 @@
 
 The web UI's pages for people: who works where, who belongs, and which
 devices can reach the koko server. Access holds the Users and the Spaces,
-with a panel for a Space and, for the Owner, one for a person; Account holds
+with a panel for a Space and, for the Owner and the Administrators, one
+for a person; Account holds
 one's own devices and the choices this browser keeps. They sit in the [web
 UI shell](web-shell.md), which routes to them, decides who the web UI acts
 as and asks before an irreversible action; each action is an API operation
@@ -11,15 +12,15 @@ design](../web-design.md#access-access); what the operations do is in [the
 access check and Spaces](access.md), [Users](users.md), [Join
 Codes](join-codes.md) and [revoking](device-connection.md#revoking).
 One's own Password and Browser Sign-ins are on Account, and, for the
-Owner, anyone's in their panel ([Sign-ins](signin.md#the-web-uis-pages)).
+Owner and the Administrators, anyone's in their panel ([Sign-ins](signin.md#the-web-uis-pages)).
 
 ## The pages
 
 | Page | Path | Who | Source |
 | --- | --- | --- | --- |
-| Access | `/access` | the Owner: the Users (`user.list`) against the shared Spaces, each with its Members and counts (`space.list`, one call); a Member: the Spaces they can act in | [`AccessPage`](../../web/src/pages/space/AccessPage.tsx) |
+| Access | `/access` | the Owner and the Administrators: the Users (`user.list`) against the shared Spaces, each with its Members and counts (`space.list`, one call); a Member: the Spaces they can act in | [`AccessPage`](../../web/src/pages/space/AccessPage.tsx) |
 | A Space's panel | `/access/spaces/<name>` | anyone who can act in it: its counts and Members (`space.show`) | [`SpacePanel`](../../web/src/pages/space/SpacePanel.tsx) |
-| A person's panel | `/access/people/<name>` | the Owner alone (`ownerOnly`): a User's role, Spaces, Personal Space and devices | [`PersonPanel`](../../web/src/pages/user/PersonPanel.tsx) |
+| A person's panel | `/access/people/<name>` | the Owner and the Administrators alone (`administers`): a User's role, Spaces, Personal Space, devices and Sign-ins | [`PersonPanel`](../../web/src/pages/user/PersonPanel.tsx) |
 | Account | `/account` | anyone: who the web UI acts as, the choices this browser keeps, their own devices (`device.list` naming them) and their Personal Space | [`AccountPage`](../../web/src/pages/user/AccountPage.tsx) |
 
 Access loads as one chunk under its three paths
@@ -30,17 +31,18 @@ beside it, goes back to `/access` with that query in place of the panel's
 history entry, so the focus returns to the link that opened it. A Member
 gets no route for a person's panel, so its path shows "Page not found".
 
-**The Owner's Access** is two lists, one at a time, on a phone as on a
+**The Owner's Access**, which an Administrator gets too, is two lists, one at a time, on a phone as on a
 desktop: the People and the shared Spaces, under the tabs **People** and
 **Spaces**, each with its count (the Users who are not Removed, and the
 shared Spaces), beside one search field that narrows the list shown by
 name, whatever its case, and Reset view. A person's row is a link to their
-panel: the initial, the name, "Owner" where so, and a one-line summary of
+panel: the initial, the name, "Owner" or "Administrator" where so, and a one-line summary of
 the shared Spaces they are a Member of and how they get in ("16 Spaces ·
 2 devices · Password set", "No Space · Invited, not yet in" for one who
 never had a device or a Password, from `device.list` with `all`; "Every
-Space · …" for the Owner; "Removed" for a Removed User). The Owner comes
-first and the Removed Users last. A Space's row is a link to its panel:
+Space · …" for the Owner and an Administrator; "Removed" for a Removed
+User). The Owner comes first, then the Administrators, then the Members,
+and the Removed Users last. A Space's row is a link to its panel:
 its name and "30 Members · 40 Hosts · 0 Secrets". The summary sits beside
 the name on a desktop and under it on a phone. Nothing that matches the
 search shows "No User matches this search." or "No Space matches this
@@ -77,11 +79,34 @@ no Members.
 (or Removed); how many of the shared Spaces they are a Member of, **Add to
 a Space**, a searchable choice of the shared Spaces they are not in (or,
 in every one, a line saying so), and those they are in, each a link to its
-panel with **Take out**; for the Owner, that the Owner sees every Space; their Personal Space's counts with a
-link to its Hosts; their devices; their Password, with Issue Password Link
-and Remove Password; their Browser Sign-ins; and Remove User. It finds the
-User in `user.list` with `all`, so a Removed User's panel opens too, and
-says so.
+panel with **Take out**; for the Owner and an Administrator, that the
+Owner and the Administrators see every Space; their Personal Space's
+counts with a link to its Hosts; their devices; their Password, with Issue
+Password Link and Remove Password; their Browser Sign-ins; for the Owner,
+**Make an Administrator** for a Member or **Make a Member** for an
+Administrator; and Remove User. It finds the User in `user.list` with
+`all`, so a Removed User's panel opens too, and says so.
+
+Who may act on whom is the koko server's rule (ADR 0056), which
+[`mayActOn`](../../web/src/shell/caller.tsx) mirrors: anyone on
+themselves, the Owner on anyone, and an Administrator on a Member. Where
+the caller may not act on the person, as an Administrator viewing the
+Owner or another Administrator, the panel shows their role, Spaces,
+devices and Sign-ins and none of the actions on them: no Add device,
+Revoke, Issue Password Link, Remove Password, Remove User, Make an
+Administrator or Make a Member. One's own panel offers what the caller may
+do on themselves, and neither role action nor Remove User.
+
+**Make an Administrator** asks first (`user.promote`, the irreversible
+tier): it names what it gives, "bob will see and act in every Space, read
+every Secret and manage every Member", and lists the User's live devices
+(`device.list` naming them), each with who added it (`added_by`, as
+`<user>/<device>`, or "in a browser or on the koko server's machine"
+without one), and their live Sign-ins (`signin.list`), since a promotion
+keeps them; its button waits until both are read. **Make a Member**
+(`user.demote`) does not ask, as Take out does not. Either is one button
+that keeps the focus as the role changes, and the panel then shows the
+new role.
 
 **Account** shows the User's name and role and how this browser got in
 (through `koko web` on a device, a Sign-in, or the Local caller), with
@@ -110,21 +135,23 @@ and replacing the history entry ([`movedTo`](../../web/src/shell/router.tsx)).
 
 | Action | Who | Asks first |
 | --- | --- | --- |
-| Add a Space (`space.add`), a short form | the Owner | no |
-| Rename a Space (`space.rename`), and the panel moves to the new name, replacing its history entry | the Owner, on a shared Space | no |
-| Remove a Space (`space.remove`), then the panel closes | the Owner, on a shared Space | yes |
-| Make a User a Member (`space.member.add`): Add to a Space in a person's panel, one Space chosen in a searchable choice of those they are not in; or Add Members in a Space's, several Users chosen in a searchable choice among those who are neither the Owner, a Removed User nor a Member already (`user.list`), in one call | the Owner, on a shared Space | no |
-| Take a Member out (`space.member.remove`): Take out, in a person's panel or a Space's | the Owner, on a shared Space | no |
-| Invite a User (`user.invite`, with `web` for In a browser and `valid_for` unless 15 minutes, then `space.member.add` once per Space chosen) | the Owner | no |
-| Issue a Password Link (`password.link`, with `valid_for` unless 15 minutes), in a person's panel; disabled, saying why, while the Web URL is unset (`server.show`) | the Owner, for a User not Removed | no |
-| Remove a Password (`password.remove`), in a person's panel | the Owner, for a User with one | yes |
-| Revoke a live Sign-in (`signin.revoke`), on Account and in a person's panel | anyone for their own; the Owner for anyone's | yes |
-| Remove a User (`user.remove`), then say from its `outcome` whether they were deleted or Removed, and close the panel | the Owner, on any User but the Owner who is not Removed | yes |
-| Add a device (`device.add`), with an optional name: on Account for oneself, with no `user`; in a person's panel for that User, named | anyone for themselves; the Owner for any User who is not Removed | no |
-| Revoke a live Device Session (`device.revoke`, naming its User) | anyone for their own; the Owner for anyone's | yes; for the Owner's own last live one, only once its name is typed, and the call carries `last` |
+| Add a Space (`space.add`), a short form | the Owner or an Administrator | no |
+| Rename a Space (`space.rename`), and the panel moves to the new name, replacing its history entry | the Owner or an Administrator, on a shared Space | no |
+| Remove a Space (`space.remove`), then the panel closes | the Owner or an Administrator, on a shared Space | yes |
+| Make a User a Member (`space.member.add`): Add to a Space in a person's panel, one Space chosen in a searchable choice of those they are not in; or Add Members in a Space's, several Users chosen in a searchable choice among those who are neither the Owner, a Removed User nor a Member already (`user.list`), in one call | the Owner or an Administrator, on a shared Space | no |
+| Take a Member out (`space.member.remove`): Take out, in a person's panel or a Space's | the Owner or an Administrator, on a shared Space | no |
+| Invite a User (`user.invite`, with `web` for In a browser and `valid_for` unless 15 minutes, then `space.member.add` once per Space chosen) | the Owner or an Administrator | no |
+| Issue a Password Link (`password.link`, with `valid_for` unless 15 minutes), in a person's panel; disabled, saying why, while the Web URL is unset (`server.show`) | anyone for themselves; the Owner for anyone; an Administrator for a Member; each for a User not Removed | no |
+| Remove a Password (`password.remove`), in a person's panel | anyone for their own; the Owner for anyone's; an Administrator for a Member's; each for a User with one | yes |
+| Revoke a live Sign-in (`signin.revoke`), on Account and in a person's panel | anyone for their own; the Owner for anyone's; an Administrator for a Member's | yes |
+| Make a Member an Administrator (`user.promote`), in a person's panel, the question listing their live devices with who added each and their live Sign-ins | the Owner | yes |
+| Make an Administrator a Member (`user.demote`), in a person's panel | the Owner | no |
+| Remove a User (`user.remove`), then say from its `outcome` whether they were deleted or Removed, and close the panel | the Owner, on any User but themselves who is not Removed; an Administrator, on a Member who is not Removed | yes |
+| Add a device (`device.add`), with an optional name: on Account for oneself, with no `user`; in a person's panel for that User, named | anyone for themselves; the Owner for any User, and an Administrator for a Member, who is not Removed | no |
+| Revoke a live Device Session (`device.revoke`, naming its User) | anyone for their own; the Owner for anyone's; an Administrator for a Member's | yes; for the Owner's own last live one, only once its name is typed, and the call carries `last` |
 
-A Member sees none of the Owner's buttons, fields or panels, and a
-Personal Space shows the Owner none of the Space actions, since the koko
+A Member sees none of the buttons, fields or panels of the Owner and the
+Administrators, and a Personal Space shows them none of the Space actions, since the koko
 server refuses them while its User exists. A refusal shows its code's
 message where the action was: in its dialog or confirmation, in the panel,
 under its add field, for a change of membership made there. Two
@@ -211,7 +238,10 @@ koko server whose writes change what it answers
   Members with no User picked; Rename moving the panel in
   place; Remove Space asking first, `space_not_empty` in place, then
   closing; a Personal Space offering nothing; a Member's Access and panel
-  read-only; a person's panel as "Page not found" to a Member; a Space a
+  read-only; the People ranked the Owner, the Administrators, the Members,
+  then the Removed Users, each Administrator labelled with "Every Space" in
+  their summary, in both languages; an Administrator's Access as the
+  Owner's; a person's panel as "Page not found" to a Member; a Space a
   Member cannot act in; each redirect of `/spaces`, `/spaces/<name>` and
   `/people`, keeping its query.
 - [`people.test.tsx`](../../web/src/pages/user/people.test.tsx): a person's
@@ -228,9 +258,19 @@ koko server whose writes change what it answers
   membership call fails; a refused Invite; the code gone once the browser
   leaves the page, the page is left within the web UI, or its time runs
   out.
+- [`administrators.test.tsx`](../../web/src/pages/user/administrators.test.tsx):
+  the Owner's Make an Administrator, its question listing the live devices
+  with who added each and the live Sign-ins, or saying there are none, its
+  button waiting until they are read, Cancel, then the panel showing
+  Administrator; Make a Member at once, the focus kept on its button; a
+  refused role change shown in the panel and in the question; the Owner's
+  own panel; an Administrator viewing the Owner, another Administrator, a
+  Member and themselves, each with the actions shown or hidden; the Owner
+  acting on an Administrator.
 - [`devices.test.tsx`](../../web/src/pages/device/devices.test.tsx): a
-  Member's Account, its devices and Personal Space, and no Owner-only
-  control; the account panel's link; a Sign-in's and the Local caller's
+  Member's Account, its devices and Personal Space, and no control for
+  the Owner and the Administrators; an Administrator's Account naming the
+  role, and the three roles in Chinese; the account panel's link; a Sign-in's and the Local caller's
   Account, no device marked; This browser mirroring the frame; "Show
   Revoked devices" as `all=1`; `/devices` to Account; Add device for
   oneself, on a desktop and a phone, and refused; Revoke asking first,

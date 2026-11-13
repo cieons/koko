@@ -8,8 +8,8 @@ import { clipboard } from "../../test/clipboard";
 import { clickOutside } from "../../test/controls";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { setViewportWidth } from "../../test/media";
-import { actAs, alerts, chooseInFrame, frameButton, renderAt } from "../../test/pages";
-import { alice, bob, device, joinCode, serve, type World, world } from "../space/access.fixture";
+import { actAs, alerts, chooseInFrame, frameButton, preferLanguages, renderAt } from "../../test/pages";
+import { administered, alice, bob, device, eve, joinCode, serve, type World, world } from "../space/access.fixture";
 
 // Account, against a fake koko server: who the web UI acts as, the choices
 // this browser keeps, one's own devices with Add device and Revoke, and the
@@ -66,6 +66,32 @@ test("a Member's Account names them, their role and the device this browser runs
   }
   await waitFor(() => expect(document.title).toBe("Account · koko"));
   await expectAccessible();
+});
+
+test("an Administrator's Account names their role", async () => {
+  await atAccount({ caller: eve, w: administered(world()) });
+
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("eveAdministrator");
+  expect(devices()).toEqual(["laptopThis deviceJoined 2026-11-03 · Not used yetRevoke"]);
+  await expectAccessible();
+});
+
+test("in Chinese Account names the role 管理员, 所有者 or 成员", async () => {
+  preferLanguages("zh-CN");
+  const w = administered(world());
+  for (const [caller, role] of [
+    [eve, "管理员"],
+    [alice, "所有者"],
+    [bob, "成员"],
+  ] as const) {
+    const api = fakeApi();
+    actAs(api, caller, w.devices.find((d) => d.user === caller.name && d.device === "laptop"));
+    serve(api, w, caller);
+    const { unmount } = renderAt("/account");
+    await screen.findByRole("heading", { level: 2, name: "设备" });
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(`${caller.name}${role}`);
+    unmount();
+  }
 });
 
 test("the account panel links to Account", async () => {

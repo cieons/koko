@@ -34,8 +34,8 @@ export interface Route {
    * phone's bar at the foot, and alone in the folded rail.
    */
   icon?: LucideIcon;
-  /** ownerOnly hides the page, and its link, from a Member. */
-  ownerOnly?: boolean;
+  /** administers hides the page, and its link, from a Member: the Owner and the Administrators alone get it. */
+  administers?: boolean;
   /**
    * outside renders the page outside the frame, with no rail and no
    * user.current, as Sign in and Set a Password are, which a browser opens

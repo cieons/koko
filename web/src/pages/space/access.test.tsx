@@ -8,8 +8,8 @@ import { expectAccessible } from "../../test/axe";
 import { clickOutside, searchAndChoose, searchAndChooseSeveral } from "../../test/controls";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { setViewportWidth } from "../../test/media";
-import { actAs, alerts, renderAt } from "../../test/pages";
-import { alice, bob, serve, space, type World, world } from "./access.fixture";
+import { actAs, alerts, preferLanguages, renderAt } from "../../test/pages";
+import { administered, alice, bob, eve, serve, space, type World, world } from "./access.fixture";
 
 // Access, against a fake koko server: for the Owner, the People and the
 // shared Spaces as two lists under tabs, searched by name, Add Space, and a
@@ -180,17 +180,63 @@ test("Show Removed Users adds them, struck through, as all=1 in the URL, and a b
   expect(tab("People").textContent).toBe("People3");
 });
 
-test("the People list the Owner first and the Removed Users last", async () => {
-  const w = world();
+test("the People list the Owner, then the Administrators, then the Members, then the Removed Users", async () => {
+  const w = administered(world());
   w.users = [...w.users].reverse();
   await at("/access?all=1", w);
 
   expect((await rows()).map((r) => /^[a-z]+/.exec(r)?.[0])).toEqual([
     "alice",
+    "frank",
+    "eve",
     "carol",
     "bob",
     "dave",
   ]);
+});
+
+test("each Administrator is labelled so, with Every Space in their summary, as the Owner is", async () => {
+  await at("/access", administered(world()));
+
+  expect(await rows()).toEqual([
+    "aliceOwnerEvery Space · 1 device",
+    "eveAdministratorEvery Space · 1 device",
+    "frankAdministratorEvery Space · 1 device · Password set",
+    "bob1 Space · 2 devices · Password set",
+    "carolNo Space · Invited, not yet in",
+  ]);
+  await expectAccessible();
+});
+
+test("in Chinese the Administrators are labelled 管理员, with 全部空间 in their summary", async () => {
+  preferLanguages("zh-CN");
+  const api = fakeApi();
+  const w = administered(world());
+  actAs(api, alice, w.devices[0]);
+  serve(api, w);
+  renderAt("/access");
+  await screen.findByRole("heading", { level: 1, name: "访问权限" });
+
+  const panel = await screen.findByRole("tabpanel");
+  const people = (await within(panel).findAllByRole("link")).map((l) => l.textContent ?? "");
+  expect(people.slice(0, 3)).toEqual([
+    "alice所有者全部空间 · 1 台设备",
+    "eve管理员全部空间 · 1 台设备",
+    "frank管理员全部空间 · 1 台设备 · 已设置密码",
+  ]);
+  await expectAccessible();
+});
+
+test("an Administrator's Access is the Owner's: the People, the Spaces, Invite and Add Space", async () => {
+  await at("/access", administered(world()), eve);
+
+  expect((await rows()).map((r) => /^[a-z]+/.exec(r)?.[0])).toEqual(["alice", "eve", "frank", "bob", "carol"]);
+  expect(tab("Spaces").textContent).toBe("Spaces2");
+  expect(screen.getByRole("button", { name: "Invite" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Add Space" })).toBeDefined();
+  fireEvent.click(screen.getByRole("link", { name: /^bob/ }));
+  expect(await screen.findByRole("dialog", { name: "bob" })).toBeDefined();
+  await expectAccessible();
 });
 
 test("a bookmark of Access with all=1 shows the Removed Users", async () => {
@@ -290,7 +336,7 @@ test("on a phone the lists are the same, and membership changes in either panel"
   fireEvent.click(await within(ops).findByRole("button", { name: "Take bob out of ops" }));
   expect(await screen.findByText("bob is no longer a Member of ops.")).toBeDefined();
   expect(api.requests(SpaceMemberRemove)).toEqual([{ space: "ops", users: ["bob"] }]);
-  await waitFor(() => expect(within(ops).getByText("No Member yet. Only the Owner sees what this Space holds.")).toBeDefined());
+  await waitFor(() => expect(within(ops).getByText("No Member yet. Only the Owner and the Administrators see what this Space holds.")).toBeDefined());
 });
 
 // A Space's panel.
@@ -405,7 +451,7 @@ test("a refused Add Members says why under the field, keeps the Users picked and
   const alert = await within(shown).findByRole("alert");
   expect(alert.textContent).toBe("That User was Removed.");
   // In place: right under the field, above the Members.
-  expect(alert.compareDocumentPosition(within(shown).getByText("No Member yet. Only the Owner sees what this Space holds.")))
+  expect(alert.compareDocumentPosition(within(shown).getByText("No Member yet. Only the Owner and the Administrators see what this Space holds.")))
     .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   expect(within(shown).getAllByRole("row").map((r) => r.textContent)).toEqual(["erin", "frank"]);
   expect(api.requests(SpaceMemberAdd)).toEqual([{ space: "web", users: ["erin", "frank"] }]);
@@ -479,7 +525,7 @@ test("Take out keeps the focus in the Members: on the next one, the one before f
   await waitFor(() =>
     expect(document.activeElement).toBe(within(shown).getByRole("button", { name: /Add Members$/ })),
   );
-  expect(within(shown).getByText("No Member yet. Only the Owner sees what this Space holds.")).toBeDefined();
+  expect(within(shown).getByText("No Member yet. Only the Owner and the Administrators see what this Space holds.")).toBeDefined();
   expect(api.requests(SpaceMemberRemove)).toEqual([
     { space: "ops", users: ["bob"] },
     { space: "ops", users: ["erin"] },

@@ -91,13 +91,13 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
   const rail = useRail();
   const userCurrent = useRead(UserCurrent, {});
   const caller = userCurrent.data && callerOf(userCurrent.data);
-  const release = useReleaseState(caller?.owner === true);
+  const release = useReleaseState(caller?.administers === true);
   // While the koko server restarts for an upgrade, calls through koko web
   // drop as it reconnects; that koko web stopped is not to be said then.
   const restarting = release.upgrade.state === "running" || release.upgrade.state === "succeeded";
   const called = useNotice(caller?.deviceSession?.id);
   const notice = restarting && called === "stopped" ? undefined : called;
-  const visible = routes.filter((r) => !r.ownerOnly || caller?.owner);
+  const visible = routes.filter((r) => !r.administers || caller?.administers);
   const places = caller ? visible.filter((r) => r.nav) : [];
   const main = useRef<HTMLElement>(null);
   useFocusMainAfterVisit(main);
@@ -147,7 +147,7 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
                 onTerminal ? "outline-none" : `w-full px-4 pb-28 outline-none md:px-8 md:pb-16 ${fill ? "" : "max-w-[76rem]"}`
               }
             >
-              {caller?.owner && !onTerminal && <ReleaseNotice />}
+              {caller?.administers && !onTerminal && <ReleaseNotice />}
               {caller ? (
                 <Page routes={visible} places={places} />
               ) : notice ? null : userCurrent.error !== undefined ? (

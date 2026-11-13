@@ -19,12 +19,31 @@ export default {
   "user.remove.button": "Remove {name}",
   "user.remove.title": "Remove {name}",
   "user.remove.consequence":
-    "If {name} never used koko, the User is deleted and the name is free again. Otherwise {name} is Removed permanently: their devices are revoked, their Sign-ins end, they leave every Space, their Personal Space becomes a Space only the Owner sees, and the name {name} is never used again.",
+    "If {name} never used koko, the User is deleted and the name is free again. Otherwise {name} is Removed permanently: their devices are revoked, their Sign-ins end, they leave every Space, their Personal Space becomes a Space only the Owner and the Administrators see, and the name {name} is never used again.",
   "user.remove.confirm": "Remove",
   "user.remove.spaceNotEmpty":
     "{name} never used koko, but the Personal Space {name} still holds records. Move or remove them, then remove {name} again.",
   "user.deleted": "{name} never used koko and is deleted. The name {name} is free again.",
-  "user.removedDone": "{name} is Removed. Their devices are revoked, and only the Owner sees the Space {name}.",
+  "user.removedDone":
+    "{name} is Removed. Their devices are revoked, and only the Owner and the Administrators see the Space {name}.",
+  "user.promote": "Make an Administrator",
+  "user.promote.lead":
+    "An Administrator does everything the Owner does in koko, except act on the Owner or another Administrator.",
+  "user.promote.title": "Make {name} an Administrator",
+  "user.promote.consequence":
+    "{name} will see and act in every Space, read every Secret and manage every Member. Their live devices and Sign-ins below stay theirs: check that each is theirs before going on.",
+  "user.promote.devices": "Live devices",
+  "user.promote.device": "{device}, added by {by}",
+  "user.promote.deviceElsewhere": "{device}, added in a browser or on the koko server's machine",
+  "user.promote.noDevice": "No live device.",
+  "user.promote.signins": "Live Sign-ins",
+  "user.promote.signin": "{client}, signed in {date}",
+  "user.promote.noSignin": "No live Sign-in.",
+  "user.promoted": "{name} is now an Administrator.",
+  "user.demote": "Make a Member",
+  "user.demote.lead":
+    "As a Member, {name} acts only in their Personal Space and the Spaces they belong to, and their SSH Sessions to other Hosts end.",
+  "user.demoted": "{name} is now a Member.",
   "user.invite": "Invite",
   "user.invite.lead": "An Invite creates a Member, with a Personal Space and a Join Code or a Password Link to get in.",
   "user.invite.method": "How they will use koko",
@@ -53,5 +72,5 @@ export default {
   "user.account.browserNote": "Both choices are kept by this browser.",
   "error.unknown_user": "No User has that name.",
   "error.user_removed": "That User was Removed.",
-  "error.owner_not_removable": "The Owner cannot be deleted or Removed.",
+  "error.owner_not_removable": "The Owner cannot be deleted or Removed, and their role never changes.",
 };

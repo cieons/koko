@@ -28,12 +28,13 @@ const upgradePoll = 2000;
 /** upgradeWait is how long the page follows an upgrade before it says where to look. */
 const upgradeWait = 15 * 60 * 1000;
 
-// What the shell tells the Owner of koko's releases: the notice above every
+// What the shell tells the Owner and the Administrators of koko's releases: the notice above every
 // page, the koko server's line in the account panel, and Check now in both,
 // against the fake API.
 
 const alice: User = { id: "user_1", name: "alice", role: "owner", created_at: "2026-11-01T09:00:00Z" };
 const bob: User = { id: "user_2", name: "bob", role: "member", created_at: "2026-11-02T09:00:00Z" };
+const erin: User = { id: "user_5", name: "erin", role: "administrator", created_at: "2026-11-02T10:00:00Z" };
 
 function HostsPage() {
   return (
@@ -110,7 +111,7 @@ function forgetLater(): void {
   onTestFinished(() => localStorage.removeItem("koko.release.later"));
 }
 
-// The notice: for the Owner alone, while a newer release is known.
+// The notice: for the Owner and the Administrators, while a newer release is known.
 
 test("the Owner sees which release is out and which version runs, with a link to its notes", async () => {
   const api = fakeApi();
@@ -130,6 +131,24 @@ test("the Owner sees which release is out and which version runs, with a link to
   // The head of the page's column, above the page's title.
   expect(screen.getByRole("main").firstElementChild).toBe(notice);
   await expectAccessible();
+});
+
+test("an Administrator sees the notice, and the koko server's line with Check now in the account panel", async () => {
+  const api = fakeApi();
+  serve(api, erin, { server: server({ update_check: found("v0.5.0") }) });
+  api.on(UserCurrent, () => ({
+    user: erin,
+    device_session: { id: "device_5", user: "erin", device: "laptop", created_at: "2026-11-03T09:00:00Z" },
+  }));
+  renderShell();
+
+  const notice = await findNotice();
+  expect(notice.textContent).toContain("koko v0.5.0 is available.");
+  expect(within(notice).getByRole("button", { name: "Upgrade" })).toBeDefined();
+  const panel = await openAccount("erin");
+  expect(within(panel).getByText("Administrator")).toBeDefined();
+  expect(within(panel).getByText("koko server")).toBeDefined();
+  expect(within(panel).getByRole("button", { name: "Check now" })).toBeDefined();
 });
 
 test("a Member sees no notice, and the shell asks server.show nothing for them", async () => {

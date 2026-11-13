@@ -13,7 +13,7 @@ export default {
   "secret.changed": "Changed {ago}",
   "secret.empty.title": "No Secret is stored",
   "secret.empty.lead":
-    "Keep the passwords, keys and tokens of the Hosts here rather than in a Note: a Secret is sealed, and only the Members of its Space and the Owner can show it.",
+    "Keep the passwords, keys and tokens of the Hosts here rather than in a Note: a Secret is sealed, and only the Members of its Space, the Owner and the Administrators can show it.",
   "secret.noMatch": "No Secret matches this view.",
   "secret.clear": "Clear the search and filters",
   "secret.copyOf": "Copy the value of {name}",
@@ -27,7 +27,7 @@ export default {
     "This value is not UTF-8 text. It is shown in base64, as koko secret show --json prints it, and Copy copies the base64.",
   "secret.more": "More actions for {name}",
   "secret.add": "Add Secret",
-  "secret.add.lead": "The value is sealed when it is stored. The Members of its Space and the Owner can show it.",
+  "secret.add.lead": "The value is sealed when it is stored. The Members of its Space, the Owner and the Administrators can show it.",
   "secret.name": "Name",
   "secret.value": "Value",
   "secret.value.help": "Several lines are kept as they are, up to 64 KiB.",
@@ -47,7 +47,7 @@ export default {
   "secret.move": "Move",
   "secret.move.title": "Move {name}",
   "secret.move.lead":
-    "It is in {space}. After the move, only the Members of the Space it moves to and the Owner can show it.",
+    "It is in {space}. After the move, only the Members of the Space it moves to, the Owner and the Administrators can show it.",
   "secret.moveTo": "Move to",
   "secret.moved": "{name} is now in {space}.",
   "secret.delete": "Delete",

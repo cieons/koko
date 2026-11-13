@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { type Language, languages } from "../../i18n/catalogues";
 import { browserName } from "../../shell/browserName";
-import { type Caller, useCaller } from "../../shell/caller";
+import { type Caller, roleName, useCaller } from "../../shell/caller";
 import { type Translate, useLanguageChoice, useT } from "../../shell/i18n";
 import { type Mode, modes, useMode } from "../../shell/mode";
 import { useQueryFlag } from "../../shell/router";
@@ -40,7 +40,7 @@ export function AccountPage() {
       title={
         <span className="flex flex-wrap items-baseline gap-x-3">
           {name}
-          <span className="t-label tracking-normal">{t(caller.owner ? "shell.role.owner" : "shell.role.member")}</span>
+          <span className="t-label tracking-normal">{t(roleName(caller.user))}</span>
         </span>
       }
       lead={viaText(t, caller)}

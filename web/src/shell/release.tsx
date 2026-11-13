@@ -98,12 +98,12 @@ function storedLater(): string | undefined {
 }
 
 /**
- * useReleaseState reads server.show for the Owner, as a read reloads on each
- * visit and on focus, and asks nothing for a Member, who has no release to
- * act on. It follows an upgrade asked for in this page.
+ * useReleaseState reads server.show for the Owner and an Administrator
+ * (shown), as a read reloads on each visit and on focus, and asks nothing
+ * for a Member, who has no release to act on. It follows an upgrade asked for in this page.
  */
-export function useReleaseState(owner: boolean): Release {
-  const show = useRead(ServerShow, {}, { enabled: owner });
+export function useReleaseState(shown: boolean): Release {
+  const show = useRead(ServerShow, {}, { enabled: shown });
   const [later, setLater] = useState(storedLater);
   const [upgrade, setUpgrade] = useState<Upgrade>({ state: "none" });
   useFollowUpgrade(upgrade, setUpgrade);

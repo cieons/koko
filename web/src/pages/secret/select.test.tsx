@@ -180,7 +180,7 @@ test("Move asks once for the Space, leaves out the Secrets in it already, and mo
 
   act("Move");
   const dialog = await screen.findByRole("dialog", { name: "Move 3 Secrets" });
-  expect(dialog.textContent).toContain("only the Members of the Space it moves to and the Owner can show it.");
+  expect(dialog.textContent).toContain("only the Members of the Space it moves to, the Owner and the Administrators can show it.");
   await expectAccessible();
   fireEvent.click(within(dialog).getByRole("button", { name: "Move 3 Secrets" }));
   expect(await screen.findByText("Choose a Space.")).toBeDefined();

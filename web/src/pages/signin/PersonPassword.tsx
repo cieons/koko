@@ -23,14 +23,15 @@ import {
 import { useWebURL } from "./webURL";
 
 /**
- * PersonPassword is the Password in a person's panel, the Owner's alone
- * (docs/web-design.md, "Access"): set on which date, or none; Issue
+ * PersonPassword is the Password in a person's panel, the Owner's and the
+ * Administrators' alone (docs/web-design.md, "Access"): set on which date,
+ * or none; and, where the caller may act on the person (acts), Issue
  * Password Link, which needs the Web URL (server.show) and is disabled with
- * the reason while it is unset; and Remove Password, asking first, while
+ * the reason while it is unset, and Remove Password, asking first, while
  * there is one. onChanged hears a Password removed, so the panel and Access
  * show it; the section's heading then takes the focus Remove Password had.
  */
-export function PersonPassword({ user, onChanged }: { user: User; onChanged: () => void }) {
+export function PersonPassword({ user, acts, onChanged }: { user: User; acts: boolean; onChanged: () => void }) {
   const t = useT();
   const webURL = useWebURL();
   const [dialog, setDialog] = useState<"issue" | "remove">();
@@ -47,17 +48,21 @@ export function PersonPassword({ user, onChanged }: { user: User; onChanged: () 
           ? t("signin.person.none", { name: user.name })
           : t("signin.person.setOn", { date: formatDate(set) })}
       </p>
-      {webURL.reason !== undefined && <p className="t-label">{webURL.reason(t)}</p>}
-      <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" isDisabled={!webURL.set} onPress={() => setDialog("issue")}>
-          {t("signin.link.issue")}
-        </Button>
-        {set !== undefined && (
-          <Button variant="danger-soft" onPress={() => setDialog("remove")}>
-            {t("signin.remove")}
-          </Button>
-        )}
-      </div>
+      {acts && (
+        <>
+          {webURL.reason !== undefined && <p className="t-label">{webURL.reason(t)}</p>}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" isDisabled={!webURL.set} onPress={() => setDialog("issue")}>
+              {t("signin.link.issue")}
+            </Button>
+            {set !== undefined && (
+              <Button variant="danger-soft" onPress={() => setDialog("remove")}>
+                {t("signin.remove")}
+              </Button>
+            )}
+          </div>
+        </>
+      )}
       {dialog === "issue" && <IssueLink user={user} onClose={() => setDialog(undefined)} />}
       {dialog === "remove" && (
         <RemovePassword

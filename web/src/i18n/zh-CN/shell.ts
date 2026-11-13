@@ -10,7 +10,8 @@ import type en from "../en/shell";
 //   Note 备注 · Relay 中继 · Registered 已登记 · Enroll 接入 ·
 //   Managed 已接入 · Retired 已下线 · Host Account 主机账户 ·
 //   Pinned host key 固定的主机密钥 · Secret 机密 · Space 空间 ·
-//   Personal Space 个人空间 · User 用户 · Owner 所有者 · Member 成员 ·
+//   Personal Space 个人空间 · User 用户 · Owner 所有者 ·
+//   Administrator 管理员 · Member 成员 ·
 //   Invite 邀请 · Removed 已移除 · Join 加入 · Join Code 加入码 ·
 //   Device Session 设备会话 · Revoked 已吊销 · Last used 上次使用 ·
 //   Password 密码 · Password Link 密码链接 · Sign-in 登录会话 ·
@@ -44,6 +45,7 @@ export default {
   "shell.mode.system": "跟随系统",
   "shell.account": "账户：{name}",
   "shell.role.owner": "所有者",
+  "shell.role.administrator": "管理员",
   "shell.role.member": "成员",
   "shell.via.device": "经由 {device} 上的 koko web",
   "shell.via.signin": "通过 {client} 登录",

@@ -53,13 +53,24 @@ export function signIns(): SignIns {
 
 /**
  * serveSignIns makes the fake API answer Sign-ins from s as the koko server
- * answers caller: the Owner sees everyone's, a Member their own. It also
- * answers /auth/password by the current Password, current, ending the
+ * answers caller: the Owner and an Administrator see everyone's, a Member
+ * their own; an Administrator revoking the Sign-in of the Owner or another
+ * Administrator, by their role in users, is refused with owner_only. It
+ * also answers /auth/password by the current Password, current, ending the
  * caller's other Sign-ins as the koko server does, and /auth/signout.
  */
-export function serveSignIns(api: FakeApi, s: SignIns, caller: User, current = "the current password"): void {
-  const owner = caller.role === "owner";
-  const sees = (si: SignIn) => owner || si.user === caller.name;
+export function serveSignIns(
+  api: FakeApi,
+  s: SignIns,
+  caller: User,
+  current = "the current password",
+  users: readonly User[] = [],
+): void {
+  const administers = caller.role === "owner" || caller.role === "administrator";
+  const sees = (si: SignIn) => administers || si.user === caller.name;
+  const roleOf = (user: string) => users.find((u) => u.name === user)?.role ?? "member";
+  const mayActOn = (user: string) =>
+    user === caller.name || caller.role === "owner" || (administers && roleOf(user) === "member");
   api.on(SignInList, ({ user, all }) => ({
     signins: s.signins.filter(
       (si) => sees(si) && (user === undefined || si.user === user) && (all === true || si.ended_at === undefined),
@@ -69,6 +80,9 @@ export function serveSignIns(api: FakeApi, s: SignIns, caller: User, current = "
     const found = s.signins.find((si) => si.id === id && sees(si));
     if (!found) {
       throw refusal("unknown_signin", 404);
+    }
+    if (!mayActOn(found.user)) {
+      throw refusal("owner_only", 403);
     }
     const ended = found.ended_at === undefined ? { ...found, ended_at: "2026-11-08T09:00:00Z", end_reason: "revoked" } : found;
     s.signins = s.signins.map((si) => (si.id === id ? ended : si));

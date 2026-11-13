@@ -11,7 +11,7 @@ import {
   SpaceRename,
   SpaceShow,
 } from "../../api/space";
-import { type User, UserInvite, UserList, UserRemove } from "../../api/user";
+import { type User, UserDemote, UserInvite, UserList, UserPromote, UserRemove } from "../../api/user";
 import { type FakeApi, refusal } from "../../test/fakeApi";
 
 // A koko server's Users, Spaces and Device Sessions for the tests of Access
@@ -33,6 +33,16 @@ export const dave: User = {
   role: "member",
   created_at: "2026-11-01T10:00:00Z",
   removed_at: "2026-11-06T09:00:00Z",
+};
+
+/** eve and frank are Administrators, whom administered adds to a World. */
+export const eve: User = { id: "user_5", name: "eve", role: "administrator", created_at: "2026-11-02T10:00:00Z" };
+export const frank: User = {
+  id: "user_6",
+  name: "frank",
+  role: "administrator",
+  created_at: "2026-11-03T10:00:00Z",
+  password_set_at: "2026-11-04T10:00:00Z",
 };
 
 /** space is a Space's detail: personal for a User's, else shared with members. */
@@ -89,6 +99,24 @@ export function world(): World {
   };
 }
 
+/**
+ * administered adds to w the Administrators eve and frank, with their
+ * Personal Spaces and a laptop each, eve's added by alice's laptop.
+ */
+export function administered(w: World): World {
+  const [owner] = w.devices;
+  return {
+    ...w,
+    users: [...w.users, eve, frank],
+    spaces: [...w.spaces, space("eve", { personal: true }), space("frank", { personal: true })],
+    devices: [
+      ...w.devices,
+      device("eve", "laptop", owner && { added_by: { id: owner.id, user: owner.user, device: owner.device } }),
+      device("frank", "laptop"),
+    ],
+  };
+}
+
 /** passwordLink is the Password Link the fake issues for user. */
 export function passwordLink(user: string): string {
   return `https://koko.example.com/password#LINKSECRETFOR${user.toUpperCase()}`;
@@ -99,12 +127,46 @@ export const joinCode = "koko_JOINCODE";
 
 /**
  * serve makes the fake API answer from w as the koko server answers caller:
- * the Owner sees every Space and Device Session, a Member their own. Each
- * write changes w.
+ * the Owner and an Administrator see every Space and Device Session, a
+ * Member their own. Acting on another User's credentials or role follows
+ * the access check's rule (mayActOn), and only the Owner promotes and
+ * demotes. Each write changes w.
  */
 export function serve(api: FakeApi, w: World, caller: User = alice): void {
-  const owner = caller.role === "owner";
-  const sees = (s: SpaceDetail) => owner || s.name === caller.name || s.members.some((m) => m.name === caller.name);
+  const administers = caller.role === "owner" || caller.role === "administrator";
+  const sees = (s: SpaceDetail) =>
+    administers || s.name === caller.name || s.members.some((m) => m.name === caller.name);
+  // actOn refuses, as the koko server's Identity.MayActOn does, a call on a User the caller may not act on.
+  const actOn = (name: string) => {
+    const target = w.users.find((u) => u.name === name);
+    const may =
+      name === caller.name || caller.role === "owner" || (administers && (target === undefined || target.role === "member"));
+    if (!may) {
+      throw refusal("owner_only", 403);
+    }
+  };
+  // roleChange reads the User user.promote or user.demote names, refusing as the koko server does.
+  const roleChange = (name: string) => {
+    if (caller.role !== "owner") {
+      throw refusal("owner_only", 403);
+    }
+    const user = w.users.find((u) => u.name === name);
+    if (!user) {
+      throw refusal("unknown_user", 404);
+    }
+    if (user.role === "owner") {
+      throw refusal("owner_not_removable", 409);
+    }
+    if (user.removed_at !== undefined) {
+      throw refusal("user_removed", 409);
+    }
+    return user;
+  };
+  const setRole = (user: User, role: string) => {
+    const changed = { ...user, role };
+    w.users = w.users.map((u) => (u.name === user.name ? changed : u));
+    return { user: changed };
+  };
   const find = (name: string) => {
     const found = w.spaces.find((s) => s.name === name && sees(s));
     if (!found) {
@@ -180,12 +242,14 @@ export function serve(api: FakeApi, w: World, caller: User = alice): void {
     },
   }));
   api.on(PasswordLinkIssue, ({ user: name }) => {
+    actOn(name);
     if (w.webURL === null) {
       throw refusal("web_url_unset", 409);
     }
     return { password_link: { id: "link_2", user: name, link: passwordLink(name), expires_at: "2026-11-09T09:00:00Z" } };
   });
   api.on(PasswordRemove, ({ user: name }) => {
+    actOn(name);
     const user = w.users.find((u) => u.name === name);
     if (user?.password_set_at === undefined) {
       throw refusal("no_password", 409);
@@ -198,33 +262,41 @@ export function serve(api: FakeApi, w: World, caller: User = alice): void {
     if (!user) {
       throw refusal("unknown_user", 404);
     }
+    if (user.role === "owner") {
+      throw refusal("owner_not_removable", 409);
+    }
+    actOn(name);
     const used = w.devices.some((d) => d.user === name) || user.password_set_at !== undefined;
     if (!used) {
       w.users = w.users.filter((u) => u.name !== name);
       return { outcome: "deleted", user };
     }
-    const removed = { ...user, removed_at: "2026-11-08T09:00:00Z" };
+    const removed = { ...user, role: "member", removed_at: "2026-11-08T09:00:00Z" };
     w.users = w.users.map((u) => (u.name === name ? removed : u));
     return { outcome: "removed", user: removed };
   });
   api.on(DeviceList, ({ user, all }) => ({
     device_sessions: w.devices.filter(
       (d) =>
-        (user === undefined ? owner || d.user === caller.name : d.user === user) &&
+        (user === undefined ? administers || d.user === caller.name : d.user === user) &&
         (all === true || d.revoked_at === undefined),
     ),
   }));
-  api.on(DeviceAdd, ({ user, device: name }) => ({
-    join_code: {
-      id: "code_2",
-      code: joinCode,
-      user: user ?? caller.name,
-      device: name ?? "device-1",
-      expires_at: "2026-11-08T09:15:00Z",
-    },
-  }));
+  api.on(DeviceAdd, ({ user, device: name }) => {
+    actOn(user ?? caller.name);
+    return {
+      join_code: {
+        id: "code_2",
+        code: joinCode,
+        user: user ?? caller.name,
+        device: name ?? "device-1",
+        expires_at: "2026-11-08T09:15:00Z",
+      },
+    };
+  });
   api.on(DeviceRevoke, ({ user, device: name, last }) => {
     const of = user ?? caller.name;
+    actOn(of);
     const session = w.devices.find((d) => d.user === of && d.device === name && d.revoked_at === undefined);
     if (!session) {
       throw refusal("unknown_device", 404);
@@ -236,5 +308,13 @@ export function serve(api: FakeApi, w: World, caller: User = alice): void {
     const revoked = { ...session, revoked_at: "2026-11-08T09:00:00Z" };
     w.devices = w.devices.map((d) => (d.id === session.id ? revoked : d));
     return { device_session: revoked };
+  });
+  api.on(UserPromote, ({ name }) => {
+    const user = roleChange(name);
+    return user.role === "administrator" ? { user } : setRole(user, "administrator");
+  });
+  api.on(UserDemote, ({ name }) => {
+    const user = roleChange(name);
+    return user.role === "member" ? { user } : setRole(user, "member");
   });
 }

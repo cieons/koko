@@ -211,11 +211,12 @@ padding. From top to bottom:
   alone.
 - **The foot**, after a hairline:
   - **the User**: an initial in a circle (32px), the name (600) and the
-    role ("Owner") under it. It opens the account panel, 19rem wide,
+    role ("Owner", "Administrator" or "Member") under it. It opens the account panel, 19rem wide,
     upwards from the rail's start: the initial, the name and role, how
     this browser reaches koko ("Signed in from Chrome on macOS", "Through
     koko web on laptop", or, for the Local caller, "On the koko server's
-    machine"), the Owner's koko server line, then Account, and Sign out
+    machine"), the koko server line for the Owner and an Administrator,
+    then Account, and Sign out
     when the browser has a Sign-in;
   - **Language**: a languages icon; opens a menu of two radio items,
     English and 简体中文. Its accessible name says the current value
@@ -262,7 +263,7 @@ Hosts table's columns that give way).
   announced as an alert, until what ends them. They are not toasts.
 - **A page whose chunk does not load**, as after an upgrade under an open
   tab, shows in place of the page that the browser page must be reloaded.
-- **The release notice**, the Owner's alone, while a newer koko release is
+- **The release notice**, the Owner's and the Administrators' alone, while a newer koko release is
   known: a panel at the head of the main region, above the page's title,
   in the page's column, so it reads as part of the page rather
   than as a warning. An upgrade icon in an accent-soft circle; "koko v0.5.0
@@ -271,10 +272,10 @@ Hosts table's columns that give way).
   buttons and the way to upgrade as a secondary button, since a page's one
   primary button stays the page's. The actions wrap under the text on a
   phone. How to upgrade opens its two lines inside the panel. Once the
-  Owner confirms an upgrade, the same panel shows its progress, a spinner
+  Owner or an Administrator confirms an upgrade, the same panel shows its progress, a spinner
   in the circle, then a check mark or, on a failure, a cross in the danger
   colour with the outcome's message in the code face. The account
-  panel shows the Owner a koko server line above Account: the version,
+  panel shows the Owner and an Administrator a koko server line above Account: the version,
   when it last checked, and Check now.
 
 **On a phone** (under 768px), every page has:
@@ -416,7 +417,7 @@ The preview's mock answers at once, so these are specified here:
 | `/hosts/<host>/services/<service>` | `/services/<host>/<service>` | A side panel over the Host's page |
 | `/secrets` | `/secrets` | |
 | `/access` | `/people`, `/spaces` | People and Spaces as two lists, `view=spaces` for the Spaces |
-| `/access/people/<name>` | none | A side panel over Access: the Owner alone |
+| `/access/people/<name>` | none | A side panel over Access: the Owner and the Administrators alone |
 | `/access/spaces/<name>` | `/spaces/<name>` | A side panel over Access |
 | `/account` | `/devices` | One's own devices and Sign-ins live here |
 | `/signin`, `/password` | none | Outside the frame |
@@ -915,7 +916,7 @@ Session is SSH 会话.
 
 ### Access (`/access`)
 
-For the Owner:
+For the Owner and an Administrator:
 
 - Title, one line, actions **Add Space** and **Invite** (primary).
 - One row of controls: the tabs **People** and **Spaces**, each with its
@@ -926,12 +927,13 @@ For the Owner:
   list's view.
 - Under it, one panel holding the list of the tab chosen, a row per person
   or Space, each a link to its panel. A person's row: initial, name,
-  "Owner" where so, and a one-line summary, "16 Spaces · 2 devices ·
-  Password set", "No Space · Invited, not yet in", "Every Space · 1
-  device" for the Owner. A Space's row: name and "30 Members · 40 Hosts ·
+  "Owner" or "Administrator" where so, and a one-line summary, "16 Spaces
+  · 2 devices · Password set", "No Space · Invited, not yet in", "Every
+  Space · 1 device" for the Owner and an Administrator. A Space's row: name and "30 Members · 40 Hosts ·
   0 Secrets". The summary is beside the name once the list itself is
   42rem wide (container query) and under it below that, as on a phone.
-  The Owner is first and the Removed Users last.
+  The Owner is first, then the Administrators, then the Members, and the
+  Removed Users last.
 - Nothing matching the search: one panel with "No User matches this
   search." or "No Space matches this search." and **Clear the search**.
   No shared Space: the Spaces tab says so, and what a Space is for.
@@ -943,9 +945,14 @@ For the Owner:
   shared Spaces they are not in, each Space a link to its panel with
   **Take out**; and the Personal Space's counts; Devices with Add device and Revoke, and "Show
   Revoked devices"; Password ("set on <date>" or none) with Issue Password
-  Link and Remove Password; Browser Sign-ins with Revoke; Remove User at
-  the foot, which asks first and then says whether the User was deleted
-  or Removed. A refusal with `space_not_empty` names the User's Personal
+  Link and Remove Password; Browser Sign-ins with Revoke; for the Owner,
+  **Make an Administrator**, which asks first and lists the User's live
+  devices, each with who added it, and live Sign-ins, or **Make a
+  Member**, which does not; Remove User at the foot, which asks first and
+  then says whether the User was deleted or Removed. An Administrator or
+  the Owner is "Every Space" in place of the Spaces. Viewing the Owner or
+  another Administrator, an Administrator sees the panel without any of
+  its actions. A refusal with `space_not_empty` names the User's Personal
   Space, which still holds records.
 - **Revoking a device** asks first and says what follows: the device is
   cut off; for the device the web UI runs through, this page stops and the
@@ -1009,7 +1016,7 @@ languages as buttons.
 
 - **Sign in**: name, Password, **Sign in**; a refusal above the fields
   (`wrong_password`, `too_many_attempts` with the minutes); one line that
-  the Owner resets a lost Password.
+  the Owner or an Administrator resets a lost Password.
 - **Set a Password**: "For <name>."; New Password with a count toward 15;
   again; **Set Password and sign in**. `link_used` and `link_invalid` each
   replace the form with what happened and "Go to Sign in".

@@ -14,7 +14,7 @@ export default {
   "error.name_taken": "此名称已被占用。",
   "error.not_initialised": "koko 服务器尚未初始化。",
   "error.local_only": "此操作仅能由 koko 服务器本机上运行的命令执行。",
-  "error.owner_only": "此操作仅限所有者执行。",
+  "error.owner_only": "此操作仅限所有者或管理员执行；涉及所有者或管理员的操作仅限所有者执行。",
   "error.idempotency_key_reused": "此表单此前已以其他内容提交。请重新加载页面，然后再次修改。",
   "error.request_too_large": "此请求超出 koko 服务器可接受的大小。",
   "error.cli_too_old": "此 koko 的版本低于 koko 服务器支持的最低版本，需通过 koko update 升级。",

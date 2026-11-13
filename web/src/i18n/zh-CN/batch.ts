@@ -75,7 +75,7 @@ const messages: Record<keyof typeof en, string> = {
   "batch.host.remove.rest.other": "删除其余 {count} 台主机",
   "batch.secret.bar": "对所选机密的操作",
   "batch.secret.move.title": "移动 {things}",
-  "batch.secret.move.lead": "每项机密将以原名称移至目标空间。移动后，仅目标空间的成员与所有者可查看。",
+  "batch.secret.move.lead": "每项机密将以原名称移至目标空间。移动后，仅目标空间的成员、所有者和管理员可查看。",
   "batch.secret.move.staying.one": "{count} 项机密已位于 {space}，无需移动。",
   "batch.secret.move.staying.other": "{count} 项机密已位于 {space}，无需移动。",
   "batch.secret.move.done.one": "{count} 项机密已移至 {space}。",

@@ -26,6 +26,8 @@ export interface SignInsProps {
    * of Password; each new count reads the list again, keeping its view.
    */
   changes?: number;
+  /** acts offers Revoke: false where the caller may not act on user, as an Administrator on the Owner. */
+  acts?: boolean;
   className?: string;
 }
 
@@ -34,9 +36,10 @@ export interface SignInsProps {
  * ended ones when asked for, this browser's marked "This browser"; and
  * revokes a live one once the caller confirms (signin.revoke). Revoking
  * this browser's own signs it out, to Sign in. Account shows the caller's
- * own; a person's panel, the Owner's alone, shows that person's.
+ * own; a person's panel, the Owner's and the Administrators' alone, shows
+ * that person's, without Revoke where the caller may not act on them.
  */
-export function SignIns({ user, level, changes = 0, className = "" }: SignInsProps) {
+export function SignIns({ user, level, changes = 0, acts = true, className = "" }: SignInsProps) {
   const t = useT();
   const language = useLanguage();
   const caller = useCaller();
@@ -91,7 +94,7 @@ export function SignIns({ user, level, changes = 0, className = "" }: SignInsPro
                             })}
                       </p>
                     </div>
-                    {live && (
+                    {live && acts && (
                       <Button
                         variant="danger-soft"
                         aria-label={t("signin.revoke.title", { client: browserName(t, s) })}

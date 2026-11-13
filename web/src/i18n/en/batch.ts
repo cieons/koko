@@ -75,7 +75,7 @@ export default {
   "batch.secret.bar": "Actions on the selected Secrets",
   "batch.secret.move.title": "Move {things}",
   "batch.secret.move.lead":
-    "Each Secret moves under its name. After the move, only the Members of the Space it moves to and the Owner can show it.",
+    "Each Secret moves under its name. After the move, only the Members of the Space it moves to, the Owner and the Administrators can show it.",
   "batch.secret.move.staying.one": "{count} Secret is in {space} already and stays there.",
   "batch.secret.move.staying.other": "{count} Secrets are in {space} already and stay there.",
   "batch.secret.move.done.one": "{count} Secret is now in {space}.",

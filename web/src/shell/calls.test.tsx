@@ -10,7 +10,7 @@ import { expectAccessible } from "../test/axe";
 import { type FakeApi, fakeApi, refusal } from "../test/fakeApi";
 import { alerts, chooseInFrame, findAlert, preferLanguages } from "../test/pages";
 import { Refusal } from "../ui/states";
-import { OwnerOnly } from "./caller";
+import { Administers } from "./caller";
 import { useRead, useWrite } from "./data";
 import { useEditForm } from "./form";
 import { navigate, type PageProps, type Route, useSearchParams } from "./router";
@@ -78,9 +78,9 @@ function ThingEditor({ thing }: { thing: Thing }) {
       <textarea aria-label="note" value={form.values.note} onChange={(e) => form.set("note", e.target.value)} />
       <button type="submit">Save</button>
       <Refusal error={save.error} />
-      <OwnerOnly>
+      <Administers>
         <button type="button">Remove</button>
-      </OwnerOnly>
+      </Administers>
     </form>
   );
 }

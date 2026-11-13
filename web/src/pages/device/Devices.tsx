@@ -33,6 +33,8 @@ export interface DevicesProps {
   onAll: (all: boolean) => void;
   /** level is the heading's level: 2 on a page, 3 in a panel. */
   level: 2 | 3;
+  /** acts offers Add device and Revoke: false where the caller may not act on user, as an Administrator on the Owner. */
+  acts?: boolean;
   className?: string;
 }
 
@@ -41,9 +43,11 @@ export interface DevicesProps {
  * when all is set, the one the web UI runs through marked "This device";
  * adds one, its Join Code shown once (AddDevice); and revokes a live one
  * once the caller confirms (RevokeDevice). The Account page shows the
- * caller's own; a person's panel, the Owner's alone, shows that person's.
+ * caller's own; a person's panel, the Owner's and the Administrators'
+ * alone, shows that person's, without either action where the caller may
+ * not act on them.
  */
-export function Devices({ user, owner, all, onAll, level, className = "" }: DevicesProps) {
+export function Devices({ user, owner, all, onAll, level, acts = true, className = "" }: DevicesProps) {
   const t = useT();
   const language = useLanguage();
   const caller = useCaller();
@@ -62,10 +66,12 @@ export function Devices({ user, owner, all, onAll, level, className = "" }: Devi
           <Laptop aria-hidden className="size-5 text-muted" />
           {t("device.title")}
         </Heading>
-        <Button variant="secondary" onPress={() => setAdding(true)}>
-          <Plus aria-hidden className="size-4" />
-          {t("device.add")}
-        </Button>
+        {acts && (
+          <Button variant="secondary" onPress={() => setAdding(true)}>
+            <Plus aria-hidden className="size-4" />
+            {t("device.add")}
+          </Button>
+        )}
       </div>
       <Loaded read={list}>
         {({ device_sessions: sessions }) =>
@@ -97,7 +103,7 @@ export function Devices({ user, owner, all, onAll, level, className = "" }: Devi
                         : t("device.revokedOn", { date: formatDate(s.revoked_at) })}
                     </p>
                   </div>
-                  {s.revoked_at === undefined && (
+                  {s.revoked_at === undefined && acts && (
                     <Button
                       variant="danger-soft"
                       aria-label={t("device.revoke.label", { name: shownName(s, caller) })}
@@ -212,7 +218,7 @@ function RevokeDevice({
  * AddDevice issues a Join Code for a new device of user, with an optional
  * name, valid for the time chosen, and shows it once; it never asks first.
  * The caller's own device is asked for with no user, as device add does
- * without --user; another User's, the Owner's alone, names them.
+ * without --user; another User's, the Owner's or an Administrator's alone, names them.
  */
 function AddDevice({ user, onAdded, onClose }: { user: string; onAdded: () => void; onClose: () => void }) {
   const t = useT();

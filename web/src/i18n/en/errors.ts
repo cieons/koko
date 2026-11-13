@@ -12,7 +12,8 @@ export default {
   "error.name_taken": "This name is already in use.",
   "error.not_initialised": "The koko server is not initialised yet.",
   "error.local_only": "Only a command run on the koko server's own machine can do this.",
-  "error.owner_only": "Only the Owner can do this.",
+  "error.owner_only":
+    "Only the Owner or an Administrator can do this, and only the Owner can do it to the Owner or an Administrator.",
   "error.idempotency_key_reused":
     "This form was already sent with other values. Reload the page and make the change again.",
   "error.request_too_large": "This request is larger than the koko server accepts.",

@@ -176,7 +176,7 @@ test("the Owner's own panel says the Owner sees every Space and offers no Remove
 
   const panel = await openPanel("alice");
   expect(within(panel).getByText("Owner · Added 2026-11-01")).toBeDefined();
-  expect(within(panel).getByText("The Owner sees every Space.")).toBeDefined();
+  expect(within(panel).getByText("The Owner and Administrators see every Space.")).toBeDefined();
   expect(within(panel).queryByRole("combobox", { name: "Add to a Space" })).toBeNull();
   expect(within(panel).queryByRole("button", { name: /^Remove/ })).toBeNull();
 });
@@ -205,7 +205,7 @@ test("Remove User asks first, then says the User was Removed, and the panel clos
   fireEvent.click(within(asking).getByRole("button", { name: "Remove" }));
 
   expect(
-    await screen.findByText("bob is Removed. Their devices are revoked, and only the Owner sees the Space bob."),
+    await screen.findByText("bob is Removed. Their devices are revoked, and only the Owner and the Administrators see the Space bob."),
   ).toBeDefined();
   expect(api.requests(UserRemove)).toEqual([{ name: "bob" }]);
   expect(window.location.pathname).toBe("/access");

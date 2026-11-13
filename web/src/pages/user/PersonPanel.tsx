@@ -2,9 +2,13 @@ import { Button, Link } from "@heroui/react";
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 
+import { DeviceList } from "../../api/device";
+import { SignInList } from "../../api/signin";
 import { CodeSpaceNotEmpty, type Space, SpaceShow } from "../../api/space";
-import { type User, UserList, UserRemove } from "../../api/user";
+import { type User, UserDemote, UserList, UserPromote, UserRemove } from "../../api/user";
 import { ApiError } from "../../client";
+import { browserName } from "../../shell/browserName";
+import { mayActOn, roleName, useCaller } from "../../shell/caller";
 import { useRead, useWrite } from "../../shell/data";
 import { formatDate } from "../../shell/format";
 import { useCount, useT } from "../../shell/i18n";
@@ -15,7 +19,7 @@ import { useFocusFallback, useRowFocus } from "../../ui/focus";
 import { Form } from "../../ui/Form";
 import { notify } from "../../ui/notify";
 import { SidePanel } from "../../ui/SidePanel";
-import { AlertLine, Loaded, Refusal } from "../../ui/states";
+import { AlertLine, Loaded, Loading, Refusal } from "../../ui/states";
 import { Devices } from "../device/Devices";
 import { PersonPassword } from "../signin/PersonPassword";
 import { SignIns } from "../signin/SignIns";
@@ -35,14 +39,20 @@ export interface PersonPanelProps {
 }
 
 /**
- * PersonPanel is a person's panel over Access, the Owner's alone
- * (docs/web-design.md, "Access"): their role and the date they were added;
- * the shared Spaces they are a Member of, each with Take out, under Add to
- * a Space, and their Personal Space's counts; their devices (Devices), with Add device for them and
- * Revoke; their Password, with Issue Password Link and Remove Password, and
- * their Browser Sign-ins with Revoke; and Remove User, which asks first and
- * then says whether the User was deleted or Removed. A Removed User's panel
- * says so and offers nothing.
+ * PersonPanel is a person's panel over Access, the Owner's and the
+ * Administrators' alone (docs/web-design.md, "Access"): their role and the
+ * date they were added; the shared Spaces they are a Member of, each with
+ * Take out, under Add to a Space, or, for the Owner and an Administrator,
+ * that they see every Space; and their Personal Space's counts; their
+ * devices (Devices), with Add device for them and Revoke; their Password,
+ * with Issue Password Link and Remove Password, and their Browser Sign-ins
+ * with Revoke; for the Owner, Make an Administrator, which asks first, or
+ * Make a Member; and Remove User, which asks first and then says whether
+ * the User was deleted or Removed. Where the caller may not act on the
+ * person (mayActOn), as an Administrator on the Owner or another
+ * Administrator, it offers none of those actions; on oneself, neither the
+ * role's nor Remove User. A Removed User's panel says so and offers
+ * nothing.
  * It finds the User in user.list with the Removed ones, so a bookmark of a
  * Removed User's panel opens too.
  */
@@ -52,7 +62,7 @@ export function PersonPanel({ name, shared, membership, onChanged, onClose }: Pe
   const [space, setSpace] = useState<string | null>(null);
   const users = useRead(UserList, { all: true });
   const user = users.data?.users.find((u) => u.name === name);
-  const role = user && t(user.role === "owner" ? "shell.role.owner" : "shell.role.member");
+  const role = user && t(roleName(user));
   const since =
     user &&
     (user.removed_at === undefined
@@ -77,6 +87,10 @@ export function PersonPanel({ name, shared, membership, onChanged, onClose }: Pe
                 users.reload();
                 onChanged();
               }}
+              onRole={() => {
+                users.reload();
+                onChanged();
+              }}
               onRemoved={() => {
                 onChanged();
                 onClose();
@@ -97,6 +111,7 @@ function Person({
   space,
   onSpace,
   onPassword,
+  onRole,
   onRemoved,
 }: {
   user: User;
@@ -107,10 +122,15 @@ function Person({
   onSpace: (space: string | null) => void;
   /** onPassword hears the User's Password removed, so the panel and Access show it. */
   onPassword: () => void;
+  /** onRole hears the User's role changed, so the panel and Access show it. */
+  onRole: () => void;
   onRemoved: () => void;
 }) {
   const t = useT();
+  const caller = useCaller();
   const owner = user.role === "owner";
+  const acts = mayActOn(caller, user);
+  const self = user.name === caller.user.name;
   const [all, setAll] = useState(false);
   const [removing, setRemoving] = useState(false);
   // Removing the Password ends the User's Sign-ins, which are read again then.
@@ -119,8 +139,8 @@ function Person({
     <>
       <section className="flex flex-col gap-3">
         <h3 className="t-heading">{t("user.spaces")}</h3>
-        {owner ? (
-          <p className="text-muted">{t("space.access.ownerSeesAll")}</p>
+        {user.role !== "member" ? (
+          <p className="text-muted">{t("space.access.seesAll")}</p>
         ) : shared === undefined ? null : shared.length === 0 ? (
           <p className="text-muted">{t("space.access.noShared")}</p>
         ) : (
@@ -128,16 +148,18 @@ function Person({
         )}
         <PersonalSpace name={user.name} />
       </section>
-      <Devices user={user.name} owner={owner} all={all} onAll={setAll} level={3} />
+      <Devices user={user.name} owner={owner} all={all} onAll={setAll} level={3} acts={acts} />
       <PersonPassword
         user={user}
+        acts={acts}
         onChanged={() => {
           setPasswordChanges((n) => n + 1);
           onPassword();
         }}
       />
-      <SignIns user={user.name} level={3} changes={passwordChanges} />
-      {!owner && (
+      <SignIns user={user.name} level={3} changes={passwordChanges} acts={acts} />
+      {caller.owner && !owner && <Role user={user} onChanged={onRole} />}
+      {acts && !owner && !self && (
         <section className="mt-2 flex flex-col items-start gap-3 border-t border-line pt-6">
           <p className="t-label max-w-[52ch]">{t("user.remove.lead")}</p>
           <Button variant="danger-soft" onPress={() => setRemoving(true)}>
@@ -282,6 +304,121 @@ export function PersonalSpace({ name }: { name: string }) {
         <Link href={spaceHostsPath(name)}>{t("space.viewHosts")}</Link>
       </p>
     )
+  );
+}
+
+/**
+ * Role is the Owner's change of a User's role, one button that keeps the
+ * focus as the role changes: Make an Administrator for a Member, which asks
+ * first (Promote), and Make a Member for an Administrator, which does not,
+ * as Take out does not. A refusal shows in place.
+ */
+function Role({ user, onChanged }: { user: User; onChanged: () => void }) {
+  const t = useT();
+  const [promoting, setPromoting] = useState(false);
+  const demote = useWrite(UserDemote);
+  const { name } = user;
+  const administrator = user.role === "administrator";
+  const changed = (key: "user.promoted" | "user.demoted") => {
+    notify(t(key, { name }));
+    onChanged();
+  };
+  return (
+    <section className="mt-2 flex flex-col items-start gap-3 border-t border-line pt-6">
+      <p className="t-label max-w-[52ch]">{t(administrator ? "user.demote.lead" : "user.promote.lead", { name })}</p>
+      <Button
+        variant="secondary"
+        isPending={demote.pending}
+        onPress={() =>
+          administrator
+            ? void demote.submit({ name }).then((done) => done && changed("user.demoted"))
+            : setPromoting(true)
+        }
+      >
+        {t(administrator ? "user.demote" : "user.promote")}
+      </Button>
+      <Refusal error={demote.error} />
+      {promoting && (
+        <Promote
+          name={name}
+          onPromoted={() => {
+            setPromoting(false);
+            changed("user.promoted");
+          }}
+          onCancel={() => setPromoting(false)}
+        />
+      )}
+    </section>
+  );
+}
+
+/**
+ * Promote makes a Member an Administrator, asking first: what it gives, and
+ * the User's live devices, each with who added it, and their live Sign-ins,
+ * which promotion keeps, for the Owner to read before acting (ADR 0056).
+ * The action waits until both are read.
+ */
+function Promote({ name, onPromoted, onCancel }: { name: string; onPromoted: () => void; onCancel: () => void }) {
+  const t = useT();
+  const promote = useWrite(UserPromote);
+  const devices = useRead(DeviceList, { user: name });
+  const signins = useRead(SignInList, { user: name });
+  const kept = devices.data && signins.data && { devices: devices.data.device_sessions, signins: signins.data.signins };
+  return (
+    <ConfirmDialog
+      title={t("user.promote.title", { name })}
+      consequence={t("user.promote.consequence", { name })}
+      confirm={t("user.promote")}
+      details={
+        kept ? (
+          <>
+            <Kept
+              title={t("user.promote.devices")}
+              none={t("user.promote.noDevice")}
+              items={kept.devices.map((d) => ({
+                id: d.id,
+                text: d.added_by
+                  ? t("user.promote.device", { device: d.device, by: `${d.added_by.user}/${d.added_by.device}` })
+                  : t("user.promote.deviceElsewhere", { device: d.device }),
+              }))}
+            />
+            <Kept
+              title={t("user.promote.signins")}
+              none={t("user.promote.noSignin")}
+              items={kept.signins.map((s) => ({
+                id: s.id,
+                text: t("user.promote.signin", { client: browserName(t, s), date: formatDate(s.started_at) }),
+              }))}
+            />
+          </>
+        ) : (
+          devices.error === undefined && signins.error === undefined && <Loading />
+        )
+      }
+      waiting={!kept}
+      pending={promote.pending}
+      error={promote.error ?? devices.error ?? signins.error}
+      onCancel={onCancel}
+      onConfirm={() => void promote.submit({ name }).then((promoted) => promoted && onPromoted())}
+    />
+  );
+}
+
+/** Kept is a short list, under its title, of what a promotion keeps, or a line saying there is none. */
+function Kept({ title, none, items }: { title: string; none: string; items: readonly { id: string; text: string }[] }) {
+  return (
+    <section className="flex flex-col gap-1">
+      <h3 className="t-label font-semibold text-foreground">{title}</h3>
+      {items.length === 0 ? (
+        <p className="text-sm text-muted">{none}</p>
+      ) : (
+        <ul className="flex flex-col gap-0.5 text-sm">
+          {items.map((item) => (
+            <li key={item.id}>{item.text}</li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

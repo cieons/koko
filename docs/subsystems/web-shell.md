@@ -6,7 +6,7 @@ menus, and the phone's top row and foot bar, routing and who the web UI acts as,
 catalogues, the API client, pages that load when first shown, the states
 every screen has, the dialogs and side panels, the confirmation, the
 fields, edit forms, reloading, what a page shows once, the notices,
-toasts and refusals, and what the Owner is told of koko's releases. What each looks like is [the web UI's
+toasts and refusals, and what the Owner and the Administrators are told of koko's releases. What each looks like is [the web UI's
 design](../web-design.md). The pages themselves are their capabilities'; where an area adds its pages and its
 catalogue files is in [code layout](code-layout.md#where-an-area-adds-its-parts).
 How the app is built, embedded and typed is [the web UI build](web-ui.md); how
@@ -60,7 +60,7 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   to the frame with its page. The one the URL is in, a page beneath its
   path such as a Host's included, is raised and has
   `aria-current="page"`. A Member gets no place whose route is
-  `ownerOnly`.
+  `administers`.
 - **Folding.** `useRail` holds the rail's state, which the frame's root
   carries as `data-rail` (`open`, `folded`, or `none` on a phone):
   - from 1280 pixels wide the rail is open unless the person folds it,
@@ -104,7 +104,7 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   browser signed in with a Password, Sign out (`useSignOut` in
   [`signOut.ts`](../../web/src/shell/signOut.ts)), which posts to
   `/auth/signout` and goes to Sign in, replacing the history entry, its
-  refusal shown in the panel. For the Owner, the koko server's line comes
+  refusal shown in the panel. For the Owner and an Administrator, the koko server's line comes
   between them ([Releases](#releases)).
 - **The main region** (`<main id="main">`) is the page's column. For a
   list page (`Route.fill`) it is the whole room beside the rail; for any
@@ -112,7 +112,7 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   the rail. [`routes.test.ts`](../../web/src/routes.test.ts) names the
   pages that fill, so a new list page is added there on purpose. It holds
   the page, under the
-  release notice for the Owner ([Releases](#releases)). After a visit
+  release notice for the Owner and an Administrator ([Releases](#releases)). After a visit
   that leaves the focus on nothing, as when the link followed went with the
   page it was on, the focus moves to it; a visit that leaves the focus
   where it was, such as on a place, keeps it there.
@@ -130,8 +130,8 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
 - **The notices** are one notice across the room beside the rail, at the
   head of the page's column ([Notices](#notices)).
 - **A path with no page** shows "Page not found" in the frame, with one
-  sentence and a link to the first place; so does a path only the Owner may
-  open, to a Member.
+  sentence and a link to the first place; so does a path only the Owner and
+  the Administrators may open, to a Member.
 - **Until `user.current` answers** the main region shows Loading; if it
   fails, why, with Try again ([States](#the-states-every-screen-has)).
 - **The icon** of the browser's tab is `web/public/favicon.svg`, which
@@ -161,7 +161,8 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   page as `params.name`), the page component, the message the frame
   links it under as a place (`nav`) and its Lucide icon (`icon`), beside
   the name in the open rail and the phone's foot bar and alone in the
-  folded rail, whether only the Owner sees it (`ownerOnly`), whether it
+  folded rail, whether only the Owner and the Administrators see it
+  (`administers`), whether it
   sits outside the frame (`outside`), and whether it fills the room beside
   the rail (`fill`). The frame
   links the places in the order of `routes` in
@@ -230,10 +231,17 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   the koko server's machine" where a device would be. On the web listener
   it answers the User of this browser's Sign-in (`signin`), whose browser
   the panel names.
-- **Owner-only pages and buttons.** The role in `user.current`'s User decides:
-  a Member gets no place for an `ownerOnly` route, and its path shows no page;
-  `<OwnerOnly>` shows its children to the Owner alone. The koko server refuses
-  a Member's Owner-only call anyway ([the access check](access.md)).
+- **The role.** `user.current`'s User carries `role`: `owner`, `administrator`
+  or `member` (ADR 0056). The `Caller`'s `owner` is true for the Owner and
+  `administers` for the Owner or an Administrator; `roleName` names the role,
+  Owner, Administrator or Member, wherever it shows.
+- **Pages and buttons for the Owner and the Administrators.** A Member gets no
+  place for an `administers` route, and its path shows no page;
+  `<Administers>` shows its children to the Owner and the Administrators
+  alone. `mayActOn` answers, as the koko server's `Identity.MayActOn` does,
+  whether the caller may act on another User's credentials and role: anyone
+  on themselves, the Owner on anyone, and an Administrator on a Member. The
+  koko server refuses every such call anyway ([the access check](access.md)).
 
 ## Language
 
@@ -462,10 +470,11 @@ something (`alerts()`, `findAlert()`, `statuses()` in
 
 ## Releases
 
-What the shell tells the Owner, and only the Owner, of koko's releases
+What the shell tells the Owner and the Administrators, and no Member, of koko's releases
 (spec #136, ADR 0048), in [`release.tsx`](../../web/src/shell/release.tsx):
 
-- **What it reads.** The frame reads `server.show` for the Owner, as any
+- **What it reads.** The frame reads `server.show` for the Owner and an
+  Administrator, as any
   read is read, on each visit and on focus (`useReleaseState`); for a
   Member it asks nothing. A release is newer by
   [`version.ts`](../../web/src/shell/version.ts), the order of
@@ -486,7 +495,8 @@ What the shell tells the Owner, and only the Owner, of koko's releases
     either case.
   - `systemd`: Upgrade, which asks first ([The upgrade](#the-upgrade)).
   - `none`: the line that says to replace kokod and start it again.
-- **The account panel's koko server line**, for the Owner: the koko
+- **The account panel's koko server line**, for the Owner and an
+  Administrator: the koko
   server's version; when it last checked ("Checked 2 hours ago",
   `formatAgo`), "Not checked yet", or the last check's error as stored;
   and Check now.
@@ -529,8 +539,8 @@ Every action each page offered before its redesign, and each its
 redesign adds, with the call it makes and who may take it. A redesign may move an action, but each
 stays possible by the same call with the same request, and each page's
 test holds one test per action (spec #108: "Patterns, not a re-skin").
-"In the Space" is anyone who can act in the record's Space: the Owner, and
-its Members; the koko server answers anyone else as for a record that does
+"In the Space" is anyone who can act in the record's Space: the Owner, the
+Administrators and its Members; the koko server answers anyone else as for a record that does
 not exist. The page's references hold the rules each action follows:
 [the record's pages](record-pages.md), [Secrets](secrets.md#the-web-uis-secrets-page)
 and [the Access and Account pages](access-pages.md). The move to
@@ -542,7 +552,7 @@ HeroUI (#121) took the pages out; each came back with its ticket (#122 to
 | Action | Call | Who |
 | --- | --- | --- |
 | See who the web UI acts as, from which device | `user.current` | anyone |
-| Follow a link to each page the caller may see | none | anyone; a person's panel the Owner alone |
+| Follow a link to each page the caller may see | none | anyone; a person's panel the Owner and the Administrators alone |
 | Open Account from the account panel | none | anyone |
 | See the terminal's tabs and their states, and go to one | none | anyone |
 | Open the switcher (New tab, Ctrl+Shift+K) | `host.list`, of the Managed Hosts | anyone |
@@ -550,11 +560,11 @@ HeroUI (#121) took the pages out; each came back with its ticket (#122 to
 | Sign out, from the account panel | `/auth/signout` | a browser signed in with a Password |
 | Choose the language, which the browser keeps | none | anyone |
 | Choose Light, Dark or System, which the browser keeps | none | anyone |
-| See that a newer koko release is out, with a link to its notes, and hide it for that release (Later) | `server.show` | the Owner |
-| See the koko server's version and when it last checked for a release, in the account panel | `server.show` | the Owner |
-| Check for a new release at once (Check now), in the account panel and the notice | `server.check_update` | the Owner |
-| See and copy how a koko server in the container image upgrades | none | the Owner |
-| Upgrade a koko server installed with systemd, asking first, and follow it to its outcome | `server.upgrade`, then `server.show` | the Owner |
+| See that a newer koko release is out, with a link to its notes, and hide it for that release (Later) | `server.show` | the Owner or an Administrator |
+| See the koko server's version and when it last checked for a release, in the account panel | `server.show` | the Owner or an Administrator |
+| Check for a new release at once (Check now), in the account panel and the notice | `server.check_update` | the Owner or an Administrator |
+| See and copy how a koko server in the container image upgrades | none | the Owner or an Administrator |
+| Upgrade a koko server installed with systemd, asking first, and follow it to its outcome | `server.upgrade`, then `server.show` | the Owner or an Administrator |
 
 **Hosts** (`/hosts`; the view in the query: `filter`, `sort`, `columns`, `all=1`, and `q`, `group`, `view=services` and `space`):
 
@@ -634,28 +644,33 @@ query) and **a Space's panel** (`/access/spaces/<name>`, which
 | --- | --- | --- |
 | List the Spaces, a Personal Space marked so, each with its Members and its counts of Hosts and Secrets | `space.list`, one call | anyone: the Spaces they can act in |
 | See a Space's Members and its counts of Hosts, Retired Hosts and Secrets, in its panel | `space.show` | in the Space |
-| List the People and the shared Spaces under two tabs, searched by name, the Removed Users when asked for | `user.list` (and `space.list`, `device.list`) | the Owner |
-| Reset view: the People with no search and without the Removed Users, the view the browser remembers forgotten | none | the Owner |
-| Add a Space | `space.add` | the Owner |
-| Rename a Space | `space.rename` | the Owner, on a shared Space |
-| Remove a Space, asking first | `space.remove` | the Owner, on a shared Space |
-| Make Users Members: Add Members, several chosen among the Users who are not one, in one call | `space.member.add` (and `user.list`) | the Owner, on a shared Space |
-| Take a Member out: Take out | `space.member.remove` | the Owner, on a shared Space |
-| Invite a User, to the Spaces chosen, in a terminal or in a browser, valid for the time chosen, their Join Code or Password Link shown once, with Copy and its countdown | `user.invite` (and `server.show` for the Web URL), then `space.member.add` | the Owner |
+| List the People and the shared Spaces under two tabs, searched by name, the Removed Users when asked for | `user.list` (and `space.list`, `device.list`) | the Owner or an Administrator |
+| Reset view: the People with no search and without the Removed Users, the view the browser remembers forgotten | none | the Owner or an Administrator |
+| Add a Space | `space.add` | the Owner or an Administrator |
+| Rename a Space | `space.rename` | the Owner or an Administrator, on a shared Space |
+| Remove a Space, asking first | `space.remove` | the Owner or an Administrator, on a shared Space |
+| Make Users Members: Add Members, several chosen among the Users who are not one, in one call | `space.member.add` (and `user.list`) | the Owner or an Administrator, on a shared Space |
+| Take a Member out: Take out | `space.member.remove` | the Owner or an Administrator, on a shared Space |
+| Invite a User, to the Spaces chosen, in a terminal or in a browser, valid for the time chosen, their Join Code or Password Link shown once, with Copy and its countdown | `user.invite` (and `server.show` for the Web URL), then `space.member.add` | the Owner or an Administrator |
 
-**A person's panel** (`/access/people/<name>`, the Owner alone):
+**A person's panel** (`/access/people/<name>`, the Owner and the
+Administrators alone). "On them" is anyone on themselves, the Owner on
+anyone, and an Administrator on a Member (`mayActOn`):
 
 | Action | Call | Who |
 | --- | --- | --- |
-| See a User's role, Spaces, Personal Space and devices, the Revoked ones when asked for | `user.list`, `space.show`, `device.list` | the Owner |
-| Make them a Member of a shared Space they are not in, chosen in Add to a Space, or take them out of one with Take out | `space.member.add`, `space.member.remove` | the Owner |
-| Add a device for them, with an optional name, valid for the time chosen, its Join Code shown once | `device.add` | the Owner, for a User not Removed |
-| Revoke a live Device Session of theirs, asking first; the Owner's own last only once its name is typed, with `last` | `device.revoke` | the Owner |
-| See when their Password was set, or that they have none | `user.list` | the Owner |
-| Issue a Password Link for them, valid for the time chosen, shown once with Copy and its countdown; disabled, saying why, without a Web URL | `password.link` (and `server.show`) | the Owner, for a User not Removed |
-| Remove their Password, asking first | `password.remove` | the Owner, for a User with one |
-| List their Browser Sign-ins, the ended ones when asked for, and revoke a live one, asking first | `signin.list`, `signin.revoke` | the Owner |
-| Remove the User, asking first, then say whether they were deleted or Removed | `user.remove` | the Owner, on any User but the Owner who is not Removed |
+| See a User's role, Spaces, Personal Space and devices, the Revoked ones when asked for | `user.list`, `space.show`, `device.list` | the Owner or an Administrator |
+| Make them a Member of a shared Space they are not in, chosen in Add to a Space, or take them out of one with Take out | `space.member.add`, `space.member.remove` | the Owner or an Administrator, for a Member |
+| Add a device for them, with an optional name, valid for the time chosen, its Join Code shown once | `device.add` | on them, for a User not Removed |
+| Revoke a live Device Session of theirs, asking first; the Owner's own last only once its name is typed, with `last` | `device.revoke` | on them |
+| See when their Password was set, or that they have none | `user.list` | the Owner or an Administrator |
+| Issue a Password Link for them, valid for the time chosen, shown once with Copy and its countdown; disabled, saying why, without a Web URL | `password.link` (and `server.show`) | on them, for a User not Removed |
+| Remove their Password, asking first | `password.remove` | on them, for a User with one |
+| List their Browser Sign-ins, the ended ones when asked for | `signin.list` | the Owner or an Administrator |
+| Revoke a live Browser Sign-in of theirs, asking first | `signin.revoke` | on them |
+| Make a Member an Administrator, asking first, the question listing their live devices with who added each and their live Sign-ins | `user.promote` (and `device.list`, `signin.list`) | the Owner |
+| Make an Administrator a Member | `user.demote` | the Owner |
+| Remove the User, asking first, then say whether they were deleted or Removed | `user.remove` | on them, for a User not Removed, never the Owner or oneself |
 
 **Account** (`/account`, which `/devices` goes to; `all=1` in the query):
 
@@ -692,8 +707,9 @@ alone ([Sign-ins](signin.md#the-web-uis-pages)):
   pages of their own in the three places: the account panel for a Device
   Session, a Sign-in and the Local caller, and its Account link closing
   it; the Owner's three places in the rail and the one the URL is in
-  marked, a page beneath a place's path in it, a Member
-  given no Owner-only place and its path showing Page not found; the open
+  marked, a page beneath a place's path in it, an Administrator given
+  Access and their role in the account panel, a Member
+  given no place for the Owner and the Administrators and its path showing Page not found; the open
   rail naming each place beside its icon and the User with their role;
   folding from 1280 pixels wide, each place and the account keeping its
   name, the choice kept across a reload and opened again, and in a
@@ -722,7 +738,8 @@ alone ([Sign-ins](signin.md#the-web-uis-pages)):
   `user.current` failing, with Try again.
 - [`release.test.tsx`](../../web/src/shell/release.test.tsx): the notice
   for the Owner, with its notes' link, at the head of the page's column,
-  and axe; none for a Member, who
+  and axe; for an Administrator, with the koko server's line and Check
+  now in the account panel; none for a Member, who
   calls no `server.show` and has no koko server line, none with the check
   off or nothing newer, a development build included; Later per release,
   kept across a reload, and a newer release bringing it back; How to
@@ -745,7 +762,7 @@ alone ([Sign-ins](signin.md#the-web-uis-pages)):
   read retried once, with and without the same key; a form resubmitted
   with its key, a new key after success or for another request, and
   overlapping writes; an edit form sending only changed fields, and its
-  baseline after a save; Owner-only buttons for a Member and the Owner; an
+  baseline after a save; `<Administers>` buttons for a Member and the Owner; an
   API error's message in place in either language, and axe on it; values
   shown as stored; reloads on focus and on each visit; page state in the
   URL and Back.

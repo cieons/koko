@@ -5,7 +5,7 @@ import { type ReactNode, useState } from "react";
 import { DeviceList, type DeviceSession } from "../../api/device";
 import { SpaceAdd, type SpaceDetail, SpaceList } from "../../api/space";
 import { type User, UserList } from "../../api/user";
-import { useCaller } from "../../shell/caller";
+import { roleName, useCaller } from "../../shell/caller";
 import { Initial } from "../../shell/controls";
 import { useRead, useWrite } from "../../shell/data";
 import { type Count, type Translate, useCount, useT } from "../../shell/i18n";
@@ -23,10 +23,11 @@ import { accessPath, personPath, spacePath } from "./path";
 import { SpacePanel } from "./SpacePanel";
 
 /**
- * AccessPage is Access (docs/web-design.md, "Access"): for the Owner, the
- * People and the shared Spaces as two lists, one at a time, each searched
- * by name; for a Member, the Spaces they can act in. A Space's panel
- * (/access/spaces/<name>) and, for the Owner alone, a person's
+ * AccessPage is Access (docs/web-design.md, "Access"): for the Owner and an
+ * Administrator, the People and the shared Spaces as two lists, one at a
+ * time, each searched by name; for a Member, the Spaces they can act in. A
+ * Space's panel (/access/spaces/<name>) and, for the Owner and an
+ * Administrator alone, a person's
  * (/access/people/<name>) open over it, each a path of its own, so the page
  * keeps its state beneath them; membership is changed in either panel.
  */
@@ -40,7 +41,7 @@ export function AccessPage({ params }: PageProps) {
   // place of the panel's history entry: not a new visit, so the focus goes
   // back to the link that opened it rather than to the main region.
   const close = () => navigate(accessPath + search, { replace: true });
-  return caller.owner ? <OwnerAccess panel={panel} close={close} /> : <MemberAccess panel={panel} close={close} />;
+  return caller.administers ? <OwnerAccess panel={panel} close={close} /> : <MemberAccess panel={panel} close={close} />;
 }
 
 /** Panel is the panel open over Access: a person's or a Space's, by name. */
@@ -49,7 +50,7 @@ interface Panel {
   name: string;
 }
 
-/** View is which of the Owner's two lists Access shows. */
+/** View is which of the two lists the Owner's Access shows. */
 type View = "people" | "spaces";
 
 /**
@@ -61,7 +62,10 @@ function accessList(): RememberedList {
   return { list: "access", base: "" };
 }
 
-/** OwnerAccess is the Owner's Access: the People and the shared Spaces as two lists, Add Space and Invite. */
+/**
+ * OwnerAccess is the Owner's Access, which an Administrator gets too: the
+ * People and the shared Spaces as two lists, Add Space and Invite.
+ */
 function OwnerAccess({ panel, close: closePanel }: { panel?: Panel; close: () => void }) {
   const t = useT();
   const remembered = useRememberedView(accessList);
@@ -179,7 +183,7 @@ function OwnerAccess({ panel, close: closePanel }: { panel?: Panel; close: () =>
 
 /** Listed is what the Owner's lists are drawn from. */
 interface Listed {
-  /** users are the Users, the Owner first and the Removed ones, when shown, last. */
+  /** users are the Users, the Owner, then the Administrators, then the Members, then the Removed ones, when shown. */
   users: readonly User[];
   devices: readonly DeviceSession[];
   /** spaces are the shared Spaces. */
@@ -187,9 +191,14 @@ interface Listed {
   membership: Membership;
 }
 
-/** byRole orders the Users as Access lists them: the Owner first and the Removed Users last, each group as user.list answered it. */
+/**
+ * byRole orders the Users as Access lists them: the Owner, then the
+ * Administrators, then the Members, then the Removed Users, each group as
+ * user.list answered it.
+ */
 function byRole(users: readonly User[]): User[] {
-  const rank = (u: User) => (u.role === "owner" ? 0 : u.removed_at === undefined ? 1 : 2);
+  const rank = (u: User) =>
+    u.removed_at !== undefined ? 3 : u.role === "owner" ? 0 : u.role === "administrator" ? 1 : 2;
   return [...users].sort((a, b) => rank(a) - rank(b));
 }
 
@@ -301,7 +310,7 @@ function waysIn(t: Translate, count: Count, user: User, devices: readonly Device
 
 /**
  * personLine is a person's one-line summary: the shared Spaces they are a
- * Member of, "Every Space" for the Owner, then how they get in; a Removed
+ * Member of, "Every Space" for the Owner and an Administrator, then how they get in; a Removed
  * User's is "Removed" alone.
  */
 function personLine(t: Translate, count: Count, user: User, { devices, spaces, membership }: Listed): string {
@@ -309,7 +318,7 @@ function personLine(t: Translate, count: Count, user: User, { devices, spaces, m
   if (user.removed_at !== undefined) {
     return ways;
   }
-  if (user.role === "owner") {
+  if (user.role !== "member") {
     return `${t("space.access.everySpace")} · ${ways}`;
   }
   const member = spaces.filter((s) => membership.isMember(s.name, user.name)).length;
@@ -352,7 +361,7 @@ const spaceRow = `${rowClass} grid-cols-[minmax(0,1fr)_auto] @2xl:grid-cols-[min
 
 /**
  * PeopleRows is the People as a list on one panel: a row per person, a link
- * to their panel, with the initial, the name, "Owner" where so, and the
+ * to their panel, with the initial, the name, "Owner" or "Administrator" where so, and the
  * one-line summary, beside the name on a wide list and under it on a narrow one.
  */
 function PeopleRows({ people, listed }: { people: readonly User[]; listed: Listed }) {
@@ -369,7 +378,7 @@ function PeopleRows({ people, listed }: { people: readonly User[]; listed: Liste
               <span className={`t-name truncate ${u.removed_at === undefined ? "" : "text-muted line-through"}`}>
                 {u.name}
               </span>
-              {u.role === "owner" && <span className="t-label">{t("shell.role.owner")}</span>}
+              {u.role !== "member" && <span className="t-label">{t(roleName(u))}</span>}
             </span>
             <span className="col-start-2 row-start-2 truncate text-sm text-muted @2xl:col-start-3 @2xl:row-start-1">
               {personLine(t, count, u, listed)}

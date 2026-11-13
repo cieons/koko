@@ -15,7 +15,7 @@ const access = lazyPage(async () => (await import("./AccessPage")).AccessPage);
 export const spaceRoutes: Route[] = [
   { path: accessPath, page: access, nav: "shell.place.access", icon: UsersRound, fill: true },
   { path: `${accessPath}/spaces/:name`, page: access, fill: true },
-  { path: `${accessPath}/people/:name`, page: access, ownerOnly: true, fill: true },
+  { path: `${accessPath}/people/:name`, page: access, administers: true, fill: true },
   { path: "/spaces", page: movedTo(() => accessPath) },
   { path: "/spaces/:name", page: movedTo(({ name = "" }) => spacePath(name)) },
   { path: "/people", page: movedTo(() => accessPath) },
