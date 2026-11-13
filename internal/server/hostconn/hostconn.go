@@ -1,6 +1,6 @@
 // Package hostconn is the Host connector: the koko server's one way to log in
 // to a Host, used by Enroll and the Gateway. It logs in as the Host Account
-// with a key or a password, through at most one Relay, and checks each host
+// with a key or a password, through a chain of Relays, and checks each host
 // key against its pin before sending anything to log in with.
 package hostconn
 
@@ -111,9 +111,9 @@ func PasswordLogin(password string) Login {
 	return Login{methods: []ssh.AuthMethod{ssh.Password(password), ssh.KeyboardInteractive(answer)}, once: once}
 }
 
-// Conn is a logged-in SSH connection to a Host, through its Relay if it has
-// one. Close it with Conn.Close, which also closes the Relay's connection;
-// the embedded Client's own Close does not.
+// Conn is a logged-in SSH connection to a Host, through its chain of Relays
+// if it has one. Close it with Conn.Close, which also closes each Relay's
+// connection; the embedded Client's own Close does not.
 //
 // The connector watches each leg (package liveness): after Timings.HostProbe
 // without a byte from the other end it sends a keepalive@openssh.com,
@@ -124,37 +124,58 @@ type Conn struct {
 	// HostKey is the host key the Host offered: the pinned one, or, with no
 	// pin, the key Enroll pins.
 	HostKey ssh.PublicKey
-	conn    *watchedConn
-	relay   *leg
+	// legs are the connections Connect made, in dial order: each Relay's,
+	// then the Host's, whose client is Client.
+	legs []*leg
 }
 
-// Close closes the connection to the Host, then the one to its Relay.
+// Close closes the connection to the Host, then each Relay's, the last
+// dialled first.
 func (c *Conn) Close() error {
-	err := c.Client.Close()
-	if c.relay != nil {
-		err = errors.Join(err, c.relay.Close())
+	return closeLegs(c.legs)
+}
+
+// closeLegs closes legs, the last dialled first, so that each is closed by
+// the connector before the leg beneath it ends.
+func closeLegs(legs []*leg) error {
+	var errs []error
+	for _, l := range slices.Backward(legs) {
+		errs = append(errs, l.Close())
 	}
-	return err
+	return errors.Join(errs...)
 }
 
 // Broken returns why the connection ended, if something other than Close
 // ended it: a *liveness.DeadError, its Quiet Timings.HostDead, when the
 // connector ended it after its probe went unanswered, or what the network or
-// the other end ended it with, such as io.EOF for a Host that closed it; a
-// *RelayError wraps an end on the Relay's leg. It returns nil while the
-// connection lives, and once Close has closed it. A channel on the
-// connection that ends because the connection did already sees it non-nil.
+// the other end ended it with, such as io.EOF for a Host that closed it. An
+// end on a Relay's leg, which ends every leg after it too, comes as a
+// *RelayError with that Relay's Hop: the leg nearest the koko server whose
+// connection ended. It returns nil while the connection lives, and once
+// Close has closed it. A channel on the connection that ends because a leg
+// did already sees it non-nil.
 func (c *Conn) Broken() error {
-	if c.relay != nil {
-		if err := c.relay.conn.broken(); err != nil {
-			return &RelayError{Err: err}
+	hop, err := endedLeg(c.legs)
+	if err == nil || hop == len(c.legs)-1 {
+		return err
+	}
+	return &RelayError{Hop: hop, Err: err}
+}
+
+// endedLeg returns the first of legs whose connection ended other than by
+// Close, and why. Each leg's end is recorded before the SSH client above it
+// learns of it, so a leg runs inside one already seen to end.
+func endedLeg(legs []*leg) (int, error) {
+	for hop, l := range legs {
+		if err := l.conn.broken(); err != nil {
+			return hop, err
 		}
 	}
-	return c.conn.broken()
+	return -1, nil
 }
 
 // leg is one logged-in SSH connection the connector made: to a Host, or to
-// its Relay.
+// a Relay of its chain.
 type leg struct {
 	*ssh.Client
 	conn *watchedConn
@@ -255,10 +276,13 @@ func (e *HostKeyMismatchError) Error() string {
 	return fmt.Sprintf("the host key does not match the pinned one (pinned %s, offered %s)", e.Pinned, e.Offered)
 }
 
-// RelayError is a failure on the Relay's leg: logging in to the Relay, or
-// losing the connection to it while connecting through it. Any other error
-// from Connect is on the Host's leg.
+// RelayError is a failure on a Relay's leg: logging in to the Relay, a
+// refused direct-tcpip open to it on the leg before included, or losing the
+// connection to it while connecting through it. Any other error from Connect
+// is on the Host's leg.
 type RelayError struct {
+	// Hop is the Relay's place in the chain, from 0 for the first dialled.
+	Hop int
 	Err error
 }
 
@@ -266,54 +290,56 @@ func (e *RelayError) Error() string { return e.Err.Error() }
 
 func (e *RelayError) Unwrap() error { return e.Err }
 
-// Connect logs in to host, through relay unless it is nil. The Relay's leg
-// gets the same retries and host key check as the Host's, and a Relay must
-// have a pin: it is always Managed.
-func (c *Connector) Connect(ctx context.Context, host Target, relay *Target) (*Conn, error) {
-	dial := dialTCP
-	var via *leg
-	if relay != nil {
-		if relay.Pin.isZero() {
-			return nil, &RelayError{Err: fmt.Errorf("the Relay at %s has no pinned host key", relay.addr())}
+// Connect logs in to host through relays, the Relays in dial order: to the
+// first over TCP, then to each next one, and to host last, through a
+// direct-tcpip channel on the leg before, so each Relay resolves the next
+// hop's address on its own network. Each Relay's leg gets the same retries
+// and host key check as the Host's, and each Relay must have a pin: it is
+// always Managed. The whole Connect, every leg and wait, is bounded by
+// Timings.HostConnect; a leg the bound cuts fails as ErrUnreachable.
+func (c *Connector) Connect(ctx context.Context, host Target, relays []Target) (*Conn, error) {
+	for hop, r := range relays {
+		if r.Pin.isZero() {
+			return nil, &RelayError{Hop: hop, Err: fmt.Errorf("the Relay at %s has no pinned host key", r.addr())}
 		}
-		l, _, err := c.login(ctx, *relay, dialTCP)
+	}
+	timings := c.Timings.Resolve()
+	ctx, cancel := context.WithTimeoutCause(ctx, timings.HostConnect,
+		fmt.Errorf("%w: not connected through every leg within %v: %w", ErrUnreachable, timings.HostConnect, os.ErrDeadlineExceeded))
+	defer cancel()
+	var legs []*leg
+	var key ssh.PublicKey
+	for hop, t := range slices.Concat(relays, []Target{host}) {
+		l, offered, err := c.login(ctx, t, legs)
 		if err != nil {
-			return nil, &RelayError{Err: fmt.Errorf("log in to the Relay at %s as %q: %w", relay.addr(), relay.Account, err)}
-		}
-		via = l
-		dial = func(ctx context.Context, addr string) (net.Conn, error) {
-			nc, err := via.DialContext(ctx, "tcp", addr)
-			if _, refused := errors.AsType[*ssh.OpenChannelError](err); err != nil && !refused && ctx.Err() == nil {
-				// The Relay did not answer the channel open: its own
-				// connection is gone.
-				return nil, &relayLostError{err}
+			_ = closeLegs(legs)
+			if lost, ok := errors.AsType[*legLostError](err); ok {
+				return nil, &RelayError{Hop: lost.hop, Err: fmt.Errorf("connect through the Relay at %s: %w", relays[lost.hop].addr(), err)}
 			}
-			return nc, err
+			if hop < len(relays) {
+				return nil, &RelayError{Hop: hop, Err: fmt.Errorf("log in to the Relay at %s as %q: %w", t.addr(), t.Account, err)}
+			}
+			return nil, fmt.Errorf("log in to %s as %q: %w", t.addr(), t.Account, err)
 		}
+		legs = append(legs, l)
+		key = offered
 	}
-	l, key, err := c.login(ctx, host, dial)
-	if err != nil {
-		if via != nil {
-			_ = via.Close()
-		}
-		if _, lost := errors.AsType[*relayLostError](err); lost {
-			return nil, &RelayError{Err: fmt.Errorf("connect through the Relay at %s: %w", relay.addr(), err)}
-		}
-		return nil, fmt.Errorf("log in to %s as %q: %w", host.addr(), host.Account, err)
-	}
-	return &Conn{Client: l.Client, HostKey: key, conn: l.conn, relay: via}, nil
+	return &Conn{Client: legs[len(legs)-1].Client, HostKey: key, legs: legs}, nil
 }
 
-// relayLostError is a Relay connection that ended while the connector was
+// legLostError is a Relay's leg that ended while the connector was
 // connecting through it.
-type relayLostError struct{ err error }
+type legLostError struct {
+	hop int
+	err error
+}
 
-func (e *relayLostError) Error() string { return "lost the connection to the Relay: " + e.err.Error() }
+func (e *legLostError) Error() string { return "lost the connection to the Relay: " + e.err.Error() }
 
-func (e *relayLostError) Unwrap() error { return e.err }
+func (e *legLostError) Unwrap() error { return e.err }
 
 // dialFunc opens the byte stream an attempt runs SSH over: a TCP connection,
-// or a channel through a Relay.
+// or a channel on the leg before.
 type dialFunc func(ctx context.Context, addr string) (net.Conn, error)
 
 func dialTCP(ctx context.Context, addr string) (net.Conn, error) {
@@ -321,18 +347,38 @@ func dialTCP(ctx context.Context, addr string) (net.Conn, error) {
 	return d.DialContext(ctx, "tcp", addr)
 }
 
+// dialThrough opens a direct-tcpip channel on the last of legs, or a TCP
+// connection when there are none.
+func dialThrough(legs []*leg) dialFunc {
+	if len(legs) == 0 {
+		return dialTCP
+	}
+	via := legs[len(legs)-1]
+	return func(ctx context.Context, addr string) (net.Conn, error) {
+		return via.DialContext(ctx, "tcp", addr)
+	}
+}
+
 // attempts is how many times the connector tries to connect to a Host or a
 // Relay before giving up.
 const attempts = 3
 
-// login logs in to t, retrying an attempt that ends in a network error before
-// the login, so a key or a password is offered at most once, and keeps the
-// connection alive from then on.
-func (c *Connector) login(ctx context.Context, t Target, dial dialFunc) (*leg, ssh.PublicKey, error) {
+// login logs in to t through below, the legs already made, retrying an
+// attempt that ends in a network error before the login, so a key or a
+// password is offered at most once, and keeps the connection alive from then
+// on. An attempt that failed because a leg of below ended is that leg's, a
+// *legLostError, and is not tried again.
+func (c *Connector) login(ctx context.Context, t Target, below []*leg) (*leg, ssh.PublicKey, error) {
 	timings := c.Timings.Resolve()
+	dial := dialThrough(below)
 	wait := timings.HostConnectWait
 	for n := 1; ; n++ {
 		l, key, retry, err := attempt(ctx, t, dial, timings.HostConnectAttempt)
+		if err != nil {
+			if hop, lost := endedLeg(below); lost != nil {
+				return nil, nil, &legLostError{hop: hop, err: lost}
+			}
+		}
 		switch {
 		case err == nil:
 			go keepAlive(l, timings.HostProbe, timings.HostDead)
@@ -451,9 +497,6 @@ func handshake(ctx, actx context.Context, t Target, dial dialFunc, algorithms []
 // Anything else, an authentication failure or a host key mismatch among
 // them, would fail the same way again.
 func retryable(err error) bool {
-	if _, lost := errors.AsType[*relayLostError](err); lost {
-		return false // the Host's leg cannot recover without the Relay's
-	}
 	if sockerr.Is(err,
 		syscall.ECONNREFUSED,
 		syscall.ENETUNREACH, syscall.EHOSTUNREACH,

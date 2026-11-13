@@ -15,6 +15,7 @@ func TestZeroTimingsAreTheProductsConstants(t *testing.T) {
 	want := timing.Timings{
 		HostConnectAttempt:   10 * time.Second,
 		HostConnectWait:      time.Second,
+		HostConnect:          45 * time.Second,
 		HostProbe:            15 * time.Second,
 		HostDead:             60 * time.Second,
 		StopNotice:           5 * time.Second,
@@ -54,6 +55,7 @@ func TestASetTimingReplacesOnlyItsConstant(t *testing.T) {
 	want := timing.Timings{
 		HostConnectAttempt:   10 * time.Second,
 		HostConnectWait:      time.Millisecond,
+		HostConnect:          45 * time.Second,
 		HostProbe:            15 * time.Second,
 		HostDead:             60 * time.Second,
 		StopNotice:           5 * time.Second,

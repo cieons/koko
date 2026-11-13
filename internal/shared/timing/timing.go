@@ -21,6 +21,11 @@ const (
 	// HostConnectWait is the wait before the second attempt to connect to a
 	// Host or a Relay; it doubles before the third.
 	HostConnectWait = time.Second
+	// HostConnect bounds one whole connect to a Host, every leg through its
+	// chain of Relays and every wait included, so that a web terminal's
+	// page, which hears nothing while the Gateway dials, has its answer
+	// before a proxy cuts a quiet connection at 60 seconds.
+	HostConnect = 45 * time.Second
 	// HostProbe is how long a connection to a Host or a Relay goes without a
 	// byte from it before the koko server probes it with
 	// keepalive@openssh.com, wanting a reply, and HostDead before the koko
@@ -153,6 +158,7 @@ const (
 type Timings struct {
 	HostConnectAttempt   time.Duration
 	HostConnectWait      time.Duration
+	HostConnect          time.Duration
 	HostProbe            time.Duration
 	HostDead             time.Duration
 	StopNotice           time.Duration
@@ -194,6 +200,7 @@ type Timings struct {
 func (t Timings) Resolve() Timings {
 	t.HostConnectAttempt = cmp.Or(t.HostConnectAttempt, HostConnectAttempt)
 	t.HostConnectWait = cmp.Or(t.HostConnectWait, HostConnectWait)
+	t.HostConnect = cmp.Or(t.HostConnect, HostConnect)
 	t.HostProbe = cmp.Or(t.HostProbe, HostProbe)
 	t.HostDead = cmp.Or(t.HostDead, HostDead)
 	t.StopNotice = cmp.Or(t.StopNotice, StopNotice)

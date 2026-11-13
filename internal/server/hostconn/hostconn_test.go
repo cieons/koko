@@ -57,10 +57,10 @@ func eventually(t *testing.T, cond func() bool, what string) {
 
 // connect connects with the fast timings and closes the connection when the
 // test ends.
-func connect(t *testing.T, host hostconn.Target, relay *hostconn.Target) (*hostconn.Conn, error) {
+func connect(t *testing.T, host hostconn.Target, relays []hostconn.Target) (*hostconn.Conn, error) {
 	t.Helper()
 	c := hostconn.Connector{Timings: fast}
-	conn, err := c.Connect(t.Context(), host, relay)
+	conn, err := c.Connect(t.Context(), host, relays)
 	if err == nil {
 		t.Cleanup(func() { _ = conn.Close() })
 	}
@@ -314,14 +314,57 @@ func TestStopsWhenTheCallerGivesUp(t *testing.T) {
 	}
 }
 
-// relayedHost starts a Relay and a Host behind it, both with the koko key
-// authorized.
-func relayedHost(t *testing.T, hostOpts ...sshhost.Option) (kokoKey ssh.Signer, relay, host *sshhost.Host) {
+// relayChain is a Host behind n Relays, each with the koko key authorized.
+type relayChain struct {
+	kokoKey ssh.Signer
+	// relays are in dial order: relays[0] is the one the koko server reaches.
+	relays []*sshhost.Host
+	host   *sshhost.Host
+}
+
+// startChain starts a Host behind n Relays. opts, when set, gives the Relay
+// at each hop, and the Host at hop n, more Options.
+func startChain(t *testing.T, n int, opts func(hop int) []sshhost.Option) relayChain {
 	t.Helper()
-	kokoKey = sshhost.NewKey(t, ssh.KeyAlgoED25519)
-	relay = sshhost.Start(t, sshhost.AuthorizedKey(kokoKey.PublicKey()))
-	host = sshhost.Start(t, append([]sshhost.Option{sshhost.AuthorizedKey(kokoKey.PublicKey())}, hostOpts...)...)
-	return kokoKey, relay, host
+	c := relayChain{kokoKey: sshhost.NewKey(t, ssh.KeyAlgoED25519)}
+	start := func(hop int) *sshhost.Host {
+		o := []sshhost.Option{sshhost.AuthorizedKey(c.kokoKey.PublicKey())}
+		if opts != nil {
+			o = append(o, opts(hop)...)
+		}
+		return sshhost.Start(t, o...)
+	}
+	for hop := range n {
+		c.relays = append(c.relays, start(hop))
+	}
+	c.host = start(n)
+	return c
+}
+
+// relayTargets are the Targets of c's Relays, in dial order, each pinned to
+// its own host key.
+func (c relayChain) relayTargets() []hostconn.Target {
+	var targets []hostconn.Target
+	for _, r := range c.relays {
+		targets = append(targets, target(r, hostconn.KeyLogin(c.kokoKey), hostconn.PinKey(r.HostKey())))
+	}
+	return targets
+}
+
+func (c relayChain) hostTarget() hostconn.Target {
+	return target(c.host, hostconn.KeyLogin(c.kokoKey), hostconn.PinKey(c.host.HostKey()))
+}
+
+// hop is the in-process Host at hop, the Host itself after the last Relay.
+func (c relayChain) hop(hop int) *sshhost.Host {
+	if hop == len(c.relays) {
+		return c.host
+	}
+	return c.relays[hop]
+}
+
+func addr(h *sshhost.Host) string {
+	return net.JoinHostPort(h.Address(), strconv.Itoa(h.Port()))
 }
 
 // directTCPIPs lists where the channels a Relay was asked to open went.
@@ -335,32 +378,313 @@ func directTCPIPs(relay *sshhost.Host) []string {
 	return targets
 }
 
-func TestLogsInThroughARelay(t *testing.T) {
-	kokoKey, relay, host := relayedHost(t)
-	r := target(relay, hostconn.KeyLogin(kokoKey), hostconn.PinKey(relay.HostKey()))
+// relayHop returns the Hop of err's *RelayError, failing the test if it has
+// none.
+func relayHop(t *testing.T, err error) int {
+	t.Helper()
+	e, ok := errors.AsType[*hostconn.RelayError](err)
+	if !ok {
+		t.Fatalf("error = %v, want a RelayError", err)
+	}
+	return e.Hop
+}
 
-	conn, err := connect(t, target(host, hostconn.KeyLogin(kokoKey), hostconn.PinKey(host.HostKey())), &r)
-	if err != nil {
-		t.Fatalf("Connect: %v", err)
-	}
-	if got, want := ssh.FingerprintSHA256(conn.HostKey), ssh.FingerprintSHA256(host.HostKey()); got != want {
-		t.Errorf("HostKey = %s, want the Host's %s", got, want)
-	}
-	hostAddr := net.JoinHostPort(host.Address(), strconv.Itoa(host.Port()))
-	if got := directTCPIPs(relay); !slices.Equal(got, []string{hostAddr}) {
-		t.Errorf("the Relay forwarded to %q, want [%s]", got, hostAddr)
-	}
-	if got := host.Logins(); len(got) != 1 || !got[0].OK {
-		t.Errorf("the Host received logins %+v, want one accepted", got)
+// Each Relay of a chain receives one login with the koko key and is asked
+// for one direct-tcpip, to the next hop's address, and the Host last.
+func TestLogsInThroughAChainOfRelays(t *testing.T) {
+	for _, n := range []int{1, 2, 4} {
+		t.Run(strconv.Itoa(n), func(t *testing.T) {
+			c := startChain(t, n, nil)
+
+			conn, err := connect(t, c.hostTarget(), c.relayTargets())
+			if err != nil {
+				t.Fatalf("Connect: %v", err)
+			}
+			if got, want := ssh.FingerprintSHA256(conn.HostKey), ssh.FingerprintSHA256(c.host.HostKey()); got != want {
+				t.Errorf("HostKey = %s, want the Host's %s", got, want)
+			}
+			kokoLogin := []sshhost.Login{{Account: sshhost.Account, Method: "publickey", Key: ssh.FingerprintSHA256(c.kokoKey.PublicKey()), OK: true}}
+			for hop, r := range c.relays {
+				if got := r.Logins(); !slices.Equal(got, kokoLogin) {
+					t.Errorf("the Relay at hop %d received logins %+v, want %+v", hop, got, kokoLogin)
+				}
+				if got, want := directTCPIPs(r), []string{addr(c.hop(hop + 1))}; !slices.Equal(got, want) {
+					t.Errorf("the Relay at hop %d forwarded to %q, want %q", hop, got, want)
+				}
+			}
+			if got := c.host.Logins(); !slices.Equal(got, kokoLogin) {
+				t.Errorf("the Host received logins %+v, want %+v", got, kokoLogin)
+			}
+		})
 	}
 }
 
-// Closing the connection to a Host closes the one to its Relay too.
-func TestClosingAHostClosesItsRelay(t *testing.T) {
-	kokoKey, relay, host := relayedHost(t)
-	r := target(relay, hostconn.KeyLogin(kokoKey), hostconn.PinKey(relay.HostKey()))
-	c := hostconn.Connector{Timings: fast}
-	conn, err := c.Connect(t.Context(), target(host, hostconn.KeyLogin(kokoKey), hostconn.PinKey(host.HostKey())), &r)
+// A failure while logging in to a Relay's leg names that Relay's hop, the
+// legs already made close, and nothing goes on to the hops after it.
+func TestAFailureNamesItsHop(t *testing.T) {
+	const relays = 3
+	otherKey := sshhost.NewKey(t, ssh.KeyAlgoED25519)
+	cases := []struct {
+		name string
+		// from is the first hop the case applies to.
+		from int
+		opts func(failing, hop int) []sshhost.Option
+		// change changes the Relay Targets Connect is given.
+		change func(c relayChain, failing int, targets []hostconn.Target)
+		check  func(t *testing.T, c relayChain, failing int, err error)
+	}{{
+		name: "pin mismatch",
+		change: func(_ relayChain, failing int, targets []hostconn.Target) {
+			targets[failing].Pin = hostconn.PinKey(otherKey.PublicKey())
+		},
+		check: func(t *testing.T, c relayChain, failing int, err error) {
+			mismatch, ok := errors.AsType[*hostconn.HostKeyMismatchError](err)
+			if !ok {
+				t.Fatalf("Connect error = %v, want a host key mismatch", err)
+			}
+			if got, want := mismatch.Offered, ssh.FingerprintSHA256(c.relays[failing].HostKey()); got != want {
+				t.Errorf("Offered = %s, want the failing Relay's %s", got, want)
+			}
+			if got := c.relays[failing].Logins(); len(got) != 0 {
+				t.Errorf("the failing Relay received logins %+v, want none", got)
+			}
+		},
+	}, {
+		name: "key refused",
+		change: func(_ relayChain, failing int, targets []hostconn.Target) {
+			targets[failing].Login = hostconn.KeyLogin(otherKey)
+		},
+		check: func(t *testing.T, c relayChain, failing int, err error) {
+			if !errors.Is(err, hostconn.ErrLoginRefused) {
+				t.Fatalf("Connect error = %v, want ErrLoginRefused", err)
+			}
+			if got := c.relays[failing].Logins(); len(got) != 1 {
+				t.Errorf("the failing Relay received logins %+v, want one", got)
+			}
+		},
+	}, {
+		name: "down",
+		opts: func(failing, hop int) []sshhost.Option {
+			if hop == failing {
+				return []sshhost.Option{sshhost.ResetFirst(3)}
+			}
+			return nil
+		},
+		check: func(t *testing.T, c relayChain, failing int, err error) {
+			if !errors.Is(err, hostconn.ErrUnreachable) {
+				t.Fatalf("Connect error = %v, want ErrUnreachable", err)
+			}
+			if got := c.relays[failing].Conns(); got != 3 {
+				t.Errorf("the failing Relay was connected to %d times, want 3", got)
+			}
+		},
+	}, {
+		name: "direct-tcpip refused",
+		// The first Relay is reached over TCP, through no Relay.
+		from: 1,
+		change: func(_ relayChain, failing int, targets []hostconn.Target) {
+			targets[failing] = down(t, targets[failing].Login)
+			targets[failing].Pin = hostconn.PinKey(otherKey.PublicKey())
+		},
+		check: func(t *testing.T, c relayChain, failing int, err error) {
+			if !errors.Is(err, hostconn.ErrUnreachable) {
+				t.Fatalf("Connect error = %v, want ErrUnreachable", err)
+			}
+			if _, ok := errors.AsType[*ssh.OpenChannelError](err); !ok {
+				t.Errorf("Connect error = %v, want the refused direct-tcpip open", err)
+			}
+			if got := directTCPIPs(c.relays[failing-1]); len(got) != 3 {
+				t.Errorf("the Relay before forwarded %d times (%q), want 3", len(got), got)
+			}
+		},
+	}}
+	for _, tc := range cases {
+		for failing := tc.from; failing < relays; failing++ {
+			t.Run(tc.name+"/hop "+strconv.Itoa(failing), func(t *testing.T) {
+				var opts func(int) []sshhost.Option
+				if tc.opts != nil {
+					opts = func(hop int) []sshhost.Option { return tc.opts(failing, hop) }
+				}
+				c := startChain(t, relays, opts)
+				targets := c.relayTargets()
+				if tc.change != nil {
+					tc.change(c, failing, targets)
+				}
+
+				_, err := connect(t, c.hostTarget(), targets)
+
+				if got := relayHop(t, err); got != failing {
+					t.Errorf("Hop = %d, want %d (%v)", got, failing, err)
+				}
+				tc.check(t, c, failing, err)
+				for hop := range failing {
+					if got := c.relays[hop].Logins(); len(got) != 1 || !got[0].OK {
+						t.Errorf("the Relay at hop %d received logins %+v, want one accepted", hop, got)
+					}
+				}
+				if got := c.hop(failing + 1).Conns(); got != 0 {
+					t.Errorf("the hop after the failing one was connected to %d times, want never", got)
+				}
+				for hop := range failing + 1 {
+					eventually(t, func() bool { return c.relays[hop].Open() == 0 },
+						"hop "+strconv.Itoa(hop)+" still has a connection open after Connect failed")
+				}
+			})
+		}
+	}
+}
+
+// A Relay whose connection ends while the connector dials the next hop
+// through it is that Relay's failure, and the next hop is not tried again
+// through it.
+func TestALostRelayIsThatRelaysHop(t *testing.T) {
+	const relays = 3
+	for lost := range relays {
+		t.Run("hop "+strconv.Itoa(lost), func(t *testing.T) {
+			// Registered before the Hosts start, so it waits for Connect after
+			// they have stopped.
+			var wg sync.WaitGroup
+			t.Cleanup(wg.Wait)
+			c := startChain(t, relays, func(hop int) []sshhost.Option {
+				if hop == lost+1 {
+					return []sshhost.Option{sshhost.StallFirst(1)}
+				}
+				return nil
+			})
+			connector := hostconn.Connector{Timings: fast}
+			done := make(chan error, 1)
+			wg.Go(func() {
+				conn, err := connector.Connect(t.Context(), c.hostTarget(), c.relayTargets())
+				if err == nil {
+					_ = conn.Close()
+				}
+				done <- err
+			})
+			next := c.hop(lost + 1)
+			eventually(t, func() bool { return next.Conns() > 0 }, "the connector never reached the hop after the lost one")
+
+			c.relays[lost].DropConns()
+
+			err := <-done
+			if got := relayHop(t, err); got != lost {
+				t.Errorf("Hop = %d, want %d (%v)", got, lost, err)
+			}
+			if got := next.Conns(); got != 1 {
+				t.Errorf("the hop after the lost one was connected to %d times, want once", got)
+			}
+		})
+	}
+}
+
+// A failure on the Host's own leg, behind a chain, is the Host's.
+func TestAFailureBehindAChainOnTheHostsLegIsTheHosts(t *testing.T) {
+	c := startChain(t, 2, nil)
+	host := c.hostTarget()
+	host.Pin = hostconn.PinKey(sshhost.NewKey(t, ssh.KeyAlgoED25519).PublicKey())
+
+	_, err := connect(t, host, c.relayTargets())
+
+	if _, ok := errors.AsType[*hostconn.HostKeyMismatchError](err); !ok {
+		t.Fatalf("Connect error = %v, want a host key mismatch", err)
+	}
+	if _, ok := errors.AsType[*hostconn.RelayError](err); ok {
+		t.Errorf("Connect error = %v, want the Host's leg, not a Relay's", err)
+	}
+}
+
+// A Host its last Relay cannot reach is retried through the same Relay, and
+// the failure is the Host's leg, not the Relay's.
+func TestRetriesAHostItsRelayCannotReach(t *testing.T) {
+	c := startChain(t, 1, nil)
+
+	_, err := connect(t, down(t, hostconn.KeyLogin(c.kokoKey)), c.relayTargets())
+
+	if !errors.Is(err, hostconn.ErrUnreachable) {
+		t.Fatalf("Connect error = %v, want ErrUnreachable", err)
+	}
+	if _, ok := errors.AsType[*hostconn.RelayError](err); ok {
+		t.Errorf("Connect error = %v, want the Host's leg, not the Relay's", err)
+	}
+	if got := directTCPIPs(c.relays[0]); len(got) != 3 {
+		t.Errorf("the Relay forwarded %d times (%q), want 3", len(got), got)
+	}
+	if got := c.relays[0].Conns(); got != 1 {
+		t.Errorf("the Relay was connected to %d times, want once", got)
+	}
+}
+
+// An attempt that fails after a hop's host key passed has sent the login, so
+// it is not retried, at a Relay of a chain as at the Host: a key reaches each
+// hop at most once per Connect.
+func TestALoginReachesEachHopAtMostOnce(t *testing.T) {
+	const relays = 2
+	for slow := range relays + 1 {
+		t.Run("hop "+strconv.Itoa(slow), func(t *testing.T) {
+			c := startChain(t, relays, func(hop int) []sshhost.Option {
+				if hop == slow {
+					return []sshhost.Option{sshhost.SlowLogins(time.Minute)}
+				}
+				return nil
+			})
+			conn := hostconn.Connector{Timings: timing.Timings{HostConnectAttempt: time.Second, HostConnectWait: fast.HostConnectWait}}
+
+			_, err := conn.Connect(t.Context(), c.hostTarget(), c.relayTargets())
+
+			if err == nil || errors.Is(err, hostconn.ErrUnreachable) || errors.Is(err, hostconn.ErrLoginRefused) {
+				t.Fatalf("Connect error = %v, want the attempt's timeout, not retried", err)
+			}
+			if got := c.hop(slow).Conns(); got != 1 {
+				t.Errorf("the slow hop was connected to %d times, want once", got)
+			}
+			for hop := range slow {
+				if got := c.relays[hop].Logins(); len(got) != 1 {
+					t.Errorf("the Relay at hop %d received logins %+v, want one", hop, got)
+				}
+			}
+		})
+	}
+}
+
+// Broken names the leg nearest the koko server whose connection ended, as a
+// RelayError with its Hop, as soon as the Host's leg has ended with it.
+func TestBrokenNamesTheLegNearestTheKokoServer(t *testing.T) {
+	const relays = 2
+	for dropped := range relays {
+		t.Run("hop "+strconv.Itoa(dropped), func(t *testing.T) {
+			c := startChain(t, relays, nil)
+			conn, err := connect(t, c.hostTarget(), c.relayTargets())
+			if err != nil {
+				t.Fatalf("Connect: %v", err)
+			}
+			if err := conn.Broken(); err != nil {
+				t.Errorf("a live chain is Broken: %v", err)
+			}
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				_ = conn.Wait()
+			}()
+
+			c.relays[dropped].DropConns()
+
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				t.Fatal("the Host's leg did not end within 10 s of its Relay's")
+			}
+			broken := conn.Broken()
+			if got := relayHop(t, broken); got != dropped {
+				t.Errorf("Broken = %v at hop %d, want hop %d", broken, got, dropped)
+			}
+		})
+	}
+}
+
+// Closing the connection to a Host behind a chain closes every leg, and
+// Broken says nothing of it.
+func TestClosingAChainClosesEveryLeg(t *testing.T) {
+	c := startChain(t, 2, nil)
+	conn, err := (&hostconn.Connector{Timings: fast}).Connect(t.Context(), c.hostTarget(), c.relayTargets())
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -369,55 +693,65 @@ func TestClosingAHostClosesItsRelay(t *testing.T) {
 		t.Errorf("Close: %v", err)
 	}
 
-	eventually(t, func() bool { return relay.Open() == 0 }, "the Relay still has a connection open after Close")
-}
-
-// The Relay's own pinned host key is checked as a Host's is, and a failure on
-// the Relay's leg says so.
-func TestChecksTheRelaysPinnedHostKey(t *testing.T) {
-	kokoKey, relay, host := relayedHost(t)
-	pinned := sshhost.NewKey(t, ssh.KeyAlgoED25519).PublicKey()
-	r := target(relay, hostconn.KeyLogin(kokoKey), hostconn.PinKey(pinned))
-
-	_, err := connect(t, target(host, hostconn.KeyLogin(kokoKey), hostconn.PinKey(host.HostKey())), &r)
-
-	if _, ok := errors.AsType[*hostconn.RelayError](err); !ok {
-		t.Errorf("Connect error = %v, want a RelayError", err)
+	for hop := range len(c.relays) + 1 {
+		eventually(t, func() bool { return c.hop(hop).Open() == 0 },
+			"hop "+strconv.Itoa(hop)+" still has a connection open after Close")
 	}
-	mismatch, ok := errors.AsType[*hostconn.HostKeyMismatchError](err)
-	if !ok {
-		t.Fatalf("Connect error = %v, want a host key mismatch", err)
-	}
-	if got, want := mismatch.Offered, ssh.FingerprintSHA256(relay.HostKey()); got != want {
-		t.Errorf("Offered = %s, want the Relay's %s", got, want)
-	}
-	if got := relay.Logins(); len(got) != 0 {
-		t.Errorf("the Relay received logins %+v, want none", got)
-	}
-	if got := host.Conns(); got != 0 {
-		t.Errorf("the Host was connected to %d times, want never", got)
+	if err := conn.Broken(); err != nil {
+		t.Errorf("Broken after Close = %v, want nil", err)
 	}
 }
 
-// A Host its Relay cannot reach is retried through the same Relay, and the
-// failure is the Host's leg, not the Relay's.
-func TestRetriesAHostItsRelayCannotReach(t *testing.T) {
-	kokoKey, relay, _ := relayedHost(t)
-	r := target(relay, hostconn.KeyLogin(kokoKey), hostconn.PinKey(relay.HostKey()))
+// The whole Connect is bounded by HostConnect, whatever each leg's own
+// attempts would allow, and a leg it cuts is unreachable, even once the
+// login was sent.
+func TestAChainIsBoundedByHostConnect(t *testing.T) {
+	const bound = 300 * time.Millisecond
+	for _, tc := range []struct {
+		name string
+		opt  sshhost.Option
+	}{
+		{"stalled", sshhost.StallFirst(3)},
+		{"slow login", sshhost.SlowLogins(time.Minute)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := startChain(t, 2, func(int) []sshhost.Option { return []sshhost.Option{tc.opt} })
+			// Only the wait for an answer that never comes is shortened.
+			conn := hostconn.Connector{Timings: timing.Timings{HostConnect: bound}}
 
-	_, err := connect(t, down(t, hostconn.KeyLogin(kokoKey)), &r)
+			start := time.Now()
+			_, err := conn.Connect(t.Context(), c.hostTarget(), c.relayTargets())
 
-	if !errors.Is(err, hostconn.ErrUnreachable) {
-		t.Fatalf("Connect error = %v, want ErrUnreachable", err)
+			if !errors.Is(err, hostconn.ErrUnreachable) || errors.Is(err, hostconn.ErrLoginRefused) {
+				t.Fatalf("Connect error = %v, want ErrUnreachable", err)
+			}
+			if got := relayHop(t, err); got != 0 {
+				t.Errorf("Hop = %d, want 0 (%v)", got, err)
+			}
+			if got := time.Since(start); got >= timing.HostConnectAttempt {
+				t.Errorf("Connect gave up after %v, want the bound to cut it before an attempt's %v", got, timing.HostConnectAttempt)
+			}
+			if got := c.relays[0].Conns(); got != 1 {
+				t.Errorf("the first Relay was connected to %d times, want once", got)
+			}
+		})
 	}
-	if _, ok := errors.AsType[*hostconn.RelayError](err); ok {
-		t.Errorf("Connect error = %v, want the Host's leg, not the Relay's", err)
+}
+
+// A Relay is always Managed, so a chain holding one without a pin is refused
+// before the connector reaches any.
+func TestEveryRelayMustBePinned(t *testing.T) {
+	c := startChain(t, 2, nil)
+	targets := c.relayTargets()
+	targets[1].Pin = hostconn.Pin{}
+
+	_, err := connect(t, c.hostTarget(), targets)
+
+	if got := relayHop(t, err); got != 1 {
+		t.Errorf("Hop = %d, want 1 (%v)", got, err)
 	}
-	if got := directTCPIPs(relay); len(got) != 3 {
-		t.Errorf("the Relay forwarded %d times (%q), want 3", len(got), got)
-	}
-	if got := relay.Conns(); got != 1 {
-		t.Errorf("the Relay was connected to %d times, want once", got)
+	if got := c.relays[0].Conns(); got != 0 {
+		t.Errorf("the first Relay was connected to %d times, want never", got)
 	}
 }
 
@@ -481,38 +815,6 @@ func TestAnAttemptThatSentTheLoginIsNotRetried(t *testing.T) {
 		t.Fatalf("Connect error = %v, want the attempt's timeout, not retried", err)
 	}
 	if got := h.Conns(); got != 1 {
-		t.Errorf("the Host was connected to %d times, want once", got)
-	}
-}
-
-// A Relay whose connection breaks while the connector is reaching the Host
-// through it is named as the broken leg, and the Host is not tried again
-// through it.
-func TestALostRelayIsTheRelaysLeg(t *testing.T) {
-	// Registered before the Hosts start, so it waits for Connect after they
-	// have stopped.
-	var wg sync.WaitGroup
-	t.Cleanup(wg.Wait)
-	kokoKey, relay, host := relayedHost(t, sshhost.StallFirst(1))
-	r := target(relay, hostconn.KeyLogin(kokoKey), hostconn.PinKey(relay.HostKey()))
-	c := hostconn.Connector{Timings: fast}
-	done := make(chan error, 1)
-	wg.Go(func() {
-		conn, err := c.Connect(t.Context(), target(host, hostconn.KeyLogin(kokoKey), hostconn.PinKey(host.HostKey())), &r)
-		if err == nil {
-			_ = conn.Close()
-		}
-		done <- err
-	})
-	eventually(t, func() bool { return host.Conns() > 0 }, "the connector never reached the Host through the Relay")
-
-	relay.DropConns()
-
-	err := <-done
-	if _, ok := errors.AsType[*hostconn.RelayError](err); !ok {
-		t.Errorf("Connect error = %v, want a RelayError", err)
-	}
-	if got := host.Conns(); got != 1 {
 		t.Errorf("the Host was connected to %d times, want once", got)
 	}
 }
@@ -594,21 +896,5 @@ func TestBrokenSaysWhyTheConnectionEnded(t *testing.T) {
 	ended(conn, "a connection Close closed")
 	if err := conn.Broken(); err != nil {
 		t.Errorf("a connection Close closed: Broken = %v, want nil", err)
-	}
-}
-
-// A Relay is always Managed, so one without a pin is refused before the
-// connector reaches it.
-func TestARelayMustBePinned(t *testing.T) {
-	kokoKey, relay, host := relayedHost(t)
-	r := target(relay, hostconn.KeyLogin(kokoKey), hostconn.Pin{})
-
-	_, err := connect(t, target(host, hostconn.KeyLogin(kokoKey), hostconn.PinKey(host.HostKey())), &r)
-
-	if _, ok := errors.AsType[*hostconn.RelayError](err); !ok {
-		t.Errorf("Connect error = %v, want a RelayError", err)
-	}
-	if got := relay.Conns(); got != 0 {
-		t.Errorf("the Relay was connected to %d times, want never", got)
 	}
 }

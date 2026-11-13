@@ -699,13 +699,13 @@ func (g *Gateway) session(t *tunnel, sshName string, a admission, stopEarlyClose
 	if a.refused == nil {
 		leg = &hostLeg{done: make(chan struct{})}
 		target := kokoTarget(a.host, a.kokoKey)
-		var relay *hostconn.Target
+		var relays []hostconn.Target
 		if r := a.host.Relay; r != nil {
-			relay = new(kokoTarget(r.Reach, a.kokoKey))
+			relays = []hostconn.Target{kokoTarget(r.Reach, a.kokoKey)}
 		}
 		g.wg.Go(func() {
 			defer close(leg.done)
-			leg.conn, leg.err = g.connector.Connect(t.ctx, target, relay)
+			leg.conn, leg.err = g.connector.Connect(t.ctx, target, relays)
 		})
 		defer func() {
 			<-leg.done

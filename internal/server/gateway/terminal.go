@@ -390,11 +390,11 @@ func (t *tunnel) cut() {
 // the refusal of a Host the connector could not log in to, or that refused
 // the session, its pty or its shell, and fails on t's end.
 func (g *Gateway) startShell(t *tunnel, a admission, cols, rows uint32) (*terminalShell, *refusal, error) {
-	var relay *hostconn.Target
+	var relays []hostconn.Target
 	if r := a.host.Relay; r != nil {
-		relay = new(kokoTarget(r.Reach, a.kokoKey))
+		relays = []hostconn.Target{kokoTarget(r.Reach, a.kokoKey)}
 	}
-	conn, err := g.connector.Connect(t.ctx, kokoTarget(a.host, a.kokoKey), relay)
+	conn, err := g.connector.Connect(t.ctx, kokoTarget(a.host, a.kokoKey), relays)
 	if err != nil {
 		return nil, connectRefusal(a.host, err), nil
 	}

@@ -97,12 +97,12 @@ func (e *enroller) prepare(ctx context.Context, read op.Read, caller op.Caller, 
 		return loggedIn{}, err
 	}
 	target := hostconn.Target{Address: h.Address, Port: h.Port, Account: h.Account, Login: in.login, Pin: pinFor(h, req)}
-	var relay *hostconn.Target
+	var relays []hostconn.Target
 	if r := h.Relay; r != nil {
 		// A Relay is always Managed: koko logs in to it as the Gateway does.
-		relay = &hostconn.Target{Address: r.Address, Port: r.Port, Account: r.Account, Login: hostconn.KeyLogin(kokoKey), Pin: hostconn.PinKey(r.Pin)}
+		relays = []hostconn.Target{{Address: r.Address, Port: r.Port, Account: r.Account, Login: hostconn.KeyLogin(kokoKey), Pin: hostconn.PinKey(r.Pin)}}
 	}
-	conn, err := e.connector.Connect(ctx, target, relay)
+	conn, err := e.connector.Connect(ctx, target, relays)
 	if err != nil {
 		return loggedIn{}, e.failed(who, h, connectRefusal(h, req, in, err), connectFailure(h, err)...)
 	}
