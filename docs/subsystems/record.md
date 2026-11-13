@@ -152,6 +152,20 @@ the record accepts, a refused `invalid_relay` or `relay_in_use` tells that
 some Host uses the Relay, or that some chain loops or is long, and nothing
 about which Hosts are on it.
 
+`host.show`'s answer carries the Host's `path` beside it, for people
+([`pathOf`](../../internal/server/host/host.go)): the chain in dial order as
+far as `Seen` reaches, each Relay `{"id", "name"}`, the Host's own Relay
+last. Where the trail stops at a Relay the reader cannot see, `path` begins
+with one `{"id": null, "name": null}` for that Relay and every one before
+it, so an unseen Relay is told from none; a Host without a Relay has `[]`,
+and a chain the record holds broken shows the Host's own Relay alone, so
+the Host that mends it can still be read. `host.list` carries no `path`.
+`koko host show` prints it after the Relay, the rest of the chain in dial
+order: `Relay:       db1 (host_…), through web1`, or `through one you cannot
+see` where the trail stops. Its `--json` prints no `path`, as an agent
+follows each `relay.id` instead, and a `host show` against a koko server
+older than chains prints the Host's own Relay alone.
+
 A new Relay anywhere in a chain, or none, interrupts no live SSH Session
 while every Relay of the chain it started through, and of its Host's chain
 now, is Managed. One that is not ends it: a Relay that stops being Managed,

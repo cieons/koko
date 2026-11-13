@@ -278,8 +278,9 @@ panel, from the bottom on a phone, in the design's four groups:
    Spaces `space.list` answers, the caller's Personal Space chosen, and
    Address.
 2. **How koko reaches it**: Host Account, `root` given; Port, `22` given;
-   and the Relay, a searchable choice of the Managed Hosts reached directly,
-   shown when there is one.
+   and the Relay, a searchable choice of the Managed Hosts
+   ([`relayChoices`](../../web/src/pages/host/HostForm.tsx)), shown when
+   there is one; a Relay may have a Relay of its own (ADR 0055).
 3. **The purchase**: Provider, Region, Price, Currency (searchable),
    Billing cycle, Expires (the date field, which takes a relative date
    too), Renews automatically (a switch) and Provider account.
@@ -316,8 +317,10 @@ the Host's name or its id, shows what `host.show` answers the caller, as
   Account and keeps the Host's key; Registered, that koko cannot log in
   yet, and `koko host enroll <name>` with Copy, since Enroll stays in the
   CLI; Retired, one sentence. Under a hairline: Address, Port, Host
-  Account, the Relay when it has one (its name, a link to the Relay's page
-  by its id, or "A Relay you cannot see", ADR 0035) and Pinned host key
+  Account, the Relay when it has one, as the path `host.show` answers
+  (`web1 → db1`, the order koko dials them, each Relay's name a link to
+  its page by its id, and the part of the chain the caller cannot see as
+  one "A Relay you cannot see", ADR 0035 and ADR 0055) and Pinned host key
   (the pin's SHA-256 fingerprint, or "Not pinned").
 - **Attributes**, each a label over its value as stored, four across:
   Provider, Region, Price (with its currency), Billing cycle, Expires,
@@ -373,8 +376,11 @@ and Host Account cannot be emptied. Renews automatically is a switch: on
 sends `yes`, and off, once it was on, `no`. What the Host form and a
 Service's panel share of the Attribute rows and of what an edit sends of
 them is [`AttributeRows`](../../web/src/pages/host/AttributeRows.tsx). The
-Relay is a searchable choice of the Managed Hosts reached directly but this
-one, with the Host's own Relay, a Relay it cannot see among them. Each
+Relay is a searchable choice of the Managed Hosts but this one and those its
+links show to be behind it, whose chain, as `host.list` shows each Host's
+own Relay, reaches it; the Host's own Relay, a Relay it cannot see among
+them, is offered too. A loop or a length through a Relay the caller cannot
+see is the koko server's `invalid_relay`, which shows in place. Each
 value is checked against its key's type when the form is submitted, a
 relative date such as `+1y` resolved in the browser's time zone as the CLI
 resolves one in a write; nothing is sent while one is at fault. With
@@ -493,7 +499,8 @@ axe on each page, dialog and pane state it renders.
   not take; no Service; a phone's rows.
 - [`addhost.test.tsx`](../../web/src/pages/host/addhost.test.tsx): a Host
   added with only the fields given, in the caller's Personal Space, then
-  its page; one added in another Space with its port, Relay, purchase,
+  its page; one added in another Space with its port, Relay (a Host with a
+  Relay of its own offered), purchase,
   other Attributes and Note in one `host.add`, a relative date resolved;
   each field checked on submit and nothing sent, and a refusal in place
   with the form kept; Cancel giving the focus back; the panel from the
@@ -504,7 +511,9 @@ axe on each page, dialog and pane state it renders.
   and All N), Note and when it was recorded; a Secret copied and shown
   there; a Registered Host's `koko host enroll` copied, a Relay unseen, no
   pin and Delete offered; a Relay linked by its id, and no Delete with a
-  pin; an unknown Host; Edit sending only what changed, a relative date
+  pin; the path through a chain, each Relay a link and the unseen part
+  unnamed, in both languages; Edit's Relay leaving out the Host and those
+  behind it, with a refusal in place; an unknown Host; Edit sending only what changed, a relative date
   resolved, and the port, the Relay and an enum cleared through `unset`;
   Edit refusing wrong values before the call, sending nothing unchanged,
   and a refusal in place; Rename, Move, Retire with `relay_in_use` and

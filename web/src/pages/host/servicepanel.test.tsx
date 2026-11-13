@@ -51,7 +51,11 @@ function served(api: FakeApi, hosts: Host[], services: Service[]): void {
     if (!shown) {
       throw refusal(CodeUnknownHost, 404);
     }
-    return { host: shown, services: services.filter((s) => s.host === ref(shown)).map(({ note: _, ...s }) => s) };
+    return {
+      host: shown,
+      path: shown.relay === null ? [] : [shown.relay],
+      services: services.filter((s) => s.host === ref(shown)).map(({ note: _, ...s }) => s),
+    };
   });
   api.on(ServiceShow, ({ host: named, name }) => {
     const on = find(named);

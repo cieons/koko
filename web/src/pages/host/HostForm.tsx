@@ -32,6 +32,32 @@ const noRelay = "-";
 /** unseenRelay is the Relay choice's id for a Relay the caller cannot see, which has no name to show. */
 const unseenRelay = "-unseen";
 
+/** maxRelays is the most Relays koko passes through to reach a Host (ADR 0055). */
+const maxRelays = 4;
+
+/**
+ * relayChoices are the Hosts of hosts that may be the Relay of the Host
+ * whose id is self, or of a new Host when self is not given: every Managed
+ * Host but the Host itself and those its links show to be behind it, whose
+ * chain, followed through each Host's own Relay as far as hosts holds it,
+ * reaches it. A loop or a length through a Relay the caller cannot see is
+ * the koko server's to refuse, and the form shows that refusal in place.
+ */
+export function relayChoices(hosts: readonly Host[], self?: string): Host[] {
+  const relayOf = new Map(hosts.map((h) => [h.id, h.relay?.id ?? null]));
+  const behind = (id: string): boolean => {
+    let next = relayOf.get(id) ?? null;
+    for (let hop = 0; next !== null && hop < maxRelays; hop++) {
+      if (next === self) {
+        return true;
+      }
+      next = relayOf.get(next) ?? null;
+    }
+    return false;
+  };
+  return hosts.filter((h) => h.state === "managed" && (self === undefined || (h.id !== self && !behind(h.id))));
+}
+
 /** HostValues are the form's values, as typed. */
 export interface HostValues {
   name: string;
@@ -60,7 +86,7 @@ export interface HostFieldsProps {
   onChange: (values: HostValues) => void;
   /** spaces, when given, makes the form ask for the Name and Space, as Add Host does. */
   spaces?: readonly Space[];
-  /** relays are the Hosts that may be a Relay: Managed, reached directly. */
+  /** relays are the Hosts that may be the Relay, as relayChoices gives them. */
   relays: readonly Host[];
   /** relayNow, in Edit, is the Host's Relay as it stands, offered though relays may not hold it. */
   relayNow?: Option;
@@ -346,7 +372,7 @@ export function AddHost({ spaces, hosts, attrs = [], onClose }: AddHostProps) {
         values={values}
         onChange={setValues}
         spaces={spaces ?? [{ id: "", name: personal, personal: true }]}
-        relays={(hosts ?? []).filter((h) => h.state === "managed" && h.relay === null)}
+        relays={relayChoices(hosts ?? [])}
         attrs={attrs}
         clock={clock}
       />
@@ -559,9 +585,7 @@ export function EditHost({ host, onSaved, onClose }: EditHostProps) {
           <HostFields
             values={values}
             onChange={setValues}
-            relays={(hosts.data?.hosts ?? []).filter(
-              (h) => h.state === "managed" && h.relay === null && h.id !== host.id,
-            )}
+            relays={relayChoices(hosts.data?.hosts ?? [], host.id)}
             relayNow={relayNow}
             editing={retired ? "retired" : "host"}
             attrs={attributes}

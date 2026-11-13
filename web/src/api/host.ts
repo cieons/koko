@@ -74,7 +74,8 @@ export interface NewHost {
   account: string;
   /**
    * Relay, when given, names the Host's Relay, by its name or its id: a
-   * Managed Host the caller can see, with no Relay itself.
+   * Managed Host the caller can see, which may have a Relay of its own
+   * (ADR 0055).
    */
   relay?: string;
   /**
@@ -141,6 +142,14 @@ export interface HostShowRequest {
 /** HostShowResponse is the Host host.show names, with its Services. */
 export interface HostShowResponse {
   host: Host;
+  /**
+   * Path is the Host's chain of Relays in the order koko dials them, as
+   * far as the caller can follow the links from the Host, its own Relay
+   * last (ADR 0055). Where the trail stops at a Relay the caller cannot
+   * see, it begins with one Relay whose id and name are both null, for
+   * that Relay and every one before it. A Host without a Relay has none.
+   */
+  path: HostRelay[];
   /**
    * Services are the Services on the Host, by name in natural order,
    * without their Notes, as service.list answers them.

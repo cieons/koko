@@ -96,6 +96,9 @@ func TestARelayMayHaveARelayOfItsOwn(t *testing.T) {
 	if r := relayOf(t, h.Koko("host", "show", "app", "--json")); r == nil || *r.Name != "r4" {
 		t.Errorf("app shows the Relay %+v, want only its own, r4", r)
 	}
+	if r, want := h.Koko("host", "show", "app"), "\nRelay:       r4 ("+showHost(t, h.Koko, "r4").ID+"), through r1, r2, r3\n"; !strings.Contains(r.Stdout, want) {
+		t.Errorf("host show app printed\n%s\nwant the line %q", r.Stdout, strings.TrimSpace(want))
+	}
 
 	for _, tc := range []struct {
 		args []string
@@ -182,9 +185,28 @@ func TestTheGatewayReachesAHostThroughAChain(t *testing.T) {
 	shown.WantSuccess(t)
 	enrollGolden(t, "host-show-chain.json", c.app1, shown.Stdout)
 
-	carol, dave := h.Join("carol"), h.Join("dave")
+	carol, bob, dave, erin := h.Join("carol"), h.Join("bob"), h.Join("dave"), h.Join("erin")
+	db1 := "db1 (" + db1ID + ")"
+	for _, tc := range []struct {
+		who   string
+		run   func(args ...string) harness.Result
+		relay string
+	}{
+		{"alice", h.Koko, db1 + ", through web1"},
+		{"carol", carol.Koko, "one you cannot see"},
+		{"bob", bob.Koko, "one you cannot see"},
+		{"dave", dave.Koko, db1 + ", through one you cannot see"},
+		{"erin", erin.Koko, db1 + ", through web1"},
+	} {
+		r := tc.run("host", "show", "app1")
+		r.WantSuccess(t)
+		if want := "\nRelay:       " + tc.relay + "\n"; !strings.Contains(r.Stdout, want) {
+			t.Errorf("%s's host show app1 printed\n%s\nwant the line %q", tc.who, r.Stdout, strings.TrimSpace(want))
+		}
+	}
+
 	sessions := 0
-	for _, run := range []func(args ...string) harness.Result{h.Koko, carol.Koko, h.Join("bob").Koko, dave.Koko, h.Join("erin").Koko} {
+	for _, run := range []func(args ...string) harness.Result{h.Koko, carol.Koko, bob.Koko, dave.Koko, erin.Koko} {
 		if r := run("exec", "app1", "echo", "two networks deep"); r.Status != 0 || r.Stdout != "two networks deep\n" || r.Stderr != "" {
 			t.Errorf("koko exec app1: exit status %d, stdout %q, stderr %q; want the echo", r.Status, r.Stdout, r.Stderr)
 		}
@@ -510,6 +532,12 @@ func TestABrokenChainOfRelaysIsAReadThatFails(t *testing.T) {
 			t.Errorf("%s behind a broken chain got %d connections, want none", tc.name, n)
 		}
 		h.Koko("host", "set", "z", "relay="+tc.name, "--json").WantError(t, 1, "internal_error")
+		// host show still reads the Host, whose own Relay mends it, and
+		// prints that Relay alone.
+		own := map[string]string{"looped": "b", "long": "e5"}[tc.name]
+		if r, want := h.Koko("host", "show", tc.name), "\nRelay:       "+own+" ("+ids[own]+")\n"; !strings.Contains(r.Stdout, want) {
+			t.Errorf("host show %s printed\n%s\nwant the line %q", tc.name, r.Stdout, strings.TrimSpace(want))
+		}
 	}
 	wantRefused(t, h.Join("bob").Koko("exec", "looped", "true"), "koko: no Host is named \"looped\".\n")
 

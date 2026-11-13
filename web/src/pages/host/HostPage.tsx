@@ -1,6 +1,6 @@
 import { Button, buttonVariants, Link } from "@heroui/react";
 import { ChevronRight, Pencil, Plus, SquareTerminal } from "lucide-react";
-import { lazy, type ReactNode, type RefObject, Suspense, useRef, useState } from "react";
+import { Fragment, lazy, type ReactNode, type RefObject, Suspense, useRef, useState } from "react";
 import { Link as RouterLink } from "react-aria-components";
 import { flushSync } from "react-dom";
 
@@ -8,6 +8,7 @@ import {
   CodeUnknownHost,
   type Host,
   HostMove,
+  type HostRelay,
   HostRemove,
   HostRename,
   HostRetire,
@@ -79,6 +80,7 @@ export function HostPage({ params }: PageProps) {
   return (
     <HostView
       host={show.data.host}
+      path={show.data.path}
       services={show.data.services}
       service={params["service"]}
       error={show.error}
@@ -90,6 +92,8 @@ export function HostPage({ params }: PageProps) {
 /** HostViewProps are what a Host's page shows. */
 interface HostViewProps {
   host: Host;
+  /** path is the Host's chain of Relays as host.show answers it, in dial order, its own Relay last. */
+  path: readonly HostRelay[];
   services: readonly Service[];
   /** service is the name of the Service whose panel is open over the page, if one is. */
   service: string | undefined;
@@ -107,7 +111,7 @@ interface HostViewProps {
  * and Delete with no pin; Rename and Retire are disabled, and its Services
  * show read-only.
  */
-function HostView({ host, services, service, error, reload }: HostViewProps) {
+function HostView({ host, path, services, service, error, reload }: HostViewProps) {
   const t = useT();
   const language = useLanguage();
   const spaces = useRead(SpaceList, {});
@@ -182,7 +186,7 @@ function HostView({ host, services, service, error, reload }: HostViewProps) {
       <div className="@container">
         <div className="grid items-start gap-5 @4xl:grid-cols-3">
           <div className="flex min-w-0 flex-col gap-5 @4xl:col-span-2">
-            <Reaching host={host} />
+            <Reaching host={host} path={path} />
             <Attributes host={host} />
           </div>
           <div className="flex min-w-0 flex-col gap-5">
@@ -248,9 +252,11 @@ function HostView({ host, services, service, error, reload }: HostViewProps) {
  * Reaching is how to reach the Host, by its state: Managed, Open terminal,
  * which adds a tab for it to the terminal workspace, over the ssh line;
  * Registered, the line that enrolls it; Retired, that it can no longer be
- * reached. Under them, its address, port, Host Account, Relay and pin.
+ * reached. Under them, its address, port, Host Account, Relay and pin: the
+ * Relay as the path koko dials, web1 → db1, each Relay a link to its page
+ * and the part the caller cannot see unnamed.
  */
-function Reaching({ host }: { host: Host }) {
+function Reaching({ host, path }: { host: Host; path: readonly HostRelay[] }) {
   const t = useT();
   return (
     <Sheet title={t("host.page.reach")}>
@@ -286,13 +292,18 @@ function Reaching({ host }: { host: Host }) {
         <Fact label={t("host.key.account")}>
           <span className="t-code">{host.account}</span>
         </Fact>
-        {host.relay !== null && (
+        {path.length > 0 && (
           <Fact label={t("host.key.relay")}>
-            {host.relay.id === null || host.relay.name === null ? (
-              <span className="text-muted">{t("host.relay.unseen")}</span>
-            ) : (
-              <Link href={hostPathOf(host.relay.id)}>{host.relay.name}</Link>
-            )}
+            {path.map((relay, i) => (
+              <Fragment key={relay.id ?? ""}>
+                {i > 0 && " → "}
+                {relay.id === null || relay.name === null ? (
+                  <span className="text-muted">{t("host.relay.unseen")}</span>
+                ) : (
+                  <Link href={hostPathOf(relay.id)}>{relay.name}</Link>
+                )}
+              </Fragment>
+            ))}
           </Fact>
         )}
         <Fact label={t("host.key.host_key")} className="col-span-2 sm:col-span-3">

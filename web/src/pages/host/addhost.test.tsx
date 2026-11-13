@@ -81,8 +81,8 @@ test("a Host added in another Space with its port, Relay, purchase, other Attrib
   type("Address", "web3.example.com");
   type("Host Account", "deploy");
   type("Port", "2222");
-  // A Relay is a Managed Host reached directly: web1, never db1, which has one.
-  await searchAndChoose("Relay", "w", "web1");
+  // A Relay is any Managed Host, db1 too, which has a Relay of its own.
+  await searchAndChoose("Relay", "", "web1", ["None, reached directly", "web1", "db1"]);
   type("Provider", "hetzner");
   type("Region", "fsn1");
   type("Price", "4.50");

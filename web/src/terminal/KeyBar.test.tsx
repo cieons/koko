@@ -89,7 +89,7 @@ function serve(path: string, viewport = upright): void {
   const api = fakeApi();
   actAs(api, alice);
   api.on(HostList, () => ({ hosts }));
-  api.on(HostShow, ({ host: name }) => ({ host: hosts.find((h) => h.name === name) ?? hosts[0]!, services: [] }));
+  api.on(HostShow, ({ host: name }) => ({ host: hosts.find((h) => h.name === name) ?? hosts[0]!, path: [], services: [] }));
   renderAt(path);
 }
 

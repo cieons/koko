@@ -86,7 +86,7 @@ function serve(path = "/terminal?host=web1"): FakeApi {
   const api = fakeApi();
   actAs(api, alice);
   api.on(HostList, () => ({ hosts }));
-  api.on(HostShow, ({ host: name }) => ({ host: hosts.find((h) => h.name === name) ?? hosts[0]!, services: [] }));
+  api.on(HostShow, ({ host: name }) => ({ host: hosts.find((h) => h.name === name) ?? hosts[0]!, path: [], services: [] }));
   api.on(FilesList, ({ path }) => {
     const found = listings[path === "" ? "/home/alice" : path];
     if (!found) {

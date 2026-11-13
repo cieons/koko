@@ -671,14 +671,49 @@ func readAttributes(ctx context.Context, tx store.Tx, hosts []api.Host) error {
 	return nil
 }
 
-// show is host.show: the Host, with its Note, and its Services.
+// show is host.show: the Host, with its Note, its path and its Services.
 func show(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostShowRequest, services ServicesOf) (api.HostShowResponse, error) {
-	_, h, err := target(ctx, tx, caller, req.Host)
+	who, h, err := target(ctx, tx, caller, req.Host)
+	if err != nil {
+		return api.HostShowResponse{}, err
+	}
+	path, err := pathOf(ctx, tx, who, h)
 	if err != nil {
 		return api.HostShowResponse{}, err
 	}
 	s, err := services(ctx, tx, h.Host)
-	return api.HostShowResponse{Host: h.Host, Services: s}, err
+	return api.HostShowResponse{Host: h.Host, Path: path, Services: s}, err
+}
+
+// pathOf is host.show's path of the Host h: its chain as far as who can
+// follow the links from it, after one unnamed Relay where the trail stops
+// at one they cannot see. A chain the record holds broken shows as the
+// Host's own Relay alone, as h shows it, so the Host whose Relay mends it
+// can still be read.
+func pathOf(ctx context.Context, tx store.Tx, who access.Identity, h stored) ([]api.HostRelay, error) {
+	relays, err := chain(ctx, tx, h)
+	if _, broken := errors.AsType[*BrokenChainError](err); broken {
+		return []api.HostRelay{*h.Relay}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	seen, err := seeChain(ctx, tx, who, relays)
+	if err != nil {
+		return nil, err
+	}
+	path := []api.HostRelay{}
+	for i, r := range seen {
+		switch {
+		case r.Seen:
+			path = append(path, api.HostRelay{ID: new(r.ID), Name: new(r.Name)})
+		case i == 0:
+			// Seen holds from some Relay of the chain on to the Host, so
+			// the unseen part is the chain's first Relays, told as one.
+			path = append(path, api.HostRelay{})
+		}
+	}
+	return path, nil
 }
 
 // retiredTakes ends each refusal of a change to a Retired Host, saying what

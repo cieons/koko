@@ -29,7 +29,7 @@ var hostCommands = []Command{
 	{
 		Noun:    "host",
 		Verb:    "add",
-		Summary: "Record a Host: address= and account= are required, space= defaults to your Personal Space, and relay= names a Managed Host to reach it through; without <host>, record the Hosts JSON on stdin holds, in the shape host ls --json prints",
+		Summary: "Record a Host: address= and account= are required, space= defaults to your Personal Space, and relay= names a Managed Host to reach it through, which may have a Relay of its own, at most 4 deep; without <host>, record the Hosts JSON on stdin holds, in the shape host ls --json prints",
 		Args:    []Arg{{Name: "host", Optional: true}},
 		Flags:   []Flag{noteFileFlag},
 		Pairs:   true,
@@ -62,7 +62,7 @@ var hostCommands = []Command{
 	{
 		Noun:    "host",
 		Verb:    "set",
-		Summary: "Change the fields, Attributes and Note of the Hosts you name, or that --where matches, and only those, all or none",
+		Summary: "Change the fields, Attributes and Note of the Hosts you name, or that --where matches, and only those, all or none; relay= names a Managed Host to reach them through, which may have a Relay of its own, at most 4 deep",
 		Args:    []Arg{{Name: "host", Optional: true, Many: true}},
 		Flags:   []Flag{noteFileFlag, whereFlag},
 		Pairs:   true,
@@ -213,6 +213,8 @@ var hostMappings = []mapping{
 	{api: reflect.TypeFor[api.HostShowResponse](), omitted: map[string]string{
 		"services": "host show prints a Host's Services for people only: its --json is the Host as host ls prints one, " +
 			"and service ls host=<host> --json lists them",
+		"path": "host show prints a Host's path for people only: its --json is the Host as host ls prints one, " +
+			"whose chain an agent follows by each relay.id (ADR 0055)",
 	}},
 	{api: reflect.TypeFor[api.HostSetResponse]()},
 	{api: reflect.TypeFor[api.HostRenameResponse]()},
@@ -500,10 +502,13 @@ func hostLs(ctx context.Context, in *Input) (hostList, error) {
 }
 
 // shownHost is what host show prints: the Host with its Attributes and
-// Note, and, for people only, its Services. Its --json is the Host as host
-// ls prints one, which host add reads back.
+// Note, and, for people only, its path and its Services. Its --json is the
+// Host as host ls prints one, which host add reads back.
 type shownHost struct {
 	hostJSON
+	// through is the path's Relays before the Host's own, in dial order,
+	// for people: a name, or one you cannot see.
+	through  []string
 	services []serviceJSON
 }
 
@@ -519,6 +524,9 @@ func (h shownHost) Human(w io.Writer) error {
 		relay = "one you cannot see"
 	case r != nil:
 		relay = fmt.Sprintf("%s (%s)", *r.Name, *r.ID)
+		if len(h.through) > 0 {
+			relay += ", through " + strings.Join(h.through, ", ")
+		}
 	}
 	fmt.Fprintf(&b, "Host %s (%s)\nSpace:       %s\nState:       %s\nAddress:     %s\nPort:        %d\nAccount:     %s\nRelay:       %s\nHost key:    %s\nCreated:     %s\nUpdated:     %s\n",
 		h.Name, h.ID, h.Space, h.State, h.Address, h.Port, h.Account, relay, hostKey, h.CreatedAt, h.UpdatedAt)
@@ -563,6 +571,17 @@ func hostShow(ctx context.Context, in *Input) (shownHost, error) {
 		return shownHost{}, err
 	}
 	h := shownHost{hostJSON: hostFromAPI(resp.Host)}
+	// An older koko server answers no path, and its Relay has none of its
+	// own.
+	if len(resp.Path) > 1 {
+		for _, r := range resp.Path[:len(resp.Path)-1] {
+			name := "one you cannot see"
+			if r.Name != nil {
+				name = *r.Name
+			}
+			h.through = append(h.through, name)
+		}
+	}
 	for _, s := range resp.Services {
 		h.services = append(h.services, serviceFromAPI(s))
 	}

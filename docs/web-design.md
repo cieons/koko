@@ -585,8 +585,9 @@ CLI resolves one in a write.
     the Host leaves koko." Registered: "koko cannot log in to this Host
     yet. Enroll it from a device that has the CLI:" and
     `$ koko host enroll <name>` with Copy. Retired: one muted sentence.
-    Under a hairline: Address, Port, Host Account, Relay (a link by its
-    id, or "A Relay you cannot see"), Pinned host key (its fingerprint, or
+    Under a hairline: Address, Port, Host Account, Relay (the path koko
+    dials, `web1 → db1`, each Relay a link by its id, the part you cannot
+    see as "A Relay you cannot see"), Pinned host key (its fingerprint, or
     "Not pinned"), each a label over a value in the code face.
   - **Attributes**: a grid of label over value, four across: Provider,
     Region, Price, Billing cycle, Expires, Renews automatically, Provider

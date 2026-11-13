@@ -11,6 +11,7 @@ import {
   HostList,
   HostMove,
   HostRemove,
+  type HostRelay,
   HostRename,
   HostRetire,
   HostSet,
@@ -25,7 +26,7 @@ import { clipboard } from "../../test/clipboard";
 import { chooseRowAction, clickOutside, expectChosen, searchAndChoose } from "../../test/controls";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { setViewportWidth } from "../../test/media";
-import { actAs, alerts, renderAt } from "../../test/pages";
+import { actAs, alerts, preferLanguages, renderAt } from "../../test/pages";
 import { alice, attributes, bob, host, pick, service, spaces, writes } from "./records.fixture";
 
 // A Host's page, against the fake API: what host.show answers, how to
@@ -81,8 +82,23 @@ interface Recorded {
 }
 
 /**
+ * pathOf is the path host.show answers for shown: its chain, followed
+ * through each Host's own Relay as far as hosts holds it, the part the
+ * caller cannot see as one unnamed Relay.
+ */
+function pathOf(shown: Host, hosts: readonly Host[]): HostRelay[] {
+  const path: HostRelay[] = [];
+  for (let relay = shown.relay; relay !== null; ) {
+    path.unshift(relay);
+    const id = relay.id;
+    relay = id === null ? null : (hosts.find((h) => h.id === id)?.relay ?? null);
+  }
+  return path;
+}
+
+/**
  * served answers host.show for each Host, by its name or its id, with its
- * Services, and the reads the page and its forms make. A Host it does not
+ * path and Services, and the reads the page and its forms make. A Host it does not
  * hold answers unknown_host.
  */
 function served(api: FakeApi, { hosts, services = [], secrets = [] }: Recorded): void {
@@ -92,7 +108,7 @@ function served(api: FakeApi, { hosts, services = [], secrets = [] }: Recorded):
       throw refusal(CodeUnknownHost, 404);
     }
     const ref = shown.state === "retired" ? shown.id : shown.name;
-    return { host: shown, services: services.filter((s) => s.host === ref) };
+    return { host: shown, path: pathOf(shown, hosts), services: services.filter((s) => s.host === ref) };
   });
   api.on(HostList, () => ({ hosts: hosts.filter((h) => h.state !== "retired") }));
   api.on(SpaceList, () => ({ spaces }));
@@ -254,6 +270,80 @@ test("a Host's Relay is a link to the Relay's page by its id, and a pinned Host 
     "Move to another Space",
     "Retire",
   ]);
+});
+
+// app1 sits behind db1, whose Relay is web1; app2 behind db2, whose own
+// Relay the caller cannot see.
+const chained = [
+  host("web1"),
+  host("db1", { relay: { id: "host_web1", name: "web1" } }),
+  host("app1", { relay: { id: "host_db1", name: "db1" } }),
+  host("db2", { relay: { id: null, name: null } }),
+  host("app2", { relay: { id: "host_db2", name: "db2" } }),
+  host("web2"),
+];
+
+test("a Host's Relay shows as the path koko dials, each Relay a link to its page, and the part you cannot see unnamed", async () => {
+  const api = fakeApi();
+  actAs(api, bob);
+  served(api, { hosts: chained });
+
+  await openHost("/hosts/app1", "app1");
+  expect(fact("Reaching it", "Relay")).toBe("web1 → db1");
+  const reach = within(screen.getByRole("region", { name: "Reaching it" }));
+  expect(reach.getByRole("link", { name: "web1" }).getAttribute("href")).toBe("/hosts/host_web1");
+  expect(reach.getByRole("link", { name: "db1" }).getAttribute("href")).toBe("/hosts/host_db1");
+  await expectAccessible();
+
+  act(() => navigate("/hosts/app2"));
+  await screen.findByRole("heading", { level: 1, name: /^app2/ });
+  expect(fact("Reaching it", "Relay")).toBe("A Relay you cannot see → db2");
+  const relay = within(screen.getByRole("region", { name: "Reaching it" })).getByText("Relay", { selector: "dt" }).nextElementSibling;
+  expect(within(relay as HTMLElement).getAllByRole("link").map((l) => l.textContent)).toEqual(["db2"]);
+  await expectAccessible();
+});
+
+test("a Host's path in Simplified Chinese", async () => {
+  preferLanguages("zh-CN");
+  const api = fakeApi();
+  actAs(api, bob);
+  served(api, { hosts: chained });
+
+  renderAt("/hosts/app2");
+  // The Host's name is the same in both languages: wait for the region the
+  // Simplified Chinese catalogue names.
+  await screen.findByRole("region", { name: "访问方式" });
+  expect(fact("访问方式", "中继")).toBe("无权查看的中继 → db2");
+  await expectAccessible();
+});
+
+test("Edit's Relay offers every Managed Host but the Host and those behind it, and shows a refusal of the Relay in place", async () => {
+  const api = fakeApi();
+  actAs(api, alice);
+  served(api, { hosts: [...chained, host("db3", { state: "registered" })] });
+  api.on(HostSet, () => {
+    throw refusal("invalid_relay", 409);
+  });
+
+  await openHost("/hosts/db1", "db1");
+  const panel = await openEdit("db1");
+  // db1 itself, app1 behind it and the Registered db3 are left out; db2
+  // and app2, whose chains it cannot follow to the end, are offered.
+  await searchAndChoose(within(panel).getByRole("combobox", { name: "Relay" }), "", "app2", [
+    "None, reached directly",
+    "web1",
+    "db2",
+    "app2",
+    "web2",
+  ]);
+  fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(alerts()).toContain(
+      "That Host cannot be a Relay here: a Relay is a Managed Host other than this one, and a chain of Relays never loops or passes through more than 4.",
+    ),
+  );
+  expect(api.requests(HostSet)).toEqual([{ host: "host_db1", relay: "app2" }]);
+  await expectChosen(within(panel).getByRole("combobox", { name: "Relay" }), "app2");
 });
 
 test("a Host no one can see shows as one that does not exist", async () => {
