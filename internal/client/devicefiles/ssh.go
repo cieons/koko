@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -28,6 +29,9 @@ const (
 	// hostKeyAlias is the name ssh looks the koko server's host key up
 	// under, so that one known_hosts line covers every SSH Name and port.
 	hostKeyAlias = "koko"
+	// kokoPattern is the Host pattern of every SSH Name, beside which koko's
+	// ssh_config names the bare names.
+	kokoPattern = "*.koko"
 	// userConfig is the user's own ssh configuration, under the home
 	// directory.
 	userConfig = ".ssh/config"
@@ -124,14 +128,12 @@ func HasSSHConfig(home string) bool {
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
-// AddressNames returns the bare names in koko's ssh_config, for the OS user
-// whose home directory is home, that ssh reads as an IPv4 address, in the
-// file's order: ssh <name> does not reach those Hosts through koko, since
-// ssh connects with the address, such as 0.0.0.201 for 201, whatever
-// HostName says, and only ssh <name>.koko does. A file that is not there,
-// or a HOME koko never writes under, holds none, an empty list; one koko
-// cannot read is an error, never none.
-func AddressNames(home string) ([]string, error) {
+// BareNames returns the bare names in koko's ssh_config, for the OS user
+// whose home directory is home, in the file's order: every name its Host
+// lines hold but *.koko. A file that is not there, or a HOME koko never
+// writes under, holds none, an empty list; one koko cannot read is an
+// error, never none.
+func BareNames(home string) ([]string, error) {
 	out := []string{}
 	if checkHome(home) != nil {
 		return out, nil
@@ -149,12 +151,26 @@ func AddressNames(home string) ([]string, error) {
 			continue
 		}
 		for n := range strings.FieldsSeq(names) {
-			if readsAsIPv4(n) {
+			if n != kokoPattern {
 				out = append(out, n)
 			}
 		}
 	}
 	return out, nil
+}
+
+// AddressNames returns the bare names in koko's ssh_config, for the OS user
+// whose home directory is home, that ssh reads as an IPv4 address, in the
+// file's order: ssh <name> does not reach those Hosts through koko, since
+// ssh connects with the address, such as 0.0.0.201 for 201, whatever
+// HostName says, and only ssh <name>.koko does. It reads the file as
+// BareNames does.
+func AddressNames(home string) ([]string, error) {
+	names, err := BareNames(home)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(names, func(n string) bool { return !readsAsIPv4(n) }), nil
 }
 
 // readsAsIPv4 tells whether the name n, a lowercase DNS label, is an IPv4
@@ -362,7 +378,7 @@ func sshConfig(koko, home string, names []string) ([]byte, error) {
 	var out bytes.Buffer
 	out.WriteString(sshConfigHeader)
 	host := "Host"
-	for _, p := range append([]string{"*.koko"}, names...) {
+	for _, p := range append([]string{kokoPattern}, names...) {
 		if len(host+" "+p+"\n") > maxLine {
 			out.WriteString(host + "\n")
 			out.Write(block.Bytes())

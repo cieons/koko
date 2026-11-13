@@ -340,6 +340,8 @@ ssh_config following the record
   one found without the user's PATH. It writes holding the Device Mux's
   lock and not once it is stopping, so it never puts back the names its own
   revocation cleanup took out.
+- **At once.** [`koko ssh reload`](device-connection.md#ssh) rewrites them
+  from the user's shell without waiting for the next refresh.
 - **No command.** A refresh is not a command connected to the Device Mux:
   it keeps the Device Mux from idling out no more than it makes it
   reconnect.

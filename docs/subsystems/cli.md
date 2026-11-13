@@ -252,7 +252,10 @@ status. A command reaches the koko server only on its first `in.Call`, so
   upgrade`](#koko-server-upgrade)), `kokod_newer` (`koko server install`
   where the `kokod` installed is a newer release than this koko, before any
   download, naming both, `sudo koko update` and `KOKO_VERSION`,
-  [the installer](installer.md#a-newer-kokod)),
+  [the installer](installer.md#a-newer-kokod)), `ssh_not_set_up` (`koko
+  ssh reload` on the koko server's own machine for an OS user `koko ssh
+  setup` never wrote koko's ssh_config for, naming `koko ssh setup`;
+  nothing written),
   and `internal_error` for a failure it did not expect. `kokod` reports `invalid_usage`, `unsupported_platform`,
   `port_taken` and `upgrade_failed` too, so those four live in the shared
   [`install`](../../internal/shared/install/install.go) package, beside
@@ -567,6 +570,7 @@ SSH Session through it ends, and never prompts (ADR 0019).
 | `koko connect [<host:port>]` | reversible | none: the koko server's version comes from its report | `{"server_address", "previous_address", "host_keys", "server_version", "device_mux"}`: the Server Address the client config now holds, the one `<host:port>` replaced or `null`, the fingerprints of the pinned host keys, the koko server's version, and the Device Mux as `koko status` shows it, or `null` on the direct path ([`koko connect`](device-connection.md#koko-connect)) |
 | `koko disconnect` | reversible | none | `{"device_muxes": [{"socket", "commands_ended"}], "commands_ended"}`: each Device Mux it stopped, by socket, with how many commands were connected to it, which ended, and the sum ([`koko disconnect`](device-mux.md#state-and-exit)) |
 | `koko ssh setup` | reversible | `server.show`, then `host.list` | `{"ssh_config", "include_warning"}`: the path of koko's ssh_config it wrote for this OS user on the koko server's own machine, and `include_warning` as `koko status` prints it ([on the koko server's own machine](device-connection.md#on-the-koko-servers-own-machine)) |
+| `koko ssh reload` | reversible | `host.list` | `{"ssh_config", "names", "added", "removed"}`: the path of koko's ssh_config, the bare names it holds now, in `host.list`'s order, and those it did not hold before and no longer holds; for people, the count, then `Added:` and `Removed:` lines, or `none changed` ([bare names](device-connection.md#ssh)) |
 | `koko leave` | irreversible | none: it never contacts the koko server | `{"server_address", "device_session"}`: the koko server the device left and its Device Session there, left behind, as `koko status` names one ([`koko leave`](device-connection.md#on-the-device)) |
 | `koko status` | read | none: the koko server's version comes from its report; for the Owner, `user.current` on a device, then `server.show` | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_latest", "server_oldest", "server_error", "device_mux", "revocation", "include_warning", "home_warning", "ssh_client_warning", "names_read_as_addresses"}`, below |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |

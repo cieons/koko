@@ -74,6 +74,7 @@ var cliCodes = []string{
 	codeUpdateUnsupported,
 	codeUpgradeFailed,
 	codeKokodNewer,
+	codeSSHNotSetUp,
 }
 
 // The exit statuses, part of the CLI's contract: new ones may be added, and

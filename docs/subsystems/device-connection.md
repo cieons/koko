@@ -252,8 +252,17 @@ ssh integration (P0 spec: reach, "Device files and ssh integration").
   `koko host add` (stdin included), `rename`, `move`, `retire` and `rm`
   succeed ([`rewriteBareNamesAfterHostChange`](../../internal/client/cli/barenames.go)),
   listing on the command's own connection, which also takes a Host someone
-  else recorded since; and the Device Mux refreshes them while it runs
+  else recorded since (`koko host enroll` rewrites none: a Host it Enrolls
+  was listed before and after); and the Device Mux refreshes them while it runs
   ([the bare-name refresh](device-mux.md#the-bare-name-refresh)).
+  **`koko ssh reload`** ([`sshReload`](../../internal/client/cli/sshreload.go)),
+  in the reversible tier, rewrites them at once in the same way, from
+  `host.list` on the command's own connection, and says how many names
+  the file holds and which it added and removed, read from the file before
+  (`devicefiles.BareNames`). On the koko server's own machine it rewrites
+  the file `koko ssh setup` wrote, as the Local caller sees the Hosts; for
+  an OS user who never ran `koko ssh setup` it writes nothing and fails
+  with `ssh_not_set_up`, naming it.
   A Host someone else records, or one in a Space the User is added to, is
   reachable as `web1.koko` at once, since the Gateway checks access at each
   SSH Session, and as bare `web1` after the next refresh. Over the Unix
@@ -399,7 +408,8 @@ nothing outside it. `koko server install` says so in one line.
 Run again, it writes the same files anew. No Device Mux runs there, so
 nothing refreshes the bare names in the background: a Host someone else
 records is reachable as `name.koko` at once, and as its bare name after the
-user's own next Host change over the socket or the next `koko ssh setup`.
+user's own next Host change over the socket, `koko ssh reload` or the next
+`koko ssh setup`.
 
 ## Which koko server the CLI reaches
 
@@ -609,6 +619,11 @@ Device Session, the address, `reason=dead` and the error, `no answer for
   Host someone else recorded since; none written over the Unix socket; a
   change whose bare names cannot be written holding, with its line on
   stderr; and the Device Mux's refresh ([the Device Mux](device-mux.md#verifying)).
+- [`sshreload_test.go`](../../internal/client/cli/sshreload_test.go): `koko
+  ssh reload` on a joined device rewriting the bare names at once with what
+  came and went, in JSON and for people; on the koko server's own machine
+  refused with `ssh_not_set_up` before `koko ssh setup`, writing nothing,
+  and taking a Host a device recorded after it.
 - [`sshsetup_test.go`](../../internal/client/cli/sshsetup_test.go): `koko
   ssh setup` over the Unix socket (golden): koko's ssh_config with every
   Host but the Retired, known_hosts with the host key `server.show` names,
