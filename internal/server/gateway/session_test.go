@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -215,13 +216,20 @@ func (tg *testGateway) attach(s *termSession) *page {
 // attachAs attaches a page of the caller c to s.
 func (tg *testGateway) attachAs(s *termSession, c op.Caller) *page {
 	gw, pg := net.Pipe()
-	a := &attachment{s: s, caller: c, key: callerKey{id: c.ID()}, written: make(chan struct{}), wake: make(chan struct{}, 1), cols: 80, rows: 24}
-	_, _ = rand.Read(a.id[:])
-	a.ctx, a.cancel = context.WithCancelCause(s.t.ctx)
+	a := newTestAttachment(s, c)
 	p := &page{a: a, stream: resumable.New(pg), ended: make(chan struct{})}
 	go p.read()
 	tg.addAttachment(a, gw, func() {}, nil)
 	return p
+}
+
+// newTestAttachment is an attachment of a page of the caller c to s, not
+// yet added.
+func newTestAttachment(s *termSession, c op.Caller) *attachment {
+	a := &attachment{s: s, caller: c, key: callerKey{id: c.ID()}, written: make(chan struct{}), wake: make(chan struct{}, 1), cols: 80, rows: 24}
+	_, _ = rand.Read(a.id[:])
+	a.ctx, a.cancel = context.WithCancelCause(s.t.ctx)
+	return a
 }
 
 func (p *page) read() {
@@ -510,5 +518,71 @@ func TestPagesShareTheirSnapshotsWhichTheBudgetCounts(t *testing.T) {
 	tg.budget.mu.Unlock()
 	if counted < int(s.snapshots.Load()) {
 		t.Errorf("the budget counts %d bytes for the SSH Session, want the %d its pages' snapshots hold among them", counted, s.snapshots.Load())
+	}
+}
+
+// An attachment whose SSH Session or caller ends while it is added, after
+// a stop has counted it among the attachments, never reaches its writer,
+// and the stop waits for nothing it left behind: it gives up no wait.
+func TestAStopWaitsForNoAttachmentEndedAsItIsAdded(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		ending bool
+		reason string
+	}{
+		{name: "its SSH Session ended", ending: true},
+		{name: "its caller ended", reason: "signin revoked"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tg := newTestGateway(t, 0)
+			t.Cleanup(tg.Close)
+			s, _ := tg.start(t)
+			gw, pg := net.Pipe()
+			t.Cleanup(func() { _ = pg.Close() })
+			go func() { _, _ = io.Copy(io.Discard, resumable.New(pg)) }()
+			stopped := make(chan struct{})
+			added := tg.addAttachment(newTestAttachment(s, op.Caller{Local: true}), gw, func() {}, func() string {
+				go func() {
+					defer close(stopped)
+					tg.CloseTerminals()
+				}()
+				// The stop counts the attachments as it refuses new pages,
+				// under one lock.
+				waitFor(t, "the stop to refuse new pages", func() bool { return !tg.terminalsOpen() })
+				if tc.ending {
+					s.t.end(errStopping)
+					waitFor(t, "the SSH Session's ending", func() bool {
+						s.mu.Lock()
+						defer s.mu.Unlock()
+						return s.ended
+					})
+				}
+				return tc.reason
+			})
+			if added {
+				t.Fatal("the attachment was added")
+			}
+			<-stopped
+			if log := tg.log.String(); strings.Contains(log, "gave up waiting") {
+				t.Errorf("the stop gave up a wait:\n%s", log)
+			}
+		})
+	}
+}
+
+// A stop whose wait never ends, as one whose owner was lost, gives it up
+// a StopNotice after cutting the pages, and logs what it waited for.
+func TestAStopGivesUpAWaitThatNeverEnds(t *testing.T) {
+	tg := newTestGateway(t, 0)
+	t.Cleanup(tg.Close)
+	s, _ := tg.start(t)
+	a := newTestAttachment(s, op.Caller{Local: true})
+	tg.mu.Lock()
+	tg.attachments[a.id] = a
+	tg.mu.Unlock()
+	tg.CloseTerminals()
+	want := `level=ERROR msg="web terminals' stop gave up waiting" waiting_for=attachment tunnel=` + s.t.id.String() + ` .*attachment=` + a.id.String() + ` `
+	if log := tg.log.String(); !regexp.MustCompile(want).MatchString(log) {
+		t.Errorf("the log says no wait given up for the attachment %s:\n%s", a.id, log)
 	}
 }

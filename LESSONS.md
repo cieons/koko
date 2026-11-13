@@ -306,6 +306,20 @@ wrapped page without a word; a wrapper now passes the chunk's loader on
 **Seen:** 1 (2026-11-13)
 **Evidence:** check runs 43234548126 and 43358569706; #200
 
+### Once a stop can find something, every way it leaves closes what the stop waits for
+
+**Why:** `addAttachment` put an attachment in the Gateway's attachments
+before it checked its caller and its SSH Session, and gave it up on either
+ending without starting its writer, which alone closes `written`. A stop
+that counted it in between waited on `written` for ever, after its
+`StopNotice` too: `harness` answers an attach before the Gateway adds it,
+so a test that ended at once could stop in that window, and the release
+gate for v0.10.0 timed out in `CloseTerminals` on ubuntu. A stop's waits
+are bounded now as well, and log what they gave up on.
+**Seen:** 1 (2026-11-13)
+**Evidence:** 6aa4712 (#215), 40f8f36 (#216); run 43443594550, attempt 2;
+#221
+
 ## Moved to the code standards
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128, #147; check run 42951455550).

@@ -228,6 +228,7 @@ func (g *Gateway) addAttachment(a *attachment, conn net.Conn, watchConn func(), 
 		if reason := ended(); reason != "" {
 			a.cancel(errEnded)
 			g.forgetAttachment(a, nil)
+			a.unstarted()
 			a.cut()
 			_ = a.stream.Close()
 			g.log.Debug("ssh session attach refused", append(a.attrs(), "reason", reason)...)
@@ -239,6 +240,7 @@ func (g *Gateway) addAttachment(a *attachment, conn net.Conn, watchConn func(), 
 		s.mu.Unlock()
 		a.cancel(errEnded)
 		g.forgetAttachment(a, nil)
+		a.unstarted()
 		_ = a.stream.CloseWithReason(endingOf(context.Cause(s.t.ctx)).notice)
 		return false
 	}
@@ -254,6 +256,11 @@ func (g *Gateway) addAttachment(a *attachment, conn net.Conn, watchConn func(), 
 	}
 	return true
 }
+
+// unstarted closes written for the attachment a, which addAttachment gave
+// up before its writer ran: a stop that found a among the Gateway's
+// attachments waits for written, which only the writer closes otherwise.
+func (a *attachment) unstarted() { close(a.written) }
 
 // forgetAttachment takes the ended attachment a out of the Gateway's. When
 // its SSH Session ended with end, which has a notice, it keeps the ending
@@ -485,22 +492,24 @@ func (g *Gateway) watchSocket(stream *resumable.Stream, s TerminalSocket, sc *so
 // listener closes, whose shutdown does not track a WebSocket. It waits for
 // each SSH Session to end and each page to have its notice, and once
 // timing.StopNotice has passed it cuts the WebSockets of those still at
-// it, which a page too stalled to take the notice holds. The tabs keep no
-// ending, so they come back restarted.
+// it, which a page too stalled to take the notice holds. Once a further
+// StopNotice has passed after the cuts it gives up, logging each wait
+// still outstanding, so that one whose owner was lost holds up no stop.
+// The tabs keep no ending, so they come back restarted.
 func (g *Gateway) CloseTerminals() {
 	g.mu.Lock()
 	g.terminalsClosed = true
-	var waits []<-chan struct{}
+	var waits []closeWait
 	for _, t := range g.tunnels {
 		if t.client == clientBrowser {
 			t.end(errStopping)
-			waits = append(waits, t.done)
+			waits = append(waits, closeWait{t.done, append([]any{"waiting_for", "ssh session"}, t.named()...)})
 		}
 	}
 	atts := slices.Collect(maps.Values(g.attachments))
 	g.mu.Unlock()
 	for _, a := range atts {
-		waits = append(waits, a.written)
+		waits = append(waits, closeWait{a.written, append([]any{"waiting_for", "attachment"}, a.attrs()...)})
 	}
 	stopping, _ := json.Marshal(wire.WorkspaceStopping{Stopping: "the koko server is restarting"}) // plain
 	var pages []*wsPage
@@ -509,29 +518,52 @@ func (g *Gateway) CloseTerminals() {
 		for p := range w.pages {
 			p.stop(stopping)
 			pages = append(pages, p)
-			waits = append(waits, p.done)
+			waits = append(waits, closeWait{p.done, slices.Concat([]any{"waiting_for", "workspace socket", "user", w.userID}, callerAttrs(p.c.Caller), []any{"addr", p.c.Addr})})
 		}
 		w.mu.Unlock()
 	}
 	late := time.NewTimer(g.timings.StopNotice)
 	defer late.Stop()
-	for _, done := range waits {
-		select {
-		case <-done:
-			continue
-		case <-late.C:
-		}
-		for _, a := range atts {
-			a.cut()
-		}
-		for _, p := range pages {
-			p.s.Cut()
-		}
-		for _, done := range waits {
-			<-done
-		}
+	if waits = awaitAll(waits, late.C); len(waits) == 0 {
 		return
 	}
+	for _, a := range atts {
+		a.cut()
+	}
+	for _, p := range pages {
+		p.s.Cut()
+	}
+	late.Reset(g.timings.StopNotice)
+	for _, w := range awaitAll(waits, late.C) {
+		g.log.Error("web terminals' stop gave up waiting", w.attrs...)
+	}
+}
+
+// closeWait is one wait of CloseTerminals: done is closed once what attrs
+// name in the log has ended.
+type closeWait struct {
+	done  <-chan struct{}
+	attrs []any
+}
+
+// awaitAll waits for each of waits until expired fires, and returns those
+// still outstanding then.
+func awaitAll(waits []closeWait, expired <-chan time.Time) []closeWait {
+	for i, w := range waits {
+		select {
+		case <-w.done:
+		case <-expired:
+			return slices.DeleteFunc(waits[i:], func(w closeWait) bool {
+				select {
+				case <-w.done:
+					return true
+				default:
+					return false
+				}
+			})
+		}
+	}
+	return nil
 }
 
 // startShell dials the Host a admitted for the web terminal t, through its

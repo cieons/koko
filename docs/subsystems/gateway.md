@@ -443,8 +443,13 @@ web`, and the Owner's for the Local caller.
   closes each attachment's WebSocket, send `{"stopping": "the koko server
   is restarting"}` on every Workspace socket and close it, and refuse new
   pages; a WebSocket still at it after `timing.StopNotice` (5 s), a page
-  too stalled to take the notice, is cut. The web listener follows, then
-  the Tunnels and the transport, as below.
+  too stalled to take the notice, is cut. A further `StopNotice` after the
+  cuts it gives up, logging each wait still outstanding
+  (`web terminals' stop gave up waiting`, with `waiting_for` and its ids),
+  so a wait whose owner was lost holds up no stop. An attachment that
+  `addAttachment` gives up before its writer runs closes its `written`
+  itself (`unstarted`), since a stop may already wait for it. The web
+  listener follows, then the Tunnels and the transport, as below.
 - **A restart.** A stop records no ending in the tabs, so at the next
   start, after a clean stop or a crash, each tab whose SSH Session was
   live comes back `restarted`, and a tab ended before the stop stays
@@ -1150,7 +1155,9 @@ that never returns finishes its page with the notice at once; and an
 emulator that fails, past its own bound or past the budget, is made anew,
 the shell and the page going on and the page getting a `reset` and the
 dropped line, the budget failing the largest emulator, not the one whose
-call passed it.
+call passed it. A stop that counted an attachment its SSH Session's or
+its caller's ending then kept from its writer gives up no wait, and a
+stop whose wait never ends gives it up and logs it.
 [`server/terminal_memory_internal_test.go`](../../internal/server/terminal_memory_internal_test.go)
 checks the budget's default: the figure given, else a quarter of the
 machine's memory at most 2 GiB, and 2 GiB when it cannot tell.

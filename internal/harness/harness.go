@@ -366,6 +366,11 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		if err := h.stop(); err != nil {
 			t.Errorf("stop the koko server: %v", err)
 		}
+		// A wait the stop gave up on had lost its owner: a leak, which the
+		// bound only keeps from hanging the stop.
+		if log := h.log.String(); strings.Contains(log, `msg="web terminals' stop gave up waiting"`) {
+			t.Errorf("the koko server's stop gave up a wait:\n%s", log)
+		}
 	})
 	if !o.noInit {
 		if _, err := h.Call(api.ServerInit, api.ServerInitRequest{Owner: Owner, Address: Address}); err != nil {
