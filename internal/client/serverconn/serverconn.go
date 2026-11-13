@@ -57,6 +57,12 @@ type Conn interface {
 	// (wire.RequestDisconnected), before the connection ends; never closed
 	// on a connection that goes through no Device Mux.
 	Disconnected() <-chan struct{}
+	// HostsChanged returns a channel that receives once the koko server has
+	// said that the Hosts the connection's User sees may have changed
+	// (wire.RequestHostsChanged), and not again until it has been
+	// received: notices that come before then count as one. Over a Device
+	// Mux, which takes the notices itself, it never receives.
+	HostsChanged() <-chan struct{}
 	// Close ends the connection and every channel on it.
 	Close() error
 }
@@ -435,6 +441,9 @@ type sshConn struct {
 	// disconnected is closed once the Device Mux said that koko disconnect
 	// stopped it; only takeRequests closes it.
 	disconnected chan struct{}
+	// hostsChanged holds a notice that the Hosts the User sees may have
+	// changed, until it is received; only takeRequests sends on it.
+	hostsChanged chan struct{}
 
 	mu        sync.Mutex
 	report    wire.Report
@@ -458,13 +467,15 @@ func newSSHConn(conn ssh.Conn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Req
 		reported:     make(chan struct{}),
 		requestsDone: make(chan struct{}),
 		disconnected: make(chan struct{}),
+		hostsChanged: make(chan struct{}, 1),
 	}
 	go c.takeRequests(reqs)
 	return c
 }
 
 // takeRequests answers the koko server's global requests until the
-// connection ends. A koko server reports once; a Device Mux reports again
+// connection ends, and passes on a notice that the Hosts the User sees may
+// have changed. A koko server reports once; a Device Mux reports again
 // for each Device Connection it opens, and the latest report holds: one
 // that does not parse leaves the report unknown, not the one before.
 func (c *sshConn) takeRequests(reqs <-chan *ssh.Request) {
@@ -488,6 +499,11 @@ func (c *sshConn) takeRequests(reqs <-chan *ssh.Request) {
 		case wire.RequestDisconnected:
 			if !isClosed(c.disconnected) {
 				close(c.disconnected)
+			}
+		case wire.RequestHostsChanged:
+			select {
+			case c.hostsChanged <- struct{}{}:
+			default: // one is waiting already
 			}
 		}
 		if r.WantReply {
@@ -564,6 +580,10 @@ func (c *sshConn) Wait() error {
 
 func (c *sshConn) Disconnected() <-chan struct{} {
 	return c.disconnected
+}
+
+func (c *sshConn) HostsChanged() <-chan struct{} {
+	return c.hostsChanged
 }
 
 // isClosed tells whether ch is closed.

@@ -28,6 +28,7 @@ import (
 	"github.com/cieons/koko/internal/server/filesystem"
 	"github.com/cieons/koko/internal/server/gateway"
 	"github.com/cieons/koko/internal/server/host"
+	"github.com/cieons/koko/internal/server/hostlist"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/secret"
@@ -180,13 +181,17 @@ type Server struct {
 	// stopNotice bounds how long Close, and a revocation, wait for the
 	// Gateway's notices.
 	stopNotice time.Duration
+	log        *slog.Logger
 	// revoking holds each revocation whose Device Connections wait for the
 	// notices of its SSH Sessions before they close. Close sets closing,
 	// under mu, before it waits for revoking, so that no revocation a call
-	// the transport cut still commits joins it after.
+	// the transport cut still commits joins it after; telling, in the same
+	// way, each change to the Hosts some Users see while its devices are
+	// told (tellHostsChanged).
 	mu       sync.Mutex
 	closing  bool
 	revoking sync.WaitGroup
+	telling  sync.WaitGroup
 }
 
 // Start opens the data directory, loads the Root Key, opens the koko
@@ -308,7 +313,7 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	t.UseTimings(cfg.Timings)
 	t.HandleTunnels(gw)
 	tcp := &tcpListener{addr: cfg.Listen, transport: t, devices: device.NewAuthenticator(st, clock, log)}
-	srv := &Server{store: st, transport: t, gateway: gw, tcp: tcp, web: webLn, api: a, stopNotice: cfg.Timings.Resolve().StopNotice}
+	srv := &Server{store: st, transport: t, gateway: gw, tcp: tcp, web: webLn, api: a, stopNotice: cfg.Timings.Resolve().StopNotice, log: log}
 	webHeld = true
 	var updateCheck bool
 	if err := st.Read(ctx, func(tx store.Tx) (err error) {
@@ -328,10 +333,15 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	var changes access.Signal
 	changes.Subscribe(srv.withdraw)
 	changes.Subscribe(front.Withdraw)
-	space.Register(a, user.ByName, holdings, &changes)
+	// The host-list signal: once a change that may change the Hosts a User
+	// sees commits, the Device Connections of the Users it concerns are
+	// told, so their Device Muxes rewrite the bare names at once.
+	var lists hostlist.Signal
+	lists.Subscribe(srv.tellHostsChanged)
+	space.Register(a, user.ByName, holdings, &changes, &lists)
 	// host show lists a Host's Services, which the service area reads,
 	// since it imports the host area.
-	host.Register(a, service.OfHost, &changes)
+	host.Register(a, service.OfHost, &changes, &lists)
 	attr.Register(a, attrKeys)
 	// The secret area seals and opens every value with the Root Key.
 	secret.Register(a, key)
@@ -475,6 +485,7 @@ func (s *Server) Close() error {
 	s.closing = true
 	s.mu.Unlock()
 	s.revoking.Wait()
+	s.telling.Wait()
 	s.tcp.unbind()
 	if s.updates != nil {
 		s.updates.Close()

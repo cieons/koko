@@ -265,7 +265,9 @@ ssh integration (P0 spec: reach, "Device files and ssh integration").
   with `ssh_not_set_up`, naming it.
   A Host someone else records, or one in a Space the User is added to, is
   reachable as `web1.koko` at once, since the Gateway checks access at each
-  SSH Session, and as bare `web1` after the next refresh. Over the Unix
+  SSH Session, and as bare `web1` within seconds on a device whose Device
+  Mux runs, which [the host-list notice](#the-host-list-notice) tells, or
+  else after the next refresh. Over the Unix
   socket the caller is the Local caller, on the koko server's own machine,
   where nothing joins: there the Host changes rewrite them only for an OS
   user whose [`koko ssh setup`](#on-the-koko-servers-own-machine) wrote
@@ -528,6 +530,45 @@ only the Gateway acts on. `server.Start` also subscribes the web front's
 once, while their Device Connections may still be open
 ([the web front](web-front.md#runs-tokens-and-the-cookie)).
 
+## The host-list notice
+
+Once a change that may change the Hosts a User sees commits, the koko
+server tells that User's Device Connections, so their Device Muxes rewrite
+the bare names at once ([the bare-name refresh](device-mux.md#the-bare-name-refresh)):
+
+- **The host-list signal** ([`hostlist.Signal`](../../internal/server/hostlist/hostlist.go))
+  carries the change, published once per call, after it commits, as the
+  access-change signal is: `host.add` (one Host or a batch), `rename`,
+  `move` (both Spaces), `retire` and `remove` (of a Host not Retired) name
+  the Spaces they changed; `space.member.add` and `space.member.remove`
+  name the Users they added or took out, none for a User who was a Member
+  already or was not one. Nothing else changes which Host names a User
+  sees: `host.set` and `host.enroll` change no name, Retired is terminal,
+  a Space that holds a Host is not removed, and the Hosts of a Removed User
+  stay with the Owner, who saw them already.
+- **Who is told.** `server.Start` subscribes the koko server's
+  `tellHostsChanged` ([`hostlist.go`](../../internal/server/hostlist.go)),
+  which, beside the call so that it waits for no read, reads for each
+  Device Session holding a Device Connection
+  (`transport.Server.DeviceSessions`) whether the change concerns its User:
+  one it names, or one who acts in a Space it names, by the access check's
+  rule ([`access.Identity.Spaces`](../../internal/server/access/access.go)).
+  A User who acts in none of them is told nothing, so a Member learns
+  nothing of a change outside their Spaces. Over the Unix socket nothing is
+  told: no Device Mux runs there.
+- **The notice** is the SSH global request
+  [`wire.RequestHostsChanged`](../../internal/shared/wire/wire.go)
+  (`hosts-changed@koko`, no payload, no reply wanted), sent on each of
+  those connections without blocking
+  (`transport.Server.TellHostsChanged`). [`serverconn`](../../internal/client/serverconn/serverconn.go)
+  passes it on as `Conn.HostsChanged`, notices not yet taken counting as
+  one; the Device Mux takes it, and a command on the direct path ignores
+  it.
+- **Across the window** it needs no revision: every koko in the window,
+  back to `compat.Oldest`, ignores a global request it does not know, so a
+  Device Mux older than the notice keeps its 10-minute refresh, and a
+  newer one against an older koko server, which sends none, does too.
+
 ## On the device
 
 The Device Mux learns of a revocation from the revocation disconnect, or
@@ -577,7 +618,10 @@ Session, `added_by` (a Device Session's or a Sign-in's id, or `unix
 socket`), the Join Code's
 id and the address it came from; each failed join logs `join failed` with
 the address, the reason and the Join Code's id when the secret is one's.
-Neither ever holds a code or its secret. Each revocation logs
+Neither ever holds a code or its secret. A change the host-list notice
+tells logs, at debug level, `told devices the Hosts they see changed` with
+the Device Sessions told, or `cannot tell devices the Hosts they see
+changed` with the error. Each revocation logs
 `device revoked` with the User, the device, the Device Session, `revoked_by`
 (a Device Session's id or `unix socket`) and `join_codes_voided`; each
 Device Connection it closes logs `device connection closed` with the Device
@@ -619,6 +663,13 @@ Device Session, the address, `reason=dead` and the error, `no answer for
   Host someone else recorded since; none written over the Unix socket; a
   change whose bare names cannot be written holding, with its line on
   stderr; and the Device Mux's refresh ([the Device Mux](device-mux.md#verifying)).
+- [`hostschanged_test.go`](../../internal/client/cli/hostschanged_test.go):
+  a Member's Device Mux rewriting the bare names within seconds, its
+  refresh an hour away, as a Host is recorded in the web UI, renamed,
+  moved out of their Spaces, Retired and deleted, and as they are added to
+  a Space and taken out of it; a Host recorded in a Space they cannot act
+  in told to the Owner's device and not theirs; after a drop, the Device
+  Mux refreshing on its next Device Connection and hearing its notices.
 - [`sshreload_test.go`](../../internal/client/cli/sshreload_test.go): `koko
   ssh reload` on a joined device rewriting the bare names at once with what
   came and went, in JSON and for people; on the koko server's own machine

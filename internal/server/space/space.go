@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/cieons/koko/internal/server/access"
+	"github.com/cieons/koko/internal/server/hostlist"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
@@ -41,13 +42,15 @@ type area struct {
 	user     UserFunc
 	holdings []Holding
 	changes  *access.Signal
+	lists    *hostlist.Signal
 }
 
 // Register adds the space operations to the API; user finds the Users a
-// call names, holdings count what the other areas record in a Space, and
-// each User taken out of a Space is announced on changes once it commits.
-func Register(a *op.API, user UserFunc, holdings []Holding, changes *access.Signal) {
-	s := &area{user: user, holdings: holdings, changes: changes}
+// call names, holdings count what the other areas record in a Space, each
+// User taken out of a Space is announced on changes once it commits, and
+// each User added to a Space or taken out of one, on lists.
+func Register(a *op.API, user UserFunc, holdings []Holding, changes *access.Signal, lists *hostlist.Signal) {
+	s := &area{user: user, holdings: holdings, changes: changes, lists: lists}
 	a.Handle(api.SpaceAdd, add)
 	a.Handle(api.SpaceList, s.list)
 	a.Handle(api.SpaceShow, s.show)
@@ -299,11 +302,22 @@ func (s *area) memberAdd(ctx context.Context, tx store.Tx, caller op.Caller, req
 			return api.SpaceMemberAddResponse{}, api.CodeUserRemoved.Errorf("%s was Removed, at %s", u.Name, u.RemovedAt)
 		}
 	}
+	var added []string
 	for _, u := range users {
-		_, err := tx.ExecContext(ctx, "INSERT INTO memberships (space_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING", sp.ID, u.ID)
+		res, err := tx.ExecContext(ctx, "INSERT INTO memberships (space_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING", sp.ID, u.ID)
 		if err != nil {
 			return api.SpaceMemberAddResponse{}, fmt.Errorf("make %s a Member of %s: %w", u.Name, sp.Name, err)
 		}
+		made, err := res.RowsAffected()
+		if err != nil {
+			return api.SpaceMemberAddResponse{}, fmt.Errorf("make %s a Member of %s: %w", u.Name, sp.Name, err)
+		}
+		if made > 0 {
+			added = append(added, u.ID)
+		}
+	}
+	if len(added) > 0 {
+		s.lists.Publish(ctx, hostlist.Change{Users: added})
 	}
 	d, err := s.detail(ctx, tx, sp)
 	return api.SpaceMemberAddResponse{Space: d}, err
@@ -319,19 +333,20 @@ func (s *area) memberRemove(ctx context.Context, tx store.Tx, caller op.Caller, 
 	if err != nil {
 		return api.SpaceMemberRemoveResponse{}, err
 	}
-	var narrowed []string
+	var narrowed, taken []string
 	for _, u := range users {
 		res, err := tx.ExecContext(ctx, "DELETE FROM memberships WHERE space_id = ? AND user_id = ?", sp.ID, u.ID)
 		if err != nil {
 			return api.SpaceMemberRemoveResponse{}, fmt.Errorf("take %s out of %s: %w", u.Name, sp.Name, err)
 		}
-		taken, err := res.RowsAffected()
+		n, err := res.RowsAffected()
 		if err != nil {
 			return api.SpaceMemberRemoveResponse{}, fmt.Errorf("take %s out of %s: %w", u.Name, sp.Name, err)
 		}
-		if taken == 0 {
+		if n == 0 {
 			continue
 		}
+		taken = append(taken, u.ID)
 		live, err := access.DeviceSessions(ctx, tx, "u.id = ? AND d.revoked_at IS NULL", u.ID)
 		if err != nil {
 			return api.SpaceMemberRemoveResponse{}, err
@@ -351,6 +366,9 @@ func (s *area) memberRemove(ctx context.Context, tx store.Tx, caller op.Caller, 
 	}
 	if len(narrowed) > 0 {
 		s.changes.Publish(ctx, access.Change{Narrowed: narrowed})
+	}
+	if len(taken) > 0 {
+		s.lists.Publish(ctx, hostlist.Change{Users: taken})
 	}
 	d, err := s.detail(ctx, tx, sp)
 	return api.SpaceMemberRemoveResponse{Space: d}, err

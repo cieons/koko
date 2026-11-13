@@ -20,6 +20,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/server/access"
+	"github.com/cieons/koko/internal/server/hostlist"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/query"
 	"github.com/cieons/koko/internal/server/space"
@@ -39,10 +40,13 @@ const idPrefix = "host"
 type ServicesOf func(ctx context.Context, tx store.Tx, h api.Host) ([]api.Service, error)
 
 // Register adds the host operations to the API; services lists a Host's
-// Services for host.show, and each write that may put a Host out of a
-// caller's reach is announced on changes once it commits.
-func Register(a *op.API, services ServicesOf, changes *access.Signal) {
-	a.Handle(api.HostAdd, add)
+// Services for host.show, each write that may put a Host out of a caller's
+// reach is announced on changes once it commits, and each that may change
+// the Hosts a User sees, on lists.
+func Register(a *op.API, services ServicesOf, changes *access.Signal, lists *hostlist.Signal) {
+	a.Handle(api.HostAdd, func(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostAddRequest) (api.HostAddResponse, error) {
+		return add(ctx, tx, caller, req, lists)
+	})
 	a.Handle(api.HostList, list)
 	a.Handle(api.HostShow, func(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostShowRequest) (api.HostShowResponse, error) {
 		return show(ctx, tx, caller, req, services)
@@ -50,14 +54,35 @@ func Register(a *op.API, services ServicesOf, changes *access.Signal) {
 	a.Handle(api.HostSet, func(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostSetRequest) (api.HostSetResponse, error) {
 		return set(ctx, tx, caller, req, changes)
 	})
-	a.Handle(api.HostRename, rename)
+	a.Handle(api.HostRename, func(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRenameRequest) (api.HostRenameResponse, error) {
+		return rename(ctx, tx, caller, req, lists)
+	})
 	a.Handle(api.HostMove, func(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRequest) (api.HostMoveResponse, error) {
-		return move(ctx, tx, caller, req, changes)
+		return move(ctx, tx, caller, req, changes, lists)
 	})
 	a.Handle(api.HostRetire, func(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRetireRequest) (api.HostRetireResponse, error) {
-		return retire(ctx, tx, caller, req, changes)
+		return retire(ctx, tx, caller, req, changes, lists)
 	})
-	a.Handle(api.HostRemove, remove)
+	a.Handle(api.HostRemove, func(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRemoveRequest) (api.HostRemoveResponse, error) {
+		return remove(ctx, tx, caller, req, lists)
+	})
+}
+
+// listChanged announces on lists, once the call commits, that the Hosts
+// seen in the Spaces whose ids are spaces may have changed; nothing when it
+// names none.
+func listChanged(ctx context.Context, lists *hostlist.Signal, spaces []string) {
+	if len(spaces) > 0 {
+		lists.Publish(ctx, hostlist.Change{Spaces: spaces})
+	}
+}
+
+// addSpace adds the Space id to spaces, once.
+func addSpace(spaces []string, id string) []string {
+	if slices.Contains(spaces, id) {
+		return spaces
+	}
+	return append(spaces, id)
 }
 
 // Holding counts a Space's Hosts for space show and space rm: those that
@@ -349,7 +374,7 @@ func invalid(hostName string, err error) error {
 // refusal lists each one at fault (api.BatchError). A later Host of the
 // batch under an earlier one's name is at fault, whether or not the earlier
 // one is.
-func add(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostAddRequest) (api.HostAddResponse, error) {
+func add(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostAddRequest, lists *hostlist.Signal) (api.HostAddResponse, error) {
 	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
 		return api.HostAddResponse{}, err
@@ -366,7 +391,10 @@ func add(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostAddRequ
 		}
 	}
 	resp := api.HostAddResponse{Hosts: make([]api.Host, 0, len(req.Hosts))}
-	var faults []api.ItemError
+	var (
+		faults []api.ItemError
+		spaces []string
+	)
 	first := map[string]int{}
 	for i, n := range req.Hosts {
 		if j, ok := first[n.Name]; ok {
@@ -375,7 +403,7 @@ func add(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostAddRequ
 			continue
 		}
 		first[n.Name] = i
-		h, err := insert(ctx, tx, who, n, l)
+		h, spaceID, err := insert(ctx, tx, who, n, l)
 		if e, ok := errors.AsType[*api.Error](err); ok && len(req.Hosts) > 1 {
 			faults = append(faults, api.ItemError{Index: i, Code: e.Code, Message: e.Message})
 			continue
@@ -384,33 +412,36 @@ func add(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostAddRequ
 			return api.HostAddResponse{}, err
 		}
 		resp.Hosts = append(resp.Hosts, h)
+		spaces = addSpace(spaces, spaceID)
 	}
 	if len(faults) > 0 {
 		// Returning an error rolls back the Hosts already recorded.
 		return api.HostAddResponse{}, api.BatchError(len(req.Hosts), "Hosts", "added", faults)
 	}
+	listChanged(ctx, lists, spaces)
 	return resp, nil
 }
 
 // insert records one new Host, Registered, in the Space it names or the
-// caller's Personal Space, checking its Relay, if any, against l.
-func insert(ctx context.Context, tx store.Tx, who access.Identity, n api.NewHost, l links) (api.Host, error) {
+// caller's Personal Space, checking its Relay, if any, against l, and
+// returns it with the id of its Space.
+func insert(ctx context.Context, tx store.Tx, who access.Identity, n api.NewHost, l links) (api.Host, string, error) {
 	if err := name.Check(n.Name); err != nil {
-		return api.Host{}, api.CodeInvalidName.Errorf("invalid Host name: %v", err)
+		return api.Host{}, "", api.CodeInvalidName.Errorf("invalid Host name: %v", err)
 	}
 	sp, err := spaceFor(ctx, tx, who, n.Space)
 	if err != nil {
-		return api.Host{}, err
+		return api.Host{}, "", err
 	}
 	v := values{address: &n.Address, port: n.Port, account: &n.Account, relay: n.Relay, attributes: n.Attributes, note: n.Note}
 	if v.port == nil {
 		v.port = new(record.DefaultPort)
 	}
 	if err := v.check(n.Name); err != nil {
-		return api.Host{}, err
+		return api.Host{}, "", err
 	}
 	if err := checkFree(ctx, tx, n.Name); err != nil {
-		return api.Host{}, err
+		return api.Host{}, "", err
 	}
 	now := op.Now(ctx).Format(time.RFC3339)
 	h := api.Host{
@@ -421,7 +452,7 @@ func insert(ctx context.Context, tx store.Tx, who access.Identity, n api.NewHost
 	if v.relay != nil {
 		r, err := relayFor(ctx, tx, who, h.ID, h.Name, *v.relay, l, nil)
 		if err != nil {
-			return api.Host{}, err
+			return api.Host{}, "", err
 		}
 		// Whoever sets a Relay can see it.
 		h.Relay, relayID = &api.HostRelay{ID: new(r.ID), Name: new(r.Name)}, sql.NullString{String: r.ID, Valid: true}
@@ -433,13 +464,13 @@ func insert(ctx context.Context, tx store.Tx, who access.Identity, n api.NewHost
 	_, err = tx.ExecContext(ctx, `INSERT INTO hosts (id, name, space_id, address, port, account, state, note, created_at, updated_at, relay_id)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, h.ID, h.Name, sp.ID, h.Address, h.Port, h.Account, h.State, note, now, now, relayID)
 	if err != nil {
-		return api.Host{}, fmt.Errorf("record the Host %s: %w", h.Name, err)
+		return api.Host{}, "", fmt.Errorf("record the Host %s: %w", h.Name, err)
 	}
 	if err := setAttributes(ctx, tx, h.ID, v.attributes); err != nil {
-		return api.Host{}, err
+		return api.Host{}, "", err
 	}
 	maps.Copy(h.Attributes, v.attributes)
-	return h, nil
+	return h, sp.ID, nil
 }
 
 // spaceFor returns the Space a new Host goes to: the one named, which the
@@ -851,7 +882,7 @@ func setOne(ctx context.Context, tx store.Tx, who access.Identity, h stored, req
 
 // rename is host.rename: the Host takes a new name, its SSH Name, and keeps
 // its id and everything else. A Retired Host holds no name to change.
-func rename(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRenameRequest) (api.HostRenameResponse, error) {
+func rename(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRenameRequest, lists *hostlist.Signal) (api.HostRenameResponse, error) {
 	who, h, err := target(ctx, tx, caller, req.Host)
 	if err != nil {
 		return api.HostRenameResponse{}, err
@@ -870,6 +901,7 @@ func rename(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRena
 	if err != nil {
 		return api.HostRenameResponse{}, fmt.Errorf("rename the Host %s to %s: %w", h.Name, req.NewName, err)
 	}
+	listChanged(ctx, lists, []string{h.spaceID})
 	renamed, err := find(ctx, tx, who, h.ID)
 	return api.HostRenameResponse{Host: renamed.Host}, err
 }
@@ -879,7 +911,7 @@ func rename(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRena
 // able to act in both Spaces. It announces each move on changes, so each
 // SSH Session to a moved Host of a caller who cannot act in the new Space
 // ends once the call commits.
-func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRequest, changes *access.Signal) (api.HostMoveResponse, error) {
+func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRequest, changes *access.Signal, lists *hostlist.Signal) (api.HostMoveResponse, error) {
 	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
 		return api.HostMoveResponse{}, err
@@ -892,8 +924,10 @@ func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRe
 	if err != nil {
 		return api.HostMoveResponse{}, err
 	}
+	var spaces []string
 	hosts, err := n.each("moved", func(h stored) (api.Host, error) {
 		if to.ID != h.spaceID {
+			spaces = addSpace(addSpace(spaces, h.spaceID), to.ID)
 			_, err := tx.ExecContext(ctx, "UPDATE hosts SET space_id = ?, updated_at = ? WHERE id = ?", to.ID, op.Now(ctx).Format(time.RFC3339), h.ID)
 			if err != nil {
 				return api.Host{}, fmt.Errorf("move the Host %s to %s: %w", h.Name, to.Name, err)
@@ -906,7 +940,9 @@ func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRe
 	switch {
 	case err != nil:
 		return api.HostMoveResponse{}, err
-	case n.several:
+	}
+	listChanged(ctx, lists, spaces)
+	if n.several {
 		return api.HostMoveResponse{Hosts: hosts}, nil
 	}
 	return api.HostMoveResponse{Host: hosts[0]}, nil
@@ -919,7 +955,7 @@ func move(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostMoveRe
 // its id names it. A Relay is refused while a Host outside the batch that
 // is not Retired uses it, so a Relay retires with the Hosts behind it. It
 // announces each retirement on changes, so the Host's SSH Sessions end.
-func retire(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRetireRequest, changes *access.Signal) (api.HostRetireResponse, error) {
+func retire(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRetireRequest, changes *access.Signal, lists *hostlist.Signal) (api.HostRetireResponse, error) {
 	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
 		return api.HostRetireResponse{}, err
@@ -929,6 +965,7 @@ func retire(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostReti
 		return api.HostRetireResponse{}, err
 	}
 	batch := n.ids()
+	var spaces []string
 	hosts, err := n.each("retired", func(h stored) (api.Host, error) {
 		if h.State == api.HostRetired {
 			return api.Host{}, api.CodeHostRetired.Errorf("%s (%s) is Retired already", h.Name, h.ID)
@@ -950,13 +987,16 @@ func retire(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostReti
 			return api.Host{}, fmt.Errorf("retire the Host %s: %w", h.Name, err)
 		}
 		changes.Publish(ctx, access.Change{Hosts: []string{h.ID}})
+		spaces = addSpace(spaces, h.spaceID)
 		retired, err := find(ctx, tx, who, h.ID)
 		return retired.Host, err
 	})
 	switch {
 	case err != nil:
 		return api.HostRetireResponse{}, err
-	case n.several:
+	}
+	listChanged(ctx, lists, spaces)
+	if n.several {
 		return api.HostRetireResponse{Hosts: hosts}, nil
 	}
 	return api.HostRetireResponse{Host: hosts[0]}, nil
@@ -966,7 +1006,7 @@ func retire(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostReti
 // Attributes, Note and Services, and is answered as it was. A Host that has
 // been Managed, which its pin shows, is kept on record instead, and
 // retiring it is the way on unless it is Retired already.
-func remove(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRemoveRequest) (api.HostRemoveResponse, error) {
+func remove(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRemoveRequest, lists *hostlist.Signal) (api.HostRemoveResponse, error) {
 	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
 		return api.HostRemoveResponse{}, err
@@ -975,6 +1015,7 @@ func remove(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRemo
 	if err != nil {
 		return api.HostRemoveResponse{}, err
 	}
+	var spaces []string
 	hosts, err := n.each("removed", func(h stored) (api.Host, error) {
 		if h.pin != nil {
 			var wayOn string
@@ -988,12 +1029,18 @@ func remove(ctx context.Context, tx store.Tx, caller op.Caller, req api.HostRemo
 		if _, err := tx.ExecContext(ctx, "DELETE FROM hosts WHERE id = ?", h.ID); err != nil {
 			return api.Host{}, fmt.Errorf("delete the Host %s: %w", h.Name, err)
 		}
+		// A Retired Host's name was listed nowhere.
+		if h.State != api.HostRetired {
+			spaces = addSpace(spaces, h.spaceID)
+		}
 		return h.Host, nil
 	})
 	switch {
 	case err != nil:
 		return api.HostRemoveResponse{}, err
-	case n.several:
+	}
+	listChanged(ctx, lists, spaces)
+	if n.several {
 		return api.HostRemoveResponse{Hosts: hosts}, nil
 	}
 	return api.HostRemoveResponse{Host: hosts[0]}, nil

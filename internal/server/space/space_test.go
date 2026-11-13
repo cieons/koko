@@ -15,6 +15,7 @@ import (
 
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/server/access"
+	"github.com/cieons/koko/internal/server/hostlist"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/space"
@@ -83,7 +84,7 @@ func newSpaces(t *testing.T) (*op.API, *holdings) {
 	a := op.New(st, rootKey, slog.New(slog.DiscardHandler),
 		func(context.Context, store.Tx) (bool, error) { return true, nil }, time.Now)
 	h := &holdings{hosts: map[string]int{}, retired: map[string]int{}, secrets: map[string]int{}}
-	space.Register(a, user.ByName, []space.Holding{h.countHosts, h.countSecrets}, &access.Signal{})
+	space.Register(a, user.ByName, []space.Holding{h.countHosts, h.countSecrets}, &access.Signal{}, &hostlist.Signal{})
 	a.Handle(addOwner, func(ctx context.Context, tx store.Tx, _ op.Caller, _ struct{}) (struct{}, error) {
 		return struct{}{}, user.AddOwner(ctx, tx, "alice")
 	})

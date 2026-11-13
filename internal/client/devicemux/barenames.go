@@ -14,8 +14,12 @@ import (
 // record (P0 spec: reach, "Bare names"), so that a Host someone else
 // records, or one in a Space the User is added to, becomes a bare name by
 // itself: it refreshes them once the Device Mux holds its first Device
-// Connection, then timing.BareNameRefresh after each refresh, and, when a
-// refresh fails, again once that Device Connection has ended, on the next.
+// Connection, at once whenever the koko server says on it that the Hosts
+// the User sees may have changed (wire.RequestHostsChanged), and otherwise
+// timing.BareNameRefresh after each refresh, the fallback for a koko server
+// that sends no such notice; and once that Device Connection has ended,
+// again on the next, since a notice sent while it held none is lost, and
+// a refresh that failed is due.
 // A refresh is no command: it neither keeps the Device Mux from idling out
 // nor makes it reconnect, and waits for the next Device Connection when it
 // holds none.
@@ -44,14 +48,12 @@ func (m *deviceMux) refreshBareNames() {
 			}
 			on, client = d, apiclient.New(func(context.Context) (serverconn.Conn, error) { return lentConn{d.conn}, nil })
 		}
-		var ended <-chan struct{}
-		if !m.writeBareNames(client) {
-			ended = d.done
-		}
+		m.writeBareNames(client)
 		timer := time.NewTimer(m.timings.BareNameRefresh)
 		select {
 		case <-timer.C:
-		case <-ended:
+		case <-d.conn.HostsChanged():
+		case <-d.done:
 		case <-m.ctx.Done():
 		}
 		timer.Stop()
@@ -83,15 +85,14 @@ func (m *deviceMux) connected() *deviceConn {
 // already, keeping the koko its ProxyCommand runs
 // (devicefiles.RefreshSSHConfig). It writes holding the Device Mux's lock,
 // and not once the Device Mux is stopping, so it never puts back the names
-// its revocation cleanup took out. It tells whether the refresh succeeded,
-// and logs either way.
-func (m *deviceMux) writeBareNames(c *apiclient.Client) bool {
+// its revocation cleanup took out. It logs whether the refresh succeeded.
+func (m *deviceMux) writeBareNames(c *apiclient.Client) {
 	resp, err := c.Call(m.ctx, api.HostList, api.HostListRequest{})
 	if err != nil {
 		if m.ctx.Err() == nil {
 			m.Log.Warn("cannot refresh the bare names", "err", err)
 		}
-		return false
+		return
 	}
 	names := make([]string, 0, len(resp.Hosts))
 	for _, h := range resp.Hosts {
@@ -100,16 +101,15 @@ func (m *deviceMux) writeBareNames(c *apiclient.Client) bool {
 	m.mu.Lock()
 	if m.ctx.Err() != nil {
 		m.mu.Unlock()
-		return false
+		return
 	}
 	wrote, err := devicefiles.RefreshSSHConfig(m.Home, names)
 	m.mu.Unlock()
 	if err != nil {
 		m.Log.Warn("cannot refresh the bare names", "err", err)
-		return false
+		return
 	}
 	m.Log.Info("refreshed the bare names", "names", len(names), "rewrote", wrote)
-	return true
 }
 
 // lentConn is a Device Connection lent to a refresh's API client: closing

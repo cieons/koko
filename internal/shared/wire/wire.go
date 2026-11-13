@@ -69,6 +69,17 @@ const RequestReport = "report@koko"
 // its next connection.
 const RequestRevoked = "revoked@koko"
 
+// RequestHostsChanged is the SSH global request the koko server sends a
+// Device Connection, wanting no reply and with no payload, once a committed
+// change may have changed the Hosts its User sees, such as a Host added,
+// renamed, moved, Retired or deleted in a Space the User acts in, or the
+// User added to a Space or taken out of one: the Device Mux holding it
+// rewrites the bare names in koko's ssh_config at once, rather than at its
+// next refresh. A device that does not know it ignores it, as every device
+// ignores a global request it does not know, so a koko server sends it to
+// every build in the window, and the refresh stays the fallback either way.
+const RequestHostsChanged = "hosts-changed@koko"
+
 // RequestDisconnected is the SSH global request a Device Mux sends each
 // command connected to it, wanting no reply and with no payload, just before
 // koko disconnect stops it: what it carried ends on purpose, and an SSH

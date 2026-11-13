@@ -323,10 +323,14 @@ The Device Mux keeps the [bare names](device-connection.md#ssh) in koko's
 ssh_config following the record
 ([`refreshBareNames`](../../internal/client/devicemux/barenames.go)):
 
-- **When.** Once it holds its first Device Connection, then
-  `timing.BareNameRefresh` (10 minutes) after each refresh, until it stops.
-  A refresh that fails tries again 10 minutes later, or sooner on the next
-  Device Connection once its own has ended. A refresh due while it holds no
+- **When.** Once it holds its first Device Connection; at once whenever
+  the koko server says on it that the Hosts its User sees may have changed
+  ([the host-list notice](device-connection.md#the-host-list-notice)); and
+  otherwise `timing.BareNameRefresh` (10 minutes) after each refresh, the
+  fallback for a koko server that sends no notice, until it stops.
+  Once its Device Connection has ended it refreshes again on the next,
+  since a notice sent while it held none is lost; a refresh that fails
+  tries again then, or 10 minutes later. A refresh due while it holds no
   Device Connection waits for the next one without asking for it, so it
   never makes the Device Mux reconnect.
 - **How.** It calls `host.list` on its Device Connection, through one API
@@ -433,8 +437,10 @@ at once` (reason: wake or route change) and `no route-change watch`.
 - [`barenames_test.go`](../../internal/client/cli/barenames_test.go): a
   Host someone else records in a Member's Space, and a Space the Member is
   added to, reached as `<name>.koko` at once and as bare names after a
-  refresh, and refreshes that find the record as it was leaving the file
-  alone; the refresh at its start, and one a drop cut tried again on the
+  refresh, and the timer's refreshes, with nothing changed, leaving the
+  file alone; [`hostschanged_test.go`](../../internal/client/cli/hostschanged_test.go):
+  the refresh on the koko server's notice ([the Device Connection](device-connection.md#verifying)),
+  and on the next Device Connection after a drop, whose notices it hears; the refresh at its start, and one a drop cut tried again on the
   next Device Connection; the idle exit however often it refreshes; and no
   reconnect for a refresh. [`devicefiles/ssh_test.go`](../../internal/client/devicefiles/ssh_test.go)
   `TestARefreshKeepsTheKokoTheFileRuns`: the ProxyCommand a refresh keeps.

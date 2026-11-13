@@ -182,8 +182,10 @@ func hostLists(h *harness.Harness) int {
 // A Host someone else records in a Member's Space, and a Space the Member
 // is added to, reach the Member's device as <name>.koko at once, since the
 // Gateway checks access at each SSH Session, and as bare names once the
-// Device Mux refreshes them, which it does every BareNameRefresh. A refresh
-// that finds the record as it was leaves koko's ssh_config alone.
+// Device Mux refreshes them, on the koko server's notice or its timer. The
+// Device Mux refreshes every BareNameRefresh, the fallback for a koko
+// server that sends no notice, and a refresh that finds the record as it
+// was leaves koko's ssh_config alone.
 func theDeviceMuxRefreshesTheBareNames(t *testing.T) {
 	const refresh = 100 * time.Millisecond
 	h := harness.Start(t)

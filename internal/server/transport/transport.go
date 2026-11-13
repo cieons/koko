@@ -547,6 +547,39 @@ func (s *Server) CloseDeviceSessions(ids ...string) {
 	}
 }
 
+// DeviceSessions returns the ids of the Device Sessions that hold a Device
+// Connection now, each once, in no order.
+func (s *Server) DeviceSessions() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var ids []string
+	for c := range s.conns {
+		if id := c.caller.DeviceSession; id != "" && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// TellHostsChanged tells every Device Connection of the Device Sessions
+// named that the Hosts its User sees may have changed
+// (wire.RequestHostsChanged), so that its Device Mux rewrites the bare
+// names at once. It does not block: a connection too stalled to take the
+// request holds up neither the caller nor the others, and ends with its
+// own liveness watch or the transport's Close.
+func (s *Server) TellHostsChanged(ids ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	for c := range s.conns {
+		if id := c.caller.DeviceSession; id != "" && slices.Contains(ids, id) {
+			s.wg.Go(func() { _, _, _ = c.ssh.SendRequest(wire.RequestHostsChanged, false, nil) })
+		}
+	}
+}
+
 // closeRevoked closes c, a Revoked Device Session's connection, once its
 // calls in flight have answered, at most shutdownGrace from now, and sends
 // the device every byte before the close.

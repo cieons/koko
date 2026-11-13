@@ -199,6 +199,7 @@ func (c *endingConn) Wait() error {
 }
 
 func (c *endingConn) Disconnected() <-chan struct{} { return nil }
+func (c *endingConn) HostsChanged() <-chan struct{} { return nil }
 
 func (c *endingConn) Close() error { return nil }
 
@@ -254,5 +255,6 @@ func (c refusingConn) Wait() error {
 }
 
 func (c refusingConn) Disconnected() <-chan struct{} { return nil }
+func (c refusingConn) HostsChanged() <-chan struct{} { return nil }
 
 func (c refusingConn) Close() error { return nil }
