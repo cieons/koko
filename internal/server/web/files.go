@@ -153,7 +153,7 @@ func refusalError(a wire.TerminalAnswer) error {
 func (f *Front) hostFiles(c gateway.TerminalCaller, tunnel string) (*gateway.Files, error) {
 	id, err := wire.ParseTerminalID(tunnel)
 	if err != nil {
-		return nil, api.CodeUnknownTunnel.Errorf("this browser has no open SSH Session with this id")
+		return nil, api.CodeUnknownTunnel.Errorf("this User has no open SSH Session with this id")
 	}
 	return f.gateway.Files(c, id)
 }

@@ -510,9 +510,10 @@ JSON with `Cache-Control: no-store` beside the way in's headers:
    `web@koko` `revoked`, then `cookie_required`.
 4. **A JSON endpoint** takes `application/json` of at most 4 KiB
    (`api.MaxFilesBody`), a member it does not know refused.
-5. **The Gateway** takes only the caller who opened the SSH Session, so
-   another caller's id is `unknown_tunnel`, as an id of none is. The files
-   move whether any page is attached to the SSH Session or none.
+5. **The Gateway** takes any live caller of the SSH Session's User, from
+   any page of theirs, so another User's id is `unknown_tunnel`, as an id
+   of none is. The files move whether any page is attached to the SSH
+   Session or none. Uploads and download tokens stay the caller's own.
 
 | Endpoint | Takes | Answers |
 | --- | --- | --- |
@@ -594,8 +595,8 @@ JSON with `Cache-Control: no-store` beside the way in's headers:
 
 | Code | Status | When |
 | --- | --- | --- |
-| `unknown_tunnel` | 404 | A files call named no live web terminal SSH Session of this caller. |
-| `ssh_session_ended` | 410 | The web terminal's SSH Session ended, as the Gateway still knows (its ending kept for a resume), which ends every transfer of it. |
+| `unknown_tunnel` | 404 | A files call named no live web terminal SSH Session of this caller's User. |
+| `ssh_session_ended` | 410 | The web terminal's SSH Session ended, while its tab holds it as its last, which ends every transfer of it. |
 | `sftp_unavailable` | 409 | The Host offers no SFTP: `web1 offers no SFTP, which koko moves files through`. The terminal is unaffected. |
 | `host_refused` | 403 | The Host refused a listing, a read or a write; the message is the Host's, such as `Permission denied`. |
 | `invalid_name` | 400 | An upload's name is empty, `.`, `..` or holds `/` (the API's own code). |

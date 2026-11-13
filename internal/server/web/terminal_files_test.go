@@ -205,6 +205,33 @@ func TestFilesCallsAreTheCallersOwn(t *testing.T) {
 	wantFiles[api.FilesListResponse](t, list(t, b, w.ID, ""))
 }
 
+// Files work from any page of the SSH Session's User: a page of the
+// Owner's other Sign-in lists the Host and uploads into it, and the log
+// names that Sign-in as who moved the file; another User's page gets
+// unknown_tunnel, as for an id that names no SSH Session.
+func TestFilesFromAnotherSignInOfTheUser(t *testing.T) {
+	t.Parallel()
+	h, host, _, w := filesTerminal(t, sshhost.SFTP())
+	other := signInAgain(t, h, harness.Owner)
+	status, body := other.Send(api.UserCurrent, []byte("{}"))
+	var current api.UserCurrentResponse
+	if err := json.Unmarshal(body, &current); err != nil || status != http.StatusOK || current.SignIn == nil {
+		t.Fatalf("user.current of the Owner's other Sign-in: %d %s", status, body)
+	}
+
+	wantFiles[api.FilesListResponse](t, list(t, other, w.ID, ""))
+	home := host.Home()
+	id := startUpload(t, other, w, home, "from-the-phone.txt", 5, false)
+	chunk(t, h, other, id, 0, []byte("hello"), 5)
+	wantFiles[api.FilesFinishResponse](t, filesPost(t, other, api.FilesFinishPath, api.FilesFinishRequest{Upload: id}))
+	if got, err := os.ReadFile(filepath.Join(home, "from-the-phone.txt")); err != nil || string(got) != "hello" {
+		t.Errorf("the upload holds %q (%v), want hello", got, err)
+	}
+	waitLog(t, h, `msg="file transferred" tunnel=`+w.ID+` client=browser user=`+harness.Owner+` signin=`+current.SignIn.ID+` host=web1 .* outcome=done\n`)
+
+	wantAPIError(t, list(t, h.SignIn("bob"), w.ID, ""), http.StatusNotFound, "unknown_tunnel")
+}
+
 // Files move while no page is attached to the terminal, and once its SSH
 // Session has ended with a notice, a files call is ssh_session_ended.
 func TestFilesWhileDetachedAndOnceEnded(t *testing.T) {

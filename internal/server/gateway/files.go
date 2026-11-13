@@ -15,6 +15,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/server/hostconn"
+	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -34,8 +35,10 @@ type Files struct {
 	// SFTP is the SSH Session's SFTP client, shared by every call.
 	SFTP *sftp.Client
 	t    *tunnel
-	f    *terminalFiles
-	log  *slog.Logger
+	// caller is who asked for the files, whom the log names as moving them.
+	caller op.Caller
+	f      *terminalFiles
+	log    *slog.Logger
 }
 
 // Direction is which way a file moved, as its log line names it.
@@ -61,10 +64,11 @@ const (
 // direction, Upload or Download, its absolute path on the Host (a
 // download's as asked, an upload's final one), the bytes moved, and the
 // outcome, with err for TransferFailed. The line names the SSH Session as
-// its other lines do, and holds no token and no content.
+// its other lines do, and the caller who moved the file, and holds no token
+// and no content.
 func (f *Files) Transferred(direction Direction, path string, bytes int64, outcome Outcome, err error) {
 	t := f.t
-	attrs := slices.Concat(t.named(), []any{"user", t.user}, callerAttrs(t.caller), []any{
+	attrs := slices.Concat(t.named(), []any{"user", t.user}, callerAttrs(f.caller), []any{
 		"host", t.hostName, "host_id", t.hostID,
 		"direction", direction, "path", path, "bytes", bytes, "outcome", outcome,
 	})
@@ -144,36 +148,38 @@ func (g *Gateway) newTerminalFiles(host *hostconn.Conn) *terminalFiles {
 	return &terminalFiles{host: host, wait: g.timings.StopNotice, wg: &g.wg, done: make(chan struct{}), atEnd: map[uint64]func(){}}
 }
 
-// Files returns the files of the web terminal's SSH Session id of the caller
-// c, opening its SFTP client on the first call, or why not: unknown_tunnel
-// for an id that names no live web terminal SSH Session of c's,
-// ssh_session_ended for one that has ended, as the Gateway still knows,
-// sftp_unavailable for a Host that refuses the sftp subsystem, and
-// host_refused for one that refuses its channel. It works while the
-// WebSocket is Detached.
+// Files returns the files of the web terminal's SSH Session id, for the
+// caller c, opening its SFTP client on the first call, or why not: any live
+// caller of the SSH Session's User may, from any page (spec #213, "The
+// page"). It refuses with unknown_tunnel an id that names no live SSH
+// Session of the caller's User's Workspace, with ssh_session_ended one that
+// names its tab's last, which has ended, with sftp_unavailable a Host that
+// refuses the sftp subsystem, and with host_refused one that refuses its
+// channel. It works with no page attached.
 func (g *Gateway) Files(c TerminalCaller, id [wire.TunnelIDSize]byte) (*Files, error) {
-	key := c.key()
-	g.mu.Lock()
-	t := g.ownLocked(tunnelID(id), key, clientBrowser)
-	var tf *terminalFiles
-	if t != nil {
-		tf = t.files
+	u, refused := g.userOf(c)
+	if refused != nil {
+		return nil, &api.Error{Code: refused.Refused, Message: *refused.Message}
 	}
-	e, kept := g.ended[tunnelID(id)]
-	kept = kept && e.key == key && e.client == clientBrowser && time.Now().Before(e.until)
-	g.mu.Unlock()
+	s, ended := g.workspaces.workspace(u.ID).sessionOf(tunnelID(id))
+	var tf *terminalFiles
+	if s != nil {
+		g.mu.Lock()
+		tf = s.t.files
+		g.mu.Unlock()
+	}
 	switch {
-	case t != nil && tf != nil:
-	case kept:
+	case tf != nil:
+	case ended:
 		return nil, api.CodeSSHSessionEnded.Errorf("this SSH Session has ended, and with it its file transfers")
 	default:
-		return nil, api.CodeUnknownTunnel.Errorf("this browser has no open SSH Session with this id")
+		return nil, api.CodeUnknownTunnel.Errorf("this User has no open SSH Session with this id")
 	}
-	client, err := g.sftpOf(t, tf)
+	client, err := g.sftpOf(s.t, tf)
 	if err != nil {
 		return nil, err
 	}
-	return &Files{SFTP: client, t: t, f: tf, log: g.log}, nil
+	return &Files{SFTP: client, t: s.t, caller: c.Caller, f: tf, log: g.log}, nil
 }
 
 // sftpOf returns the SFTP client of the web terminal t, whose files are tf,

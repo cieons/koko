@@ -467,9 +467,9 @@ web`, and the Owner's for the Local caller.
   no mode, so the client writes through `privateCreates`, which gives each
   exclusive create, an upload's partial file, the permissions `0600`, so
   the Host makes it private as it creates it. Or it says why not:
-  `unknown_tunnel` for an id that names no live web terminal of the
-  caller's, `ssh_session_ended` for one that has ended, as long as its
-  ending is kept, `sftp_unavailable` for a Host that refuses the subsystem,
+  `unknown_tunnel` for an id that names no live SSH Session of the
+  caller's User's Workspace, `ssh_session_ended` for one that names its
+  tab's last SSH Session, which has ended, `sftp_unavailable` for a Host that refuses the subsystem,
   and `host_refused` for one that refuses its channel. Once the SSH Session
   ends, its files end first, while the Host connection still lives: every
   later call is `ssh_session_ended`, and the end hooks the web front
