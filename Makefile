@@ -18,7 +18,7 @@ CROSS_TARGETS := $(RELEASE_TARGETS)
 # npm ci writes this file, so it is newer than the lockfile once installed.
 WEB_DEPS := web/node_modules/.package-lock.json
 
-.PHONY: check lint fmt vet test cross build dist image webui generate clean
+.PHONY: check lint fmt vet test stress cross build dist image webui generate clean
 
 ## check: everything a change must pass before it is committed
 check: webui lint vet test cross
@@ -45,18 +45,42 @@ vet:
 
 # Tests run under a throwaway HOME so they never touch the real ~/.ssh,
 # ~/.claude or ~/.config. Go's caches and env file are pinned first, or
-# every run would re-download modules into the temp HOME. The Go tests
-# include the check that the web UI's generated types are up to date; the
-# web UI's own tests run in Vitest. A test binary still running after 5
-# minutes has hung: go test fails it with a goroutine dump, well inside the
-# CI job's timeout.
-test: $(WEB_DEPS)
-	@home=$$(mktemp -d); trap 'rm -rf "$$home"' EXIT; \
+# every run would re-download modules into the temp HOME. TEST_HOME makes
+# the HOME, removed when the recipe's shell exits, and exports it.
+TEST_HOME = home=$$(mktemp -d); trap 'rm -rf "$$home"' EXIT; \
 	export GOENV="$$($(GO) env GOENV)" GOPATH="$$($(GO) env GOPATH)" \
 	GOMODCACHE="$$($(GO) env GOMODCACHE)" GOCACHE="$$($(GO) env GOCACHE)" \
 	HOME="$$home" XDG_CONFIG_HOME="$$home/.config" \
-	XDG_DATA_HOME="$$home/.local/share" XDG_STATE_HOME="$$home/.local/state"; \
-	$(GO) test -race -timeout 5m ./... && cd web && node_modules/.bin/vitest run
+	XDG_DATA_HOME="$$home/.local/share" XDG_STATE_HOME="$$home/.local/state";
+
+# The Go tests include the check that the web UI's generated types are up
+# to date; the web UI's own tests run in Vitest. A test binary still
+# running after 5 minutes has hung: go test fails it with a goroutine dump,
+# well inside the CI job's timeout.
+test: $(WEB_DEPS)
+	@$(TEST_HOME) $(GO) test -race -timeout 5m ./... && cd web && node_modules/.bin/vitest run
+
+## stress: reproduce a flake, and prove its fix, by running the tests
+## STRESS_RUN matches in STRESS_PKGS under load, as on CI's slower runners:
+##   make stress STRESS_PKGS=./internal/client/cli STRESS_RUN='^TestX$$'
+## STRESS_RUN is passed to go test as it is written, a $$ included.
+## Each runs STRESS_COUNT times at each GOMAXPROCS in STRESS_CPU, under the
+## race detector, beside STRESS_LOAD busy loops, two for each CPU by
+## default (docs/code-standards.md, "Tests").
+STRESS_PKGS ?=
+STRESS_RUN ?=
+STRESS_COUNT ?= 20
+STRESS_CPU ?= 1,4
+STRESS_LOAD ?= $$(( 2 * $$(getconf _NPROCESSORS_ONLN) ))
+stress:
+	@[ -n "$(STRESS_PKGS)" ] && [ -n '$(value STRESS_RUN)' ] || \
+		{ echo "make stress needs STRESS_PKGS and STRESS_RUN, such as STRESS_PKGS=./internal/client/cli STRESS_RUN='^TestX\$$'" >&2; exit 2; }
+	@$(TEST_HOME) load=; \
+	trap '{ kill $$load; wait; } 2>/dev/null; rm -rf "$$home"' EXIT; \
+	for _ in $$(seq $(STRESS_LOAD)); do \
+		sh -c 'while :; do :; done' & load="$$load $$!"; \
+	done; \
+	$(GO) test -race -count=$(STRESS_COUNT) -cpu=$(STRESS_CPU) -run '$(value STRESS_RUN)' $(STRESS_PKGS)
 
 cross:
 	@for t in $(CROSS_TARGETS); do \
