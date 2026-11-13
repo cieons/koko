@@ -514,6 +514,19 @@ JSON with `Cache-Control: no-store` beside the way in's headers:
    any page of theirs, so another User's id is `unknown_tunnel`, as an id
    of none is. The files move whether any page is attached to the SSH
    Session or none. Uploads and download tokens stay the caller's own.
+   Each upload chunk reads the caller anew, and a download is cut once
+   the access-change signal ends its caller (`downloads.cutEnded`: a
+   Device Session Revoked, a Sign-in ended, or every Sign-in's on a Web
+   URL change), from the moment the web front read its caller, the
+   Gateway's read in `Files` being the read after. One cut before its
+   first byte is refused, as the caller now is. Once it streams, the file
+   closes and a past write deadline frees a write that waits for a browser
+   reading nothing, so the answer ends short and the log says
+   `outcome=failed` with `err="its caller has ended, and the download with
+   it"`; a download is logged `done` only once its last bytes left the
+   answer's buffer. Through `koko web`, whose
+   connection takes no deadline, a Revoked Device Session's Device
+   Connection closing ends it.
 
 | Endpoint | Takes | Answers |
 | --- | --- | --- |

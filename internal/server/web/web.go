@@ -105,10 +105,12 @@ func (f *Front) Register(a *op.API) {
 }
 
 // Withdraw ends the cookies and tokens of the Device Sessions c Revoked, at
-// once, while their connections may still be open: a consumer of the
-// access-change signal. It does not block.
+// once, while their connections may still be open, and cuts the downloads
+// streaming for each caller c ended: a consumer of the access-change
+// signal. It does not block.
 func (f *Front) Withdraw(c access.Change) {
 	f.runs.revoke(c.Revoked)
+	f.downloads.cutEnded(c)
 }
 
 // start is web.start: it issues a token for the caller's Device Session, or,

@@ -2,12 +2,14 @@ package web_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json/v2"
 	"errors"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,6 +24,7 @@ import (
 	"github.com/cieons/koko/internal/harness/sshhost"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/timing"
+	"github.com/cieons/koko/internal/shared/wire"
 )
 
 // filesPost posts req, as JSON, to the files endpoint path from the browser
@@ -482,13 +485,31 @@ func TestFilesUploadToAHostThatFailsWrites(t *testing.T) {
 // the proxy, and returns the answer, not yet read.
 func fetch(t *testing.T, h *harness.Harness, b *harness.Browser, path string) *http.Response {
 	t.Helper()
+	return fetchOn(t, h, b, path, &http.Transport{})
+}
+
+// fetchStalling is fetch from a browser whose connection takes in little
+// at a time: once it stops reading, the koko server's writes wait at once.
+func fetchStalling(t *testing.T, h *harness.Harness, b *harness.Browser, path string) *http.Response {
+	t.Helper()
+	var d net.Dialer
+	return fetchOn(t, h, b, path, &http.Transport{DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		c, err := d.DialContext(ctx, network, addr)
+		if err == nil {
+			err = c.(*net.TCPConn).SetReadBuffer(4 << 10)
+		}
+		return c, err
+	}})
+}
+
+func fetchOn(t *testing.T, h *harness.Harness, b *harness.Browser, path string, tr *http.Transport) *http.Response {
+	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+h.WebAddress()+path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	req.Host = strings.TrimPrefix(harness.WebURL, "https://")
 	req.AddCookie(&http.Cookie{Name: "__Host-koko", Value: b.Cookie})
-	tr := &http.Transport{}
 	t.Cleanup(tr.CloseIdleConnections)
 	resp, err := (&http.Client{Transport: tr}).Do(req)
 	if err != nil {
@@ -589,6 +610,164 @@ func TestFilesDownloadTokensExpireAndAreTheCallersOwn(t *testing.T) {
 	wantAPIError(t, fetchAll(t, h, b, api.FilesDownloadPath+"/"+late.Token), http.StatusNotFound, "unknown_download")
 	if a := fetchAll(t, h, b, api.FilesDownloadPath+"/"+inTime.Token); a.StatusCode != http.StatusOK {
 		t.Errorf("a token 1 s old answered %s", a.Status)
+	}
+}
+
+// sparseFile makes the file name under dir of size bytes, sparse, so
+// that a file far larger than the connection's buffers is made at once.
+func sparseFile(t *testing.T, dir, name string, size int64) {
+	t.Helper()
+	f, err := os.Create(filepath.Join(dir, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	if err := f.Truncate(size); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A download already streaming is cut once its caller is ended: a page of
+// the Owner's other Sign-in downloads from a tab the first one opened, and
+// revoking that Sign-in, or its expiry, found by the sweep or at a
+// Workspace request of its page, which records it, cuts the answer short,
+// though the browser has stopped reading, so the koko server's write waits.
+// The SSH Session goes on.
+func TestFilesDownloadIsCutWhenItsCallerEnds(t *testing.T) {
+	t.Parallel()
+	// expire lets 8 days pass, the first Sign-in used on the 6th, so the
+	// phone's alone expires.
+	expire := func(t *testing.T, h *harness.Harness, b *harness.Browser) {
+		h.Advance(6 * 24 * time.Hour)
+		signInOf(t, b)
+		h.Advance(2 * 24 * time.Hour)
+	}
+	for _, c := range []struct {
+		name    string
+		timings timing.Timings
+		end     func(t *testing.T, h *harness.Harness, b, phone *harness.Browser, ws *harness.WorkspacePage, tab string)
+	}{
+		{
+			name: "revoked",
+			end: func(t *testing.T, h *harness.Harness, _, phone *harness.Browser, _ *harness.WorkspacePage, _ string) {
+				h.Koko("signin", "revoke", signInOf(t, phone)).WantSuccess(t)
+			},
+		},
+		{
+			name:    "expired, found by the sweep",
+			timings: timing.Timings{SignInCheck: 20 * time.Millisecond},
+			end: func(t *testing.T, h *harness.Harness, b, _ *harness.Browser, _ *harness.WorkspacePage, _ string) {
+				expire(t, h, b)
+			},
+		},
+		{
+			name: "expired, found at a Workspace request",
+			end: func(t *testing.T, h *harness.Harness, b, _ *harness.Browser, ws *harness.WorkspacePage, tab string) {
+				expire(t, h, b)
+				ws.Send(wire.WorkspaceRequest{Close: tab})
+			},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			h := startTerminals(t, harness.Timings(c.timings))
+			host := terminalHost(t, h, "web1", nil, sshhost.SFTP())
+			b := h.SignIn(harness.Owner)
+			w := b.TerminalPage().Open("web1", 80, 24)
+			const size = 256 << 20
+			sparseFile(t, host.Home(), "big.img", size)
+			phone := signInAgain(t, h, harness.Owner)
+			ws := phone.TerminalPage().Workspace()
+
+			d := downloadToken(t, phone, w, host.Home()+"/big.img")
+			resp := fetchStalling(t, h, phone, api.FilesDownloadPath+"/"+d.Token)
+			defer func() { _ = resp.Body.Close() }()
+			if _, err := io.ReadFull(resp.Body, make([]byte, 64<<10)); err != nil {
+				t.Fatalf("read the download's start: %v", err)
+			}
+			c.end(t, h, b, phone, ws, w.Tab)
+			m := waitLog(t, h, `msg="file transferred" tunnel=`+w.ID+` .* direction=download path=\S+/big.img bytes=(\d+) outcome=failed err="its caller has ended, and the download with it"\n`)
+			if moved, _ := strconv.Atoi(m[1]); moved >= size {
+				t.Errorf("the cut download moved %d bytes, the whole file", moved)
+			}
+			if n, err := io.Copy(io.Discard, resp.Body); err == nil {
+				t.Errorf("the cut download's answer ended cleanly after %d more bytes, want it cut short", n)
+			}
+			wantFiles[api.FilesListResponse](t, list(t, b, w.ID, ""))
+		})
+	}
+}
+
+// A download whose caller is revoked after the web front read it and
+// before its first byte, here while the Host is frozen in the download's
+// first calls, is refused rather than streamed: it was among the downloads
+// a change cuts from the caller's read on.
+func TestFilesDownloadStartedAsItsCallerEndsIsRefused(t *testing.T) {
+	t.Parallel()
+	h, host, _, w := filesTerminal(t, sshhost.SFTP())
+	sparseFile(t, host.Home(), "big.img", 8<<20)
+	phone := signInAgain(t, h, harness.Owner)
+	id := signInOf(t, phone)
+	// The web front's read of the caller moves its Last used time, kept to
+	// the minute, which tells the test the read is done: the token is taken
+	// 30 s after the Sign-in's last use, which it does not move, and spent
+	// 31 s later, within its 60 s, which does.
+	h.Advance(30 * time.Second)
+	d := downloadToken(t, phone, w, host.Home()+"/big.img")
+	h.Advance(31 * time.Second)
+	lastUsed := func() string {
+		resp, err := h.Call(api.SignInList, api.SignInListRequest{User: harness.Owner})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, si := range resp.SignIns {
+			if si.ID == id {
+				return si.LastUsedAt
+			}
+		}
+		t.Fatalf("signin.list holds no %s", id)
+		return ""
+	}
+	before := lastUsed()
+
+	host.Freeze()
+	type got struct {
+		status int
+		body   int
+	}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+h.WebAddress()+api.FilesDownloadPath+"/"+d.Token, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = strings.TrimPrefix(harness.WebURL, "https://")
+	req.AddCookie(&http.Cookie{Name: "__Host-koko", Value: phone.Cookie})
+	tr := &http.Transport{}
+	t.Cleanup(tr.CloseIdleConnections)
+	fetched := make(chan got, 1)
+	go func() {
+		resp, err := (&http.Client{Transport: tr}).Do(req)
+		if err != nil {
+			fetched <- got{status: -1}
+			return
+		}
+		n, _ := io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		fetched <- got{resp.StatusCode, int(n)}
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	for lastUsed() == before {
+		if time.Now().After(deadline) {
+			t.Fatal("the download's caller was not read within 10 s")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	h.Koko("signin", "revoke", id).WantSuccess(t)
+	host.Thaw()
+	switch a := <-fetched; a.status {
+	case -1:
+		t.Error("the download whose caller was revoked as it started got no answer, want its refusal")
+	case http.StatusOK:
+		t.Errorf("the download whose caller was revoked as it started answered 200 with %d bytes, want it refused", a.body)
 	}
 }
 

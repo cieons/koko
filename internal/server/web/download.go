@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -9,12 +10,15 @@ import (
 	"maps"
 	"net/http"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/cieons/koko/internal/server/access"
 	"github.com/cieons/koko/internal/server/gateway"
+	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -37,14 +41,53 @@ const downloadBuffer = 256 << 10
 
 // downloads are the download tokens the web front has given and not yet
 // seen spent, by the SHA-256 of each, so the tokens themselves are kept
-// nowhere.
+// nowhere, and the downloads streaming, which a change that ends their
+// caller cuts (cutEnded).
 type downloads struct {
-	mu     sync.Mutex
-	byHash map[[sha256.Size]byte]download
+	mu        sync.Mutex
+	byHash    map[[sha256.Size]byte]download
+	streaming map[*streaming]struct{}
 }
 
 func newDownloads() *downloads {
-	return &downloads{byHash: map[[sha256.Size]byte]download{}}
+	return &downloads{byHash: map[[sha256.Size]byte]download{}, streaming: map[*streaming]struct{}{}}
+}
+
+// streaming is a download streaming for its caller, and how to cut it.
+type streaming struct {
+	caller op.Caller
+	cut    context.CancelCauseFunc
+}
+
+// errCallerEnded cuts a download whose caller a change ended, as its log
+// line says.
+var errCallerEnded = errors.New("its caller has ended, and the download with it")
+
+// stream keeps the download s streaming until the call it returns.
+func (ds *downloads) stream(s *streaming) (done func()) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	ds.streaming[s] = struct{}{}
+	return func() {
+		ds.mu.Lock()
+		defer ds.mu.Unlock()
+		delete(ds.streaming, s)
+	}
+}
+
+// cutEnded cuts every download streaming for a caller the committed change
+// c ended: a Device Session it Revoked, a Sign-in it ended, and when it
+// changed the Web URL, every Sign-in's, whose page is signed out. A token
+// not yet spent needs no cut: spending it reads the caller.
+func (ds *downloads) cutEnded(c access.Change) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	for s := range ds.streaming {
+		if slices.Contains(c.Revoked, s.caller.DeviceSession) || slices.Contains(c.SignIns, s.caller.SignIn) ||
+			c.WebURL && s.caller.SignIn != "" {
+			s.cut(errCallerEnded)
+		}
+	}
 }
 
 // download is what a token is good for: the file path names on the Host
@@ -131,8 +174,8 @@ func notAFile(p string) error {
 // once it is found the caller's and good, then the file's bytes, streamed
 // as an attachment with its length. A failure before the bytes is the
 // error object; one while they stream cuts the answer short, which the
-// browser shows as a failed download. The token reaches no log line
-// (loggedPath).
+// browser shows as a failed download, as does a change that ends the
+// caller (cutEnded). The token reaches no log line (loggedPath).
 func (f *Front) serveDownload(w http.ResponseWriter, r *http.Request, way terminalWay, token string) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -144,6 +187,13 @@ func (f *Front) serveDownload(w http.ResponseWriter, r *http.Request, way termin
 		f.refuseAPI(w, r, refusalError(*refused))
 		return
 	}
+	// Among the downloads streaming from the caller's read on, so that a
+	// change that ends the caller from then on cuts it, the Gateway's read
+	// in Files being the read after: no window between the two lets one
+	// through.
+	ctx, cut := context.WithCancelCause(r.Context())
+	defer cut(nil)
+	defer f.downloads.stream(&streaming{caller: c.Caller, cut: cut})()
 	d, ok := f.downloads.spend(token, keyOf(c), f.clock())
 	if !ok {
 		f.refuseAPI(w, r, api.CodeUnknownDownload.Errorf("this download link has expired, was used already, or is not this browser's"))
@@ -170,10 +220,25 @@ func (f *Front) serveDownload(w http.ResponseWriter, r *http.Request, way termin
 	if err == nil && !fi.Mode().IsRegular() {
 		err = notAFile(d.path)
 	}
-	if err != nil {
+	switch {
+	case errors.Is(context.Cause(ctx), errCallerEnded):
+		// Cut before a byte went: refused as the caller now is.
+		f.refuseAPI(w, r, f.endedCaller(r, way))
+		return
+	case err != nil:
 		f.refuseAPI(w, r, hostError(files, err))
 		return
 	}
+	// From here a cut closes the file, which fails its read, and fails a
+	// write to a browser that reads nothing, which would hold it otherwise;
+	// before, the refusal above answers it.
+	rc := http.NewResponseController(w)
+	defer context.AfterFunc(ctx, func() {
+		if errors.Is(context.Cause(ctx), errCallerEnded) {
+			_ = file.Close()
+			_ = rc.SetWriteDeadline(time.Now())
+		}
+	})()
 	size := fi.Size()
 	h := w.Header()
 	h.Set("Content-Type", "application/octet-stream")
@@ -181,10 +246,30 @@ func (f *Front) serveDownload(w http.ResponseWriter, r *http.Request, way termin
 	h.Set("Content-Length", strconv.FormatInt(size, 10))
 	w.WriteHeader(http.StatusOK)
 	moved, outcome, err := copyDownload(w, file, size)
-	if ended := files.Err(); outcome == gateway.TransferFailed && ended != nil {
+	if outcome == gateway.TransferDone {
+		// The last bytes wait in the answer's buffer: done only once they
+		// went, which a cut may stop.
+		if err := rc.Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			outcome = gateway.TransferCancelled
+		}
+	}
+	switch ended := files.Err(); {
+	case outcome != gateway.TransferDone && errors.Is(context.Cause(ctx), errCallerEnded):
+		outcome, err = gateway.TransferFailed, errCallerEnded
+	case outcome == gateway.TransferFailed && ended != nil:
 		err = ended
 	}
 	files.Transferred(gateway.Download, d.path, moved, outcome, err)
+}
+
+// endedCaller is the refusal of a download whose caller ended before its
+// first byte: the caller's own refusal, read again, or, for a page on the
+// web listener whose Sign-in lives on at an old Web URL, signin_required.
+func (f *Front) endedCaller(r *http.Request, way terminalWay) error {
+	if _, refused := way.caller(r.Context()); refused != nil {
+		return refusalError(*refused)
+	}
+	return api.CodeSignInRequired.Errorf("this page's Sign-in no longer reaches this koko server: sign in again")
 }
 
 // copyDownload copies size bytes of file to w, and returns how many it
