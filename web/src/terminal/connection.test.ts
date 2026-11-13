@@ -1,50 +1,36 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { FakeLocks } from "../test/terminal";
-import { type ConnectionState, type TerminalSocket, Terminals, timing } from "./connection";
+import { Attachment, type AttachmentState, type Colors, type Size, type TerminalSocket } from "./connection";
 import { encodeRecord, RecordReader, type TerminalRecord } from "./records";
 import { encodeFrame, type Frame, FrameReader } from "./stream";
+import { timing } from "./timing";
+import { personActed, resetWorkspace, runtime } from "./workspace";
 
-// The page's end of a web terminal's SSH Session, against a fake WebSocket
-// the test plays the koko server on, and on a fake clock.
+// A page's attachment to one SSH Session of its Workspace, against a fake
+// WebSocket the test plays the koko server on, and on a fake clock.
 
 const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 const bytes = (s: string) => new TextEncoder().encode(s);
 
-const start = Date.parse("2026-11-12T12:00:00Z");
-const id = "0123456789abcdef0123456789abcdef";
-const keptKey = "koko.terminal.sessions";
-const kept = () => JSON.parse(sessionStorage.getItem(keptKey) ?? "[]") as string[];
-
-let locks = new FakeLocks();
-
-/** withoutLocks makes the browser one without Web Locks. */
-function withoutLocks(): void {
-  Reflect.deleteProperty(navigator, "locks");
-}
+const start = Date.parse("2026-11-13T12:00:00Z");
+const session = "0123456789abcdef0123456789abcdef";
+const attachment = "fedcba9876543210fedcba9876543210";
+const colors: Colors = { foreground: [0x1d, 0x1f, 0x27], background: [0xff, 0xff, 0xff] };
 
 beforeEach(() => {
   vi.useFakeTimers({ now: start });
-  locks = new FakeLocks();
-  Object.defineProperty(navigator, "locks", { configurable: true, value: locks });
 });
 
 afterEach(() => {
   vi.useRealTimers();
-  sessionStorage.clear();
   show(true);
-  withoutLocks();
+  resetWorkspace();
 });
 
 /** show makes the page shown or hidden, and tells it so. */
 function show(visible: boolean): void {
   Object.defineProperty(document, "visibilityState", { configurable: true, value: visible ? "visible" : "hidden" });
   document.dispatchEvent(new Event("visibilitychange"));
-}
-
-/** pagehide tells the page the browser is leaving it, kept for the back-forward cache or not. */
-function pagehide(persisted: boolean): void {
-  window.dispatchEvent(Object.assign(new Event("pagehide"), { persisted }));
 }
 
 /** passed lets ms pass on the page's clock, and everything due by then happen. */
@@ -127,58 +113,64 @@ class FakeSocket implements TerminalSocket {
   get recordsSent(): string[] {
     const reader = new RecordReader();
     reader.push(this.dataSent);
-    const records: string[] = [];
-    for (let record = reader.next(); record; record = reader.next()) {
-      records.push(
-        record.type === "data"
-          ? `data ${text(record.data)}`
-          : record.type === "resize"
-            ? `resize ${record.columns}x${record.rows}`
-            : record.type,
-      );
-    }
-    return records;
+    return named(reader);
   }
 }
 
-/** terminals is one document's terminals, with the WebSockets it opened. */
-function terminals(): { terminals: Terminals; sockets: FakeSocket[] } {
+/** named names each record a reader holds, as the tests compare them. */
+function named(reader: RecordReader): string[] {
+  const records: string[] = [];
+  for (let record = reader.next(); record; record = reader.next()) {
+    switch (record.type) {
+      case "data":
+        records.push(`data ${text(record.data)}`);
+        break;
+      case "resize":
+        records.push(`resize ${record.columns}x${record.rows}`);
+        break;
+      case "colors":
+        records.push(`colors ${record.foreground.join(",")} ${record.background.join(",")}`);
+        break;
+      default:
+        records.push(record.type);
+    }
+  }
+  return records;
+}
+
+/** attaching attaches to the SSH Session and returns the attachment before the koko server has answered. */
+async function attaching(size: Size = { columns: 120, rows: 36 }, withColors?: Colors) {
   const sockets: FakeSocket[] = [];
-  return {
-    sockets,
-    terminals: new Terminals(() => {
+  const states: AttachmentState[] = [];
+  const output: string[] = [];
+  const resets: Size[] = [];
+  const actives: boolean[] = [];
+  const attached = new Attachment(
+    session,
+    size,
+    withColors,
+    {
+      onState: (state) => states.push(state),
+      onOutput: (data) => void output.push(text(data)),
+      onReset: (grid) => resets.push(grid),
+      onActive: (active) => actives.push(active),
+    },
+    () => {
       const socket = new FakeSocket();
       sockets.push(socket);
       return socket;
-    }),
-  };
-}
-
-/** newTab is the terminals of a document in a new browser tab, whose sessionStorage keeps nothing. */
-function newTab() {
-  sessionStorage.clear();
-  return terminals();
-}
-
-/** opening opens a terminal to web1 and returns it before the koko server has answered. */
-async function opening(on = newTab()) {
-  const states: ConnectionState[] = [];
-  const output: string[] = [];
-  const connection = on.terminals.open(
-    "web1",
-    { columns: 120, rows: 36 },
-    { onState: (state) => states.push(state), onOutput: (data) => void output.push(text(data)) },
+    },
   );
   await passed();
-  return { ...on, connection, states, output, state: () => states.at(-1) };
+  return { attachment: attached, sockets, states, output, resets, actives };
 }
 
-/** connected opens a terminal to web1 whose shell has started. */
-async function connected(on = newTab()) {
-  const page = await opening(on);
+/** attached is an attachment the koko server has taken. */
+async function attached(withColors?: Colors) {
+  const page = await attaching(undefined, withColors);
   const socket = page.sockets.at(-1) as FakeSocket;
   socket.opened();
-  socket.answer({ tunnel: id });
+  socket.answer({ attachment });
   await passed();
   return { ...page, socket };
 }
@@ -186,126 +178,133 @@ async function connected(on = newTab()) {
 /** latest is the WebSocket the page opened last. */
 const latest = (sockets: FakeSocket[]) => sockets.at(-1) as FakeSocket;
 
-test("an open names the Host and the size, and its answer starts the stream", async () => {
-  const { connection, sockets, states } = await opening();
-  expect(connection.state).toEqual({ status: "connecting" });
-  expect(sockets).toHaveLength(1);
+test("an attach names the SSH Session and the box, and its answer starts the stream with the theme's colours", async () => {
+  const { attachment: page, sockets, states } = await attaching({ columns: 100, rows: 30 }, colors);
+  expect(page.state).toEqual({ status: "attaching" });
   const socket = latest(sockets);
   expect(socket.first, "nothing is sent before the WebSocket is open").toBeUndefined();
-
-  connection.resize(100, 30); // the emulator's grid, known before the WebSocket opened
+  page.resize({ columns: 90, rows: 20 }); // the box, which changed before the WebSocket opened
   socket.opened();
   expect(socket.binaryType).toBe("arraybuffer");
-  expect(socket.first).toEqual({ protocol: 1, open: "web1", cols: 100, rows: 30 });
-
-  connection.resize(90, 20); // after the open went
-  socket.answer({ tunnel: id });
+  expect(socket.first).toEqual({ protocol: 2, attach: session, cols: 90, rows: 20 });
+  socket.answer({ attachment });
   await passed();
-  expect(states).toEqual([{ status: "connected" }]);
-  expect(connection.sessionId).toBe(id);
-  expect(kept()).toEqual([id]);
-  expect(socket.recordsSent, "the size that changed after the open").toEqual(["resize 90x20"]);
+  expect(states).toEqual([{ status: "attached" }]);
+  expect(socket.recordsSent, "the colours, and no active: attaching is no person's act").toEqual(["colors 29,31,39 255,255,255"]);
+
+  page.setColors({ foreground: [1, 2, 3], background: [4, 5, 6] });
+  expect(socket.recordsSent.at(-1), "the theme changed").toBe("colors 1,2,3 4,5,6");
 });
 
-test("each refusal is shown with its code and the koko server's words, and nothing more is tried", async () => {
-  const refusals = {
-    reload_page: "",
-    signin_required: "",
-    cookie_required: "",
-    revoked: "",
-    unknown_host: "no Host named web1.",
-    host_registered: "web1 is Registered, and koko does not reach it yet.",
-    relay_registered: "the Relay of web1 is not Managed.",
-    access_refused: "access to web1 was refused.",
-    ssh_session_limit: "this Sign-in already has 16 SSH Sessions open, the most koko allows; this SSH Session did not start.",
-    host_unreachable: "web1 is unreachable.",
-    host_key_mismatch: "the host key of web1 is not the pinned one.",
-    login_refused: "web1 refused the koko key.",
-    host_connection_failed: "the connection to web1 failed.",
-    shell_refused: "web1 refused a shell.",
-  };
-  for (const [code, message] of Object.entries(refusals)) {
-    const { connection, sockets, states } = await opening();
+test("a box past the koko server's cap is held to it", async () => {
+  const { sockets } = await attaching({ columns: 900, rows: 0 });
+  latest(sockets).opened();
+  expect(latest(sockets).first).toEqual({ protocol: 2, attach: session, cols: 500, rows: 1 });
+});
+
+test("an SSH Session that is gone, and each refusal of the web front, end the attachment, and nothing more is tried", async () => {
+  const refusals: [string, string, AttachmentState][] = [
+    ["unknown_tunnel", "", { status: "gone" }],
+    ["ssh_session_ended", "", { status: "gone" }],
+    ["reload_page", "", { status: "refused", code: "reload_page", message: "" }],
+    ["signin_required", "", { status: "refused", code: "signin_required", message: "" }],
+    ["cookie_required", "", { status: "refused", code: "cookie_required", message: "" }],
+    ["revoked", "this device was revoked.", { status: "refused", code: "revoked", message: "this device was revoked." }],
+  ];
+  for (const [code, message, want] of refusals) {
+    const { sockets, states } = await attaching();
     const socket = latest(sockets);
     socket.opened();
     socket.answer(message === "" ? { refused: code } : { refused: code, message });
-    await passed(timing.grace);
-    expect(states, code).toEqual([{ status: "refused", code, message }]);
+    await passed(60_000);
+    expect(states, code).toEqual([want]);
     expect(socket.closed, code).toBe(true);
     expect(sockets, `${code}: no further attempt`).toHaveLength(1);
-    expect(connection.sessionId, code).toBe("");
-    expect(kept(), code).toEqual([]);
   }
 });
 
-test("an open the koko server never answers is unreachable", async () => {
-  const noAnswer: [string, (socket: FakeSocket) => void | Promise<void>][] = [
-    ["the WebSocket closed before it opened", (socket) => socket.drop()],
-    ["the WebSocket closed before the answer", (socket) => (socket.opened(), socket.drop())],
-    ["the WebSocket never opened", () => passed(timing.connect)],
-    ["an answer that is no JSON", (socket) => (socket.opened(), socket.onmessage?.({ data: "{" } as MessageEvent))],
-    ["an answer that is binary", (socket) => (socket.opened(), socket.frames({ kind: "eof", ack: 0 }))],
-    ["an answer of neither kind", (socket) => (socket.opened(), socket.answer({ ended: true }))],
-  ];
-  for (const [what, act] of noAnswer) {
-    const { sockets, states } = await opening();
-    await act(latest(sockets));
-    await passed(timing.grace);
-    expect(states, what).toEqual([{ status: "unreachable" }]);
-    expect(sockets, `${what}: no further attempt`).toHaveLength(1);
-  }
-  // The Gateway dials the Host before it answers, so an open waits for it.
-  const { sockets, states } = await opening();
-  latest(sockets).opened();
-  await passed(60_000);
-  expect(states, "an open still waiting after a minute").toEqual([]);
-
-  const failing = new Terminals(() => {
-    throw new Error("no WebSocket here");
-  });
-  const told: ConnectionState[] = [];
-  failing.open("web1", { columns: 80, rows: 24 }, { onState: (state) => told.push(state), onOutput: () => {} });
+test("an attach the koko server does not answer is tried again, after 250 ms doubling", async () => {
+  const { sockets, states } = await attaching();
+  latest(sockets).drop();
   await passed();
-  expect(told, "a browser that opens no WebSocket").toEqual([{ status: "unreachable" }]);
+  expect(sockets).toHaveLength(1);
+  await passed(timing.reconnectFirst);
+  expect(sockets).toHaveLength(2);
+  latest(sockets).opened();
+  latest(sockets).answer({ neither: true });
+  await passed(2 * timing.reconnectFirst);
+  expect(sockets).toHaveLength(3);
+  latest(sockets).opened();
+  expect(latest(sockets).first).toEqual({ protocol: 2, attach: session, cols: 120, rows: 36 });
+  latest(sockets).answer({ attachment });
+  await passed();
+  expect(states).toEqual([{ status: "attached" }]);
+});
+
+test("reset clears the emulator to the pty's size before the snapshot, and the active record says whose box it is", async () => {
+  const { socket, output, resets, actives } = await attached();
+  socket.records(
+    { type: "reset", columns: 80, rows: 24 },
+    { type: "data", data: bytes("snapshot") },
+    { type: "active", active: false },
+    { type: "data", data: bytes("live") },
+  );
+  await passed();
+  expect(resets).toEqual([{ columns: 80, rows: 24 }]);
+  expect(output).toEqual(["snapshot", "live"]);
+  expect(actives).toEqual([false]);
+  socket.records({ type: "active", active: true }, { type: "reset", columns: 200, rows: 50 }, { type: "data", data: bytes("again") });
+  await passed();
+  expect(actives).toEqual([false, true]);
+  expect(resets.at(-1)).toEqual({ columns: 200, rows: 50 });
+  expect(output.at(-1)).toBe("again");
 });
 
 test("the shell's output reaches the page in order, and what the page sends reaches the shell as records", async () => {
-  const { connection, socket, output } = await connected();
+  const { attachment: page, socket, output } = await attached();
   socket.records({ type: "data", data: bytes("$ ") }, { type: "data", data: bytes("ls\r\n") });
   await passed();
   expect(output).toEqual(["$ ", "ls\r\n"]);
 
-  connection.send(bytes("ls\r"));
-  connection.send(new Uint8Array(0));
-  connection.resize(80, 24);
-  connection.resize(0, 5000); // an emulator not yet laid out, or absurdly large
-  expect(socket.recordsSent).toEqual(["data ls\r", "resize 80x24", "resize 1x4096"]);
+  page.send(bytes("ls\r"));
+  page.send(new Uint8Array(0));
+  page.resize({ columns: 80, rows: 24 });
+  page.active();
+  expect(socket.recordsSent).toEqual(["data ls\r", "resize 80x24", "active"]);
 
   const pasted = new Uint8Array(40_000).fill(0x61);
-  connection.send(pasted);
+  page.send(pasted);
   const records = socket.recordsSent.slice(3);
   expect(records.map((record) => record.length - "data ".length), "a paste cut at a record's most").toEqual([32_768, 7_232]);
 });
 
 test("the page reads on only once it has written the output into the emulator", async () => {
-  const on = terminals();
+  const sockets: FakeSocket[] = [];
   const written: (() => void)[] = [];
   const output: string[] = [];
-  on.terminals.open(
-    "web1",
+  new Attachment(
+    session,
     { columns: 80, rows: 24 },
+    undefined,
     {
       onState: () => {},
       onOutput: (data) => {
         output.push(text(data));
         return new Promise<void>((resolve) => written.push(resolve));
       },
+      onReset: () => {},
+      onActive: () => {},
+    },
+    () => {
+      const socket = new FakeSocket();
+      sockets.push(socket);
+      return socket;
     },
   );
   await passed();
-  const socket = latest(on.sockets);
+  const socket = latest(sockets);
   socket.opened();
-  socket.answer({ tunnel: id });
+  socket.answer({ attachment });
   const chunk = (fill: string): TerminalRecord => ({ type: "data", data: bytes(fill.repeat(30_000)) });
   socket.records(chunk("a"));
   socket.records(chunk("b"));
@@ -319,65 +318,47 @@ test("the page reads on only once it has written the output into the emulator", 
   expect(socket.framesSent.map((frame) => frame.ack), "acknowledged once two frames were read").toEqual([60_008]);
 });
 
-test("the shell's end is shown as its exit status, its signal, or the koko server's notice", async () => {
-  const endings: [string, (socket: FakeSocket) => void, ConnectionState][] = [
-    [
-      "an exit status",
-      (socket) => {
-        socket.records({ type: "data", data: bytes("logout\r\n") }, { type: "exitStatus", status: 3 });
-        socket.frames({ kind: "close", ack: 0, reason: "" });
-      },
-      { status: "ended", ending: { kind: "exitStatus", status: 3 } },
-    ],
-    [
-      "a signal",
-      (socket) => {
-        socket.records({ type: "exitSignal", signal: "KILL" });
-        socket.frames({ kind: "close", ack: 0, reason: "" });
-      },
-      { status: "ended", ending: { kind: "exitSignal", signal: "KILL" } },
-    ],
-    [
-      "a notice",
-      (socket) => {
-        socket.records({ type: "data", data: bytes("\r\nkoko: the koko server is restarting; this SSH Session has ended.\r\n") });
-        socket.frames({ kind: "close", ack: 0, reason: "the koko server is restarting; this SSH Session has ended." });
-        socket.drop(); // the Gateway closes the WebSocket behind its close frame
-      },
-      { status: "ended", ending: { kind: "notice", notice: "the koko server is restarting; this SSH Session has ended." } },
-    ],
-  ];
-  for (const [what, act, want] of endings) {
-    const { socket, sockets, states, output } = await connected();
-    act(socket);
-    await passed(timing.grace);
-    expect(states.at(-1), what).toEqual(want);
-    expect(states, what).toHaveLength(2);
-    expect(output.join("").length > 0 || what === "a signal", `${what}: the output before the end`).toBe(true);
-    expect(socket.closed, what).toBe(true);
-    expect(sockets, `${what}: no Resume of an SSH Session that ended`).toHaveLength(1);
-    expect(kept(), `${what}: its id is no longer kept`).toEqual([]);
-  }
+test("the koko server closing the attachment ends it with its notice, and nothing is resumed", async () => {
+  const { socket, sockets, states } = await attached();
+  socket.records({ type: "data", data: bytes("logout\r\n") }, { type: "exitStatus", status: 0 });
+  socket.frames({ kind: "close", ack: 0, reason: "the koko server is restarting; this SSH Session has ended." });
+  socket.drop(); // the Gateway closes the WebSocket behind its close frame
+  await passed(60_000);
+  expect(states.at(-1)).toEqual({ status: "detached", notice: "the koko server is restarting; this SSH Session has ended." });
+  expect(socket.closed).toBe(true);
+  expect(sockets).toHaveLength(1);
 });
 
-test("bytes that are not the protocol end the SSH Session, telling the koko server why", async () => {
+test("a page displaced by a ninth is told so, and attaches again only when asked", async () => {
+  const { socket, sockets, states } = await attached();
+  socket.records({ type: "active", active: false }, { type: "displaced" });
+  socket.frames({ kind: "close", ack: 0, reason: "" });
+  socket.drop();
+  await passed(60_000);
+  expect(states.at(-1)).toEqual({ status: "displaced" });
+  expect(sockets, "no attach of its own, which would displace another").toHaveLength(1);
+});
+
+test("bytes that are not the protocol end the attachment, telling the koko server why", async () => {
   const broken: [string, (socket: FakeSocket) => void][] = [
-    ["an unknown record", (socket) => socket.frames({ kind: "data", ack: 0, data: Uint8Array.of(0x04, 0x00) })],
+    ["an unknown record", (socket) => socket.frames({ kind: "data", ack: 0, data: Uint8Array.of(0x7f, 0x00) })],
     ["a resize from the koko server", (socket) => socket.records({ type: "resize", columns: 80, rows: 24 })],
+    ["the page's own active", (socket) => socket.records({ type: "active" })],
+    ["colours from the koko server", (socket) => socket.records({ type: "colors", ...colors })],
     ["a frame acknowledging what was never sent", (socket) => socket.frames({ kind: "data", ack: 9, data: new Uint8Array(0) })],
   ];
   for (const [what, act] of broken) {
-    const { socket, states } = await connected();
+    const { socket, states } = await attached();
     act(socket);
     await passed();
-    expect(states.at(-1), what).toMatchObject({ status: "ended", ending: { kind: "protocol" } });
+    expect(states.at(-1), what).toMatchObject({ status: "protocol" });
     expect(socket.framesSent.at(-1), what).toMatchObject({ kind: "close", reason: expect.stringContaining("malformed") });
     expect(socket.closed, what).toBe(true);
   }
 });
 
 test("the page probes after 15 s without sending, and takes 45 s of silence for a dead WebSocket", async () => {
-  const { connection, socket, sockets, states } = await connected();
+  const { attachment: page, socket, sockets, states } = await attached();
   await passed(timing.probe - 1);
   expect(socket.framesSent).toEqual([]);
   await passed(1);
@@ -386,29 +367,18 @@ test("the page probes after 15 s without sending, and takes 45 s of silence for 
   // What the page sends puts its next probe off; what it hears keeps the
   // WebSocket alive, and only that.
   await passed(5_000); // 20 s
-  connection.send(bytes("x"));
+  page.send(bytes("x"));
   socket.frames({ kind: "data", ack: 0, data: new Uint8Array(0) }); // the Gateway's own probe
   await passed(timing.probe - 1);
   expect(socket.framesSent).toHaveLength(2);
   await passed(1); // 35 s
   expect(socket.framesSent).toHaveLength(3);
   await passed(timing.dead - timing.probe - 1); // 1 ms short of 45 s after the Gateway's probe
-  expect(states).toEqual([{ status: "connected" }]);
+  expect(states).toEqual([{ status: "attached" }]);
   await passed(1);
   expect(states.at(-1)).toEqual({ status: "reconnecting", since: start + 20_000 + timing.dead });
   expect(socket.closed).toBe(true);
   expect(latest(sockets)).not.toBe(socket);
-});
-
-test("an idle terminal whose koko server probes stays connected", async () => {
-  const { socket, sockets, states } = await connected();
-  for (let i = 0; i < 20; i++) {
-    await passed(timing.probe);
-    socket.frames({ kind: "data", ack: 0, data: new Uint8Array(0) });
-  }
-  expect(states).toEqual([{ status: "connected" }]);
-  expect(sockets).toHaveLength(1);
-  expect(socket.framesSent, "the page's probes").toHaveLength(20);
 });
 
 test("a page shown again, or back online, takes a WebSocket silent for 15 s for dead at once", async () => {
@@ -418,28 +388,24 @@ test("a page shown again, or back online, takes a WebSocket silent for 15 s for 
     ["online", () => window.dispatchEvent(new Event("online"))],
   ];
   for (const [what, wake] of wakes) {
-    const { socket, sockets, states } = await connected();
+    const { socket, sockets, states, attachment: page } = await attached();
     await passed(timing.probe - 1);
     wake();
-    expect(states, `${what}, 1 ms short of 15 s of silence`).toEqual([{ status: "connected" }]);
+    expect(states, `${what}, 1 ms short of 15 s of silence`).toEqual([{ status: "attached" }]);
     await passed(1);
     wake();
     await passed();
     expect(states.at(-1), what).toEqual({ status: "reconnecting", since: Date.now() });
     expect(socket.closed, what).toBe(true);
     latest(sockets).opened();
-    expect(latest(sockets).first, what).toEqual({ protocol: 1, resume: id, offset: 0 });
+    expect(latest(sockets).first, what).toEqual({ protocol: 2, resume: attachment, offset: 0 });
+    page.detach();
   }
-  // Hidden, a page is not woken: the browser tells it of a change it cannot use.
-  const { states } = await connected();
-  await passed(timing.probe);
-  show(false);
-  expect(states).toEqual([{ status: "connected" }]);
 });
 
-/** dropped is a connected terminal whose WebSocket has just closed, and its first try to Resume. */
+/** dropped is an attachment whose WebSocket has just closed, and its first try to resume. */
 async function dropped() {
-  const page = await connected();
+  const page = await attached();
   page.socket.records({ type: "data", data: bytes("0123456789") });
   await passed();
   page.socket.drop();
@@ -447,44 +413,26 @@ async function dropped() {
   return page;
 }
 
-test("a dropped WebSocket is resumed at once, then after 250 ms doubling to 5 s", async () => {
+test("a dropped WebSocket is resumed at once, then after 250 ms doubling to 5 s, for as long as it takes", async () => {
   const { socket, sockets, states } = await dropped();
   expect(states.at(-1)).toEqual({ status: "reconnecting", since: start });
   expect(socket.closed).toBe(true);
   for (let i = 0; i < 9; i++) {
     const retry = latest(sockets);
     retry.opened();
-    expect(retry.first, "the offset is what the page has read: the record's two bytes and its ten").toEqual({ protocol: 1, resume: id, offset: 12 });
+    expect(retry.first, "the offset is what the page has read: the record's two bytes and its ten").toEqual({ protocol: 2, resume: attachment, offset: 12 });
     retry.drop();
     expect(retry.closed).toBe(true);
     await vi.advanceTimersToNextTimerAsync(); // the wait before the next try
   }
   const waits = sockets.slice(1).map((retry, i, retries) => retry.at - (retries[i - 1]?.at ?? retry.at));
   expect(waits).toEqual([0, 250, 500, 1000, 2000, 4000, 5000, 5000, 5000, 5000]);
-  expect(states).toHaveLength(2);
+  await passed(60 * 60_000);
+  expect(states, "no grace on the page: the Gateway says when the attachment is gone").toHaveLength(2);
 });
 
-test("a try that gets no answer is given up after its bound, and the next follows", async () => {
-  const { sockets } = await dropped();
-  const unopened = latest(sockets);
-  await passed(timing.connect - 1);
-  expect(unopened.closed, "a WebSocket not yet open, 1 ms short of its bound").toBe(false);
-  await passed(1);
-  expect(unopened.closed).toBe(true);
-  await passed(timing.reconnectFirst);
-  const unanswered = latest(sockets);
-  expect(unanswered).not.toBe(unopened);
-  unanswered.opened();
-  await passed(timing.answer - 1);
-  expect(unanswered.closed, "a resume not yet answered, 1 ms short of its bound").toBe(false);
-  await passed(1);
-  expect(unanswered.closed).toBe(true);
-  await passed(2 * timing.reconnectFirst);
-  expect(latest(sockets)).not.toBe(unanswered);
-});
-
-test("a hidden page does not try, and tries at once when it is shown", async () => {
-  const { socket, sockets, states } = await connected();
+test("a hidden page does not try, and tries at once when it is shown; Try now skips the backoff", async () => {
+  const { attachment: page, socket, sockets, states } = await attached();
   show(false);
   socket.drop();
   await passed(60_000);
@@ -492,323 +440,100 @@ test("a hidden page does not try, and tries at once when it is shown", async () 
   expect(sockets, "tries while hidden").toHaveLength(1);
   show(true);
   expect(sockets, "a try at once when shown").toHaveLength(2);
-
-  // Hidden between tries, it stops; Try now and a wake skip the backoff.
-  latest(sockets).drop();
-  show(false);
-  await passed(60_000);
-  expect(sockets).toHaveLength(2);
-  show(true);
-  expect(sockets).toHaveLength(3);
-  for (let i = 0; i < 6; i++) {
-    latest(sockets).drop();
-    await passed(timing.reconnectMax);
-  }
-  latest(sockets).drop(); // the next try is 5 s away
-  const before = sockets.length;
-  window.dispatchEvent(new Event("online"));
-  expect(sockets, "a try at once when back online").toHaveLength(before + 1);
-});
-
-test("the person's Try now skips the backoff", async () => {
-  const { connection, sockets } = await dropped();
   for (let i = 0; i < 6; i++) {
     latest(sockets).drop();
     await passed(timing.reconnectMax);
   }
   latest(sockets).drop();
   const before = sockets.length;
-  connection.tryNow();
+  page.tryNow();
   expect(sockets).toHaveLength(before + 1);
-  connection.tryNow();
+  page.tryNow();
   expect(sockets, "a second Try now while the first is under way").toHaveLength(before + 1);
 });
 
-test("the page gives up 15 minutes after the loss", async () => {
-  const { sockets, states } = await dropped();
-  const answerNothing = setInterval(() => latest(sockets).drop(), 1_000);
-  await passed(timing.grace - 1);
-  expect(states.at(-1), "1 ms short of the grace").toEqual({ status: "reconnecting", since: start });
-  await passed(1);
-  clearInterval(answerNothing);
-  expect(states.at(-1)).toEqual({ status: "ended", ending: { kind: "lost", at: start, message: "" } });
-  expect(kept()).toEqual([]);
-  const tried = sockets.length;
-  show(true);
-  await passed(timing.grace);
-  expect(sockets, "tries after giving up").toHaveLength(tried);
-
-  // A hidden page gives up too, without a try.
-  const hidden = await connected();
-  show(false);
-  const lost = Date.now();
-  hidden.socket.drop();
-  await passed(timing.grace - 1);
-  expect(hidden.states.at(-1)).toEqual({ status: "reconnecting", since: lost });
-  await passed(1);
-  expect(hidden.states.at(-1)).toEqual({ status: "ended", ending: { kind: "lost", at: lost, message: "" } });
-  expect(hidden.sockets).toHaveLength(1);
-});
-
-test("a refused resume ends the SSH Session with the Gateway's reason, and nothing more is tried", async () => {
-  const { sockets, states } = await dropped();
-  const retry = latest(sockets);
-  retry.opened();
-  retry.answer({ refused: "resume_refused", message: "web1 closed the connection" });
-  await passed(timing.grace);
-  expect(states.at(-1)).toEqual({ status: "ended", ending: { kind: "lost", at: start, message: "web1 closed the connection" } });
-  expect(retry.closed).toBe(true);
-  expect(sockets).toHaveLength(2);
-  expect(kept()).toEqual([]);
-
-  // An id the Gateway holds nothing of is refused without a reason.
-  const unknown = await dropped();
-  latest(unknown.sockets).opened();
-  latest(unknown.sockets).answer({ refused: "resume_refused", message: "" });
-  expect(unknown.states.at(-1)).toMatchObject({ status: "ended", ending: { kind: "lost", message: "" } });
-
-  // The shell's exit, read before the loss, says more than the refusal.
-  const exited = await connected();
-  exited.socket.records({ type: "exitStatus", status: 0 });
-  await passed();
-  exited.socket.drop(); // before the close frame
-  latest(exited.sockets).opened();
-  latest(exited.sockets).answer({ refused: "resume_refused", message: "web1 closed the connection" });
-  expect(exited.states.at(-1)).toEqual({ status: "ended", ending: { kind: "exitStatus", status: 0 } });
-
-  // The web front's own refusal, as of a Sign-in that ended meanwhile.
-  const signedOut = await dropped();
-  latest(signedOut.sockets).opened();
-  latest(signedOut.sockets).answer({ refused: "signin_required" });
-  await passed(timing.grace);
-  expect(signedOut.states.at(-1)).toEqual({ status: "refused", code: "signin_required", message: "" });
-  expect(signedOut.sockets).toHaveLength(2);
-});
-
-test("a Resume carries on byte for byte: keys typed meanwhile go once, and the size goes again", async () => {
-  const { connection, socket, sockets, states, output } = await connected();
-  connection.send(bytes("abc")); // a record of five bytes, of which the Gateway reads two before the drop
+test("a resume carries on byte for byte: keys typed meanwhile go once, the size goes again, and no active", async () => {
+  const { attachment: page, socket, sockets, states, output } = await attached();
+  page.send(bytes("abc")); // a record of five bytes, of which the Gateway reads two before the drop
   socket.records({ type: "data", data: bytes("seen") });
   await passed();
   socket.frames({ kind: "data", ack: 0, data: encodeRecord({ type: "data", data: bytes("unseen") }).slice(0, 4) });
   socket.drop();
   await passed();
-  connection.send(bytes("typed meanwhile"));
-  connection.resize(100, 40);
+  page.send(bytes("typed meanwhile"));
+  page.resize({ columns: 100, rows: 40 });
 
   const next = latest(sockets);
   next.opened();
-  expect(next.first).toEqual({ protocol: 1, resume: id, offset: 10 }); // the whole record read, and half of the next
+  expect(next.first).toEqual({ protocol: 2, resume: attachment, offset: 10 }); // the whole record read, and half of the next
   next.answer({ offset: 2 });
   await passed();
-  expect(states.at(-1)).toEqual({ status: "connected" });
+  expect(states.at(-1)).toEqual({ status: "attached" });
   expect([...next.dataSent.slice(0, 3)], "resent from the Gateway's offset, inside the record").toEqual([...bytes("abc")]);
-  const rest = new FakeSocket();
-  rest.send("");
-  rest.send(Uint8Array.from(encodeFrame({ kind: "data", ack: 0, data: next.dataSent.slice(3) })));
-  expect(rest.recordsSent).toEqual(["data typed meanwhile", "resize 100x40", "resize 100x40"]);
+  const rest = new RecordReader();
+  rest.push(next.dataSent.slice(3));
+  expect(named(rest)).toEqual(["data typed meanwhile", "resize 100x40", "resize 100x40"]);
 
   // The Gateway resends from the page's offset, and the output carries on.
   next.frames({ kind: "data", ack: 0, data: encodeRecord({ type: "data", data: bytes("unseen") }).slice(4) });
   await passed();
   expect(output).toEqual(["seen", "unseen"]);
-
-  // The liveness watch is on the new WebSocket.
-  await passed(timing.dead);
-  expect(states.at(-1)).toMatchObject({ status: "reconnecting" });
 });
 
-test("a resume answered with an offset the page cannot serve ends the SSH Session", async () => {
-  const { sockets, states } = await dropped();
-  latest(sockets).opened();
-  latest(sockets).answer({ offset: 99 });
-  expect(states.at(-1)).toMatchObject({ status: "ended", ending: { kind: "protocol", message: expect.stringContaining("offset") } });
-  expect(latest(sockets).framesSent).toMatchObject([{ kind: "close" }]);
-  expect(latest(sockets).closed).toBe(true);
-});
-
-test("the person ending the SSH Session sends the stream's close, then closes the WebSocket", async () => {
-  const { connection, socket, sockets, states } = await connected();
-  connection.send(bytes("exit\r"));
-  connection.end();
-  expect(socket.framesSent.at(-1)).toEqual({ kind: "close", ack: 0, reason: "" });
-  expect(socket.recordsSent, "what was typed before goes before the close").toEqual(["data exit\r"]);
-  expect(socket.closed).toBe(true);
-  expect(states.at(-1)).toEqual({ status: "ended", ending: { kind: "closed" } });
-  expect(kept()).toEqual([]);
-  await passed(timing.grace);
-  expect(sockets).toHaveLength(1);
-  expect(states).toHaveLength(2);
-
-  // Before the koko server answered, there is no SSH Session to close yet.
-  const early = await opening();
-  latest(early.sockets).opened();
-  early.connection.end();
-  expect(latest(early.sockets).closed).toBe(true);
-  expect(early.states).toEqual([{ status: "ended", ending: { kind: "closed" } }]);
-});
-
-test("ending an SSH Session while reconnecting asks the koko server to end it", async () => {
-  const { connection, sockets, states } = await dropped();
+test("a resume the Gateway refuses attaches again, and the new snapshot draws the screen", async () => {
+  const { sockets, states, resets, output } = await dropped();
   const retry = latest(sockets);
-  connection.end();
-  expect(states.at(-1)).toEqual({ status: "ended", ending: { kind: "closed" } });
-  expect(retry.closed, "the try to Resume under way").toBe(true);
-  const ending = latest(sockets);
-  expect(ending).not.toBe(retry);
-  ending.opened();
-  expect(ending.first).toEqual({ protocol: 1, end: id });
-  expect(kept(), "kept until the koko server has ended it").toEqual([id]);
-  ending.answer({ ended: true });
-  expect(kept()).toEqual([]);
-  expect(ending.closed).toBe(true);
+  retry.opened();
+  retry.answer({ refused: "resume_refused", message: "" });
+  await passed();
+  const again = latest(sockets);
+  expect(again).not.toBe(retry);
+  again.opened();
+  expect(again.first).toEqual({ protocol: 2, attach: session, cols: 120, rows: 36 });
+  expect(states.at(-1), "still reconnecting while it attaches again").toMatchObject({ status: "reconnecting" });
+  again.answer({ attachment: "11111111111111111111111111111111" });
+  await passed();
+  again.records({ type: "reset", columns: 120, rows: 36 }, { type: "data", data: bytes("the screen now") });
+  await passed();
+  expect(states.at(-1)).toEqual({ status: "attached" });
+  expect(resets).toEqual([{ columns: 120, rows: 36 }]);
+  expect(output.at(-1)).toBe("the screen now");
+  expect(again.recordsSent, "no active on attaching again").toEqual([]);
+
+  // Its next drop resumes the new attachment.
+  again.drop();
+  await passed();
+  latest(sockets).opened();
+  expect(latest(sockets).first).toMatchObject({ resume: "11111111111111111111111111111111" });
 });
 
-test("a page the browser leaves closes its SSH Sessions, and keeps their ids for the next page", async () => {
-  const { socket, states } = await connected();
-  pagehide(true); // kept for the back-forward cache
-  expect(states).toEqual([{ status: "connected" }]);
-  expect(socket.closed).toBe(false);
+test("a person's act while reconnecting is told once the attachment is resumed", async () => {
+  const { attachment: page, sockets } = await dropped();
+  page.active();
+  const next = latest(sockets);
+  next.opened();
+  next.answer({ offset: 0 });
+  await passed();
+  expect(next.recordsSent).toEqual(["active", "resize 120x36"]);
+});
 
-  pagehide(false);
-  expect(socket.framesSent.at(-1)).toEqual({ kind: "close", ack: 0, reason: "" });
+test("active is sent only for a person's act in a visible page", async () => {
+  const { attachment: page, socket } = await attached();
+  runtime("tab1").attachment = page;
+  show(false);
+  personActed("tab1");
+  expect(socket.recordsSent, "a hidden page").toEqual([]);
+  show(true);
+  personActed("tab1");
+  expect(socket.recordsSent).toEqual(["active"]);
+});
+
+test("detaching sends the stream's close, then closes the WebSocket, and tries nothing more", async () => {
+  const { attachment: page, socket, sockets, states } = await attached();
+  page.detach();
+  expect(socket.framesSent).toEqual([{ kind: "close", ack: 0, reason: "" }]);
   expect(socket.closed).toBe(true);
-  expect(kept(), "the close may never leave the browser").toEqual([id]);
-});
-
-test("a new page ends the SSH Sessions the page before it left, then opens its own", async () => {
-  // The page before: two terminals, and a reload.
-  const before = newTab();
-  const [first, second] = ["1".repeat(32), "2".repeat(32)];
-  for (const tunnel of [first, second]) {
-    await opening(before);
-    latest(before.sockets).opened();
-    latest(before.sockets).answer({ tunnel });
-  }
-  pagehide(false);
-  expect(kept()).toEqual([first, second]);
-  await passed(); // the browser lets the leaving document's locks go
-
-  const after = terminals();
-  const page = await opening(after);
-  await opening(after);
-  expect(after.sockets, "one WebSocket for each kept id, and none yet for an open").toHaveLength(2);
-  for (const socket of after.sockets) {
-    socket.opened();
-  }
-  expect(after.sockets.map((socket) => socket.first)).toEqual([
-    { protocol: 1, end: first },
-    { protocol: 1, end: second },
-  ]);
-  after.sockets[0]?.answer({ ended: true });
-  await passed(1_000);
-  expect(after.sockets, "an open before every kept id is ended").toHaveLength(2);
-  expect(kept()).toEqual([second]);
-  after.sockets[1]?.answer({ ended: true });
-  await passed();
-  expect(after.sockets.slice(0, 2).every((socket) => socket.closed)).toBe(true);
-  expect(after.sockets, "both terminals open once the old SSH Sessions are ended").toHaveLength(4);
-  after.sockets[2]?.opened();
-  expect(after.sockets[2]?.first).toEqual({ protocol: 1, open: "web1", cols: 120, rows: 36 });
-  after.sockets[2]?.answer({ tunnel: id });
-  await passed();
-  expect(page.state()).toEqual({ status: "connected" });
-  expect(kept()).toEqual([id]);
-
-  // A terminal opened later ends nothing: the ids kept now are this page's.
-  await opening(after);
-  latest(after.sockets).opened();
-  expect(latest(after.sockets).first).toMatchObject({ open: "web1" });
-});
-
-test("a kept id the koko server does not answer for is kept, and the page opens all the same", async () => {
-  sessionStorage.setItem(keptKey, JSON.stringify(["1".repeat(32), "2".repeat(32), "3".repeat(32)]));
-  const { sockets, states } = await opening(terminals());
-  expect(sockets).toHaveLength(3);
-  sockets[0]?.opened(); // and never answered
-  sockets[1]?.drop();
-  sockets[2]?.opened();
-  sockets[2]?.answer({ refused: "signin_required" }); // this page can end nothing more for it
-  await passed(timing.connect);
-  expect(sockets[0]?.closed).toBe(true);
-  expect(sockets, "the open, once each end was answered or given up").toHaveLength(4);
-  expect(kept()).toEqual(["1".repeat(32), "2".repeat(32)]);
-  latest(sockets).opened();
-  latest(sockets).answer({ tunnel: id });
-  await passed();
-  expect(states).toEqual([{ status: "connected" }]);
-
-  // What sessionStorage holds that is no list of ids is none.
-  sessionStorage.setItem(keptKey, "{");
-  const unreadable = await opening(terminals());
-  latest(unreadable.sockets).opened();
-  expect(latest(unreadable.sockets).first).toMatchObject({ open: "web1" });
-});
-
-test("a document holds a Web Lock for each SSH Session it holds, until the SSH Session ends", async () => {
-  const { connection } = await connected();
-  expect([...locks.held]).toEqual([`koko.terminal.${id}`]);
-  connection.end();
-  await passed();
-  expect([...locks.held]).toEqual([]);
-});
-
-test("a browser tab duplicated from a live one leaves that one's SSH Sessions alone, and opens its own", async () => {
-  // The browser tab duplicated: the copy starts with its sessionStorage,
-  // which keeps the id of an SSH Session the original still holds.
-  const original = await connected();
-  expect(kept()).toEqual([id]);
-
-  const copy = terminals();
-  const page = await opening(copy);
-  expect(copy.sockets, "the copy waits a moment for the original's SSH Session to be let go").toHaveLength(0);
-  await passed(timing.heldWait);
-  expect(copy.sockets, "no end for the original's SSH Session").toHaveLength(1);
-  latest(copy.sockets).opened();
-  expect(latest(copy.sockets).first).toEqual({ protocol: 1, open: "web1", cols: 120, rows: 36 });
-  expect(kept(), "the copy forgets the original's id").toEqual([]);
-  const own = "f".repeat(32);
-  latest(copy.sockets).answer({ tunnel: own });
-  await passed();
-  expect(page.state()).toEqual({ status: "connected" });
-  expect(kept()).toEqual([own]);
-
-  expect(original.socket.closed).toBe(false);
-  expect(original.socket.framesSent).toEqual([]);
-  expect(original.state()).toEqual({ status: "connected" });
-
-  // Once the original lets its SSH Session go, as a browser tab closed whose
-  // close may never have arrived, the copy makes sure it is ended.
-  const sockets = copy.sockets.length;
-  original.connection.end();
-  await passed();
-  expect(copy.sockets).toHaveLength(sockets + 1);
-  latest(copy.sockets).opened();
-  expect(latest(copy.sockets).first).toEqual({ protocol: 1, end: id });
-});
-
-test("a document that cannot tell whose the kept ids are ends none of them and forgets them", async () => {
-  withoutLocks();
-  sessionStorage.setItem(keptKey, JSON.stringify(["1".repeat(32)]));
-  const { sockets } = await opening(terminals());
+  await passed(60_000);
   expect(sockets).toHaveLength(1);
-  latest(sockets).opened();
-  expect(latest(sockets).first).toMatchObject({ open: "web1" });
-  expect(kept()).toEqual([]);
-});
-
-test("a reload whose earlier document still held its locks when asked ends its SSH Sessions first all the same", async () => {
-  await connected();
-  pagehide(false); // the next document asks before the browser lets this one's locks go
-
-  const after = terminals();
-  await opening(after);
-  expect(after.sockets, "the end, once the lock was let go, and no open yet").toHaveLength(1);
-  latest(after.sockets).opened();
-  expect(latest(after.sockets).first).toEqual({ protocol: 1, end: id });
-  latest(after.sockets).answer({ ended: true });
-  await passed();
-  expect(after.sockets).toHaveLength(2);
-  latest(after.sockets).opened();
-  expect(latest(after.sockets).first).toEqual({ protocol: 1, open: "web1", cols: 120, rows: 36 });
+  expect(states).toEqual([{ status: "attached" }]);
 });

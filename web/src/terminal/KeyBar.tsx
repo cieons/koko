@@ -67,7 +67,7 @@ function Key(props: { label: string; sticky?: Sticky; onPress: () => void; child
  * keyboard key opens or closes the soft keyboard. The row is one Tab stop,
  * so a keyboard can scroll it.
  */
-export function KeyBar({ tab }: { tab: number }) {
+export function KeyBar({ tab }: { tab: string }) {
   const t = useT();
   const ws = useWorkspace();
   const toggleKeyboard = () => {
@@ -88,7 +88,7 @@ export function KeyBar({ tab }: { tab: number }) {
     >
       {keys.map(({ key, face, name }) =>
         key === "ctrl" || key === "alt" ? (
-          <Key key={key} label={t(name)} sticky={ws[key]} onPress={() => tapModifier(key)}>
+          <Key key={key} label={t(name)} sticky={ws[key]} onPress={() => tapModifier(tab, key)}>
             {face}
           </Key>
         ) : (

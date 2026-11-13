@@ -1,11 +1,14 @@
 import { Button } from "@heroui/react";
 import { Layers, Plus, SquareTerminal, X } from "lucide-react";
-import { type KeyboardEvent, useLayoutEffect, useRef } from "react";
+import { type KeyboardEvent, useEffect, useLayoutEffect, useRef } from "react";
 import { Link, Tab, TabList, Tabs } from "react-aria-components";
 
 import type { Host } from "../api/host";
+import { CodeSignInRequired } from "../api/web";
 import { useT } from "../shell/i18n";
+import { navigate, signInPage, signInPath } from "../shell/router";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { notify } from "../ui/notify";
 import { useManagedHosts } from "./hosts";
 import { chord, goToTerminal, openSwitcher } from "./keys";
 import { stateWord, TabMark } from "./TabMark";
@@ -14,8 +17,11 @@ import {
   cancelClose,
   closeTab,
   maxTabs,
+  saidClosedElsewhere,
+  saidAtLimit,
   setTabListId,
   showTab,
+  tabStatus,
   type Tab as TerminalTab,
   terminalPath,
   useWorkspace,
@@ -51,13 +57,13 @@ export function spaceOf(hosts: readonly Host[] | undefined, name: string): strin
 /** TabLine is a tab's second line: its state when it is not Connected, else its directory, or its Space. */
 export function TabLine({ tab, space }: { tab: TerminalTab; space: string | undefined }) {
   const t = useT();
-  const { status } = tab.state;
+  const status = tabStatus(tab);
   if (status !== "connected") {
     // The mark beside it says the state to a screen reader already.
     return (
       <span
         aria-hidden
-        className={`truncate text-xs font-medium ${status === "refused" || status === "unreachable" ? "text-danger" : "text-ink-2"}`}
+        className={`truncate text-xs font-medium ${status === "refused" ? "text-danger" : "text-ink-2"}`}
       >
         {stateWord(t, status)}
       </span>
@@ -87,8 +93,8 @@ function RailTabs({ open, onTerminal, hosts }: { open: boolean; onTerminal: bool
     return () => setTabListId(undefined);
   }, []);
 
-  const choose = (key: number) => {
-    showTab(key, { focus: !byKeys.current });
+  const choose = (id: string) => {
+    showTab(id, { focus: !byKeys.current, person: true });
     if (!onTerminal) {
       goToTerminal();
     }
@@ -97,10 +103,10 @@ function RailTabs({ open, onTerminal, hosts }: { open: boolean; onTerminal: bool
     if (event.key !== "Delete" && event.key !== "Backspace") {
       return;
     }
-    const key = Number((event.target as HTMLElement).closest("[data-tab]")?.getAttribute("data-tab"));
-    if (Number.isInteger(key)) {
+    const id = (event.target as HTMLElement).closest("[data-tab]")?.getAttribute("data-tab");
+    if (id) {
       event.preventDefault();
-      askClose(key);
+      askClose(id);
     }
   };
   return (
@@ -117,7 +123,7 @@ function RailTabs({ open, onTerminal, hosts }: { open: boolean; onTerminal: bool
       <Tabs
         orientation="vertical"
         selectedKey={active}
-        onSelectionChange={(key) => choose(Number(key))}
+        onSelectionChange={(key) => choose(String(key))}
         keyboardActivation={onTerminal ? "automatic" : "manual"}
         className="flex min-h-0 flex-col"
       >
@@ -127,18 +133,18 @@ function RailTabs({ open, onTerminal, hosts }: { open: boolean; onTerminal: bool
           className="-mx-1 flex min-h-0 flex-col gap-1 overflow-y-auto px-1 py-1 [scrollbar-width:thin]"
         >
           {tabs.map((tab) => {
-            const selected = tab.key === active;
+            const selected = tab.id === active;
             const raised = selected && onTerminal;
             return (
               <Tab
-                key={tab.key}
-                id={tab.key}
-                data-tab={tab.key}
+                key={tab.id}
+                id={tab.id}
+                data-tab={tab.id}
                 className={`group relative flex shrink-0 cursor-default items-center rounded-2xl text-start outline-none transition-colors data-[focus-visible]:ring-2 data-[focus-visible]:ring-focus ${
                   raised ? "island" : "hover:bg-surface/60"
                 } ${open ? "min-h-14 gap-3 py-2 ps-3.5 pe-1.5" : "size-14 flex-col justify-center gap-1.5 self-center"}`}
               >
-                <TabMark status={tab.state.status} word={false} />
+                <TabMark status={tabStatus(tab)} word={false} />
                 {open ? (
                   <>
                     <span className="flex min-w-0 flex-1 flex-col">
@@ -157,7 +163,7 @@ function RailTabs({ open, onTerminal, hosts }: { open: boolean; onTerminal: bool
                       onMouseDown={(event) => event.stopPropagation()}
                       onClick={(event) => {
                         event.stopPropagation();
-                        askClose(tab.key);
+                        askClose(tab.id);
                       }}
                       className={`flex size-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-tertiary hover:text-foreground ${
                         raised ? "" : "opacity-0 group-hover:opacity-100"
@@ -270,7 +276,7 @@ export function TerminalSection({ open, onTerminal }: { open: boolean; onTermina
 export function PhoneTerminalButton() {
   const t = useT();
   const { tabs, active } = useWorkspace();
-  const tab = tabs.find((each) => each.key === active);
+  const tab = tabs.find((each) => each.id === active);
   return (
     <Link
       href={terminalPath + workspaceQuery(workspace())}
@@ -296,23 +302,48 @@ export function PhoneTerminalButton() {
   );
 }
 
-/** EndQuestion asks before a tab's SSH Session, whose shell runs, is ended: by closing the tab, or by More's End SSH Session. */
-export function EndQuestion({ tab, onEnd, onCancel }: { tab: TerminalTab; onEnd: () => void; onCancel: () => void }) {
+/** CloseQuestion asks before a tab whose shell runs is closed, wherever its closing was asked for: it ends the shell everywhere. */
+export function CloseQuestion() {
   const t = useT();
-  return (
+  const { tabs, closing } = useWorkspace();
+  const tab = tabs.find((each) => each.id === closing);
+  return tab ? (
     <ConfirmDialog
-      title={t("terminal.end.title", { host: tab.label })}
-      consequence={t("terminal.end.consequence", { host: tab.host })}
-      confirm={t("terminal.end.confirm")}
-      onConfirm={onEnd}
-      onCancel={onCancel}
+      title={t("terminal.close.title", { tab: tab.label })}
+      consequence={t("terminal.close.consequence")}
+      confirm={t("terminal.tab.close")}
+      onConfirm={() => closeTab(tab.id)}
+      onCancel={cancelClose}
     />
-  );
+  ) : null;
 }
 
-/** CloseQuestion asks before a tab whose shell runs is closed, wherever its closing was asked for. */
-export function CloseQuestion() {
-  const { tabs, closing } = useWorkspace();
-  const tab = tabs.find((each) => each.key === closing);
-  return tab ? <EndQuestion tab={tab} onEnd={() => closeTab(tab.key)} onCancel={cancelClose} /> : null;
+/**
+ * WorkspaceNotices says what the Workspace came to that has no place of
+ * its own, on whatever page the frame shows: an open past the limit, the
+ * tab shown closed by another page, and a Workspace socket
+ * refused for want of a Sign-in, which goes to Sign in and back.
+ */
+export function WorkspaceNotices() {
+  const t = useT();
+  const { atLimit, closedElsewhere, socket } = useWorkspace();
+  useEffect(() => {
+    if (atLimit) {
+      notify(t("terminal.tab.limit", { max: maxTabs }));
+      saidAtLimit();
+    }
+  }, [atLimit, t]);
+  useEffect(() => {
+    if (closedElsewhere !== undefined) {
+      notify(t("terminal.closedElsewhere", { tab: closedElsewhere }));
+      saidClosedElsewhere();
+    }
+  }, [closedElsewhere, t]);
+  const signIn = socket.status === "refused" && socket.code === CodeSignInRequired;
+  useEffect(() => {
+    if (signIn && window.location.pathname !== signInPage) {
+      navigate(signInPath(window.location.pathname + window.location.search), { replace: true });
+    }
+  }, [signIn]);
+  return null;
 }

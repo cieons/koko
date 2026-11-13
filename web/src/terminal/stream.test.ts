@@ -86,6 +86,16 @@ function described(record: TerminalRecord): string {
       return `exit status ${record.status}`;
     case "exitSignal":
       return `exit signal ${record.signal}`;
+    case "reset":
+      return `reset ${record.columns}x${record.rows}`;
+    case "active":
+      return record.active === undefined ? "active" : `active ${record.active ? 1 : 0}`;
+    case "colors": {
+      const rgb = (c: readonly number[]) => `${c.map((part) => part.toString(16).padStart(2, "0")).join("")}`;
+      return `colors ${rgb(record.foreground)} ${rgb(record.background)}`;
+    }
+    case "displaced":
+      return "displaced";
   }
 }
 
@@ -122,6 +132,8 @@ test("a record the decoder would refuse is not encoded", () => {
     { type: "resize", columns: 80.5, rows: 24 },
     { type: "exitStatus", status: 2 ** 32 },
     { type: "data", data: new Uint8Array(maxData + 1) },
+    { type: "reset", columns: 0, rows: 24 },
+    { type: "colors", foreground: [256, 0, 0], background: [0, 0, 0] },
   ] satisfies TerminalRecord[]) {
     expect(() => encodeRecord(record), described(record).slice(0, 40)).toThrow(MalformedRecord);
   }

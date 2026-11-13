@@ -5,7 +5,7 @@ import { createElement, createRef } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import snapshotGolden from "../../../../internal/server/vt/testdata/snapshot.golden?raw";
-import { Emulator, type EmulatorHandle } from "./Emulator";
+import { Emulator, type EmulatorHandle, type EmulatorProps } from "./Emulator";
 
 // The emulator against the real wterm and ghostty core under jsdom, which
 // lays nothing out: what koko relies on wterm 0.5.10 for, and the patch to
@@ -123,14 +123,12 @@ test("the patched renderer gives the HTML parser no style attribute, and styles 
   }
 });
 
-test("the Emulator sends a pressed key as the terminal's modes ask, and gives what the shell reports", async () => {
+/** emulator renders the Emulator with the real wterm and core, and is its handle and what it gave onInput. */
+async function emulator(props: Partial<EmulatorProps> = {}) {
   serveWasm();
   const handle = createRef<EmulatorHandle>();
   const input: string[] = [];
   const ready = vi.fn();
-  const dirs = vi.fn();
-  const copied = vi.fn();
-  const title = vi.fn();
   render(
     createElement(Emulator, {
       ref: handle,
@@ -140,38 +138,82 @@ test("the Emulator sends a pressed key as the terminal's modes ask, and gives wh
       announce: false,
       onReady: ready,
       onInput: (bytes: Uint8Array) => input.push(new TextDecoder().decode(bytes)),
-      onResize: () => {},
-      onClipboardWrite: copied,
-      onWorkingDirectory: dirs,
-      onTitle: title,
+      onClipboardWrite: () => {},
+      onWorkingDirectory: () => {},
+      onTitle: () => {},
       onError: (error: unknown) => {
         throw error;
       },
+      ...props,
     }),
   );
   await waitFor(() => expect(ready).toHaveBeenCalled());
-  const emulator = handle.current;
-  if (!emulator) {
+  const found = handle.current;
+  if (!found) {
     throw new Error("the Emulator gave no handle");
   }
-  emulator.pressKey("ArrowUp", { ctrl: false, alt: false });
-  emulator.pressKey("c", { ctrl: true, alt: false });
-  emulator.pressKey("b", { ctrl: false, alt: true });
-  emulator.pressKey("PageUp", { ctrl: false, alt: false });
+  return { emulator: found, input };
+}
+
+test("the Emulator sends a pressed key as the terminal's modes ask, and gives what the shell reports", async () => {
+  const dirs = vi.fn();
+  const copied = vi.fn();
+  const title = vi.fn();
+  const { emulator: handle, input } = await emulator({ onClipboardWrite: copied, onWorkingDirectory: dirs, onTitle: title });
+  handle.pressKey("ArrowUp", { ctrl: false, alt: false });
+  handle.pressKey("c", { ctrl: true, alt: false });
+  handle.pressKey("b", { ctrl: false, alt: true });
+  handle.pressKey("PageUp", { ctrl: false, alt: false });
   // Application cursor keys, as vim and htop set them.
-  emulator.write(new TextEncoder().encode("\x1b[?1h"));
-  emulator.pressKey("ArrowUp", { ctrl: false, alt: false });
-  emulator.pressKey("Home", { ctrl: false, alt: false });
+  handle.write(new TextEncoder().encode("\x1b[?1h"));
+  handle.pressKey("ArrowUp", { ctrl: false, alt: false });
+  handle.pressKey("Home", { ctrl: false, alt: false });
   expect(input).toEqual(["\x1b[A", "\x03", "\x1bb", "\x1b[5~", "\x1bOA", "\x1bOH"]);
 
   const encode = (text: string) => new TextEncoder().encode(text);
-  emulator.write(encode(`\x1b]52;c;${btoa("ls -la")}\x07`));
-  emulator.write(encode("\x1b]7;file://web1/srv/app\x1b\\"));
-  emulator.write(encode("\x1b]2;deploy@web1\x07"));
+  handle.write(encode(`\x1b]52;c;${btoa("ls -la")}\x07`));
+  handle.write(encode("\x1b]7;file://web1/srv/app\x1b\\"));
+  handle.write(encode("\x1b]2;deploy@web1\x07"));
   await waitFor(() => expect(copied).toHaveBeenCalledWith("ls -la"));
   expect(dirs).toHaveBeenCalledWith("file://web1/srv/app");
   expect(title).toHaveBeenCalledWith("deploy@web1");
   expect(document.querySelector(".wterm.koko-term.koko-term-14")?.getAttribute("aria-label")).toBe("web1");
+});
+
+// The koko server answers the shell's queries once, however many pages are
+// attached (spec #213): the Emulator drops what wterm answers within write,
+// so no reply reaches the attachment, and a key pressed still does.
+test("the Emulator drops wterm's replies to the shell's queries, and no reply reaches onInput", async () => {
+  const { emulator: handle, input } = await emulator();
+  vi.useFakeTimers();
+  try {
+    for (const query of ["\x1b[c", "\x1b[6n", "\x1b]10;?\x1b\\", "\x1b]11;?\x1b\\", "\x1b[14t", "\x1b[18t", "\x1b[?u"]) {
+      handle.write(new TextEncoder().encode(query));
+    }
+    vi.runAllTimers();
+  } finally {
+    vi.useRealTimers();
+  }
+  expect(input).toEqual([]);
+  handle.pressKey("Escape", { ctrl: false, alt: false });
+  expect(input).toEqual(["\x1b"]);
+});
+
+// A reset record clears the page's emulator, its history too, and sets its
+// grid to the pty's size, so the snapshot after it draws the screen alone.
+test("reset clears the screen and its history, and sets the grid to the size given", async () => {
+  const { emulator: handle, input } = await emulator();
+  const lines = Array.from({ length: 60 }, (_, n) => `old line ${n}`).join("\r\n");
+  handle.write(new TextEncoder().encode(`${lines}\x1b[?1h`));
+  await waitFor(() => expect(document.querySelector(".wterm")?.textContent).toContain("old line 59"));
+  handle.reset(30, 5);
+  handle.write(new TextEncoder().encode("snapshot"));
+  await waitFor(() => expect(document.querySelector(".wterm")?.textContent).toContain("snapshot"));
+  expect(document.querySelector(".wterm")?.textContent).not.toContain("old line");
+  expect(document.querySelectorAll(".wterm .term-grid .term-row")).toHaveLength(5);
+  // The modes go with the screen: the snapshot sets its own.
+  handle.pressKey("ArrowUp", { ctrl: false, alt: false });
+  expect(input).toEqual(["\x1b[A"]);
 });
 
 /**

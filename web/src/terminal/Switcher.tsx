@@ -15,10 +15,12 @@ import {
 
 import type { Host } from "../api/host";
 import { useT } from "../shell/i18n";
+import { AlertLine } from "../ui/states";
+import { refusalSaid } from "./said";
 import { chord } from "./keys";
 import { shortPath } from "./RailSection";
 import { stateWord, TabMark } from "./TabMark";
-import { addTab, maxTabs, setSwitcher, showTab, useWorkspace } from "./workspace";
+import { maxTabs, openTab, setSwitcher, showTab, tabStatus, useWorkspace } from "./workspace";
 
 /** itemClass is a row of the switcher's list, marked while the virtual focus is on it. */
 const itemClass =
@@ -29,23 +31,26 @@ const itemClass =
  * switcher"): one field over one list of two groups, the open tabs and the
  * Managed Hosts, narrowed by name, directory and Space as it is typed in.
  * The arrow keys move, Enter shows the tab or opens the Host in a new tab,
- * Escape closes. At 16 tabs the Hosts give way to the limit's line.
+ * Escape closes. At 16 tabs the Hosts give way to the limit's line. A
+ * Host opened closes it once the Workspace names its tab; an open refused
+ * leaves it open, saying why.
  */
 export function Switcher({ hosts }: { hosts: readonly Host[] | undefined }) {
   const t = useT();
-  const { tabs, active } = useWorkspace();
+  const { tabs, active, openRefused } = useWorkspace();
   const { contains } = useFilter({ sensitivity: "base" });
   const full = tabs.length >= maxTabs;
   const close = () => setSwitcher(false);
   const act = (key: string) => {
     const [kind, value = ""] = key.split(":");
     if (kind === "tab") {
-      showTab(Number(value), { focus: true });
+      showTab(value, { focus: true, person: true });
+      close();
     } else {
-      addTab(value);
+      void openTab(value).then((opened) => opened && close());
     }
-    close();
   };
+  const refused = openRefused && refusalSaid(t, openRefused.host, openRefused.code, openRefused.message);
   return (
     <ModalOverlay
       isOpen
@@ -79,23 +84,23 @@ export function Switcher({ hosts }: { hosts: readonly Host[] | undefined }) {
                   <Header className="t-label px-3 pt-1 pb-1.5">{t("terminal.switcher.tabs")}</Header>
                   {tabs.map((tab) => (
                     <ListBoxItem
-                      key={`tab:${tab.key}`}
-                      id={`tab:${tab.key}`}
+                      key={`tab:${tab.id}`}
+                      id={`tab:${tab.id}`}
                       textValue={`${tab.label} ${tab.cwd ?? ""}`}
                       className={itemClass}
                     >
                       <span className="flex w-4 shrink-0 justify-center">
-                        <TabMark status={tab.state.status} word={false} />
+                        <TabMark status={tabStatus(tab)} word={false} />
                       </span>
                       <span className="t-name min-w-0 truncate">{tab.label}</span>
                       <span className="t-label min-w-0 flex-1 truncate font-mono text-xs">
-                        {tab.state.status === "connected"
+                        {tabStatus(tab) === "connected"
                           ? tab.cwd === undefined
                             ? ""
                             : shortPath(tab.cwd)
-                          : stateWord(t, tab.state.status)}
+                          : stateWord(t, tabStatus(tab))}
                       </span>
-                      {tab.key === active && <span className="t-label shrink-0">{t("terminal.switcher.shown")}</span>}
+                      {tab.id === active && <span className="t-label shrink-0">{t("terminal.switcher.shown")}</span>}
                     </ListBoxItem>
                   ))}
                 </ListBoxSection>
@@ -122,6 +127,14 @@ export function Switcher({ hosts }: { hosts: readonly Host[] | undefined }) {
               )}
             </ListBox>
           </Autocomplete>
+          {refused && (
+            <div className="border-t border-line px-5 py-3">
+              <AlertLine>
+                {refused.line}
+                {refused.detail !== undefined && <span className="t-code mt-1 block text-xs break-words">{refused.detail}</span>}
+              </AlertLine>
+            </div>
+          )}
           {full && <p className="t-label border-t border-line px-5 py-3">{t("terminal.tab.limit", { max: maxTabs })}</p>}
           <p className="t-label hidden border-t border-line px-5 py-3 md:block">
             {t("terminal.switcher.keys", { open: chord("K"), left: chord("←"), right: chord("→") })}

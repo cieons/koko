@@ -1,99 +1,41 @@
 import { Button, Spinner } from "@heroui/react";
 import { Clipboard as ClipboardIcon } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { CodeRevoked } from "../api/device";
-import { CodeHostUnreachable, CodeLoginRefused } from "../api/enroll";
-import { CodeUnknownHost } from "../api/host";
-import { CodeCookieRequired, CodeSignInRequired } from "../api/web";
-import type { MessageKey } from "../i18n/catalogues";
-import { type Translate, useCount, useLanguage, useT } from "../shell/i18n";
+import { CodeSignInRequired } from "../api/web";
+import { useCount, useT } from "../shell/i18n";
 import { navigate, signInPage, signInPath } from "../shell/router";
 import { writeClipboard } from "../ui/copy";
 import { AlertLine, loadingDelay } from "../ui/states";
-import type { Connection, Ending, Terminals } from "./connection";
-import { Emulator, type EmulatorHandle } from "./emulator/Emulator";
+import { Attachment, gridOf, type Size } from "./connection";
+import { Emulator, type EmulatorHandle, type Metrics } from "./emulator/Emulator";
+import { endingSaid, refusalSaid, restartNotice, type Said } from "./said";
 import { TabMark } from "./TabMark";
-import { closeTab, panelId, patchTab, reopen, runtime, type Tab, takeTyped, useWorkspace } from "./workspace";
+import { themeColors, watchTheme } from "./themeColors";
+import { timing } from "./timing";
+import {
+  askClose,
+  boxSize,
+  panelId,
+  patchTab,
+  personActed,
+  reopenTab,
+  runtime,
+  setBox,
+  type Tab,
+  takeTyped,
+  useWorkspace,
+} from "./workspace";
 
 // A tab's pane: its terminal, and over it the tab's state (docs/web-design.md,
 // "Tabs and their states"). No state moves the layout: a tab with nothing to
 // show is covered; one whose terminal stays has cards at its top end.
 
-/**
- * restartNotice is the Gateway's notice when the koko server stops for a
- * restart (gateway.go, errStopping), which the page says in its own words;
- * it must match the Gateway's byte for byte.
- */
-const restartNotice = "the koko server is restarting; this SSH Session has ended.";
+/** maxAttachments is the most pages attached to one SSH Session (the Gateway's maxAttachments). */
+const maxAttachments = 8;
 
-/**
- * refusals are the open's refusals (the Gateway's, spec #169) the page says
- * in its own words, by their codes; any other is said generally.
- */
-const refusals: Readonly<Record<string, MessageKey>> = {
-  [CodeUnknownHost]: "terminal.refused.unknown_host",
-  host_registered: "terminal.refused.host_registered",
-  relay_registered: "terminal.refused.relay_registered",
-  access_refused: "terminal.refused.access_refused",
-  ssh_session_limit: "terminal.refused.ssh_session_limit",
-  [CodeHostUnreachable]: "terminal.refused.host_unreachable",
-  host_key_mismatch: "terminal.refused.host_key_mismatch",
-  [CodeLoginRefused]: "terminal.refused.login_refused",
-  host_connection_failed: "terminal.refused.host_connection_failed",
-  shell_refused: "terminal.refused.shell_refused",
-};
-
-/** shellRefusals are the web front's refusals the shell already has words for. */
-const shellRefusals: Readonly<Record<string, MessageKey>> = {
-  [CodeCookieRequired]: "error.cookie_required",
-  [CodeRevoked]: "error.revoked",
-  [CodeSignInRequired]: "error.signin_required",
-};
-
-/**
- * Said is what a state says: a line in the page's words, and beneath it the
- * koko server's own, as it wrote them, when they add to it: they may begin
- * with a Host's name, which keeps its case.
- */
-interface Said {
-  line: string;
-  detail?: string;
-}
-
-/** refusalSaid says why an open or a resume was refused. */
-function refusalSaid(t: Translate, host: string, code: string, message: string): Said {
-  const shell = shellRefusals[code];
-  if (shell !== undefined) {
-    return { line: t(shell) };
-  }
-  // An unknown name's words are the same for every Host the caller cannot see, and add nothing.
-  const detail = message === "" || code === CodeUnknownHost ? undefined : message;
-  return { line: t(refusals[code] ?? "terminal.refused.other", { host }), detail };
-}
-
-/** endingSaid says why an SSH Session ended. */
-function endingSaid(t: Translate, language: string, host: string, ending: Ending): Said {
-  switch (ending.kind) {
-    case "exitStatus":
-      return { line: t("terminal.ended.status", { host, status: ending.status }) };
-    case "exitSignal":
-      return { line: t("terminal.ended.signal", { host, signal: ending.signal }) };
-    case "notice":
-      if (ending.notice === restartNotice) {
-        return { line: t("terminal.ended.restart") };
-      }
-      return { line: t("terminal.ended.notice", { host }), detail: ending.notice === "" ? undefined : ending.notice };
-    case "closed":
-      return { line: t("terminal.ended.closed", { host }) };
-    case "lost": {
-      const time = new Intl.DateTimeFormat(language, { hour: "2-digit", minute: "2-digit" }).format(ending.at);
-      return { line: t("terminal.ended.lost", { host, time }), detail: ending.message === "" ? undefined : ending.message };
-    }
-    case "protocol":
-      return { line: t("terminal.ended.protocol"), detail: ending.message };
-  }
-}
+/** focusReports are what wterm sends as the terminal gains and loses the focus, for a program that asks. */
+const focusReports = new Set(["\x1b[I", "\x1b[O"]);
 
 /**
  * Notice is a card at the terminal's top end, over it, which stays readable
@@ -123,9 +65,8 @@ function Saying({ said }: { said: Said }) {
   );
 }
 
-/** Connecting stands over an empty terminal while its SSH Session opens, with a spinner past 300 ms. */
-function Connecting({ host }: { host: string }) {
-  const t = useT();
+/** Waiting stands over an empty terminal while its SSH Session starts or the page attaches, with a spinner past 300 ms. */
+export function Waiting({ line }: { line: string }) {
   const [slow, setSlow] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setSlow(true), loadingDelay);
@@ -134,13 +75,13 @@ function Connecting({ host }: { host: string }) {
   return (
     <div role="status" className="flex w-full max-w-lg items-center gap-3 text-ink-2">
       <span className="flex size-5 items-center justify-center">{slow && <Spinner aria-hidden size="sm" color="current" />}</span>
-      <p className="text-[1.0625rem] font-medium">{t("terminal.connecting", { host })}</p>
+      <p className="text-[1.0625rem] font-medium">{line}</p>
     </div>
   );
 }
 
 /** Cover stands in place of a terminal that has nothing to show: why, and what to do. */
-function Cover({ said, children }: { said: Said; children: ReactNode }) {
+export function Cover({ said, children }: { said: Said; children: ReactNode }) {
   return (
     <div className="flex w-full max-w-lg flex-col items-start gap-4">
       <AlertLine>
@@ -158,7 +99,7 @@ function ClipboardNotice({ tab, text }: { tab: Tab; text: string }) {
   const count = useCount();
   const [failed, setFailed] = useState(false);
   const [first] = text.split("\n");
-  const answer = () => patchTab(tab.key, { clipboard: undefined });
+  const answer = () => patchTab(tab.id, { clipboard: undefined });
   return (
     <Notice mark={<ClipboardIcon aria-hidden className="size-4 text-muted" />}>
       <div className="min-w-0 flex-1 basis-56">
@@ -191,167 +132,295 @@ function directoryOf(uri: string, host: string): string | undefined {
   return undefined;
 }
 
-/** PaneProps are a tab, whether it is the one shown and whether the workspace is in view, and the document's Terminals. */
+/** cellsOf is how many cells a box of width by height pixels holds, or undefined while it cannot be told. */
+function cellsOf(box: { width: number; height: number } | undefined, metrics: Metrics | null | undefined): Size | undefined {
+  if (!box || !metrics || box.width <= 0 || box.height <= 0) {
+    return undefined;
+  }
+  return gridOf({
+    columns: Math.floor((box.width - metrics.padX) / metrics.cellWidth),
+    rows: Math.floor((box.height - metrics.padY) / metrics.cellHeight),
+  });
+}
+
+/** PaneProps are a tab, whether it is the one shown and whether the workspace is in view. */
 export interface PaneProps {
   tab: Tab;
   active: boolean;
   shown: boolean;
-  terminals: Terminals;
 }
 
 /**
- * Pane is one tab's terminal. It stays mounted while another tab or
- * another page is shown, its painting paused, so its SSH Session carries
- * on; it opens the tab's SSH Session once its emulator has laid out its
- * grid, and a new one each time the tab is opened again.
+ * Pane is one tab's terminal. It attaches to the tab's SSH Session once
+ * the tab is first shown, and stays attached while another tab or another
+ * page is shown, its painting paused, so switching back draws at once.
+ * The terminal is drawn at the pty's size, which the koko server sets by
+ * the reset record: scaled down to fit a box too small, and with a margin
+ * in the terminal's background in a box too large. The page's own box goes
+ * to the koko server once it has been still for a moment.
  */
-export function Pane({ tab, active, shown, terminals }: PaneProps) {
+export function Pane({ tab, active, shown }: PaneProps) {
   const t = useT();
-  const language = useLanguage();
-  const { fontSize, announce, tabListId } = useWorkspace();
+  const { fontSize, announce, tabListId, socket } = useWorkspace();
   const emulator = useRef<EmulatorHandle | null>(null);
-  const connection = useRef<Connection | null>(null);
-  const [grid, setGrid] = useState<{ cols: number; rows: number }>();
-  const { key, host, state } = tab;
+  const box = useRef<HTMLDivElement>(null);
+  const [ready, setReady] = useState(false);
+  const [seen, setSeen] = useState(false);
+  /** attachments counts this page's attachments to the SSH Session: Show here and Try again make the next. */
+  const [attachments, setAttachments] = useState(0);
+  /** grid is the pty's size, from the last reset. */
+  const [grid, setGrid] = useState<Size>();
+  const [boxPx, setBoxPx] = useState<{ width: number; height: number }>();
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const { id, host, session, attachment } = tab;
+  const running = tab.state === "running";
 
-  // The tab's SSH Session: opened once the grid is known, at its size, and
-  // again on each reopen; ended with the pane, as when the frame goes on
-  // signing out.
-  const gridNow = useRef(grid);
-  gridNow.current = grid;
-  const ready = grid !== undefined;
+  // The page attaches to a tab once it shows it, and stays attached.
   useEffect(() => {
-    const size = gridNow.current;
-    if (!size) {
+    if (active && shown) {
+      setSeen(true);
+    }
+  }, [active, shown]);
+
+  // The box: measured as it changes, in pixels, and in cells against the emulator's.
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (!element) {
       return;
     }
-    // A connection tells its state only after open returns, so its id is there to read.
-    const opened: Connection = terminals.open(
-      host,
-      { columns: size.cols, rows: size.rows },
-      {
-        onState: (next) => patchTab(key, { state: next, session: opened.sessionId || undefined }),
-        onOutput: (bytes) => emulator.current?.write(bytes),
-      },
-    );
-    connection.current = opened;
-    runtime(key).end = () => opened.end();
+    const measure = () => setBoxPx({ width: element.clientWidth, height: element.clientHeight });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    window.addEventListener("resize", measure);
     return () => {
-      opened.end();
-      if (connection.current === opened) {
-        connection.current = null;
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+  useEffect(() => {
+    if (ready) {
+      setMetrics(emulator.current?.metrics() ?? null);
+    }
+  }, [ready, fontSize, boxPx]);
+  const cells = cellsOf(boxPx, metrics);
+
+  // The box goes to the koko server, and becomes the size tabs open at, once it has been still.
+  const columns = cells?.columns;
+  const rows = cells?.rows;
+  useEffect(() => {
+    if (columns === undefined || rows === undefined) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (active) {
+        setBox({ columns, rows });
+      }
+      runtime(id).attachment?.resize({ columns, rows });
+    }, timing.still);
+    return () => clearTimeout(timer);
+  }, [columns, rows, active, id]);
+
+  // The attachment: made once the tab has been shown and its shell runs, and again on Show here.
+  useEffect(() => {
+    if (!ready || !seen || !running || session === undefined) {
+      return;
+    }
+    const rt = runtime(id);
+    // The box as it is now: the measure above may not have come round yet.
+    const element = box.current;
+    const now = element && cellsOf({ width: element.clientWidth, height: element.clientHeight }, emulator.current?.metrics());
+    const made = new Attachment(session, now ?? boxSize(), themeColors(), {
+      onState: (next) => patchTab(id, { attachment: next }),
+      onOutput: (bytes) => emulator.current?.write(bytes),
+      onReset: (size) => {
+        emulator.current?.reset(size.columns, size.rows);
+        setGrid(size);
+      },
+      onActive: (on) => patchTab(id, on ? { activePage: true } : { activePage: false, clipboard: undefined }),
+    });
+    rt.attachment = made;
+    patchTab(id, { attachment: made.state });
+    if (rt.acted) {
+      rt.acted = false;
+      made.active();
+    }
+    const unwatch = watchTheme(() => {
+      const colors = themeColors();
+      if (colors) {
+        made.setColors(colors);
+      }
+    });
+    return () => {
+      unwatch();
+      made.detach();
+      if (rt.attachment === made) {
+        rt.attachment = undefined;
       }
     };
-  }, [ready, tab.opening, terminals, host, key]);
+  }, [ready, seen, running, session, attachments, id]);
 
-  // A refusal for want of a Sign-in, at an open or a resume, takes the page to Sign in, which comes back here.
-  const signIn = state.status === "refused" && state.code === CodeSignInRequired;
+  // A refusal for want of a Sign-in takes the page to Sign in, which comes back here.
+  const signIn = attachment?.status === "refused" && attachment.code === CodeSignInRequired;
   useEffect(() => {
     if (signIn && window.location.pathname !== signInPage) {
       navigate(signInPath(window.location.pathname + window.location.search), { replace: true });
     }
   }, [signIn]);
 
-  const covered = state.status === "connecting" || state.status === "refused" || state.status === "unreachable" || tab.failed === true;
-  const retry = () => reopen(key);
-  const close = () => closeTab(key);
+  /** attachAgain makes a new attachment on the person's word, which makes this page the active one. */
+  const attachAgain = () => {
+    if (document.visibilityState === "visible") {
+      runtime(id).acted = true;
+    }
+    setAttachments((n) => n + 1);
+  };
+  const close = () => askClose(id);
+  const reload = (
+    <Button variant="primary" onPress={() => window.location.reload()}>
+      {t("terminal.reload.action")}
+    </Button>
+  );
+  const closeButton = (
+    <Button variant="tertiary" onPress={close}>
+      {t("terminal.tab.close")}
+    </Button>
+  );
+
   let cover: ReactNode = null;
   if (tab.failed === true) {
+    cover = <Cover said={{ line: t("terminal.emulatorFailed") }}>{reload}</Cover>;
+  } else if (running && attachment?.status === "refused" && attachment.code === "reload_page") {
+    cover = <Cover said={{ line: t("terminal.reload.message") }}>{reload}</Cover>;
+  } else if (running && attachment?.status === "refused") {
     cover = (
-      <Cover said={{ line: t("terminal.emulatorFailed") }}>
-        <Button variant="primary" onPress={() => window.location.reload()}>
-          {t("terminal.reload.action")}
-        </Button>
-      </Cover>
-    );
-  } else if (state.status === "connecting") {
-    cover = <Connecting host={host} />;
-  } else if (state.status === "refused" && state.code === "reload_page") {
-    cover = (
-      <Cover said={{ line: t("terminal.reload.message") }}>
-        <Button variant="primary" onPress={() => window.location.reload()}>
-          {t("terminal.reload.action")}
-        </Button>
-      </Cover>
-    );
-  } else if (state.status === "refused" || state.status === "unreachable") {
-    const said =
-      state.status === "refused" ? refusalSaid(t, host, state.code, state.message) : { line: t("terminal.unreachable") };
-    cover = (
-      <Cover said={said}>
-        <Button variant="primary" onPress={retry}>
+      <Cover said={refusalSaid(t, host, attachment.code, attachment.message)}>
+        <Button variant="primary" onPress={attachAgain}>
           {t("terminal.retry")}
         </Button>
-        <Button variant="tertiary" onPress={close}>
-          {t("terminal.tab.close")}
+        {closeButton}
+      </Cover>
+    );
+  } else if (running && attachment?.status === "protocol") {
+    cover = <Cover said={{ line: t("terminal.ended.protocol"), detail: attachment.message }}>{reload}</Cover>;
+  } else if (running && attachment?.status === "displaced") {
+    cover = (
+      <Cover said={{ line: t("terminal.displaced", { count: maxAttachments }) }}>
+        <Button variant="primary" onPress={attachAgain}>
+          {t("terminal.displaced.show")}
         </Button>
+      </Cover>
+    );
+  } else if (
+    running &&
+    ((socket.status === "reconnecting" && socket.stopping) || (attachment?.status === "detached" && attachment.notice === restartNotice))
+  ) {
+    // The koko server is restarting: the tab comes back restarted once the page reconnects.
+    cover = <Waiting line={t("terminal.ended.restart")} />;
+  } else if (tab.state === "restarted") {
+    cover = <Waiting line={t("terminal.restarted")} />;
+  } else if (tab.state === "starting" || (running && attachment?.status !== "attached" && attachment?.status !== "reconnecting")) {
+    // Attaching, or an attachment the koko server let go while the Workspace still says the shell runs: its word comes.
+    cover = <Waiting line={t("terminal.connecting", { host })} />;
+  } else if (tab.state === "refused") {
+    const refused = tab.refused ?? { code: "", message: "" };
+    cover = (
+      <Cover said={refusalSaid(t, host, refused.code, refused.message)}>
+        <Button variant="primary" onPress={() => reopenTab(id)}>
+          {t("terminal.retry")}
+        </Button>
+        {closeButton}
       </Cover>
     );
   }
 
+  const reconnecting = running && attachment?.status === "reconnecting";
+  const clipboard = tab.activePage ? tab.clipboard : undefined;
+  const cards = cover === null && (reconnecting || tab.state === "ended" || clipboard !== undefined);
+
+  // The terminal at the pty's size: scaled down to fit a box too small, at its top start in one too large.
+  const natural = grid && metrics && { width: grid.columns * metrics.cellWidth + metrics.padX, height: grid.rows * metrics.cellHeight + metrics.padY };
+  const scale =
+    natural && boxPx && boxPx.width > 0 && boxPx.height > 0
+      ? Math.min(1, boxPx.width / natural.width, boxPx.height / natural.height)
+      : 1;
+
   return (
     <div
       role="tabpanel"
-      id={panelId(key, tabListId)}
+      id={panelId(id, tabListId)}
       aria-label={tab.label}
       className={`absolute inset-0 flex flex-col ${active ? "" : "invisible"}`}
       inert={!active}
     >
-      <div className={`flex min-h-0 flex-1 transition-opacity ${state.status === "reconnecting" ? "opacity-55" : ""}`}>
-        <Emulator
-          ref={(handle) => {
-            emulator.current = handle;
-            if (handle) {
-              runtime(key).emulator = handle;
-            }
-          }}
-          label={t("terminal.label", { tab: tab.label })}
-          fontSize={fontSize}
-          paused={!active || !shown}
-          announce={announce}
-          onReady={(cols, rows) => {
-            setGrid({ cols, rows });
-            patchTab(key, { ready: true });
-          }}
-          onInput={(bytes) => {
-            // A character typed while the key bar's Control or Alt is on is pressed with it instead.
-            if (!takeTyped(key, bytes)) {
-              connection.current?.send(bytes);
-            }
-          }}
-          onResize={(cols, rows) => {
-            setGrid({ cols, rows });
-            connection.current?.resize(cols, rows);
-          }}
-          onClipboardWrite={(text) => patchTab(key, { clipboard: text === "" ? undefined : text })}
-          onWorkingDirectory={(uri) => {
-            const cwd = directoryOf(uri, host);
-            if (cwd !== undefined) {
-              patchTab(key, { cwd });
-            }
-          }}
-          onTitle={() => {}}
-          onError={() => patchTab(key, { failed: true })}
-        />
+      <div
+        ref={box}
+        className={`relative min-h-0 flex-1 overflow-hidden transition-opacity ${reconnecting ? "opacity-55" : ""}`}
+        onPointerDown={() => personActed(id)}
+      >
+        <div
+          data-terminal-grid
+          className={natural ? "absolute top-0 left-0 flex origin-top-left" : "flex size-full"}
+          style={natural ? { width: natural.width, height: natural.height, transform: scale < 1 ? `scale(${scale})` : undefined } : undefined}
+        >
+          <Emulator
+            ref={(handle) => {
+              emulator.current = handle;
+              if (handle) {
+                runtime(id).emulator = handle;
+              }
+            }}
+            label={t("terminal.label", { tab: tab.label })}
+            fontSize={fontSize}
+            paused={!active || !shown}
+            announce={announce}
+            onReady={() => {
+              setReady(true);
+              patchTab(id, { ready: true });
+            }}
+            onInput={(bytes) => {
+              // A program's focus reports go from the active page alone.
+              if (!tab.activePage && focusReports.has(String.fromCharCode(...bytes))) {
+                return;
+              }
+              // A character typed while the key bar's Control or Alt is on is pressed with it instead.
+              if (!takeTyped(id, bytes)) {
+                runtime(id).attachment?.send(bytes);
+              }
+            }}
+            onClipboardWrite={(text) => {
+              // A copy is offered in the active page alone.
+              if (tab.activePage) {
+                patchTab(id, { clipboard: text === "" ? undefined : text });
+              }
+            }}
+            onWorkingDirectory={(uri) => {
+              const cwd = directoryOf(uri, host);
+              if (cwd !== undefined) {
+                patchTab(id, { cwd });
+              }
+            }}
+            onTitle={() => {}}
+            onError={() => patchTab(id, { failed: true })}
+          />
+        </div>
       </div>
-      {covered && (
-        <div className="absolute inset-0 flex items-center justify-center bg-[var(--term-surface)] p-6">{cover}</div>
-      )}
-      {!covered && (state.status !== "connected" || tab.clipboard !== undefined) && (
+      {cover !== null && <div className="absolute inset-0 flex items-center justify-center bg-[var(--term-surface)] p-6">{cover}</div>}
+      {cards && (
         <div className="pointer-events-none absolute inset-x-2 top-2 z-10 flex flex-col items-stretch gap-2 md:start-auto md:end-3 md:top-3 md:w-[min(34rem,calc(100%-1.5rem))]">
-          {state.status === "reconnecting" && (
+          {reconnecting && (
             <Notice mark={<TabMark status="reconnecting" word={false} />}>
               <p className="min-w-0 flex-1 basis-56">{t("terminal.reconnecting")}</p>
-              <Button size="sm" variant="secondary" onPress={() => connection.current?.tryNow()}>
+              <Button size="sm" variant="secondary" onPress={() => runtime(id).attachment?.tryNow()}>
                 {t("terminal.reconnecting.now")}
               </Button>
             </Notice>
           )}
-          {state.status === "ended" && (
+          {tab.state === "ended" && (
             <Notice mark={<TabMark status="ended" word={false} />}>
-              <Saying said={endingSaid(t, language, host, state.ending)} />
+              <Saying said={endingSaid(t, host, tab.ended)} />
               <div className="flex gap-2">
-                <Button size="sm" variant="primary" onPress={retry}>
+                <Button size="sm" variant="primary" onPress={() => reopenTab(id)}>
                   {t("terminal.ended.new")}
                 </Button>
                 <Button size="sm" variant="tertiary" onPress={close}>
@@ -360,10 +429,9 @@ export function Pane({ tab, active, shown, terminals }: PaneProps) {
               </div>
             </Notice>
           )}
-          {tab.clipboard !== undefined && <ClipboardNotice tab={tab} text={tab.clipboard} />}
+          {clipboard !== undefined && <ClipboardNotice tab={tab} text={clipboard} />}
         </div>
       )}
     </div>
   );
 }
-

@@ -1,5 +1,5 @@
 import { act, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
 import { type Host, HostList, HostShow } from "../api/host";
 import { alice, host } from "../pages/host/records.fixture";
@@ -7,14 +7,14 @@ import { expectAccessible } from "../test/axe";
 import { fakeApi } from "../test/fakeApi";
 import { setViewport } from "../test/media";
 import { actAs, renderAt } from "../test/pages";
-import { FakeWebSocket } from "../test/terminal";
+import { attachments, type FakeWebSocket, requestsOn, running, type WireTab, workspaceSockets } from "../test/terminal";
 import type { EmulatorProps, Modifiers } from "./emulator/Emulator";
 
 // The terminal on a phone: its key bar, the tab button that starts the
 // key bar's row, the sheet of tabs, and the phone's layout upright and
 // sideways, run as the whole web UI against the fake API, with the
 // emulator replaced by a fake that records the keys pressed through it
-// and the WebSocket by one the test answers as the koko server.
+// and the WebSockets by fakes the test answers as the koko server.
 
 vi.setConfig({ testTimeout: 20_000 });
 configure({ asyncUtilTimeout: 5_000 });
@@ -38,10 +38,11 @@ vi.mock("./emulator/Emulator", async () => {
     const input = useRef<HTMLTextAreaElement>(null);
     useImperativeHandle(props.ref, () => ({
       write: () => {},
+      reset: () => {},
+      metrics: () => ({ cellWidth: 8, cellHeight: 16, padX: 0, padY: 0 }),
       focus: () => input.current?.focus(),
       blur: () => input.current?.blur(),
       hasFocus: () => document.activeElement === input.current,
-      fit: () => {},
       selection: () => "",
       // A key is encoded as the fake writes it, and given back through onInput as wterm gives its bytes.
       pressKey: (name: string, modifiers: Modifiers) => {
@@ -52,7 +53,7 @@ vi.mock("./emulator/Emulator", async () => {
     }));
     useEffect(() => {
       record.mounts++;
-      props.onReady(120, 36);
+      props.onReady();
     }, []);
     // A character typed on the soft keyboard reaches the page as its bytes.
     return createElement("textarea", {
@@ -66,17 +67,14 @@ vi.mock("./emulator/Emulator", async () => {
 
 const hosts: Host[] = [host("web1", { space: "web" }), host("db2", { space: "ops" }), host("cache3", { space: "ops" })];
 
-const tunnel = (n: number) => n.toString(16).padStart(32, "0");
+const web1 = running("a1", "web1");
+const db2 = running("b2", "db2");
+const cache3 = running("c3", "cache3");
 
 /** upright and sideways are a phone held upright and turned; narrow is a desktop's window as narrow as a phone. */
 const upright = { width: 390, height: 844, coarse: true };
 const sideways = { width: 844, height: 390, coarse: true };
 const narrow = { width: 390, height: 800, coarse: false };
-
-beforeEach(() => {
-  FakeWebSocket.sockets = [];
-  vi.stubGlobal("WebSocket", FakeWebSocket);
-});
 
 afterEach(() => {
   emulators.clear();
@@ -93,17 +91,32 @@ function serve(path: string, viewport = upright): void {
   renderAt(path);
 }
 
-/** opened waits for the page to have opened n WebSockets, and has the koko server start each one's shell. */
-async function opened(n: number): Promise<FakeWebSocket[]> {
-  await waitFor(() => expect(FakeWebSocket.sockets).toHaveLength(n));
-  const all = [...FakeWebSocket.sockets];
-  for (const [i, socket] of all.entries()) {
-    await act(async () => {
-      socket.opened();
-      socket.answer({ tunnel: tunnel(i + 1) });
-    });
-  }
-  return all;
+/** joined has the koko server take the page's Workspace socket and send it the Workspace, and is the socket. */
+async function joined(...tabs: WireTab[]): Promise<FakeWebSocket> {
+  await waitFor(() => expect(workspaceSockets()).toHaveLength(1));
+  const socket = workspaceSockets()[0] as FakeWebSocket;
+  await act(async () => {
+    socket.opened();
+    socket.answer({ tabs });
+  });
+  return socket;
+}
+
+/** attached waits for the page's nth attachment, from 1, has the koko server take it at 120 by 36, and is its WebSocket. */
+async function attached(n = 1): Promise<FakeWebSocket> {
+  await waitFor(() => expect(attachments().length).toBeGreaterThanOrEqual(n));
+  const socket = attachments()[n - 1] as FakeWebSocket;
+  await act(async () => {
+    socket.opened();
+    socket.answer({ attachment: `a77ac4${n}` });
+    socket.records({ type: "reset", columns: 120, rows: 36 }, { type: "active", active: false });
+  });
+  return socket;
+}
+
+/** actives counts the active records the page sent on an attachment: a person's acts. */
+function actives(socket: FakeWebSocket | undefined): number {
+  return (socket?.framesSent ?? []).filter((frame) => frame.kind === "data" && frame.data[0] === 0x05 && frame.data[1] === 0).length;
 }
 
 /** emulator is the fake emulator of the tab of that name. */
@@ -153,8 +166,9 @@ const tabButton = () => screen.getByRole("button", { name: /open\. Show the tabs
 const sheet = () => screen.getByRole("dialog", { name: "Tabs" });
 
 test("each key of the key bar is pressed through the active tab's emulator, and no key takes the focus", async () => {
-  serve("/terminal?host=web1&host=db2&tab=2");
-  const [, socket] = await opened(2);
+  serve("/terminal?tab=2");
+  await joined(web1, db2);
+  const socket = await attached();
   const terminal = screen.getByRole("textbox", { name: "Terminal on db2" });
   act(() => terminal.focus());
 
@@ -202,8 +216,9 @@ test("each key of the key bar is pressed through the active tab's emulator, and 
 });
 
 test("Control applies to the next key, typed or pressed, and lets go; a second tap holds it and a third lets it go", async () => {
-  serve("/terminal?host=web1");
-  const [socket] = await opened(1);
+  serve("/terminal");
+  await joined(web1);
+  const socket = await attached();
   const terminal = screen.getByRole("textbox", { name: "Terminal on web1" });
   // On a touch screen the terminal never takes the focus by itself, which would open the soft keyboard.
   await act(async () => {});
@@ -250,8 +265,8 @@ test("Control applies to the next key, typed or pressed, and lets go; a second t
 });
 
 test("the key bar shows only on a touch screen: at the island's foot on a desktop, beside the tab button on a phone", async () => {
-  serve("/terminal?host=web1", { width: 1280, height: 800, coarse: false });
-  await opened(1);
+  serve("/terminal", { width: 1280, height: 800, coarse: false });
+  await joined(web1);
   expect(screen.queryByRole("toolbar")).toBeNull();
 
   act(() => setViewport({ width: 1280, height: 800, coarse: true }));
@@ -269,8 +284,8 @@ test("the key bar shows only on a touch screen: at the island's foot on a deskto
 });
 
 test("the tab button shows the active tab and the count, and a swipe across it shows the next or the one before", async () => {
-  serve("/terminal?host=web1&host=db2&host=cache3");
-  await opened(3);
+  serve("/terminal");
+  await joined(web1, db2, cache3);
   expect(tabButton().getAttribute("aria-label")).toBe("web1, 3 open. Show the tabs");
   expect(tabButton().textContent).toBe("web13");
 
@@ -282,7 +297,7 @@ test("the tab button shows the active tab and the count, and a swipe across it s
   expect(tabButton().getAttribute("aria-label")).toBe("web1, 3 open. Show the tabs");
   swipeAcross(tabButton(), 60);
   expect(tabButton().getAttribute("aria-label")).toBe("cache3, 3 open. Show the tabs");
-  await waitFor(() => expect(window.location.search).toBe("?host=web1&host=db2&host=cache3&tab=3"));
+  await waitFor(() => expect(window.location.search).toBe("?tab=3"));
   // A move of 36 pixels or less is a tap.
   swipeAcross(tabButton(), -36);
   expect(sheet()).toBeDefined();
@@ -291,8 +306,8 @@ test("the tab button shows the active tab and the count, and a swipe across it s
 });
 
 test("the sheet of tabs leads to the places, shows a tab, closes one, asking while its shell runs, and opens the switcher", async () => {
-  serve("/terminal?host=web1&host=db2&host=cache3");
-  const sockets = await opened(3);
+  serve("/terminal");
+  const socket = await joined(web1, db2, cache3);
   tap(tabButton());
   const places = within(sheet()).getByRole("navigation", { name: "Main" });
   expect(within(places).getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
@@ -313,11 +328,15 @@ test("the sheet of tabs leads to the places, shows a tab, closes one, asking whi
   // Closing a tab whose shell runs asks first.
   tap(tabButton());
   tap(within(sheet()).getByRole("button", { name: "Close cache3" }));
-  const question = await screen.findByRole("alertdialog", { name: "End the SSH Session to cache3?" });
+  const question = await screen.findByRole("alertdialog", { name: "Close cache3?" });
   await expectAccessible();
-  tap(within(question).getByRole("button", { name: "End SSH Session" }));
+  tap(within(question).getByRole("button", { name: "Close tab" }));
+  await waitFor(() => expect(requestsOn(socket)).toEqual([{ request: 1, close: "c3" }]));
+  await act(async () => {
+    socket.answer({ tabs: [web1, db2] });
+    socket.answer({ request: 1 });
+  });
   await waitFor(() => expect(within(sheet()).getAllByRole("listitem")).toHaveLength(2));
-  expect(sockets[2]?.framesSent.at(-1)).toMatchObject({ kind: "close" });
   expect(tabButton().getAttribute("aria-label")).toBe("db2, 2 open. Show the tabs");
 
   // New tab closes the sheet and opens the switcher.
@@ -329,6 +348,7 @@ test("the sheet of tabs leads to the places, shows a tab, closes one, asking whi
 
 test("with no tab open, the tab button opens the sheet, which leads to the places and to New tab", async () => {
   serve("/terminal");
+  await joined();
   await screen.findByRole("heading", { level: 1, name: "No terminal is open" });
   expect(tabButton().getAttribute("aria-label")).toBe("Terminal, 0 open. Show the tabs");
   expect(screen.queryByRole("toolbar")).toBeNull();
@@ -339,8 +359,9 @@ test("with no tab open, the tab button opens the sheet, which leads to the place
 });
 
 test("on a phone the terminal's row takes the frame's place, and held sideways Files and More end the key bar's row", async () => {
-  serve("/terminal?host=web1&host=db2");
-  const sockets = await opened(2);
+  serve("/terminal");
+  await joined(web1, db2);
+  const sockets = [await attached()];
   // Upright: no frame, the row over the terminal, the key bar's row under it.
   expect(screen.queryByRole("banner")).toBeNull();
   expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
@@ -367,20 +388,58 @@ test("on a phone the terminal's row takes the frame's place, and held sideways F
   act(() => setViewport(sideways));
   expect(emulator("web1").mounts).toBe(1);
   expect(emulator("db2").mounts).toBe(1);
-  expect(FakeWebSocket.sockets).toHaveLength(2);
+  expect(attachments()).toHaveLength(1);
   expect(sockets.every((socket) => !socket.closed)).toBe(true);
 });
 
 test("the row over the terminal names a tab's state in words while it is not Connected", async () => {
-  serve("/terminal?host=web1");
-  await waitFor(() => expect(FakeWebSocket.sockets).toHaveLength(1));
+  serve("/terminal");
+  await joined(web1);
   const head = screen.getByRole("link", { name: "koko, Back to Hosts" }).parentElement as HTMLElement;
   expect(within(head).getByText("Connecting").className).not.toContain("sr-only");
-  const [socket] = FakeWebSocket.sockets;
-  await act(async () => {
-    socket?.opened();
-    socket?.answer({ tunnel: tunnel(1) });
-  });
+  await attached();
   // Connected is said to a screen reader alone.
   expect(within(head).getByText("Connected").className).toContain("sr-only");
+});
+
+test("a key from the bar, Control and Alt included, makes this page the active one", async () => {
+  serve("/terminal");
+  await joined(web1);
+  const socket = await attached();
+  expect(actives(socket), "attaching is no person's act").toBe(0);
+  tap(key("Control"));
+  await waitFor(() => expect(actives(socket)).toBe(1));
+  tap(key("Escape"));
+  await waitFor(() => expect(actives(socket)).toBe(2));
+});
+
+test("the terminal is drawn at the pty's size: scaled down in a box smaller, at its start in one larger", async () => {
+  // The terminal's box, which jsdom never lays out: 480 by 288 pixels, 60 by 18 cells of the fake's 8 by 16.
+  const box = { width: 480, height: 288 };
+  const width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(() => box.width);
+  const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(() => box.height);
+  try {
+    serve("/terminal");
+    await joined(web1);
+    const socket = await attached();
+    expect(socket.first).toEqual({ protocol: 2, attach: web1.session, cols: 60, rows: 18 });
+    // The pty is 120 by 36, another page's: 960 by 576 pixels, drawn at half its size.
+    const grid = () => document.querySelector<HTMLElement>("[data-terminal-grid]") as HTMLElement;
+    await waitFor(() => expect(grid().style.transform).toBe("scale(0.5)"));
+    expect([grid().style.width, grid().style.height]).toEqual(["960px", "576px"]);
+
+    // A box larger than the pty draws it at its own size, with the margin around it.
+    box.width = 1600;
+    box.height = 900;
+    act(() => window.dispatchEvent(new Event("resize")));
+    await waitFor(() => expect(grid().style.transform).toBe(""));
+    // The box goes to the koko server once it has been still for 100 ms.
+    await waitFor(() => {
+      const sizes = socket.framesSent.flatMap((frame) => (frame.kind === "data" && frame.data[0] === 0x01 ? [[...frame.data]] : []));
+      expect(sizes.at(-1)).toEqual([0x01, 0x03, 0xc8, 0x01, 0x38]);
+    });
+  } finally {
+    width.mockRestore();
+    height.mockRestore();
+  }
 });

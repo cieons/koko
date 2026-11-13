@@ -1,65 +1,8 @@
-import { onTestFinished } from "vitest";
-
 import { encodeRecord, RecordReader, type TerminalRecord } from "../terminal/records";
 import { encodeFrame, type Frame, FrameReader } from "../terminal/stream";
 
-// Stand-ins for what the web terminal uses of the browser: Web Locks, which
-// tell a duplicated browser tab's SSH Sessions from a reload's, and the
-// WebSocket to /terminal/socket, whose other end a test plays.
-
-/**
- * FakeLocks is the browser's Web Locks, which every document a test plays
- * shares, as the documents of one browser do: a lock asked for while held
- * is granted once it is let go.
- */
-export class FakeLocks {
-  readonly held = new Set<string>();
-  /** queues holds, for each lock asked for, when its last request lets it go. */
-  private readonly queues = new Map<string, Promise<void>>();
-
-  /**
-   * request runs callback once the lock is free, and holds it until
-   * callback's promise settles; a request whose signal aborts before then
-   * is refused at once, and its callback never runs.
-   */
-  request(name: string, ...args: [() => Promise<void>] | [{ signal?: AbortSignal }, () => Promise<void>]): Promise<void> {
-    const [options, callback] = args.length === 1 ? [{}, args[0]] : args;
-    const { signal } = options;
-    let aborted = false;
-    const refused = new Promise<never>((_, reject) => {
-      signal?.addEventListener("abort", () => {
-        aborted = true;
-        reject(new DOMException("The request was aborted.", "AbortError"));
-      });
-    });
-    const granted = (this.queues.get(name) ?? Promise.resolve()).then(() => {
-      if (aborted) {
-        return;
-      }
-      this.held.add(name);
-      return callback().finally(() => this.held.delete(name));
-    });
-    this.queues.set(
-      name,
-      granted.catch(() => {}),
-    );
-    return signal ? Promise.race([granted, refused]) : granted;
-  }
-
-  async query(): Promise<LockManagerSnapshot> {
-    return { held: [...this.held].map((name) => ({ name, mode: "exclusive" })), pending: [] };
-  }
-}
-
-/** useFakeLocks gives the browser Web Locks for one test, and is them. */
-export function useFakeLocks(): FakeLocks {
-  const locks = new FakeLocks();
-  Object.defineProperty(navigator, "locks", { configurable: true, value: locks });
-  onTestFinished(() => {
-    Reflect.deleteProperty(navigator, "locks");
-  });
-  return locks;
-}
+// A stand-in for the browser's WebSocket, to the Workspace socket and to
+// /terminal/socket, whose other end a test plays.
 
 /**
  * FakeWebSocket stands in for the browser's WebSocket (vi.stubGlobal): each
@@ -122,6 +65,11 @@ export class FakeWebSocket {
     this.onclose?.({} as CloseEvent);
   }
 
+  /** messages is the text messages the page sent, parsed: the Workspace socket's. */
+  get messages(): unknown[] {
+    return this.sent.flatMap((message) => (typeof message === "string" ? [JSON.parse(message)] : []));
+  }
+
   /** first is the first message the page sent, parsed. */
   get first(): unknown {
     return typeof this.sent[0] === "string" ? JSON.parse(this.sent[0]) : undefined;
@@ -155,4 +103,41 @@ export class FakeWebSocket {
     }
     return text;
   }
+}
+
+/** isWorkspace says a fake WebSocket is the Workspace socket, not an attachment's. */
+const isWorkspace = (socket: FakeWebSocket) => socket.url.endsWith("/terminal/workspace");
+
+/** attachments are the WebSockets the page opened to /terminal/socket, in order. */
+export function attachments(): FakeWebSocket[] {
+  return FakeWebSocket.sockets.filter((socket) => !isWorkspace(socket));
+}
+
+/** workspaceSockets are the Workspace sockets the page opened, in order. */
+export function workspaceSockets(): FakeWebSocket[] {
+  return FakeWebSocket.sockets.filter(isWorkspace);
+}
+
+/** WireTab is a tab of the Workspace message, as the koko server writes it. */
+export interface WireTab {
+  id: string;
+  host: string;
+  label: string;
+  state: "starting" | "running" | "ended" | "refused" | "restarted";
+  session?: string;
+  ended?: { reason: string; notice?: string; exit_status?: number; exit_signal?: string };
+  refused?: { code: string; message: string };
+}
+
+/** running is a tab whose shell runs, its SSH Session's id made from its own. */
+export function running(id: string, host: string, label = host): WireTab {
+  return { id, host, label, state: "running", session: `5e55${id}`.padEnd(32, "0") };
+}
+
+/** Request is a request the page sent on the Workspace socket. */
+export type Request = { request: number } & Record<string, unknown>;
+
+/** requestsOn is the requests the page sent on a Workspace socket, in order. */
+export function requestsOn(socket: FakeWebSocket | undefined): Request[] {
+  return (socket?.messages ?? []).filter((message): message is Request => typeof (message as Request).request === "number");
 }

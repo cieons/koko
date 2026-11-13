@@ -432,8 +432,8 @@ The preview's mock answers at once, so these are specified here:
 | `/access/spaces/<name>` | `/spaces/<name>` | A side panel over Access |
 | `/account` | `/devices` | One's own devices and Sign-ins live here |
 | `/signin`, `/password` | none | Outside the frame |
-| `/terminal` | none | The terminal workspace: `?host=web1&host=db2&tab=2` lists its tabs' Hosts and the active one |
-| `/hosts/<name>/terminal` | none | Adds a tab for the Host, then replaces itself with the workspace's URL |
+| `/terminal` | none | The User's Workspace: `?tab=2` names the tab shown, counted from 1 |
+| `/hosts/<name>/terminal` | none | Adds a tab for the Host to the Workspace, then shows it on `/terminal` |
 | `/` | `/` | Goes to `/hosts`, keeping its query |
 
 Every URL a released koko served (`/services`, `/services/<host>/<service>`,
@@ -707,10 +707,11 @@ the Hosts list and the Secrets page.
 
 ### The terminal (`/terminal`)
 
-The terminal workspace: tabs, each its own SSH Session to a Managed Host,
-beside the frame's rail. Its tabs live in the rail's Terminal section on
-every page, and the workspace stays mounted while the person visits other
-pages (spec #169; [the web terminal](subsystems/web-terminal.md)). The
+The User's Workspace: tabs, each its own SSH Session to a Managed Host,
+held by the koko server and the same in every page of the User, beside the
+frame's rail. Its tabs live in the rail's Terminal section on every page,
+and the workspace stays mounted while the person visits other pages (spec
+#169, spec #213; [the web terminal](subsystems/web-terminal.md)). The
 Owner approved it on a live preview (#170, 2026-11-12), the rail's
 direction. Details may be polished in implementation.
 
@@ -736,13 +737,16 @@ direction. Details may be polished in implementation.
   - Geist Mono at 14px on 18px rows, Chinese falling through to the
     system's fonts, padded 14px by 18px (8px by 10px on a phone);
   - the sixteen ANSI colours of each mode as `--term-*` tokens;
-  - text sizes 12, 13, 14, 16 and 18px from More.
+  - text sizes 12, 13, 14, 16 and 18px from More;
+  - drawn at the pty's size, which follows the page a person last acted
+    in: in a box too small, scaled down to fit it, from its top start; in
+    a box too large, at its top start with the margin in `--term-surface`.
 - **The key bar**, when the primary pointer is a touch screen (`pointer:
   coarse`), as on a tablet, at the island's foot under a hairline (see "On
   a phone").
 - **Files** docks inside the island at its end edge, as a column
   `clamp(20rem, 28vw, 26rem)` wide with a hairline at its start. The
-  terminal narrows to make room, and the shell is told its new size. The
+  terminal's box narrows to make room, and the koko server is told it. The
   column has its own 56px head ("Files · on web1", and Close) over the
   Files panel, padded 16px by 20px, which acts on the active tab's SSH
   Session (below).
@@ -784,9 +788,8 @@ takes uploads into it (spec #169, "Files over SFTP"):
   "The SSH Session has ended." in place of a listing once it has.
 - **On a phone** the panel is a side panel from the bottom, titled "Files
   on web1".
-- **More**: Larger text, Smaller text, Copy the selection, Announce output,
-  and End SSH Session (danger, asked first: "End the SSH Session to
-  web1?").
+- **More**: Larger text, Smaller text, Copy the selection and Announce
+  output.
 - **The title** is the active tab's Host: "web1 · Terminal · koko".
 
 **The keys that reach the workspace.** The workspace takes these chords on
@@ -821,20 +824,24 @@ tabs and the Managed Hosts the caller can see.
 
 **Tabs and their states.**
 
-- **Labels**: the Host's name, and for a second tab to the same Host
-  "web1 (2)", the lowest number no open tab has. A page holds at most 16
-  tabs, a Sign-in's limit.
+- **Labels** are the koko server's: the Host's name, and for a second tab
+  to the same Host "web1 (2)", the lowest number no open tab has. A
+  Workspace holds at most 16 tabs.
 - **A state never moves the layout.** Each shows inside its tab, over the
   terminal:
   - **Covers**, in `--term-surface`, for a tab with nothing to show, the
     text and actions at the start of a column 32rem wide, centred:
     - Connecting: "Connecting to web1…" (17px, 500), with the spinner past
-      300 ms;
+      300 ms, while its SSH Session starts or the page attaches;
+    - after a koko server restart: "The koko server restarted.", as
+      Connecting is, until its new SSH Session starts;
     - Refused: the refusal block, the page's words for the code ("koko
       could not reach web1. This SSH Session did not start.") over the
       koko server's own words in the code face, as it wrote them, then
-      **Try again** (primary) and **Close tab** (tertiary). An open that
-      got no answer says the koko server could not be reached;
+      **Try again** (primary), which opens a new SSH Session in the tab,
+      and **Close tab** (tertiary);
+    - another page took its place: "This terminal is open in 8 other
+      pages." and **Show here** (primary);
     - an out-of-date page: "This page is out of date. Reload it." and
       **Reload** (primary).
     A refusal for want of a Sign-in goes to Sign in, which comes back here.
@@ -845,18 +852,26 @@ tabs and the Managed Hosts the caller can see.
     - Reconnecting dims the terminal to 55%, still selectable, under
       "Reconnecting to the koko server… Keys typed now are sent once it is
       back." and **Try now** (secondary);
-    - Ended: why ("The shell on web1 exited with status 0.", "The shell on
-      web1 ended by signal KILL.", "The koko server is restarting; this SSH
-      Session has ended.", "Lost the connection to the koko server at
-      12:01; the SSH Session to web1 could not be resumed." with the koko
-      server's reason under it), and **Open a new one** (primary), in the
-      same tab, and **Close tab** (tertiary);
-    - the clipboard request (OSC 52): a clipboard icon, "web1 asks to copy
-      42 characters to the clipboard.", the first line in the code face,
-      then **Copy** (secondary) and **Dismiss** (tertiary). A newer request
-      replaces an unanswered one.
-- **Closing** a tab whose shell runs asks first, as End SSH Session does;
-  one still connecting, refused or ended closes at once.
+    - Ended: why, the same words in every page ("The shell on web1 exited
+      with status 0.", "The shell on web1 ended by signal KILL.", "The koko
+      server is restarting; this SSH Session has ended.", or "The SSH
+      Session to web1 has ended." with the koko server's notice under it),
+      and **Open a new one** (primary), in the same tab, and **Close tab**
+      (tertiary);
+    - the clipboard request (OSC 52), in the page a person last acted in
+      alone: a clipboard icon, "web1 asks to copy 42 characters to the
+      clipboard.", the first line in the code face, then **Copy**
+      (secondary) and **Dismiss** (tertiary). A newer request replaces an
+      unanswered one.
+- **Opening and closing** change the Workspace: a tab appears, and goes,
+  once the koko server's Workspace says so. Closing a tab whose shell runs
+  or starts asks first: "Close web1?", "This ends its SSH Session in every
+  place it is open.", **Close tab**; one refused or ended closes at once. A
+  tab shown here that another page closed is announced, "web1 was closed
+  in another page.", and the tab beside it shown. An open refused adds no
+  tab, and says why in place: in the switcher that sent it, which stays
+  open; for an open from a Host's card or Open terminal, in a card at the
+  terminal's top end with **Dismiss** (tertiary).
 - **An empty workspace:** "No terminal is open" (`t-display`), up to
   eight Managed Hosts as raised cards
   (name over Space; one opens a tab), and "Search every Managed Host" with
@@ -901,7 +916,9 @@ keyboard: a tap on it, or the keyboard key, does.
     closes the soft keyboard. Each is named for a screen reader
     ("Escape", "Left arrow", "Vertical bar"). They scroll sideways,
     fading at their end. Each key goes to the active tab as the
-    terminal's modes encode it. Ctrl and Alt are sticky: one tap applies
+    terminal's modes encode it, and makes the phone the page the
+    terminal fits, so a full-screen program fits the phone while it is
+    used. Ctrl and Alt are sticky: one tap applies
     the modifier to the next key, from the bar or the soft keyboard, and
     lets it go, with the accent fill; a second tap holds it, with the text
     colour as fill; a third lets it go (`aria-pressed`). A key never takes
@@ -912,7 +929,7 @@ keyboard: a tap on it, or the keyboard key, does.
 - **The sheet of tabs**, a side panel from the bottom titled "Tabs":
   - Hosts, Secrets and Access first, as raised tiles of icon over name,
     so one thumb gets back to them;
-  - then the tabs, 56px rows: the mark, the name, and the state or
+  - then the Workspace's tabs, 56px rows: the mark, the name, and the state or
     directory under it, as in the rail; a tap shows the tab and closes the
     sheet, and each row's close button closes it, asking first while its
     shell runs;

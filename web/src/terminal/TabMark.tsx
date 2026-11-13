@@ -2,17 +2,13 @@ import { X } from "lucide-react";
 
 import type { MessageKey } from "../i18n/catalogues";
 import { useT } from "../shell/i18n";
-import type { ConnectionState } from "./connection";
-
-/** Status is a tab's connection state's name. */
-type Status = ConnectionState["status"];
+import type { Status } from "./workspace";
 
 /**
  * marks are each state's mark (docs/web-design.md, "The terminal"): its
- * shape differs with the state, not only its colour. A tab whose open got
- * no answer is marked as one refused.
+ * shape differs with the state, not only its colour.
  */
-const marks: Record<Exclude<Status, "refused" | "unreachable" | "reconnecting">, string> = {
+const marks: Record<Exclude<Status, "refused" | "reconnecting">, string> = {
   connecting: "size-2 rounded-full border-[1.5px] border-muted",
   connected: "size-2 rounded-full bg-ok shadow-[0_0_0_3px_var(--ok-halo)]",
   ended: "h-0.5 w-2 rounded-full bg-muted",
@@ -33,7 +29,7 @@ export function TabMark({ status, word = true }: { status: Status; word?: boolea
   const name = stateWord(t, status);
   return (
     <span className="inline-flex items-center gap-2 text-[0.8125rem] font-medium whitespace-nowrap text-ink-2">
-      {status === "refused" || status === "unreachable" ? (
+      {status === "refused" ? (
         <X aria-hidden className="size-3 shrink-0 text-danger" strokeWidth={3} />
       ) : status === "reconnecting" ? (
         // A dot half filled: its ring, and its start half.

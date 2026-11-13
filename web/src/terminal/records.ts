@@ -9,7 +9,7 @@ import { bytesOf, readUvarint, Unread, uvarint } from "./bytes";
  * the first messages, the records and the stream's frames as the terminal
  * uses them (wire.TerminalProtocol). The koko server takes only its own.
  */
-export const terminalProtocol = 1;
+export const terminalProtocol = 2;
 
 /** maxRecord is the most bytes one record's payload holds. */
 export const maxRecord = 32 << 10;
@@ -25,6 +25,13 @@ const typeData = 0x00;
 const typeResize = 0x01;
 const typeExitStatus = 0x02;
 const typeExitSignal = 0x03;
+const typeReset = 0x04;
+const typeActive = 0x05;
+const typeColors = 0x06;
+const typeDisplaced = 0x07;
+
+/** RGB is a colour as its red, green and blue, each 0 to 255. */
+export type RGB = readonly [number, number, number];
 
 /** TerminalRecord is one terminal record. */
 export type TerminalRecord =
@@ -35,7 +42,18 @@ export type TerminalRecord =
   /** The shell's exit status, from the Gateway. */
   | { type: "exitStatus"; status: number }
   /** The name of the signal that ended the shell, such as KILL, from the Gateway. */
-  | { type: "exitSignal"; signal: string };
+  | { type: "exitSignal"; signal: string }
+  /** Clear the emulator, its history too, to this size; the snapshot follows. From the Gateway. */
+  | { type: "reset"; columns: number; rows: number }
+  /**
+   * From the page, without active: a person acted in this page. From the
+   * Gateway, with it: whether this page is the SSH Session's active page.
+   */
+  | { type: "active"; active?: boolean }
+  /** The theme's foreground and background, from the page. */
+  | { type: "colors"; foreground: RGB; background: RGB }
+  /** A ninth page attached, and this one, the least recently active, is detached; its stream's close follows. From the Gateway. */
+  | { type: "displaced" };
 
 /**
  * MalformedRecord is the error for bytes that are no terminal record: an
@@ -83,6 +101,28 @@ export function encodeRecord(record: TerminalRecord): Uint8Array<ArrayBuffer> {
       type = typeExitSignal;
       payload = new TextEncoder().encode(record.signal);
       break;
+    case "reset":
+      checkSize(record.columns, record.rows);
+      type = typeReset;
+      payload = bytesOf([...uvarint(record.columns), ...uvarint(record.rows)]);
+      break;
+    case "active":
+      type = typeActive;
+      payload = record.active === undefined ? new Uint8Array() : Uint8Array.of(record.active ? 1 : 0);
+      break;
+    case "colors":
+      for (const part of [...record.foreground, ...record.background]) {
+        if (!Number.isInteger(part) || part < 0 || part > 0xff) {
+          throw new MalformedRecord(`a colour part of ${part}, which no byte holds`);
+        }
+      }
+      type = typeColors;
+      payload = Uint8Array.from([...record.foreground, ...record.background]);
+      break;
+    case "displaced":
+      type = typeDisplaced;
+      payload = new Uint8Array();
+      break;
   }
   if (payload.length > maxRecord) {
     throw new MalformedRecord(`a payload of ${payload.length} bytes, more than ${maxRecord}`);
@@ -126,7 +166,7 @@ export class RecordReader {
     if (type === undefined) {
       return null;
     }
-    if (type > typeExitSignal) {
+    if (type > typeDisplaced) {
       throw new MalformedRecord(`type 0x${type.toString(16)}`);
     }
     const length = readUvarint(bytes, 1);
@@ -153,13 +193,35 @@ export class RecordReader {
 /** decodePayload reads the payload of a record of the given type. */
 function decodePayload(type: number, payload: Uint8Array): TerminalRecord {
   switch (type) {
-    case typeResize: {
+    case typeResize:
+    case typeReset: {
       const columns = field(payload, 0, "columns");
       const rows = field(payload, columns.next, "rows");
       payloadEnd(payload, rows.next);
       checkSize(columns.value, rows.value);
-      return { type: "resize", columns: columns.value, rows: rows.value };
+      return { type: type === typeReset ? "reset" : "resize", columns: columns.value, rows: rows.value };
     }
+    case typeActive: {
+      if (payload.length === 0) {
+        return { type: "active" };
+      }
+      payloadEnd(payload, 1);
+      const flag = payload[0];
+      if (flag !== 0 && flag !== 1) {
+        throw new MalformedRecord(`an active of ${flag}, neither 0 nor 1`);
+      }
+      return { type: "active", active: flag === 1 };
+    }
+    case typeColors: {
+      if (payload.length !== 6) {
+        throw new MalformedRecord(`colours of ${payload.length} bytes, not 6`);
+      }
+      const [r1 = 0, g1 = 0, b1 = 0, r2 = 0, g2 = 0, b2 = 0] = payload;
+      return { type: "colors", foreground: [r1, g1, b1], background: [r2, g2, b2] };
+    }
+    case typeDisplaced:
+      payloadEnd(payload, 0);
+      return { type: "displaced" };
     case typeExitStatus: {
       const status = field(payload, 0, "an exit status");
       payloadEnd(payload, status.next);

@@ -116,15 +116,18 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   that leaves the focus on nothing, as when the link followed went with the
   page it was on, the focus moves to it; a visit that leaves the focus
   where it was, such as on a place, keeps it there.
+- **The terminal's Workspace socket** is opened as the frame first shows,
+  on every page, so the rail lists the User's Workspace.
 - **The terminal's workspace**, once wanted (a terminal opened, `/terminal`
-  visited, or SSH Sessions kept from before a reload), is mounted in the
+  visited, or the switcher opened), is mounted in the
   main region for the frame's life, shown on `/terminal` and hidden and
   `inert` elsewhere; on `/terminal` the main region is not the page's
   column, and the frame's notice heads the workspace in place of the
   page's. Its chords (Ctrl+Shift+K, and on the terminal Ctrl+Shift+← and
   →) are taken on the window on every page ([the web
-  terminal](web-terminal.md)). The frame going, on signing out, ends its
-  SSH Sessions.
+  terminal](web-terminal.md)). The frame going, on signing out, closes
+  its sockets, which detaches the page from every SSH Session and ends
+  none.
 - **The document's title** is the page's own name, then koko ("web1 ·
   koko"): the page's head (`Page`, [Parts](#parts)) sets it.
 - **The notices** are one notice across the room beside the rail, at the

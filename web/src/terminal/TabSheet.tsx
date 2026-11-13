@@ -11,7 +11,7 @@ import { SidePanel } from "../ui/SidePanel";
 import { keepFocus } from "./KeyBar";
 import { spaceOf, TabLine } from "./RailSection";
 import { stateWord, TabMark } from "./TabMark";
-import { askClose, maxTabs, setSwitcher, showTab, stepTab, useWorkspace } from "./workspace";
+import { askClose, maxTabs, setSwitcher, showTab, stepTab, tabStatus, useWorkspace } from "./workspace";
 
 // The phone's way among the tabs (docs/web-design.md, "The terminal", "On a
 // phone"): the tab button that starts the key bar's row, and the sheet of
@@ -31,7 +31,7 @@ export const swipe = 36;
 export function TabButton({ onPress }: { onPress: () => void }) {
   const t = useT();
   const { tabs, active } = useWorkspace();
-  const tab = tabs.find((each) => each.key === active);
+  const tab = tabs.find((each) => each.id === active);
   const start = useRef<number | undefined>(undefined);
   const swiped = useRef(false);
   const down = (event: PointerEvent) => {
@@ -116,23 +116,23 @@ export function TabSheet(props: { places: readonly Route[]; hosts: readonly Host
       {tabs.length > 0 && (
         <ul aria-label={t("terminal.tabs")} className="flex flex-col gap-1">
           {tabs.map((tab) => (
-            <li key={tab.key} className={`flex items-center rounded-2xl ${tab.key === active ? "bg-default" : ""}`}>
+            <li key={tab.id} className={`flex items-center rounded-2xl ${tab.id === active ? "bg-default" : ""}`}>
               <button
                 type="button"
-                aria-current={tab.key === active ? "true" : undefined}
+                aria-current={tab.id === active ? "true" : undefined}
                 onClick={() => {
-                  showTab(tab.key, { focus: true });
+                  showTab(tab.id, { focus: true, person: true });
                   onClose();
                 }}
                 className="flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-2xl py-2 ps-4 text-start outline-none focus-visible:ring-2 focus-visible:ring-focus"
               >
                 {/* The row is named by the tab first, then its state. */}
                 <span aria-hidden className="flex">
-                  <TabMark status={tab.state.status} word={false} />
+                  <TabMark status={tabStatus(tab)} word={false} />
                 </span>
                 <span className="flex min-w-0 flex-col">
                   <span className="t-name truncate">{tab.label}</span>
-                  <span className="sr-only">{`, ${stateWord(t, tab.state.status)}`}</span>
+                  <span className="sr-only">{`, ${stateWord(t, tabStatus(tab))}`}</span>
                   <TabLine tab={tab} space={spaceOf(hosts, tab.host)} />
                 </span>
               </button>
@@ -141,7 +141,7 @@ export function TabSheet(props: { places: readonly Route[]; hosts: readonly Host
                 isIconOnly
                 className="me-1 rounded-full"
                 aria-label={t("terminal.tab.closeNamed", { tab: tab.label })}
-                onPress={() => askClose(tab.key)}
+                onPress={() => askClose(tab.id)}
               >
                 <X aria-hidden className="size-[1.125rem]" />
               </Button>

@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 
 import { FilesCancel, FilesDownload, FilesFinish, FilesList, type FilesListResponse, FilesUpload } from "../api/files";
 import { ApiError, post, postBytes } from "../client";
-import { timing } from "./connection";
+import { timing } from "./timing";
 
 // The Files panel's calls, the web front's own endpoints under
 // /terminal/files/ (P1 spec: a terminal in the web UI, "Files over SFTP"),
@@ -233,7 +233,7 @@ async function sent<T>(id: number, job: Job, send: () => Promise<T>): Promise<T>
       if (job.cancelled) {
         throw new Cancelled();
       }
-      if (error instanceof ApiError || Date.now() - since >= timing.grace) {
+      if (error instanceof ApiError || Date.now() - since >= timing.retryFor) {
         throw error;
       }
     }

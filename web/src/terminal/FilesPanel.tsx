@@ -19,7 +19,7 @@ import {
   type Upload,
   useUploads,
 } from "./files";
-import type { Tab } from "./workspace";
+import { type Tab, tabStatus } from "./workspace";
 
 // The Files panel (docs/web-design.md, "The terminal"): a directory of the
 // active tab's Host over its SSH Session, opening where its shell last
@@ -27,8 +27,8 @@ import type { Tab } from "./workspace";
 
 /** Dropped is files dropped on a tab's terminal, to upload into the directory its shell is in. */
 export interface Dropped {
-  /** tab is the key of the tab they were dropped on. */
-  tab: number;
+  /** tab is the id of the tab they were dropped on. */
+  tab: string;
   files: readonly File[];
 }
 
@@ -427,7 +427,7 @@ export interface FilesBodyProps {
  */
 function FilesBody({ tab, dropped, onTaken }: FilesBodyProps) {
   const t = useT();
-  const { status } = tab.state;
+  const status = tabStatus(tab);
   let directory;
   if (status === "ended") {
     directory = <p className="text-muted">{t("terminal.files.ended")}</p>;
@@ -472,7 +472,7 @@ export function FilesColumn({ tab, dropped, onTaken, onClose }: FilesPanelProps)
         </Button>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
-        <FilesBody key={tab.key} tab={tab} dropped={dropped} onTaken={onTaken} />
+        <FilesBody key={tab.id} tab={tab} dropped={dropped} onTaken={onTaken} />
       </div>
     </aside>
   );
@@ -483,7 +483,7 @@ export function FilesSheet({ tab, dropped, onTaken, onClose }: FilesPanelProps) 
   const t = useT();
   return (
     <SidePanel title={t("terminal.files.title", { host: tab.label })} onClose={onClose}>
-      <FilesBody key={tab.key} tab={tab} dropped={dropped} onTaken={onTaken} />
+      <FilesBody key={tab.id} tab={tab} dropped={dropped} onTaken={onTaken} />
     </SidePanel>
   );
 }

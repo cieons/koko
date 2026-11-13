@@ -19,17 +19,31 @@ export interface Modifiers {
   alt: boolean;
 }
 
+/** Metrics are a terminal's cell and the padding around its grid, in CSS pixels. */
+export interface Metrics {
+  cellWidth: number;
+  cellHeight: number;
+  /** padX and padY are the padding on both sides together, across and down. */
+  padX: number;
+  padY: number;
+}
+
 /** EmulatorHandle is what the page calls on an emulator. */
 export interface EmulatorHandle {
-  /** write gives the emulator the shell's output. */
+  /**
+   * write gives the emulator the shell's output. What wterm answers to a
+   * query in it goes nowhere: the koko server answers the shell's queries.
+   */
   write(bytes: Uint8Array): void;
+  /** reset clears the screen and its history, and sets the grid to cols by rows, as a snapshot is drawn on. */
+  reset(cols: number, rows: number): void;
+  /** metrics is the size of a cell and the grid's padding, once the emulator has loaded and laid out. */
+  metrics(): Metrics | null;
   focus(): void;
   /** blur takes the focus off the terminal, which closes a phone's soft keyboard. */
   blur(): void;
   /** hasFocus tells whether the terminal has the focus, as it has while a phone's soft keyboard is open. */
   hasFocus(): boolean;
-  /** fit sizes the grid to its element again; onResize follows when the grid changes. */
-  fit(): void;
   /**
    * pressKey sends a key as the terminal's current modes ask, such as
    * application cursor keys, through onInput. name is a KeyboardEvent key:
@@ -56,12 +70,10 @@ export interface EmulatorProps {
   paused: boolean;
   /** announce has output announced politely to a screen reader while the terminal has the focus. */
   announce: boolean;
-  /** onReady says the emulator has loaded and laid out its grid of cols by rows. */
-  onReady: (cols: number, rows: number) => void;
-  /** onInput gives the bytes typed, pasted or pressed. */
+  /** onReady says the emulator has loaded and laid out its grid. */
+  onReady: () => void;
+  /** onInput gives the bytes typed, pasted or pressed, and wterm's focus reports; never its replies to queries. */
   onInput: (bytes: Uint8Array) => void;
-  /** onResize gives the grid's new size. */
-  onResize: (cols: number, rows: number) => void;
   /** onClipboardWrite is a program's request to copy text (OSC 52), which the page asks about first. */
   onClipboardWrite: (text: string) => void;
   /** onWorkingDirectory is the directory the shell reported (OSC 7), as its file: URI. */
@@ -74,6 +86,14 @@ export interface EmulatorProps {
 /** scrollbackLines is the history a terminal keeps. */
 const scrollbackLines = 5000;
 
+/** clearAll is RIS, then ED 3: the screen, its modes and its history cleared, for a snapshot to draw on. */
+const clearAll = "\x1bc\x1b[3J";
+
+/** Measured is wterm's own measure of a cell, which WTerm 0.5.10 keeps private: it measures afresh, as after a new text size. */
+interface Measured {
+  _measureCharSize?: () => { charWidth: number; rowHeight: number } | null;
+}
+
 /** KeyEncoder is wterm's InputHandler as far as pressKey uses it. */
 interface KeyEncoder {
   encodeKey?: (key: { key: string; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean }) => string | null;
@@ -85,8 +105,15 @@ const encoder = new TextEncoder();
  * Emulator is one terminal: wterm's <Terminal> on a ghostty core of its own.
  * The page compiles the core's WebAssembly once, and each terminal
  * instantiates it, with 5,000 lines of scrollback and Kitty graphics off.
- * It stays mounted for as long as its tab is open: unmounting it ends its
- * screen and frees its core.
+ * Its grid is set by reset alone, never fitted to its element: the pty's
+ * size is the koko server's. It stays mounted for as long as its tab is
+ * open: unmounting it ends its screen and frees its core.
+ *
+ * wterm hands its replies to the shell's queries to onData, as typed keys:
+ * in 0.5.10 within write, the core's through its drain and the window's
+ * size after it (wterm.test.ts). The emulator drops what wterm gives while
+ * write runs, since the koko server answers the queries once, however many
+ * pages are attached.
  */
 export function Emulator(props: EmulatorProps) {
   const { ref, fontSize, paused, announce, label } = props;
@@ -94,6 +121,8 @@ export function Emulator(props: EmulatorProps) {
   const terminal = useRef<TerminalHandle>(null);
   const callbacks = useRef(props);
   callbacks.current = props;
+  /** writing says write is running, whose replies from wterm go nowhere. */
+  const writing = useRef(false);
 
   useEffect(() => {
     let gone = false;
@@ -117,8 +146,43 @@ export function Emulator(props: EmulatorProps) {
 
   useImperativeHandle(ref, () => {
     const instance = (): WTerm | null => terminal.current?.instance ?? null;
+    /** written writes into wterm, dropping what it gives meanwhile. */
+    const written = (data: string | Uint8Array) => {
+      writing.current = true;
+      try {
+        terminal.current?.write(data);
+      } finally {
+        writing.current = false;
+      }
+    };
     return {
-      write: (bytes) => terminal.current?.write(bytes),
+      write: written,
+      reset: (cols, rows) => {
+        const wt = instance();
+        if (wt && (wt.cols !== cols || wt.rows !== rows)) {
+          wt.resize(cols, rows);
+        }
+        written(clearAll);
+      },
+      metrics: () => {
+        const wt = instance();
+        const measured = (wt as unknown as Measured | null)?._measureCharSize?.();
+        if (!wt || !measured || measured.charWidth <= 0 || measured.rowHeight <= 0) {
+          return null;
+        }
+        const element = wt.element;
+        const style = getComputedStyle(element);
+        const px = (value: string) => Number.parseFloat(value) || 0;
+        const bordersX = px(style.borderLeftWidth) + px(style.borderRightWidth);
+        // A terminal with history scrolls, and a scrollbar that takes room is counted as padding, as wterm's own fit does.
+        const scrollbar = Math.max(0, element.offsetWidth - element.clientWidth - bordersX);
+        return {
+          cellWidth: measured.charWidth,
+          cellHeight: measured.rowHeight,
+          padX: px(style.paddingLeft) + px(style.paddingRight) + bordersX + scrollbar,
+          padY: px(style.paddingTop) + px(style.paddingBottom) + px(style.borderTopWidth) + px(style.borderBottomWidth),
+        };
+      },
       focus: () => terminal.current?.focus(),
       blur: () => {
         const focused = document.activeElement;
@@ -127,7 +191,6 @@ export function Emulator(props: EmulatorProps) {
         }
       },
       hasFocus: () => instance()?.element.contains(document.activeElement) === true,
-      fit: () => instance()?.fit(),
       selection: () => instance()?.getSelectionText() ?? "",
       pressKey: (name, modifiers) => {
         const wt = instance();
@@ -153,11 +216,6 @@ export function Emulator(props: EmulatorProps) {
     };
   }, []);
 
-  // A new text size changes the cells, so the grid is fitted again.
-  useEffect(() => {
-    terminal.current?.instance?.fit();
-  }, [fontSize]);
-
   if (!core) {
     return null;
   }
@@ -165,15 +223,18 @@ export function Emulator(props: EmulatorProps) {
     <Terminal
       ref={terminal}
       core={core}
-      autoResize
+      autoResize={false}
       renderingPaused={paused}
       announceOutput={announce}
-      className={`koko-term koko-term-${fontSize} min-w-0 flex-1`}
+      className={`koko-term koko-term-${fontSize} size-full`}
       aria-label={label}
-      onReady={(wt) => callbacks.current.onReady(wt.cols, wt.rows)}
-      onData={(data) => callbacks.current.onInput(encoder.encode(data))}
-      onBinary={(bytes) => callbacks.current.onInput(bytes)}
-      onResize={(cols, rows) => callbacks.current.onResize(cols, rows)}
+      onReady={(wt) => {
+        // wterm fixes the element's height to the first grid's; the page sizes it.
+        wt.element.style.height = "";
+        callbacks.current.onReady();
+      }}
+      onData={(data) => writing.current || callbacks.current.onInput(encoder.encode(data))}
+      onBinary={(bytes) => writing.current || callbacks.current.onInput(bytes)}
       onClipboardWrite={(text) => callbacks.current.onClipboardWrite(text)}
       onWorkingDirectory={(uri) => callbacks.current.onWorkingDirectory(uri)}
       onTitle={(title) => callbacks.current.onTitle(title)}

@@ -1,9 +1,10 @@
 import { cleanup } from "@testing-library/react";
-import { afterEach, expect } from "vitest";
+import { afterEach, beforeEach, expect, vi } from "vitest";
 
 import indexHTML from "../../index.html?raw";
 import { installCspWatch, takeCspViolations } from "./csp";
 import { installMatchMedia, resetMedia, withoutMotion } from "./media";
+import { FakeWebSocket } from "./terminal";
 
 // The document's language and head are index.html's: its title, and the
 // <meta> whose id keeps React Aria's usePress from adding a <style>
@@ -80,6 +81,14 @@ document.elementsFromPoint ??= () => [];
 // the one before, nothing the browser remembers, index.html's language and
 // title, the system in light mode and a desktop's viewport; and ends with
 // no CSP violation.
+// The frame keeps a Workspace socket open on every page (terminal/
+// workspaceSocket.ts): every test's WebSockets are fakes, which a test of
+// the terminal answers as the koko server and any other leaves unanswered.
+beforeEach(() => {
+  FakeWebSocket.sockets = [];
+  vi.stubGlobal("WebSocket", FakeWebSocket);
+});
+
 afterEach(async () => {
   cleanup();
   // Imported here, not above: React Aria reads whether the document has

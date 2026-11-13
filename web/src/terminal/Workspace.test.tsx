@@ -1,5 +1,5 @@
 import { act, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
 import { type Host, HostList, HostShow } from "../api/host";
 import { alice, host } from "../pages/host/records.fixture";
@@ -9,13 +9,21 @@ import { clipboard } from "../test/clipboard";
 import { type FakeApi, fakeApi } from "../test/fakeApi";
 import { setViewportWidth } from "../test/media";
 import { actAs, preferLanguages, renderAt } from "../test/pages";
-import { FakeWebSocket, useFakeLocks } from "../test/terminal";
+import {
+  attachments,
+  type FakeWebSocket,
+  type Request,
+  requestsOn,
+  running,
+  type WireTab,
+  workspaceSockets,
+} from "../test/terminal";
 import type { EmulatorProps } from "./emulator/Emulator";
 
 // The terminal workspace, its tabs in the rail and a tab's states, run as
 // the whole web UI against the fake API, with the emulator replaced by a
-// fake that records what it is given and the WebSocket by one the test
-// answers as the koko server.
+// fake that records what it is given, and the WebSockets by fakes the test
+// answers as the koko server: the Workspace socket, and each attachment's.
 
 vi.setConfig({ testTimeout: 20_000 });
 configure({ asyncUtilTimeout: 5_000 });
@@ -26,6 +34,8 @@ interface FakeEmulator {
   /** mounts counts the times it was mounted: a remount would lose the screen. */
   mounts: number;
   written: string;
+  /** resets are the grids reset gave it. */
+  resets: string[];
   selection: string;
 }
 
@@ -38,7 +48,7 @@ vi.mock("./emulator/Emulator", async () => {
   const { useEffect, useImperativeHandle, useRef, useState } = await import("react");
   const { createElement } = await import("react");
   function Emulator(props: EmulatorProps) {
-    const record = emulators.get(props.label) ?? { props, mounts: 0, written: "", selection: "" };
+    const record = emulators.get(props.label) ?? { props, mounts: 0, written: "", resets: [], selection: "" };
     record.props = props;
     emulators.set(props.label, record);
     const input = useRef<HTMLTextAreaElement>(null);
@@ -47,21 +57,25 @@ vi.mock("./emulator/Emulator", async () => {
       write: (bytes: Uint8Array) => {
         record.written += new TextDecoder().decode(bytes);
       },
+      reset: (cols: number, rows: number) => {
+        record.written = "";
+        record.resets.push(`${cols}x${rows}`);
+      },
+      metrics: () => ({ cellWidth: 8, cellHeight: 16, padX: 0, padY: 0 }),
       focus: () => input.current?.focus(),
       blur: () => input.current?.blur(),
       hasFocus: () => document.activeElement === input.current,
-      fit: () => {},
       selection: () => record.selection,
       pressKey: () => {},
     }));
     useEffect(() => {
       record.mounts++;
       if (loaded) {
-        props.onReady(120, 36);
+        props.onReady();
       } else {
         loading.held.push(() => {
           setLoaded(true);
-          props.onReady(120, 36);
+          props.onReady();
         });
       }
     }, []);
@@ -81,12 +95,9 @@ vi.mock("./emulator/Emulator", async () => {
 
 const hosts: Host[] = [host("web1", { space: "web" }), host("db2", { space: "ops" }), host("cache3", { space: "ops" })];
 
-const tunnel = (n: number) => n.toString(16).padStart(32, "0");
-
-beforeEach(() => {
-  FakeWebSocket.sockets = [];
-  vi.stubGlobal("WebSocket", FakeWebSocket);
-});
+const web1 = running("a1", "web1");
+const db2 = running("b2", "db2");
+const cache3 = running("c3", "cache3");
 
 afterEach(() => {
   emulators.clear();
@@ -105,17 +116,50 @@ function serve(path: string): FakeApi {
   return api;
 }
 
-/** sockets waits for the page to have opened n WebSockets, and is them. */
-async function sockets(n: number): Promise<FakeWebSocket[]> {
-  await waitFor(() => expect(FakeWebSocket.sockets).toHaveLength(n));
-  return [...FakeWebSocket.sockets];
+/** workspace waits for the page's nth Workspace socket, from 1, and is it. */
+async function workspace(n = 1): Promise<FakeWebSocket> {
+  await waitFor(() => expect(workspaceSockets()).toHaveLength(n));
+  return workspaceSockets()[n - 1] as FakeWebSocket;
 }
 
-/** connect has the koko server take the open on socket and start the shell. */
-async function connect(socket: FakeWebSocket | undefined, id: string): Promise<void> {
+/** says is the koko server sending a Workspace on socket. */
+async function says(socket: FakeWebSocket, ...tabs: WireTab[]): Promise<void> {
+  await act(async () => socket.answer({ tabs }));
+}
+
+/** joined has the page's Workspace socket taken, and the koko server send it the Workspace; it is the socket. */
+async function joined(...tabs: WireTab[]): Promise<FakeWebSocket> {
+  const socket = await workspace();
+  act(() => socket.opened());
+  expect(socket.first).toEqual({ protocol: 2 });
+  await says(socket, ...tabs);
+  return socket;
+}
+
+/** asked waits for the page's nth request on socket, from 1, and is it. */
+async function asked(socket: FakeWebSocket, n: number): Promise<Request> {
+  await waitFor(() => expect(requestsOn(socket).length).toBeGreaterThanOrEqual(n));
+  return requestsOn(socket)[n - 1] as Request;
+}
+
+/** answers is the koko server answering a request on socket: the Workspace first, then the answer. */
+async function answers(socket: FakeWebSocket, request: Request, answer: object, ...tabs: WireTab[]): Promise<void> {
+  await says(socket, ...tabs);
+  await act(async () => socket.answer({ request: request.request, ...answer }));
+}
+
+/** attachment waits for the page's nth attachment, from 1, and is its WebSocket. */
+async function attachment(n = 1): Promise<FakeWebSocket> {
+  await waitFor(() => expect(attachments().length).toBeGreaterThanOrEqual(n));
+  return attachments()[n - 1] as FakeWebSocket;
+}
+
+/** attached has the koko server take an attachment, give the pty's size and a snapshot, and say whether this page is active. */
+async function attached(socket: FakeWebSocket, snapshot = "", active = true): Promise<void> {
   await act(async () => {
-    socket?.opened();
-    socket?.answer({ tunnel: id });
+    socket.opened();
+    socket.answer({ attachment: "a77ac4" });
+    socket.records({ type: "reset", columns: 120, rows: 36 }, { type: "data", data: new TextEncoder().encode(snapshot) }, { type: "active", active });
   });
 }
 
@@ -179,44 +223,69 @@ function chord(key: string, code = key): void {
   fireEvent.keyDown(document.activeElement ?? document.body, { key, code, ctrlKey: true, shiftKey: true });
 }
 
-test("the workspace opens the URL's Hosts as tabs in order, the active one kept, and names the page after it", async () => {
-  serve("/terminal?host=web1&host=db2&host=web1&tab=2");
-  const opened = await sockets(3);
-  for (const socket of opened) {
-    act(() => socket.opened());
-  }
-  expect(opened.map((socket) => socket.first)).toEqual([
-    { protocol: 1, open: "web1", cols: 120, rows: 36 },
-    { protocol: 1, open: "db2", cols: 120, rows: 36 },
-    { protocol: 1, open: "web1", cols: 120, rows: 36 },
-  ]);
-  expect(opened[0]?.url).toBe(`ws://${window.location.host}/terminal/socket`);
+/** toast waits for a toast saying text. */
+async function toast(text: string): Promise<void> {
+  await waitFor(() => expect(screen.getByText(text)).toBeDefined());
+}
+
+test("the tabs come from the Workspace, in order with the koko server's labels; the URL's tab is shown and attached alone", async () => {
+  serve("/terminal?tab=2");
+  const socket = await workspace();
+  expect(socket.url).toBe(`ws://${window.location.host}/terminal/workspace`);
+  act(() => socket.opened());
+  await says(socket, web1, db2, running("a3", "web1", "web1 (2)"));
   expect(tabs()).toEqual(["web1", "db2", "web1 (2)"]);
   expect(selected()).toBe("db2");
   expect(document.title).toBe("db2 · Terminal · koko");
   expect(within(shown()).getByRole("status").textContent).toBe("Connecting to db2…");
   // The tab's panel is the one its tab names.
   expect(document.getElementById(tab("db2").getAttribute("aria-controls") ?? "")).toBe(shown());
-  expect(window.location.pathname + window.location.search).toBe("/terminal?host=web1&host=db2&host=web1&tab=2");
-  await expectAccessible();
+  expect(window.location.pathname + window.location.search).toBe("/terminal?tab=2");
 
-  await connect(opened[1], tunnel(2));
-  act(() => opened[1]?.output("deploy@db2:~$ "));
+  // The page attaches to the tab it shows, and only once it shows it.
+  const first = await attachment();
+  act(() => first.opened());
+  expect(first.url).toBe(`ws://${window.location.host}/terminal/socket`);
+  expect(first.first).toEqual({ protocol: 2, attach: db2.session, cols: 80, rows: 24 });
+  await attached(first, "deploy@db2:~$ ");
   await waitFor(() => expect(emulator("db2").written).toBe("deploy@db2:~$ "));
+  expect(emulator("db2").resets).toEqual(["120x36"]);
   expect(within(shown()).queryByRole("status")).toBeNull();
   expect(within(screen.getByRole("region", { name: "Terminal" })).getByText("Connected")).toBeDefined();
+  expect(attachments()).toHaveLength(1);
   await expectAccessible();
+
+  // Each Workspace replaces the tabs: one gone, one new, a label as the koko server gives it.
+  await says(socket, running("a3", "web1", "web1 (2)"), db2, cache3);
+  expect(tabs()).toEqual(["web1 (2)", "db2", "cache3"]);
+  expect(selected()).toBe("db2");
+  expect(emulator("db2").mounts).toBe(1);
+  expect(window.location.search).toBe("?tab=2");
+});
+
+test("a reconnected Workspace socket's first message replaces the tabs whole", async () => {
+  serve("/terminal");
+  const socket = await joined(web1, db2);
+  expect(tabs()).toEqual(["web1", "db2"]);
+  await act(async () => socket.drop());
+  const again = await workspace(2);
+  act(() => again.opened());
+  expect(again.first).toEqual({ protocol: 2 });
+  await says(again, cache3);
+  expect(tabs()).toEqual(["cache3"]);
+  expect(selected()).toBe("cache3");
 });
 
 test("keys typed reach the shell, and each state of a tab shows over its terminal without moving it", async () => {
-  serve("/terminal?host=web1");
-  const [socket] = await sockets(1);
-  await connect(socket, tunnel(1));
+  serve("/terminal");
+  await joined(web1);
+  const socket = await attachment();
+  await attached(socket);
   fireEvent.keyDown(screen.getByRole("textbox", { name: "Terminal on web1" }), { key: "l" });
-  await waitFor(() => expect(socket?.framesSent.some((frame) => frame.kind === "data")).toBe(true));
+  await waitFor(() => expect(socket.typed).toBe("l"));
 
   // Reconnecting: the terminal stays, dimmed, under a notice with Try now.
-  await act(async () => socket?.drop());
+  await act(async () => socket.drop());
   await waitFor(() =>
     expect(within(shown()).getByRole("status").textContent).toContain(
       "Reconnecting to the koko server… Keys typed now are sent once it is back.",
@@ -225,204 +294,286 @@ test("keys typed reach the shell, and each state of a tab shows over its termina
   expect(within(shown()).getByRole("button", { name: "Try now" })).toBeDefined();
   expect(tab("web1").textContent).toContain("Reconnecting");
   await expectAccessible();
-  const resume = (await sockets(2))[1];
-  await act(async () => {
-    resume?.opened();
-    resume?.answer({ offset: 0 });
-  });
+  const resume = await attachment(2);
+  act(() => resume.opened());
+  expect(resume.first).toEqual({ protocol: 2, resume: "a77ac4", offset: expect.any(Number) });
+  await act(async () => resume.answer({ offset: 0 }));
   await waitFor(() => expect(within(shown()).queryByRole("status")).toBeNull());
+});
 
-  // A program asks to copy: the page asks first.
+test("the clipboard card shows only while this page is the active one, and focus reports go from it alone", async () => {
+  serve("/terminal");
+  await joined(web1);
+  const socket = await attachment();
+  await attached(socket, "", false);
+
+  // Another page is active: a copy is not offered here, and no focus report goes.
+  act(() => emulator("web1").props.onClipboardWrite("uptime"));
+  expect(within(shown()).queryByRole("status")).toBeNull();
+  act(() => emulator("web1").props.onInput(new TextEncoder().encode("\x1b[I")));
+  expect(socket.typed).toBe("");
+
+  // This page becomes active.
+  await act(async () => socket.records({ type: "active", active: true }));
   const copied = clipboard();
   act(() => emulator("web1").props.onClipboardWrite("uptime\nsecond line"));
   const ask = within(shown()).getByRole("status");
   expect(ask.textContent).toContain("web1 asks to copy 18 characters to the clipboard.");
-  expect(ask.textContent).toContain("uptime");
   await expectAccessible();
   fireEvent.click(within(ask).getByRole("button", { name: "Copy" }));
   await waitFor(() => expect(copied).toHaveBeenCalledWith("uptime\nsecond line"));
-  await waitFor(() => expect(within(shown()).queryByRole("status")).toBeNull());
-  act(() => emulator("web1").props.onClipboardWrite("x"));
-  fireEvent.click(within(shown()).getByRole("button", { name: "Dismiss" }));
-  expect(within(shown()).queryByRole("status")).toBeNull();
+  act(() => emulator("web1").props.onInput(new TextEncoder().encode("\x1b[O")));
+  expect(socket.typed).toBe("\x1b[O");
 
-  // The shell exits: why, and a new one in the same tab.
-  await act(async () => {
-    resume?.records({ type: "exitStatus", status: 3 });
-    resume?.frames({ kind: "close", ack: 0, reason: "" });
-  });
-  await waitFor(() =>
-    expect(within(shown()).getByRole("status").textContent).toContain("The shell on web1 exited with status 3."),
-  );
-  expect(tab("web1").textContent).toContain("Ended");
+  // Another page takes it over, and the card asked for goes.
+  act(() => emulator("web1").props.onClipboardWrite("x"));
+  expect(within(shown()).getByRole("status")).toBeDefined();
+  await act(async () => socket.records({ type: "active", active: false }));
+  await waitFor(() => expect(within(shown()).queryByRole("status")).toBeNull());
+});
+
+test("a pointer on the terminal, a tab chosen and the window resized make this page active; attaching does not", async () => {
+  serve("/terminal");
+  await joined(web1, db2);
+  const first = await attachment();
+  await attached(first, "", false);
+  const named = () => first.framesSent.flatMap((frame) => (frame.kind === "data" ? [...frame.data] : []));
+  expect(named(), "attaching is no person's act").toEqual([]);
+  fireEvent.pointerDown(screen.getByRole("textbox", { name: "Terminal on web1" }));
+  await waitFor(() => expect(named()).toEqual([0x05, 0x00]));
+  act(() => window.dispatchEvent(new Event("resize")));
+  await waitFor(() => expect(named()).toEqual([0x05, 0x00, 0x05, 0x00]));
+
+  // A tab chosen by a pointer: its attachment says so once it is made.
+  press(tab("db2"));
+  const second = await attachment(2);
+  await attached(second, "", false);
+  await waitFor(() => expect(second.framesSent.some((frame) => frame.kind === "data" && frame.data[0] === 0x05)).toBe(true));
+});
+
+test("an SSH Session's end comes from the Workspace, the same words in every page, and Open a new one sends reopen", async () => {
+  const endings: [WireTab["ended"], string][] = [
+    [{ reason: "shell ended", exit_status: 3 }, "The shell on web1 exited with status 3."],
+    [{ reason: "shell ended", exit_signal: "KILL" }, "The shell on web1 ended by signal KILL."],
+    [
+      { reason: "access", notice: "access to web1 was withdrawn: bob was Removed; this SSH Session is closed." },
+      "The SSH Session to web1 has ended.access to web1 was withdrawn: bob was Removed; this SSH Session is closed.",
+    ],
+    [{ reason: "server stopping", notice: "the koko server is restarting; this SSH Session has ended." }, "The koko server is restarting; this SSH Session has ended."],
+  ];
+  serve("/terminal");
+  const socket = await joined(web1);
+  for (const [ended, line] of endings) {
+    await says(socket, { id: "a1", host: "web1", label: "web1", state: "ended", ended });
+    await waitFor(() => expect(within(shown()).getByRole("status").textContent).toContain(line));
+    expect(tab("web1").textContent).toContain("Ended");
+  }
   await expectAccessible();
   fireEvent.click(within(shown()).getByRole("button", { name: "Open a new one" }));
-  const again = (await sockets(3))[2];
-  act(() => again?.opened());
-  expect(again?.first).toEqual({ protocol: 1, open: "web1", cols: 120, rows: 36 });
+  const reopen = await asked(socket, 1);
+  expect(reopen).toEqual({ request: 1, reopen: "a1", cols: 80, rows: 24 });
+  await answers(socket, reopen, { tab: "a1" }, { id: "a1", host: "web1", label: "web1", state: "starting" });
   expect(within(shown()).getByRole("status").textContent).toBe("Connecting to web1…");
 });
 
-test("an SSH Session's end says why: a signal, the koko server's notice, a restart, a lost connection, or this page", async () => {
-  const endings: [string, (socket: FakeWebSocket) => void, string][] = [
-    [
-      "a signal",
-      (socket) => {
-        socket.records({ type: "exitSignal", signal: "KILL" });
-        socket.frames({ kind: "close", ack: 0, reason: "" });
-      },
-      "The shell on web1 ended by signal KILL.",
-    ],
-    [
-      "a notice",
-      (socket) => socket.frames({ kind: "close", ack: 0, reason: "access to web1 was withdrawn: bob was Removed; this SSH Session is closed." }),
-      "The SSH Session to web1 has ended.access to web1 was withdrawn: bob was Removed; this SSH Session is closed.",
-    ],
-    [
-      "a restart",
-      (socket) => socket.frames({ kind: "close", ack: 0, reason: "the koko server is restarting; this SSH Session has ended." }),
-      "The koko server is restarting; this SSH Session has ended.",
-    ],
-  ];
-  serve("/terminal?host=web1");
-  for (const [what, end, says] of endings) {
-    const before = FakeWebSocket.sockets.length;
-    const socket = (await sockets(before + 1))[before];
-    await connect(socket, tunnel(before + 1));
-    await act(async () => socket && end(socket));
-    await waitFor(() => expect(within(shown()).getByRole("status").textContent, what).toContain(says));
-    fireEvent.click(within(shown()).getByRole("button", { name: "Open a new one" }));
-  }
-
-  // A lost connection the Gateway will not resume.
-  const socket = (await sockets(4))[3];
-  await connect(socket, tunnel(9));
-  await act(async () => socket?.drop());
-  const resume = (await sockets(5))[4];
-  await act(async () => {
-    resume?.opened();
-    resume?.answer({ refused: "resume_refused", message: "web1 closed the connection" });
-  });
-  await waitFor(() =>
-    expect(within(shown()).getByRole("status").textContent).toMatch(
-      /Lost the connection to the koko server at \d\d:\d\d( [AP]M)?; the SSH Session to web1 could not be resumed\.web1 closed the connectionOpen a new one/,
-    ),
-  );
-  await expectAccessible();
-});
-
-test("each refusal is said, with Try again and Close tab, and one of an out-of-date page asks for a reload", async () => {
+test("a refused tab says why, with Try again, which reopens it, and Close tab", async () => {
   const refusals: [string, string, string][] = [
     ["unknown_host", 'no Host is named "web1".', "No Host you can see is named web1."],
-    ["host_registered", "web1 is Registered: …", "web1 is Registered, so koko does not log in to it yet.web1 is Registered: …"],
-    ["ssh_session_limit", "this Sign-in already has 16 SSH Sessions open, …", "The most SSH Sessions koko allows are already open."],
     ["host_unreachable", "web1 is down or unreachable: …", "koko could not reach web1. This SSH Session did not start.web1 is down"],
     ["shell_refused", "web1 refused the shell", "web1 refused to start a shell."],
-    ["revoked", "", "This device's Device Session was Revoked."],
     ["something_new", "a refusal of a later koko", "The koko server refused this SSH Session to web1.a refusal of a later koko"],
   ];
-  serve("/terminal?host=web1");
-  await sockets(1);
-  for (const [code, message, says] of refusals) {
-    const socket = FakeWebSocket.sockets.at(-1);
-    await act(async () => {
-      socket?.opened();
-      socket?.answer({ refused: code, message });
-    });
+  serve("/terminal");
+  const socket = await joined(web1);
+  let n = 0;
+  for (const [code, message, line] of refusals) {
+    await says(socket, { id: "a1", host: "web1", label: "web1", state: "refused", refused: { code, message } });
     const alert = await within(shown()).findByRole("alert");
-    expect(alert.textContent, code).toContain(says);
+    expect(alert.textContent, code).toContain(line);
     expect(tab("web1").textContent).toContain("Refused");
     await expectAccessible();
-    const count = FakeWebSocket.sockets.length;
     fireEvent.click(within(shown()).getByRole("button", { name: "Try again" }));
-    await sockets(count + 1);
+    expect(await asked(socket, ++n)).toMatchObject({ reopen: "a1" });
   }
-
-  // An open that got no answer.
-  await act(async () => FakeWebSocket.sockets.at(-1)?.drop());
-  expect((await within(shown()).findByRole("alert")).textContent).toBe(
-    "The koko server could not be reached. Check the network connection and try again.",
-  );
-  expect(tab("web1").textContent).toContain("Not connected");
-
-  // An out-of-date page.
-  fireEvent.click(within(shown()).getByRole("button", { name: "Try again" }));
-  const socket = (await sockets(FakeWebSocket.sockets.length))[FakeWebSocket.sockets.length - 1];
-  await act(async () => {
-    socket?.opened();
-    socket?.answer({ refused: "reload_page", message: "" });
-  });
-  expect((await within(shown()).findByRole("alert")).textContent).toBe("This page is out of date. Reload it.");
-  expect(within(shown()).getByRole("button", { name: "Reload" })).toBeDefined();
-  expect(within(shown()).queryByRole("button", { name: "Try again" })).toBeNull();
-  await expectAccessible();
-
   // A tab whose shell never started closes at once.
   press(tab("web1").querySelector("[data-close]") as Element);
   expect(screen.queryByRole("alertdialog")).toBeNull();
-  expect(screen.queryByRole("tablist", { name: "Terminal tabs" })).toBeNull();
-  expect(screen.getByRole("heading", { level: 1, name: "No terminal is open" })).toBeDefined();
+  expect(await asked(socket, n + 1)).toEqual({ request: n + 1, close: "a1" });
 });
 
-test("a refusal for want of a Sign-in goes to Sign in, which comes back to the terminal", async () => {
-  serve("/terminal?host=web1");
-  const [socket] = await sockets(1);
+test("the koko server's restart: its tabs are reopened in tab order, each once the one before has left starting", async () => {
+  serve("/terminal");
+  const restarted = (id: string, name: string): WireTab => ({ id, host: name, label: name, state: "restarted" });
+  const socket = await joined(restarted("a1", "web1"), restarted("b2", "db2"), { ...cache3, state: "ended", session: undefined, ended: { reason: "shell ended", exit_status: 0 } });
+  expect(within(shown()).getByRole("status").textContent).toBe("The koko server restarted.");
+  const first = await asked(socket, 1);
+  expect(first).toEqual({ request: 1, reopen: "a1", cols: 80, rows: 24 });
+  // Another page's change meanwhile asks nothing more.
+  await says(socket, restarted("a1", "web1"), restarted("b2", "db2"), { ...cache3, state: "ended", session: undefined, ended: { reason: "shell ended", exit_status: 0 } });
+  expect(requestsOn(socket), "one at a time").toHaveLength(1);
+  // The answer comes before the koko server dials: the next waits while the tab starts.
+  await answers(socket, first, { tab: "a1" }, { ...web1, state: "starting", session: undefined }, restarted("b2", "db2"), cache3);
+  expect(requestsOn(socket), "web1 is still starting").toHaveLength(1);
+  await says(socket, web1, restarted("b2", "db2"), cache3);
+  const second = await asked(socket, 2);
+  expect(second).toEqual({ request: 2, reopen: "b2", cols: 80, rows: 24 });
+  // One refused counts as done as one running does.
+  await answers(socket, second, { tab: "b2" }, web1, { ...db2, state: "starting", session: undefined }, restarted("d4", "cache3"), cache3);
+  await says(socket, web1, { id: "b2", host: "db2", label: "db2", state: "refused", refused: { code: "host_unreachable", message: "" } }, restarted("d4", "cache3"), cache3);
+  expect(await asked(socket, 3)).toEqual({ request: 3, reopen: "d4", cols: 80, rows: 24 });
+  await says(socket, web1, db2, { ...running("d4", "cache3") }, cache3);
+  expect(requestsOn(socket), "a tab ended before the restart is left as it is").toHaveLength(3);
+  expect(tabs()).toEqual(["web1", "db2", "cache3", "cache3"]);
+});
+
+test("the koko server stopping says so, and the page reconnects", async () => {
+  serve("/terminal");
+  const socket = await joined(web1);
+  const first = await attachment();
+  await attached(first);
   await act(async () => {
-    socket?.opened();
-    socket?.answer({ refused: "signin_required", message: "" });
+    first.frames({ kind: "close", ack: 0, reason: "the koko server is restarting; this SSH Session has ended." });
+    socket.answer({ stopping: "the koko server is restarting" });
+    socket.drop();
   });
-  await waitFor(() => expect(window.location.pathname).toBe("/signin"));
-  expect(new URLSearchParams(window.location.search).get("next")).toBe("/terminal?host=web1&tab=1");
+  expect(within(shown()).getByRole("status").textContent).toBe("The koko server is restarting; this SSH Session has ended.");
+  await expectAccessible();
+  const again = await workspace(2);
+  act(() => again.opened());
+  await says(again, { id: "a1", host: "web1", label: "web1", state: "restarted" });
+  expect(within(shown()).getByRole("status").textContent).toBe("The koko server restarted.");
+  expect(await asked(again, 1)).toMatchObject({ reopen: "a1" });
 });
 
-test("the switcher shows an open tab or opens a Host, and two tabs to one Host are told apart", async () => {
-  serve("/terminal?host=web1");
-  await connect((await sockets(1))[0], tunnel(1));
+test("open and close are requests: a tab shows once the Workspace names it, and closing asks first in the new words", async () => {
+  serve("/terminal");
+  const socket = await joined(web1);
   press(screen.getByRole("button", { name: /^New tab/ }));
   const dialog = await screen.findByRole("dialog", { name: "Go to a terminal" });
-  const field = within(dialog).getByRole("textbox", { name: "Go to a terminal" });
-  await waitFor(() => expect(document.activeElement).toBe(field));
-  expect(within(dialog).getAllByRole("option").map((option) => option.textContent)).toEqual([
-    "Connectedweb1Shown",
-    "web1webOpen",
-    "db2opsOpen",
-    "cache3opsOpen",
-  ]);
-  await expectAccessible();
+  press(within(dialog).getByRole("option", { name: /^db2opsOpen/ }));
+  const open = await asked(socket, 1);
+  expect(open).toEqual({ request: 1, open: "db2", cols: 80, rows: 24 });
+  expect(tabs(), "no tab before the Workspace names it").toEqual(["web1"]);
+  await answers(socket, open, { tab: "b2" }, web1, { ...db2, state: "starting", session: undefined });
+  await waitFor(() => expect(selected()).toBe("db2"));
+  expect(window.location.search).toBe("?tab=2");
 
-  // A browser tells of typing before the change, which has the first match take the virtual focus.
-  fireEvent(field, new InputEvent("beforeinput", { inputType: "insertText", data: "ops", bubbles: true }));
-  fireEvent.change(field, { target: { value: "ops" } });
-  await waitFor(() =>
-    expect(within(dialog).getAllByRole("option").map((option) => option.textContent)).toEqual(["db2opsOpen", "cache3opsOpen"]),
-  );
-  fireEvent.keyDown(field, { key: "Enter" });
-  fireEvent.keyUp(field, { key: "Enter" });
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(tabs()).toEqual(["web1", "db2"]);
+  // Closing a tab whose shell runs asks first, by its mark, which chooses no tab.
+  const mark = tab("web1").querySelector("[data-close]");
+  expect(mark?.getAttribute("aria-hidden")).toBe("true");
+  press(mark as Element);
+  const question = await screen.findByRole("alertdialog", { name: "Close web1?" });
+  expect(question.textContent).toContain("This ends its SSH Session in every place it is open.");
   expect(selected()).toBe("db2");
-  expect(window.location.search).toBe("?host=web1&host=db2&tab=2");
-  await sockets(2);
+  await expectAccessible();
+  fireEvent.click(within(question).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  expect(requestsOn(socket)).toHaveLength(1);
 
-  // The same Host again, labelled apart, then an open tab shown.
-  fireEvent.keyDown(document.activeElement ?? document.body, { key: "K", code: "KeyK", ctrlKey: true, shiftKey: true });
-  press(within(await screen.findByRole("dialog")).getByRole("option", { name: /^web1webOpen/ }));
-  await waitFor(() => expect(tabs()).toEqual(["web1", "db2", "web1 (2)"]));
-  expect(window.location.search).toBe("?host=web1&host=db2&host=web1&tab=3");
-  chord("K", "KeyK");
-  press(within(await screen.findByRole("dialog")).getByRole("option", { name: /^Connectedweb1$/ }));
-  await waitFor(() => expect(selected()).toBe("web1"));
-  expect(window.location.search).toBe("?host=web1&host=db2&host=web1&tab=1");
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Terminal on web1" })));
+  // Delete on a focused tab, then Close tab: the tab goes once the Workspace no longer names it, and nothing is announced.
+  act(() => tab("db2").focus());
+  fireEvent.keyDown(tab("db2"), { key: "Delete" });
+  fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Close db2?" })).getByRole("button", { name: "Close tab" }));
+  const close = await asked(socket, 2);
+  expect(close).toEqual({ request: 2, close: "b2" });
+  expect(tabs()).toEqual(["web1", "db2"]);
+  await answers(socket, close, {}, web1);
+  expect(tabs()).toEqual(["web1"]);
+  expect(selected()).toBe("web1");
+  expect(screen.queryByText(/was closed in another page/)).toBeNull();
+});
+
+test("an open refused adds no tab, and says why in place: in the switcher that sent it, else over the terminal", async () => {
+  serve("/terminal");
+  const socket = await joined(web1);
+  press(screen.getByRole("button", { name: /^New tab/ }));
+  press(within(await screen.findByRole("dialog")).getByRole("option", { name: /^cache3opsOpen/ }));
+  await answers(socket, await asked(socket, 1), { refused: "access_refused", message: "access to cache3 was refused." }, web1);
+  const dialog = screen.getByRole("dialog", { name: "Go to a terminal" });
+  expect((await within(dialog).findByRole("alert")).textContent).toBe("koko refused this SSH Session to cache3.access to cache3 was refused.");
+  expect(tabs()).toEqual(["web1"]);
+  expect(screen.queryByRole("alertdialog"), "no toast").toBeNull();
+  await expectAccessible();
+  // Opened again, the switcher has forgotten it.
+  fireEvent.keyDown(within(dialog).getByRole("textbox"), { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  press(screen.getByRole("button", { name: /^New tab/ }));
+  expect(within(await screen.findByRole("dialog")).queryByRole("alert")).toBeNull();
+  fireEvent.keyDown(within(screen.getByRole("dialog")).getByRole("textbox"), { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  // An open from a Host's page is refused over the terminal, until dismissed.
+  act(() => navigate("/hosts/cache3/terminal"));
+  await answers(socket, await asked(socket, 2), { refused: "access_refused", message: "" }, web1);
+  const line = await screen.findByRole("alert");
+  expect(line.textContent).toBe("koko refused this SSH Session to cache3.");
+  await expectAccessible();
+  press(screen.getByRole("button", { name: "Dismiss" }));
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+});
+
+test("a tab another page closed is announced, and the tab beside it shown", async () => {
+  serve("/terminal?tab=2");
+  const socket = await joined(web1, db2, cache3);
+  expect(selected()).toBe("db2");
+  await says(socket, web1, cache3);
+  await toast("db2 was closed in another page.");
+  expect(selected()).toBe("cache3");
+  // One not shown goes without a word.
+  await says(socket, cache3);
+  expect(screen.queryByText("web1 was closed in another page.")).toBeNull();
+});
+
+test("a ninth page detaches this one, which shows it with Show here, and attaches again only then", async () => {
+  serve("/terminal");
+  await joined(web1);
+  const first = await attachment();
+  await attached(first);
+  await act(async () => {
+    first.records({ type: "active", active: false }, { type: "displaced" });
+    first.frames({ kind: "close", ack: 0, reason: "" });
+  });
+  const cover = await within(shown()).findByRole("alert");
+  expect(cover.textContent).toBe("This terminal is open in 8 other pages.");
+  await expectAccessible();
+  expect(attachments()).toHaveLength(1);
+  fireEvent.click(within(shown()).getByRole("button", { name: "Show here" }));
+  const again = await attachment(2);
+  await attached(again, "", false);
+  await waitFor(() => expect(again.framesSent.some((frame) => frame.kind === "data" && frame.data[0] === 0x05)).toBe(true));
+});
+
+test("an attach refused for an out-of-date page asks for a reload, and the Workspace's for want of a Sign-in goes to Sign in", async () => {
+  serve("/terminal?tab=1");
+  await joined(web1);
+  const first = await attachment();
+  await act(async () => {
+    first.opened();
+    first.answer({ refused: "reload_page", message: "" });
+  });
+  expect((await within(shown()).findByRole("alert")).textContent).toBe("This page is out of date. Reload it.");
+  expect(within(shown()).getByRole("button", { name: "Reload" })).toBeDefined();
+  await expectAccessible();
+});
+
+test("a Workspace socket refused for want of a Sign-in goes to Sign in, which comes back to the terminal", async () => {
+  serve("/terminal?tab=1");
+  const socket = await workspace();
+  await act(async () => {
+    socket.opened();
+    socket.answer({ refused: "signin_required", message: "" });
+  });
+  await waitFor(() => expect(window.location.pathname).toBe("/signin"));
+  expect(new URLSearchParams(window.location.search).get("next")).toBe("/terminal?tab=1");
 });
 
 test("tabs are switched by a pointer, by the arrow keys in the rail, and by Control, Shift and the arrows anywhere", async () => {
-  serve("/terminal?host=web1&host=db2&host=cache3&tab=1");
-  await sockets(3);
+  serve("/terminal?tab=1");
+  await joined(web1, db2, cache3);
 
   press(tab("db2"));
   expect(selected()).toBe("db2");
-  expect(window.location.search).toBe("?host=web1&host=db2&host=cache3&tab=2");
+  expect(window.location.search).toBe("?tab=2");
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Terminal on db2" })));
 
   // The arrow keys move along the list, showing each tab, and leave the focus there.
@@ -439,18 +590,17 @@ test("tabs are switched by a pointer, by the arrow keys in the rail, and by Cont
   expect(selected()).toBe("cache3");
   chord("ArrowLeft");
   expect(selected()).toBe("db2");
-  expect(
-    FakeWebSocket.sockets.flatMap((socket) => socket.framesSent),
-    "no key reached a shell",
-  ).toEqual([]);
+  expect(attachments().map((socket) => socket.typed).join(""), "no key reached a shell").toBe("");
 });
 
-test("a new tab's terminal takes the focus once its emulator has loaded", async () => {
+test("a tab's terminal takes the focus once its emulator has loaded", async () => {
   loading.hold = true;
-  serve("/terminal?host=web1");
+  serve("/terminal");
+  const socket = await joined(web1);
   await waitFor(() => expect(loading.held).toHaveLength(1));
   press(screen.getByRole("button", { name: /^New tab/ }));
   press(within(await screen.findByRole("dialog")).getByRole("option", { name: /^db2opsOpen/ }));
+  await answers(socket, await asked(socket, 1), { tab: "b2" }, web1, db2);
   await waitFor(() => expect(loading.held).toHaveLength(2));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   act(() => loading.held[1]?.());
@@ -458,10 +608,10 @@ test("a new tab's terminal takes the focus once its emulator has loaded", async 
 });
 
 test("the chords never reach the emulator", async () => {
-  serve("/terminal?host=web1&host=db2");
-  await sockets(2);
+  serve("/terminal?tab=2");
+  await joined(web1, db2);
   const typed = vi.fn();
-  const textbox = screen.getByRole("textbox", { name: "Terminal on db2" });
+  const textbox = await screen.findByRole("textbox", { name: "Terminal on db2" });
   textbox.addEventListener("keydown", typed);
   act(() => textbox.focus());
   for (const [key, code] of [
@@ -476,49 +626,18 @@ test("the chords never reach the emulator", async () => {
   expect(typed).toHaveBeenCalledTimes(1);
 });
 
-test("closing a tab whose shell runs asks first, by its mark or by Delete; one that has ended closes at once", async () => {
-  serve("/terminal?host=web1&host=db2&host=cache3&tab=1");
-  const opened = await sockets(3);
-  await connect(opened[0], tunnel(1));
-  await connect(opened[1], tunnel(2));
-
-  // The close mark, which is no button inside the tab, and asks first.
-  const mark = tab("web1").querySelector("[data-close]");
-  expect(mark?.getAttribute("aria-hidden")).toBe("true");
-  press(mark as Element);
-  const dialog = await screen.findByRole("alertdialog", { name: "End the SSH Session to web1?" });
-  expect(selected(), "the mark chooses no tab").toBe("web1");
-  await expectAccessible();
-  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
-  expect(tabs()).toEqual(["web1", "db2", "cache3"]);
-
-  press(mark as Element);
-  fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "End SSH Session" }));
-  await waitFor(() => expect(tabs()).toEqual(["db2", "cache3"]));
-  expect(opened[0]?.framesSent.at(-1)).toEqual({ kind: "close", ack: 0, reason: "" });
-  expect(selected()).toBe("db2");
-
-  // Delete on a focused tab.
-  act(() => tab("db2").focus());
-  fireEvent.keyDown(tab("db2"), { key: "Delete" });
-  fireEvent.click(within(await screen.findByRole("alertdialog", { name: "End the SSH Session to db2?" })).getByRole("button", { name: "End SSH Session" }));
-  await waitFor(() => expect(tabs()).toEqual(["cache3"]));
-
-  // A tab still connecting has no shell yet, and Backspace closes it at once.
-  act(() => tab("cache3").focus());
-  fireEvent.keyDown(tab("cache3"), { key: "Backspace" });
-  expect(screen.queryByRole("alertdialog")).toBeNull();
-  expect(screen.queryByRole("tablist", { name: "Terminal tabs" })).toBeNull();
-  expect(window.location.search).toBe("");
-});
-
-test("More changes the text size, copies the selection, and ends the SSH Session after asking", async () => {
-  serve("/terminal?host=web1");
-  await connect((await sockets(1))[0], tunnel(1));
+test("More changes the text size and copies the selection, and ends nothing", async () => {
+  serve("/terminal");
+  await joined(web1);
   const more = () => press(within(screen.getByRole("region", { name: "Terminal" })).getByRole("button", { name: "More" }));
   more();
-  fireEvent.click(await screen.findByRole("menuitem", { name: "Larger text" }));
+  expect((await screen.findAllByRole("menuitem")).map((item) => item.textContent)).toEqual([
+    "Larger text",
+    "Smaller text",
+    "Copy the selection",
+    "Announce output",
+  ]);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Larger text" }));
   await waitFor(() => expect(screen.getByRole("textbox", { name: "Terminal on web1" }).getAttribute("data-font")).toBe("16"));
 
   emulator("web1").selection = "uptime";
@@ -526,19 +645,11 @@ test("More changes the text size, copies the selection, and ends the SSH Session
   more();
   fireEvent.click(await screen.findByRole("menuitem", { name: "Copy the selection" }));
   await waitFor(() => expect(copied).toHaveBeenCalledWith("uptime"));
-
-  more();
-  fireEvent.click(await screen.findByRole("menuitem", { name: "End SSH Session" }));
-  fireEvent.click(within(await screen.findByRole("alertdialog", { name: "End the SSH Session to web1?" })).getByRole("button", { name: "End SSH Session" }));
-  await waitFor(() =>
-    expect(within(shown()).getByRole("status").textContent).toContain("The SSH Session to web1 was ended from this page."),
-  );
-  expect(tabs()).toEqual(["web1"]);
 });
 
 test("Files opens a column docked in the island, named for the tab's Host", async () => {
-  serve("/terminal?host=web1");
-  await sockets(1);
+  serve("/terminal");
+  await joined(web1);
   const files = screen.getByRole("button", { name: "Files" });
   expect(files.getAttribute("aria-pressed")).toBe("false");
   press(files);
@@ -550,59 +661,62 @@ test("Files opens a column docked in the island, named for the tab's Host", asyn
   expect(screen.queryByRole("complementary", { name: "Files" })).toBeNull();
 });
 
-test("a page holds at most 16 tabs: New tab is then disabled and says why", async () => {
-  const sixteen = Array.from({ length: 17 }, (_, n) => `host=h${n + 1}`).join("&");
-  serve(`/terminal?${sixteen}`);
-  await sockets(16);
+test("a Workspace holds at most 16 tabs: New tab is then disabled and says why, and Open terminal asks nothing", async () => {
+  serve("/terminal");
+  const socket = await joined(...Array.from({ length: 16 }, (_, n) => running(`t${n}`, `h${n + 1}`)));
   expect(tabs()).toHaveLength(16);
   expect(screen.getByRole("button", { name: /^New tab/ }).hasAttribute("disabled")).toBe(true);
-  expect(screen.getByText("A browser holds at most 16 SSH Sessions at once. Close a tab to open another.")).toBeDefined();
+  expect(screen.getByText("The terminal holds at most 16 tabs. Close a tab to open another.")).toBeDefined();
 
-  // Open terminal at 16 adds none, and says why in a notice beside the rail's line.
   act(() => navigate("/hosts/web1/terminal"));
   await waitFor(() => expect(window.location.pathname).toBe("/terminal"));
-  expect(tabs()).toHaveLength(16);
-  await waitFor(() =>
-    expect(screen.getAllByText("A browser holds at most 16 SSH Sessions at once. Close a tab to open another.")).toHaveLength(2),
-  );
+  await waitFor(() => expect(screen.getAllByText("The terminal holds at most 16 tabs. Close a tab to open another.")).toHaveLength(2));
+  expect(requestsOn(socket)).toEqual([]);
 });
 
-test("/hosts/<name>/terminal adds a tab, and the tabs stay as they were while the person visits other pages", async () => {
-  serve("/hosts/web1/terminal");
-  await waitFor(() => expect(window.location.pathname + window.location.search).toBe("/terminal?host=web1&tab=1"));
-  const [socket] = await sockets(1);
-  await connect(socket, tunnel(1));
-  act(() => socket?.output("first"));
+test("/hosts/<name>/terminal adds a tab, then shows it, and the tabs stay as they were while the person visits other pages", async () => {
+  serve("/hosts/db2/terminal");
+  const socket = await joined(web1);
+  const open = await asked(socket, 1);
+  expect(open).toEqual({ request: 1, open: "db2", cols: 80, rows: 24 });
+  await answers(socket, open, { tab: "b2" }, web1, db2);
+  await waitFor(() => expect(window.location.pathname + window.location.search).toBe("/terminal?tab=2"));
+  expect(selected()).toBe("db2");
+  // The page showed web1 until the Workspace named the new tab, and stays attached to it.
+  const first = await attachment(2);
+  act(() => first.opened());
+  expect(first.first).toMatchObject({ attach: db2.session });
+  await attached(first, "first");
 
   // Another page: the tabs stay in the rail, none raised, and the terminal is hidden and kept.
   act(() => navigate("/hosts"));
   await screen.findByRole("heading", { level: 1, name: "Hosts" });
-  expect(tabs()).toEqual(["web1"]);
-  expect(tab("web1").className).not.toContain("island");
-  act(() => socket?.output(" second"));
+  expect(tabs()).toEqual(["web1", "db2"]);
+  expect(tab("db2").className).not.toContain("island");
+  act(() => first.output(" second"));
   await expectAccessible();
-
-  // A Managed Host's page offers Open terminal, which adds a second tab.
-  act(() => navigate("/hosts/db2"));
-  const open = await screen.findByRole("link", { name: "Open terminal" });
-  expect(open.getAttribute("href")).toBe("/hosts/db2/terminal");
-  press(open);
-  await waitFor(() => expect(tabs()).toEqual(["web1", "db2"]));
-  expect(window.location.search).toBe("?host=web1&host=db2&tab=2");
 
   // Choosing a tab from another page goes to the terminal showing it.
   act(() => navigate("/secrets"));
-  press(tab("web1"));
-  await waitFor(() => expect(window.location.pathname + window.location.search).toBe("/terminal?host=web1&host=db2&tab=1"));
-  expect(emulator("web1").mounts).toBe(1);
-  await waitFor(() => expect(emulator("web1").written).toBe("first second"));
-  expect(FakeWebSocket.sockets.filter((each) => (each.first as { open?: string } | undefined)?.open === "web1")).toHaveLength(1);
+  press(tab("db2"));
+  await waitFor(() => expect(window.location.pathname + window.location.search).toBe("/terminal?tab=2"));
+  expect(emulator("db2").mounts).toBe(1);
+  await waitFor(() => expect(emulator("db2").written).toBe("first second"));
+  expect(attachments()).toHaveLength(2);
+});
+
+test("the rail lists the Workspace on every page, before the terminal is ever opened", async () => {
+  serve("/hosts");
+  await screen.findByRole("heading", { level: 1, name: "Hosts" });
+  await joined(web1, db2);
+  expect(tabs()).toEqual(["web1", "db2"]);
+  expect(attachments(), "no page shows a tab yet").toHaveLength(0);
 });
 
 test("Control, Shift and K on another page goes to the terminal and opens the switcher", async () => {
   serve("/hosts");
   await screen.findByRole("heading", { level: 1, name: "Hosts" });
-  expect(screen.getByRole("button", { name: "Open terminal" })).toBeDefined();
+  const socket = await joined();
   fireEvent.keyDown(document.body, { key: "K", code: "KeyK", ctrlKey: true, shiftKey: true });
   const dialog = await screen.findByRole("dialog", { name: "Go to a terminal" });
   expect(window.location.pathname).toBe("/terminal");
@@ -611,71 +725,73 @@ test("Control, Shift and K on another page goes to the terminal and opens the sw
   fireEvent.keyDown(field, { key: "Escape" });
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.getByRole("heading", { level: 1, name: "No terminal is open" })).toBeDefined();
-  expect(screen.getAllByRole("button", { name: /^(web1|db2|cache3)/ }).map((card) => card.textContent)).toEqual([
-    "web1web",
-    "db2ops",
-    "cache3ops",
-  ]);
   await expectAccessible();
   press(screen.getByRole("button", { name: "db2ops" }));
-  await waitFor(() => expect(tabs()).toEqual(["db2"]));
+  expect(await asked(socket, 1)).toMatchObject({ open: "db2" });
 });
 
-test("a reload ends the SSH Sessions the page before it held, then opens each Host again, the active tab kept", async () => {
-  useFakeLocks();
-  sessionStorage.setItem("koko.terminal.sessions", JSON.stringify([tunnel(1), tunnel(2)]));
-  serve("/terminal?host=web1&host=db2&tab=2");
-  const ends = await sockets(2);
-  for (const socket of ends) {
-    act(() => socket.opened());
-  }
-  expect(ends.map((socket) => socket.first)).toEqual([
-    { protocol: 1, end: tunnel(1) },
-    { protocol: 1, end: tunnel(2) },
-  ]);
-  for (const socket of ends) {
-    await act(async () => socket.answer({ ended: true }));
-  }
-  const opens = (await sockets(4)).slice(2);
-  for (const socket of opens) {
-    act(() => socket.opened());
-  }
-  expect(opens.map((socket) => socket.first)).toEqual([
-    { protocol: 1, open: "web1", cols: 120, rows: 36 },
-    { protocol: 1, open: "db2", cols: 120, rows: 36 },
-  ]);
-  expect(selected()).toBe("db2");
+test("a reload attaches to the tab it shows and ends nothing, and the key the page before kept is removed", async () => {
+  sessionStorage.setItem("koko.terminal.sessions", JSON.stringify([web1.session]));
+  serve("/terminal?tab=1");
+  const socket = await joined(web1, db2);
+  expect(sessionStorage.getItem("koko.terminal.sessions")).toBeNull();
+  const first = await attachment();
+  act(() => first.opened());
+  expect(first.first).toEqual({ protocol: 2, attach: web1.session, cols: 80, rows: 24 });
+  expect(requestsOn(socket), "no close, no open").toEqual([]);
+  expect(attachments()).toHaveLength(1);
 });
 
-test("a window crossing 768 pixels keeps every tab's emulator and its one WebSocket", async () => {
-  serve("/terminal?host=web1&host=db2");
-  const opened = await sockets(2);
-  await connect(opened[0], tunnel(1));
-  await connect(opened[1], tunnel(2));
+test("signing out detaches: the sockets close and nothing is closed or ended", async () => {
+  serve("/terminal");
+  const socket = await joined(web1);
+  const first = await attachment();
+  await attached(first);
+  act(() => navigate("/signin"));
+  expect(await screen.findByRole("heading", { level: 1, name: "Sign in" })).toBeDefined();
+  expect(socket.closed).toBe(true);
+  expect(requestsOn(socket)).toEqual([]);
+  expect(first.framesSent.at(-1), "the attachment's close, which detaches it").toMatchObject({ kind: "close", reason: "" });
+  expect(first.closed).toBe(true);
+});
+
+test("a window crossing 768 pixels keeps every tab's emulator and its one attachment", async () => {
+  serve("/terminal");
+  await joined(web1, db2);
+  await attached(await attachment());
+  press(tab("db2"));
+  await attached(await attachment(2));
   act(() => setViewportWidth(390));
   act(() => setViewportWidth(1280));
   act(() => setViewportWidth(700));
   expect(emulator("web1").mounts).toBe(1);
   expect(emulator("db2").mounts).toBe(1);
-  expect(FakeWebSocket.sockets).toHaveLength(2);
-  expect(opened.every((socket) => !socket.closed)).toBe(true);
+  expect(attachments()).toHaveLength(2);
+  expect(attachments().every((socket) => !socket.closed)).toBe(true);
   // On a phone the terminal's own row takes the frame's place, starting with the tab button, named by what it shows.
   act(() => setViewportWidth(390));
   expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
-  expect(screen.getByRole("button", { name: "web1, 2 open. Show the tabs" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "db2, 2 open. Show the tabs" })).toBeDefined();
   await expectAccessible();
 });
 
 test("the terminal speaks Simplified Chinese", async () => {
   preferLanguages("zh-CN");
-  serve("/terminal?host=web1");
-  const [socket] = await sockets(1);
-  act(() => socket?.opened());
-  expect(within(shown()).getByRole("status").textContent).toBe("正在连接 web1…");
+  serve("/terminal");
+  const socket = await joined({ id: "a1", host: "web1", label: "web1", state: "restarted" }, db2);
+  expect(within(shown()).getByRole("status").textContent).toBe("koko 服务器已重启。");
   expect(document.title).toBe("web1 · 终端 · koko");
   expect(screen.getByRole("tablist", { name: "终端标签页" })).toBeDefined();
-  await act(async () => socket?.answer({ refused: "unknown_host", message: 'no Host is named "web1".' }));
+  await answers(socket, await asked(socket, 1), { tab: "a1" }, { id: "a1", host: "web1", label: "web1", state: "refused", refused: { code: "unknown_host", message: "" } }, db2);
   expect((await within(shown()).findByRole("alert")).textContent).toBe("不存在名为 web1 且当前用户可见的主机。");
   expect(within(shown()).getByRole("button", { name: "重试" })).toBeDefined();
+  await expectAccessible();
+  const named = (name: string) => screen.getByRole("tab", { name: new RegExp(name) });
+  press(named("db2"));
+  press(named("web1").querySelector("[data-close]") as Element);
+  await answers(socket, await asked(socket, 2), {}, db2);
+  press(named("db2").querySelector("[data-close]") as Element);
+  const question = await screen.findByRole("alertdialog", { name: "是否关闭 db2？" });
+  expect(question.textContent).toContain("其 SSH 会话将在所有打开它的位置结束。");
   await expectAccessible();
 });

@@ -1,41 +1,23 @@
-import { forgetSession, keepSessions, keptSessions } from "./kept";
-import { encodeRecord, MalformedRecord, maxRecord, maxSide, RecordReader, type TerminalRecord, terminalProtocol } from "./records";
+import { encodeRecord, MalformedRecord, maxRecord, RecordReader, type RGB, type TerminalRecord, terminalProtocol } from "./records";
 import { Stream, StreamError, type StreamSocket } from "./stream";
+import { timing } from "./timing";
+import type { Refusal } from "./workspaceSocket";
 
-// The page's end of a web terminal's SSH Session: the first messages on
-// /terminal/socket and their answers, the resumable stream of terminal
-// records after them, liveness, and the Resume after a drop (P1 spec: a
-// terminal in the web UI, "The terminal endpoint"). It has no UI: a page
-// shows its state and gives it keys.
+// A page's attachment to one SSH Session of its Workspace (spec #213, "The
+// terminal socket and attaching"): the first messages on /terminal/socket
+// and their answers, the resumable stream of terminal records after them,
+// liveness, and resuming the attachment after a drop. Attaching changes
+// nothing in the SSH Session: the shell goes on with no page attached. It
+// has no UI: a page shows its state and gives it keys.
 
 /**
- * timing is the page's timings, on the page's clock. Each but connect and
- * answer is the koko server's or the device's of the same purpose
- * (internal/shared/timing), which the spec has the page share.
+ * maxGrid is the most columns and rows a pty has, the koko server's
+ * vt.MaxCols by vt.MaxRows: a page whose box holds more says the cap, and
+ * draws the terminal at it with a margin.
  */
-export const timing = {
-  /** probe is how long the page goes without sending before it sends a probe (ServerProbe). */
-  probe: 15_000,
-  /** dead is how long it goes without a byte from the koko server before it takes the WebSocket for dead (ServerDead). */
-  dead: 45_000,
-  /** reconnectFirst is the wait after the first failed try to Resume; it doubles up to reconnectMax. */
-  reconnectFirst: 250,
-  reconnectMax: 5_000,
-  /** grace is how long the Gateway holds a Detached SSH Session, and so how long the page tries (BrowserGrace). */
-  grace: 15 * 60_000,
-  /** connect bounds how long one WebSocket takes to open (DeviceConnectAttempt). */
-  connect: 10_000,
-  /** answer bounds how long the answer to a resume or an end takes, once the WebSocket is open (ResumeExchange). */
-  answer: 5_000,
-  /**
-   * heldWait bounds how long a new document waits for a kept SSH Session
-   * another document holds to be let go before it opens its own, as the
-   * document before a reload does within it.
-   */
-  heldWait: 1_000,
-} as const;
+export const maxGrid = { columns: 500, rows: 200 } as const;
 
-/** TerminalSocket is the part of a WebSocket the terminal uses. */
+/** TerminalSocket is the part of a WebSocket an attachment uses. */
 export interface TerminalSocket {
   binaryType: BinaryType;
   onopen: ((event: Event) => void) | null;
@@ -46,7 +28,7 @@ export interface TerminalSocket {
 }
 
 /** dialSocket opens a WebSocket to the terminal endpoint of the page's own origin. */
-function dialSocket(): TerminalSocket {
+export function dialSocket(): TerminalSocket {
   const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
   return new WebSocket(`${scheme}//${window.location.host}/terminal/socket`);
 }
@@ -57,151 +39,54 @@ export interface Size {
   rows: number;
 }
 
-/** Ending is why an SSH Session ended. */
-export type Ending =
-  /** The shell exited. */
-  | { kind: "exitStatus"; status: number }
-  /** A signal, such as KILL, ended the shell. */
-  | { kind: "exitSignal"; signal: string }
-  /** The koko server closed it, saying notice: the Gateway's notice without "koko: ", perhaps empty. */
-  | { kind: "notice"; notice: string }
-  /** The person ended it from the page. */
-  | { kind: "closed" }
-  /**
-   * The WebSocket was lost at the time at (Date.now), and the SSH Session
-   * could not be resumed: message is the Gateway's reason, or empty when it
-   * gave none or the page gave up at the grace.
-   */
-  | { kind: "lost"; at: number; message: string }
-  /** The two ends disagreed about the protocol, which is a bug in koko. */
-  | { kind: "protocol"; message: string };
+/** Colors are the theme's foreground and background, which the koko server answers OSC 10 and 11 with. */
+export interface Colors {
+  foreground: RGB;
+  background: RGB;
+}
 
-/** ConnectionState is what a terminal's tab shows of its connection. */
-export type ConnectionState =
-  | { status: "connecting" }
-  | { status: "connected" }
+/** AttachmentState is what a tab shows of its page's attachment. */
+export type AttachmentState =
+  | { status: "attaching" }
+  | { status: "attached" }
   /** The WebSocket was lost at since (Date.now), and the page is resuming; keys typed are kept. */
   | { status: "reconnecting"; since: number }
   /**
-   * The koko server refused, with a code the page can test and the
-   * Gateway's words: an open's refusal, such as unknown_host, or the web
-   * front's, such as signin_required or reload_page, at an open or a
-   * resume. The page makes no further attempt.
+   * The koko server refused the page, with a code it can test: the web
+   * front's, such as signin_required or reload_page. Nothing more is tried.
    */
-  | { status: "refused"; code: string; message: string }
-  /** The open got no answer: the WebSocket failed first. */
-  | { status: "unreachable" }
-  | { status: "ended"; ending: Ending };
+  | ({ status: "refused" } & Refusal)
+  /** The SSH Session is no longer there to attach to: the Workspace tells how it ended. */
+  | { status: "gone" }
+  /** The koko server closed the attachment, saying notice: the SSH Session ended, or this page was detached. */
+  | { status: "detached"; notice: string }
+  /** A ninth page attached and detached this one, the least recently active: it attaches again only on the person's word. */
+  | { status: "displaced" }
+  /** The two ends disagreed about the protocol, which is a bug in koko. */
+  | { status: "protocol"; message: string };
 
-/** Handlers is what a connection tells its page. */
+/** Handlers is what an attachment tells its page. */
 export interface Handlers {
   /** onState is called at each change of state. */
-  onState(state: ConnectionState): void;
+  onState(state: AttachmentState): void;
   /**
-   * onOutput is given the shell's output, in order. The connection waits
+   * onOutput is given the shell's output, in order. The attachment waits
    * for the promise it returns, if any, before it reads on, so an emulator
-   * that falls behind slows the shell instead of filling memory.
+   * that falls behind slows the stream instead of filling memory.
    */
   onOutput(bytes: Uint8Array): void | Promise<void>;
+  /** onReset clears the emulator, its history too, to the pty's size; the snapshot follows as output. */
+  onReset(size: Size): void;
+  /** onActive says whether this page is the SSH Session's active page, whose box the pty takes. */
+  onActive(active: boolean): void;
 }
 
-// A browser tab duplicated from this one starts with a copy of its
-// sessionStorage, and so with the ids of SSH Sessions this document still
-// holds. So a document holds a Web Lock named after each SSH Session it
-// holds, for as long as it does; the browser lets the locks go with the
-// document. A new document ends only the kept ids no other document holds:
-// a reload's or a restored tab's, whose document has gone. The ids another
-// document holds are that document's, and the copy forgets them.
+/** side brings a number of columns or rows into 1 to most. */
+const side = (cells: number, most: number) => Math.min(Math.max(Math.trunc(cells) || 1, 1), most);
 
-/** lockPrefix begins the name of the Web Lock a document holds for each SSH Session it holds. */
-const lockPrefix = "koko.terminal.";
-
-/** locks is the browser's Web Locks, if it has them: every browser the web UI supports does, in a secure context. */
-function locks(): LockManager | undefined {
-  return "locks" in navigator ? navigator.locks : undefined;
-}
-
-/**
- * holdSession tells this browser's other documents that this one holds the
- * SSH Session of that id, until the function it returns is called or the
- * document goes.
- */
-function holdSession(id: string): () => void {
-  let release = () => {};
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  locks()
-    ?.request(lockPrefix + id, () => held)
-    .catch(() => {});
-  return release;
-}
-
-/**
- * heldElsewhere is the ids of the SSH Sessions other documents of this
- * browser hold, or null when the browser cannot tell.
- */
-async function heldElsewhere(): Promise<Set<string> | null> {
-  const manager = locks();
-  if (!manager) {
-    return null;
-  }
-  try {
-    const { held = [] } = await manager.query();
-    return new Set(held.flatMap(({ name = "" }) => (name.startsWith(lockPrefix) ? [name.slice(lockPrefix.length)] : [])));
-  } catch {
-    return null;
-  }
-}
-
-/**
- * endLeft ends the SSH Sessions an earlier document of this browser tab
- * left, before this document opens its own. A kept id another document
- * holds is waited for, a moment at most (timing.heldWait): the document
- * before a reload lets its locks go within it, and its SSH Session is then
- * ended here first. One still held after it is a live document's, such as
- * the original of a duplicated browser tab, which this document leaves
- * alone; it is ended once that document lets it go, as when it is closed
- * and its close never arrived (one it ended itself is answered as ended).
- * The kept ids this document may not end now are forgotten, and every one
- * when the browser cannot tell whose they are: the Gateway ends those at
- * the grace.
- */
-async function endLeft(dial: () => TerminalSocket): Promise<void> {
-  const kept = keptSessions();
-  const manager = locks();
-  if (kept.length === 0) {
-    return;
-  }
-  const elsewhere = await heldElsewhere();
-  if (!manager || elsewhere === null) {
-    keepSessions(() => []);
-    return;
-  }
-  const ours = kept.filter((id) => !elsewhere.has(id));
-  keepSessions((ids) => ids.filter((id) => ours.includes(id)));
-  await Promise.all([
-    ...ours.map((id) => endSession(dial, id)),
-    ...kept.filter((id) => elsewhere.has(id)).map((id) => endOnceLetGo(manager, dial, id)),
-  ]);
-}
-
-/**
- * endOnceLetGo ends the SSH Session of a kept id another document holds
- * once that document lets it go: within timing.heldWait, before this
- * document opens anything, or else whenever it does.
- */
-async function endOnceLetGo(manager: LockManager, dial: () => TerminalSocket, id: string): Promise<void> {
-  const name = lockPrefix + id;
-  const waited = new AbortController();
-  const timer = setTimeout(() => waited.abort(), timing.heldWait);
-  try {
-    await manager.request(name, { signal: waited.signal }, () => endSession(dial, id));
-  } catch {
-    manager.request(name, () => endSession(dial, id)).catch(() => {});
-  } finally {
-    clearTimeout(timer);
-  }
+/** gridOf brings a box's size into what a pty may have. */
+export function gridOf(size: Size): Size {
+  return { columns: side(size.columns, maxGrid.columns), rows: side(size.rows, maxGrid.rows) };
 }
 
 /**
@@ -213,17 +98,11 @@ type Answered = { answer: Record<string, unknown>; socket: TerminalSocket } | nu
 
 /**
  * ask opens a WebSocket, sends one first message, made once the WebSocket
- * is open, and gives the answer. answerWithin bounds the wait for it; an
- * open has no bound, since the Gateway dials the Host before it answers.
- * The returned function gives the WebSocket up, and answered is then not
+ * is open, and gives the answer, within timing.answer of the open. The
+ * returned function gives the WebSocket up, and answered is then not
  * called.
  */
-function ask(
-  dial: () => TerminalSocket,
-  message: () => object,
-  answerWithin: number | null,
-  answered: (answered: Answered) => void,
-): () => void {
+function ask(dial: () => TerminalSocket, message: () => object, answered: (answered: Answered) => void): () => void {
   let socket: TerminalSocket | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   /** release takes the WebSocket out of ask's hands, once. */
@@ -252,9 +131,7 @@ function ask(
   timer = setTimeout(fail, timing.connect);
   socket.onopen = () => {
     clearTimeout(timer);
-    if (answerWithin !== null) {
-      timer = setTimeout(fail, answerWithin);
-    }
+    timer = setTimeout(fail, timing.answer);
     socket?.send(JSON.stringify({ protocol: terminalProtocol, ...message() }));
   };
   socket.onmessage = (event) => {
@@ -280,133 +157,73 @@ function ask(
 }
 
 /** refusalOf is an answer's refusal, if it is one: its code and the koko server's words. */
-function refusalOf(answer: Record<string, unknown>): { code: string; message: string } | null {
+function refusalOf(answer: Record<string, unknown>): Refusal | null {
   if (typeof answer.refused !== "string") {
     return null;
   }
   return { code: answer.refused, message: typeof answer.message === "string" ? answer.message : "" };
 }
 
-/**
- * endSession asks the koko server to end the SSH Session of that id, as a
- * page that no longer holds its stream does, and forgets the id once the
- * koko server has answered: ended, or refused, after which this page can do
- * no more for it. Without an answer the id is kept for a later page.
- */
-function endSession(dial: () => TerminalSocket, id: string): Promise<void> {
-  return new Promise((resolve) => {
-    ask(
-      dial,
-      () => ({ end: id }),
-      timing.answer,
-      (answered) => {
-        if (answered) {
-          forgetSession(id);
-          answered.socket.close();
-        }
-        resolve();
-      },
-    );
-  });
-}
+/** goneCodes are the refusals of an attach that say the SSH Session is no longer there. */
+const goneCodes: ReadonlySet<string> = new Set(["unknown_tunnel", "ssh_session_ended"]);
 
 /**
- * Terminals opens the web terminal's SSH Sessions for one document. Before
- * its first, it ends the SSH Sessions an earlier document of this browser
- * tab left: a reload, or a tab the browser discarded and restored, lost
- * their streams, and sessionStorage kept their ids, so they stop counting
- * against the caller's limit before the tabs open again. A browser tab
- * duplicated from a live one leaves that one's SSH Sessions alone.
+ * Attachment is one page's attachment to one SSH Session: attached at once,
+ * resumed after a drop, and attached again with a new snapshot once the
+ * Gateway has let the old one go (resume_refused). It ends when the koko
+ * server closes it, or when the page detaches.
  */
-export class Terminals {
+export class Attachment {
   private readonly dial: () => TerminalSocket;
-  private earlierEnded: Promise<void> | undefined;
-
-  constructor(dial: () => TerminalSocket = dialSocket) {
-    this.dial = dial;
-  }
-
-  /**
-   * endEarlier ends the SSH Sessions an earlier document of this browser
-   * tab left, once; the first open waits for it, and a page may start it
-   * sooner, as one that has no terminal to open yet.
-   */
-  endEarlier(): Promise<void> {
-    this.earlierEnded ??= endLeft(this.dial);
-    return this.earlierEnded;
-  }
-
-  /**
-   * open opens an SSH Session to the Host of that name, with a pty of that
-   * size, and returns its connection, which starts as connecting.
-   */
-  open(host: string, size: Size, handlers: Handlers): Connection {
-    return new Connection(this.dial, this.endEarlier(), host, size, handlers);
-  }
-}
-
-/** side brings a number of columns or rows into what a resize carries. */
-const side = (cells: number) => Math.min(Math.max(Math.trunc(cells) || 1, 1), maxSide);
-
-/**
- * Connection is one SSH Session of a web terminal, from its open to its
- * end: Terminals.open makes it. A new shell in the same tab is a new
- * Connection.
- */
-export class Connection {
-  private readonly dial: () => TerminalSocket;
-  private readonly host: string;
+  private readonly session: string;
   private readonly handlers: Handlers;
-  private current: ConnectionState = { status: "connecting" };
+  private current: AttachmentState = { status: "attaching" };
   private size: Size;
+  private colors: Colors | undefined;
+  /** wantsActive says a person acted while no stream reached the Gateway: it is told once one does. */
+  private wantsActive = false;
   /** giveUp gives up the WebSocket of a first message not yet answered. */
   private giveUp: (() => void) | null = null;
   private socket: TerminalSocket | null = null;
   private stream: Stream | null = null;
   private id = "";
-  /** release lets go of the Web Lock that says this document holds the SSH Session. */
-  private release = () => {};
-  /** exit is the shell's end, once its record has come. */
-  private exit: Ending | null = null;
+  /** displaced says the Gateway said this page was detached for a ninth, before closing the stream. */
+  private displaced = false;
 
   // Liveness: when the page last sent, and last heard, on the WebSocket.
   private lastSent = 0;
   private lastReceived = 0;
   private liveness: ReturnType<typeof setTimeout> | undefined;
 
-  // Resuming: when the WebSocket was lost, the wait before the next try,
-  // and whether a try is under way.
+  // Reconnecting: when the WebSocket was lost, the wait before the next
+  // try, and whether a try is under way.
   private lostAt = 0;
   private wait = 0;
   private trying = false;
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(dial: () => TerminalSocket, earlierEnded: Promise<void>, host: string, size: Size, handlers: Handlers) {
+  constructor(session: string, size: Size, colors: Colors | undefined, handlers: Handlers, dial: () => TerminalSocket = dialSocket) {
     this.dial = dial;
-    this.host = host;
+    this.session = session;
     this.handlers = handlers;
-    this.size = { columns: side(size.columns), rows: side(size.rows) };
+    this.size = gridOf(size);
+    this.colors = colors;
     document.addEventListener("visibilitychange", this.wake);
     window.addEventListener("pageshow", this.wake);
     window.addEventListener("online", this.wake);
-    window.addEventListener("pagehide", this.leave);
-    void earlierEnded.then(() => this.open());
+    this.attach();
   }
 
-  /** state is the connection's state now. */
-  get state(): ConnectionState {
+  /** state is the attachment's state now. */
+  get state(): AttachmentState {
     return this.current;
   }
 
-  /** sessionId is the SSH Session's id, which the Files panel's calls name; empty until connected. */
-  get sessionId(): string {
-    return this.id;
-  }
-
   /**
-   * send sends bytes typed or pasted to the shell. While reconnecting they
-   * are kept, and sent once on the Resume; before the shell has started
-   * and after it has ended they go nowhere.
+   * send sends bytes typed or pasted to the shell, which makes this page
+   * the active one. While reconnecting they are kept, and sent once on the
+   * resume; while attaching, and once the attachment is over, they go
+   * nowhere.
    */
   send(bytes: Uint8Array): void {
     for (let at = 0; at < bytes.length; at += maxRecord) {
@@ -414,48 +231,68 @@ export class Connection {
     }
   }
 
-  /** resize tells the shell the terminal's size, at the open if it has not gone yet. */
-  resize(columns: number, rows: number): void {
-    this.size = { columns: side(columns), rows: side(rows) };
+  /** resize tells the koko server the page's box, in cells, which the pty takes while this page is active. */
+  resize(size: Size): void {
+    this.size = gridOf(size);
     this.write({ type: "resize", ...this.size });
   }
 
   /**
-   * end ends the SSH Session on the person's word: the stream's close
-   * frame, then the WebSocket's close. While reconnecting, where no stream
-   * reaches the Gateway, it asks the koko server to end it instead.
+   * active tells the koko server a person acted in this page, which makes
+   * it the active page. The caller sends it only for a person's act in a
+   * visible document; one while no stream reaches the Gateway is told once
+   * one does.
    */
-  end(): void {
-    if (this.current.status === "connected") {
-      this.stream?.close();
-      forgetSession(this.id);
-    } else if (this.current.status === "reconnecting") {
-      void endSession(this.dial, this.id);
-    } else if (this.current.status !== "connecting") {
+  active(): void {
+    if (!this.writes) {
+      this.wantsActive = this.live;
       return;
     }
-    this.settle({ status: "ended", ending: { kind: "closed" } });
+    this.write({ type: "active" });
   }
 
-  /** tryNow tries to Resume at once, for a person who does not wait out the backoff. */
+  /** setColors tells the koko server the theme's colours, now and on every attach. */
+  setColors(colors: Colors): void {
+    this.colors = colors;
+    this.write({ type: "colors", ...colors });
+  }
+
+  /** tryNow tries to resume at once, for a person who does not wait out the backoff. */
   tryNow(): void {
     this.wait = 0;
     this.retry();
   }
 
-  /** live says whether the connection may still carry the shell: it is in no final state. */
-  private get live(): boolean {
-    const status = this.current.status;
-    return status === "connecting" || status === "connected" || status === "reconnecting";
+  /**
+   * detach leaves the SSH Session, as a page does that closes its tab,
+   * reloads or signs out: the stream's close, then the WebSocket's. The
+   * SSH Session goes on.
+   */
+  detach(): void {
+    if (this.writes) {
+      this.stream?.close();
+    }
+    this.settle(null);
   }
 
-  private setState(state: ConnectionState): void {
+  /** live says whether the attachment may still carry the shell: it is in no final state. */
+  private get live(): boolean {
+    const status = this.current.status;
+    return status === "attaching" || status === "attached" || status === "reconnecting";
+  }
+
+  /** writes says whether a record written now reaches the Gateway, at once or once resumed. */
+  private get writes(): boolean {
+    return this.stream !== null && (this.current.status === "attached" || this.current.status === "reconnecting");
+  }
+
+  private setState(state: AttachmentState): void {
     this.current = state;
     this.handlers.onState(state);
   }
 
-  /** settle brings the connection to a final state, and gives up what it held. */
-  private settle(state: ConnectionState): void {
+  /** settle brings the attachment to a final state, or with null to none the page hears of, and gives up what it held. */
+  private settle(state: AttachmentState | null): void {
     if (!this.live) {
       return;
     }
@@ -464,19 +301,13 @@ export class Connection {
     document.removeEventListener("visibilitychange", this.wake);
     window.removeEventListener("pageshow", this.wake);
     window.removeEventListener("online", this.wake);
-    window.removeEventListener("pagehide", this.leave);
     this.giveUp?.();
     this.giveUp = null;
     this.discard();
-    this.release();
-    this.setState(state);
-  }
-
-  /** finish ends the SSH Session for ending, or for the shell's end when its record came first. */
-  private finish(ending: Ending): void {
-    if (this.live) {
-      forgetSession(this.id);
-      this.settle({ status: "ended", ending: this.exit ?? ending });
+    if (state) {
+      this.setState(state);
+    } else {
+      this.current = { status: "gone" };
     }
   }
 
@@ -491,47 +322,57 @@ export class Connection {
   }
 
   private write(record: TerminalRecord): void {
-    if (this.stream && this.live) {
+    if (this.writes) {
       // A write an ended stream refuses is told of by the stream's end.
-      this.stream.write(encodeRecord(record)).catch(() => {});
+      this.stream?.write(encodeRecord(record)).catch(() => {});
     }
   }
 
-  /** open sends the open, once the earlier document's SSH Sessions are ended. */
-  private open(): void {
-    if (this.current.status !== "connecting") {
-      return;
-    }
-    let sent = this.size;
+  /** attach sends the attach, at the box's size, and starts the stream it answers with. */
+  private attach(): void {
+    this.trying = true;
     this.giveUp = ask(
       this.dial,
-      () => {
-        sent = this.size;
-        return { open: this.host, cols: sent.columns, rows: sent.rows };
-      },
-      null,
+      () => ({ attach: this.session, cols: this.size.columns, rows: this.size.rows }),
       (answered) => {
         this.giveUp = null;
-        const id = answered?.answer.tunnel;
-        if (!answered || typeof id !== "string") {
-          answered?.socket.close();
-          const refusal = answered && refusalOf(answered.answer);
-          this.settle(refusal ? { status: "refused", ...refusal } : { status: "unreachable" });
+        this.trying = false;
+        const id = answered?.answer.attachment;
+        if (answered && typeof id === "string") {
+          this.start(id, answered.socket);
           return;
         }
-        this.id = id;
-        keepSessions((ids) => [...ids, id]);
-        this.release = holdSession(id);
-        const stream = new Stream(this.carry(answered.socket));
-        this.stream = stream;
-        this.watch();
-        this.setState({ status: "connected" });
-        if (sent !== this.size) {
-          this.write({ type: "resize", ...this.size });
+        answered?.socket.close();
+        const refusal = answered && refusalOf(answered.answer);
+        if (refusal) {
+          this.settle(goneCodes.has(refusal.code) ? { status: "gone" } : { status: "refused", ...refusal });
+          return;
         }
-        void this.relay(stream);
+        this.backOff();
       },
     );
+  }
+
+  /** start makes the stream of a new attachment, and tells the koko server the theme's colours and a person's act. */
+  private start(id: string, socket: TerminalSocket): void {
+    this.id = id;
+    const stream = new Stream(this.carry(socket));
+    this.stream = stream;
+    this.watch();
+    this.setState({ status: "attached" });
+    if (this.colors) {
+      this.write({ type: "colors", ...this.colors });
+    }
+    this.sayActive();
+    void this.relay(stream);
+  }
+
+  /** sayActive tells the koko server of a person's act that came while no stream reached it. */
+  private sayActive(): void {
+    if (this.wantsActive) {
+      this.wantsActive = false;
+      this.write({ type: "active" });
+    }
   }
 
   /**
@@ -578,39 +419,50 @@ export class Connection {
     this.liveness = setTimeout(() => this.watch(), next - now);
   }
 
-  /** relay gives the page the shell's output, and ends the connection as the stream ends. */
+  /** relay gives the page the stream's records, and ends the attachment as the stream ends. */
   private async relay(stream: Stream): Promise<void> {
     const records = new RecordReader();
     try {
       for (let bytes = await stream.read(); bytes !== null; bytes = await stream.read()) {
         records.push(bytes);
         for (let record = records.next(); record; record = records.next()) {
+          if (this.stream !== stream) {
+            return;
+          }
           if (record.type === "data") {
             await this.handlers.onOutput(record.data);
-          } else if (record.type === "exitStatus") {
-            this.exit = { kind: "exitStatus", status: record.status };
-          } else if (record.type === "exitSignal") {
-            this.exit = { kind: "exitSignal", signal: record.signal };
-          } else {
-            throw new MalformedRecord("a resize, which only the page sends");
+          } else if (record.type === "reset") {
+            this.handlers.onReset({ columns: record.columns, rows: record.rows });
+          } else if (record.type === "active" && record.active !== undefined) {
+            this.handlers.onActive(record.active);
+          } else if (record.type === "displaced") {
+            this.displaced = true;
+          } else if (record.type !== "exitStatus" && record.type !== "exitSignal") {
+            // The shell's exit comes in the Workspace too, which the page shows.
+            throw new MalformedRecord(`a ${record.type} record, which only the page sends`);
           }
         }
       }
     } catch (err) {
       if (err instanceof MalformedRecord) {
         stream.close(err.message);
-        this.finish({ kind: "protocol", message: err.message });
+        this.settle({ status: "protocol", message: err.message });
         return;
       }
       if (!(err instanceof StreamError)) {
         throw err;
       }
     }
+    if (this.stream !== stream) {
+      return;
+    }
     const err = await stream.ended;
-    if (err.kind === "peerClosed") {
-      this.finish({ kind: "notice", notice: err.reason });
+    if (this.displaced) {
+      this.settle({ status: "displaced" });
+    } else if (err.kind === "peerClosed") {
+      this.settle({ status: "detached", notice: err.reason });
     } else if (err.kind !== "closed") {
-      this.finish({ kind: "protocol", message: err.message });
+      this.settle({ status: "protocol", message: err.message });
     }
   }
 
@@ -620,7 +472,7 @@ export class Connection {
    * end is on its way to the page through relay.
    */
   private lose(): void {
-    if (this.current.status !== "connected" || !this.stream || this.stream.error) {
+    if (this.current.status !== "attached" || !this.stream || this.stream.error) {
       return;
     }
     clearTimeout(this.liveness);
@@ -632,31 +484,34 @@ export class Connection {
     this.retry();
   }
 
+  /** backOff waits before the next try: reconnectFirst, doubling up to reconnectMax. */
+  private backOff(): void {
+    this.wait = this.wait === 0 ? timing.reconnectFirst : Math.min(2 * this.wait, timing.reconnectMax);
+    this.retryTimer = setTimeout(() => this.retry(), this.wait);
+  }
+
   /**
-   * retry tries to Resume on a new WebSocket, unless a try is under way.
-   * It gives up at the grace, counted from the loss, and while the page is
-   * hidden it does not try: wake does when the page is shown.
+   * retry tries again on a new WebSocket, unless a try is under way: to
+   * resume the attachment, or to attach while there is none. While the page
+   * is hidden it does not try: wake does when the page is shown.
    */
   private retry(): void {
-    const stream = this.stream;
-    if (this.current.status !== "reconnecting" || this.trying || !stream) {
+    if (!this.live || this.trying || this.current.status === "attached") {
       return;
     }
     clearTimeout(this.retryTimer);
-    const left = this.lostAt + timing.grace - Date.now();
-    if (left <= 0) {
-      this.finish({ kind: "lost", at: this.lostAt, message: "" });
+    if (document.visibilityState === "hidden") {
       return;
     }
-    if (document.visibilityState === "hidden") {
-      this.retryTimer = setTimeout(() => this.retry(), left);
+    const stream = this.stream;
+    if (!stream) {
+      this.attach();
       return;
     }
     this.trying = true;
     this.giveUp = ask(
       this.dial,
       () => ({ resume: this.id, offset: stream.detach() }),
-      timing.answer,
       (answered) => {
         this.giveUp = null;
         this.trying = false;
@@ -665,27 +520,30 @@ export class Connection {
           try {
             stream.resume(this.carry(answered.socket), offset);
           } catch (err) {
-            this.finish({ kind: "protocol", message: err instanceof Error ? err.message : String(err) });
+            this.settle({ status: "protocol", message: err instanceof Error ? err.message : String(err) });
             return;
           }
           this.watch();
-          this.setState({ status: "connected" });
+          this.setState({ status: "attached" });
           // A resize may have been lost unacknowledged, so the size goes again.
           this.write({ type: "resize", ...this.size });
+          this.sayActive();
           return;
         }
         answered?.socket.close();
         const refusal = answered && refusalOf(answered.answer);
         if (refusal?.code === "resume_refused") {
-          this.finish({ kind: "lost", at: this.lostAt, message: refusal.message });
+          // The Gateway let the attachment go: a new one brings the screen as it is now.
+          this.stream = null;
+          this.wait = 0;
+          this.attach();
           return;
         }
         if (refusal) {
           this.settle({ status: "refused", ...refusal });
           return;
         }
-        this.wait = this.wait === 0 ? timing.reconnectFirst : Math.min(2 * this.wait, timing.reconnectMax);
-        this.retryTimer = setTimeout(() => this.retry(), Math.min(this.wait, this.lostAt + timing.grace - Date.now()));
+        this.backOff();
       },
     );
   }
@@ -693,30 +551,16 @@ export class Connection {
   /**
    * wake is the page shown again, or back online: a WebSocket that has
    * said nothing for probe is taken for dead at once, so a phone out of a
-   * pocket does not wait out dead; and a Resume waiting is tried at once.
+   * pocket does not wait out dead; and a try waiting is made at once.
    */
   private readonly wake = (): void => {
     if (document.visibilityState === "hidden") {
       return;
     }
-    if (this.current.status === "connected" && Date.now() - this.lastReceived >= timing.probe) {
+    if (this.current.status === "attached" && Date.now() - this.lastReceived >= timing.probe) {
       this.lose();
     } else {
       this.tryNow();
-    }
-  };
-
-  /**
-   * leave is the browser leaving the page for good, not keeping it for the
-   * back-forward cache: the page sends the stream's close, at best effort,
-   * since a browser may stop the page before the bytes leave. The id stays
-   * kept, so that the next document ends the SSH Session if the close
-   * never arrived.
-   */
-  private readonly leave = (event: PageTransitionEvent): void => {
-    if (!event.persisted) {
-      this.stream?.close();
-      this.settle({ status: "ended", ending: { kind: "closed" } });
     }
   };
 }

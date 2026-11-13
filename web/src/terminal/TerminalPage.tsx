@@ -12,25 +12,29 @@ import { notify } from "../ui/notify";
 import { useDocumentTitle } from "../ui/Page";
 import { useCoarsePointer, usePhone, useSideways } from "../ui/phone";
 import { type RowAction, RowMenu } from "../ui/RowMenu";
-import { Terminals } from "./connection";
+import { AlertLine } from "../ui/states";
 import { fontSizes } from "./emulator/Emulator";
 import { resetUploads } from "./files";
 import { DropCover, type Dropped, FilesColumn, FilesSheet, useFileDrop } from "./FilesPanel";
 import { useManagedHosts } from "./hosts";
 import { KeyBar } from "./KeyBar";
 import { chord, openSwitcher } from "./keys";
-import { Pane } from "./Pane";
-import { EndQuestion, Kbd, shortPath, spaceOf } from "./RailSection";
+import { Cover, Pane, Waiting } from "./Pane";
+import { Kbd, shortPath, spaceOf } from "./RailSection";
+import { refusalSaid } from "./said";
 import { Switcher } from "./Switcher";
 import { TabButton, TabSheet } from "./TabSheet";
 import { TabMark } from "./TabMark";
 import {
-  addTab,
+  dismissOpenRefused,
+  openTab,
+  personActed,
   runtime,
   setAnnounce,
   setFontSize,
   shellLives,
   type Tab,
+  tabStatus,
   terminalPath,
   useWorkspace,
   workspaceQuery,
@@ -48,13 +52,13 @@ function Title({ tab }: { tab: Tab | undefined }) {
   return null;
 }
 
-/** useMore is More's actions on the active tab; End SSH Session asks first, through onEnd. */
-function useMore(tab: Tab | undefined, onEnd: (tab: Tab) => void): RowAction[] {
+/** useMore is More's actions on the active tab. */
+function useMore(tab: Tab | undefined): RowAction[] {
   const t = useT();
   const { fontSize, announce } = useWorkspace();
   const size = fontSizes.indexOf(fontSize);
   const copy = () => {
-    const text = tab ? (runtime(tab.key).emulator?.selection() ?? "") : "";
+    const text = tab ? (runtime(tab.id).emulator?.selection() ?? "") : "";
     if (text === "") {
       notify(t("terminal.more.nothingSelected"));
       return;
@@ -83,13 +87,6 @@ function useMore(tab: Tab | undefined, onEnd: (tab: Tab) => void): RowAction[] {
       label: t(announce ? "terminal.more.announceOff" : "terminal.more.announce"),
       onAction: () => setAnnounce(!announce),
     },
-    {
-      id: "end",
-      label: t("terminal.more.end"),
-      danger: true,
-      isDisabled: !tab || !shellLives(tab),
-      onAction: () => tab && onEnd(tab),
-    },
   ];
 }
 
@@ -115,7 +112,7 @@ function Head(props: { tab: Tab | undefined; space: string | undefined; files: b
               {tab.label}
             </Link>
           </nav>
-          <TabMark status={tab.state.status} />
+          <TabMark status={tabStatus(tab)} />
           {tab.cwd !== undefined && (
             <span title={tab.cwd} className="hidden min-w-0 items-center gap-1.5 rounded-lg bg-default px-2 py-1 xl:flex">
               <Folder aria-hidden className="size-3.5 shrink-0 text-muted" />
@@ -164,8 +161,8 @@ function PhoneHead(props: { tab: Tab | undefined; onFiles: () => void; more: Row
         <span className="sr-only">{`, ${t("terminal.back")}`}</span>
       </Link>
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        {tab && <TabMark status={tab.state.status} word={tab.state.status !== "connected"} />}
-        {tab?.state.status === "connected" && tab.cwd !== undefined && (
+        {tab && <TabMark status={tabStatus(tab)} word={tabStatus(tab) !== "connected"} />}
+        {tab && tabStatus(tab) === "connected" && tab.cwd !== undefined && (
           <span title={tab.cwd} className="t-code min-w-0 truncate text-[0.75rem] text-muted">
             <span className="sr-only">{t("terminal.cwd")} </span>
             {shortPath(tab.cwd)}
@@ -237,7 +234,7 @@ function EmptyWorkspace({ hosts }: { hosts: readonly Host[] | undefined }) {
             <li key={host.name}>
               <button
                 type="button"
-                onClick={() => addTab(host.name)}
+                onClick={() => void openTab(host.name)}
                 className="island flex w-full flex-col items-start rounded-2xl px-4 py-3 text-start outline-none hover:bg-surface-secondary focus-visible:ring-2 focus-visible:ring-focus"
               >
                 <span className="t-name max-w-full truncate">{host.name}</span>
@@ -257,6 +254,52 @@ function EmptyWorkspace({ hosts }: { hosts: readonly Host[] | undefined }) {
           <Kbd>{chord("K")}</Kbd>
         </span>
       </button>
+    </div>
+  );
+}
+
+/**
+ * OpenRefused says in place why the koko server refused an open asked for
+ * outside the switcher (a Host's card, Open terminal), over the terminal's
+ * top end, until it is dismissed or the next open is asked for.
+ */
+function OpenRefused() {
+  const t = useT();
+  const { openRefused } = useWorkspace();
+  if (!openRefused) {
+    return null;
+  }
+  const said = refusalSaid(t, openRefused.host, openRefused.code, openRefused.message);
+  return (
+    <div className="absolute inset-x-2 top-2 z-20 flex flex-wrap items-start gap-3 rounded-2xl bg-overlay py-3 ps-4 pe-3 text-sm shadow-overlay md:start-auto md:end-3 md:top-3 md:w-[min(34rem,calc(100%-1.5rem))]">
+      <div className="min-w-0 flex-1 basis-56">
+        <AlertLine>
+          {said.line}
+          {said.detail !== undefined && <span className="t-code mt-1 block text-xs break-words">{said.detail}</span>}
+        </AlertLine>
+      </div>
+      <Button size="sm" variant="tertiary" onPress={dismissOpenRefused}>
+        {t("terminal.openRefused.dismiss")}
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * WorkspaceRefused stands in place of the tabs when the koko server refused
+ * the Workspace socket: a page out of date is asked to reload, and the
+ * shell's words say the rest. signin_required goes to Sign in (the frame's).
+ */
+function WorkspaceRefused({ code, message }: { code: string; message: string }) {
+  const t = useT();
+  const reload = code === "reload_page";
+  return (
+    <div className="flex h-full items-center justify-center p-6">
+      <Cover said={reload ? { line: t("terminal.reload.message") } : refusalSaid(t, "", code, message)}>
+        <Button variant="primary" onPress={() => window.location.reload()}>
+          {t("terminal.reload.action")}
+        </Button>
+      </Cover>
     </div>
   );
 }
@@ -293,41 +336,44 @@ export function Workspace({ shown, notice, places }: WorkspaceProps) {
   const [files, setFiles] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [dropped, setDropped] = useState<Dropped>();
-  const [ending, setEnding] = useState<Tab>();
-  const tab = ws.tabs.find((each) => each.key === ws.active);
+  const tab = ws.tabs.find((each) => each.id === ws.active);
   const taken = useCallback(() => setDropped(undefined), []);
   // Files dropped on a terminal whose shell runs go into the directory it is in, through the Files panel.
   const drop = useFileDrop(shown && tab?.session !== undefined && shellLives(tab), (dropping) => {
     if (tab && dropping.length > 0) {
-      setDropped({ tab: tab.key, files: dropping });
+      setDropped({ tab: tab.id, files: dropping });
       setFiles(true);
     }
   });
   const panel = tab && {
     tab,
-    dropped: dropped?.tab === tab.key ? dropped : undefined,
+    dropped: dropped?.tab === tab.id ? dropped : undefined,
     onTaken: taken,
     onClose: () => setFiles(false),
   };
-  const more = useMore(tab, setEnding);
-  // This document's SSH Sessions, which end first what the document before a reload left.
-  const [terminals] = useState(() => new Terminals());
-
-  // A document that kept SSH Sessions from before a reload ends them now, with or without a tab to open.
-  useEffect(() => {
-    void terminals.endEarlier();
-  }, [terminals]);
+  const more = useMore(tab);
 
   // The uploads go with the workspace, as on signing out, so the next Sign-in sees none of them.
   useEffect(() => resetUploads, []);
 
-  // The URL lists the tabs, so a reload or a bookmark opens the same Hosts again.
+  // The URL names the tab shown, so a reload shows it again; it is written once the Workspace has come.
   const query = workspaceQuery(ws);
   useEffect(() => {
-    if (shown && window.location.search !== query) {
+    if (shown && ws.synced && window.location.search !== query) {
       navigate(terminalPath + query, { replace: true });
     }
-  }, [shown, query]);
+  }, [shown, ws.synced, query]);
+
+  // The window resized while it shows a tab is a person's act, which makes this page the active one.
+  const shownTab = shown ? ws.active : undefined;
+  useEffect(() => {
+    if (shownTab === undefined) {
+      return;
+    }
+    const resized = () => personActed(shownTab);
+    window.addEventListener("resize", resized);
+    return () => window.removeEventListener("resize", resized);
+  }, [shownTab]);
 
   useVisualViewport(layer, compact && shown);
   // The sheet of tabs is the phone's: a window widening past it leaves it closed.
@@ -339,7 +385,7 @@ export function Workspace({ shown, notice, places }: WorkspaceProps) {
   // open, since an emulator still loading has nothing to focus. On a touch
   // screen it never takes the focus by itself, which would open the soft
   // keyboard: a tap on the terminal or the keyboard key does.
-  const overlay = ws.switcher || ending !== undefined || ws.closing !== undefined || (files && compact) || sheetOpen;
+  const overlay = ws.switcher || ws.closing !== undefined || (files && compact) || sheetOpen;
   const ready = tab?.ready === true;
   const answered = useRef(0);
   useEffect(() => {
@@ -377,22 +423,31 @@ export function Workspace({ shown, notice, places }: WorkspaceProps) {
           )}
           <div className="relative min-h-0 flex-1 overflow-hidden bg-[var(--term-surface)]" {...drop.handlers}>
             {ws.tabs.map((each) => (
-              <Pane key={each.key} tab={each} active={each.key === ws.active} shown={shown} terminals={terminals} />
+              <Pane key={each.id} tab={each} active={each.id === ws.active} shown={shown} />
             ))}
-            {ws.tabs.length === 0 && <EmptyWorkspace hosts={hosts} />}
+            {ws.socket.status === "refused" ? (
+              <WorkspaceRefused code={ws.socket.code} message={ws.socket.message} />
+            ) : !ws.synced ? (
+              <div className="flex h-full items-center justify-center p-6">
+                <Waiting line={t("terminal.state.connecting")} />
+              </div>
+            ) : (
+              ws.tabs.length === 0 && <EmptyWorkspace hosts={hosts} />
+            )}
+            {!ws.switcher && <OpenRefused />}
             {drop.over && tab && <DropCover tab={tab} />}
           </div>
           {compact ? (
             <div className="flex shrink-0 items-center gap-1.5 border-t border-line bg-background px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]">
               <TabButton onPress={() => setSheet(true)} />
-              {coarse && tab ? <KeyBar tab={tab.key} /> : <span className="flex-1" />}
+              {coarse && tab ? <KeyBar tab={tab.id} /> : <span className="flex-1" />}
               {sideways && <PhoneActions {...actions} />}
             </div>
           ) : (
             coarse &&
             tab && (
               <div className="flex shrink-0 border-t border-line px-2 py-1.5">
-                <KeyBar tab={tab.key} />
+                <KeyBar tab={tab.id} />
               </div>
             )
           )}
@@ -402,16 +457,6 @@ export function Workspace({ shown, notice, places }: WorkspaceProps) {
       {files && panel && compact && shown && <FilesSheet {...panel} />}
       {sheetOpen && <TabSheet places={places} hosts={hosts} onClose={() => setSheet(false)} />}
       {shown && ws.switcher && <Switcher hosts={hosts} />}
-      {ending && (
-        <EndQuestion
-          tab={ending}
-          onEnd={() => {
-            runtime(ending.key).end?.();
-            setEnding(undefined);
-          }}
-          onCancel={() => setEnding(undefined)}
-        />
-      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { act, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
+import { afterEach, expect, onTestFinished, test, vi } from "vitest";
 
 import { type FileEntry, FilesCancel, FilesDownload, FilesFinish, FilesList, type FilesListResponse, FilesUpload } from "../api/files";
 import { type Host, HostList, HostShow } from "../api/host";
@@ -8,7 +8,7 @@ import { navigate } from "../shell/router";
 import { expectAccessible } from "../test/axe";
 import { type FakeApi, fakeApi, refusal, refusalSaying } from "../test/fakeApi";
 import { actAs, renderAt } from "../test/pages";
-import { FakeWebSocket } from "../test/terminal";
+import { attachments, type FakeWebSocket, requestsOn, running, workspaceSockets } from "../test/terminal";
 import type { EmulatorProps } from "./emulator/Emulator";
 
 // The Files panel, run as the whole web UI against the fake API, which
@@ -27,14 +27,15 @@ vi.mock("./emulator/Emulator", async () => {
     emulators.set(props.label, props);
     useImperativeHandle(props.ref, () => ({
       write: () => {},
+      reset: () => {},
+      metrics: () => null,
       focus: () => {},
       blur: () => {},
       hasFocus: () => false,
-      fit: () => {},
       selection: () => "",
       pressKey: () => {},
     }));
-    useEffect(() => props.onReady(120, 36), []);
+    useEffect(() => props.onReady(), []);
     return createElement("textarea", { "aria-label": props.label });
   }
   return { fontSizes: [12, 13, 14, 16, 18], Emulator };
@@ -42,16 +43,14 @@ vi.mock("./emulator/Emulator", async () => {
 
 const hosts: Host[] = [host("web1", { space: "web" }), host("db2", { space: "ops" })];
 
-/** session is the SSH Session's id the fake koko server gives the first tab. */
-const session = "0123456789abcdef0123456789abcdef";
+const web1 = running("a1", "web1");
+const db2 = running("b2", "db2");
+
+/** session is the SSH Session's id of web1's tab. */
+const session = web1.session;
 
 /** chunkPath is where an upload's chunks go (api.FilesChunkPath). */
 const chunkPath = "/terminal/files/chunk";
-
-beforeEach(() => {
-  FakeWebSocket.sockets = [];
-  vi.stubGlobal("WebSocket", FakeWebSocket);
-});
 
 afterEach(() => {
   emulators.clear();
@@ -82,7 +81,7 @@ const listings: Record<string, FilesListResponse> = {
 };
 
 /** serve renders the web UI at path for alice, with the files endpoints answering from listings. */
-function serve(path = "/terminal?host=web1"): FakeApi {
+function serve(path = "/terminal"): FakeApi {
   const api = fakeApi();
   actAs(api, alice);
   api.on(HostList, () => ({ hosts }));
@@ -103,24 +102,41 @@ function serve(path = "/terminal?host=web1"): FakeApi {
   return api;
 }
 
-/** sockets waits for the page to have opened n WebSockets, and is them. */
-async function sockets(n: number): Promise<FakeWebSocket[]> {
-  await waitFor(() => expect(FakeWebSocket.sockets).toHaveLength(n));
-  return [...FakeWebSocket.sockets];
+/** joined waits for the page's nth Workspace socket, from 1, and has the koko server send it web1's tab; it is the socket. */
+async function joined(n = 1): Promise<FakeWebSocket> {
+  await waitFor(() => expect(workspaceSockets()).toHaveLength(n));
+  const socket = workspaceSockets()[n - 1] as FakeWebSocket;
+  await act(async () => {
+    socket.opened();
+    socket.answer({ tabs: [web1] });
+  });
+  return socket;
 }
 
-/** connected starts web1's shell as the SSH Session `session`, its shell in cwd when given (OSC 7), and is its WebSocket. */
-async function connected(cwd?: string): Promise<FakeWebSocket | undefined> {
-  const [socket] = await sockets(1);
+/** connected has the page attach to web1's SSH Session `session`, its shell in cwd when given (OSC 7), and is the Workspace socket. */
+async function connected(cwd?: string): Promise<FakeWebSocket> {
+  const socket = await joined();
+  await waitFor(() => expect(attachments()).toHaveLength(1));
+  const attachment = attachments()[0] as FakeWebSocket;
   await act(async () => {
-    socket?.opened();
-    socket?.answer({ tunnel: session });
+    attachment.opened();
+    attachment.answer({ attachment: "a77ac4" });
   });
   await waitFor(() => expect(screen.getByRole("tab", { name: /web1/ }).textContent).not.toContain("Connecting"));
   if (cwd !== undefined) {
     act(() => emulators.get("Terminal on web1")?.onWorkingDirectory(cwd));
   }
   return socket;
+}
+
+/** openedDb2 has the koko server answer the page's open of db2, and show it. */
+async function openedDb2(socket: FakeWebSocket): Promise<void> {
+  await waitFor(() => expect(requestsOn(socket).at(-1)).toMatchObject({ open: "db2" }));
+  const request = requestsOn(socket).at(-1)?.request;
+  await act(async () => {
+    socket.answer({ tabs: [web1, db2] });
+    socket.answer({ request, tab: "b2" });
+  });
 }
 
 /** press is a pointer's press on el, as a browser sends it. */
@@ -275,7 +291,7 @@ test("a directory the Host refuses says so in the Host's words, with Try again",
 
 test("uploads go in 512 KiB chunks with their progress, show in the directory, and stay listed from another tab", async () => {
   const api = serve();
-  await connected("file:///home/alice/src");
+  const workspace = await connected("file:///home/alice/src");
   const column = openFiles();
   await listed(column, "/home/alice/src");
   const held: (() => void)[] = [];
@@ -316,7 +332,7 @@ test("uploads go in 512 KiB chunks with their progress, show in the directory, a
 
   // Another tab's panel lists it too, until it is dismissed.
   act(() => navigate("/hosts/db2/terminal"));
-  await sockets(2);
+  await openedDb2(workspace);
   await waitFor(() => expect(screen.getByRole("complementary", { name: "Files" }).textContent).toContain("on db2"));
   const other = screen.getByRole("complementary", { name: "Files" });
   expect(uploadRow(other, "big.bin").textContent).toContain("To web1: /home/alice/src");
@@ -366,7 +382,7 @@ test("past four uploads at once the rest wait their turn, and Cancel stops one a
   expect(() => uploadRow(column, "a")).toThrow("no upload of a is listed");
 });
 
-test("signing out forgets the uploads, as it ends the tabs", async () => {
+test("signing out forgets the uploads, and leaves the tabs", async () => {
   const api = serve();
   await connected("file:///home/alice");
   const column = openFiles();
@@ -378,8 +394,8 @@ test("signing out forgets the uploads, as it ends the tabs", async () => {
   // Signing out leaves the frame; the next Sign-in's terminal has no upload of the last.
   act(() => navigate("/signin"));
   expect(await screen.findByRole("heading", { level: 1, name: "Sign in" })).toBeDefined();
-  act(() => navigate("/terminal?host=web1"));
-  await sockets(2);
+  act(() => navigate("/terminal"));
+  await joined(2);
   const again = openFiles();
   expect(within(again).queryByRole("region", { name: "Uploads" })).toBeNull();
 });
@@ -479,10 +495,7 @@ test("a Host without SFTP says so as one panel, and a tab whose SSH Session has 
   expect(api.requests(FilesList)).toHaveLength(1);
   await expectAccessible();
 
-  await act(async () => {
-    socket?.records({ type: "exitStatus", status: 0 });
-    socket?.frames({ kind: "close", ack: 0, reason: "" });
-  });
+  await act(async () => socket.answer({ tabs: [{ id: "a1", host: "web1", label: "web1", state: "ended", ended: { reason: "shell ended", exit_status: 0 } }] }));
   await within(column).findByText("The SSH Session has ended.");
   await expectAccessible();
 });

@@ -11,7 +11,7 @@ import type { MessageKey } from "../i18n/catalogues";
 import { Page as PageHead } from "../ui/Page";
 import { usePhone, useSideways } from "../ui/phone";
 import { useTerminalKeys } from "../terminal/keys";
-import { CloseQuestion } from "../terminal/RailSection";
+import { CloseQuestion, WorkspaceNotices } from "../terminal/RailSection";
 import { WorkspaceLayer } from "../terminal/routes";
 import { resetWorkspace, startWorkspace, terminalPath, useWorkspace } from "../terminal/workspace";
 import { Loading, LoadFailed } from "../ui/states";
@@ -169,6 +169,7 @@ function Frame({ routes: all }: { routes: readonly Route[] }) {
           </div>
           {phone && !bare && places.length > 0 && <PhoneBar places={places} />}
           <CloseQuestion />
+          <WorkspaceNotices />
         </div>
       </ReleaseProvider>
     </CallerContext>
