@@ -4,6 +4,7 @@ import { GhosttyCore } from "@wterm/ghostty";
 import { createElement, createRef } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
+import snapshotGolden from "../../../../internal/server/vt/testdata/snapshot.golden?raw";
 import { Emulator, type EmulatorHandle } from "./Emulator";
 
 // The emulator against the real wterm and ghostty core under jsdom, which
@@ -34,18 +35,22 @@ afterEach(() => {
   }
 });
 
-/** terminal is a WTerm of 40 by 10 on a ghostty core, as the Emulator makes one, with what it reports. */
-async function terminal() {
+/** terminal is a WTerm of cols by rows, 40 by 10 unless given, on a ghostty core, as the Emulator makes one, with what it reports. */
+async function terminal(cols = 40, rows = 10) {
   serveWasm();
   const core = await GhosttyCore.load({ wasmPath: "/ghostty-vt.wasm", scrollbackLines: 5000, imageStorageLimit: 0 });
   const element = document.createElement("div");
   document.body.append(element);
   const copied: string[] = [];
   const dirs: string[] = [];
+  const data: string[] = [];
+  const titles: string[] = [];
   const wt = new WTerm(element, {
     core,
-    cols: 40,
-    rows: 10,
+    cols,
+    rows,
+    onData: (text) => data.push(text),
+    onTitle: (title) => titles.push(title),
     onClipboardWrite: (text) => copied.push(text),
     onWorkingDirectory: (uri) => dirs.push(uri),
   });
@@ -55,7 +60,7 @@ async function terminal() {
     element.remove();
   });
   await wt.init();
-  return { wt, core, copied, dirs, element };
+  return { wt, core, copied, dirs, data, titles, element };
 }
 
 /** painted waits for wterm to paint text, which it does a frame after a write. */
@@ -167,4 +172,137 @@ test("the Emulator sends a pressed key as the terminal's modes ask, and gives wh
   expect(dirs).toHaveBeenCalledWith("file://web1/srv/app");
   expect(title).toHaveBeenCalledWith("deploy@web1");
   expect(document.querySelector(".wterm.koko-term.koko-term-14")?.getAttribute("aria-label")).toBe("web1");
+});
+
+/**
+ * GoldenCase is one case of the koko server's snapshot golden
+ * (internal/server/vt): output a shell wrote, the snapshot of the koko
+ * server's emulator after it, and the screen the snapshot draws there.
+ */
+interface GoldenCase {
+  name: string;
+  cols: number;
+  rows: number;
+  output: string;
+  snapshot: string;
+  then?: string;
+  screen: string[];
+  cursorRow: number;
+  cursorCol: number;
+  alternate: boolean;
+  title: string;
+  pwd: string;
+}
+
+const goldenCases = JSON.parse(snapshotGolden) as GoldenCase[];
+
+const encoder = new TextEncoder();
+
+/** screenText is the visible rows of a core as text, without trailing blanks, as the golden names them. */
+function screenText(core: GhosttyCore): string[] {
+  const rows: string[] = [];
+  for (let row = 0; row < core.getRows(); row++) {
+    let text = "";
+    for (let col = 0; col < core.getCols(); col++) {
+      const cell = core.getCell(row, col);
+      if (cell.width === 0 || cell.spacerHead) {
+        continue;
+      }
+      text += cell.chars ?? String.fromCodePoint(cell.char);
+    }
+    rows.push(text.trimEnd());
+  }
+  return rows;
+}
+
+/** state is what a page's core shows: every visible cell, the newest history, the cursor and the modes. */
+function state(core: GhosttyCore, history: number) {
+  const cells = [];
+  for (let row = 0; row < core.getRows(); row++) {
+    for (let col = 0; col < core.getCols(); col++) {
+      cells.push(core.getCell(row, col));
+    }
+  }
+  // Offset 0 is the newest line of history.
+  const lines = [];
+  for (let offset = 0; offset < history; offset++) {
+    const line = [];
+    for (let col = 0; col < core.getScrollbackLineLen(offset); col++) {
+      line.push(core.getScrollbackCell(offset, col));
+    }
+    lines.push(line);
+  }
+  return {
+    cells,
+    lines,
+    cursor: core.getCursor(),
+    alternate: core.usingAltScreen(),
+    modes: [
+      core.cursorKeysApp(),
+      core.bracketedPaste(),
+      core.mouseTracking(),
+      core.mouseEncoding(),
+      core.focusEvents(),
+      core.synchronizedOutput(),
+      core.modifyOtherKeys(),
+      core.kittyKeyboardFlags(),
+    ],
+  };
+}
+
+// The koko server keeps an emulator for each web terminal SSH Session, of
+// libghostty-vt 1.0.1, and a page that attaches gets its snapshot (spec
+// #213). Each case of its golden, written into wterm's core of Ghostty
+// 1.3.1, draws the screen the golden names, and the same terminal as the
+// shell's output written into it directly: the cells with their colours,
+// the newest history, the cursor and the modes.
+test.each(goldenCases)("the koko server's snapshot draws $name", async (c) => {
+  const direct = await terminal(c.cols, c.rows);
+  const drawn = await terminal(c.cols, c.rows);
+  direct.wt.write(encoder.encode(c.output));
+  drawn.wt.write(encoder.encode(c.snapshot));
+  expect(screenText(drawn.core)).toEqual(c.screen);
+  const cursor = drawn.core.getCursor();
+  expect([cursor.row, cursor.col]).toEqual([c.cursorRow, c.cursorCol]);
+  expect(drawn.core.usingAltScreen()).toBe(c.alternate);
+  expect(drawn.titles.at(-1) ?? "").toBe(c.title);
+  expect(drawn.dirs.at(-1) ?? "").toBe(c.pwd);
+  expect([drawn.titles.at(-1), drawn.dirs.at(-1)]).toEqual([direct.titles.at(-1), direct.dirs.at(-1)]);
+  const history = Math.min(direct.core.getScrollbackCount(), drawn.core.getScrollbackCount());
+  expect(state(drawn.core, history)).toEqual(state(direct.core, history));
+  if (c.then) {
+    direct.wt.write(encoder.encode(c.then));
+    drawn.wt.write(encoder.encode(c.then));
+    const after = Math.min(direct.core.getScrollbackCount(), drawn.core.getScrollbackCount());
+    expect(state(drawn.core, after)).toEqual(state(direct.core, after));
+  }
+});
+
+// The koko server answers what a shell asks of the terminal, once however
+// many pages are attached, and the page answers nothing: koko's Emulator
+// drops what wterm gives while write runs (spec #213). That holds only
+// while wterm 0.5.10 gives each reply within write, the core's through its
+// drain and the window's size in pixels after it, so a wterm that moved
+// one fails here first. It gives no reply to CSI 18 t, the text area's
+// size in cells, which its core leaves to the host.
+test.each([
+  ["device attributes", "\x1b[c", 1],
+  ["the cursor's place", "\x1b[6n", 1],
+  ["the foreground colour", "\x1b]10;?\x1b\\", 1],
+  ["the background colour", "\x1b]11;?\x1b\\", 1],
+  ["the window's size in pixels", "\x1b[14t", 1],
+  ["the text area's size in cells", "\x1b[18t", 0],
+])("wterm answers a query for %s within write", async (_, query, replies) => {
+  const { wt, data } = await terminal();
+  // wterm's timers and frames run under the fake clock, so whatever it
+  // would give after write has been given once they have all run.
+  vi.useFakeTimers();
+  try {
+    wt.write(encoder.encode(query));
+    expect(data).toHaveLength(replies);
+    vi.runAllTimers();
+    expect(data).toHaveLength(replies);
+  } finally {
+    vi.useRealTimers();
+  }
 });

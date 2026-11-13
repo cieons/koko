@@ -18,7 +18,7 @@ CROSS_TARGETS := $(RELEASE_TARGETS)
 # npm ci writes this file, so it is newer than the lockfile once installed.
 WEB_DEPS := web/node_modules/.package-lock.json
 
-.PHONY: check lint fmt vet test stress cross build dist image webui generate clean
+.PHONY: check lint fmt vet test stress cross build dist image webui generate vt-wasm clean
 
 ## check: everything a change must pass before it is committed
 check: webui lint vet test cross
@@ -138,6 +138,21 @@ $(WEB_DEPS): web/package.json web/package-lock.json
 ## API's Go types (internal/shared/api)
 generate:
 	$(GO) test ./internal/shared/api -run '^TestTypeScriptTypes$$' -update
+
+## vt-wasm: fetch libghostty-vt's WebAssembly module, the release file
+## internal/server/vt/ghostty-vt.wasm.sum names, into ghostty-vt.wasm beside
+## it, checked against the SHA-256 there (ADR 0058). Pinning a new release
+## is a new line in the .sum file and this target; make check checks the
+## committed file against the line (TestTheModuleIsThePinnedRelease).
+VT_WASM := internal/server/vt/ghostty-vt.wasm
+vt-wasm:
+	@set -e; read -r sum file <$(VT_WASM).sum; \
+	version=$${file#ghostty-vt-}; version=$${version%%-*}; version=$${version%.wasm}; \
+	tmp=$$(mktemp); trap 'rm -f "$$tmp"' EXIT; \
+	curl -fsSL -o "$$tmp" "https://release.files.ghostty.org/libghostty-vt/$$version/$$file"; \
+	echo "$$sum  $$tmp" | shasum -a 256 -c - >/dev/null || \
+		{ echo "$$file does not match $(VT_WASM).sum" >&2; exit 1; }; \
+	cp "$$tmp" $(VT_WASM); echo "$(VT_WASM): $$file"
 
 clean:
 	rm -rf bin dist internal/server/webui/site/app

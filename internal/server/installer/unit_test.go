@@ -67,3 +67,17 @@ func TestDropInPortReadsEnvironmentLines(t *testing.T) {
 		t.Errorf("a drop-in listening on :https reads as port %d, want an error", got)
 	}
 }
+
+// The web terminal's emulator runs under wazero's compiler, which writes
+// machine code to memory and then executes it (internal/server/vt, ADR
+// 0058). MemoryDenyWriteExecute= refuses that, and the interpreter left
+// would be about 100 times slower, so the unit never sets it, nor a
+// system call filter that could take mprotect away.
+func TestTheUnitLetsTheEmulatorCompile(t *testing.T) {
+	unit := Unit(UnitSettings{Port: 7822})
+	for _, setting := range []string{"MemoryDenyWriteExecute=", "SystemCallFilter="} {
+		if strings.Contains(unit, setting) {
+			t.Errorf("the unit sets %s, which keeps wazero's compiler from running", setting)
+		}
+	}
+}

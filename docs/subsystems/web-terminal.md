@@ -290,7 +290,10 @@ scrollback and Kitty graphics off; unmounting a terminal frees its core.
 - [`wterm.test.ts`](../../web/src/terminal/emulator/wterm.test.ts): the
   real wterm and core under jsdom: OSC 52 and 7, wide characters, the
   patched renderer giving the HTML parser no `style` attribute, and the
-  Emulator's key encoding and callbacks.
+  Emulator's key encoding and callbacks; each of the koko server's
+  snapshot golden cases drawing the screen it names ([the emulator in the
+  koko server](vt.md#verify)); and each query's reply given within
+  `write`.
 - The static checks (`static.test.ts`): only `emulator/` imports
   `@wterm/*`, the four packages pinned to one version, the patch for it
   applied at install. `go test ./internal/server/webui` checks the build:

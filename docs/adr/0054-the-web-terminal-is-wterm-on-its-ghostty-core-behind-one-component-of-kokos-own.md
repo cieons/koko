@@ -1,3 +1,7 @@
+---
+status: its core as the one emulator of a terminal, refined by ADR-0058
+---
+
 # The web terminal is wterm on its ghostty core, behind one component of koko's own
 
 The web terminal (ADR 0053) is rendered by wterm (Apache-2.0) with its

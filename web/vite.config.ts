@@ -22,12 +22,17 @@ export default defineConfig({
   },
   server: {
     // Tests read files outside web/: the static checks kokod's CSP
-    // (static.test.ts), and the terminal's stream the golden files that pin
-    // its Go end (stream.test.ts).
+    // (static.test.ts), the terminal's stream the golden files that pin
+    // its Go end (stream.test.ts), and the emulator the koko server's
+    // snapshots (wterm.test.ts).
     fs: {
-      allow: [".", "../internal/server/web", "../internal/shared/resumable/testdata", "../internal/shared/wire/testdata"].map(
-        (path) => decodeURIComponent(new URL(path, import.meta.url).pathname),
-      ),
+      allow: [
+        ".",
+        "../internal/server/web",
+        "../internal/shared/resumable/testdata",
+        "../internal/shared/wire/testdata",
+        "../internal/server/vt/testdata",
+      ].map((path) => decodeURIComponent(new URL(path, import.meta.url).pathname)),
     },
   },
   test: {

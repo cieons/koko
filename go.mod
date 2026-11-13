@@ -5,6 +5,7 @@ go 1.27
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/pkg/sftp v1.13.12
+	github.com/tetratelabs/wazero v1.12.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/mod v0.42.0
 	golang.org/x/sys v0.49.0
