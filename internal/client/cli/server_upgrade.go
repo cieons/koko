@@ -28,10 +28,10 @@ var serverUpgradeCommand = Command{
 	},
 	// It restarts the koko server, which ends every open SSH Session (ADR
 	// 0048); --check only lowers its risk, so the path keeps it here.
-	Tier:      Irreversible,
-	OwnerOnly: true,
-	Op:        api.ServerUpgrade,
-	Run:       action(serverUpgrade),
+	Tier: Irreversible,
+	Who:  OwnerOrAdministrator,
+	Op:   api.ServerUpgrade,
+	Run:  action(serverUpgrade),
 }
 
 // The wait for the koko server's upgrade: its outcome is read every

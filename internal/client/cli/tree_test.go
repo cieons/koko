@@ -24,6 +24,9 @@ func TestCommandTreeEntries(t *testing.T) {
 		if c.Tier == tierUnset {
 			t.Errorf("%s has no risk tier; every command needs one (ADR 0019)", path)
 		}
+		if c.Who == whoUnset {
+			t.Errorf("%s does not say who may run it; every command needs Who", path)
+		}
 		if c.Summary == "" {
 			t.Errorf("%s has no summary", path)
 		}

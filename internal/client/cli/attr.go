@@ -18,6 +18,7 @@ var attrCommands = []Command{
 		Verb:    "ls",
 		Summary: "List the Preset Attributes with their types, and every other Attribute key in use on what you can see",
 		Tier:    Read,
+		Who:     Anyone,
 		Op:      api.AttrList,
 		Run:     action(attrLs),
 	},

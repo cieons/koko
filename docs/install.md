@@ -348,7 +348,8 @@ file, which a later `koko update` or install.ps1 deletes once nothing runs
 it. The install line, run again, upgrades the CLI the same way.
 
 The koko server, installed with systemd, upgrades in place with one
-command, run by the Owner on any of their devices or on its own machine:
+command, run by the Owner or an Administrator on any of their devices, or
+on its own machine:
 
 ```sh
 koko server upgrade            # to the latest release
@@ -367,8 +368,8 @@ database's snapshot back when it had changed the schema, and installs the
 previous `kokod` again. `koko server upgrade` waits for the outcome, then
 brings the CLI that ran it to the same release when `koko update` can
 replace it, or says how to. On failure it exits with `upgrade_failed` and
-the reason, and leaves the CLI as it was. The web UI offers the Owner the
-same upgrade: a notice above every page says when a newer release is out,
+the reason, and leaves the CLI as it was. The web UI offers the Owner and
+the Administrators the same upgrade: a notice above every page says when a newer release is out,
 and its Upgrade button, after a confirmation, asks for the upgrade and
 follows it until the koko server runs the new release, then reloads the
 page, or says why it failed and which version runs. Check now, in the
@@ -832,7 +833,8 @@ start again.
 
 ### Upgrading the container
 
-The web UI tells the Owner when a newer release is out, in a notice above
+The web UI tells the Owner and the Administrators when a newer release is
+out, in a notice above
 every page, and its How to upgrade shows the two steps, each with Copy;
 `koko server show` names them too. Set the new release in `.env`, such as
 `KOKO_VERSION=0.5.0`, then, beside `compose.yaml`:
@@ -1093,7 +1095,8 @@ listener.
 
 ### Inviting a browser User
 
-The Owner invites a person who will use koko in a browser with a Password
+The Owner or an Administrator invites a person who will use koko in a
+browser with a Password
 Link instead of a Join Code:
 
 ```sh
@@ -1105,9 +1108,9 @@ This creates bob as a Member and prints a link,
 minutes. `--valid` sets from 1 minute to 7 days, such as `--valid 1d` for a
 link that will be opened later; `koko device add` takes `--valid` too. In
 the web UI, the same Invite is on the Access page: **Invite**, then **In a
-browser** and **Valid for**. The Owner runs these on any device, on the
-koko server's machine (`docker exec koko` in a container), or in a browser
-signed in as the Owner. bob becomes a Member of a Space as any Member does:
+browser** and **Valid for**. The Owner or an Administrator runs these on
+any of their devices or in a browser signed in as them, and the Owner also
+on the koko server's machine (`docker exec koko` in a container). bob becomes a Member of a Space as any Member does:
 `koko space member add <space> bob`, or in the Invite itself.
 
 Opened in a browser, the link shows the User name and asks for a Password:
@@ -1155,10 +1158,11 @@ koko signin revoke <id>
 ```
 
 `koko signin ls` lists the caller's own Sign-ins, and every User's for the
-Owner; `--all` adds the ended ones. In the web UI, each person sees their
+Owner or an Administrator; `--all` adds the ended ones. In the web UI, each person sees their
 own under **Browser Sign-ins** on the Account page, where **Change
 Password** also changes their Password and signs out their other browsers.
-The Owner sees a person's Sign-ins in that person's panel on the Access
+The Owner or an Administrator sees a person's Sign-ins in that person's
+panel on the Access
 page, with **Revoke**.
 
 After 10 wrong Passwords in a row for one name, sign-ins with that name
@@ -1171,7 +1175,8 @@ signed in keep working.
 
 Signed in, a User may do in the web UI exactly what their Space membership
 allows, as on a device of theirs: keep the Hosts, Services and Secrets of
-their Spaces, and for the Owner, everything the Owner does from a device.
+their Spaces, and for the Owner or an Administrator, everything they do
+from a device.
 As from a device, `koko server set` stays on the koko server's machine.
 
 A Sign-in also reaches Hosts as a device of the same User does: the web

@@ -106,12 +106,16 @@ _Avoid_: manual, agent docs, prompt
 ### People
 
 **User**:
-A person who belongs to a koko server, either its Owner or a Member.
+A person who belongs to a koko server: its Owner, an Administrator or a Member.
 _Avoid_: account, operator, admin
 
 **Owner**:
-A User who can do everything on the koko server and sees every Space.
+A User who can do everything on the koko server and sees every Space. There is one.
 _Avoid_: admin, root, superuser
+
+**Administrator**:
+A User the Owner has made able to do everything the Owner does, except act on the Owner or another Administrator; sees every Space.
+_Avoid_: admin, co-owner, superuser, manager
 
 **Member**:
 A User who can see and act on every Host, Service and Secret in the Spaces they belong to, and sees nothing outside them.
@@ -126,11 +130,11 @@ The Space every User has to themselves, named after them, where what they record
 _Avoid_: home, private space
 
 **Invite**:
-What creates a new User, issued by the Owner: their first Join Code, or their first Password Link.
+What creates a new User, issued by the Owner or an Administrator: their first Join Code, or their first Password Link.
 _Avoid_: enroll, signup, registration, invite link
 
 **Removed**:
-A User the Owner has taken out of the koko server, kept on record so their name is never used again.
+A User the Owner or an Administrator has taken out of the koko server, kept on record so their name is never used again.
 _Avoid_: deleted, deactivated, banned
 
 ### Access
@@ -148,7 +152,7 @@ The one secret a User may set to sign in to the Web UI in a browser; it never re
 _Avoid_: credential, passphrase
 
 **Password Link**:
-A one-time, time-limited link the Owner issues that lets one User set their Password in a browser: a new User's Invite, or a reset.
+A one-time, time-limited link the Owner or an Administrator issues that lets one User set their Password in a browser: a new User's Invite, or a reset.
 _Avoid_: reset link, magic link, invite link
 
 **Sign-in**:

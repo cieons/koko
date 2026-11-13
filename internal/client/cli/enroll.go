@@ -32,6 +32,7 @@ var enrollCommands = []Command{
 		ReadsSecret: true,
 		// It reaches a Host and changes its authorized_keys (ADR 0019).
 		Tier: Irreversible,
+		Who:  Anyone,
 		Op:   api.HostEnroll,
 		Run:  action(hostEnroll),
 	},

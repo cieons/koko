@@ -109,11 +109,15 @@ func (c commandJSON) help(w io.Writer) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	// A tabwriter reports a failed write when it flushes.
 	_, _ = fmt.Fprintf(tw, "%s\n\n%s\n\n", c.Usage, c.Summary)
-	owner := ""
-	if c.OwnerOnly {
-		owner = " Only the Owner may run it."
+	who := ""
+	switch {
+	case !c.OwnerOnly:
+	case c.Administrators:
+		who = " Only the Owner or an Administrator may run it."
+	default:
+		who = " Only the Owner may run it."
 	}
-	_, _ = fmt.Fprintf(tw, "Risk tier: %s.%s\n", c.Tier, owner)
+	_, _ = fmt.Fprintf(tw, "Risk tier: %s.%s\n", c.Tier, who)
 	for _, a := range c.Args {
 		if a.Choices != nil {
 			_, _ = fmt.Fprintf(tw, "\n%s is one of %s.\n", a.Arg, strings.Join(*a.Choices, ", "))

@@ -5,6 +5,7 @@
     "summary": "Write the stub SKILL.md that tells an agent to run koko skill, as <dir>/koko/SKILL.md",
     "tier": "reversible",
     "owner_only": false,
+    "administrators": true,
     "args": [],
     "flags": [
       {

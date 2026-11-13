@@ -95,6 +95,18 @@ func listedCommands(section string) []string {
 	return paths
 }
 
+// whoTexts is what koko skill and koko help say of each Who: --json's
+// owner_only and administrators, the Markdown's mark after the usage, and
+// the end of help's "Risk tier" line.
+var whoTexts = map[Who]struct {
+	ownerOnly, administrators bool
+	mark, help                string
+}{
+	Anyone:               {ownerOnly: false, administrators: true, mark: "", help: ""},
+	OwnerOrAdministrator: {ownerOnly: true, administrators: true, mark: " (Owner or Administrator)", help: " Only the Owner or an Administrator may run it."},
+	OwnerAlone:           {ownerOnly: true, administrators: false, mark: " (Owner)", help: " Only the Owner may run it."},
+}
+
 // Every command of the tree is listed under its own risk tier, and under no
 // other, in koko skill's text and in its --json, so that a person can allow
 // the read tier by prefix.
@@ -115,8 +127,13 @@ func TestSkillListsEveryCommandUnderItsTier(t *testing.T) {
 			t.Errorf("koko skill --json leaves out koko %s", c.Path())
 			continue
 		}
-		if got := ref.Commands[i]; got.Tier != c.Tier.String() || got.OwnerOnly != c.OwnerOnly || got.Summary != c.Summary {
-			t.Errorf("koko skill --json lists koko %s as %+v, want tier %s, owner only %v and its summary", c.Path(), got, c.Tier, c.OwnerOnly)
+		w := whoTexts[c.Who]
+		if got := ref.Commands[i]; got.Tier != c.Tier.String() || got.OwnerOnly != w.ownerOnly || got.Administrators != w.administrators || got.Summary != c.Summary {
+			t.Errorf("koko skill --json lists koko %s as %+v, want tier %s, owner_only %v, administrators %v and its summary",
+				c.Path(), got, c.Tier, w.ownerOnly, w.administrators)
+		}
+		if item := "- `" + synopsis(&c) + "`" + w.mark + ": "; !strings.Contains(sections[c.Tier.String()], item) {
+			t.Errorf("koko skill does not list koko %s as %q", c.Path(), item)
 		}
 	}
 	if len(ref.Commands) != len(Tree()) {
@@ -393,8 +410,8 @@ func TestHelpShowsEveryCommandAndItsFlags(t *testing.T) {
 			t.Errorf("koko help %s: exit status %d, stderr %q", c.Path(), status, errs)
 			continue
 		}
-		if !strings.HasPrefix(detail, synopsis(&c)+"\n") || !strings.Contains(detail, "Risk tier: "+c.Tier.String()) {
-			t.Errorf("koko help %s = %q, want its usage and tier", c.Path(), detail)
+		if !strings.HasPrefix(detail, synopsis(&c)+"\n") || !strings.Contains(detail, "\nRisk tier: "+c.Tier.String()+"."+whoTexts[c.Who].help+"\n") {
+			t.Errorf("koko help %s = %q, want its usage, and its tier and who may run it", c.Path(), detail)
 		}
 		for _, f := range c.flags() {
 			if !strings.Contains(detail, "  "+f.usage()) {

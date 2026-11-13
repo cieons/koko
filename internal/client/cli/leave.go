@@ -16,6 +16,7 @@ var leaveCommands = []Command{
 		// The device's key is gone for good, and with it the Device
 		// Session's only use (ADR 0019).
 		Tier: Irreversible,
+		Who:  Anyone,
 		// It calls no operation: it never contacts the koko server, which
 		// may be gone.
 		Run: action(leave),

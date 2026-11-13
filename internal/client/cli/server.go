@@ -44,6 +44,7 @@ var serverCommands = []Command{
 		// It prints a credential, the first Join Code (P0 spec: install and
 		// run), and changes the machine.
 		Tier: Irreversible,
+		Who:  Anyone,
 		Op:   api.ServerInit,
 		Run:  action(serverInstall),
 	},
@@ -55,6 +56,7 @@ var serverCommands = []Command{
 		// It stops the koko server and removes it from the machine (P0
 		// spec: install and run).
 		Tier: Irreversible,
+		Who:  Anyone,
 		Run:  action(serverUninstall),
 	},
 	serverUpgradeCommand,
@@ -63,6 +65,7 @@ var serverCommands = []Command{
 		Verb:    "show",
 		Summary: "Show the koko server's Server Address, port, web listener, Web URL, host key, version, Root Key file, data directory, update check and how it upgrades",
 		Tier:    Read,
+		Who:     Anyone,
 		Op:      api.ServerShow,
 		Run:     action(serverShow),
 	},
@@ -75,9 +78,9 @@ var serverCommands = []Command{
 		Tier:    Reversible,
 		// Only the Owner, as the Local caller on the koko server's machine,
 		// may run it: the koko server answers it only over its Unix socket.
-		OwnerOnly: true,
-		Op:        api.ServerSet,
-		Run:       action(serverSet),
+		Who: OwnerAlone,
+		Op:  api.ServerSet,
+		Run: action(serverSet),
 	},
 }
 

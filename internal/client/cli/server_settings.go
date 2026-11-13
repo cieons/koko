@@ -203,7 +203,7 @@ koko connect %s
 	case s.UpdateCheck.Enabled:
 		b.WriteString("Turned the update check on. The koko server checks for a new koko release a few minutes from now, then every 6 hours.\n")
 	default:
-		b.WriteString("Turned the update check off. The koko server no longer checks for a new koko release by itself; the Owner can still check at once.\n")
+		b.WriteString("Turned the update check off. The koko server no longer checks for a new koko release by itself; the Owner or an Administrator can still check at once.\n")
 	}
 	_, err := io.WriteString(w, b.String())
 	return err

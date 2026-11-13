@@ -22,6 +22,7 @@ var statusCommands = []Command{
 		Verb:    "status",
 		Summary: "Show the koko server this device reaches and as whom, both versions and whether they work together, any revocation, and whether ssh reads koko's ssh_config",
 		Tier:    Read,
+		Who:     Anyone,
 		// Its main operation is none: the koko server's version comes in
 		// the report every connection carries (ADR 0027). For the Owner it
 		// also asks user.current and server.show, for the latest release
@@ -278,15 +279,15 @@ func status(ctx context.Context, in *Input) (statusJSON, error) {
 }
 
 // latestForTheOwner returns koko's latest release, as the koko server's
-// update check found it, when the caller is the Owner: the Local caller,
-// or a device whose User user.current names the Owner. It asks
-// server.show for nobody else, and answers nil for anything it cannot
-// learn, such as from a koko server older than the check: status reports
-// what it can and fails on none of it.
+// update check found it, when the caller is the Owner or an Administrator:
+// the Local caller, or a device whose User user.current names the Owner or
+// an Administrator. It asks server.show for nobody else, and answers nil
+// for anything it cannot learn, such as from a koko server older than the
+// check: status reports what it can and fails on none of it.
 func (in *Input) latestForTheOwner(ctx context.Context) *string {
 	if in.socket == "" {
 		who, err := in.Call(ctx, api.UserCurrent, api.UserCurrentRequest{})
-		if err != nil || who.User.Role != api.RoleOwner {
+		if err != nil || (who.User.Role != api.RoleOwner && who.User.Role != api.RoleAdministrator) {
 			return nil
 		}
 	}

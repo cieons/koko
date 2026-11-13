@@ -26,6 +26,7 @@ var skillCommands = []Command{
 		Summary: "Print the reference for agents of this koko: its commands by risk tier with their --json shapes, " +
 			"the filter syntax, the Preset Attributes, the error codes and the exit statuses",
 		Tier: Read,
+		Who:  Anyone,
 		Run:  action(skill),
 	},
 	{
@@ -37,6 +38,7 @@ var skillCommands = []Command{
 			Summary: "The agent's skills directory, in which koko writes koko/SKILL.md; ~/.claude/skills when not given",
 		}},
 		Tier: Reversible,
+		Who:  Anyone,
 		Run:  action(skillInstall),
 	},
 	{
@@ -44,6 +46,7 @@ var skillCommands = []Command{
 		Summary: "List the commands; show the command the words name in full, with its flags, or list every command they start",
 		Args:    []Arg{{Name: "command", Optional: true, Many: true}},
 		Tier:    Read,
+		Who:     Anyone,
 		Run:     action(help),
 	},
 	{
@@ -51,6 +54,7 @@ var skillCommands = []Command{
 		Summary: "Print the script that completes koko's commands, flags and their values in a shell",
 		Args:    []Arg{{Name: "shell", Choices: completionShells}},
 		Tier:    Read,
+		Who:     Anyone,
 		Run:     action(completion),
 	},
 }
@@ -81,8 +85,13 @@ type commandJSON struct {
 	Usage   string `json:"usage"`
 	Summary string `json:"summary"`
 	// Tier is read, reversible or irreversible (ADR 0019).
-	Tier      string `json:"tier"`
-	OwnerOnly bool   `json:"owner_only"`
+	Tier string `json:"tier"`
+	// OwnerOnly says only the Owner, or only the Owner or an Administrator,
+	// may run the command: true for both, as before Administrators.
+	OwnerOnly bool `json:"owner_only"`
+	// Administrators says an Administrator may run the command: false only
+	// for a command the Owner alone may run.
+	Administrators bool `json:"administrators"`
 	// Args are the positional arguments, in order.
 	Args []argJSON `json:"args"`
 	// Flags are the flags beside --json, which every command takes.
@@ -208,16 +217,17 @@ func skill(_ context.Context, in *Input) (skillJSON, error) {
 // commandOf describes a command of the tree.
 func commandOf(c *Command) commandJSON {
 	j := commandJSON{
-		Command:   c.Path(),
-		Usage:     synopsis(c),
-		Summary:   c.Summary,
-		Tier:      c.Tier.String(),
-		tier:      c.Tier,
-		remote:    c.RemoteCommand,
-		stdio:     c.Stdio,
-		OwnerOnly: c.OwnerOnly,
-		Args:      []argJSON{},
-		Flags:     []flagJSON{},
+		Command:        c.Path(),
+		Usage:          synopsis(c),
+		Summary:        c.Summary,
+		Tier:           c.Tier.String(),
+		tier:           c.Tier,
+		remote:         c.RemoteCommand,
+		stdio:          c.Stdio,
+		OwnerOnly:      c.Who != Anyone,
+		Administrators: c.Who != OwnerAlone,
+		Args:           []argJSON{},
+		Flags:          []flagJSON{},
 	}
 	for _, a := range c.Args {
 		j.Args = append(j.Args, argJSON{Arg: a.usage(), Choices: orNull(a.Choices)})
@@ -374,12 +384,14 @@ func (s skillJSON) Human(w io.Writer) error {
 	p("- systemd and the image run the koko server as `kokod run`, a program of its own beside koko,\n")
 	p("  which an agent does not run itself; `koko server install` and `uninstall` put it on a machine.\n")
 	p("- `koko update` replaces this koko, the CLI, alone: it never contacts or changes the koko server.\n")
-	p("  `koko server upgrade` (Owner) upgrades the koko server, which restarts and ends every open SSH\n")
-	p("  Session, then this koko; with `--check` it changes nothing, and keeps its tier by its path.\n\n")
+	p("  `koko server upgrade` (Owner or Administrator) upgrades the koko server, which restarts and ends\n")
+	p("  every open SSH Session, then this koko; with `--check` it changes nothing, and keeps its tier by\n")
+	p("  its path.\n\n")
 
 	p("## Commands by risk tier\n\n")
 	p("Each command shows how it is written, what it does, its flags and the shape of its `--json`, written\n")
-	p("as: %s. (Owner) marks a command only the Owner may run.\n", shapeNotation)
+	p("as: %s. (Owner or Administrator) marks a command only the Owner or an Administrator may run,\n", shapeNotation)
+	p("and (Owner) one only the Owner may run; the koko server refuses anyone else with `%s`.\n", api.CodeOwnerOnly.Name)
 	for _, c := range s.Commands {
 		for _, d := range s.Commands {
 			if strings.HasPrefix(d.Command, c.Command+" ") && d.tier > c.tier {
@@ -394,11 +406,7 @@ func (s skillJSON) Human(w io.Writer) error {
 			tier = c.tier
 			p("\n### %s\n\n%s\n\n", tier, tierMeanings[tier])
 		}
-		owner := ""
-		if c.OwnerOnly {
-			owner = " (Owner)"
-		}
-		p("- `%s`%s: %s\n", c.Usage, owner, c.Summary)
+		p("- `%s`%s: %s\n", c.Usage, c.mark(), c.Summary)
 		for _, a := range c.Args {
 			if a.Choices != nil {
 				p("  - `%s`: one of %s\n", a.Arg, strings.Join(*a.Choices, ", "))
@@ -450,6 +458,10 @@ func (s skillJSON) Human(w io.Writer) error {
 	p("\n## Error codes\n\n")
 	p("Branch on an error's code, never its message. The koko server's codes, which the CLI passes through:\n")
 	p("%s.\n\n", codeList(s.ErrorCodes, "server"))
+	p("`%s` refuses a caller who is neither the Owner nor an Administrator, or anyone but the Owner\n", api.CodeOwnerOnly.Name)
+	p("for an act on the Owner or an Administrator, such as `koko user promote` or revoking an\n")
+	p("Administrator's device. `%s` refuses removing the Owner or changing their role, which the\n", api.CodeOwnerNotRemovable.Name)
+	p("koko server always keeps as it is.\n\n")
 	p("The CLI's own, for a problem on this device or a command line it refused: %s.\n", codeList(s.ErrorCodes, "cli"))
 
 	p("\n## Exit statuses\n\n")
@@ -459,6 +471,18 @@ func (s skillJSON) Human(w io.Writer) error {
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// mark is what koko skill writes after a command's usage to say who may
+// run it: nothing for anyone.
+func (c commandJSON) mark() string {
+	switch {
+	case !c.OwnerOnly:
+		return ""
+	case c.Administrators:
+		return " (Owner or Administrator)"
+	}
+	return " (Owner)"
 }
 
 // shapeOnce writes the command's --json shape the first time a command of

@@ -24,24 +24,25 @@ var deviceCommands = []Command{
 			{
 				Name:    "user",
 				Value:   "user",
-				Summary: "issue it for this User's device instead of your own (the Owner only)",
+				Summary: "issue it for this User's device instead of your own (the Owner or an Administrator only)",
 			},
 			validFlag("the Join Code"),
 		},
 		// It prints a credential (ADR 0019).
 		Tier: Irreversible,
+		Who:  Anyone,
 		Op:   api.DeviceAdd,
 		Run:  action(deviceAdd),
 	},
 	{
 		Noun:    "device",
 		Verb:    "ls",
-		Summary: "List your Device Sessions, or every User's for the Owner",
+		Summary: "List your Device Sessions, or every User's for the Owner or an Administrator",
 		Flags: []Flag{
 			{
 				Name:    "user",
 				Value:   "user",
-				Summary: "list only this User's Device Sessions (the Owner only, for another User)",
+				Summary: "list only this User's Device Sessions (the Owner or an Administrator only, for another User)",
 			},
 			{
 				Name:    "all",
@@ -50,6 +51,7 @@ var deviceCommands = []Command{
 			},
 		},
 		Tier: Read,
+		Who:  Anyone,
 		Op:   api.DeviceList,
 		Run:  action(deviceLs),
 	},
@@ -66,6 +68,7 @@ var deviceCommands = []Command{
 			},
 		},
 		Tier: Irreversible,
+		Who:  Anyone,
 		Op:   api.DeviceRevoke,
 		Run:  action(deviceRevoke),
 	},

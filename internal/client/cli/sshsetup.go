@@ -20,6 +20,7 @@ var sshSetupCommands = []Command{
 		// It writes only koko's own files and the one Include line, which
 		// it writes again on every run (ADR 0019).
 		Tier: Reversible,
+		Who:  Anyone,
 		// It also lists the Hosts for the bare names, as a join does.
 		Op:  api.ServerShow,
 		Run: action(sshSetup),

@@ -23,6 +23,7 @@ var sshReloadCommands = []Command{
 		Summary: "Rewrite the bare names in koko's ssh_config now, from the Hosts you can see, and say which changed",
 		// It rewrites only koko's own ssh_config, from the record (ADR 0019).
 		Tier: Reversible,
+		Who:  Anyone,
 		Op:   api.HostList,
 		Run:  action(sshReload),
 	},

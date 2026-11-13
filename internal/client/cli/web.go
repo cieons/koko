@@ -44,6 +44,7 @@ var webCommands = []Command{
 		},
 		// It prints a credential, its one-time token (P0 spec: overview).
 		Tier: Irreversible,
+		Who:  Anyone,
 		Op:   api.WebStart,
 		Run:  longAction(web),
 	},

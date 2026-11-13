@@ -18,6 +18,7 @@ var secretCommands = []Command{
 		Summary: "List the names of the Secrets in a Space, or in every Space you can act in, never a value",
 		Args:    []Arg{{Name: "space", Optional: true}},
 		Tier:    Read,
+		Who:     Anyone,
 		Op:      api.SecretList,
 		Run:     action(secretLs),
 	},
@@ -29,6 +30,7 @@ var secretCommands = []Command{
 		// It prints a credential (ADR 0019): a Secret's value, which no
 		// other command prints.
 		Tier: Irreversible,
+		Who:  Anyone,
 		Op:   api.SecretShow,
 		Run:  action(secretShow),
 	},
@@ -42,6 +44,7 @@ var secretCommands = []Command{
 		},
 		ReadsSecret: true,
 		Tier:        Reversible,
+		Who:         Anyone,
 		Op:          api.SecretAdd,
 		Run:         action(secretAdd),
 	},
@@ -57,6 +60,7 @@ var secretCommands = []Command{
 		// Reversible by the verb rule of ADR 0019, though P0 keeps no value
 		// history (P0 spec: Secrets).
 		Tier: Reversible,
+		Who:  Anyone,
 		Op:   api.SecretSet,
 		Run:  action(secretSet),
 	},
@@ -66,6 +70,7 @@ var secretCommands = []Command{
 		Summary: "Give a Secret a new name within its Space",
 		Args:    []Arg{{Name: "secret", Qualifier: "space"}, {Name: "new-name"}},
 		Tier:    Reversible,
+		Who:     Anyone,
 		Op:      api.SecretRename,
 		Run:     action(secretRename),
 	},
@@ -76,6 +81,7 @@ var secretCommands = []Command{
 		Args:    []Arg{{Name: "secret", Qualifier: "space", Many: true}},
 		Flags:   []Flag{{Name: "to", Value: "space", Summary: "The Space to move the Secrets to"}},
 		Tier:    Reversible,
+		Who:     Anyone,
 		Op:      api.SecretMove,
 		Run:     action(secretMove),
 	},
@@ -85,6 +91,7 @@ var secretCommands = []Command{
 		Summary: "Delete the Secrets you name and their values, all or none, for good",
 		Args:    []Arg{{Name: "secret", Qualifier: "space", Many: true}},
 		Tier:    Irreversible,
+		Who:     Anyone,
 		Op:      api.SecretRemove,
 		Run:     action(secretRm),
 	},

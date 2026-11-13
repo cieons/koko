@@ -380,9 +380,9 @@ func TestStatusNamesANewerReleaseForTheOwner(t *testing.T) {
 }
 
 // koko status asks the koko server for its update check only for the
-// Owner: a Member's status makes no server.show call and shows no latest
-// release.
-func TestStatusAsksForTheLatestReleaseOnlyForTheOwner(t *testing.T) {
+// Owner and an Administrator: a Member's status makes no server.show call
+// and shows no latest release.
+func TestStatusAsksForTheLatestReleaseOnlyForTheOwnerAndAnAdministrator(t *testing.T) {
 	t.Parallel()
 	rel := harness.NewMachine(t).Release("v0.5.0")
 	rel.Latest()
@@ -391,17 +391,21 @@ func TestStatusAsksForTheLatestReleaseOnlyForTheOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.Koko("user", "invite", "bob").WantSuccess(t)
-	owner, member := h.Join(harness.Owner), h.Join("bob")
+	h.Koko("user", "invite", "carol").WantSuccess(t)
+	h.Koko("user", "promote", "carol").WantSuccess(t)
+	member := h.Join("bob")
 	shows := func() int { return strings.Count(h.Log(), `msg="api call" path=/v1/server.show `) }
 
+	for who, d := range map[string]*harness.Device{"the Owner": h.Join(harness.Owner), "an Administrator": h.Join("carol")} {
+		before := shows()
+		if s, _ := status(t, d.Koko); deref(s.ServerLatest) != "v0.5.0" {
+			t.Errorf("%s's status shows the latest release %v, want v0.5.0", who, deref(s.ServerLatest))
+		}
+		if n := shows() - before; n != 1 {
+			t.Errorf("%s's status made %d server.show calls, want 1", who, n)
+		}
+	}
 	before := shows()
-	if s, _ := status(t, owner.Koko); deref(s.ServerLatest) != "v0.5.0" {
-		t.Errorf("the Owner's status shows the latest release %v, want v0.5.0", deref(s.ServerLatest))
-	}
-	if n := shows() - before; n != 1 {
-		t.Errorf("the Owner's status made %d server.show calls, want 1", n)
-	}
-	before = shows()
 	if s, _ := status(t, member.Koko); s.ServerLatest != nil {
 		t.Errorf("a Member's status shows the latest release %q, want null", *s.ServerLatest)
 	}

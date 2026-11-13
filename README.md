@@ -57,7 +57,7 @@ The web UI opens with `koko web` on any joined device. People who do not
 use the CLI, such as a teammate on a phone, use it in a browser instead:
 the koko server serves it to a reverse proxy, such as Caddy, that holds a
 domain and its certificate, and each person signs in with a Password,
-which they set through a one-time Password Link the Owner issues. Signed in, they
+which they set through a one-time Password Link the Owner or an Administrator issues. Signed in, they
 keep the record their Spaces allow. Either way, the web UI's terminal opens
 SSH Sessions, each in a tab of its own, to the Hosts the person may reach,
 and its Files panel uploads and downloads files on them
@@ -68,6 +68,9 @@ and its Files panel uploads and downloads files on them
 - A record of hosts and the services on them, described by typed
   attributes such as provider, region and renewal date.
 - Spaces that decide who can see and reach which hosts.
+- One Owner, who may make trusted people Administrators to run the koko
+  server with them. Once it has Administrators, the koko server's own
+  machine is best kept out of its record: a shell there acts as the Owner.
 - Secrets: passwords, keys and tokens kept in a Space, sealed under a key
   that never sits beside the data, and printed only by
   `koko secret show`. Credentials go only into Secrets: notes and

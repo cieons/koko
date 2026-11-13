@@ -13,6 +13,7 @@ var versionCommands = []Command{
 		Verb:    "version",
 		Summary: "Print this koko's build",
 		Tier:    Read,
+		Who:     Anyone,
 		Run:     action(version),
 	},
 }

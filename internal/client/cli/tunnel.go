@@ -23,6 +23,7 @@ var tunnelCommands = []Command{
 		Stdio:   true,
 		// It reaches a Host (ADR 0019).
 		Tier: Irreversible,
+		Who:  Anyone,
 		Run:  quietAction(proxySSH),
 	},
 }

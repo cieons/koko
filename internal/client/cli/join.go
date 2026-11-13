@@ -31,6 +31,7 @@ var joinCommands = []Command{
 		}},
 		// It spends a one-time Join Code (P0 spec: overview).
 		Tier: Irreversible,
+		Who:  Anyone,
 		// The join itself is SSH authentication, not an operation; once
 		// joined, koko join asks who the device now is.
 		Op:  api.UserCurrent,

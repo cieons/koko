@@ -19,7 +19,10 @@ list the only values it takes, its choices), the flags
 `key=value` pairs and `--unset`, the fields a list filters and sorts on
 (`Filters`, with their types), whether it reads a secret input
 (`ReadsSecret`), the risk tier (required),
-Owner-only, the API operation it calls and its `Run`, made with `action(f)`
+who may run it (`Who`, required: `Anyone`, `OwnerOrAdministrator` or
+`OwnerAlone`, [ADR
+0056](../adr/0056-one-owner-and-administrators-who-act-on-everything-but-the-owner-and-each-other.md);
+the koko server enforces it), the API operation it calls and its `Run`, made with `action(f)`
 from a function returning the command's `--json` type, which is also its
 shape. Every command takes `--json`, which is not listed, except one with
 `RemoteCommand`, whose last argument is a command it runs on a Host as ssh
@@ -343,7 +346,10 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
   the fields a list filters on and the shape of its `--json`, then the
   filter syntax (`filterTerms` and the relative dates), the value types, the
   Preset Attributes (`record.Presets`), every error code (`api.Codes`, then
-  the CLI's `cliCodes`) and the exit statuses (`exitStatuses`). A read
+  the CLI's `cliCodes`), with what `owner_only` and `owner_not_removable`
+  refuse, and the exit statuses (`exitStatuses`). A command's usage is
+  marked `(Owner or Administrator)` or `(Owner)` when only they may run it,
+  and the text says what each mark means. A read
   command whose path is a prefix of a riskier one is named, as `koko skill`
   of `koko skill install`. A shape is written from the command's `--json`
   type by [`shape`](../../internal/client/cli/shape.go) as encoding/json/v2
@@ -359,9 +365,13 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
   "matches"}], "relative_dates"}, "presets": [{"key", "type", "values",
   "min"}], "error_codes": [{"code", "from"}], "exit_statuses": [{"status",
   "means"}]}`, `from` `"server"` or `"cli"`. A command is `{"command",
-  "usage", "summary", "tier", "owner_only", "args": [{"arg", "choices"}],
-  "flags": [{"flag", "summary", "env", "default", "choices",
-  "repeatable"}], "filters", "json"}`, `filters` the list's fields as
+  "usage", "summary", "tier", "owner_only", "administrators", "args":
+  [{"arg", "choices"}], "flags": [{"flag", "summary", "env", "default",
+  "choices", "repeatable"}], "filters", "json"}`, `owner_only` true for a
+  command only the Owner, or only the Owner or an Administrator, may run,
+  as it was before Administrators, `administrators` true for every command
+  an Administrator may run, so false only for the Owner's alone (a field
+  only added), `filters` the list's fields as
   `presets` writes a key, or `null`, and `json` the shape, or `null` for a
   command that prints nothing. Its tests check properties (every command of
   the tree under its tier with its flags and shape, every error code, every
@@ -378,7 +388,8 @@ no koko server ([`skill.go`](../../internal/client/cli/skill.go)).
   never goes stale across upgrades.
 - **`koko help`** lists every command with its arguments and summary. `koko
   help <words>` shows the command the words name in full (usage, summary,
-  tier, flags with their variables, defaults and choices, the fields a list
+  tier, whose "Risk tier" line ends "Only the Owner or an Administrator
+  may run it." or "Only the Owner may run it." for such a command, flags with their variables, defaults and choices, the fields a list
   filters on, and the longer commands its path starts, as `koko skill
   install` of `koko skill`), or else lists every command whose path starts
   with them. Words that start no command are refused with exit 2, as the
@@ -494,7 +505,7 @@ The Device Mux's refresh still keeps the path there
 ## `koko server upgrade`
 
 [`koko server upgrade`](../../internal/client/cli/server_upgrade.go), the
-Owner's, upgrades the koko server in place through its upgrade helper
+Owner's or an Administrator's, upgrades the koko server in place through its upgrade helper
 ([ADR 0048](../adr/0048-the-koko-server-upgrades-itself-through-a-root-helper-that-takes-only-a-newer-releases-version.md),
 [the helper](installer.md#the-upgrade-helper)), then this koko. It is in the
 irreversible tier by its path, since the koko server restarts and every open
@@ -542,18 +553,20 @@ SSH Session through it ends, and never prompts (ADR 0019).
 
 | Command | Tier | Calls | `--json` |
 | --- | --- | --- | --- |
-| `koko space add <space>` (Owner) | reversible | `space.add` | the Space: `{"id", "name", "personal"}` |
+| `koko space add <space>` (Owner or Administrator) | reversible | `space.add` | the Space: `{"id", "name", "personal"}` |
 | `koko space ls` | read | `space.list` | an array of the Spaces the caller can act in, `{"id", "name", "personal"}`: not the Members and counts `space.list` also answers, since an older koko server answers without them and the CLI could not tell that from none; `space show` prints them |
 | `koko space show <space>` | read | `space.show` | the Space with its Members and counts: `{"id", "name", "personal", "members": [{"id", "name"}], "counts": {"hosts", "retired_hosts", "secrets"}}`; a member's `id` is the User's |
-| `koko space rename <space> <new-name>` (Owner) | reversible | `space.rename` | the Space under its new name |
-| `koko space rm <space>` (Owner) | irreversible | `space.remove` | the Space it removed, as it was |
-| `koko space member add <space> <user>...` (Owner) | reversible | `space.member.add` | the Space with its Members after the change, as `space show` prints it |
-| `koko space member rm <space> <user>...` (Owner) | reversible | `space.member.remove` | the same |
-| `koko user invite <user> [--web] [--valid <duration>]` (Owner) | irreversible | `user.invite` | `{"user": {"id", "name", "role", "created_at", "removed_at", "password_set_at"}, "join_code": ...}`, the User as `user ls` prints one and the Join Code as `device add` prints it; with `--web`, `{"user", "password_link", "expires_at"}`, a Password Link in place of the Join Code ([Sign-ins](signin.md#password-links)); `--valid` as `device add` takes it |
-| `koko user ls [--all]` (Owner) | read | `user.list` | an array of the Users by name, `--all` adding the Removed ones: `{"id", "name", "role", "created_at", "removed_at", "password_set_at"}`, `removed_at` `null` while the User is not Removed and `password_set_at` while they have no Password ([Users](users.md#listing)) |
-| `koko user remove <user>` (Owner) | irreversible | `user.remove` | `{"outcome", "user"}`: `"deleted"` for a User who never used koko, `"removed"` for anyone else, and the User as the call left them ([Users](users.md#removing)) |
-| `koko password link <user> [--valid <duration>]` (Owner) | irreversible | `password.link` | `{"user", "password_link", "expires_at"}`: the link for the User's browser, valid as `--valid` says, 15 minutes without it ([Sign-ins](signin.md#password-links)) |
-| `koko password rm <user>` (Owner) | irreversible | `password.remove` | `{"user"}` |
+| `koko space rename <space> <new-name>` (Owner or Administrator) | reversible | `space.rename` | the Space under its new name |
+| `koko space rm <space>` (Owner or Administrator) | irreversible | `space.remove` | the Space it removed, as it was |
+| `koko space member add <space> <user>...` (Owner or Administrator) | reversible | `space.member.add` | the Space with its Members after the change, as `space show` prints it |
+| `koko space member rm <space> <user>...` (Owner or Administrator) | reversible | `space.member.remove` | the same |
+| `koko user invite <user> [--web] [--valid <duration>]` (Owner or Administrator) | irreversible | `user.invite` | `{"user": {"id", "name", "role", "created_at", "removed_at", "password_set_at"}, "join_code": ...}`, the User as `user ls` prints one and the Join Code as `device add` prints it; with `--web`, `{"user", "password_link", "expires_at"}`, a Password Link in place of the Join Code ([Sign-ins](signin.md#password-links)); `--valid` as `device add` takes it |
+| `koko user ls [--all]` (Owner or Administrator) | read | `user.list` | an array of the Users by name, `--all` adding the Removed ones: `{"id", "name", "role", "created_at", "removed_at", "password_set_at"}`, `removed_at` `null` while the User is not Removed and `password_set_at` while they have no Password ([Users](users.md#listing)) |
+| `koko user remove <user>` (Owner or Administrator) | irreversible | `user.remove` | `{"outcome", "user"}`: `"deleted"` for a User who never used koko, `"removed"` for anyone else, and the User as the call left them ([Users](users.md#removing)) |
+| `koko user promote <user>` (Owner) | irreversible | `user.promote` | the User, now an Administrator, as `user ls` prints one ([Users](users.md#administrators)) |
+| `koko user demote <user>` (Owner) | reversible | `user.demote` | the User, now a Member, as `user ls` prints one ([Users](users.md#administrators)) |
+| `koko password link <user> [--valid <duration>]` (Owner or Administrator) | irreversible | `password.link` | `{"user", "password_link", "expires_at"}`: the link for the User's browser, valid as `--valid` says, 15 minutes without it ([Sign-ins](signin.md#password-links)) |
+| `koko password rm <user>` (Owner or Administrator) | irreversible | `password.remove` | `{"user"}` |
 | `koko signin ls [--user <user>] [--all]` | read | `signin.list` | an array of Sign-ins: `{"id", "user", "client", "address", "started_at", "last_used_at", "expires_at", "ended_at", "end_reason"}`, the last two `null` while it is live ([Sign-ins](signin.md#sign-ins)) |
 | `koko signin revoke <id>` | irreversible | `signin.revoke` | the Sign-in as it left it, as `signin ls` prints one |
 | `koko device add [<device>] [--user <user>] [--valid <duration>]` | irreversible | `device.add` | the Join Code: `{"id", "code", "user", "device", "expires_at"}`; `--valid`, `1m` to `7d` in whole minutes, hours or days, sets `expires_at` (15 minutes without it), and anything else is refused with exit 2 before any call ([Join Codes](join-codes.md#issuing)) |
@@ -572,12 +585,12 @@ SSH Session through it ends, and never prompts (ADR 0019).
 | `koko ssh setup` | reversible | `server.show`, then `host.list` | `{"ssh_config", "include_warning"}`: the path of koko's ssh_config it wrote for this OS user on the koko server's own machine, and `include_warning` as `koko status` prints it ([on the koko server's own machine](device-connection.md#on-the-koko-servers-own-machine)) |
 | `koko ssh reload` | reversible | `host.list` | `{"ssh_config", "names", "added", "removed"}`: the path of koko's ssh_config, the bare names it holds now, in `host.list`'s order, and those it did not hold before and no longer holds; for people, the count, then `Added:` and `Removed:` lines, or `none changed` ([bare names](device-connection.md#ssh)) |
 | `koko leave` | irreversible | none: it never contacts the koko server | `{"server_address", "device_session"}`: the koko server the device left and its Device Session there, left behind, as `koko status` names one ([`koko leave`](device-connection.md#on-the-device)) |
-| `koko status` | read | none: the koko server's version comes from its report; for the Owner, `user.current` on a device, then `server.show` | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_latest", "server_oldest", "server_error", "device_mux", "revocation", "include_warning", "home_warning", "ssh_client_warning", "names_read_as_addresses"}`, below |
+| `koko status` | read | none: the koko server's version comes from its report; for the Owner or an Administrator, `user.current` on a device, then `server.show` | `{"server_address", "device_session", "socket", "cli_version", "server_version", "server_latest", "server_oldest", "server_error", "device_mux", "revocation", "include_warning", "home_warning", "ssh_client_warning", "names_read_as_addresses"}`, below |
 | `koko version` | read | none | `{"version", "revision", "go", "platform"}` |
 | `koko update [--check] [--version <vX.Y.Z>]` | reversible | none: it never contacts the koko server | `{"path", "from", "to", "updated"}`, or with `--check` `{"path", "installed", "target", "update_available"}` ([`koko update`](#koko-update)) |
 | `koko web [--port <port>] [--no-open]` | irreversible | `web.start` | `{"address"}`, once it serves ([`koko web`](web-front.md#koko-web)) |
 | `koko server install [--owner <user>] [--address <host[:port]>] [--port <port>] [--web-listen <host:port\|off>] [--kokod <file>]` | irreversible | `server.init`, after it runs `kokod install` | `{"upgraded", "address", "host_key_fingerprint", "root_key_file", "root_key_id", "listen_port", "join_code"}`, the Join Code as `device add` prints it; an upgrade has no `join_code`, and may have `devices_must_connect` ([the installer](installer.md#what-it-prints)). Without `--kokod` it runs the `kokod` installed of its build, or else downloads its release's ([the download](installer.md#the-download)) |
-| `koko server upgrade [--check] [--version <vX.Y.Z>]` (Owner) | irreversible | `server.upgrade` and `server.show`; with `--check`, `server.check_update` and `server.show` | `{"server": {"from", "to", "state", "message"}, "cli"}`, or with `--check` `{"version", "latest", "checked_at", "update_available", "upgrade_way"}` ([`koko server upgrade`](#koko-server-upgrade)) |
+| `koko server upgrade [--check] [--version <vX.Y.Z>]` (Owner or Administrator) | irreversible | `server.upgrade` and `server.show`; with `--check`, `server.check_update` and `server.show` | `{"server": {"from", "to", "state", "message"}, "cli"}`, or with `--check` `{"version", "latest", "checked_at", "update_available", "upgrade_way"}` ([`koko server upgrade`](#koko-server-upgrade)) |
 | `koko server uninstall [--kokod <file>]` | irreversible | none: it runs `kokod uninstall` | `{"removed", "data_dir", "root_key_file", "system_user", "listen_port", "web_listen"}` ([the installer](installer.md#uninstall)). It gets `kokod` as install does, downloading it when none of its build is installed |
 | `koko server show` | read | `server.show` | `{"address", "listen_port", "host_key_fingerprint", "version", "root_key_file", "root_key_id", "data_dir", "web_url", "web_listen", "update_check": {"enabled", "checked_at", "latest", "error"}, "upgrade_way", "last_upgrade"}`, `web_url` and `web_listen` `null` while unset and off ([the deployment afterwards](initialisation.md#the-deployment-afterwards)), the check for a new release, each of its fields but `enabled` `null` while unknown ([the update check](initialisation.md#the-update-check)), how the koko server upgrades, `systemd`, `image` or `none`, and the outcome of its last upgrade, `null` while there is none ([how it upgrades](initialisation.md#how-it-upgrades)) |
 | `koko server set address=<host[:port]>`, `web_url=<https://host[:port]>`, `update_check=on\|off`, `--unset web_url` (Owner, over the Unix socket only) | reversible | `server.set` | the settings as `server show` prints them, as the change left them |
@@ -636,8 +649,8 @@ path when commands reach the koko server on its own machine, as the Local
 caller; `cli_version` is this koko's version and `server_version` the one
 the koko server reported on connecting, or `null`; `server_latest` is
 the latest koko release the koko server's [update
-check](initialisation.md#the-update-check) found, for the Owner only, or
-`null` when unknown or for a Member; `server_oldest` is the oldest koko
+check](initialisation.md#the-update-check) found, for the Owner or an
+Administrator only, or `null` when unknown or for a Member; `server_oldest` is the oldest koko
 the koko server works with, as its report names it
 ([the window](api.md#the-way-in)), or `null` when it was not reached or
 names none, as one from before the window; `server_error` is the
@@ -688,9 +701,10 @@ with, v0.3.0: upgrade the koko server)` when the koko server is below
 `compat.Oldest`. Outside the window status still shows both versions and
 exits 0, and calls nothing more.
 
-For the Owner, once the koko server answered, status asks for the update
-check: over the Unix socket the Local caller is the Owner, and on a device
-`user.current` says whether its User is. Only then does it call
+For the Owner or an Administrator, once the koko server answered, status
+asks for the update check: over the Unix socket the Local caller is the
+Owner, and on a device `user.current` says whether its User is the Owner or
+an Administrator. Only then does it call
 `server.show`, so a Member's status makes no `server.show` call. When
 `server_latest` is newer than `server_version`, the `koko server` line
 ends `(v0.5.0 is available: koko server upgrade)`. Either call failing,

@@ -28,6 +28,7 @@ var updateCommands = []Command{
 			{Name: "version", Value: "vX.Y.Z", Summary: "the release to install, such as v0.4.0, in place of the latest"},
 		},
 		Tier: Reversible,
+		Who:  Anyone,
 		Run:  action(update),
 	},
 }

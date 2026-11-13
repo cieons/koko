@@ -61,10 +61,10 @@ type Command struct {
 	Stdio bool
 	// Tier is the command's risk tier (ADR 0019). It is required.
 	Tier Tier
-	// OwnerOnly says only the Owner may run the command, for help and koko
-	// skill. The koko server's access check enforces it, refusing anyone
+	// Who says who may run the command, for help and koko skill. It is
+	// required. The koko server's access check enforces it, refusing anyone
 	// else with owner_only.
-	OwnerOnly bool
+	Who Who
 	// Op is the API operation the command calls, or nil for a command that
 	// calls none.
 	Op api.Operation
@@ -166,6 +166,20 @@ func (t Tier) String() string {
 	}
 	return "unset"
 }
+
+// Who is who may run a command (ADR 0056).
+type Who int
+
+const (
+	whoUnset Who = iota
+	// Anyone may run it; the koko server decides what each caller sees.
+	Anyone
+	// OwnerOrAdministrator is the Owner and the Administrators.
+	OwnerOrAdministrator
+	// OwnerAlone is the Owner alone, since the command acts on the
+	// Administrators or only the Local caller makes it.
+	OwnerAlone
+)
 
 // Result is what a command prints on success: it is marshalled as the
 // command's --json, the CLI's own contract (ADR 0016), and Human writes it for
