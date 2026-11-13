@@ -25,7 +25,8 @@ jobs:
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     timeout-minutes: 20
     steps:
-      # The whole history, to find the build before the latest migration step.
+      # The whole history and every tag, to find the build before the latest
+      # migration step and the tags in its history.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -40,31 +41,25 @@ jobs:
           cache-dependency-path: web/package-lock.json
       # koko server install downloads only the kokod of a release's build,
       # and Go stamps a release's version only at a tag, so each build is
-      # tagged first, here and never pushed. The CLI and the koko server
-      # turn away each other below compat.Oldest (ADR 0049), so the tags
-      # are pre-releases of the patch after it, within the window: .2 this
-      # commit and .1 the older one, such as v0.3.1-check.2 and
-      # v0.3.1-check.1. A release's own tag there wins when it is the
-      # higher.
-      - name: Choose the builds' tags within the window
-        run: |
-          oldest=$(sed -n 's/^const Oldest = "\(v[0-9]*\.[0-9]*\.[0-9]*\)"$/\1/p' internal/shared/compat/compat.go)
-          [ -n "$oldest" ] || { echo "found no compat.Oldest in internal/shared/compat/compat.go" >&2; exit 1; }
-          next=${oldest%.*}.$((${oldest##*.} + 1))
-          echo "NEWER_TAG=$next-check.2" >>"$GITHUB_ENV"
-          echo "OLDER_TAG=$next-check.1" >>"$GITHUB_ENV"
+      # tagged first, here and never pushed. The upgrade must migrate to
+      # leave a snapshot, so the older build is the commit just before the
+      # one that added the latest migration step. Both tags are
+      # pre-releases of the patch after the higher of compat.Oldest and
+      # the highest tag in the older commit's history, such as
+      # v0.8.2-check.1 for the older build and v0.8.2-check.2 for this
+      # commit's, so that this commit's build is always the newer and both
+      # are within the window (ADR 0049); on a release's tag, the release's
+      # tag is the higher (release/systemd-tags.sh).
+      - name: Choose the older build and the builds' tags
+        run: release/systemd-tags.sh >>"$GITHUB_ENV"
       - name: Build this commit's release
         run: |
           git tag "$NEWER_TAG"
           make dist
-      # The upgrade must migrate to leave a snapshot, so the older build is
-      # the commit just before the one that added the latest migration step.
       - name: Build the release before the latest migration step
         run: |
-          added=$(git log -1 --format=%H --diff-filter=A -- internal/server/store/migrations)
-          [ -n "$added" ] || { echo "no commit added a migration step, so no older build to upgrade from" >&2; exit 1; }
-          git tag "$OLDER_TAG" "$added^"
-          git worktree add "$RUNNER_TEMP/older" "$added^"
+          git tag "$OLDER_TAG" "$OLDER_COMMIT"
+          git worktree add "$RUNNER_TEMP/older" "$OLDER_COMMIT"
           make -C "$RUNNER_TEMP/older" dist
       # koko server upgrade asks the upgrade helper for a release newer than
       # the one installed, so two more builds of this commit follow: one to

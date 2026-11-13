@@ -483,7 +483,15 @@ release's own tag, one release that is both the previous one and
 `compat.Oldest`'s listed once, the previous release found by version and
 never a pre-release, no pair for a release that is not there yet, is not
 yet published or is below `compat.Oldest`, and a failure to list the
-releases failing the script. No test runs `skew-check.sh`, which
+releases failing the script.
+[`release/systemd_tags_test.go`](../../release/systemd_tags_test.go) runs
+`systemd-tags.sh` on such a repository with migration steps: the older
+commit and both tags for an older commit that carries a release tag, one
+with no tag near it, one with a pre-release, a release's own tag, tags
+after the older commit left out, a `compat.Oldest` above every tag and a
+clone without tags, the commit's build newer than the older one as Go
+stamps them and both within the window; and no migration step or no
+`compat.Oldest` failing the script. No test runs `skew-check.sh`, which
 needs Docker and the network: [the skew check](#the-skew-check) is its
 run. [The container check](#the-container-check) runs what
 `make image` builds: its index's platforms and binaries, and, by running
@@ -653,13 +661,20 @@ migration step is a file added to `internal/server/store/migrations/`,
 `koko server install` downloads only the `kokod` of its own release, and Go
 stamps a release's version only at a tag ([Building one](#building-one)):
 so the workflow first tags the commit and the older one, in its checkout
-only, never pushed. The CLI and the koko server turn away each other below
-`compat.Oldest` ([the window](api.md#the-way-in)), so the tags are
-pre-releases of the patch after it, read from
-[`compat.go`](../../internal/shared/compat/compat.go): `v0.3.1-check.2`
-for the commit and `v0.3.1-check.1` for the older one while it is
-`v0.3.0`. On a release's tag from that patch on, the release's tag is the
-higher, and Go stamps it. For `koko server upgrade` it then builds two
+only, never pushed. [`release/systemd-tags.sh`](../../release/systemd-tags.sh)
+finds the older commit and chooses both tags. Go stamps a build with the
+highest tag on its commit, and the older commit may carry a release's tag
+of its own, as one that comes just before a migration step does; and the
+CLI and the koko server turn away each other below `compat.Oldest`
+([the window](api.md#the-way-in)). So the tags are pre-releases of the
+patch after the higher of `compat.Oldest`, read from
+[`compat.go`](../../internal/shared/compat/compat.go), and the highest tag
+in the older commit's history, its own included, without its pre-release
+part: `v0.8.2-check.1` for the older one and `v0.8.2-check.2` for the
+commit when the older commit is `v0.8.1`'s. A release tag on the older
+commit is below its `-check.1`, and on a release's tag, which is above
+every tag before it, the release's tag is the higher, and Go stamps it, so
+the commit's build is always the newer. For `koko server upgrade` it then builds two
 releases newer than the commit's, of `koko-linux-amd64` and
 `kokod-linux-amd64` alone, with the commit's web UI and a `SHA256SUMS`:
 each in a worktree of its own, on an empty commit of its own tagged a

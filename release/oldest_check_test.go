@@ -30,15 +30,18 @@ func newHistory(t *testing.T) *history {
 	return h
 }
 
-// git runs git in the repository, apart from the user's own configuration.
-func (h *history) git(args ...string) {
+// git runs git in the repository, apart from the user's own configuration,
+// and returns its output without the final newline.
+func (h *history) git(args ...string) string {
 	h.t.Helper()
 	cmd := exec.CommandContext(h.t.Context(), "git", append([]string{"-c", "user.name=koko", "-c", "user.email=koko@example.com", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"}, args...)...)
 	cmd.Dir = h.dir
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-	if out, err := cmd.CombinedOutput(); err != nil {
+	out, err := cmd.CombinedOutput()
+	if err != nil {
 		h.t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
+	return strings.TrimSuffix(string(out), "\n")
 }
 
 // release commits a compat.go whose compat.Oldest is oldest, on its one
