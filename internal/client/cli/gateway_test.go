@@ -244,7 +244,9 @@ func TestTheKokoServerRefusesDirectTCPIP(t *testing.T) {
 func theGatewayProbesAQuietHost(t *testing.T) {
 	h := harness.Start(t, harness.Timings(timing.Timings{HostProbe: 50 * time.Millisecond}))
 	host := managedHost(t, h, "web1")
-	p := h.Background(nil, "exec", "web1", "echo ready; sleep 0.5; echo after the blip")
+	// The command stays quiet until the blip has passed: a set sleep, which
+	// counts from its start, could end before a loaded test froze the Host.
+	p := h.Background(nil, "exec", "web1", "echo ready; until [ -e blipped ]; do sleep 0.05; done; echo after the blip")
 	p.WaitStdout("ready")
 
 	host.Freeze()
@@ -253,6 +255,7 @@ func theGatewayProbesAQuietHost(t *testing.T) {
 	eventually(t, "the Host receives a keepalive@openssh.com", func() bool {
 		return slices.ContainsFunc(host.Requests(), func(r sshhost.Request) bool { return !r.Channel && r.Type == "keepalive@openssh.com" })
 	})
+	mustDo(t, os.WriteFile(filepath.Join(host.Home(), "blipped"), nil, 0o600))
 	if r := p.Wait(); r.Status != 0 || r.Stdout != "ready\nafter the blip\n" || r.Stderr != "" {
 		t.Errorf("exit status %d, stdout %q, stderr %q; want the command to carry on after the blip", r.Status, r.Stdout, r.Stderr)
 	}

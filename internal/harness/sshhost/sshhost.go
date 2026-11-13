@@ -57,6 +57,9 @@ type Host struct {
 	conns    int
 	logins   []Login
 	requests []Request
+	// asked counts the login attempts that reached the Host, each as it
+	// arrived (LoginsAsked).
+	asked int
 	// resetNext counts the connections still to reset, as ResetNext asked.
 	resetNext int
 	// thawed is closed while the Host is not frozen (Freeze).
@@ -372,6 +375,15 @@ func (h *Host) Logins() []Login {
 	return append([]Login(nil), h.logins...)
 }
 
+// LoginsAsked counts the login attempts that have reached the Host, each as
+// it arrived: unlike Logins, it counts one that SlowLogins still holds
+// unanswered.
+func (h *Host) LoginsAsked() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.asked
+}
+
 // Requests returns the channel opens and requests the Host has received, in
 // order.
 func (h *Host) Requests() []Request {
@@ -474,6 +486,9 @@ func (h *Host) serverConfig() *ssh.ServerConfig {
 
 // login records a login attempt and answers it.
 func (h *Host) login(l Login) error {
+	h.mu.Lock()
+	h.asked++
+	h.mu.Unlock()
 	select {
 	case <-time.After(h.settings.slowLogins):
 	case <-h.t.Context().Done():

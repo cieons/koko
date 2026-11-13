@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -299,10 +300,20 @@ func TestAJoinCutInAuthenticationIsNoRefusal(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			address, code := stallingJoin(t, tc.secret)
 			d := harness.NewDevice(t)
 			d.UseTimings(timing.Timings{CommandWait: 200 * time.Millisecond})
-			msg := d.Koko("join", code, "--json").WantError(t, 1, "server_unreachable")
+			// The short wait counts from the join's start, so on a loaded
+			// machine it may end in a step the fake answers, before its
+			// stall: such a join starts again, with a fake of its own, so
+			// that a stall an earlier one reaches late is not counted.
+			var address, msg string
+			eventually(t, "a join reaches the fake koko server's stall", func() bool {
+				var code string
+				var stalled func() bool
+				address, code, stalled = stallingJoin(t, tc.secret)
+				msg = d.Koko("join", code, "--json").WantError(t, 1, "server_unreachable")
+				return stalled()
+			})
 			if !strings.HasPrefix(msg, "cannot reach the koko server at "+address) || !strings.HasSuffix(msg, tc.says) {
 				t.Errorf("a join cut in authentication %s says %q, want that koko cannot reach the koko server at %s, ending %q", tc.name, msg, address, tc.says)
 			}
@@ -314,10 +325,13 @@ func TestAJoinCutInAuthenticationIsNoRefusal(t *testing.T) {
 // stallingJoin starts a fake koko server that never answers a join's
 // authentication: the device key's signature, or, once it has asked for the
 // Join Code's secret as a koko server does for a new key, when secret, the
-// secret. It returns its address and a Join Code for it.
-func stallingJoin(t *testing.T, secret bool) (address, code string) {
+// secret. It returns its address, a Join Code for it, and whether a join
+// has reached the stall.
+func stallingJoin(t *testing.T, secret bool) (address, code string, stalled func() bool) {
 	t.Helper()
+	var reached atomic.Bool
 	stall := func() error {
+		reached.Store(true)
 		<-t.Context().Done()
 		return errors.New("the test ended")
 	}
@@ -367,7 +381,7 @@ func stallingJoin(t *testing.T, secret bool) (address, code string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return address, code
+	return address, code, reached.Load
 }
 
 // A used code, an expired one (the clock moved past its 15 minutes) and one

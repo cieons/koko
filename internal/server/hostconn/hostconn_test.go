@@ -20,9 +20,23 @@ import (
 	"github.com/cieons/koko/internal/shared/timing"
 )
 
-// fast shrinks the connect timings so that a test of retries takes
-// milliseconds.
-var fast = timing.Timings{HostConnectAttempt: 5 * time.Second, HostConnectWait: 20 * time.Millisecond}
+// fast shrinks the wait between attempts so that a test of retries takes
+// milliseconds. Each attempt keeps the product's bound: a Host answers it.
+var fast = timing.Timings{HostConnectWait: 20 * time.Millisecond}
+
+// tries is how many times a test whose attempt bound is shortened, for a
+// Host that never answers a step, runs before it takes the run as it came:
+// the bound counts from the attempt's start, so it times the steps before,
+// which a Host answers, too, and a run in which it cut one starts again.
+const tries = 5
+
+// cutBeforeLogin says whether an attempt to h ran out of time before its
+// login reached h, where h answers every step but the login: each attempt
+// that got that far carried one login, and none is made after one did.
+func cutBeforeLogin(h *sshhost.Host) bool {
+	asked := h.LoginsAsked()
+	return asked == 0 || h.Conns() > asked
+}
 
 // target is how the connector reaches h as its Host Account.
 func target(h *sshhost.Host, login hostconn.Login, pin hostconn.Pin) hostconn.Target {
@@ -251,36 +265,46 @@ func TestGivesUpAfterThreeAttempts(t *testing.T) {
 // An attempt the Host never answers ends at the per-attempt timeout, and the
 // next attempt is made.
 func TestRetriesAnUnansweredAttempt(t *testing.T) {
-	// Registered before the Host starts, so it waits for Connect after the
-	// Host has stopped and let go of the held connection.
-	var wg sync.WaitGroup
-	t.Cleanup(wg.Wait)
 	key := sshhost.NewKey(t, ssh.KeyAlgoED25519)
-	h := sshhost.Start(t, sshhost.AuthorizedKey(key.PublicKey()), sshhost.StallFirst(1))
 	c := hostconn.Connector{Timings: timing.Timings{HostConnectAttempt: time.Second, HostConnectWait: fast.HostConnectWait}}
-
 	type result struct {
 		conn *hostconn.Conn
 		err  error
 	}
-	done := make(chan result, 1)
-	wg.Go(func() {
-		conn, err := c.Connect(t.Context(), target(h, hostconn.KeyLogin(key), hostconn.PinKey(h.HostKey())), nil)
-		done <- result{conn, err}
-	})
+	for try := 1; ; try++ {
+		// Registered before the Host starts, so it waits for Connect after
+		// the Host has stopped and let go of the held connection.
+		var wg sync.WaitGroup
+		t.Cleanup(wg.Wait)
+		h := sshhost.Start(t, sshhost.AuthorizedKey(key.PublicKey()), sshhost.StallFirst(1))
+		done := make(chan result, 1)
+		wg.Go(func() {
+			conn, err := c.Connect(t.Context(), target(h, hostconn.KeyLogin(key), hostconn.PinKey(h.HostKey())), nil)
+			done <- result{conn, err}
+		})
 
-	var r result
-	select {
-	case r = <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("Connect still waits on a Host that never answers")
-	}
-	if r.err != nil {
-		t.Fatalf("Connect: %v", r.err)
-	}
-	t.Cleanup(func() { _ = r.conn.Close() })
-	if got := h.Conns(); got != 2 {
-		t.Errorf("the Host was connected to %d times, want 2", got)
+		var r result
+		select {
+		case r = <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("Connect still waits on a Host that never answers")
+		}
+		if r.err == nil {
+			t.Cleanup(func() { _ = r.conn.Close() })
+		}
+		if h.Conns() > 2 && try < tries {
+			// The second attempt, which the Host answers, ran out of time
+			// too (tries).
+			t.Logf("try %d: the Host was connected to %d times; starting again", try, h.Conns())
+			continue
+		}
+		if r.err != nil {
+			t.Fatalf("Connect: %v", r.err)
+		}
+		if got := h.Conns(); got != 2 {
+			t.Errorf("the Host was connected to %d times, want 2", got)
+		}
+		return
 	}
 }
 
@@ -620,15 +644,24 @@ func TestALoginReachesEachHopAtMostOnce(t *testing.T) {
 	const relays = 2
 	for slow := range relays + 1 {
 		t.Run("hop "+strconv.Itoa(slow), func(t *testing.T) {
-			c := startChain(t, relays, func(hop int) []sshhost.Option {
-				if hop == slow {
-					return []sshhost.Option{sshhost.SlowLogins(time.Minute)}
-				}
-				return nil
-			})
 			conn := hostconn.Connector{Timings: timing.Timings{HostConnectAttempt: time.Second, HostConnectWait: fast.HostConnectWait}}
-
-			_, err := conn.Connect(t.Context(), c.hostTarget(), c.relayTargets())
+			var c relayChain
+			var err error
+			for try := 1; ; try++ {
+				c = startChain(t, relays, func(hop int) []sshhost.Option {
+					if hop == slow {
+						return []sshhost.Option{sshhost.SlowLogins(time.Minute)}
+					}
+					return nil
+				})
+				_, err = conn.Connect(t.Context(), c.hostTarget(), c.relayTargets())
+				// The bound also times every step before the slow hop's
+				// login, its own and each Relay's before it (tries).
+				if !cutBeforeLogin(c.hop(slow)) || try == tries {
+					break
+				}
+				t.Logf("try %d: an attempt ran out of time before the slow hop's login (%v); starting again", try, err)
+			}
 
 			if err == nil || errors.Is(err, hostconn.ErrUnreachable) || errors.Is(err, hostconn.ErrLoginRefused) {
 				t.Fatalf("Connect error = %v, want the attempt's timeout, not retried", err)
@@ -862,10 +895,18 @@ func TestAFingerprintPinRefusesEveryOtherKey(t *testing.T) {
 // is not retried: a key or a password reaches a Host at most once per
 // Connect.
 func TestAnAttemptThatSentTheLoginIsNotRetried(t *testing.T) {
-	h := sshhost.Start(t, sshhost.Password("correct horse"), sshhost.SlowLogins(time.Minute))
 	c := hostconn.Connector{Timings: timing.Timings{HostConnectAttempt: time.Second, HostConnectWait: fast.HostConnectWait}}
-
-	_, err := c.Connect(t.Context(), target(h, hostconn.PasswordLogin("correct horse"), hostconn.PinKey(h.HostKey())), nil)
+	var h *sshhost.Host
+	var err error
+	for try := 1; ; try++ {
+		h = sshhost.Start(t, sshhost.Password("correct horse"), sshhost.SlowLogins(time.Minute))
+		_, err = c.Connect(t.Context(), target(h, hostconn.PasswordLogin("correct horse"), hostconn.PinKey(h.HostKey())), nil)
+		// The bound also times the steps before the login (tries).
+		if !cutBeforeLogin(h) || try == tries {
+			break
+		}
+		t.Logf("try %d: an attempt ran out of time before the login (%v); starting again", try, err)
+	}
 
 	if err == nil || errors.Is(err, hostconn.ErrUnreachable) || errors.Is(err, hostconn.ErrLoginRefused) {
 		t.Fatalf("Connect error = %v, want the attempt's timeout, not retried", err)
