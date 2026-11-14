@@ -81,6 +81,9 @@ and its Files panel uploads and downloads files on them
 - One SSH port (7822 by default) and no certificates; `ssh`, `scp` and
   `rsync` work unchanged through it.
 - CLI first, with a built-in skill for coding agents (`koko skill`).
+- Ansible reaches the Managed Hosts through koko, with
+  `koko host ls --ansible` as its inventory
+  ([Using koko with Ansible](docs/ansible.md)).
 
 ## License
 

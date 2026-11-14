@@ -50,17 +50,18 @@ var hostCommands = []Command{
 		Flags: []Flag{
 			{Name: "with-note", Bool: true, Summary: "Include each Host's Note"},
 			{Name: "all", Bool: true, Summary: "Include the Retired Hosts, which state=retired lists alone"},
+			{Name: "ansible", Bool: true, Summary: "Print the Managed Hosts as Ansible's dynamic inventory JSON, without --all, --with-note or --json"},
 		},
 		Filters: api.HostListFields,
 		Examples: []string{
 			"koko host ls",
-			"koko host ls region=eu --sort expires_at",
 			"koko host ls price.gt=10 --sort price.desc --json",
+			"koko host ls region=eu --ansible",
 		},
 		Tier: Read,
 		Who:  Anyone,
 		Op:   api.HostList,
-		Run:  action(hostLs),
+		Run:  hostLsAction,
 	},
 	{
 		Noun:    "host",

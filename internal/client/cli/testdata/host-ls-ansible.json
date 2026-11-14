@@ -1,0 +1,74 @@
+{
+  "_meta": {
+    "hostvars": {
+      "app1": {
+        "ansible_host": "app1.koko",
+        "koko_region": "us",
+        "koko_space": "alice"
+      },
+      "db1": {
+        "ansible_host": "db1.koko",
+        "koko_region": "eu",
+        "koko_role": "db",
+        "koko_space": "eu-ops"
+      },
+      "web1": {
+        "ansible_host": "web1.koko",
+        "koko_expires_at": "2027-01-31",
+        "koko_price": 12.5,
+        "koko_region": "eu",
+        "koko_role": "web",
+        "koko_space": "eu-ops",
+        "koko_team": "Core/Ops 2"
+      }
+    }
+  },
+  "all": {
+    "children": [
+      "region_eu",
+      "region_us",
+      "role_db",
+      "role_web",
+      "space_alice",
+      "space_eu_ops",
+      "team_Core_Ops_2"
+    ]
+  },
+  "region_eu": {
+    "hosts": [
+      "db1",
+      "web1"
+    ]
+  },
+  "region_us": {
+    "hosts": [
+      "app1"
+    ]
+  },
+  "role_db": {
+    "hosts": [
+      "db1"
+    ]
+  },
+  "role_web": {
+    "hosts": [
+      "web1"
+    ]
+  },
+  "space_alice": {
+    "hosts": [
+      "app1"
+    ]
+  },
+  "space_eu_ops": {
+    "hosts": [
+      "db1",
+      "web1"
+    ]
+  },
+  "team_Core_Ops_2": {
+    "hosts": [
+      "web1"
+    ]
+  }
+}

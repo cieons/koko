@@ -52,6 +52,7 @@ curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | 
 - 接入主机时只添加一个公钥，不作其他任何更改。
 - 只使用一个 SSH 端口（默认 7822），无需证书；`ssh`、`scp` 和 `rsync` 可直接经由该端口使用，无需改动。
 - 以 CLI 为核心，内置供编程 agent 使用的 skill（`koko skill`）。
+- Ansible 经由 koko 访问已接入的主机，并以 `koko host ls --ansible` 的输出作为主机清单（见 [Using koko with Ansible](docs/ansible.md)）。
 
 ## 许可证
 
