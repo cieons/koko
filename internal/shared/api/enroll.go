@@ -48,11 +48,16 @@ type HostEnrollRequest struct {
 	// Password is the Host Account's password. Exactly one of Password,
 	// PrivateKey and Secret is given.
 	Password EnrollInput `json:"password_base64,omitzero"`
-	// PrivateKey is a private key the Host Account accepts, unencrypted, in
-	// a form golang.org/x/crypto/ssh parses: OpenSSH, PKCS #1, PKCS #8 or
-	// SEC 1, in PEM. koko host enroll --key decrypts an encrypted key on the
-	// device, so its passphrase never leaves it.
+	// PrivateKey is a private key the Host Account accepts, in a form
+	// golang.org/x/crypto/ssh parses: OpenSSH, PKCS #1, PKCS #8 or SEC 1,
+	// in PEM. One that is encrypted comes with its Passphrase. koko host
+	// enroll --key decrypts an encrypted key on the device, so its
+	// passphrase never leaves it; the web UI sends both.
 	PrivateKey EnrollInput `json:"private_key_base64,omitzero"`
+	// Passphrase opens PrivateKey when it is encrypted, and is given with
+	// an encrypted PrivateKey alone. The koko server decrypts the key with
+	// it once, and keeps and logs neither.
+	Passphrase EnrollInput `json:"passphrase_base64,omitzero"`
 	// Secret names a Secret that holds the Host Account's password or a
 	// private key it accepts. The koko server reads it on its own side, for
 	// the caller, who must be able to act in its Space, so the value never
@@ -100,7 +105,9 @@ type HostEnrollResponse struct {
 // exist, with CodeUnknownSpace, whatever the caller can do on the Host. The
 // login runs before the write's transaction, so a slow Host holds up no
 // other write.
-var HostEnroll = Op[HostEnrollRequest, HostEnrollResponse]{Name: "host.enroll", Write: true}
+var HostEnroll = Op[HostEnrollRequest, HostEnrollResponse]{
+	Name: "host.enroll", Write: true, Revision: 2, Added: map[string]int{"passphrase_base64": 2},
+}
 
 var enrollOperations = []Operation{
 	HostEnroll,
@@ -134,6 +141,12 @@ var (
 	// though the koko key may be in the authorized_keys of the Host Account
 	// it logged in as; it may run again.
 	CodeHostChanged = Code{"host_changed", http.StatusConflict}
+	// CodePassphraseNeeded: private_key_base64 is encrypted, and the call
+	// gives no passphrase_base64 to open it.
+	CodePassphraseNeeded = Code{"passphrase_needed", http.StatusBadRequest}
+	// CodeWrongPassphrase: passphrase_base64 does not open the encrypted
+	// private_key_base64.
+	CodeWrongPassphrase = Code{"wrong_passphrase", http.StatusBadRequest}
 )
 
 var enrollCodes = []Code{
@@ -143,4 +156,6 @@ var enrollCodes = []Code{
 	CodeKeyNotAdded,
 	CodeAlreadyManaged,
 	CodeHostChanged,
+	CodePassphraseNeeded,
+	CodeWrongPassphrase,
 }

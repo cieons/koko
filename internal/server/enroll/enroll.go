@@ -15,6 +15,7 @@ package enroll
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -180,16 +181,20 @@ func (e *enroller) inputOf(ctx context.Context, tx store.Tx, caller op.Caller, r
 		return input{}, api.CodeInvalidRequest.Errorf(
 			"give host.enroll the Host Account's password, a private key it accepts, or a Secret holding either: exactly one of them")
 	}
-	if max(len(req.Password), len(req.PrivateKey)) > api.EnrollInputMaxSize {
+	if len(req.Passphrase) > 0 && len(req.PrivateKey) == 0 {
+		return input{}, api.CodeInvalidRequest.Errorf(
+			"passphrase_base64 opens an encrypted private_key_base64: give it only with one")
+	}
+	if max(len(req.Password), len(req.PrivateKey), len(req.Passphrase)) > api.EnrollInputMaxSize {
 		return input{}, api.CodeInvalidValue.Errorf(
-			"the password or private key is longer than %d KiB, the most Enroll takes", api.EnrollInputMaxSize>>10)
+			"the password, private key or passphrase is longer than %d KiB, the most Enroll takes", api.EnrollInputMaxSize>>10)
 	}
 	switch {
 	case len(req.Password) > 0:
 		return input{login: hostconn.PasswordLogin(string(req.Password)), refusedAs: "the password"}, nil
 	case len(req.PrivateKey) > 0:
-		return keyInput(req.PrivateKey, "the private key",
-			"Enroll takes it decrypted, as koko host enroll --key sends it once it has asked for the passphrase")
+		return keyInput(req.PrivateKey, req.Passphrase, "the private key", api.CodePassphraseNeeded.Errorf(
+			"the private key is encrypted: give its passphrase in passphrase_base64, or send it decrypted, as koko host enroll --key does once it has asked for the passphrase"))
 	}
 	return e.inputFromSecret(ctx, tx, caller, *req.Secret)
 }
@@ -207,8 +212,8 @@ func (e *enroller) inputFromSecret(ctx context.Context, tx store.Tx, caller op.C
 		return input{}, err
 	}
 	if key := bytes.TrimLeft(value, " \t\r\n"); bytes.HasPrefix(key, pemHeader) {
-		return keyInput(key, "the private key in the Secret "+ref.String(),
-			"Enroll takes a key decrypted, and koko keeps no passphrase: store the key decrypted, or Enroll with --key <file>, which asks for the passphrase on the device")
+		return keyInput(key, nil, "the private key in the Secret "+ref.String(), api.CodeInvalidValue.Errorf(
+			"the private key in the Secret %s is encrypted: koko keeps no passphrase, so store the key decrypted, or Enroll with --key <file>, which asks for the passphrase on the device", ref))
 	}
 	password := api.EnrollPassword(value)
 	if len(password) == 0 {
@@ -218,13 +223,24 @@ func (e *enroller) inputFromSecret(ctx context.Context, tx store.Tx, caller op.C
 	return input{login: hostconn.PasswordLogin(string(password)), refusedAs: "the password in the Secret " + ref.String()}, nil
 }
 
-// keyInput parses key, the private key refusedAs names. It refuses an
-// encrypted key, saying why with whenEncrypted, and one that does not
-// parse.
-func keyInput(key []byte, refusedAs, whenEncrypted string) (input, error) {
+// keyInput parses key, the private key refusedAs names, decrypting it with
+// passphrase when it is encrypted. It refuses an encrypted key with no
+// passphrase with whenEncrypted, one the passphrase does not open with
+// CodeWrongPassphrase, a passphrase for a key that is not encrypted, and a
+// key that does not parse. The passphrase appears in no refusal.
+func keyInput(key, passphrase []byte, refusedAs string, whenEncrypted *api.Error) (input, error) {
 	signer, err := ssh.ParsePrivateKey(key)
-	if _, encrypted := errors.AsType[*ssh.PassphraseMissingError](err); encrypted {
-		return input{}, api.CodeInvalidValue.Errorf("%s is encrypted: %s", refusedAs, whenEncrypted)
+	_, encrypted := errors.AsType[*ssh.PassphraseMissingError](err)
+	switch {
+	case encrypted && len(passphrase) == 0:
+		return input{}, whenEncrypted
+	case encrypted:
+		signer, err = ssh.ParsePrivateKeyWithPassphrase(key, passphrase)
+		if errors.Is(err, x509.IncorrectPasswordError) {
+			return input{}, api.CodeWrongPassphrase.Errorf("the passphrase does not open %s", refusedAs)
+		}
+	case err == nil && len(passphrase) > 0:
+		return input{}, api.CodeInvalidRequest.Errorf("%s is not encrypted, so it takes no passphrase_base64", refusedAs)
 	}
 	if err != nil {
 		return input{}, api.CodeInvalidValue.Errorf("%s does not parse: %v", refusedAs, err)

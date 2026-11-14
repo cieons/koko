@@ -18,12 +18,19 @@ export interface HostEnrollRequest {
    */
   password_base64?: string;
   /**
-   * PrivateKey is a private key the Host Account accepts, unencrypted, in
-   * a form golang.org/x/crypto/ssh parses: OpenSSH, PKCS #1, PKCS #8 or
-   * SEC 1, in PEM. koko host enroll --key decrypts an encrypted key on the
-   * device, so its passphrase never leaves it.
+   * PrivateKey is a private key the Host Account accepts, in a form
+   * golang.org/x/crypto/ssh parses: OpenSSH, PKCS #1, PKCS #8 or SEC 1,
+   * in PEM. One that is encrypted comes with its Passphrase. koko host
+   * enroll --key decrypts an encrypted key on the device, so its
+   * passphrase never leaves it; the web UI sends both.
    */
   private_key_base64?: string;
+  /**
+   * Passphrase opens PrivateKey when it is encrypted, and is given with
+   * an encrypted PrivateKey alone. The koko server decrypts the key with
+   * it once, and keeps and logs neither.
+   */
+  passphrase_base64?: string;
   /**
    * Secret names a Secret that holds the Host Account's password or a
    * private key it accepts. The koko server reads it on its own side, for
@@ -127,3 +134,15 @@ export const CodeAlreadyManaged = "already_managed";
  * it logged in as; it may run again.
  */
 export const CodeHostChanged = "host_changed";
+
+/**
+ * CodePassphraseNeeded: private_key_base64 is encrypted, and the call
+ * gives no passphrase_base64 to open it.
+ */
+export const CodePassphraseNeeded = "passphrase_needed";
+
+/**
+ * CodeWrongPassphrase: passphrase_base64 does not open the encrypted
+ * private_key_base64.
+ */
+export const CodeWrongPassphrase = "wrong_passphrase";

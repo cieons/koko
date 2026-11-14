@@ -204,6 +204,17 @@ secret.name 1 string
 host_key 1 string
 replace_host_key 1 boolean
 
+== host.enroll 2
+host 1 string
+password_base64 1 list of number
+private_key_base64 1 list of number
+passphrase_base64 2 list of number
+secret 1 object
+secret.space 1 string
+secret.name 1 string
+host_key 1 string
+replace_host_key 1 boolean
+
 == service.add 1
 host 1 string
 name 1 string

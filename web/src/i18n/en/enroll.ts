@@ -6,4 +6,6 @@ export default {
   "error.key_not_added": "koko logged in to the Host but could not add the koko key to its authorized_keys.",
   "error.already_managed": "The Host is Managed already; Enroll it again only to pin a new host key.",
   "error.host_changed": "The Host changed while it was being Enrolled, so koko recorded nothing; Enroll it again.",
+  "error.passphrase_needed": "The private key is encrypted; give its passphrase.",
+  "error.wrong_passphrase": "The passphrase does not open the private key.",
 };

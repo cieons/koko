@@ -48,7 +48,18 @@ for people, the fingerprint it pinned.
 `private_key_base64` (each an `api.EnrollInput`, bytes carried as base64,
 which prints and logs as its length) and `secret` (an `api.SecretRef`,
 `{"space", "name"}`), and at most one of `host_key` and
-`replace_host_key`. It is a [prepared write](api.md#the-operation-framework):
+`replace_host_key`. It is a [prepared write](api.md#the-operation-framework).
+
+An encrypted `private_key_base64` comes with `passphrase_base64`, an
+`api.EnrollInput` too, from revision 2, as the web UI sends it;
+`koko host enroll --key` decrypts on the device and sends none. The koko
+server decrypts the key with it once and keeps neither. An encrypted key
+without it is refused with
+`passphrase_needed`, one it does not open with `wrong_passphrase`, and a
+passphrase with anything but an encrypted `private_key_base64` with
+`invalid_request`, each before any login, and no refusal holds it.
+
+Enroll runs in two parts:
 
 1. **Before the write's transaction.** In one short read-only transaction,
    it checks the request, reads the Host through
@@ -177,8 +188,9 @@ logged in as, which the refusal says.
 ## Failures and the log
 
 Enroll's refusals are `unexpected_host_key`, `login_refused` (never
-retried), `host_unreachable`, `key_not_added`, `already_managed` and
-`host_changed` ([the codes](api.md#calls)).
+retried), `host_unreachable`, `key_not_added`, `already_managed`,
+`host_changed`, `passphrase_needed` and `wrong_passphrase`
+([the codes](api.md#calls)).
 
 The koko server logs `host enrolled` (the Host, its id, the User, and
 `enrolled_by`, the Device Session or `unix socket`, with the pinned
@@ -201,6 +213,12 @@ value: the request is kept only as the sealed digest of its
   when the Host Account changes during the login, the state table, `host
   rm` refused, a dropped caller not cancelling Enroll, and no input in any
   output, log line or database file.
+- [`internal/client/cli/enroll_passphrase_test.go`](../../internal/client/cli/enroll_passphrase_test.go):
+  `host.enroll` with an encrypted key and its `passphrase_base64`; the key
+  without it refused with `passphrase_needed`, with a wrong one with
+  `wrong_passphrase`, and a passphrase with a key that is not encrypted or
+  with a password with `invalid_request`, each before any login; and the
+  passphrase in no refusal, log line or file of the data directory.
 - [`internal/client/cli/enroll_secret_test.go`](../../internal/client/cli/enroll_secret_test.go):
   `--secret` holding a password, with the line ending `echo` adds, and a
   private key in OpenSSH's form and in PKCS #8; no prompt and no stdin read;

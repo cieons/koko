@@ -180,6 +180,8 @@ first call, through the dial it was given, and for each call:
 | `key_not_added` | 502 | Enroll logged in but could not append the koko key to the Host Account's `authorized_keys`. |
 | `already_managed` | 409 | Enroll of a Managed Host without `host_key` or `replace_host_key`. |
 | `host_changed` | 409 | The Host's Host Account, state, pin or Relay changed while Enroll logged in to it, so it recorded nothing. |
+| `passphrase_needed` | 400 | Enroll's `private_key_base64` is encrypted, and the call gives no `passphrase_base64` ([Enroll](enroll.md#the-operation)). |
+| `wrong_passphrase` | 400 | Enroll's `passphrase_base64` does not open its encrypted `private_key_base64`. |
 | `host_was_managed` | 409 | `host.remove` of a Host that has been Managed, as its pin shows ([the record](record.md#operations)). |
 | `host_retired` | 409 | A Retired Host was asked for a change it does not take, or to be Enrolled or retired again ([retiring a Host](record.md#retiring-a-host)). |
 | `invalid_relay` | 409 | The Host named as a Relay cannot be one: the Host itself, not Managed, or with a Relay of its own; or the Host given a Relay is the Relay of a Host that is not Retired; or Enroll of a Host whose Relay is not Managed ([a Relay](record.md#a-relay)). |
