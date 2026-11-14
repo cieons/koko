@@ -254,7 +254,9 @@ func SocketPath(path string) Option {
 // connection (from 32768 on Linux, 49152 on macOS), FreeAddr returns none
 // twice in one test process, and until the test ends it holds the UDP port
 // of the same number, which FreeAddr in another test process, such as
-// another package's or another checkout's, then passes over.
+// another package's or another checkout's, then passes over. On Unix it
+// finds the TCP port free by dialing it, leaving nothing there that would
+// outlast its return (WaitNothingListens).
 func FreeAddr(t testing.TB) string {
 	t.Helper()
 	return freeAddr(t, freePorts)
@@ -271,19 +273,30 @@ func freeAddr(t testing.TB, ports *portSeq) string {
 		if err != nil {
 			continue // another test process reserved it, or something else holds it
 		}
-		ln, err := lc.Listen(t.Context(), "tcp4", addr)
-		if err != nil {
+		if listening(t.Context(), addr) {
 			_ = reserved.Close()
 			continue // something outside the test processes holds it
 		}
 		t.Cleanup(func() { _ = reserved.Close() })
-		if err := ln.Close(); err != nil {
-			t.Fatal(err)
-		}
 		return addr
 	}
 	t.Fatalf("no free TCP port on 127.0.0.1 in %d tries", freePortTries)
 	return ""
+}
+
+// WaitNothingListens waits until nothing listens on addr, a loopback TCP
+// address such as a FreeAddr, before a test binds it in its own process
+// again, as a restart of koko web on its port does. A listener the test
+// process closed lives on in a child process it forked meanwhile, such as an
+// in-process Host's shell, until that child execs, and a bind of the port
+// fails until then (#224). It fails the test when 10 s pass first.
+func WaitNothingListens(t testing.TB, addr string) {
+	t.Helper()
+	for deadline := time.Now().Add(waitFor); listening(t.Context(), addr); time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("something still listens on %s after %v", addr, waitFor)
+		}
+	}
 }
 
 // The ports FreeAddr returns, from firstFreePort up to the start of Linux's

@@ -70,9 +70,12 @@ func startWebOn(t *testing.T, h *harness.Harness, port int) *kokoWeb {
 }
 
 // startWebThrough runs koko web --no-open --json on port with background, the
-// Local caller's or a device's, and waits for its address.
+// Local caller's or a device's, and waits for its address. On a port an
+// earlier koko web of the test ran on, it first waits until that run's
+// listener is gone from the test process's children too.
 func startWebThrough(t *testing.T, background func(env []string, args ...string) *harness.Process, port int) *kokoWeb {
 	t.Helper()
+	harness.WaitNothingListens(t, net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	p := background(nil, "web", "--port", strconv.Itoa(port), "--no-open", "--json")
 	w := printedWeb(t, p.WaitStdout("}\n"))
 	w.Process = p
