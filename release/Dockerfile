@@ -29,6 +29,10 @@ LABEL org.opencontainers.image.source=https://github.com/cieons/koko \
 # docker exec runs as the Local caller over the container's socket.
 COPY --chmod=0755 kokod-linux-$TARGETARCH /usr/local/bin/kokod
 COPY --chmod=0755 koko-linux-$TARGETARCH /usr/local/bin/koko
+# kokod's third-party notices, the file kokod version --licenses prints,
+# from the build context notices that make image names: the repository's
+# internal/server/kokod, never dist/, so no release asset holds it.
+COPY --from=notices THIRD_PARTY_NOTICES /usr/share/doc/koko/THIRD_PARTY_NOTICES
 # /koko holds the data directory and the Root Key; /run/koko the Unix
 # socket, in a directory only uid 65532 can write. A named volume on /koko
 # starts as a copy of it; a bind mount must be 65532's already, since koko

@@ -89,6 +89,10 @@ func (c *command) parse(rest []string, getenv func(string) string) (*parsed, err
 			return nil, usagef("unknown flag --%s for kokod %s", name, c.name)
 		case p.values[name] != "":
 			return nil, usagef("--%s is given twice", name)
+		case f.Bool && hasValue:
+			return nil, usagef("--%s takes no value", name)
+		case f.Bool:
+			value = "true"
 		case !hasValue && (i+1 == len(rest) || strings.HasPrefix(rest[i+1], "--")):
 			return nil, usagef("--%s needs a value (write --%s=<%s> for one that starts with --)", name, name, f.Value)
 		case !hasValue:

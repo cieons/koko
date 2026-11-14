@@ -24,7 +24,9 @@ A package that holds only tests is in no group, since only non-test
 dependencies count: so far the real-OpenSSH test's
 [`internal/client/openssh`](#the-real-openssh-test), and
 [`internal/client/muxprocess`](../../internal/client/muxprocess/muxprocess_test.go),
-which runs a real Device Mux process.
+which runs a real Device Mux process, and
+[`internal/notices`](../../internal/notices/notices_test.go), which writes
+and checks the binaries' [third-party notices](release.md#third-party-notices).
 
 | Program | May not depend on |
 | --- | --- |

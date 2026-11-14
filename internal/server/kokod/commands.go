@@ -2,6 +2,7 @@ package kokod
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"io"
 	"strings"
@@ -63,8 +64,11 @@ var commands = []*command{
 	{
 		name:    "version",
 		summary: "Print this kokod's build",
-		json:    "Print the build as JSON",
-		run:     version,
+		flags: []flag{
+			{Name: "licenses", Bool: true, Summary: "print the third-party software this kokod includes, with its licences and notices"},
+		},
+		json: "Print the build as JSON",
+		run:  version,
 	},
 }
 
@@ -184,17 +188,35 @@ type versionJSON struct {
 	Go string `json:"go"`
 	// Platform is GOOS/GOARCH, such as linux/amd64.
 	Platform string `json:"platform"`
+	// Licenses is thirdPartyNotices, with --licenses.
+	Licenses string `json:"licenses,omitempty"`
 }
 
+// thirdPartyNotices names every third-party component this kokod carries,
+// its web UI's included, with its licence and notices; internal/notices
+// writes it, and fails make check when it is out of date or a licence is
+// not one koko accepts. The image carries the same file
+// (release/Dockerfile).
+//
+//go:embed THIRD_PARTY_NOTICES
+var thirdPartyNotices string
+
 // version is kokod version: it prints the build koko version prints, naming
-// kokod.
+// kokod, or with --licenses the third-party notices.
 func version(_ context.Context, _ *Program, inv *Invocation, line *parsed) error {
 	b := build.Read()
+	licenses := line.value("licenses") != ""
 	var out strings.Builder
 	if line.json {
-		if err := encodeJSON(&out, versionJSON{Version: b.Version, Revision: b.Revision, Go: b.Go, Platform: b.Platform}); err != nil {
+		v := versionJSON{Version: b.Version, Revision: b.Revision, Go: b.Go, Platform: b.Platform}
+		if licenses {
+			v.Licenses = thirdPartyNotices
+		}
+		if err := encodeJSON(&out, v); err != nil {
 			return fmt.Errorf("encode the build: %w", err)
 		}
+	} else if licenses {
+		out.WriteString(thirdPartyNotices)
 	} else {
 		fmt.Fprintf(&out, "kokod %s\n", b)
 	}
@@ -225,15 +247,24 @@ func writeHelp(w io.Writer) {
 func (c *command) writeHelp(w io.Writer) {
 	line := "kokod " + c.name
 	for _, f := range c.flags {
-		line += fmt.Sprintf(" [--%s <%s>]", f.Name, f.Value)
+		line += " [" + f.usage() + "]"
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintf(tw, "%s [--json]\n\n%s\n\nFlags:\n", line, c.summary)
 	for _, f := range c.flags {
-		_, _ = fmt.Fprintf(tw, "  --%s <%s>\t%s%s\n", f.Name, f.Value, f.Summary, details(f))
+		_, _ = fmt.Fprintf(tw, "  %s\t%s%s\n", f.usage(), f.Summary, details(f))
 	}
 	_, _ = fmt.Fprintf(tw, "  --json\t%s\n", c.json)
 	_ = tw.Flush()
+}
+
+// usage is the flag as help writes it: --name <value>, or --name for a
+// Bool flag.
+func (f flag) usage() string {
+	if f.Bool {
+		return "--" + f.Name
+	}
+	return fmt.Sprintf("--%s <%s>", f.Name, f.Value)
 }
 
 // details is what help adds after a flag's summary: its choices, its

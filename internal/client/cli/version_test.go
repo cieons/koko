@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"encoding/json/v2"
+	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -40,5 +41,34 @@ func TestVersionPrintsTheBuild(t *testing.T) {
 	r.WantSuccess(t)
 	if !strings.HasPrefix(r.Stdout, "koko "+v.Version+" (") {
 		t.Errorf("version = %q", r.Stdout)
+	}
+}
+
+// version --licenses prints the third-party notices koko embeds, offline,
+// as text or in the build's JSON.
+func TestVersionPrintsTheThirdPartyNotices(t *testing.T) {
+	t.Parallel()
+	notices, err := os.ReadFile("THIRD_PARTY_NOTICES")
+	if err != nil {
+		t.Fatal(err)
+	}
+	noServer := cli.Runner{SocketPath: filepath.Join(t.TempDir(), "none.sock")}
+	r := harness.Run(t, noServer, nil, "version", "--licenses")
+	r.WantSuccess(t)
+	if r.Stdout != string(notices) || !strings.HasPrefix(r.Stdout, "Third-party notices for koko\n") {
+		t.Errorf("version --licenses printed %d bytes, not THIRD_PARTY_NOTICES's %d", len(r.Stdout), len(notices))
+	}
+
+	r = harness.Run(t, noServer, nil, "version", "--licenses", "--json")
+	r.WantSuccess(t)
+	var v struct {
+		Version  string `json:"version"`
+		Licenses string `json:"licenses"`
+	}
+	if err := json.Unmarshal([]byte(r.Stdout), &v); err != nil {
+		t.Fatalf("version --licenses --json: %v", err)
+	}
+	if v.Version == "" || v.Licenses != string(notices) {
+		t.Errorf("version --licenses --json has version %q and %d bytes of licenses, want THIRD_PARTY_NOTICES's %d", v.Version, len(v.Licenses), len(notices))
 	}
 }

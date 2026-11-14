@@ -21,7 +21,9 @@ holds:
 | `SHA256SUMS` | the SHA-256 of each asset above, one `<hex>  <name>` line each, as `sha256sum` writes it |
 
 Each binary is self-contained, built with `CGO_ENABLED=0`, `-trimpath` and
-`-ldflags='-s -w'`. Every asset in `SHA256SUMS` has a GitHub artifact
+`-ldflags='-s -w'`, and carries its own [third-party
+notices](#third-party-notices), so a release holds no notices file of its
+own. Every asset in `SHA256SUMS` has a GitHub artifact
 attestation, which `gh attestation verify <file> --repo cieons/koko` checks.
 
 The names, the `releases/latest` redirect and `SHA256SUMS` are read by
@@ -40,6 +42,40 @@ its `upgrade_way` `image` ([the update check](initialisation.md#the-update-check
 
 Beside the Release, each release pushes [the image](#the-image).
 
+## Third-party notices
+
+Each binary embeds the notices of the third-party software it carries, and
+prints them with `koko version --licenses` and `kokod version --licenses`
+([#220](https://github.com/cieons/koko/issues/220)): every Go module its
+build links on any of its platforms, the Go project's own licence and
+patent grant for the standard library and runtime, the files vendored in
+the repository that a linked package embeds (Ghostty's VT module beside
+[`internal/server/vt`](../../internal/server/vt), the Geist fonts beside
+the web UI's source), and, in `kokod`, every npm package of the web UI's
+build that `web/package-lock.json` does not mark as for development alone.
+Each part names its components, then the licence and notice files they
+carry (a module's `NOTICE`, such as wazero's, among them), once for all the
+components that share them.
+
+The two files are committed:
+[`internal/client/cli/THIRD_PARTY_NOTICES`](../../internal/client/cli/THIRD_PARTY_NOTICES)
+and
+[`internal/server/kokod/THIRD_PARTY_NOTICES`](../../internal/server/kokod/THIRD_PARTY_NOTICES),
+so `go build` needs no step of its own.
+[`internal/notices`](../../internal/notices/notices_test.go), a package of
+tests alone, writes them from the module cache, `web/node_modules` and the
+repository, and nothing else: `go test ./internal/notices -update`. In
+`make check` it fails when either file differs from what it would write,
+and when a component's licence is not one koko accepts:
+`acceptedLicences`, permissive licences and MPL-2.0. A Go module's or a
+vendored file's licence is read from its licence file's text, an npm
+package's from its `license` field; a text naming a copyleft or
+source-available licence, such as the GPL, fails it either way, as does a
+licence text it does not recognise, which is accepted only once read.
+
+The image carries `kokod`'s file at
+`/usr/share/doc/koko/THIRD_PARTY_NOTICES`.
+
 ## The image
 
 `ghcr.io/cieons/koko` runs the koko server in a container that systemd does
@@ -53,6 +89,7 @@ step, so building for the other architecture needs no emulation:
 | Base | `gcr.io/distroless/static-debian12:nonroot`, pinned by digest; [Dependabot](../../.github/dependabot.yml) opens a pull request when the digest moves |
 | User | the base's default, the numeric `65532` (`nonroot` in its `/etc/passwd`, home `/home/nonroot`), from the start: the image never runs as root and holds no capability ([ADR 0039](../adr/0039-the-container-runs-as-uid-65532-from-the-start-and-koko-changes-no-owner.md)) |
 | Binaries | `/usr/local/bin/kokod` and `/usr/local/bin/koko`: the release's `kokod-linux-<arch>` and `koko-linux-<arch>`, copied from `dist/`, never rebuilt: the binaries `SHA256SUMS` lists, whose version the release checks is the tag |
+| Notices | `/usr/share/doc/koko/THIRD_PARTY_NOTICES`: `kokod`'s [third-party notices](#third-party-notices), the file it embeds, from the build context `notices`, which `make image` names as `internal/server/kokod`, so `dist/` and the release hold no copy |
 | Entrypoint, command | `["kokod"]`, `["run"]`: `kokod run`, which takes the flags and `KOKO_*` variables `koko server run` took before it, so a Compose file that sets no entrypoint or command, as `release/compose.yaml` sets none, needs no change |
 | Environment | `KOKO_DATA_DIR=/koko/data`, `KOKO_ROOT_KEY_FILE=/koko/root.key` |
 | Directories | `/koko` (0700, uid and gid 65532), a `VOLUME`, so a container without a mount keeps its data in an anonymous volume, which outlives `docker rm`; `/run/koko` (0755, 65532), the socket's directory |
@@ -832,7 +869,8 @@ them is removed, then, in order:
    65532's, and so is `data/koko.db`; `docker logs koko` says `koko server
    initialised` and names `koko device add`, and never holds the Root Key;
    and `docker exec koko koko version` and `docker exec koko kokod version`
-   name the same version and commit;
+   name the same version and commit, and `docker exec koko kokod version
+   --licenses` prints `kokod`'s notices;
 2. without that line, Docker makes `state/` as root, and the start is
    refused, naming `/koko` and uid and gid 65532, with nothing written in
    it; run with `--user 0` there, the image is refused, naming the rule,
@@ -881,7 +919,9 @@ them is removed, then, in order:
 10. the archive's index holds `linux/amd64` and `linux/arm64` and nothing
     else, and in each platform's layers `/usr/local/bin/kokod` and
     `/usr/local/bin/koko` have the SHA-256s `SHA256SUMS` lists for its
-    `kokod-linux-<arch>` and `koko-linux-<arch>`.
+    `kokod-linux-<arch>` and `koko-linux-<arch>`, and
+    `/usr/share/doc/koko/THIRD_PARTY_NOTICES` is what `kokod version
+    --licenses` printed.
 
 **One build.** The check runs only the image of the commit it checks.
 Upgrading across a migration step and going back belong to the binaries,

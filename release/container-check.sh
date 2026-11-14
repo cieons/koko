@@ -31,7 +31,8 @@
 # koko server install refuses in a plain container with no network, naming
 # the image, before any download; and
 # the image's index holds linux/amd64 and linux/arm64, each with the kokod
-# and the koko SHA256SUMS list. Upgrades and going back are the
+# and the koko SHA256SUMS list, and the notices kokod version --licenses
+# prints at /usr/share/doc/koko/THIRD_PARTY_NOTICES. Upgrades and going back are the
 # real-systemd check's and the tests', since the image holds the same
 # binaries.
 #
@@ -337,6 +338,8 @@ build=$(jq -r '"\(.version) \(.revision)"' "$work/koko-version")
 [ "$(jq -r '"\(.version) \(.revision)"' "$work/kokod-version")" = "$build" ] ||
 	fail "kokod version says $(cat "$work/kokod-version"), but koko version says $build"
 docker exec koko kokod version | grep -q '^kokod ' || fail "kokod version does not name kokod"
+docker exec koko kokod version --licenses >"$work/notices"
+grep -q '^Third-party notices for kokod$' "$work/notices" || fail "kokod version --licenses prints no third-party notices"
 echo "both are $build"
 
 step "a state/ Docker made as root is refused, naming it and uid 65532, and nothing is written"
@@ -502,7 +505,7 @@ cat "$work/err" >&2
 jq -e '.error.code == "unsupported_platform" and (.error.message | contains("ghcr.io/cieons/koko"))' "$work/err" >/dev/null ||
 	fail "koko server install did not refuse with unsupported_platform, naming ghcr.io/cieons/koko"
 
-step "the image's index holds linux/amd64 and linux/arm64, each with the two binaries SHA256SUMS lists"
+step "the image's index holds linux/amd64 and linux/arm64, each with the two binaries SHA256SUMS lists and kokod's notices"
 oci=$work/oci
 mkdir "$oci"
 tar -xf "$dist/koko-image.tar" -C "$oci"
@@ -530,6 +533,17 @@ for a in amd64 arm64; do
 		[ "$got" = "$want" ] || fail "the linux/$a image's /usr/local/bin/$program is $got, but SHA256SUMS lists $want"
 		echo "linux/$a: /usr/local/bin/$program is $program-linux-$a, $got"
 	done
+	notices=
+	for layer in $(jq -r '.layers[].digest' "$manifest"); do
+		if tar -tzf "$(blob "$layer")" | grep -qx "usr/share/doc/koko/THIRD_PARTY_NOTICES"; then
+			tar -xzOf "$(blob "$layer")" usr/share/doc/koko/THIRD_PARTY_NOTICES >"$work/notices-$a"
+			notices=yes
+		fi
+	done
+	[ -n "$notices" ] || fail "the linux/$a image holds no /usr/share/doc/koko/THIRD_PARTY_NOTICES"
+	cmp -s "$work/notices-$a" "$work/notices" ||
+		fail "the linux/$a image's /usr/share/doc/koko/THIRD_PARTY_NOTICES is not what kokod version --licenses prints"
+	echo "linux/$a: /usr/share/doc/koko/THIRD_PARTY_NOTICES is kokod's notices"
 done
 
 step "every check passed"

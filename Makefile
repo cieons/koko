@@ -110,7 +110,8 @@ dist: webui
 ## image: build the koko server's image (release/Dockerfile) for
 ## IMAGE_PLATFORMS from the binaries make dist built, into dist/koko-image.tar,
 ## an OCI layout archive that the release pushes to ghcr.io/cieons/koko and no
-## SHA256SUMS lists (docs/subsystems/release.md). It needs Docker with buildx,
+## SHA256SUMS lists (docs/subsystems/release.md), with kokod's third-party
+## notices from its build context notices. It needs Docker with buildx,
 ## and builder koko-image, which it makes once with the docker-container
 ## driver, the one that exports a multi-platform image. Nothing runs in the
 ## image, so no emulation is needed; make check never runs it.
@@ -122,6 +123,7 @@ image:
 		--provenance=false --sbom=false \
 		--build-arg VERSION=$(patsubst v%,%,$(shell git describe --tags --always --dirty)) \
 		--build-arg REVISION=$(shell git rev-parse HEAD) \
+		--build-context notices=internal/server/kokod \
 		--file release/Dockerfile --output type=oci,dest=dist/koko-image.tar dist
 
 ## webui: build the web UI into internal/server/webui/site/app, which kokod,

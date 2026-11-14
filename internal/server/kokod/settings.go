@@ -38,7 +38,9 @@ const defaultRootKeyFile = "$CREDENTIALS_DIRECTORY/" + rootKeyCredential
 type flag struct {
 	// Name is the flag without its dashes, such as "data-dir".
 	Name string
-	// Value names the value in help, such as "dir".
+	// Bool makes the flag take no value: given, its value is "true".
+	Bool bool
+	// Value names the value in help, such as "dir"; empty for a Bool flag.
 	Value string
 	// Env is the flag's KOKO_* environment variable, used when the flag is
 	// not given; an empty variable counts as not set.

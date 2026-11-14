@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 
@@ -311,7 +312,7 @@ func TestKokodHelp(t *testing.T) {
 	}
 	version := harness.RunKokod(t, p, nil, "version", "--help")
 	version.WantSuccess(t)
-	if !strings.HasPrefix(version.Stdout, "kokod version [--json]\n") {
+	if !strings.HasPrefix(version.Stdout, "kokod version [--licenses] [--json]\n") {
 		t.Errorf("kokod version --help = %q", version.Stdout)
 	}
 }
@@ -347,4 +348,35 @@ func TestKokodVersionIsKokosBuild(t *testing.T) {
 	if kokodV != kokoV || kokodV.Version == "" {
 		t.Errorf("kokod version --json = %+v, koko version --json = %+v, want the same build", kokodV, kokoV)
 	}
+}
+
+// kokod version --licenses prints the third-party notices kokod embeds,
+// as text or in the build's JSON, and its flag takes no value.
+func TestKokodVersionPrintsTheThirdPartyNotices(t *testing.T) {
+	t.Parallel()
+	notices, err := os.ReadFile("THIRD_PARTY_NOTICES")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := (&fakeServer{}).program()
+	r := harness.RunKokod(t, p, nil, "version", "--licenses")
+	r.WantSuccess(t)
+	if r.Stdout != string(notices) || !strings.HasPrefix(r.Stdout, "Third-party notices for kokod\n") {
+		t.Errorf("kokod version --licenses printed %d bytes, not THIRD_PARTY_NOTICES's %d", len(r.Stdout), len(notices))
+	}
+
+	r = harness.RunKokod(t, p, nil, "version", "--licenses", "--json")
+	r.WantSuccess(t)
+	var v struct {
+		Version  string `json:"version"`
+		Licenses string `json:"licenses"`
+	}
+	if err := json.Unmarshal([]byte(r.Stdout), &v); err != nil {
+		t.Fatalf("kokod version --licenses --json: %v", err)
+	}
+	if v.Version == "" || v.Licenses != string(notices) {
+		t.Errorf("kokod version --licenses --json has version %q and %d bytes of licenses, want THIRD_PARTY_NOTICES's %d", v.Version, len(v.Licenses), len(notices))
+	}
+
+	harness.RunKokod(t, p, nil, "version", "--licenses=yes", "--json").WantError(t, 2, "invalid_usage")
 }
