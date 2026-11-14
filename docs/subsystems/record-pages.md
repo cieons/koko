@@ -270,7 +270,8 @@ as the CLI resolves one in a write.
 
 [`AddHost`](../../web/src/pages/host/HostForm.tsx), a module that loads
 with its first opening, with the calendar, is the Host form in a wide side
-panel, from the bottom on a phone, in the design's four groups:
+panel, from the bottom on a phone, in the design's four groups and
+Enroll:
 
 1. **The Host**: Name (the SSH Name), Space, a searchable choice of the
    Spaces `space.list` answers, the caller's Personal Space chosen, and
@@ -285,16 +286,26 @@ panel, from the bottom on a phone, in the design's four groups:
 4. **Anything else**: rows of an Attribute key, picked among those
    `attr.list` answers or typed anew, and its value, as its key's type
    takes it; then the Note.
+5. **Enroll**: the [Enroll fields](#enroll), with "Not now" chosen.
 
 It checks each field when submitted (the name rule, a port, each value
 against its key's type, an Attribute key's rule and that no row gives a
 key given above), and sends one `host.add` with only the fields given:
 `port` only when it is not 22, the Relay only when one is chosen, each
 Attribute given (a relative date resolved, Renews automatically as `yes`
-when on) and the Note when it holds text. Then a toast says the Host is
-recorded and the page moves to it. A refusal shows in the panel, the form
-kept as typed. Cancel and Escape close it, sending nothing, the focus back
-on Add Host. [`HostFields`](../../web/src/pages/host/HostForm.tsx), the
+when on) and the Note when it holds text. With a way to Enroll given, it
+then sends one `host.enroll` naming the new Host by its id. Then a toast
+says the Host is recorded, and Managed with the host key pinned when it
+was Enrolled, and the page moves to it. A refusal of `host.add` shows in
+the panel, the form kept as typed. A refusal of `host.enroll` leaves the
+Host recorded, Registered: the panel then says so, "web3 is recorded, but
+not Enrolled:" and the refusal's message, in place of the form, with
+**Open web3**, whose page offers Enroll again, and Close. Cancel and
+Escape close it, sending nothing, the focus back on Add Host. Closed while
+a call runs, it sends nothing more and moves nowhere: no `host.enroll`
+once `host.add` answers, and an answer that comes after the close says
+in a toast what was done, a refused Enroll in a danger toast
+(`notifyRefusal`), and the list loads again. [`HostFields`](../../web/src/pages/host/HostForm.tsx), the
 four groups, is what [Edit](#edit-forms) reuses without Name and Space.
 
 ## A Host's page
@@ -312,9 +323,8 @@ the Host's name or its id, shows what `host.show` answers the caller, as
   `/hosts/<name>/terminal`, which adds a tab for the Host to [the web
   terminal](web-terminal.md), over `ssh <name>` in a [command
   line](web-shell.md#parts) with Copy, and that koko logs in as the Host
-  Account and keeps the Host's key; Registered, that koko cannot log in
-  yet, and `koko host enroll <name>` with Copy, since Enroll stays in the
-  CLI; Retired, one sentence. Under a hairline: Address, Port, Host
+  Account and keeps the Host's key; Registered, **Enroll**, which opens
+  [Enroll](#enroll); Retired, one sentence. Under a hairline: Address, Port, Host
   Account, the Relay when it has one, as the path `host.show` answers
   (`web1 → db1`, the order koko dials them, each Relay's name a link to
   its page by its id, and the part of the chain the caller cannot see as
@@ -348,6 +358,7 @@ write that succeeded says so in a toast.
 | Action | Asks | After |
 | --- | --- | --- |
 | Edit (`host.set`), [below](#edit-forms) | no | the page loads again |
+| Enroll (`host.enroll`), a Registered Host's, [below](#enroll) | no | a toast names the host key pinned, and the page loads again |
 | Rename (`host.rename`): the new name, checked by the name rule | no | the page moves to the new name, replacing its history entry |
 | Move to another Space (`host.move`): the Space, a searchable choice of the others `space.list` answers | no | the page loads again |
 | Add Service (`service.add`), [below](#a-services-panel) | no | the new Service's panel opens |
@@ -358,6 +369,47 @@ A Retired Host's page offers Edit, of its Attributes and Note alone, Move,
 and Delete when it has no pin; Rename and Retire are disabled, there is no
 Add Service, and its Services' panels are read-only, as the koko server
 refuses any other change with `host_retired`.
+
+## Enroll
+
+[`EnrollHost`](../../web/src/pages/host/Enroll.tsx), a [short
+form](web-shell.md#dialogs) a Registered Host's **Enroll** opens, and Add
+Host's fifth group are the same fields,
+[`EnrollFields`](../../web/src/pages/host/Enroll.tsx), and send one
+`host.enroll` naming the Host by its id, as `koko host enroll` does
+([Enroll](enroll.md#the-web-ui)):
+
+- **The way**, segments: Password, Private key, Secret, with Not now first
+  in Add Host, where it is chosen; Password first in Enroll.
+- **Password**: a password field, "Password of <the Host Account>".
+- **Private key**: a field of several lines in the code face, which a key
+  is pasted into or **Read from a file** fills, the file read in the
+  browser. A key the page reads as encrypted
+  ([`encryptedKey`](../../web/src/pages/host/Enroll.tsx): OpenSSH's form
+  with a cipher, or a PEM block whose `Proc-Type` says `ENCRYPTED`), or
+  one the koko server answered `passphrase_needed` for, adds the
+  passphrase's password field, and goes with its passphrase in
+  `passphrase_base64`. A file over 64 KiB is refused before it is read,
+  and a file read after the way changed changes nothing.
+- **Secret**: a searchable choice of the Secrets `secret.list` answers the
+  caller, of every Space they act in, each as `<space>/<name>`, read once
+  Secret is chosen. Only its name crosses the API.
+- **Host key fingerprint**, for any way: optional; checked as `--host-key`
+  is, `SHA256:` and 43 characters of base64 whose last two bits are zero
+  ([`validFingerprint`](../../web/src/pages/host/Enroll.tsx)), and sent
+  as `host_key`.
+
+The credential is handled as [Enroll](enroll.md#the-web-ui) says: the
+password, the key and the passphrase are offered only in a secure context
+(`window.isSecureContext`), else the fields offer a Secret alone and say
+why; they ask the browser and password managers neither to fill nor to
+save them; [`useEnroll`](../../web/src/pages/host/Enroll.tsx) clears them
+from the form as the call is sent and keeps the request only as a salted
+digest, so the same credential given again reuses its `Idempotency-Key`,
+and closing the form drops them; nothing goes to the browser's storage. A
+refusal shows in place, the credential to be given again; `invalid_value`
+in Enroll's own words ([`enrollRefusal`](../../web/src/pages/host/Enroll.tsx)),
+and `already_managed` loading the page again.
 
 ## Edit forms
 
@@ -503,11 +555,30 @@ axe on each page, dialog and pane state it renders.
   each field checked on submit and nothing sent, and a refusal in place
   with the form kept; Cancel giving the focus back; the panel from the
   bottom on a phone.
+- [`enroll.test.tsx`](../../web/src/pages/host/enroll.test.tsx): Add Host
+  recording, then Enrolling by the new Host's id, with a password and a
+  fingerprint, a private key read from a file (no passphrase asked for one
+  that is not encrypted) and a Secret chosen among every Space's, and
+  recording alone with Not now; an Add whose Enroll is refused leaving the
+  Host recorded, saying why, and its page offering Enroll; Enroll on a
+  Registered Host's page, its toast naming the pin and the page showing
+  it; an encrypted key asking for its passphrase, sent with it, a refusal
+  clearing both, and each try a new write; the fingerprint checked before
+  any call; Cancel clearing what was typed, in both; Add Host closed while
+  `host.add` runs sending no `host.enroll`, and closed while `host.enroll`
+  runs giving its refusal in a toast and loading the list; a key file over
+  64 KiB refused unread, and one read after the way changed changing
+  nothing; `invalid_value` in Enroll's words; `passphrase_needed` asking
+  for the passphrase; a dropped Enroll given again taking the same key;
+  `already_managed` loading the page; the credential fields' attributes;
+  and outside a secure context, a Secret alone; `encryptedKey` over
+  OpenSSH's, PKCS #1's, SEC 1's and PKCS #8's forms with either line
+  ending, and `validFingerprint`.
 - [`host.test.tsx`](../../web/src/pages/host/host.test.tsx): a Managed
   Host's page with its breadcrumb, ssh line copied, facts, pin, Attributes
   in order, Services, the Secrets of its Space (four, the Host's first,
   and All N), Note and when it was recorded; a Secret copied and shown
-  there; a Registered Host's `koko host enroll` copied, a Relay unseen, no
+  there; a Registered Host's Enroll offered, a Relay unseen, no
   pin and Delete offered; a Relay linked by its id, and no Delete with a
   pin; the path through a chain, each Relay a link and the unseen part
   unnamed, in both languages; Edit's Relay leaving out the Host and those

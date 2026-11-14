@@ -68,6 +68,15 @@ export interface FieldProps {
   validate?: Validate;
   /** code sets the field in the code face, for a machine value: an address, a key, a Secret's value. */
   code?: boolean;
+  /**
+   * credential marks a field that takes a password, a private key or a
+   * passphrase the page sends once and keeps no longer: the browser and
+   * the common password managers are asked neither to fill it nor to save
+   * it. A single-line one is marked a one-time code, which browsers leave
+   * out of what they offer to save, as they do not autocomplete="off" on a
+   * password field; whether each does is the Owner's to see in a browser.
+   */
+  credential?: boolean;
   /** multiline makes it a text area of rows lines. */
   multiline?: boolean;
   rows?: number;
@@ -86,6 +95,18 @@ export function Field(props: FieldProps) {
   const machine = code
     ? ({ className: "t-code", spellCheck: "false", autoCapitalize: "none", autoCorrect: "off" } as const)
     : {};
+  const credential =
+    props.credential === true
+      ? ({
+          spellCheck: "false",
+          autoCapitalize: "none",
+          autoCorrect: "off",
+          "data-1p-ignore": "",
+          "data-lpignore": "true",
+          "data-bwignore": "",
+          "data-form-type": "other",
+        } as const)
+      : {};
   return (
     <TextField
       value={props.value}
@@ -99,13 +120,14 @@ export function Field(props: FieldProps) {
     >
       <Label>{props.label}</Label>
       {props.multiline === true ? (
-        <TextArea rows={props.rows ?? 4} placeholder={props.placeholder} {...machine} />
+        <TextArea rows={props.rows ?? 4} placeholder={props.placeholder} autoComplete="off" {...machine} {...credential} />
       ) : (
         <Input
           placeholder={props.placeholder}
-          autoComplete={props.autoComplete ?? "off"}
+          autoComplete={props.credential === true ? "one-time-code" : (props.autoComplete ?? "off")}
           inputMode={props.inputMode}
           {...machine}
+          {...credential}
         />
       )}
       {props.description !== undefined && <Description>{props.description}</Description>}

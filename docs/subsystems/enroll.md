@@ -1,6 +1,7 @@
 # Enroll
 
-`koko host enroll` makes a Registered Host Managed: the koko server logs in
+`koko host enroll`, or Enroll in [the web UI](#the-web-ui), makes a
+Registered Host Managed: the koko server logs in
 to it once with a password or private key the User supplies, pins its host
 key and appends the koko key to its Host Account's `authorized_keys`
 ([ADR 0003](../adr/0003-enroll-only-adds-the-koko-key.md)). The operation is
@@ -42,6 +43,47 @@ Space) comes before any call. It prints
 the Host, with `--json` the Host's own shape ([the record](record.md#the-cli));
 for people, the fingerprint it pinned.
 
+## The web UI
+
+Add Host and a Registered Host's page Enroll through the same
+`host.enroll` ([the record's pages](record-pages.md#enroll)), with a
+password, a private key or a Secret, and a host key's fingerprint checked
+as `--host-key` is. A credential typed into the browser opens no new path:
+the web UI takes Secret values already, and the koko server does the login
+whichever surface calls. The page keeps to these rules:
+
+- **A secure context only.** The password, the key and the passphrase are
+  offered only where `window.isSecureContext` holds: a page served over
+  HTTPS, or `koko web`'s on loopback. Elsewhere only a Secret is offered,
+  whose value never crosses the API. No page outside one reaches the API
+  in practice: the web listener answers only the Web URL's host, takes a
+  `POST` only from the Web URL's `https://` origin, and its sign-in cookie
+  is `Secure` ([the web listener](web-front.md#the-web-listener)); the
+  check holds anyway, should that change.
+- **Sent once, kept no longer.** The form clears the credential as the
+  call is sent, and keeps the request only as its SHA-256, salted with
+  bytes of its own, so the same credential given again, as after a
+  dropped answer, reuses its `Idempotency-Key` and the koko server
+  answers it once. Closing the form drops what was typed, and a form
+  closed while a call runs sends nothing more: Add Host closed before its
+  `host.add` answers sends no `host.enroll`. Nothing goes to the
+  browser's storage.
+- **Asked not to be saved.** A password or passphrase field is marked
+  `autocomplete="one-time-code"`, which browsers leave out of what they
+  offer to save, where they disregard `autocomplete="off"` on a password
+  field; the key's field `autocomplete="off"`; and each carries the
+  attributes the common password managers read to leave a field alone
+  (`data-1p-ignore`, `data-lpignore`, `data-bwignore`,
+  `data-form-type="other"`). Whether each browser keeps to them is
+  checked in a browser, by the Owner, not by a test.
+- **An encrypted key** goes with its passphrase in `passphrase_base64`,
+  which the page asks for once the key it reads is encrypted
+  (`encryptedKey`), or once the koko server answers `passphrase_needed`
+  for a key it did not read so; the koko server decrypts the key, as
+  below.
+- **Its own refusal.** `invalid_value` on Enroll says which keys and
+  Secret values Enroll takes, not the Host form's message.
+
 ## The operation
 
 `host.enroll` takes the Host, exactly one of `password_base64`,
@@ -51,7 +93,8 @@ which prints and logs as its length) and `secret` (an `api.SecretRef`,
 `replace_host_key`. It is a [prepared write](api.md#the-operation-framework).
 
 An encrypted `private_key_base64` comes with `passphrase_base64`, an
-`api.EnrollInput` too, from revision 2, as the web UI sends it;
+`api.EnrollInput` too, from revision 2, as [the web UI](#the-web-ui)
+sends it;
 `koko host enroll --key` decrypts on the device and sends none. The koko
 server decrypts the key with it once and keeps neither. An encrypted key
 without it is refused with

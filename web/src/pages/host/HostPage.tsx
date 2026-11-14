@@ -1,5 +1,5 @@
 import { Button, buttonVariants, Link } from "@heroui/react";
-import { ChevronRight, Pencil, Plus, SquareTerminal } from "lucide-react";
+import { ChevronRight, KeyRound, Pencil, Plus, SquareTerminal } from "lucide-react";
 import { Fragment, lazy, type ReactNode, type RefObject, Suspense, useRef, useState } from "react";
 import { Link as RouterLink } from "react-aria-components";
 import { flushSync } from "react-dom";
@@ -41,9 +41,10 @@ import { hostPath, hostPathOf, servicePath, validName } from "./record";
 const EditHost = lazy(() => import("./HostForm").then((m) => ({ default: m.EditHost })));
 const AddService = lazy(() => import("./ServicePanel").then((m) => ({ default: m.AddService })));
 const OpenService = lazy(() => import("./ServicePanel").then((m) => ({ default: m.OpenService })));
+const EnrollHost = lazy(() => import("./Enroll").then((m) => ({ default: m.EnrollHost })));
 
 /** Acting is the overlay one of the page's actions opened. */
-type Acting = "edit" | "rename" | "move" | "retire" | "delete" | "addService";
+type Acting = "edit" | "enroll" | "rename" | "move" | "retire" | "delete" | "addService";
 
 /** secretsShown is how many of its Space's Secrets a Host's page shows. */
 const secretsShown = 4;
@@ -186,7 +187,7 @@ function HostView({ host, path, services, service, error, reload }: HostViewProp
       <div className="@container">
         <div className="grid items-start gap-5 @4xl:grid-cols-3">
           <div className="flex min-w-0 flex-col gap-5 @4xl:col-span-2">
-            <Reaching host={host} path={path} />
+            <Reaching host={host} path={path} onEnroll={() => setActing("enroll")} />
             <Attributes host={host} />
           </div>
           <div className="flex min-w-0 flex-col gap-5">
@@ -216,6 +217,7 @@ function HostView({ host, path, services, service, error, reload }: HostViewProp
 
       <Suspense>
         {acting === "edit" && <EditHost host={host} onSaved={done} onClose={close} />}
+        {acting === "enroll" && <EnrollHost host={host} onEnrolled={done} onStale={reload} onClose={close} />}
         {acting === "addService" && (
           <AddService
             host={host}
@@ -251,12 +253,12 @@ function HostView({ host, path, services, service, error, reload }: HostViewProp
 /**
  * Reaching is how to reach the Host, by its state: Managed, Open terminal,
  * which adds a tab for it to the terminal workspace, over the ssh line;
- * Registered, the line that enrolls it; Retired, that it can no longer be
- * reached. Under them, its address, port, Host Account, Relay and pin: the
+ * Registered, Enroll, which onEnroll opens; Retired, that it can no longer
+ * be reached. Under them, its address, port, Host Account, Relay and pin: the
  * Relay as the path koko dials, web1 → db1, each Relay a link to its page
  * and the part the caller cannot see unnamed.
  */
-function Reaching({ host, path }: { host: Host; path: readonly HostRelay[] }) {
+function Reaching({ host, path, onEnroll }: { host: Host; path: readonly HostRelay[]; onEnroll: () => void }) {
   const t = useT();
   return (
     <Sheet title={t("host.page.reach")}>
@@ -273,10 +275,10 @@ function Reaching({ host, path }: { host: Host; path: readonly HostRelay[] }) {
         </>
       )}
       {host.state === "registered" && (
-        <>
-          <p className="mb-3 max-w-[66ch] text-sm text-ink-2">{t("host.page.reachRegistered")}</p>
-          <CommandLine command={`koko host enroll ${host.name}`} label={t("host.page.enrollCommand")} />
-        </>
+        <Button variant="secondary" onPress={onEnroll}>
+          <KeyRound aria-hidden className="size-4" />
+          {t("host.enroll")}
+        </Button>
       )}
       {host.state === "retired" && <p className="max-w-[66ch] text-sm text-muted">{t("host.page.reachRetired")}</p>}
       <dl className="mt-5 grid grid-cols-2 gap-x-8 gap-y-5 border-t border-line pt-5 sm:grid-cols-3">

@@ -335,7 +335,7 @@ HeroUI parts, as the preview composes them:
 | Command line | a `<code>` in an inset block | A `$`, the command, Copy; a line for a file has no `$` |
 | Shown once | an inset block with a dashed accent edge | A Join Code or Password Link, its time left counting down, Copy, and the line that it is not shown again |
 | State mark | a `<span>` | Managed: a filled green dot with a halo. Registered: a hollow dot. Retired: a short bar, muted. A terminal's tab: Connecting, a hollow ring in `--muted`; Connected, the Managed mark; Reconnecting, a dot half filled in `--wait`; Ended, a short bar in `--muted`; Refused, or not reached, a ✕ in the danger colour. Always with its word, shown or for a screen reader |
-| Notice | `toast` | The outcome of a call that changed something, bottom end |
+| Notice | `toast` | The outcome of a call that changed something, bottom end; a danger toast only for a refusal whose form closed before it came |
 | Refusal | a `role="alert"` block | The koko server's message, in the form or dialog that made the call |
 
 **Searchable choices**, the Owner's rule (2026-11-10): wherever a person
@@ -348,6 +348,7 @@ cycle, Valid for). The places:
 | --- | --- |
 | Add Host, Edit | the Relay; the Space (Add Host) |
 | Add Secret | the Space |
+| Enroll, and Add Host's Enroll | the Secret to log in with |
 | Move a Host, Move a Secret | the Space to move it to |
 | A person's panel: Add to a Space | a shared Space the person is not in |
 | Add device, where it asks whose device it is | a User who is not Removed |
@@ -380,7 +381,7 @@ closes it, unless closing would lose something.
 | --- | --- |
 | A popover or menu: Filter, Columns, a select's or searchable choice's list, a row menu, the frame's menus, the account panel | Closes it, always |
 | The rail laid over the page, under 1280px wide | Closes it, always, as Escape and a place chosen do |
-| A short form or a side panel with a form: Add Host, Edit, Add Service, a Service's panel, Rename, Move, Add Secret, Set value, Add Space, the first step of Invite, Add device and a Password Link; a Space's panel, for its Add Members field; a person's panel, for its Add to a Space field | Closes it while nothing in it has changed; once something has been typed or chosen, does nothing |
+| A short form or a side panel with a form: Add Host, Edit, Enroll, Add Service, a Service's panel, Rename, Move, Add Secret, Set value, Add Space, the first step of Invite, Add device and a Password Link; a Space's panel, for its Add Members field; a person's panel, for its Add to a Space field | Closes it while nothing in it has changed; once something has been typed or chosen, does nothing |
 | A confirmation | Cancels it, as Cancel does, unless its call runs; a name typed in it to confirm is not kept |
 | A batch's dialog ([the Select mode](#the-select-mode)) | A form (Move, Attribute) as a short form; a confirmation (Retire, Delete) as one, but not once the count has been typed; a refused batch's list of records at fault closes, as Cancel does |
 | A value shown once: a Join Code or a Password Link | Does nothing, since the value cannot be shown again; Done, the close button and Escape close it |
@@ -558,7 +559,8 @@ panel becomes a table as a Space's panel of Hosts is.
 
 ### Add Host and Edit (side panel, wide)
 
-Four groups, in the order of a provider's order confirmation:
+Four groups, in the order of a provider's order confirmation, then
+Enroll in Add Host:
 
 1. **The Host**: Name (the SSH Name), Space, Address.
 2. **How koko reaches it**: Host Account (prefilled `root`), Port (22),
@@ -568,9 +570,15 @@ Four groups, in the order of a provider's order confirmation:
    Provider account.
 4. **Anything else**: Attributes of any name as key and value rows, then
    the Note.
+5. **Enroll** (Add Host only): [the Enroll fields](#enroll-short-form),
+   "Not now" chosen.
 
 Add sends one `host.add`, with only the fields given, and the page moves
-to the new Host. Edit shows no Name or Space (Rename and Move are their own
+to the new Host. With a way to Enroll given, it then sends one
+`host.enroll` for the new Host, and the toast names the host key pinned.
+An Enroll refused leaves the Host recorded: the panel's form gives way to
+"web3 is recorded, but not Enrolled:" and the refusal, as an alert, with
+**Open web3** (primary), whose page offers Enroll again, and Close. Edit shows no Name or Space (Rename and Move are their own
 actions), sends one `host.set` with the keys that changed and `unset` for
 those emptied, and never overwrites a field someone else changed meanwhile
 ([edit forms](subsystems/record-pages.md#edit-forms)). A Retired Host's
@@ -592,8 +600,8 @@ CLI resolves one in a write.
 - Two thirds, left:
   - **Reaching it**. Managed: **Open terminal**, a secondary button
     linking to `/hosts/<name>/terminal`, over `$ ssh <name>` with Copy.
-    Registered: "Enroll it from a device with the CLI:" and
-    `$ koko host enroll <name>` with Copy. Retired: "It can no longer be
+    Registered: **Enroll**, a secondary button that opens
+    [Enroll](#enroll-short-form). Retired: "It can no longer be
     reached.", muted.
     Under a hairline: Address, Port, Host Account, Relay (the path koko
     dials, `web1 → db1`, each Relay a link by its id, the part you cannot
@@ -618,6 +626,36 @@ CLI resolves one in a write.
 - The actions name the Host by its id, so a rename made meanwhile never
   sends one to another Host. A Host no one can see answers `unknown_host`,
   shown as for one that does not exist.
+
+### Enroll (short form)
+
+A Registered Host's **Enroll** opens it, "Enroll <name>",
+with **Enroll** as its button; Add Host's fifth group holds the same
+fields ([Enroll](subsystems/enroll.md#the-web-ui)):
+
+- **Enroll with**: segments, Password, Private key, Secret; Add Host puts
+  "Not now" first, chosen.
+- **Password of <Host Account>**: a password field.
+- **Private key**: several lines in the code face, pasted, or filled by
+  **Read from a file** (tertiary, under it), read in the browser. A key
+  that is encrypted adds **Passphrase of the private key**, a password
+  field, under it.
+- **Secret**: a searchable choice of the Secrets the person can use, each
+  as `<space>/<name>`.
+- **Host key fingerprint**, for any way: optional, in the code face,
+  `SHA256:…` as its placeholder, and a line under it saying that Enroll
+  then accepts only that key; checked on submit as the CLI checks it.
+  The passphrase also shows once the koko server says the key needs one.
+
+Outside a secure context the form offers a Secret alone, with one line
+saying why: the connection is not secure. The credential fields ask the
+browser not to fill or save them; the form clears them as its call is
+sent, and closing it drops them. Add Host closed while its calls run
+sends nothing more and stays on the list, which loads again; an answer
+that comes after says in a toast what was done. A refusal shows in place, the credential
+to be given again. Once Enrolled, a toast says "<name> is Managed, with its
+host key SHA256:… pinned.", as the CLI says it, and the page shows the
+pin.
 
 ### A Service (side panel)
 

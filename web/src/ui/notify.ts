@@ -9,3 +9,12 @@ import { toast } from "@heroui/react";
 export function notify(message: string): void {
   toast.success(message);
 }
+
+/**
+ * notifyRefusal says why a call failed in a toast, only where the form that
+ * made the call has closed before its answer came, so no place is left to
+ * show it in, as when Add Host is closed while its Enroll runs.
+ */
+export function notifyRefusal(message: string): void {
+  toast.danger(message);
+}

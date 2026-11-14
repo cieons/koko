@@ -233,18 +233,16 @@ test("a Secret on a Host's page is copied and shown as on the Secrets page", asy
   await expectAccessible();
 });
 
-test("a Registered Host's page copies koko host enroll, names a Relay you cannot see, says it is not pinned, and offers Delete", async () => {
+test("a Registered Host's page offers Enroll, names a Relay you cannot see, says it is not pinned, and offers Delete", async () => {
   const api = fakeApi();
   actAs(api, bob);
-  const writeText = clipboard();
   const unseen = host("db2", { state: "registered", relay: { id: null, name: null } });
   served(api, { hosts: [unseen] });
 
   await openHost("/hosts/db2", "db2");
   const reach = screen.getByRole("region", { name: "Reaching it" });
-  expect(reach.textContent).toContain("Enroll it from a device with the CLI:");
-  fireEvent.click(within(within(reach).getByRole("group", { name: "Enroll command" })).getByRole("button", { name: "Copy" }));
-  await waitFor(() => expect(writeText).toHaveBeenCalledWith("koko host enroll db2"));
+  expect(within(reach).getByRole("button", { name: "Enroll" })).toBeDefined();
+  expect(within(reach).queryByRole("group")).toBeNull();
   expect(fact("Reaching it", "Relay")).toBe("A Relay you cannot see");
   expect(fact("Reaching it", "Pinned host key")).toBe("Not pinned");
   expect(screen.getByRole("region", { name: "Attributes" }).textContent).toContain("No Attribute is recorded.");

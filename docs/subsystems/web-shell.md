@@ -587,14 +587,14 @@ HeroUI (#121) took the pages out; each came back with its ticket (#122 to
 | Set or remove one Attribute of the Hosts selected, in one batch | `host.set` with `hosts` | in each Host's Space |
 | Retire the Hosts selected, asking first, in one batch | `host.retire` with `hosts` | in each Host's Space |
 | Delete the Hosts selected that were never Managed, asking first, in one batch | `host.remove` with `hosts` | in each Host's Space |
-| Add a Host: `name`, `space`, `address`, `port`, `account`, `relay`, its Attributes and Note | `host.add` (and `space.list` for the Spaces) | anyone, in a Space they can act in |
+| Add a Host: `name`, `space`, `address`, `port`, `account`, `relay`, its Attributes and Note; then, when a way to Enroll is given, Enroll it | `host.add` (and `space.list` for the Spaces), then `host.enroll` | anyone, in a Space they can act in |
 
 **A Host** (`/hosts/<name or id>`); a Retired Host offers only what says so:
 
 | Action | Call | Who |
 | --- | --- | --- |
 | See its fields, Attributes, Note, Services (read-only when Retired) and fingerprint | `host.show` | in the Space; Retired too |
-| Copy `koko host enroll <host>`, for a Registered Host | none | in the Space |
+| Enroll a Registered Host: a password, a private key with its passphrase, or a Secret, and a host key's fingerprint | `host.enroll` (and `secret.list` for the Secrets) | in the Space; a Secret, in its Space too |
 | Edit: set or clear `address`, `port`, `account`, `relay`, Attributes and Note (`unset` for a value emptied) | `host.set` (and `attr.list`) | in the Space; Retired: Attributes and Note alone |
 | Rename | `host.rename` | in the Space |
 | Move to another Space | `host.move` (and `space.list`) | in both Spaces; Retired too |

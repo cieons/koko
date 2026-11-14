@@ -82,6 +82,9 @@ export function useRead<Req, Resp>(op: Op<Req, Resp>, request: NoInfer<Req>, { e
   return { data: current?.data, error: current?.error, reload: () => setReloads((n) => n + 1) };
 }
 
+/** Outcome is how one write ended: its response, or why it failed. */
+export type Outcome<Resp> = { response: Resp; error?: undefined } | { response?: undefined; error: unknown };
+
 /** Write is what useWrite holds of one form's write. */
 export interface Write<Req, Resp> {
   /**
@@ -89,6 +92,12 @@ export interface Write<Req, Resp> {
    * failed, with the reason in error.
    */
   submit: (request: Req) => Promise<Resp | undefined>;
+  /**
+   * send sends the write as submit does, and answers its outcome, the
+   * reason with it when it failed, for a form that acts on a refusal or
+   * that may have closed before the answer came.
+   */
+  send: (request: Req) => Promise<Outcome<Resp>>;
   pending: boolean;
   error?: unknown;
 }
@@ -98,32 +107,58 @@ export interface Write<Req, Resp> {
  * after it failed, as after a dropped connection, reuses its
  * Idempotency-Key, so the koko server applies it once; a write that
  * succeeded, or another request, takes a new key.
+ *
+ * With credential, the request holds a password or a private key, which
+ * the page keeps only until the call is sent: the hook remembers the
+ * request only as its SHA-256, salted with bytes of its own, so the same
+ * credential given again still reuses the key, and the form clears the
+ * credential as it sends it. Where the browser has no SubtleCrypto,
+ * outside a secure context, every send takes a new key.
  */
-export function useWrite<Req, Resp>(op: Op<Req, Resp>): Write<Req, Resp> {
-  // attempt is the request last submitted, with its key, until it succeeds.
+export function useWrite<Req, Resp>(op: Op<Req, Resp>, { credential = false } = {}): Write<Req, Resp> {
+  // attempt is the request last sent, or its salted digest, with its key, until it succeeds.
   const attempt = useRef<{ body: string; key: string }>(undefined);
+  const salt = useRef<Uint8Array>(undefined);
   const [inFlight, setInFlight] = useState(0);
   const [error, setError] = useState<unknown>();
-  const submit = async (request: Req) => {
-    const body = JSON.stringify(request);
-    if (attempt.current?.body !== body) {
-      attempt.current = { body, key: newIdempotencyKey() };
-    }
-    const { key } = attempt.current;
+  const send = async (request: Req): Promise<Outcome<Resp>> => {
     setInFlight((n) => n + 1);
     setError(undefined);
     try {
+      const json = JSON.stringify(request);
+      salt.current ??= crypto.getRandomValues(new Uint8Array(16));
+      const body = credential ? await saltedDigest(salt.current, json) : json;
+      if (attempt.current?.body !== body) {
+        attempt.current = { body, key: newIdempotencyKey() };
+      }
+      const { key } = attempt.current;
       const response = await call(op, request, { key });
       if (attempt.current?.key === key) {
         attempt.current = undefined; // not a later request's key
       }
-      return response;
+      return { response };
     } catch (failure) {
       setError(failure);
-      return undefined;
+      return { error: failure };
     } finally {
       setInFlight((n) => n - 1);
     }
   };
-  return { submit, pending: inFlight > 0, error };
+  const submit = async (request: Req) => (await send(request)).response;
+  return { submit, send, pending: inFlight > 0, error };
+}
+
+/**
+ * saltedDigest is the SHA-256 of salt and text, in hex, by which a write
+ * that holds a credential is told apart from the next without being kept;
+ * where the browser has no SubtleCrypto it is a new random value, so no two
+ * are alike.
+ */
+async function saltedDigest(salt: Uint8Array, text: string): Promise<string> {
+  if (crypto.subtle === undefined) {
+    return newIdempotencyKey();
+  }
+  const bytes = new Uint8Array([...salt, ...new TextEncoder().encode(text)]);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
 }

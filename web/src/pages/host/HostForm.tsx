@@ -1,20 +1,21 @@
 import { Button, Switch } from "@heroui/react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 
 import { type AttrKey, AttrList } from "../../api/attr";
 import { type Host, HostAdd, HostList, HostSet, type HostSetRequest, type NewHost } from "../../api/host";
 import type { Space } from "../../api/space";
 import { useCaller } from "../../shell/caller";
-import { useRead, useWrite } from "../../shell/data";
+import { reloadReads, useRead, useWrite } from "../../shell/data";
 import { differs } from "../../shell/form";
 import { useT } from "../../shell/i18n";
 import { navigate } from "../../shell/router";
 import { Field, type Option, SearchChoice } from "../../ui/fields";
-import { notify } from "../../ui/notify";
+import { notify, notifyRefusal } from "../../ui/notify";
 import { SidePanel } from "../../ui/SidePanel";
 import { Loaded, LoadFailed, Refusal } from "../../ui/states";
 import { type AttributeRow, AttributeRows, recordChanges, type RecordText, rowsOf, text, typeOf } from "./AttributeRows";
 import { DateValue } from "./DateValue";
+import { EnrollFields, enrollRefusal, enrollValues, useEnroll } from "./Enroll";
 import { EnumChoice } from "./EnumChoice";
 import { purchase } from "./keys";
 import { hostPath, validName, validPort } from "./record";
@@ -320,7 +321,15 @@ export interface AddHostProps {
  * AddHost records a Host (docs/web-design.md, "Add Host and Edit"), in a
  * wide side panel: one host.add with only the fields given, Attributes and
  * Note among them, in the caller's Personal Space unless they choose
- * another; then the page moves to the new Host.
+ * another; then, when a way to Enroll is given, one host.enroll naming the
+ * new Host by its id, which clears the credential as it is sent; then the
+ * page moves to the new Host. When the Enroll fails, the Host stays
+ * recorded, Registered, and the panel says so with the Enroll's refusal,
+ * and offers the Host's page, where Enroll is offered again.
+ *
+ * Closed while a call runs, it sends nothing more, the credential with
+ * it, and moves nowhere: an answer that comes after says in a toast what
+ * was done, and the list under it loads again.
  */
 export function AddHost({ spaces, hosts, attrs = [], onClose }: AddHostProps) {
   const t = useT();
@@ -332,45 +341,103 @@ export function AddHost({ spaces, hosts, attrs = [], onClose }: AddHostProps) {
     space: personal,
   }));
   const [values, setValues] = useState(opened);
+  const [enrollOpened] = useState(() => enrollValues("none"));
+  const [enrolling, setEnrolling] = useState(enrollOpened);
+  const enroll = useEnroll(setEnrolling);
+  // notEnrolled is the Host recorded whose Enroll failed.
+  const [notEnrolled, setNotEnrolled] = useState<Host>();
+  // closed tells a call's answer that the panel has closed; recorded, that host.add has answered.
+  const closed = useRef(false);
+  const recorded = useRef(false);
   const clock = browserClock();
+  const open = (h: Host) => {
+    onClose();
+    navigate(hostPath(h));
+  };
+  const close = () => {
+    closed.current = true;
+    // The list under the panel shows the Host recorded.
+    if (recorded.current) {
+      reloadReads();
+    }
+    onClose();
+  };
   const submit = () => {
-    void add.submit({ hosts: [newHost(values, attrs, clock)] }).then((added) => {
-      const [recorded] = added?.hosts ?? [];
-      if (recorded) {
-        notify(t("host.add.done", { name: recorded.name }));
-        onClose();
-        navigate(hostPath(recorded));
+    if (notEnrolled !== undefined) {
+      open(notEnrolled);
+      return;
+    }
+    void add.submit({ hosts: [newHost(values, attrs, clock)] }).then(async (added) => {
+      const [h] = added?.hosts ?? [];
+      if (h === undefined) {
+        return;
+      }
+      recorded.current = true;
+      if (closed.current || enrolling.way === "none") {
+        notify(t("host.add.done", { name: h.name }));
+        if (closed.current) {
+          reloadReads();
+        } else {
+          open(h);
+        }
+        return;
+      }
+      const { response, error } = await enroll.send(h.id, enrolling);
+      if (closed.current) {
+        if (response === undefined) {
+          notifyRefusal(t("host.add.notEnrolled", { name: h.name, reason: enrollRefusal(t, error) ?? "" }));
+        } else {
+          notify(t("host.add.enrolled", { name: h.name, fingerprint: response.host.host_key ?? "" }));
+        }
+        reloadReads();
+      } else if (response === undefined) {
+        setNotEnrolled(h);
+      } else {
+        notify(t("host.add.enrolled", { name: h.name, fingerprint: response.host.host_key ?? "" }));
+        open(response.host);
       }
     });
   };
+  const pending = add.pending || enroll.pending;
   return (
     <SidePanel
       title={t("host.add.title")}
       wide
       onSubmit={submit}
-      changed={differs(values, opened)}
-      pending={add.pending}
-      onClose={onClose}
+      changed={notEnrolled === undefined && (differs(values, opened) || differs(enrolling, enrollOpened))}
+      pending={pending}
+      onClose={close}
       footer={
         <>
-          <Button variant="tertiary" onPress={onClose}>
-            {t("shell.cancel")}
+          <Button variant="tertiary" onPress={close}>
+            {notEnrolled === undefined ? t("shell.cancel") : t("shell.close")}
           </Button>
-          <Button type="submit" isPending={add.pending}>
-            {t("host.add.submit")}
+          <Button type="submit" isPending={pending}>
+            {notEnrolled === undefined ? t("host.add.submit") : t("host.add.openHost", { name: notEnrolled.name })}
           </Button>
         </>
       }
     >
-      <HostFields
-        values={values}
-        onChange={setValues}
-        spaces={spaces ?? [{ id: "", name: personal, personal: true }]}
-        relays={relayChoices(hosts ?? [])}
-        attrs={attrs}
-        clock={clock}
-      />
-      <Refusal error={add.error} />
+      {notEnrolled === undefined ? (
+        <>
+          <HostFields
+            values={values}
+            onChange={setValues}
+            spaces={spaces ?? [{ id: "", name: personal, personal: true }]}
+            relays={relayChoices(hosts ?? [])}
+            attrs={attrs}
+            clock={clock}
+          />
+          <Group title={t("host.enroll")}>
+            <EnrollFields values={enrolling} onChange={setEnrolling} account={values.account.trim()} optional />
+          </Group>
+          <Refusal error={add.error} />
+        </>
+      ) : (
+        <Refusal
+          error={t("host.add.notEnrolled", { name: notEnrolled.name, reason: enrollRefusal(t, enroll.error) ?? "" })}
+        />
+      )}
     </SidePanel>
   );
 }

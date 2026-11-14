@@ -73,6 +73,13 @@ if (!("inert" in HTMLElement.prototype)) {
   });
 }
 
+// jsdom's page is at http://localhost, which a browser counts a secure
+// context, as it does every https:// page; jsdom leaves isSecureContext out.
+// A test of a page outside one stubs it false.
+if (!("isSecureContext" in window)) {
+  Object.defineProperty(window, "isSecureContext", { configurable: true, writable: true, value: true });
+}
+
 // Without it axe-core stands one in that adds a <style> element, which the
 // CSP watch would take for the page's.
 document.elementsFromPoint ??= () => [];
