@@ -332,6 +332,32 @@ once the frame's own reads are done.
 **Seen:** 1 (2026-11-13)
 **Evidence:** run 43443594550, attempt 1; #221
 
+### A cost the caller's input sets is bounded before it is paid, and paid outside any transaction
+
+**Why:** 71b453b let `host.enroll` decrypt an OpenSSH key with the
+passphrase given, and bcrypt_pbkdf runs for as many rounds as the key's
+own header asks, up to x/crypto's 2048, some 17 s of a core. Any
+signed-in User could send many such calls at once; each ran inside the
+read transaction, holding its WAL snapshot, and a dropped caller stopped
+none. Read the cost from the input and refuse past a limit first, run the
+work after the transaction, and bound how many run at once.
+**Seen:** 1 (2026-11-14)
+**Evidence:** 71b453b (#226); found by the ticket's review, fixed in the
+commit after its web slice
+
+### A credential typed into a form is sent only while the form is open
+
+**Why:** Add Host sent `host.enroll` from the continuation of its
+`host.add`, whose closure held the password typed. Cancelled while
+`host.add` ran, the panel closed, yet when the answer came the page sent
+the password, logged in to the Host and moved to it; closed while
+`host.enroll` ran, its refusal went to the unmounted panel and was lost.
+Work that outlives a form checks, before it sends a credential or shows
+an outcome, that the form is still open, and says in a toast what was
+done once it is not.
+**Seen:** 1 (2026-11-14)
+**Evidence:** #226's review, before its web slice was pushed
+
 ## Moved to the code standards
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128, #147; check run 42951455550).

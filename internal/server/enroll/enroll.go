@@ -17,6 +17,7 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -46,15 +47,28 @@ type enroller struct {
 	connector hostconn.Connector
 	// addKey bounds the command that appends the koko key.
 	addKey time.Duration
-	log    *slog.Logger
+	// decrypts holds a slot for each private key being decrypted with a
+	// passphrase, so at most cap(decrypts) run at once (unlock).
+	decrypts chan struct{}
+	log      *slog.Logger
 }
+
+// maxDecrypts is how many private keys the koko server decrypts at once:
+// each bcrypt KDF takes a core for as long as its rounds ask.
+const maxDecrypts = 2
 
 // Register adds host.enroll to the API. It opens the koko key and the
 // Secrets that requests name with rootKey, waits as timings say (the zero
 // Timings is the product's), and logs each Enroll, each re-pin and each
 // failure to log.
 func Register(a *op.API, rootKey *seal.RootKey, timings timing.Timings, log *slog.Logger) {
-	e := &enroller{rootKey: rootKey, connector: hostconn.Connector{Timings: timings}, addKey: timings.Resolve().EnrollAddKey, log: log}
+	e := &enroller{
+		rootKey:   rootKey,
+		connector: hostconn.Connector{Timings: timings},
+		addKey:    timings.Resolve().EnrollAddKey,
+		decrypts:  make(chan struct{}, maxDecrypts),
+		log:       log,
+	}
 	a.HandlePrepared(api.HostEnroll, e.prepare, e.record)
 }
 
@@ -107,6 +121,13 @@ func (e *enroller) prepare(ctx context.Context, read op.Read, caller op.Caller, 
 	if err != nil {
 		return loggedIn{}, err
 	}
+	// An encrypted key is decrypted only now, outside the read transaction,
+	// since its KDF may take seconds.
+	if in.locked != nil {
+		if in, err = e.unlock(ctx, in); err != nil {
+			return loggedIn{}, err
+		}
+	}
 	target := hostconn.Target{Address: h.Address, Port: h.Port, Account: h.Account, Login: in.login, Pin: pinFor(h, req)}
 	relays := make([]hostconn.Target, len(h.Relays))
 	for i, r := range h.Relays {
@@ -156,6 +177,14 @@ type input struct {
 	// refusedAs is how a refusal names the input, such as "the password"
 	// or "the private key in the Secret ops/deploy-key", never by its value.
 	refusedAs string
+	// locked, when set, is an encrypted private key and its passphrase,
+	// which unlock decrypts into login once the read transaction is over.
+	locked *lockedKey
+}
+
+// lockedKey is an encrypted private key with the passphrase given for it.
+type lockedKey struct {
+	key, passphrase []byte
 }
 
 // inputOf checks the request and returns the input it gives: the password
@@ -223,10 +252,10 @@ func (e *enroller) inputFromSecret(ctx context.Context, tx store.Tx, caller op.C
 	return input{login: hostconn.PasswordLogin(string(password)), refusedAs: "the password in the Secret " + ref.String()}, nil
 }
 
-// keyInput parses key, the private key refusedAs names, decrypting it with
-// passphrase when it is encrypted. It refuses an encrypted key with no
-// passphrase with whenEncrypted, one the passphrase does not open with
-// CodeWrongPassphrase, a passphrase for a key that is not encrypted, and a
+// keyInput parses key, the private key refusedAs names. An encrypted key
+// with passphrase is left locked for unlock, once its KDF's cost is
+// checked (checkRounds). It refuses an encrypted key with no passphrase
+// with whenEncrypted, a passphrase for a key that is not encrypted, and a
 // key that does not parse. The passphrase appears in no refusal.
 func keyInput(key, passphrase []byte, refusedAs string, whenEncrypted *api.Error) (input, error) {
 	signer, err := ssh.ParsePrivateKey(key)
@@ -235,10 +264,10 @@ func keyInput(key, passphrase []byte, refusedAs string, whenEncrypted *api.Error
 	case encrypted && len(passphrase) == 0:
 		return input{}, whenEncrypted
 	case encrypted:
-		signer, err = ssh.ParsePrivateKeyWithPassphrase(key, passphrase)
-		if errors.Is(err, x509.IncorrectPasswordError) {
-			return input{}, api.CodeWrongPassphrase.Errorf("the passphrase does not open %s", refusedAs)
+		if err := checkRounds(key, refusedAs); err != nil {
+			return input{}, err
 		}
+		return input{refusedAs: refusedAs, locked: &lockedKey{key: key, passphrase: passphrase}}, nil
 	case err == nil && len(passphrase) > 0:
 		return input{}, api.CodeInvalidRequest.Errorf("%s is not encrypted, so it takes no passphrase_base64", refusedAs)
 	}
@@ -246,6 +275,65 @@ func keyInput(key, passphrase []byte, refusedAs string, whenEncrypted *api.Error
 		return input{}, api.CodeInvalidValue.Errorf("%s does not parse: %v", refusedAs, err)
 	}
 	return input{login: hostconn.KeyLogin(signer), refusedAs: refusedAs}, nil
+}
+
+// unlock decrypts in's locked key with its passphrase, waiting for one of
+// e.decrypts' slots first, or for ctx. It refuses with CodeWrongPassphrase
+// a passphrase that does not open the key.
+func (e *enroller) unlock(ctx context.Context, in input) (input, error) {
+	select {
+	case e.decrypts <- struct{}{}:
+	case <-ctx.Done():
+		return input{}, fmt.Errorf("wait to decrypt %s: %w", in.refusedAs, context.Cause(ctx))
+	}
+	defer func() { <-e.decrypts }()
+	signer, err := ssh.ParsePrivateKeyWithPassphrase(in.locked.key, in.locked.passphrase)
+	switch {
+	case errors.Is(err, x509.IncorrectPasswordError):
+		return input{}, api.CodeWrongPassphrase.Errorf("the passphrase does not open %s", in.refusedAs)
+	case err != nil:
+		return input{}, api.CodeInvalidValue.Errorf("%s does not parse: %v", in.refusedAs, err)
+	}
+	return input{login: hostconn.KeyLogin(signer), refusedAs: in.refusedAs}, nil
+}
+
+// maxKDFRounds is the most rounds of bcrypt_pbkdf an encrypted key in
+// OpenSSH's format may ask Enroll to run: ssh-keygen's default is 16, and
+// guides give -a 100; x/crypto's own limit, 2048, takes some 17 s a call.
+const maxKDFRounds = 256
+
+// checkRounds refuses with CodeKeyTooCostly an encrypted key in OpenSSH's
+// format whose bcrypt KDF asks for more than maxKDFRounds, read from its
+// header before any KDF runs. A key in PEM's older encrypted form derives
+// its key with one MD5 pass, and takes no check; one that does not parse
+// is left for the decrypt to refuse.
+func checkRounds(key []byte, refusedAs string) error {
+	block, _ := pem.Decode(key)
+	if block == nil || block.Type != "OPENSSH PRIVATE KEY" {
+		return nil
+	}
+	body, ok := bytes.CutPrefix(block.Bytes, []byte("openssh-key-v1\x00"))
+	if !ok {
+		return nil
+	}
+	var header struct {
+		CipherName, KdfName, KdfOpts string
+		Rest                         []byte `ssh:"rest"`
+	}
+	if ssh.Unmarshal(body, &header) != nil || header.KdfName != "bcrypt" {
+		return nil
+	}
+	var opts struct {
+		Salt   string
+		Rounds uint32
+		Rest   []byte `ssh:"rest"`
+	}
+	if ssh.Unmarshal([]byte(header.KdfOpts), &opts) != nil || opts.Rounds <= maxKDFRounds {
+		return nil
+	}
+	return api.CodeKeyTooCostly.Errorf(
+		"%s asks for %d rounds of bcrypt to decrypt, and Enroll runs at most %d: lower them with ssh-keygen -p -a 100 -f <file>, or Enroll with koko host enroll --key, which decrypts on the device",
+		refusedAs, opts.Rounds, maxKDFRounds)
 }
 
 // enrollable refuses to Enroll a Host whose state does not allow it: a

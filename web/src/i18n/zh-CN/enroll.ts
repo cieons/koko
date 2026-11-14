@@ -10,4 +10,5 @@ export default {
   "error.host_changed": "该主机在接入过程中发生变化，因此 koko 未作任何记录；请再次接入。",
   "error.passphrase_needed": "该私钥已加密，须提供其口令。",
   "error.wrong_passphrase": "该口令无法解开此私钥。",
+  "error.key_too_costly": "该私钥解密所需的轮数超过接入所能执行的上限（256）；请使用 ssh-keygen -p -a 100 降低轮数。",
 } satisfies Record<keyof typeof en, string>;

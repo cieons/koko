@@ -2,10 +2,16 @@ package cli_test
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/harness/sshhost"
@@ -21,11 +27,59 @@ func wantCallRefused(t *testing.T, what string, err error, code api.Code) {
 	}
 }
 
+// withRounds is file, a private key in OpenSSH's format encrypted with
+// bcrypt_pbkdf, with its header asking for rounds rounds, as ssh-keygen -a
+// writes it. Its passphrase no longer opens it, since the key was derived
+// with the rounds it had.
+func withRounds(t *testing.T, file []byte, rounds uint32) []byte {
+	t.Helper()
+	block, _ := pem.Decode(file)
+	const magic = "openssh-key-v1\x00"
+	var key struct {
+		CipherName, KdfName, KdfOpts string
+		NumKeys                      uint32
+		PubKey, PrivKeyBlock         []byte
+	}
+	if block == nil || ssh.Unmarshal(block.Bytes[len(magic):], &key) != nil || key.KdfName != "bcrypt" {
+		t.Fatalf("%q is no key in OpenSSH's format encrypted with bcrypt", file)
+	}
+	var opts struct {
+		Salt   string
+		Rounds uint32
+	}
+	if err := ssh.Unmarshal([]byte(key.KdfOpts), &opts); err != nil {
+		t.Fatal(err)
+	}
+	opts.Rounds = rounds
+	key.KdfOpts = string(ssh.Marshal(opts))
+	block.Bytes = append([]byte(magic), ssh.Marshal(key)...)
+	return pem.EncodeToMemory(block)
+}
+
+// pkcs1Key is an RSA key in PKCS #1's PEM, encrypted with passphrase in
+// PEM's older form, which x/crypto still decrypts.
+func pkcs1Key(t *testing.T, passphrase string) []byte {
+	t.Helper()
+	k, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//nolint:staticcheck // SA1019: the old form is deprecated, but keys made with it are still in use, and Enroll takes them.
+	block, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(k), []byte(passphrase), x509.PEMCipherAES256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem.EncodeToMemory(block)
+}
+
 // host.enroll takes an encrypted private key with its passphrase, as the
 // web UI sends them, and the koko server decrypts the key to log in. A key
 // without its passphrase is refused with passphrase_needed, one the
-// passphrase does not open with wrong_passphrase, each before any login;
-// and a passphrase is taken only with an encrypted key. The passphrase is in
+// passphrase does not open with wrong_passphrase, in OpenSSH's format or
+// PKCS #1's, each before any login; a key whose KDF asks for more than 256
+// rounds is refused with key_too_costly before any KDF runs, while one
+// with ssh-keygen -a 100's is taken; and a passphrase is taken only with
+// an encrypted key. The passphrase is in
 // no log line and no file of the data directory.
 func TestEnrollDecryptsAnEncryptedKeyWithThePassphraseGiven(t *testing.T) {
 	t.Parallel()
@@ -45,6 +99,10 @@ func TestEnrollDecryptsAnEncryptedKeyWithThePassphraseGiven(t *testing.T) {
 		{"a wrong passphrase", api.HostEnrollRequest{Host: "web1", PrivateKey: encrypted.file, Passphrase: []byte("not it")}, api.CodeWrongPassphrase},
 		{"a passphrase for a key that is not encrypted", api.HostEnrollRequest{Host: "web1", PrivateKey: plain.file, Passphrase: []byte(passphrase)}, api.CodeInvalidRequest},
 		{"a passphrase with a password", api.HostEnrollRequest{Host: "web1", Password: []byte(hostPassword), Passphrase: []byte(passphrase)}, api.CodeInvalidRequest},
+		{"a key whose KDF asks for 257 rounds", api.HostEnrollRequest{Host: "web1", PrivateKey: withRounds(t, encrypted.file, 257), Passphrase: []byte(passphrase)}, api.CodeKeyTooCostly},
+		// Taken, then not opened, since its rounds are not those its key was derived with.
+		{"a key whose KDF asks for 100 rounds", api.HostEnrollRequest{Host: "web1", PrivateKey: withRounds(t, encrypted.file, 100), Passphrase: []byte(passphrase)}, api.CodeWrongPassphrase},
+		{"a wrong passphrase for a key in PKCS #1's encrypted PEM", api.HostEnrollRequest{Host: "web1", PrivateKey: pkcs1Key(t, passphrase), Passphrase: []byte("not it")}, api.CodeWrongPassphrase},
 	} {
 		_, err := h.Call(api.HostEnroll, c.req)
 		wantCallRefused(t, c.what, err, c.code)

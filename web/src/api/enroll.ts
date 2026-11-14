@@ -146,3 +146,10 @@ export const CodePassphraseNeeded = "passphrase_needed";
  * private_key_base64.
  */
 export const CodeWrongPassphrase = "wrong_passphrase";
+
+/**
+ * CodeKeyTooCostly: the encrypted private_key_base64 asks for more
+ * rounds of its KDF than Enroll runs (256), which a key made by
+ * ssh-keygen with its default, or with -a 100, never does.
+ */
+export const CodeKeyTooCostly = "key_too_costly";

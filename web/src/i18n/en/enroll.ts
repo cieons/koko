@@ -8,4 +8,6 @@ export default {
   "error.host_changed": "The Host changed while it was being Enrolled, so koko recorded nothing; Enroll it again.",
   "error.passphrase_needed": "The private key is encrypted; give its passphrase.",
   "error.wrong_passphrase": "The passphrase does not open the private key.",
+  "error.key_too_costly":
+    "The private key asks for more rounds to decrypt than Enroll runs (256); lower them with ssh-keygen -p -a 100.",
 };

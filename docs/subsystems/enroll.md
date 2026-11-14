@@ -94,13 +94,21 @@ which prints and logs as its length) and `secret` (an `api.SecretRef`,
 
 An encrypted `private_key_base64` comes with `passphrase_base64`, an
 `api.EnrollInput` too, from revision 2, as [the web UI](#the-web-ui)
-sends it;
-`koko host enroll --key` decrypts on the device and sends none. The koko
-server decrypts the key with it once and keeps neither. An encrypted key
-without it is refused with
-`passphrase_needed`, one it does not open with `wrong_passphrase`, and a
-passphrase with anything but an encrypted `private_key_base64` with
-`invalid_request`, each before any login, and no refusal holds it.
+sends it; `koko host enroll --key` decrypts on the device and sends none.
+The koko server decrypts the key with it once and keeps neither. An
+encrypted key without it is refused with `passphrase_needed`, one it does
+not open with `wrong_passphrase`, and a passphrase with anything but an
+encrypted `private_key_base64` with `invalid_request`, each before any
+login, and no refusal holds it.
+
+A key in OpenSSH's format derives its cipher's key with bcrypt_pbkdf, for
+as many rounds as its header asks, some 8 ms a round on one core. So the
+koko server reads the rounds from the header first and refuses more than
+256 with `key_too_costly` ([`checkRounds`](../../internal/server/enroll/enroll.go)):
+ssh-keygen's default is 16, and guides give `-a 100`. It decrypts only
+after the read transaction, and at most two keys at once, a call waiting
+for a slot (`unlock`). A key in PEM's older encrypted form derives its key
+with one MD5 pass, and takes no such check.
 
 Enroll runs in two parts:
 
@@ -110,7 +118,8 @@ Enroll runs in two parts:
    check (`unknown_host` for a Host the caller cannot see), reads the Secret
    `secret` names ([reading a Secret](#reading-a-secret)), checks the Host's
    state, and opens the koko key's public key. Then, outside any
-   transaction, it logs in through the [Host connector](host-connector.md)
+   transaction, it decrypts an encrypted key ([above](#the-operation)),
+   logs in through the [Host connector](host-connector.md)
    as the Host Account with the supplied password or key, never the koko
    key, and appends the koko key over one exec request, within
    `timing.EnrollAddKey` (30 s). A Host with a Relay is reached through it
@@ -232,7 +241,8 @@ logged in as, which the refusal says.
 
 Enroll's refusals are `unexpected_host_key`, `login_refused` (never
 retried), `host_unreachable`, `key_not_added`, `already_managed`,
-`host_changed`, `passphrase_needed` and `wrong_passphrase`
+`host_changed`, `passphrase_needed`, `wrong_passphrase` and
+`key_too_costly`
 ([the codes](api.md#calls)).
 
 The koko server logs `host enrolled` (the Host, its id, the User, and
@@ -259,9 +269,13 @@ value: the request is kept only as the sealed digest of its
 - [`internal/client/cli/enroll_passphrase_test.go`](../../internal/client/cli/enroll_passphrase_test.go):
   `host.enroll` with an encrypted key and its `passphrase_base64`; the key
   without it refused with `passphrase_needed`, with a wrong one with
-  `wrong_passphrase`, and a passphrase with a key that is not encrypted or
-  with a password with `invalid_request`, each before any login; and the
-  passphrase in no refusal, log line or file of the data directory.
+  `wrong_passphrase`, in OpenSSH's format and PKCS #1's, a key asking for
+  257 rounds with `key_too_costly` and one asking for 100 taken, and a
+  passphrase with a key that is not encrypted or with a password with
+  `invalid_request`, each before any login; and the passphrase in no
+  refusal, log line or file of the data directory.
+- [`internal/server/enroll/unlock_test.go`](../../internal/server/enroll/unlock_test.go):
+  a key decrypted only in a free slot, waiting while every slot is held.
 - [`internal/client/cli/enroll_secret_test.go`](../../internal/client/cli/enroll_secret_test.go):
   `--secret` holding a password, with the line ending `echo` adds, and a
   private key in OpenSSH's form and in PKCS #8; no prompt and no stdin read;
