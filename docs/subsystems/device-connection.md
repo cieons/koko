@@ -505,7 +505,9 @@ which names the Device Sessions and the Hosts a committed change affects.
 ([`server.go`](../../internal/server/server.go)): the Gateway first ends
 the Revoked Device Sessions' SSH Sessions, each with its notice
 ([the Gateway](gateway.md#access-during-a-live-ssh-session)), and once
-they have ended, or `timing.StopNotice` (5 s) has passed, the transport
+they have ended and those Device Sessions' own pages of them, as through
+koko web, have been sent the notice and the close, or `timing.StopNotice`
+(5 s) has passed, the transport
 closes their Device Connections
 ([`transport.Server.CloseDeviceSessions`](../../internal/server/transport/transport.go)):
 each one once the calls in flight on it have answered (so a device that

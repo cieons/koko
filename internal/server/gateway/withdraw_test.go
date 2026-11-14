@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"regexp"
 	"sync"
 	"sync/atomic"
@@ -16,6 +17,7 @@ import (
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/resumable"
 	"github.com/cieons/koko/internal/shared/timing"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -243,4 +245,103 @@ func TestEverySignInEndTakesBackButLeaving(t *testing.T) {
 			t.Errorf("signInEnding(%q) = %+v, want an ending with its notice", reason, e)
 		}
 	}
+}
+
+// A revocation tells the koko server to close the Revoked Device Session's
+// connections only once the device's pages of its SSH Sessions have been
+// sent the notice and the close: the SSH Session's own ending may come
+// first, and a page through koko web on that device would otherwise see a
+// drop rather than why.
+func TestARevocationWaitsForTheDevicesPagesToBeToldWhy(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tg := newTestGateway(t, 0)
+		t.Cleanup(tg.Close)
+		laptop := op.Caller{DeviceSession: "devsession_laptop"}
+		tun := tg.newTunnel(laptop, clientBrowser, nil)
+		tun.userID, tun.user, tun.hostID, tun.hostName = "user_bob", "bob", "host_web1", "web1"
+		tg.mu.Lock()
+		tg.tunnels[tun.id] = tun
+		tg.mu.Unlock()
+		s := tg.newSession(tun, nil, "tab", admission{}, callerKey{id: laptop.ID()}, 80, 24)
+		sh := newFakeShell()
+		if err := s.start(sh); err != nil {
+			t.Fatal(err)
+		}
+		// As runSession ends: the pages finished, then the Tunnel gone.
+		tg.wg.Go(func() {
+			_ = s.awaitEnd()
+			sh.end()
+			tg.unregister(tun)
+		})
+		// The page's connection, whose writes from the Gateway wait while
+		// held is not nil: a Device Connection that has yet to carry them.
+		gw, pg := net.Pipe()
+		conn := &heldConn{Conn: gw}
+		a := newTestAttachment(s, laptop)
+		p := &page{a: a, stream: resumable.New(pg), ended: make(chan struct{})}
+		go p.read()
+		tg.addAttachment(a, conn, func() {}, nil)
+		synctest.Wait()
+		if !p.has(1, "") {
+			t.Fatal("the page got no snapshot")
+		}
+
+		release := conn.hold()
+		t.Cleanup(release)
+		told := tg.Withdraw(access.Change{Revoked: []string{laptop.DeviceSession}})
+		synctest.Wait()
+		select {
+		case <-tun.done:
+		default:
+			t.Fatal("the SSH Session did not end")
+		}
+		select {
+		case <-told:
+			t.Fatal("the revocation was told done before the device's page was sent its notice")
+		default:
+		}
+
+		release()
+		synctest.Wait()
+		select {
+		case <-told:
+		default:
+			t.Fatal("the revocation was not told done once the page had its notice")
+		}
+		notice := revokedEnding(tun).notice
+		if e, ok := errors.AsType[*resumable.PeerClosedError](p.err); !ok || e.Reason != notice {
+			t.Errorf("the page's stream ended with %v, want the revocation's notice", p.err)
+		}
+	})
+}
+
+// heldConn is a connection whose writes wait while it is held.
+type heldConn struct {
+	net.Conn
+	mu   sync.Mutex
+	held chan struct{}
+}
+
+// hold holds the connection's writes, and returns what lets them go on.
+func (c *heldConn) hold() func() {
+	held := make(chan struct{})
+	c.mu.Lock()
+	c.held = held
+	c.mu.Unlock()
+	return sync.OnceFunc(func() {
+		c.mu.Lock()
+		c.held = nil
+		c.mu.Unlock()
+		close(held)
+	})
+}
+
+func (c *heldConn) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	held := c.held
+	c.mu.Unlock()
+	if held != nil {
+		<-held
+	}
+	return c.Conn.Write(p)
 }

@@ -358,6 +358,20 @@ done once it is not.
 **Seen:** 1 (2026-11-14)
 **Evidence:** #226's review, before its web slice was pushed
 
+### A wait for a notice to reach a page waits for the page's writer, not for the ending that queued it
+
+**Why:** a revocation closes the Revoked Device Session's Device
+Connections once its SSH Sessions have ended, so that each device learns
+why rather than seeing a drop. An SSH Session's ending only queues the
+notice for its pages, and each page's writer sends it after, so the
+connection could close first: a web terminal through koko web on the
+revoked device saw its WebSocket drop instead of the notice, and
+`TestRevokingADeviceSessionEndsItsWebTerminal` waited 20 s for an end
+that never came. Wait for what sends the notice (an attachment's
+`written`), as a stop already did.
+**Seen:** 1 (2026-11-14)
+**Evidence:** run 43576801509, attempt 2; #227
+
 ## Moved to the code standards
 
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128, #147; check run 42951455550).

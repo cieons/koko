@@ -29,7 +29,8 @@ import (
 // A Sign-in that only signed out or expired takes back nothing it opened
 // (spec #213, "What ends an SSH Session, and what only detaches"). The
 // channel it returns is closed once the SSH Sessions the Revoked Device
-// Sessions opened have given their notice and ended, so that their Device
+// Sessions opened have given their notice and ended, and those Device
+// Sessions' pages of them have been sent it, so that their Device
 // Connections close only after. It never blocks, since the access-change
 // signal calls it before the call that made the change answers.
 func (g *Gateway) Withdraw(c access.Change) <-chan struct{} {
@@ -71,6 +72,15 @@ func (g *Gateway) Withdraw(c access.Change) <-chan struct{} {
 		}
 		if slices.Contains(c.Revoked, t.caller.DeviceSession) {
 			revoked = append(revoked, t.done)
+		}
+	}
+	// A Revoked Device Session's pages of those SSH Sessions, as through
+	// koko web, get the notice on its own Device Connections, from their
+	// writers, which the SSH Sessions' endings do not wait for. Its pages
+	// of other SSH Sessions are cut, with nothing to send.
+	for _, a := range g.attachments {
+		if slices.Contains(c.Revoked, a.caller.DeviceSession) && slices.Contains(c.Revoked, a.s.t.caller.DeviceSession) {
+			revoked = append(revoked, a.written)
 		}
 	}
 	if len(recheck) > 0 {
