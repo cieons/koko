@@ -580,7 +580,12 @@ func (w *WebTerminal) waitFor(what string, cond func() bool) []byte {
 			default:
 			}
 		case <-deadline.C:
-			w.t.Fatalf("the web terminal got no %s within 20 s; it got %q", what, tail(w.Output()))
+			// A reset, as a page that fell behind gets, starts the output
+			// anew, and a stall leaves it as it was.
+			w.mu.Lock()
+			resets, n := len(w.resets), len(w.output)
+			w.mu.Unlock()
+			w.t.Fatalf("the web terminal got no %s within 20 s; it got %d resets and %d bytes since the last, ending %q", what, resets, n, tail(w.Output()))
 		}
 	}
 }

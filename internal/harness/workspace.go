@@ -10,6 +10,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/cieons/koko/internal/server/vt"
 	"github.com/cieons/koko/internal/server/web"
 	"github.com/cieons/koko/internal/shared/wire"
 )
@@ -199,16 +200,38 @@ func (ws *WorkspacePage) Answer(n uint64) wire.WorkspaceAnswer {
 }
 
 // Open asks to open a tab to the Host named host at cols by rows, and
-// returns the answer.
+// returns the answer, once the emulator has compiled (waitEmulator).
 func (ws *WorkspacePage) Open(host string, cols, rows uint32) wire.WorkspaceAnswer {
 	ws.t.t.Helper()
+	ws.waitEmulator()
 	return ws.Answer(ws.Send(wire.WorkspaceRequest{Open: host, Cols: cols, Rows: rows}))
 }
 
-// Reopen asks for a new SSH Session in the tab, and returns the answer.
+// Reopen asks for a new SSH Session in the tab, and returns the answer,
+// once the emulator has compiled (waitEmulator).
 func (ws *WorkspacePage) Reopen(tab string, cols, rows uint32) wire.WorkspaceAnswer {
 	ws.t.t.Helper()
+	ws.waitEmulator()
 	return ws.Answer(ws.Send(wire.WorkspaceRequest{Reopen: tab, Cols: cols, Rows: rows}))
+}
+
+// emulatorCompiles bounds the wait for the web terminals' emulator to
+// compile: about 11 s under -race on CI's runner, longer while other test
+// processes compile theirs.
+const emulatorCompiles = 2 * time.Minute
+
+// waitEmulator waits for the web terminals' emulator to compile, once per
+// test process, which an SSH Session's start waits for, so that the 20 s
+// waits for a tab and its terminal time those alone (#227). The koko
+// server a page reaches runs in the test's process, and so does its
+// compile. It fails the test after emulatorCompiles.
+func (ws *WorkspacePage) waitEmulator() {
+	ws.t.t.Helper()
+	ctx, cancel := context.WithTimeout(ws.t.t.Context(), emulatorCompiles)
+	defer cancel()
+	if _, err := vt.Engine(ctx); err != nil {
+		ws.t.t.Fatalf("the web terminals' emulator did not compile: %v", err)
+	}
 }
 
 // CloseTab asks to close the tab, and returns the answer.
@@ -292,21 +315,26 @@ func (ws *WorkspacePage) waitFor(what string, cond func() bool) {
 	for {
 		ws.mu.Lock()
 		ok, changed, ended := cond(), ws.changed, ws.err != nil
+		// The last message that is not a probe's {}, which says what the
+		// page last learnt.
 		last := ""
-		if n := len(ws.messages); n > 0 {
-			last = ws.messages[n-1]
+		for _, m := range slices.Backward(ws.messages) {
+			if m != "{}" {
+				last = m
+				break
+			}
 		}
 		ws.mu.Unlock()
 		if ok {
 			return
 		}
 		if ended {
-			ws.t.t.Fatalf("the Workspace socket ended (%v) before %s; its last message was %s", ws.Err(), what, last)
+			ws.t.t.Fatalf("the Workspace socket ended (%v) before %s; its last message but probes was %s", ws.Err(), what, last)
 		}
 		select {
 		case <-changed:
 		case <-deadline.C:
-			ws.t.t.Fatalf("the Workspace socket got no %s within 20 s; its last message was %s", what, last)
+			ws.t.t.Fatalf("the Workspace socket did not get %s within 20 s; its last message but probes was %s", what, last)
 		}
 	}
 }
