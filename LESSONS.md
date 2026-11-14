@@ -56,22 +56,6 @@ the SSH Session ends, or `exec` the command so the kill reaches it.
 **Seen:** 1 (2026-11-06)
 **Evidence:** 0ac2b3d (#64); check run 42166495220; 2e5b9f4 (#59)
 
-### A change that makes something happen by itself re-reads every test that counts it or stalls the path it crosses
-
-**Why:** #54 made the Device Mux reconnect at once after a drop, where it
-had reconnected only when a command asked. `TestTheDeviceMuxCarriesChannelsAcrossADrop`
-counted the Device Connections right after a drop, as the old behaviour
-left them; it passed locally whenever the reconnect lost the race, failed
-on both CI runners, and left `main` red at c152887. #206 made the Device
-Mux refresh the bare names on every Device Connection it opens, not only
-the first, and the wake probe test stalled the path as soon as the second
-opened, while the refresh's answer could still cross it; arriving after
-the at-once probe, it counted as the probe's answer, and the drop never
-came within the test's wait.
-**Seen:** 2 (2026-11-06, 2026-11-13)
-**Evidence:** c152887 (#54); check runs 42166495220 and 42167225724;
-ab54dc2 (#206); check run 43382302660; #211
-
 ### Every SSH connection koko opens channels on goes through sshconn.Wrap
 
 **Why:** x/crypto's `OpenChannel` on a connection that has just ended can
@@ -377,3 +361,4 @@ that never came. Wait for what sends the notice (an attachment's
 - Wait for the event itself, not for one that comes just before it: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-08, 2026-11-09, 2026-11-10, 2026-11-11; #38, #43, #49, #54, #60, #70, #90, #119, #120, #128, #147; check run 42951455550).
 - A channel or connection closes only once every request on it has its answer: [What a change contains](docs/code-standards.md#what-a-change-contains) (seen 2026-11-06, 2026-11-08, 2026-11-10; #49, #59, #64, #81, #127).
 - A test shortens a wait only where what it waits for never comes: [Tests](docs/code-standards.md#tests) (seen 2026-11-06, 2026-11-11, 2026-11-12, 2026-11-13; #38, #77, #147, #163, #167, #207, #218, #219; check runs 42081318152, 43128685688, 43375988659 and 43388926131).
+- A change that makes something happen by itself re-reads every path it crosses: [What a change contains](docs/code-standards.md#what-a-change-contains) (seen 2026-11-06, 2026-11-13, 2026-11-14; #54, #206, #211, #222, #227; check runs 42166495220, 43382302660 and run 43576801509).

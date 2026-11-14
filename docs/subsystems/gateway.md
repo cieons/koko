@@ -813,8 +813,10 @@ attachment's `attachment`, its id.
   ([Relay](#relay)), as is `relay registered`, and `relay chain broken`
   with `read_relay_ids`. A Workspace's 17th tab is refused so, with `ssh
   session limit`. A client that leaves before its `none`, or a web
-  terminal whose tab closed before its shell started, is logged at debug
-  level as `ssh session ended before it started`.
+  terminal that ended before its shell and its emulator started, as when
+  its tab closed or its access was withdrawn meanwhile, is logged at debug
+  level as `ssh session ended before it started`, and its tab records the
+  ending, not a refusal.
 - `ssh session attached`, a page attached to a web terminal: `tunnel`,
   `client`, `tab`, `attachment`, `signin` or `device_session`, and `addr`.
 - `ssh session detached`: for a Tunnel, `tunnel`, `client` and

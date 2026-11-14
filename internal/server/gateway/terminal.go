@@ -89,6 +89,36 @@ func (g *Gateway) terminalsOpen() bool {
 	return !g.closed && !g.terminalsClosed
 }
 
+// startSession starts the SSH Session s on the shell sh, and says whether
+// it did. A start that failed as the SSH Session ended meanwhile, such as
+// one whose emulator waited for the engine's compile, records the ending
+// in its tab, as an SSH Session that ended before its shell started does;
+// any other failure refuses its tab.
+func (g *Gateway) startSession(s *termSession, sh hostShell, hostName string) bool {
+	err := s.start(sh)
+	switch {
+	case err == nil:
+		return true
+	case s.t.ctx.Err() != nil:
+		g.endedBeforeStart(s, hostName)
+	default:
+		t := s.t
+		g.log.Error("open a web terminal", slices.Concat(s.named(), []any{"name", hostName}, callerAttrs(t.caller), []any{"addr", t.from, "err", err})...)
+		s.w.refused(s, openFailed)
+	}
+	return false
+}
+
+// endedBeforeStart records the ending of the SSH Session s, which ended
+// while it opened: its tab closed, the koko server stops, or its access
+// was withdrawn, which its tab tells.
+func (g *Gateway) endedBeforeStart(s *termSession, hostName string) {
+	t := s.t
+	e := endingOf(context.Cause(t.ctx))
+	g.log.Debug("ssh session ended before it started", slices.Concat(s.named(), []any{"name", hostName}, callerAttrs(t.caller), []any{"addr", t.from, "err", e})...)
+	s.w.ended(s, e, nil, "")
+}
+
 // runSession runs the SSH Session s of a Workspace, registered, from its
 // dial until it ends: it starts the shell at the pty's size, runs the
 // loop, and once the SSH Session ends, finishes its pages with how it
@@ -106,11 +136,7 @@ func (g *Gateway) runSession(s *termSession) {
 	}
 	switch {
 	case t.ctx.Err() != nil:
-		// Ended while it opened: its tab closed, the koko server stops, or
-		// its access was withdrawn, which its tab tells.
-		e := endingOf(context.Cause(t.ctx))
-		g.log.Debug("ssh session ended before it started", slices.Concat(s.named(), []any{"name", hostName}, callerAttrs(t.caller), []any{"addr", t.from, "err", e})...)
-		s.w.ended(s, e, nil, "")
+		g.endedBeforeStart(s, hostName)
 		return
 	case refused != nil:
 		g.logRefused(t, hostName, refused)
@@ -128,9 +154,7 @@ func (g *Gateway) runSession(s *termSession) {
 	g.mu.Lock()
 	t.files = sh.files
 	g.mu.Unlock()
-	if err := s.start(sh); err != nil {
-		g.log.Error("open a web terminal", slices.Concat(s.named(), []any{"name", hostName}, callerAttrs(t.caller), []any{"addr", t.from, "err", err})...)
-		s.w.refused(s, openFailed)
+	if !g.startSession(s, sh, hostName) {
 		return
 	}
 

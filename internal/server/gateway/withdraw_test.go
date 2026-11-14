@@ -3,10 +3,12 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -344,4 +346,41 @@ func (c *heldConn) Write(p []byte) (int, error) {
 		<-held
 	}
 	return c.Conn.Write(p)
+}
+
+// An SSH Session that ends while its start waits for its emulator, as the
+// first one does while the engine compiles, is recorded in its tab as
+// ended, with its ending, as one that ended before its shell started is:
+// not refused as an open that failed.
+func TestAnSSHSessionThatEndsWhileItStartsIsRecordedEnded(t *testing.T) {
+	sg := newStoreGateway(t)
+	making := make(chan struct{})
+	sg.newEmulator = func(ctx context.Context, _, _ int) (emulator, error) {
+		close(making)
+		<-ctx.Done()
+		return nil, fmt.Errorf("wait for libghostty-vt to compile: %w", context.Cause(ctx))
+	}
+	tun := sg.newTunnel(desktop, clientBrowser, nil)
+	tun.userID = "user_bob"
+	s := sg.newSession(tun, sg.w, "tab2", admission{}, callerKey{}, 80, 24)
+	sg.w.mu.Lock()
+	sg.w.tabs = append(sg.w.tabs, &wsTab{id: "tab2", state: wire.TabStateStarting, session: s})
+	sg.w.mu.Unlock()
+	started := make(chan bool, 1)
+	go func() { started <- sg.startSession(s, newFakeShell(), "web1") }()
+	<-making
+	tun.end(errWebURLChanged)
+	if <-started {
+		t.Fatal("the SSH Session started")
+	}
+	sg.w.mu.Lock()
+	tab, _ := sg.w.find("tab2")
+	state, ended, refused := tab.state, tab.ended, tab.refused
+	sg.w.mu.Unlock()
+	if state != wire.TabStateEnded || ended == nil || ended.Reason != errWebURLChanged.reason || refused != nil {
+		t.Errorf("the tab is %s, ended %+v, refused %+v; want ended with %q", state, ended, refused, errWebURLChanged.reason)
+	}
+	if log := sg.log.String(); strings.Contains(log, "level=ERROR") {
+		t.Errorf("an SSH Session that ended as it started logged an error:\n%s", log)
+	}
 }
