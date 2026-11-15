@@ -145,7 +145,7 @@ endpoint: Origin-checked, JSON, covered by the rate limits. It:
    a Sign-in Link, one no longer valid with `link_used` or `link_invalid`,
    which counts for the address;
 3. keeps of `next` only a path of this origin outside `/signin`, `/link`,
-   `/password` and `/auth/`, else `/`;
+   `/password` and `/auth/`, once its dot segments are resolved, else `/`;
 4. fetches the issuer's discovery as kept (below), outside any transaction;
 5. makes `state` (the flow's id) and `nonce`, 128 random bits each, a PKCE
    verifier (`oauth2.GenerateVerifier`) and a binding token of 128 bits,
@@ -207,8 +207,8 @@ case. In order:
    after the koko server's clock less 60 seconds, and `nbf`, when present,
    within 5 minutes of it (`expiry`); `nonce` is the flow's (`nonce`);
    `sub` is 1 to 255 bytes (`subject`). A key set that does not answer,
-   when a token names a key it lacks, is `provider_unreachable`, not a bad
-   signature.
+   or answers a server error, when a token names a key it lacks, is
+   `provider_unreachable`, not a bad signature.
 7. **The outcome**, in one write transaction, which checks the provider
    and the Web URL again:
    - **Signing in:** (`iss`, `sub`) names the Linked Identity of a User
@@ -228,7 +228,14 @@ case. In order:
 8. **The answer:** after signing in, a `303` to `next`, with the Sign-in
    cookie; after linking, to `/account?linked=1`, either way; after a
    refusal, to `/signin?refused=<code>`, `/account?refused=<code>` or
-   `/link?refused=<code>`, by purpose. The code is not secret.
+   `/link?refused=<code>`, by purpose. The code is not secret, and is one
+   the pages word: `signin_expired`, `provider_refused`,
+   `provider_failed`, `provider_unreachable`, `identity_not_linked`,
+   `identity_linked`, `identity_taken`, `signin_required`, `link_used`,
+   `link_invalid`, `too_many_attempts` or `internal_error`. Any other
+   refusal, such as a discovery fetched again since the flow began and no
+   longer valid, is `provider_failed` at the step `discovery`, logged with
+   its `cause`.
 
 Once the binding has passed, `provider_failed`, `identity_not_linked` and a
 refused link count for the address ([rate limits](signin.md#rate-limits));

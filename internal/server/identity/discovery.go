@@ -184,7 +184,24 @@ func (k *discoveries) get(ctx context.Context, issuer string) (*known, error) {
 }
 
 // known is d with a key set that fetches the issuer's keys through k's
-// client as tokens name them.
+// client as tokens name them, a server error failing the fetch as no
+// answer does.
 func (k *discoveries) known(d discovery) *known {
-	return &known{doc: d, keys: oidc.NewRemoteKeySet(oidc.ClientContext(context.Background(), k.client), d.JWKSURL)}
+	client := &http.Client{Transport: serverErrors{k.client.Transport}, CheckRedirect: k.client.CheckRedirect}
+	return &known{doc: d, keys: oidc.NewRemoteKeySet(oidc.ClientContext(context.Background(), client), d.JWKSURL)}
+}
+
+// serverErrors fails a call its provider answered with a server error
+// (5xx), so that go-oidc's key set, which reads any answer but 200 as keys
+// it cannot use, passes the failure on as one without an answer, which a
+// verification tells from a bad signature.
+type serverErrors struct{ base http.RoundTripper }
+
+func (s serverErrors) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := s.base.RoundTrip(req)
+	if err != nil || resp.StatusCode < http.StatusInternalServerError {
+		return resp, err
+	}
+	_ = resp.Body.Close()
+	return nil, fmt.Errorf("the identity provider answered %s", resp.Status)
 }

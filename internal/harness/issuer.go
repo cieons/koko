@@ -49,8 +49,10 @@ type Issuer struct {
 	// answers at once. waiting counts the requests held now.
 	held    chan struct{}
 	waiting int
-	// keysOnly makes Hold hold only the key set's requests.
-	keysOnly bool
+	// keysStatus is what the key set answers in place of its keys, 0 for
+	// them; dropKeys makes it close the connection unanswered instead.
+	keysStatus int
+	dropKeys   bool
 	// requests is every request's path, in order.
 	requests []string
 	// key signs the issuer's ID tokens, and kid names it in the key set.
@@ -108,7 +110,7 @@ func NewIssuer(t testing.TB) *Issuer {
 		i.mu.Lock()
 		i.requests = append(i.requests, r.URL.Path)
 		held := i.held
-		if r.URL.Path == issuerPath+"authorize" || i.keysOnly && r.URL.Path != issuerPath+"jwks" {
+		if r.URL.Path == issuerPath+"authorize" {
 			held = nil
 		}
 		if held != nil {
@@ -191,13 +193,20 @@ func (i *Issuer) Hold() {
 	}
 }
 
-// HoldKeys makes Hold hold only the key set's requests, as an issuer whose
-// key set alone does not answer.
-func (i *Issuer) HoldKeys() {
+// AnswerKeys makes the key set answer status, such as 503, in place of its
+// keys; 0 serves them again.
+func (i *Issuer) AnswerKeys(status int) {
 	i.mu.Lock()
-	i.keysOnly = true
-	i.mu.Unlock()
-	i.Hold()
+	defer i.mu.Unlock()
+	i.keysStatus = status
+}
+
+// DropKeys makes the key set close each request's connection unanswered,
+// as one that does not answer; false serves it again.
+func (i *Issuer) DropKeys(drop bool) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.dropKeys = drop
 }
 
 // Release answers the requests Hold holds, and the next ones at once.
@@ -208,7 +217,6 @@ func (i *Issuer) Release() {
 		close(i.held)
 		i.held = nil
 	}
-	i.keysOnly = false
 }
 
 // Waiting is how many requests Hold holds now.
@@ -281,8 +289,15 @@ func (i *Issuer) discovery(w http.ResponseWriter, r *http.Request) {
 
 func (i *Issuer) jwks(w http.ResponseWriter, _ *http.Request) {
 	i.mu.Lock()
-	key, kid := i.key, i.kid
+	key, kid, status, drop := i.key, i.kid, i.keysStatus, i.dropKeys
 	i.mu.Unlock()
+	switch {
+	case drop:
+		panic(http.ErrAbortHandler) // closes the connection unanswered
+	case status != 0:
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
 	pub, err := key.PublicKey.Bytes()
 	if err != nil {
 		i.t.Errorf("encode the issuer's key: %v", err)

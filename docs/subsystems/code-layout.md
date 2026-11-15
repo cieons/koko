@@ -121,11 +121,13 @@ seals Password hashes with the Root Key and runs the `/auth/` endpoints'
 writes through `op.API.Do`, so `server.Start` makes it
 (`signin.New`), hands it to the web front, and registers it after `user`
 (`Service.Register`). The identity area seals the Identity Provider's client
-secret with the Root Key, ends the Sign-ins made through a Linked Identity it
-unlinks through the signin area (`identity.SignIns`), and calls the provider
-through `server.Config.IdentityClient`'s transport, bounded by the timings,
-so `server.Start` makes it after the signin area (`identity.New`) and
-registers it (`Service.Register`). The passkey area runs its ceremonies'
+secret with the Root Key, starts and ends the Sign-ins made through a Linked
+Identity, spends Sign-in Links and counts its flows' failures through the
+signin area, runs its flows' outcomes through `op.API.Do`, and calls the
+provider through `server.Config.IdentityClient`'s transport, bounded by the
+timings, so `server.Start` makes it after the signin area (`identity.New`),
+hands it to the web front for `/auth/oidc/`, and registers it
+(`Service.Register`). The passkey area runs its ceremonies'
 writes through `op.API.Do` and starts their Sign-ins, spends their Sign-in
 Links and counts their failures through the signin area, so `server.Start`
 makes it after the signin area (`passkey.New`), hands it to the web front,

@@ -554,6 +554,7 @@ func TestASignInEndsOnlyOnAPathOfThisOrigin(t *testing.T) {
 		"/link?x=1":            "/",
 		"/password":            "/",
 		"/auth/oidc/callback":  "/",
+		"/x/../signin":         "/",
 		"spaces":               "/",
 		"/a\tb":                "/",
 	} {
@@ -806,20 +807,27 @@ func TestRemovingTheProviderEndsTheSignInsThroughIt(t *testing.T) {
 	}
 }
 
-// A key set that does not answer, when a token names a key it lacks, is
-// provider_unreachable, which counts for nothing, not a bad signature.
+// A key set that does not answer, or answers a server error, when a token
+// names a key it lacks, is provider_unreachable, which counts for nothing,
+// not a bad signature.
 func TestAKeySetThatDoesNotAnswerIsUnreachable(t *testing.T) {
 	t.Parallel()
-	h, iss := startIssuer(t, harness.Timings(timing.Timings{ProviderCall: 200 * time.Millisecond}))
+	h, iss := startIssuer(t)
 	link(t, h, iss, "bob")
-	iss.RotateKey()
-	iss.HoldKeys()
-	wantSeeOther(t, h.Browser().ThroughProvider(iss, signInThrough), "/signin?refused=provider_unreachable")
-	if strings.Contains(h.Log(), "reason=provider_failed") {
-		t.Errorf("the key set's silence was taken for a bad signature:\n%s", h.Log())
+	for name, spoil := range map[string]func(){
+		"no answer":      func() { iss.DropKeys(true) },
+		"a server error": func() { iss.AnswerKeys(http.StatusServiceUnavailable) },
+	} {
+		iss.RotateKey()
+		spoil()
+		wantSeeOther(t, h.Browser().ThroughProvider(iss, signInThrough), "/signin?refused=provider_unreachable")
+		if strings.Contains(h.Log(), "reason=provider_failed") {
+			t.Errorf("%s: the key set's failure was taken for a bad signature:\n%s", name, h.Log())
+		}
+		iss.DropKeys(false)
+		iss.AnswerKeys(0)
+		wantSeeOther(t, h.Browser().ThroughProvider(iss, signInThrough), "/")
 	}
-	iss.Release()
-	wantSeeOther(t, h.Browser().ThroughProvider(iss, signInThrough), "/")
 }
 
 // Unlinking one's identity from a browser ends the Sign-ins made through

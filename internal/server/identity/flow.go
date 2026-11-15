@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -217,8 +218,11 @@ func safeNext(next string) string {
 	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil {
 		return "/"
 	}
+	// A browser, and the 303's own cleaning, resolve /x/../signin to
+	// /signin.
+	clean := path.Clean(u.Path)
 	for _, page := range []string{signInPage, linkPage, "/password", "/auth"} {
-		if u.Path == page || strings.HasPrefix(u.Path, page+"/") {
+		if clean == page || strings.HasPrefix(clean, page+"/") {
 			return "/"
 		}
 	}
@@ -279,6 +283,9 @@ const (
 	stepExpiry    = "expiry"
 	stepNonce     = "nonce"
 	stepSubject   = "subject"
+	// stepDiscovery is a discovery that failed in a way a page does not
+	// word, such as one no longer valid.
+	stepDiscovery = "discovery"
 )
 
 // failed is a provider_failed refusal at step, which counts.
@@ -588,6 +595,15 @@ func (s *Service) link(ctx context.Context, tx store.Tx, userID, id, issuer stri
 	return nil
 }
 
+// callbackCodes are the codes a callback's refusal sends a page, each of
+// which the page words: any other is provider_failed at the step
+// discovery.
+var callbackCodes = []api.Code{
+	api.CodeSignInExpired, api.CodeProviderRefused, api.CodeProviderFailed, api.CodeProviderUnreachable,
+	api.CodeIdentityNotLinked, api.CodeIdentityLinked, api.CodeIdentityTaken, api.CodeSignInRequired,
+	api.CodeLinkUsed, api.CodeLinkInvalid, api.CodeTooManyAttempts, api.CodeInternal,
+}
+
 // refuse is the outcome of f refused with err from a, at step for
 // provider_failed, logging it with attrs: a coded refusal at f's page; any
 // other failure, which the log holds, as internal_error there.
@@ -600,6 +616,12 @@ func (s *Service) refuse(f oidcFlow, a signin.Attempt, err error, step string, a
 	if !registered {
 		s.log.Error("sign-in through the identity provider failed", "purpose", f.purpose, "address", a.Address, "err", err)
 		return refusedAt(f.page(), api.CodeInternal)
+	}
+	if !slices.Contains(callbackCodes, code) {
+		// Such as invalid_provider, from a discovery fetched again since
+		// the flow began: a page words only the callback's own codes.
+		attrs = append(attrs, "cause", code.Name)
+		code, step = api.CodeProviderFailed, stepDiscovery
 	}
 	line := append([]any{"reason", code.Name, "purpose", f.purpose}, attrs...)
 	if step != "" {
