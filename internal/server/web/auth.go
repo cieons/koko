@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/cieons/koko/internal/server/identity"
+	"github.com/cieons/koko/internal/server/passkey"
 	"github.com/cieons/koko/internal/server/signin"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
@@ -170,6 +171,9 @@ func (f *Front) authMethods(w http.ResponseWriter, r *http.Request, body []byte)
 	}
 	var resp api.AuthMethodsResponse
 	err := f.store.Read(r.Context(), func(tx store.Tx) (err error) {
+		if resp.Passkeys, err = passkey.Available(r.Context(), tx); err != nil {
+			return err
+		}
 		resp.Provider, err = identity.Button(r.Context(), tx)
 		return err
 	})

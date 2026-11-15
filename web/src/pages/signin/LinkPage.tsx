@@ -9,12 +9,13 @@ import { ApiError, post } from "../../client";
 import { useCount, useT } from "../../shell/i18n";
 import { navigate, signInPage } from "../../shell/router";
 import { Form } from "../../ui/Form";
+import { notify } from "../../ui/notify";
 import { AlertLine, Loading } from "../../ui/states";
 import { Door } from "./Door";
 import { useLinkSecret } from "./linkSecret";
 import { PasswordFields } from "./PasswordFields";
 import { refusalText } from "./refusal";
-import { cancelled, makePasskey, passkeysAvailable, useCeremony } from "./webauthn";
+import { cancelled, makePasskey, useCeremony, usePasskeysOffered } from "./webauthn";
 
 /** Step is where a Sign-in Link's page is: reading the link, its choices, a link that no longer works, or a read that failed. */
 type Step =
@@ -41,8 +42,12 @@ function gone(error: unknown): Step | undefined {
  * (/auth/passkey/add/begin, the browser's ceremony, /auth/passkey/add),
  * and Set a Password instead, which opens the new Password twice, saying it
  * replaces their Password when they have one, for /auth/password. Either
- * spends the link and signs this browser in. A browser without WebAuthn
- * gets the Password's fields at once. A link used already or no longer
+ * spends the link and signs this browser in. A browser without WebAuthn,
+ * or a Web URL passkeys do not work at (/auth/methods, usePasskeysOffered),
+ * gets the Password's fields at once; the page shows Loading until both
+ * /auth/link and /auth/methods have answered. A passkey's answer whose page
+ * closed meanwhile says in a toast that this browser is signed in, instead
+ * of going on. A link used already or no longer
  * valid replaces the page with what happened and Go to Sign in. The secret
  * is sent only while the page is open: a ceremony whose page closed, as for
  * another link, sends nothing more.
@@ -65,9 +70,10 @@ function ForLink({ secret }: { secret: string | undefined }) {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<unknown>();
   const begin = useCeremony();
-  const passkeys = passkeysAvailable();
-  // password says the Password's fields show: at once without WebAuthn, else once chosen.
-  const [password, setPassword] = useState(!passkeys);
+  const passkeys = usePasskeysOffered();
+  // chosen says Set a Password instead was chosen; without passkeys the Password's fields show at once.
+  const [chosen, setChosen] = useState(false);
+  const password = passkeys === false || chosen;
   // The line saying a Password set here replaces theirs describes the submit, so a screen reader tabbing to it hears it.
   const replaces = useId();
 
@@ -107,8 +113,12 @@ function ForLink({ secret }: { secret: string | undefined }) {
       if (!ceremony.open()) {
         return;
       }
-      await post(AuthPasskeyAdd, { flow, credential });
-      navigate("/", { replace: true });
+      const { user } = await post(AuthPasskeyAdd, { flow, credential });
+      if (ceremony.open()) {
+        navigate("/", { replace: true });
+      } else {
+        notify(t("passkey.signedIn", { name: user.name }));
+      }
     } catch (failure) {
       if (!ceremony.open()) {
         return;
@@ -156,10 +166,10 @@ function ForLink({ secret }: { secret: string | undefined }) {
       </Door>
     );
   }
-  if (step.kind !== "ready") {
+  if (step.kind !== "ready" || passkeys === undefined) {
     return (
-      <Door title={t("signin.set.title")}>
-        {step.kind === "reading" ? (
+      <Door title={t(passkeys === false ? "signin.set.title" : "passkey.link.title")}>
+        {step.kind !== "failed" ? (
           <Loading />
         ) : (
           <div className="flex flex-col items-start gap-3">
@@ -188,7 +198,7 @@ function ForLink({ secret }: { secret: string | undefined }) {
             fullWidth
             onPress={() => {
               setError(undefined);
-              setPassword(true);
+              setChosen(true);
             }}
           >
             {t("passkey.link.password")}
@@ -225,7 +235,7 @@ function ForLink({ secret }: { secret: string | undefined }) {
             fullWidth
             onPress={() => {
               setError(undefined);
-              setPassword(false);
+              setChosen(false);
             }}
           >
             {t("passkey.link.back")}

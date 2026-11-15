@@ -2,8 +2,10 @@
 // begins and answers in two requests, such as a passkey's ceremony (#228,
 // "Challenges"): each in memory under a random 128-bit id the page posts
 // back, taken once, expiring after its lifetime, and bounded per client
-// address and in all, so that no one host can evict everyone's flows. A
-// restart forgets them all, and the page starts again.
+// address and in all. When the store is full, the address holding the most
+// flows loses its oldest, so addresses that fill it evict their own flows
+// before anyone else's. A restart forgets them all, and the page starts
+// again.
 package flow
 
 import (
@@ -23,7 +25,9 @@ const (
 	// counts as one, since one host commonly holds the /64 whole.
 	PerAddress = 20
 	// Total is how many flows are held at most in all; one more drops the
-	// oldest.
+	// oldest flow of the address holding the most. An address holding one
+	// flow loses it only once every address holds one alone, which takes
+	// Total addresses, or IPv6 /64s, beginning flows within their lifetime.
 	Total = 10_000
 )
 
@@ -40,6 +44,9 @@ type Store[V any] struct {
 	byID  map[string]*list.Element
 	// byAddress holds the ids of each address's flows, the oldest first.
 	byAddress map[string][]string
+	// holding counts the addresses by how many flows each holds:
+	// holding[n] addresses hold n.
+	holding [PerAddress + 1]int
 }
 
 type entry[V any] struct {
@@ -71,11 +78,37 @@ func (s *Store[V]) Begin(address string, v V) string {
 		s.drop(s.byID[held[0]])
 	}
 	if s.order.Len() >= Total {
-		s.drop(s.order.Front())
+		s.drop(s.crowdedOldest())
 	}
 	s.byID[id] = s.order.PushBack(&entry[V]{id: id, address: key, began: now, value: v})
+	s.count(key, +1)
 	s.byAddress[key] = append(s.byAddress[key], id)
 	return id
+}
+
+// crowdedOldest is the flow to drop from a full store: the oldest of those
+// of the addresses holding the most; s.mu is held.
+func (s *Store[V]) crowdedOldest() *list.Element {
+	most := PerAddress
+	for s.holding[most] == 0 {
+		most--
+	}
+	for el := s.order.Front(); ; el = el.Next() {
+		if len(s.byAddress[el.Value.(*entry[V]).address]) == most {
+			return el
+		}
+	}
+}
+
+// count moves key, which holds one flow more or one fewer, between the
+// counts of holding; s.mu is held.
+func (s *Store[V]) count(key string, by int) {
+	if held := len(s.byAddress[key]); held > 0 {
+		s.holding[held]--
+	}
+	if held := len(s.byAddress[key]) + by; held > 0 {
+		s.holding[held]++
+	}
 }
 
 // Take returns the flow id names and forgets it, so that no later answer
@@ -106,6 +139,7 @@ func (s *Store[V]) expire(now time.Time) {
 func (s *Store[V]) drop(el *list.Element) {
 	e := s.order.Remove(el).(*entry[V])
 	delete(s.byID, e.id)
+	s.count(e.address, -1)
 	held := slices.DeleteFunc(s.byAddress[e.address], func(id string) bool { return id == e.id })
 	if len(held) == 0 {
 		delete(s.byAddress, e.address)

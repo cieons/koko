@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/server/flow"
 	"github.com/cieons/koko/internal/shared/api"
 )
 
@@ -466,26 +467,74 @@ func TestAnAddressHoldsTwentyFlows(t *testing.T) {
 	}
 }
 
-// passkey_refused counts as a failure for the client's address: past the
-// limit, the answers are refused too_many_attempts, and so is a begin of
-// adding a passkey, while a sign-in's begin, which counts nothing, is not.
+// An answer naming no flow held, never begun or dropped as its address
+// began more, counts for no limit: it can verify nothing, and a flood from
+// elsewhere may have dropped it. A refused answer to a flow held counts for
+// the address: past the limit, the answers are refused too_many_attempts,
+// and so is a begin of adding a passkey, while a sign-in's begin, which
+// counts nothing, is not.
 func TestARefusedPasskeyCountsForTheAddress(t *testing.T) {
 	t.Parallel()
 	h := startSignIns(t)
+	auth := harness.NewAuthenticator(harness.WebURL)
+	addPasskey(t, h.SignIn("bob"), auth, "", "Laptop")
+	spoiled := *auth
+	spoiled.SkipUV = true
 	b := h.Browser()
 	b.Address = "192.0.2.30"
+	dropped := b.BeginPasskeySignIn()
+	for range flow.PerAddress {
+		b.BeginPasskeySignIn()
+	}
+	status, body := b.Answer(api.AuthPasskeySignInPath, dropped, mustGet(t, auth, dropped), "")
+	wantCode(t, status, body, api.CodePasskeyRefused.Name)
 	for range 10 {
-		status, body := b.Answer(api.AuthPasskeySignInPath, harness.Ceremony{Flow: "unknown"}, []byte(`{}`), "")
+		status, body := b.Answer(api.AuthPasskeySignInPath, harness.Ceremony{Flow: "AAAAAAAAAAAAAAAAAAAAAA"}, []byte(`{}`), "")
 		wantCode(t, status, body, api.CodePasskeyRefused.Name)
 	}
-	status, body := b.Answer(api.AuthPasskeySignInPath, harness.Ceremony{Flow: "unknown"}, []byte(`{}`), "")
+	for range 10 {
+		c := b.BeginPasskeySignIn()
+		status, body := b.Answer(api.AuthPasskeySignInPath, c, mustGet(t, &spoiled, c), "")
+		wantCode(t, status, body, api.CodePasskeyRefused.Name)
+	}
+	c := b.BeginPasskeySignIn()
+	status, body = b.Answer(api.AuthPasskeySignInPath, c, mustGet(t, auth, c), "")
 	wantCode(t, status, body, api.CodeTooManyAttempts.Name)
 	status, body = b.Post(api.AuthPasskeyAddBeginPath, api.AuthPasskeyAddBeginRequest{Link: harness.LinkSecret(passwordLink(t, h, "bob"))})
 	wantCode(t, status, body, api.CodeTooManyAttempts.Name)
-	b.BeginPasskeySignIn()
 	if status, body := h.Browser().Post(api.AuthPasskeyAddBeginPath, api.AuthPasskeyAddBeginRequest{Link: "AAAAAAAAAAAAAAAAAAAAAAAAAA"}); status != http.StatusNotFound {
 		t.Errorf("another address's begin answered %d %s, want link_invalid", status, body)
 	}
+}
+
+// A refused answer to adding a passkey from a Sign-in, and a refused link at
+// adding one's begin, each count for the address: the eleventh begin is
+// refused too_many_attempts.
+func TestARefusedAddCountsForTheAddress(t *testing.T) {
+	t.Parallel()
+	h := startSignIns(t)
+	t.Run("a refused answer", func(t *testing.T) {
+		b := h.SignIn("bob")
+		b.Address = "192.0.2.40"
+		spoiled := harness.NewAuthenticator(harness.WebURL)
+		spoiled.SkipUV = true
+		for range 10 {
+			status, body := b.AddPasskey(spoiled, "", "")
+			wantCode(t, status, body, api.CodePasskeyRefused.Name)
+		}
+		status, body := b.Post(api.AuthPasskeyAddBeginPath, api.AuthPasskeyAddBeginRequest{})
+		wantCode(t, status, body, api.CodeTooManyAttempts.Name)
+	})
+	t.Run("a refused link", func(t *testing.T) {
+		b := h.Browser()
+		b.Address = "192.0.2.41"
+		for range 10 {
+			status, body := b.Post(api.AuthPasskeyAddBeginPath, api.AuthPasskeyAddBeginRequest{Link: "AAAAAAAAAAAAAAAAAAAAAAAAAA"})
+			wantCode(t, status, body, api.CodeLinkInvalid.Name)
+		}
+		status, body := b.Post(api.AuthPasskeyAddBeginPath, api.AuthPasskeyAddBeginRequest{Link: harness.LinkSecret(passwordLink(t, h, "carol"))})
+		wantCode(t, status, body, api.CodeTooManyAttempts.Name)
+	})
 }
 
 // The two endpoints that carry a passkey's answer take up to 64 KiB, and
@@ -505,17 +554,6 @@ func TestThePasskeyAnswersTakeLargerBodies(t *testing.T) {
 	}
 	a := b.Do(http.MethodPost, api.AuthPasskeyAddBeginPath, fmt.Sprintf(`{"link": %q}`, strings.Repeat("a", 8<<10)))
 	wantCode(t, a.StatusCode, a.Body, api.CodeRequestTooLarge.Name)
-}
-
-// /auth/methods names the Identity Provider's button, null while none is
-// configured, to any page.
-func TestAuthMethodsNamesTheProvidersButton(t *testing.T) {
-	t.Parallel()
-	h := startSignIns(t)
-	status, body := h.Browser().Post(api.AuthMethodsPath, api.AuthMethodsRequest{})
-	if status != http.StatusOK || body != `{"provider":null}` {
-		t.Errorf("/auth/methods answered %d %s, want no provider", status, body)
-	}
 }
 
 // Removing a User deletes their passkeys, and user.list counts each User's.
@@ -696,4 +734,101 @@ func claim(t *testing.T, answer []byte, rawID string) []byte {
 		t.Fatal(err)
 	}
 	return claimed
+}
+
+// A Member naming another User, or a name no User holds, lists no passkeys,
+// from a Sign-in and from a device alike; an Administrator lists the other
+// User's.
+func TestAMemberListsNoOtherUsersPasskeys(t *testing.T) {
+	t.Parallel()
+	h := startSignIns(t)
+	addPasskey(t, h.SignIn("carol"), harness.NewAuthenticator(harness.WebURL), "", "Laptop")
+	member := map[string]func([]byte) (int, []byte){
+		"a Sign-in": func(body []byte) (int, []byte) { return h.SignIn("bob").Send(api.PasskeyList, body) },
+		"a device":  func(body []byte) (int, []byte) { return h.Join("bob").Send(api.PasskeyList, body) },
+	}
+	for caller, send := range member {
+		for _, of := range []string{"carol", "nobody"} {
+			status, body := send([]byte(`{"user": "` + of + `"}`))
+			if status != http.StatusOK || string(body) != `{"passkeys":[]}` {
+				t.Errorf("a Member's passkey.list of %s through %s answered %d %s, want none", of, caller, status, body)
+			}
+		}
+	}
+	if got := passkeysOf(t, h, "carol"); len(got) != 1 {
+		t.Errorf("the Owner's passkey.list of carol answered %+v, want her passkey", got)
+	}
+}
+
+// An add flow is bound to the Sign-in that began it: an answer that comes
+// with another Sign-in's cookie, the same User's, is refused, recording
+// nothing.
+func TestAnAddFlowIsBoundToItsSignIn(t *testing.T) {
+	t.Parallel()
+	h := startSignIns(t)
+	first := h.SignIn("bob")
+	second := signInAgain(t, h, "bob")
+	c := first.BeginPasskeyAdd("")
+	answer, err := harness.NewAuthenticator(harness.WebURL).Create(c.Options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, body := second.Answer(api.AuthPasskeyAddPath, c, answer, "Laptop")
+	wantCode(t, status, body, api.CodePasskeyRefused.Name)
+	if got := passkeysOf(t, h, "bob"); len(got) != 0 {
+		t.Errorf("bob has %+v, want no passkey", got)
+	}
+}
+
+// A ceremony begun under one Web URL and answered under another, here only
+// its port changed, is refused passkey_refused, a sign-in's and an add's,
+// though the answer is right for the Web URL it began under.
+func TestACeremonyAnsweredUnderAnotherWebURLIsRefused(t *testing.T) {
+	t.Parallel()
+	h := startSignIns(t)
+	auth := harness.NewAuthenticator(harness.WebURL)
+	b := h.SignIn("bob")
+	addPasskey(t, b, auth, "", "Laptop")
+	moved := h.Browser()
+	moved.Origin, moved.Cookie = "https://koko.example.com:8443", b.Cookie
+	signIn := b.BeginPasskeySignIn()
+	signInAnswer := mustGet(t, auth, signIn)
+	add := b.BeginPasskeyAdd("")
+	addAnswer, err := harness.NewAuthenticator(harness.WebURL).Create(add.Options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Call(api.ServerSet, api.ServerSetRequest{WebURL: new(moved.Origin)}); err != nil {
+		t.Fatal(err)
+	}
+	status, body := moved.Answer(api.AuthPasskeySignInPath, signIn, signInAnswer, "")
+	wantCode(t, status, body, api.CodePasskeyRefused.Name)
+	status, body = moved.Answer(api.AuthPasskeyAddPath, add, addAnswer, "Phone")
+	wantCode(t, status, body, api.CodePasskeyRefused.Name)
+	if got := passkeysOf(t, h, "bob"); len(got) != 1 {
+		t.Errorf("bob has %+v, want the Laptop alone", got)
+	}
+}
+
+// /auth/methods says passkeys work at a Web URL whose host is a domain
+// name, and not at one whose host is an IP address, which WebAuthn takes
+// for no relying party.
+func TestPasskeysNeedADomainName(t *testing.T) {
+	t.Parallel()
+	h := startSignIns(t)
+	b := h.Browser()
+	status, body := b.Post(api.AuthMethodsPath, api.AuthMethodsRequest{})
+	if status != http.StatusOK || body != `{"passkeys":true,"provider":null}` {
+		t.Errorf("/auth/methods answered %d %s, want passkeys and no provider", status, body)
+	}
+	for _, webURL := range []string{"https://192.0.2.1", "https://[2001:db8::1]:8443"} {
+		if _, err := h.Call(api.ServerSet, api.ServerSetRequest{WebURL: new(webURL)}); err != nil {
+			t.Fatal(err)
+		}
+		b.Origin = webURL
+		status, body := b.Post(api.AuthMethodsPath, api.AuthMethodsRequest{})
+		if status != http.StatusOK || body != `{"passkeys":false,"provider":null}` {
+			t.Errorf("/auth/methods at %s answered %d %s, want no passkeys", webURL, status, body)
+		}
+	}
 }

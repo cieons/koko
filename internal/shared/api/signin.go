@@ -319,8 +319,9 @@ var (
 	AuthPassword = AuthEndpoint[AuthPasswordRequest, AuthSignInResponse]{Path: AuthPasswordPath}
 	// AuthSignOut ends this browser's Sign-in and clears its cookie.
 	AuthSignOut = AuthEndpoint[AuthSignOutRequest, AuthSignOutResponse]{Path: AuthSignOutPath}
-	// AuthMethods answers whether an Identity Provider is configured, and
-	// the name on its button. It counts for no rate limit.
+	// AuthMethods answers whether passkeys work at the Web URL, and whether
+	// an Identity Provider is configured, with the name on its button. It
+	// counts for no rate limit.
 	AuthMethods = AuthEndpoint[AuthMethodsRequest, AuthMethodsResponse]{Path: AuthMethodsPath}
 )
 
@@ -333,9 +334,13 @@ func AuthEndpoints() []AuthEndpointInfo {
 // AuthMethodsRequest asks for the ways to sign in.
 type AuthMethodsRequest struct{}
 
-// AuthMethodsResponse is the ways to sign in beside a Password and a
-// passkey.
+// AuthMethodsResponse is the ways to sign in beside a Password: passkeys,
+// and the Identity Provider.
 type AuthMethodsResponse struct {
+	// Passkeys says a browser can make and use a passkey at the Web URL:
+	// false while its host is an IP address, which WebAuthn takes for no
+	// relying party.
+	Passkeys bool `json:"passkeys"`
 	// Provider is the Identity Provider's button; null while none is
 	// configured.
 	Provider *AuthProvider `json:"provider"`

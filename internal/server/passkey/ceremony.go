@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -70,6 +71,22 @@ func relyingParty(ctx context.Context, tx store.Tx) (rpID, origin string, err er
 	return u.Hostname(), webURL, nil
 }
 
+// Available tells whether a browser can make and use a passkey at the Web
+// URL, as tx reads it: not while it is unset, nor while its host is an IP
+// address, which WebAuthn takes for no relying party, so a browser refuses
+// every ceremony there.
+func Available(ctx context.Context, tx store.Tx) (bool, error) {
+	rpID, _, err := relyingParty(ctx, tx)
+	if _, coded := errors.AsType[*api.Error](err); coded {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	_, notIP := netip.ParseAddr(rpID)
+	return notIP != nil, nil
+}
+
 // now is the time of a ceremony's request on the koko server's clock.
 func (s *Service) now() time.Time {
 	return s.clock().UTC().Truncate(time.Second)
@@ -114,9 +131,13 @@ func (s *Service) BeginSignIn(ctx context.Context, a signin.Attempt) (api.AuthPa
 // which it takes, verified or not, starting a Sign-in made with the
 // passkey. Its counter, backup state and Last used are stored as the
 // Sign-in starts. Every refusal is api.CodePasskeyRefused, the same bytes
-// whether the flow, the passkey, its User, its host or the answer failed,
-// and counts as a failure for the client's address; an address past its
-// limit is refused with a *signin.Limited before anything is read.
+// whether the flow, the passkey, its User, its host or the answer failed.
+// It counts as a failure for the client's address once a flow is taken; an
+// answer naming no flow held, unknown, taken already, expired or dropped,
+// counts for no limit, since it can verify nothing, so there is nothing to
+// guess, and another address's flood may have dropped its flow. An address
+// past its limit is refused with a *signin.Limited before anything is
+// read.
 func (s *Service) SignIn(ctx context.Context, req api.AuthPasskeySignInRequest, a signin.Attempt) (_ signin.Started, err error) {
 	end, err := s.signins.BeginAttempt(a)
 	if err != nil {
@@ -131,8 +152,12 @@ func (s *Service) SignIn(ctx context.Context, req api.AuthPasskeySignInRequest, 
 		end(failed)
 	}()
 	c, ok := s.flows.Take(req.Flow)
+	if !ok {
+		s.noFlowLog(a, "signin")
+		return signin.Started{}, refused()
+	}
 	answer, decoded := assertion(req.Credential)
-	if !ok || c.purpose != purposeSignIn || !decoded {
+	if c.purpose != purposeSignIn || !decoded {
 		failed = true
 		return signin.Started{}, refused()
 	}
@@ -153,6 +178,9 @@ func (s *Service) SignIn(ctx context.Context, req api.AuthPasskeySignInRequest, 
 	if err != nil {
 		failed = true
 		return signin.Started{}, refused()
+	}
+	if afterVerify != nil {
+		afterVerify()
 	}
 	var started signin.Started
 	err = s.api.Do(ctx, func(ctx context.Context, tx store.Tx) error {
@@ -184,6 +212,11 @@ func (s *Service) SignIn(ctx context.Context, req api.AuthPasskeySignInRequest, 
 	}
 	return started, nil
 }
+
+// afterVerify, set by this package's tests alone, runs once a sign-in's answer
+// has verified and before the write that stores its counter, so that a test
+// can hold two answers there at once.
+var afterVerify func()
 
 // record is a Passkey as the verifier checks an answer against it, with its
 // id and its User's name.
@@ -319,8 +352,9 @@ type Added struct {
 // signs this browser in, ending the User's other Sign-ins; from a Sign-in,
 // which the cookie carrying token must still be, it keeps the Sign-in and
 // names the passkey req.Name, or the browser's label. Every refusal of the
-// answer, or of the flow, is api.CodePasskeyRefused and counts as a failure
-// for the client's address, as a refused link does.
+// answer, or of the flow, is api.CodePasskeyRefused, and counts as a
+// failure for the client's address, as a refused link does, once a flow is
+// taken: as for SignIn, an answer naming no flow held counts for none.
 func (s *Service) Add(ctx context.Context, req api.AuthPasskeyAddRequest, token string, a signin.Attempt) (_ Added, err error) {
 	end, err := s.signins.BeginAttempt(a)
 	if err != nil {
@@ -328,16 +362,21 @@ func (s *Service) Add(ctx context.Context, req api.AuthPasskeyAddRequest, token 
 	}
 	var c ceremony
 	var l signin.Link
+	taken := false
 	defer func() {
-		failed := isRefused(err)
+		failed := taken && isRefused(err)
 		if failed {
 			s.refusedLog(a, "add", c.userName)
 		}
 		end(failed || c.link != "" && s.signins.LinkRefused(l, err, a))
 	}()
-	c, ok := s.flows.Take(req.Flow)
+	c, taken = s.flows.Take(req.Flow)
+	if !taken {
+		s.noFlowLog(a, "add")
+		return Added{}, refused()
+	}
 	reg, decoded := registration(req.Credential)
-	if !ok || c.purpose != purposeAdd || !decoded {
+	if c.purpose != purposeAdd || !decoded {
 		return Added{}, refused()
 	}
 	name := signin.Label(a.UserAgent)
@@ -444,6 +483,13 @@ func (s *Service) refusedLog(a signin.Attempt, ceremony, userName string) {
 		attrs = append(attrs, "user", userName)
 	}
 	s.log.Info("sign-in refused", attrs...)
+}
+
+// noFlowLog logs, at debug level, an answer from a in the ceremony named
+// that named no flow held: any page can send one, and it counts for no
+// limit.
+func (s *Service) noFlowLog(a signin.Attempt, ceremony string) {
+	s.log.Debug("sign-in refused", "reason", api.CodePasskeyRefused.Name, "ceremony", ceremony, "flow", "none", "address", a.Address)
 }
 
 // decode reads base64url, with or without padding, as a browser writes

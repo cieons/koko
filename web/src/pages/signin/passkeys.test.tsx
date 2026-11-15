@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -10,8 +10,9 @@ import {
   PasskeyList,
   PasskeyRemove,
 } from "../../api/passkey";
-import { AuthLink, AuthPassword, type CurrentSignIn } from "../../api/signin";
+import { AuthLink, AuthMethods, type AuthMethodsResponse, AuthPassword, type CurrentSignIn } from "../../api/signin";
 import { type User, UserCurrent, UserPromote } from "../../api/user";
+import { navigate } from "../../shell/router";
 import { expectAccessible } from "../../test/axe";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
 import { actAs, alerts, preferLanguages, renderAt } from "../../test/pages";
@@ -27,6 +28,7 @@ import {
   fakeAuthenticator,
   registration,
   serveCeremonies,
+  serveMethods,
   signsInWithoutUserHandle,
 } from "./passkeys.fixture";
 import { firefox, serveSignIns, signIn, signIns } from "./signins.fixture";
@@ -102,18 +104,67 @@ function list(b: BufferSource | undefined): number[] {
   return Array.from(ArrayBuffer.isView(b) ? new Uint8Array(b.buffer, b.byteOffset, b.byteLength) : new Uint8Array(b));
 }
 
-/** pending makes the next ceremony of a's kind wait, and is what settles it. */
-function pending(fn: Authenticator["create"] | Authenticator["get"]): { settle: (answer: unknown) => void } {
-  let settle: (answer: unknown) => void = () => undefined;
-  fn.mockImplementationOnce(() => new Promise((resolve) => (settle = resolve)));
-  return { settle: (answer) => settle(answer) };
+/** Waiting is a call the test holds: settle answers it, and answered is that answer once given. */
+interface Waiting<T> {
+  settle: (answer: T) => void;
+  answered: Promise<T>;
 }
+
+/** waiting is a Waiting for one call, whose promise the call returns as its answer. */
+function waiting<T>(): Waiting<T> & { promise: Promise<T> } {
+  let settle: (answer: T) => void = () => undefined;
+  const promise = new Promise<T>((resolve) => (settle = resolve));
+  return { settle: (answer) => settle(answer), answered: promise, promise };
+}
+
+/** pending makes the next ceremony of fn's kind wait for the test to settle it. */
+function pending(fn: Authenticator["create"] | Authenticator["get"]): Waiting<unknown> {
+  const w = waiting<unknown>();
+  fn.mockImplementationOnce(() => w.promise);
+  return w;
+}
+
+/**
+ * settled settles a held call with answer and waits, inside act, until the
+ * page has done all it does with it: the answer itself, then one turn of
+ * the event loop, by which every continuation the answer queued has run,
+ * a post the page would send among them. It waits for no fixed time.
+ */
+async function settled<T>(call: Waiting<T>, answer: T): Promise<void> {
+  await act(async () => {
+    call.settle(answer);
+    await call.answered;
+  });
+  await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+}
+
+/** madeNow is a new passkey's credential as the fake authenticator answers one. */
+const madeNow = {
+  id: "bmV3",
+  rawId: bytes("new").buffer,
+  type: "public-key",
+  response: { clientDataJSON: bytes("c").buffer, attestationObject: bytes("a").buffer },
+};
+
+/** usedNow is a sign-in's credential as the fake authenticator answers one. */
+const usedNow = {
+  id: "bmV3",
+  rawId: bytes("new").buffer,
+  type: "public-key",
+  response: {
+    clientDataJSON: bytes("c").buffer,
+    authenticatorData: bytes("a").buffer,
+    signature: bytes("s").buffer,
+    userHandle: null,
+  },
+};
 
 // Sign in.
 
 test("Sign in offers a passkey first, then the name and Password with Sign in secondary", async () => {
   fakeAuthenticator();
   const api = fakeApi();
+  serveMethods(api);
   renderAt("/signin");
 
   const withPasskey = await screen.findByRole("button", { name: "Sign in with a passkey" });
@@ -123,8 +174,56 @@ test("Sign in offers a passkey first, then the name and Password with Sign in se
   expect(withPasskey.className).not.toContain("button--secondary");
   expect(screen.getByRole("separator")).toBeDefined();
   expect(screen.getByText("The Owner or an Administrator can send you a Sign-in Link.")).toBeDefined();
-  expect(api.calls).toEqual([]);
+  expect(api.calls.map((c) => [c.path, c.request])).toEqual([[AuthMethods.path, {}]]);
   await expectAccessible();
+});
+
+test("Sign in shows Loading until /auth/methods answers, never a passkey action it then takes back", async () => {
+  fakeAuthenticator();
+  const api = fakeApi();
+  const methods = waiting<AuthMethodsResponse>();
+  api.on(AuthMethods, () => methods.promise);
+  renderAt("/signin");
+
+  expect(await screen.findByRole("heading", { level: 1, name: "Sign in" })).toBeDefined();
+  await waitFor(() => expect(api.requests(AuthMethods)).toEqual([{}]));
+  expect(screen.queryByRole("button", { name: "Sign in with a passkey" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+  methods.settle({ passkeys: true, provider: null });
+
+  expect(await screen.findByRole("button", { name: "Sign in with a passkey" })).toBeDefined();
+});
+
+test.each([
+  { at: "Sign in", path: "/signin" },
+  { at: "a Sign-in Link's page", path: `/link#${secret}` },
+])("$at offers no passkey where the Web URL's host is an IP address", async ({ path }) => {
+  const authenticator = fakeAuthenticator();
+  const api = fakeApi();
+  serveMethods(api, false);
+  api.on(AuthLink, () => linkFor());
+  renderAt(path);
+
+  const submit = await screen.findByRole("button", { name: /^(Sign in|Set Password and sign in)$/ });
+  expect(submit.className).not.toContain("button--secondary");
+  expect(screen.queryByRole("button", { name: "Sign in with a passkey" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Create a passkey" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+  expect(screen.queryByRole("separator")).toBeNull();
+  expect(api.requests(AuthMethods)).toEqual([{}]);
+  expect(authenticator.create).not.toHaveBeenCalled();
+  await expectAccessible();
+});
+
+test("a failed /auth/methods still offers a passkey, the browser's own refusal showing if it comes", async () => {
+  fakeAuthenticator();
+  const api = fakeApi();
+  api.on(AuthMethods, () => {
+    throw refusal("internal_error", 500);
+  });
+  renderAt("/signin");
+
+  expect(await screen.findByRole("button", { name: "Sign in with a passkey" })).toBeDefined();
 });
 
 test("without WebAuthn Sign in offers no passkey, and Sign in stays the primary action", async () => {
@@ -154,6 +253,41 @@ test("Sign in with a passkey passes the koko server's options as bytes, posts th
   expect(options?.publicKey?.userVerification).toBe("required");
   expect(options?.signal).toBeInstanceOf(AbortSignal);
   expect(api.requests(AuthPasskeySignIn)).toEqual([{ flow: "flow_signin", credential: assertion() }]);
+});
+
+test("nothing is posted once Sign in has closed while the browser asked for the passkey", async () => {
+  const authenticator = fakeAuthenticator();
+  const api = fakeApi();
+  signedIn(api, withPasskeys());
+  const asking = pending(authenticator.get);
+  renderAt("/signin");
+
+  fireEvent.click(await screen.findByRole("button", { name: "Sign in with a passkey" }));
+  await waitFor(() => expect(authenticator.get).toHaveBeenCalledTimes(1));
+  act(() => navigate("/link")); // Sign in closes
+  expect(await screen.findByRole("heading", { level: 1, name: "This Sign-in Link no longer works" })).toBeDefined();
+  expect(authenticator.get.mock.calls[0]?.[0].signal?.aborted).toBe(true);
+  await settled(asking, usedNow);
+
+  expect(api.requests(AuthPasskeySignIn)).toEqual([]);
+});
+
+test("a passkey's sign-in answered after Sign in closed goes nowhere, and a toast says this browser is signed in", async () => {
+  fakeAuthenticator();
+  const api = fakeApi();
+  signedIn(api, withPasskeys());
+  const answer = waiting<{ user: User }>();
+  api.on(AuthPasskeySignIn, () => answer.promise);
+  renderAt("/signin?next=%2Faccount");
+
+  fireEvent.click(await screen.findByRole("button", { name: "Sign in with a passkey" }));
+  await waitFor(() => expect(api.requests(AuthPasskeySignIn)).toHaveLength(1));
+  act(() => navigate("/link"));
+  expect(await screen.findByRole("heading", { level: 1, name: "This Sign-in Link no longer works" })).toBeDefined();
+  answer.settle({ user: bob });
+
+  expect(await screen.findByText("This browser is signed in as bob.")).toBeDefined();
+  expect(window.location.pathname).toBe("/link");
 });
 
 test("an authenticator that leaves out the userHandle has it posted empty", async () => {
@@ -252,6 +386,7 @@ async function atLink(
   { path = "/link", passwordSet = false, create = "Create a passkey" } = {},
 ): Promise<Authenticator> {
   const authenticator = fakeAuthenticator();
+  serveMethods(api);
   api.on(AuthLink, () => linkFor(passwordSet));
   renderAt(`${path}#${secret}`);
   await screen.findByRole("button", { name: create });
@@ -307,14 +442,8 @@ test("the link's secret is not sent once its page has closed while the browser m
   window.location.hash = "SECONDLINKSECONDLINKSECOND"; // another link: the first one's page closes
   expect(await screen.findByText("For carol.")).toBeDefined();
   expect(signal?.aborted).toBe(true);
-  making.settle({
-    id: "bmV3",
-    rawId: bytes("new").buffer,
-    type: "public-key",
-    response: { clientDataJSON: bytes("c").buffer, attestationObject: bytes("a").buffer },
-  });
+  await settled(making, madeNow);
 
-  await new Promise((resolve) => setTimeout(resolve, 50));
   expect(api.requests(AuthPasskeyAdd)).toEqual([]);
   expect(api.requests(AuthPasskeyAddBegin)).toEqual([{ link: secret }]);
 });
@@ -322,19 +451,37 @@ test("the link's secret is not sent once its page has closed while the browser m
 test("nothing is begun once the page closed while the koko server answered the begin", async () => {
   const api = fakeApi();
   const authenticator = await atLink(api);
-  let answer: (value: AuthPasskeyAddBeginResponse) => void = () => undefined;
-  api.on(AuthPasskeyAddBegin, () => new Promise<AuthPasskeyAddBeginResponse>((resolve) => (answer = resolve)));
+  const begun = waiting<AuthPasskeyAddBeginResponse>();
+  api.on(AuthPasskeyAddBegin, () => begun.promise);
   api.on(AuthLink, () => ({ ...linkFor(), user: "carol" }));
 
   fireEvent.click(screen.getByRole("button", { name: "Create a passkey" }));
   await waitFor(() => expect(api.requests(AuthPasskeyAddBegin)).toHaveLength(1));
   window.location.hash = "SECONDLINKSECONDLINKSECOND";
   expect(await screen.findByText("For carol.")).toBeDefined();
-  answer({ flow: "flow_add", options: creationOptions });
+  await settled(begun, { flow: "flow_add", options: creationOptions });
 
-  await new Promise((resolve) => setTimeout(resolve, 50));
   expect(authenticator.create).not.toHaveBeenCalled();
   expect(api.requests(AuthPasskeyAdd)).toEqual([]);
+});
+
+test("a passkey made through the link answered after its page closed goes nowhere, and a toast says this browser is signed in", async () => {
+  const api = fakeApi();
+  await atLink(api);
+  serveCeremonies(api, withPasskeys(), bob);
+  const answer = waiting<{ user: User; passkey: ReturnType<typeof passkey> }>();
+  api.on(AuthPasskeyAdd, () => answer.promise);
+  api.on(AuthLink, () => ({ ...linkFor(), user: "carol" }));
+
+  fireEvent.click(screen.getByRole("button", { name: "Create a passkey" }));
+  await waitFor(() => expect(api.requests(AuthPasskeyAdd)).toHaveLength(1));
+  window.location.hash = "SECONDLINKSECONDLINKSECOND"; // another link: the first one's page closes
+  expect(await screen.findByText("For carol.")).toBeDefined();
+  answer.settle({ user: bob, passkey: passkey("bob", "Firefox on Linux") });
+
+  expect(await screen.findByText("This browser is signed in as bob.")).toBeDefined();
+  expect(window.location.pathname).toBe("/link");
+  expect(screen.getByText("For carol.")).toBeDefined();
 });
 
 test("a ceremony cancelled on the link's page shows nothing, and a refused one says why in place", async () => {
@@ -454,10 +601,16 @@ test("in Chinese the link's page offers 创建通行密钥 and 改为设置密�
  */
 async function atAccount(
   w: World = withPasskeys(),
-  { me = () => bob, signin = viaPasskey, passkeys = "Passkeys" }: { me?: () => User; signin?: CurrentSignIn; passkeys?: string } = {},
+  {
+    me = () => bob,
+    signin = viaPasskey,
+    passkeys = "Passkeys",
+    methods = true,
+  }: { me?: () => User; signin?: CurrentSignIn; passkeys?: string; methods?: boolean } = {},
 ): Promise<FakeApi> {
   const api = fakeApi();
   signedIn(api, w, me, signin);
+  serveMethods(api, methods);
   renderAt("/account");
   const region = await screen.findByRole("region", { name: passkeys });
   const own = w.passkeys.filter((p) => p.user === me().name).length;
@@ -580,6 +733,36 @@ test("a passkey whose answer was sent as Account closed is said added in a toast
   expect(await screen.findByText("The passkey Firefox on Linux is added.")).toBeDefined();
 });
 
+test("nothing is posted once Account has closed while the browser made the passkey", async () => {
+  const authenticator = fakeAuthenticator();
+  const api = await atAccount();
+  const making = pending(authenticator.create);
+
+  fireEvent.click(screen.getByRole("button", { name: "Add a passkey" }));
+  await waitFor(() => expect(authenticator.create).toHaveBeenCalledTimes(1));
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Access" }));
+  await screen.findByRole("heading", { level: 1, name: "Access" });
+  expect(authenticator.create.mock.calls[0]?.[0].signal?.aborted).toBe(true);
+  await settled(making, madeNow);
+
+  expect(api.requests(AuthPasskeyAdd)).toEqual([]);
+});
+
+test.each([
+  { language: "en", heading: "Passkeys", line: "Passkeys need a Web URL whose host is a domain name, not an IP address." },
+  { language: "zh-CN", heading: "通行密钥", line: "通行密钥要求 Web 地址的主机为域名，而非 IP 地址。" },
+])("in $language Account says why no passkey is added where the Web URL's host is an IP address", async ({ language, heading, line }) => {
+  preferLanguages(language);
+  fakeAuthenticator();
+  const api = await atAccount(withPasskeys(), { methods: false, passkeys: heading });
+
+  expect(await screen.findByText(line)).toBeDefined();
+  expect(screen.queryByRole("button", { name: /^(Add a passkey|添加通行密钥)$/ })).toBeNull();
+  expect(within(screen.getByRole("region", { name: heading })).getAllByRole("listitem")).toHaveLength(3);
+  expect(api.requests(AuthMethods)).toEqual([{}]);
+  await expectAccessible();
+});
+
 test("removing the passkey this browser signed in with says this browser is signed out, then goes to Sign in", async () => {
   fakeAuthenticator();
   const api = await atAccount();
@@ -650,6 +833,7 @@ test("through koko web the passkeys are listed with Remove, and one sentence say
   expect(screen.getByText("Passkeys are added in a browser signed in at the Web URL.")).toBeDefined();
   expect(screen.queryByRole("button", { name: "Add a passkey" })).toBeNull();
   expect(screen.queryByLabelText("Name")).toBeNull();
+  expect(api.requests(AuthMethods)).toEqual([]); // koko web has no /auth/ endpoints
   expect(screen.getByRole("button", { name: "Remove the passkey iPhone" })).toBeDefined();
   expect(
     screen.getByText("This browser came through koko web, so a Password is changed in a browser signed in with it."),

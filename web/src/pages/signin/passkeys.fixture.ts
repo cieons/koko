@@ -8,6 +8,7 @@ import {
   type PasskeyCreationOptions,
   type PasskeyRequestOptions,
 } from "../../api/passkey";
+import { AuthMethods } from "../../api/signin";
 import type { User } from "../../api/user";
 import type { FakeApi } from "../../test/fakeApi";
 import { passkey, type World } from "../space/access.fixture";
@@ -139,12 +140,22 @@ export function cancel(): DOMException {
 }
 
 /**
- * serveCeremonies makes the fake API begin and answer passkey ceremonies
+ * serveMethods makes /auth/methods answer whether passkeys work at the Web
+ * URL, as the koko server does: false for a host that is an IP address.
+ */
+export function serveMethods(api: FakeApi, passkeys = true): void {
+  api.on(AuthMethods, () => ({ passkeys, provider: null }));
+}
+
+/**
+ * serveCeremonies makes the fake API answer /auth/methods with passkeys
+ * working, and begin and answer passkey ceremonies
  * as the koko server does for user: signing in, and adding one through a
  * link or from a Sign-in, which adds it to w's passkeys, named name or,
  * through a link or with none, Firefox on Linux.
  */
 export function serveCeremonies(api: FakeApi, w: World, user: User): void {
+  serveMethods(api);
   api.on(AuthPasskeySignInBegin, () => ({ flow: "flow_signin", options: requestOptions }));
   api.on(AuthPasskeySignIn, () => ({ user }));
   api.on(AuthPasskeyAddBegin, () => ({ flow: "flow_add", options: creationOptions }));

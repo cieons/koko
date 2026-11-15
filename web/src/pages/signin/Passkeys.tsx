@@ -44,11 +44,13 @@ export interface PasskeysProps {
   otherWays: boolean;
   /**
    * add is what the list offers for adding one: "here", Add a passkey,
-   * for a browser signed in with WebAuthn; "elsewhere", a sentence saying
+   * for a browser signed in with WebAuthn; "unusable", a sentence saying
+   * passkeys need a Web URL whose host is a domain name, where /auth/methods
+   * says they do not work at the Web URL; "elsewhere", a sentence saying
    * passkeys are added in a browser at the Web URL, through koko web or for
    * the Local caller; "none", nothing, as in a person's panel.
    */
-  add: "here" | "elsewhere" | "none";
+  add: "here" | "unusable" | "elsewhere" | "none";
 }
 
 /**
@@ -119,6 +121,7 @@ export function Passkeys({ user, webHost, level, acts, otherWays, add }: Passkey
         }
       </Loaded>
       {add === "here" && <AddPasskey onAdded={reloadReads} />}
+      {add === "unusable" && <p className="t-label">{t("passkey.needsDomain")}</p>}
       {add === "elsewhere" && <p className="t-label">{t("passkey.viaBrowser")}</p>}
       {removing && (
         <RemovePasskey

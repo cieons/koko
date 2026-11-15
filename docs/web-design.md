@@ -1082,7 +1082,9 @@ handle that failure; the build does.
 - Panels: **Sign-in**: Passkeys, each with its name, "Made for <host>"
   where its host is not the Web URL's, Synced, added and last used ("Never
   used"), and Remove, then **Add a passkey**, a name prefilled with this
-  browser's label, for a browser with WebAuthn; and Password (current,
+  browser's label, for a browser with WebAuthn, or, where passkeys do not
+  work at the Web URL, "Passkeys need a Web URL whose host is a domain
+  name, not an IP address."; and Password (current,
   new, again; a count toward 15 characters; for a User without one, new
   and again alone, **Set Password**). Through `koko web` or for the Local
   caller the passkeys are listed with Remove, one sentence says they are
@@ -1106,8 +1108,11 @@ Outside the frame: the wordmark, then one panel 26rem wide, then the two
 languages as buttons.
 
 - **Sign in**: **Sign in with a passkey** (primary), a divider, then
-  name, Password and **Sign in** (secondary); without WebAuthn, no passkey
-  action and Sign in primary. A refusal above them (`passkey_refused`,
+  name, Password and **Sign in** (secondary); without WebAuthn, or where
+  `/auth/methods` says passkeys do not work at the Web URL (its host an IP
+  address), no passkey action and Sign in primary. With WebAuthn the panel
+  shows Loading until `/auth/methods` answers, so no passkey action shows
+  and then goes; a failed `/auth/methods` offers it. A refusal above them (`passkey_refused`,
   `wrong_password`, `too_many_attempts` with the minutes); a ceremony the
   person cancels shows nothing. One line, "The Owner or an Administrator
   can send you a Sign-in Link."
@@ -1116,10 +1121,12 @@ languages as buttons.
   (primary) and **Set a Password instead** (secondary), which opens Set a
   Password: when they have a Password, a line that one set here replaces
   it; New Password with a count toward 15; again; **Set Password and sign
-  in**; **Back** to the choices. Without WebAuthn the page is Set a
-  Password at once. A ceremony cancelled shows nothing, a refusal shows
+  in**; **Back** to the choices. Without WebAuthn, or where passkeys do
+  not work at the Web URL, the page is Set a Password at once. A ceremony cancelled shows nothing, a refusal shows
   above the choices. `link_used` and `link_invalid` each replace the page
   with what happened and "Go to Sign in".
+- On either page, a passkey's last answer that comes after the page closed
+  goes nowhere: a toast says "This browser is signed in as <name>."
 
 ### Page not found
 

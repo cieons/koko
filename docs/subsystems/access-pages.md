@@ -153,7 +153,7 @@ and replacing the history entry ([`movedTo`](../../web/src/shell/router.tsx)).
 | Issue a Sign-in Link (`password.link`, with `valid_for` unless 15 minutes), in a person's panel; disabled, saying why, while the Web URL is unset (`server.show`) | anyone for themselves; the Owner for anyone; an Administrator for a Member; each for a User not Removed | no |
 | Remove a Password (`password.remove`), ending the Sign-ins made with it, in a person's panel | anyone for their own; the Owner for anyone's; an Administrator for a Member's; each for a User with one | yes |
 | Remove a passkey (`passkey.remove`), ending the Sign-ins made with it, on Account and in a person's panel | anyone for their own; the Owner for anyone's; an Administrator for a Member's | yes, saying who is signed out, that the device keeps it, and for the User's last way to sign in that the next sign-in needs a Sign-in Link |
-| Add a passkey (`/auth/passkey/add/begin` and `/auth/passkey/add` with a name), on Account | a browser signed in, with WebAuthn, for its own User | no |
+| Add a passkey (`/auth/passkey/add/begin` and `/auth/passkey/add` with a name), on Account | a browser signed in, with WebAuthn, for its own User, where `/auth/methods` says passkeys work at the Web URL; otherwise one sentence says they need a Web URL whose host is a domain name | no |
 | Revoke a live Sign-in (`signin.revoke`), on Account and in a person's panel | anyone for their own; the Owner for anyone's; an Administrator for a Member's | yes |
 | Make a Member an Administrator (`user.promote`), in a person's panel, the question listing their live devices with who added each and their live Sign-ins | the Owner | yes |
 | Make an Administrator a Member (`user.demote`), in a person's panel | the Owner | no |

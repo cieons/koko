@@ -9,28 +9,33 @@ import { useCount, useT } from "../../shell/i18n";
 import { linkPage, navigate, passwordPage, signInPage, useSearchParams } from "../../shell/router";
 import { Field } from "../../ui/fields";
 import { Form } from "../../ui/Form";
-import { AlertLine } from "../../ui/states";
+import { notify } from "../../ui/notify";
+import { AlertLine, Loading } from "../../ui/states";
 import { Door } from "./Door";
 import { refusalText } from "./refusal";
-import { cancelled, getPasskey, passkeysAvailable, useCeremony } from "./webauthn";
+import { cancelled, getPasskey, useCeremony, usePasskeysOffered } from "./webauthn";
 
 /**
  * SignInPage is Sign in, outside the frame (docs/web-design.md, "Sign in
  * and a Sign-in Link's page"): Sign in with a passkey first, where the
- * browser has WebAuthn, then a divider and a User name and Password, posted
- * to /auth/signin. Either sets the Sign-in cookie; then the page next
- * names, on this origin only, or the first place. A refusal shows above
- * both, and too_many_attempts says in how many minutes to try again; a
- * passkey's ceremony the person cancelled shows nothing. One line says the
- * Owner or an Administrator can send a Sign-in Link, for a lost Password or
- * passkey.
+ * browser has WebAuthn and /auth/methods says passkeys work at the Web URL
+ * (usePasskeysOffered), then a divider and a User name and Password, posted
+ * to /auth/signin. A browser with WebAuthn shows Loading until
+ * /auth/methods answers, so neither layout shows and then changes. Either
+ * way sets the Sign-in cookie; then the page next names, on this origin
+ * only, or the first place; a passkey's answer whose page closed meanwhile
+ * says in a toast that this browser is signed in, instead. A refusal shows
+ * above both, and too_many_attempts says in how many minutes to try again;
+ * a passkey's ceremony the person cancelled shows nothing. One line says
+ * the Owner or an Administrator can send a Sign-in Link, for a lost
+ * Password or passkey.
  */
 export function SignInPage() {
   const t = useT();
   const count = useCount();
   const [params] = useSearchParams();
   const begin = useCeremony();
-  const passkeys = passkeysAvailable();
+  const passkeys = usePasskeysOffered();
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState<"password" | "passkey">();
@@ -53,8 +58,12 @@ export function SignInPage() {
       if (!ceremony.open()) {
         return;
       }
-      await post(AuthPasskeySignIn, { flow, credential });
-      navigate(nextPage(params.get("next")), { replace: true });
+      const { user } = await post(AuthPasskeySignIn, { flow, credential });
+      if (ceremony.open()) {
+        navigate(nextPage(params.get("next")), { replace: true });
+      } else {
+        notify(t("passkey.signedIn", { name: user.name }));
+      }
     } catch (failure) {
       if (ceremony.open()) {
         setError(cancelled(failure) ? undefined : failure);
@@ -75,6 +84,13 @@ export function SignInPage() {
     }
   };
 
+  if (passkeys === undefined) {
+    return (
+      <Door title={t("signin.title")}>
+        <Loading />
+      </Door>
+    );
+  }
   return (
     <Door title={t("signin.title")}>
       {error !== undefined && (

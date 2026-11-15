@@ -111,8 +111,9 @@ func TestAddressesOfAnotherNetworkCountApart(t *testing.T) {
 	}
 }
 
-// At most flow.Total flows are held in all: one more drops the oldest,
-// whatever its address.
+// At most flow.Total flows are held in all: one more drops the oldest flow
+// of the address holding the most, the oldest of all among addresses that
+// hold one each.
 func TestAtMostTotalFlowsAreHeld(t *testing.T) {
 	t.Parallel()
 	flows, _ := newFlows(5 * time.Minute)
@@ -128,5 +129,20 @@ func TestAtMostTotalFlowsAreHeld(t *testing.T) {
 	}
 	if _, ok := flows.Take(ids[len(ids)-1]); !ok {
 		t.Error("the newest flow was dropped")
+	}
+}
+
+// Addresses that fill the store evict their own flows first: a flow begun
+// before them, from an address holding one, outlasts the store filled
+// many times over from the 65,536 /64s of one /48.
+func TestFloodingAddressesEvictTheirOwnFlowsFirst(t *testing.T) {
+	t.Parallel()
+	flows, _ := newFlows(5 * time.Minute)
+	victim := flows.Begin("192.0.2.1", "victim")
+	for i := range 3 * flow.Total {
+		flows.Begin(fmt.Sprintf("2001:db8:1:%x::1", i%2000), "")
+	}
+	if v, ok := flows.Take(victim); !ok || v != "victim" {
+		t.Error("the flood evicted a flow of an address that held one")
 	}
 }

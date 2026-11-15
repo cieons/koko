@@ -17,7 +17,7 @@ import { Devices } from "../device/Devices";
 import { ChangePassword } from "../signin/ChangePassword";
 import { Passkeys } from "../signin/Passkeys";
 import { SignIns } from "../signin/SignIns";
-import { passkeysAvailable } from "../signin/webauthn";
+import { passkeysAvailable, usePasskeysOffered } from "../signin/webauthn";
 import { useWebURL } from "../signin/webURL";
 import { PersonalSpace } from "./PersonPanel";
 
@@ -82,7 +82,9 @@ export function AccountPage() {
 
 /**
  * SignInPanel is the caller's ways to sign in: their passkeys, with Add a
- * passkey for a browser signed in with WebAuthn, and through koko web or
+ * passkey for a browser signed in with WebAuthn where /auth/methods says
+ * passkeys work at the Web URL, else a sentence saying they need a domain
+ * name; through koko web or
  * for the Local caller a sentence saying where one is added; and their
  * Password, changed there, or for a User without one set there, for a
  * browser signed in; else one sentence saying where. onChanged hears a
@@ -92,6 +94,16 @@ function SignInPanel({ caller, onChanged }: { caller: Caller; onChanged: () => v
   const t = useT();
   const { user, signin } = caller;
   const webURL = useWebURL();
+  // Only a browser on the web listener asks /auth/methods; koko web has no /auth/ endpoints.
+  const offered = usePasskeysOffered(signin !== undefined);
+  const add =
+    signin === undefined
+      ? "elsewhere"
+      : !passkeysAvailable() || offered === undefined
+        ? "none"
+        : offered
+          ? "here"
+          : "unusable";
   const first = user.password_set_at === undefined;
   return (
     <Sheet title={t("signin.methods")}>
@@ -102,7 +114,7 @@ function SignInPanel({ caller, onChanged }: { caller: Caller; onChanged: () => v
           level={3}
           acts
           otherWays={!first || user.identity_linked_at !== undefined}
-          add={signin === undefined ? "elsewhere" : passkeysAvailable() ? "here" : "none"}
+          add={add}
         />
         <section className="flex flex-col gap-3">
           <h3 className="t-heading">{t("signin.password")}</h3>

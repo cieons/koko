@@ -104,8 +104,14 @@ offers none.
   of its purpose. A flow expires 5 minutes after its begin. At most 20 are
   held per client address, a 21st dropping that address's oldest, an IPv6
   address counting by its /64, which one host commonly holds whole, and at
-  most 10,000 in all, the oldest dropped first, so no one host can evict
-  everyone's flows. A restart forgets them, and the page starts again.
+  most 10,000 in all. When the store is full, the address holding the most
+  flows loses its oldest, so addresses that fill it evict their own flows
+  first: an address holding one flow loses it only once every address holds
+  one alone, which takes 10,000 addresses or /64s beginning flows within 5
+  minutes. What is left: a host with that many prefixes, such as a /48, can
+  still drop a person's flow, and their passkey sign-in starts again; since
+  an answer naming no flow held counts for no limit (below), it locks nobody
+  out. A restart forgets the flows, and the page starts again.
   The Identity Provider's flows use the same store.
 - **Making one** ([`Service.Add`](../../internal/server/passkey/ceremony.go)),
   through a Sign-in Link or from a live Sign-in, after
@@ -133,13 +139,24 @@ offers none.
   the passkey stays, for the Owner or its User to remove. The verifying runs
   outside any transaction; in the write transaction that starts the
   Sign-in, the passkey is read again, and its counter must be the one
-  verified against, so two answers at once cannot both pass; the new
+  verified against, so two answers of a counting authenticator verified at
+  once cannot both pass (a synced passkey's counter stays 0, so two of its
+  ceremonies both pass, as the spec intends); the new
   counter, backup state and Last used are stored there.
 - **Every refusal** of an answer is `passkey_refused` (401), the same bytes
   whichever step failed: the flow unknown, taken, expired or of the other
   purpose, the passkey unknown, of another host or of a Removed User, the
   answer not read, or any check of the verifier. Members of the answer koko
-  does not read, which browsers add to, are taken and left unread.
+  does not read, which browsers add to, are taken and left unread. Every
+  refusal counts as a failure for the client's address once the answer's
+  flow is taken; an answer naming no flow held, never begun, taken already,
+  expired or dropped, counts for none, since it can verify nothing, so there
+  is nothing to guess, and another address's flood may have dropped its
+  flow. It is logged at debug level.
+- **A Web URL whose host is an IP address** has no passkeys: WebAuthn takes
+  an IP address for no relying party, so a browser refuses every ceremony
+  there. `/auth/methods` answers `passkeys` false then, and while the Web
+  URL is unset, and the pages offer no passkey action.
 - **Who made the link.** `added_by` is the User who issued the Sign-in Link
   a passkey was made through, the Owner for one the Unix socket issued, or
   `null` for one made from its User's own Sign-in.
@@ -316,7 +333,7 @@ and a refusal is the API's error object. Their types are in
 | `POST /auth/link` | `{"link"}`, the secret after `#` | Answers `{"user", "expires_at", "password_set", "passkeys", "identity_linked"}`, spending nothing: whether the User has a Password, how many passkeys and whether a Linked Identity, so the page can say what a choice replaces. |
 | `POST /auth/password` | `{"link", "password"}`, `{"current", "password"}` with the cookie, or `{"password"}` alone with the cookie | Sets the Password through a link, signing this browser in; changes it, keeping this Sign-in; or sets a first one for a User who has none, ending no Sign-in; answers `{"user"}`. A wrong `current`, or none for a User with a Password, is `wrong_password`. |
 | `POST /auth/signout` | `{}` with the cookie | Ends this Sign-in (`signed_out`) and clears the cookie; without a live one it only clears it. |
-| `POST /auth/methods` | `{}` | Answers `{"provider": {"name"}}`, the Identity Provider's button, or `{"provider": null}` while none is configured. |
+| `POST /auth/methods` | `{}` | Answers `{"passkeys", "provider"}`: whether a browser can make and use a passkey at the Web URL, false while it is unset or its host is an IP address, and the Identity Provider's button, `{"name"}`, or `null` while none is configured. |
 | `POST /auth/passkey/signin/begin` | `{}` | Begins signing in with a passkey: answers `{"flow", "options"}`. |
 | `POST /auth/passkey/signin` | `{"flow", "credential"}`, the answer as `toJSON()` gives it: `id`, `rawId`, `type`, `response.{clientDataJSON, authenticatorData, signature, userHandle}` | Signs in with the method `passkey`: sets the cookie and answers `{"user"}`. |
 | `POST /auth/passkey/add/begin` | `{"link"}`, or `{}` with the cookie | Begins making a passkey for the link's User or the Sign-in's: answers `{"flow", "options"}`, spending nothing. Without a live Sign-in or a link, `signin_required`. |
@@ -330,7 +347,8 @@ forgotten at restart. The client's address is the web listener's
 ([the web front](web-front.md#the-web-listener)).
 
 - **For each address**: 10 failed attempts (a wrong sign-in, a refused
-  link, a wrong current Password, `passkey_refused`) within 15 minutes, and its next attempts
+  link, a wrong current Password, `passkey_refused` for an answer whose flow
+  was held) within 15 minutes, and its next attempts
   at any `/auth/` endpoint but `signout`, `methods` and
   `passkey/signin/begin` are answered `too_many_attempts`
   (429) with `Retry-After` in seconds, until the oldest failure is 15
@@ -411,7 +429,12 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
   `""`. A browser without `window.PublicKeyCredential` and
   `navigator.credentials` (`passkeysAvailable`) gets neither Sign in with
   a passkey, nor Create a passkey, nor Add a passkey; it still lists and
-  removes passkeys. A ceremony the person cancels or lets time out
+  removes passkeys. Nor does a browser where `/auth/methods` answers
+  `passkeys` false, the Web URL's host being an IP address
+  (`usePasskeysOffered`): Sign in and a Sign-in Link's page ask it, and
+  Account for a browser on the web listener, never through `koko web`; a
+  failed `/auth/methods` offers passkeys, since the browser's own refusal
+  still shows. A ceremony the person cancels or lets time out
   (`NotAllowedError`), or that the page aborts as it closes (`AbortError`),
   shows nothing; `InvalidStateError`, the device holding one of the User's
   passkeys already, says so, and any other failure says the browser could
@@ -420,14 +443,19 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
   first answer. A ceremony runs only while its page is open
   (`useCeremony`): it checks after each wait, the begin and the browser's
   prompt, and sends nothing more once the page or panel has closed, and
-  the page's closing aborts the prompt.
+  the page's closing aborts the prompt. A last answer that comes after
+  the page closed, which signed this browser in, goes nowhere: a toast says
+  "This browser is signed in as <name>.", from the answer's User.
 - **Sign in** ([`SignInPage`](../../web/src/pages/signin/SignInPage.tsx),
   `/signin`), outside the frame: **Sign in with a passkey**, the primary
-  action, where the browser has WebAuthn: `/auth/passkey/signin/begin`,
+  action, where the browser has WebAuthn and `/auth/methods` offers
+  passkeys: `/auth/passkey/signin/begin`,
   `navigator.credentials.get()`, then `/auth/passkey/signin`; then a
   divider and the User name and Password (`autocomplete` `username` and
   `current-password`), posted to `/auth/signin`, **Sign in** secondary
-  beside a passkey and primary without one. Either goes on to the page
+  beside a passkey and primary without one. With WebAuthn the panel shows
+  Loading until `/auth/methods` answers, so no passkey action shows and
+  then goes. Either goes on to the page
   `next` names, followed only when it is a path of this origin, else
   `/`, replacing the history entry. A refusal shows above them:
   `passkey_refused`, `wrong_password`, or `too_many_attempts` with the
@@ -453,8 +481,9 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
   browser's label and signs this browser in; then `/`. The secret is sent
   only while the page is open: another link opened as the browser makes
   the passkey closes the first one's page, and its answer is not sent. Set
-  a Password instead, or the page at once in a browser without WebAuthn,
-  shows Set a Password, with Back to the choices beside a passkey: a line
+  a Password instead, or the page at once in a browser without WebAuthn or
+  where `/auth/methods` offers no passkeys (the page shows Loading until
+  both `/auth/link` and `/auth/methods` have answered), shows Set a Password, with Back to the choices beside a passkey: a line
   saying a Password set there replaces theirs when
   `password_set` says they have one, which describes the submit button
   (`aria-describedby`), and the new Password twice
@@ -480,7 +509,9 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
     prefilled with this browser's label, checked on submit (1 to 64
     characters), then `/auth/passkey/add/begin` with no link,
     `navigator.credentials.create()` and `/auth/passkey/add` with the name,
-    which keeps the Sign-in; every read on the page is read again. Through
+    which keeps the Sign-in; every read on the page is read again. Where
+    `/auth/methods` offers no passkeys, one sentence says in its place that
+    passkeys need a Web URL whose host is a domain name. Through
     `koko web` or for the Local caller they are listed with Remove, and one
     sentence says passkeys are added in a browser signed in at the Web URL.
     Remove (`passkey.remove`) asks first and says who is signed out: this
@@ -626,13 +657,22 @@ attestation, assertion or signature.
   and answer; a credential id another User's passkey holds; removing one
   ending only its Sign-ins and the web terminals they opened; a host
   change, a port change and the old host put back; 20 flows per address
-  and per IPv6 /64; `passkey_refused` counting for the address; the bodies'
-  limits; `/auth/methods`; removing a User deleting their passkeys and
+  and per IPv6 /64; `passkey_refused` counting for the address, at a
+  sign-in and at an add, a refused link at an add's begin too, while an
+  answer naming a flow never begun or dropped counts for none; an add flow
+  bound to its Sign-in; a sign-in and an add answered under another Web
+  URL; a Member listing no other User's passkeys, from a Sign-in and a
+  device; the bodies' limits; `/auth/methods` and no passkeys at an IP
+  address; removing a User deleting their passkeys and
   `user.list`'s count; the log lines and no challenge, flow, client data
   or signature in a line or an answer.
 - [`internal/server/flow/flow_test.go`](../../internal/server/flow/flow_test.go):
-  a flow taken once, expiring, 20 per address and per IPv6 /64, and 10,000
-  in all.
+  a flow taken once, expiring, 20 per address and per IPv6 /64, 10,000
+  in all, and addresses flooding the store from one /48 evicting their own
+  flows before a flow of an address holding one;
+  [`internal/server/passkey/passkey_test.go`](../../internal/server/passkey/passkey_test.go):
+  two answers of one passkey held between their verifying and their write,
+  of which one signs in.
 - [`internal/server/signin/hash_test.go`](../../internal/server/signin/hash_test.go):
   the hash sealed, absent in plain from the data directory, of the stated
   parameters, and an older one rehashed at sign-in;
@@ -673,18 +713,26 @@ attestation, assertion or signature.
   [`passkeys.fixture.ts`](../../web/src/pages/signin/passkeys.fixture.ts)'s
   fake authenticator in place of `navigator.credentials`, axe on each
   state: Sign in with a passkey first and Sign in secondary, none without
-  WebAuthn; `get()` given the challenge's bytes and `rpId`, the answer
-  posted in base64url, `next` followed; a cancel showing nothing and the
+  WebAuthn; Loading until `/auth/methods` answers, no passkey on Sign in or
+  a Sign-in Link's page where it says an IP address, and one offered when
+  it fails; `get()` given the challenge's bytes and `rpId`, the answer
+  posted in base64url, `next` followed; nothing posted once Sign in closed
+  during the prompt, and an answer after it closed going nowhere with its
+  toast; a cancel showing nothing and the
   next press beginning anew; `passkey_refused`, `too_many_attempts` and a
   browser's failure; in Chinese. A Sign-in Link's choices; Create a passkey
   posting the link, then the answer, and going to `/`; the answer, or the
-  ceremony, not sent once another link closed the page; a cancel, a
+  ceremony, not sent once another link closed the page, and the last
+  answer after it closed going nowhere with its toast; a cancel, a
   refusal and a passkey the device holds already; `link_used` from the
   answer and `link_invalid` from the begin; Set a Password instead, with
   and without a Password, Back, and setting it; `/password`; in Chinese.
   Account's Sign-in: the passkeys, one of another host, Synced and never
   used; the method in its lead; Add a passkey with the name typed, checked
-  on submit, and cancelled; removing this browser's own, another and the
+  on submit, cancelled, refused, not sent once Account closed during the
+  prompt, and said in a toast when Account closed during its answer; the
+  sentence in both languages where `/auth/methods` says an IP address;
+  removing this browser's own, another and the
   last way; through `koko web`, for the Local caller and without WebAuthn;
   a first Password; each Browser Sign-in's method in both languages; in
   Chinese. A person's passkeys, their last way, an Administrator viewing
