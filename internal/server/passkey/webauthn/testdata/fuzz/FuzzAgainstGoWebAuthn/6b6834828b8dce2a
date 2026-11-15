@@ -1,0 +1,5 @@
+go test fuzz v1
+byte('\x18')
+byte('\a')
+byte('\n')
+[]byte("2\x18 ")

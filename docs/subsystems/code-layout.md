@@ -17,7 +17,7 @@ no row, or when either depends (directly or not) on a group it may not use.
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
 | shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the Web URL's form (`weburl`), the wire constants, the version and operations report, the channel adapter, how a join carries its secret and what a Tunnel's two ends agree on (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the liveness watch of an SSH connection, which both ends of a Device Connection run (`liveness`), the SSH connection every channel koko opens goes through, whose opens fail once it has ended (`sshconn`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and `kokod install`, and `kokod run` and the start-up, agree on: the request, the reports as the JSON `kokod` prints, the koko server's paths and platforms, and the error codes koko and kokod both report (`install`), the record's value rules: a Host's fields, a Service's ports, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`), finding a koko release, downloading one of its assets and checking it against `SHA256SUMS` and its build, for `koko update`, `koko server install` and the koko server's update check (`release`), the order of koko's versions (`compat`) | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), the mount table and the network-filesystem check, which the installer and start-up share (`filesystem`), one package per area (`space`, `user`, `device`, `host`, `service`, `attr`, `secret`, `web`: the web front, `signin`: Passwords, Sign-in Links and Sign-ins, `identity`: the Identity Provider), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`), the Gateway (`gateway`), the web terminal's emulator (`vt`), the check for a new koko release (`updatecheck`), the host-list signal (`hostlist`), `kokod`'s command line, with `kokod run`'s flags and the settings they make (`kokod`) | client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), the mount table and the network-filesystem check, which the installer and start-up share (`filesystem`), one package per area (`space`, `user`, `device`, `host`, `service`, `attr`, `secret`, `web`: the web front, `signin`: Passwords, Sign-in Links and Sign-ins, `identity`: the Identity Provider), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`), the Gateway (`gateway`), the web terminal's emulator (`vt`), koko's own WebAuthn verifier, which reads no store and no clock, with go-webauthn as its oracle in its tests alone ([ADR 0061](../adr/0061-koko-verifies-webauthn-itself-and-uses-go-oidc-for-openid-connect.md); `passkey/webauthn`), the check for a new koko release (`updatecheck`), the host-list signal (`hostlist`), `kokod`'s command line, with `kokod run`'s flags and the settings they make (`kokod`) | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join, koko's ssh_config and known_hosts, and the Include line (`devicefiles`), the Device Mux and the client of its local protocol (`devicemux`), the device end of a Tunnel (`tunnel`) | server |
 
 A package that holds only tests is in no group, since only non-test
@@ -317,6 +317,27 @@ of revisions, one section for each revision of an operation or a channel,
 which never changes once written: `go test -update` adds a new revision's
 section and changes none ([API](api.md#revisions)). It imports nothing of
 koko's, so a package's own tests use it without an import cycle.
+[`harness.Authenticator`](../../internal/harness/authenticator.go) is a
+browser and a passkey authenticator together, in software. Given a koko
+server's options for `navigator.credentials.create()` or `.get()` in their
+WebAuthn JSON forms, it answers as a browser's `toJSON()` does, with keys
+of EdDSA, ES256 and RS256 and a CBOR writer of its own. It refuses an RP ID
+that is not its origin's host, as a browser does. Its fields are the
+knobs a test turns:
+
+- user verification;
+- whether a passkey is discoverable;
+- the counter: stepping, at 0, or going back;
+- the backup flags;
+- a kept attestation statement;
+- a wrong origin, RP ID or `type`;
+- a cross-origin answer;
+- `Tamper`, which changes the client data and authenticator data before
+  they are signed.
+
+A package the koko server imports uses the Authenticator only from its
+external test package (`<pkg>_test`), since the harness imports the koko
+server and an internal test would make an import cycle.
 [`harness.Kokod(t, opts...)`](../../internal/harness/kokod.go) is a
 `kokod.Program` for S1 tests of `kokod run`: the real start-up on a
 temporary socket and, whatever `--listen` says, a loopback port, stopped at
