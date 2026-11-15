@@ -21,15 +21,18 @@ Owner and the Administrators, anyone's in their panel ([Sign-ins](signin.md#the-
 | Access | `/access` | the Owner and the Administrators: the Users (`user.list`) against the shared Spaces, each with its Members and counts (`space.list`, one call); a Member: the Spaces they can act in | [`AccessPage`](../../web/src/pages/space/AccessPage.tsx) |
 | A Space's panel | `/access/spaces/<name>` | anyone who can act in it: its counts and Members (`space.show`) | [`SpacePanel`](../../web/src/pages/space/SpacePanel.tsx) |
 | A person's panel | `/access/people/<name>` | the Owner and the Administrators alone (`administers`): a User's role, Spaces, Personal Space, devices and Sign-ins | [`PersonPanel`](../../web/src/pages/user/PersonPanel.tsx) |
+| The Identity provider panel | `/access/provider` | the Owner and the Administrators alone (`administers`): the Identity Provider (`server.oidc.show`), the Owner's form, read-only for an Administrator | [`ProviderPanel`](../../web/src/pages/identity/ProviderPanel.tsx) |
 | Account | `/account` | anyone: who the web UI acts as, the choices this browser keeps, their own devices (`device.list` naming them) and their Personal Space | [`AccountPage`](../../web/src/pages/user/AccountPage.tsx) |
 
-Access loads as one chunk under its three paths
+Access loads as one chunk under its four paths
 ([`spaceRoutes`](../../web/src/pages/space/routes.ts)), so the page keeps
 its state as a panel opens over it and closes. A panel's link keeps the
 page's query, and closing a panel, by its close button, Escape or a click
 beside it, goes back to `/access` with that query in place of the panel's
 history entry, so the focus returns to the link that opened it. A Member
-gets no route for a person's panel, so its path shows "Page not found".
+gets no route for a person's panel or the Identity provider's, so their
+paths show "Page not found". **Identity provider**, a secondary action
+beside Add Space and Invite, opens its panel.
 
 **The Owner's Access**, which an Administrator gets too, is two lists, one at a time, on a phone as on a
 desktop: the People and the shared Spaces, under the tabs **People** and
@@ -147,6 +150,8 @@ and replacing the history entry ([`movedTo`](../../web/src/shell/router.tsx)).
 | Make a Member an Administrator (`user.promote`), in a person's panel, the question listing their live devices with who added each and their live Sign-ins | the Owner | yes |
 | Make an Administrator a Member (`user.demote`), in a person's panel | the Owner | no |
 | Remove a User (`user.remove`), then say from its `outcome` whether they were deleted or Removed, and close the panel | the Owner, on any User but themselves who is not Removed; an Administrator, on a Member who is not Removed | yes |
+| Set the Identity Provider (`server.oidc.set`), in the Identity provider panel: Issuer URL, Client ID, Client secret and Name, every one for the first set; then only what changed, the secret only when typed, an empty field keeping the stored one, and dropped as it is sent; the redirect URI with Copy; disabled, saying why, while the Web URL is unset (`redirect_uri` `null`) | the Owner | when the issuer changes, naming how many Linked Identities it unlinks (`linked_identities`) |
+| Remove the Identity Provider (`server.oidc.remove`), then the panel closes | the Owner | yes, naming how many Linked Identities it unlinks |
 | Add a device (`device.add`), with an optional name: on Account for oneself, with no `user`; in a person's panel for that User, named | anyone for themselves; the Owner for any User, and an Administrator for a Member, who is not Removed | no |
 | Revoke a live Device Session (`device.revoke`, naming its User) | anyone for their own; the Owner for anyone's; an Administrator for a Member's | yes; for the Owner's own last live one, only once its name is typed, and the call carries `last` |
 
@@ -258,6 +263,16 @@ koko server whose writes change what it answers
   membership call fails; a refused Invite; the code gone once the browser
   leaves the page, the page is left within the web UI, or its time runs
   out.
+- [`provider.test.tsx`](../../web/src/pages/identity/provider.test.tsx):
+  Identity provider beside Invite opening its panel, and its path as
+  "Page not found" to a Member; the first save needing every field and an
+  https:// issuer, then sending all four and dropping the secret; a save
+  sending only what changed, an empty secret field keeping the stored one;
+  `invalid_provider` and `provider_unreachable` in place; a changed issuer
+  asking first, naming how many Linked Identities it unlinks; Remove
+  asking first, then closing; an Administrator's read-only panel, with a
+  provider and with none; the form disabled without a Web URL; and the
+  panel in Simplified Chinese.
 - [`administrators.test.tsx`](../../web/src/pages/user/administrators.test.tsx):
   the Owner's Make an Administrator, its question listing the live devices
   with who added each and the live Sign-ins, or saying there are none, its

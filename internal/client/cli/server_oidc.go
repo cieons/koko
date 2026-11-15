@@ -66,7 +66,9 @@ var serverOIDCCommands = []Command{
 
 var serverOIDCMappings = []mapping{
 	{api: reflect.TypeFor[api.ServerOIDCShowResponse]()},
-	{api: reflect.TypeFor[api.IdentityProvider](), cli: reflect.TypeFor[oidcJSON]()},
+	{api: reflect.TypeFor[api.IdentityProvider](), cli: reflect.TypeFor[oidcJSON](), omitted: map[string]string{
+		"linked_identities": "for the web UI's confirmation of a change of issuer; koko server oidc set and rm print how many they unlinked",
+	}},
 	{
 		api:     reflect.TypeFor[api.ServerOIDCSetResponse](),
 		cli:     reflect.TypeFor[oidcSetJSON](),

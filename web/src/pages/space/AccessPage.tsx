@@ -1,5 +1,5 @@
 import { Button, Chip, Link, SearchField, Switch, Tabs } from "@heroui/react";
-import { ChevronRight, Plus, UserPlus } from "lucide-react";
+import { ChevronRight, KeyRound, Plus, UserPlus } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
 import { DeviceList, type DeviceSession } from "../../api/device";
@@ -16,10 +16,11 @@ import { FormDialog } from "../../ui/FormDialog";
 import { notify } from "../../ui/notify";
 import { Page, Sheet } from "../../ui/Page";
 import { LoadFailed, Loading, NoMatch } from "../../ui/states";
+import { ProviderPanel } from "../identity/ProviderPanel";
 import { Invite } from "../user/Invite";
 import { PersonPanel } from "../user/PersonPanel";
 import { type Membership, useMembership } from "./membership";
-import { accessPath, personPath, spacePath } from "./path";
+import { accessPath, personPath, providerPath, spacePath } from "./path";
 import { SpacePanel } from "./SpacePanel";
 
 /**
@@ -28,15 +29,20 @@ import { SpacePanel } from "./SpacePanel";
  * time, each searched by name; for a Member, the Spaces they can act in. A
  * Space's panel (/access/spaces/<name>) and, for the Owner and an
  * Administrator alone, a person's
- * (/access/people/<name>) open over it, each a path of its own, so the page
- * keeps its state beneath them; membership is changed in either panel.
+ * (/access/people/<name>) and the Identity provider's (/access/provider)
+ * open over it, each a path of its own, so the page keeps its state
+ * beneath them; membership is changed in a Space's or a person's panel.
  */
 export function AccessPage({ params }: PageProps) {
   const caller = useCaller();
   const { pathname, search } = useLocation();
   const name = params["name"];
   const panel: Panel | undefined =
-    name === undefined ? undefined : { kind: pathname.startsWith(personPath("")) ? "person" : "space", name };
+    pathname === providerPath
+      ? { kind: "provider", name: "" }
+      : name === undefined
+        ? undefined
+        : { kind: pathname.startsWith(personPath("")) ? "person" : "space", name };
   // A panel closes back to Access as it was beneath it, its query kept, in
   // place of the panel's history entry: not a new visit, so the focus goes
   // back to the link that opened it rather than to the main region.
@@ -44,9 +50,9 @@ export function AccessPage({ params }: PageProps) {
   return caller.administers ? <OwnerAccess panel={panel} close={close} /> : <MemberAccess panel={panel} close={close} />;
 }
 
-/** Panel is the panel open over Access: a person's or a Space's, by name. */
+/** Panel is the panel open over Access: a person's or a Space's, by name, or the Identity provider's. */
 interface Panel {
-  kind: "person" | "space";
+  kind: "person" | "space" | "provider";
   name: string;
 }
 
@@ -64,10 +70,12 @@ function accessList(): RememberedList {
 
 /**
  * OwnerAccess is the Owner's Access, which an Administrator gets too: the
- * People and the shared Spaces as two lists, Add Space and Invite.
+ * People and the shared Spaces as two lists, Identity provider, Add Space
+ * and Invite.
  */
 function OwnerAccess({ panel, close: closePanel }: { panel?: Panel; close: () => void }) {
   const t = useT();
+  const { search } = useLocation();
   const remembered = useRememberedView(accessList);
   const { params, setParams } = remembered;
   const view: View = params.get("view") === "spaces" ? "spaces" : "people";
@@ -116,6 +124,10 @@ function OwnerAccess({ panel, close: closePanel }: { panel?: Panel; close: () =>
       title={t("shell.place.access")}
       actions={
         <>
+          <Button variant="secondary" onPress={() => navigate(providerPath + search)}>
+            <KeyRound aria-hidden className="size-4" />
+            {t("identity.provider")}
+          </Button>
           <Button variant="secondary" onPress={() => setDialog("space")}>
             <Plus aria-hidden className="size-4" />
             {t("space.add")}
@@ -166,6 +178,7 @@ function OwnerAccess({ panel, close: closePanel }: { panel?: Panel; close: () =>
       {panel?.kind === "space" && (
         <SpacePanel name={panel.name} membership={membership} onChanged={reload} onClose={close} />
       )}
+      {panel?.kind === "provider" && <ProviderPanel onClose={close} />}
       {dialog === "space" && (
         <AddSpace
           onAdded={() => {

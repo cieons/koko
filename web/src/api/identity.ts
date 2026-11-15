@@ -25,6 +25,11 @@ export interface IdentityProvider {
    * client secret, which is sealed and never answered.
    */
   client_secret_set: boolean;
+  /**
+   * LinkedIdentities is how many Users have linked their identity at
+   * the provider: those a change of issuer, or a removal, unlinks.
+   */
+  linked_identities: number;
   /** SetAt is when the provider was last set, RFC 3339 in UTC. */
   set_at: string;
 }

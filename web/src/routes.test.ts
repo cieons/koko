@@ -12,5 +12,6 @@ test("the pages that fill the room beside the rail are Hosts, Secrets and Access
     "/access",
     "/access/spaces/:name",
     "/access/people/:name",
+    "/access/provider",
   ]);
 });

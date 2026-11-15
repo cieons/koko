@@ -92,7 +92,7 @@ func TestTheOwnerSetsTheIdentityProviderFromEachOfTheirCallers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("set the provider over the Unix socket: %v", err)
 	}
-	want := api.IdentityProvider{Issuer: iss.URL(), ClientID: "koko", Name: "Authentik", ClientSecretSet: true, SetAt: h.Now().UTC().Format(time.RFC3339)}
+	want := api.IdentityProvider{Issuer: iss.URL(), ClientID: "koko", Name: "Authentik", ClientSecretSet: true, LinkedIdentities: 0, SetAt: h.Now().UTC().Format(time.RFC3339)}
 	if resp.Provider != want || resp.RedirectURI != redirectURI || resp.IdentitiesUnlinked != 0 {
 		t.Errorf("server.oidc.set answered %+v, want %+v, the redirect URI %s and none unlinked", resp, want, redirectURI)
 	}
@@ -474,9 +474,12 @@ func TestAChangeOfClientOrNameKeepsIdentities(t *testing.T) {
 	t.Parallel()
 	iss := harness.NewIssuer(t)
 	f := newLinkedFixture(t, iss)
+	if got := shown(t, f.h).Provider; got == nil || got.LinkedIdentities != 2 {
+		t.Errorf("server.oidc.show answered %+v, want 2 Linked Identities", got)
+	}
 	resp, err := f.h.Call(api.ServerOIDCSet, api.ServerOIDCSetRequest{ClientID: new("koko-2"), ClientSecret: new(secret + "-2"), Name: new("Keycloak")})
-	if err != nil || resp.IdentitiesUnlinked != 0 {
-		t.Fatalf("a change of the client and the name answered %+v %v, want none unlinked", resp, err)
+	if err != nil || resp.IdentitiesUnlinked != 0 || resp.Provider.LinkedIdentities != 2 {
+		t.Fatalf("a change of the client and the name answered %+v %v, want none unlinked and 2 linked", resp, err)
 	}
 	f.wantEnded(t, false)
 	if !strings.Contains(f.h.Log(), `client_id=koko-2 name=Keycloak secret_changed=true set_by="unix socket" identities_unlinked=0`) {
@@ -495,7 +498,7 @@ func TestAChangeOfIssuerUnlinksEveryIdentity(t *testing.T) {
 	f := newLinkedFixture(t, iss)
 	other := harness.NewIssuer(t)
 	resp, err := f.h.Call(api.ServerOIDCSet, api.ServerOIDCSetRequest{Issuer: new(other.URL())})
-	if err != nil || resp.IdentitiesUnlinked != 2 || resp.Provider.Issuer != other.URL() {
+	if err != nil || resp.IdentitiesUnlinked != 2 || resp.Provider.Issuer != other.URL() || resp.Provider.LinkedIdentities != 0 {
 		t.Fatalf("a change of issuer answered %+v %v, want the new issuer and 2 unlinked", resp, err)
 	}
 	f.wantEnded(t, true)

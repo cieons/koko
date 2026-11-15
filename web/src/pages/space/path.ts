@@ -6,6 +6,9 @@ export function spacePath(name: string): string {
   return `${accessPath}/spaces/${encodeURIComponent(name)}`;
 }
 
+/** providerPath is the path of the Identity provider panel, over Access: the Owner's and the Administrators'. */
+export const providerPath = `${accessPath}/provider`;
+
 /** personPath is the path of a person's panel, over Access: the Owner's alone. */
 export function personPath(name: string): string {
   return `${accessPath}/people/${encodeURIComponent(name)}`;

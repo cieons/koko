@@ -34,6 +34,9 @@ type IdentityProvider struct {
 	// ClientSecretSet is true: a provider is never configured without its
 	// client secret, which is sealed and never answered.
 	ClientSecretSet bool `json:"client_secret_set"`
+	// LinkedIdentities is how many Users have linked their identity at
+	// the provider: those a change of issuer, or a removal, unlinks.
+	LinkedIdentities int `json:"linked_identities"`
 	// SetAt is when the provider was last set, RFC 3339 in UTC.
 	SetAt string `json:"set_at"`
 }

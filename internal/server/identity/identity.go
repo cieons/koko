@@ -91,7 +91,11 @@ func (s *Service) show(ctx context.Context, tx store.Tx, caller op.Caller, _ api
 	}
 	var resp api.ServerOIDCShowResponse
 	if p != nil {
-		resp.Provider = new(p.answer())
+		linked, err := countIdentities(ctx, tx)
+		if err != nil {
+			return api.ServerOIDCShowResponse{}, err
+		}
+		resp.Provider = new(p.answer(linked))
 	}
 	if webURL != "" {
 		resp.RedirectURI = new(webURL + api.RedirectPath)
@@ -178,6 +182,10 @@ func (s *Service) set(ctx context.Context, tx store.Tx, caller op.Caller, req ap
 	if err != nil {
 		return api.ServerOIDCSetResponse{}, err
 	}
+	linked, err := countIdentities(ctx, tx)
+	if err != nil {
+		return api.ServerOIDCSetResponse{}, err
+	}
 	secretChanged := current == nil || next.secret != current.secret
 	op.AfterTx(ctx, func(committed bool) {
 		if !committed {
@@ -189,7 +197,7 @@ func (s *Service) set(ctx context.Context, tx store.Tx, caller op.Caller, req ap
 		s.log.Info("identity provider set", "user", who.User.Name, "issuer", next.issuer, "client_id", next.clientID,
 			"name", next.name, "secret_changed", secretChanged, "set_by", who.By(), "identities_unlinked", unlinked)
 	})
-	return api.ServerOIDCSetResponse{Provider: next.answer(), RedirectURI: redirect, IdentitiesUnlinked: unlinked}, nil
+	return api.ServerOIDCSetResponse{Provider: next.answer(linked), RedirectURI: redirect, IdentitiesUnlinked: unlinked}, nil
 }
 
 // remove is server.oidc.remove, for the Owner alone: it unlinks every

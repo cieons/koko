@@ -28,7 +28,11 @@ row under a new id, sealing the secret again for it.
 | `server.oidc.remove` | `koko server oidc rm` | the Owner alone | `{"identities_unlinked"}` |
 
 A provider is answered as `{"issuer", "client_id", "name",
-"client_secret_set", "set_at"}`; the client secret never is. The redirect
+"client_secret_set", "linked_identities", "set_at"}`; the client secret
+never is. `linked_identities` counts the Linked Identities a change of
+issuer or a removal would unlink, for the web UI's confirmation; the CLI
+leaves it out. The web UI's panel is in [the Access
+pages](access-pages.md#what-each-may-do). The redirect
 URI is the Web URL followed by `/auth/oidc/callback` (`api.RedirectPath`),
 which the Owner registers at the provider. `server.show`, which answers
 Members, says nothing of the provider.

@@ -25,9 +25,22 @@ type provider struct {
 	secret                            string
 }
 
-// answer is p as the API answers it, without its secret.
-func (p *provider) answer() api.IdentityProvider {
-	return api.IdentityProvider{Issuer: p.issuer, ClientID: p.clientID, Name: p.name, ClientSecretSet: p.secret != "", SetAt: p.setAt}
+// answer is p as the API answers it, without its secret, with the number
+// of Linked Identities, linked.
+func (p *provider) answer(linked int) api.IdentityProvider {
+	return api.IdentityProvider{
+		Issuer: p.issuer, ClientID: p.clientID, Name: p.name, ClientSecretSet: p.secret != "",
+		LinkedIdentities: linked, SetAt: p.setAt,
+	}
+}
+
+// countIdentities is how many Linked Identities there are.
+func countIdentities(ctx context.Context, tx store.Tx) (int, error) {
+	var n int
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identities").Scan(&n); err != nil {
+		return 0, fmt.Errorf("count the Linked Identities: %w", err)
+	}
+	return n, nil
 }
 
 // readProvider returns the Identity Provider, its secret opened with
