@@ -1,0 +1,2 @@
+For bob to sign in, open this Sign-in Link in their browser before <time>:
+https://koko.example.com/link#<secret>

@@ -1,0 +1,3 @@
+Invited frank (user_<1>) as a Member.
+For frank to sign in, open this Sign-in Link in their browser before <time>:
+https://koko.example.com/link#<secret>

@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"encoding/json/v2"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -27,12 +28,12 @@ func TestSignInLink(t *testing.T) {
 	t.Parallel()
 	h := startWebListener(t)
 	for _, c := range []struct{ words, golden, field string }{
-		{"signin link", "signin-link.json", "signin_link"},
-		{"password link", "password-link.json", "password_link"},
+		{"signin link", "signin-link", "signin_link"},
+		{"password link", "password-link", "password_link"},
 	} {
 		r := h.Koko(append(strings.Fields(c.words), "bob", "--json")...)
 		r.WantSuccess(t)
-		harness.Golden(t, c.golden, r.Stdout)
+		harness.Golden(t, c.golden+".json", r.Stdout)
 		var out map[string]string
 		if err := json.Unmarshal([]byte(r.Stdout), &out); err != nil {
 			t.Fatal(err)
@@ -44,6 +45,7 @@ func TestSignInLink(t *testing.T) {
 
 		r = h.Koko(append(strings.Fields(c.words), "bob", "--valid", "2d")...)
 		r.WantSuccess(t)
+		harness.Golden(t, c.golden+".txt", r.Stdout)
 		want := "For bob to sign in, open this Sign-in Link in their browser before " + h.Now().Add(48*time.Hour).Format(time.RFC3339) + ":\n" + harness.WebURL + "/link#"
 		if !strings.HasPrefix(r.Stdout, want) {
 			t.Errorf("%s printed %q, want it to start %q", c.words, r.Stdout, want)
@@ -84,6 +86,8 @@ func TestUserInviteWeb(t *testing.T) {
 
 	r = h.Koko("user", "invite", "frank", "--web")
 	r.WantSuccess(t)
+	// The text names the new User's id bare, which the golden's ids, quoted, do not cover.
+	harness.Golden(t, "user-invite-web.txt", regexp.MustCompile(`user_[a-z0-9]+`).ReplaceAllString(r.Stdout, "user_<1>"))
 	if !strings.Contains(r.Stdout, "Invited frank (user_") || !strings.Contains(r.Stdout, "For frank to sign in, open this Sign-in Link in their browser before ") {
 		t.Errorf("user invite --web printed %q", r.Stdout)
 	}
@@ -107,6 +111,7 @@ func TestSignInsFromTheCLI(t *testing.T) {
 	}
 	r = h.Koko("signin", "ls")
 	r.WantSuccess(t)
+	harness.Golden(t, "signin-ls.txt", strings.ReplaceAll(r.Stdout, listed[0].ID, "signin_<1>"))
 	if !strings.HasPrefix(r.Stdout, "USER  CLIENT            METHOD    ADDRESS     ID") ||
 		!strings.Contains(r.Stdout, "bob   Firefox on Linux  password  192.0.2.10  "+listed[0].ID) {
 		t.Errorf("signin ls printed:\n%s", r.Stdout)

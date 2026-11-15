@@ -1,0 +1,2 @@
+USER  CLIENT            METHOD    ADDRESS     ID               STARTED               LAST USED             EXPIRES
+bob   Firefox on Linux  password  192.0.2.10  signin_<1>  <time>  <time>  <time>
