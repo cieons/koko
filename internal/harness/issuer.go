@@ -12,16 +12,22 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 )
 
 // issuerPath is the path of an Issuer's issuer, ending in /, as Authentik
 // names its issuers: so a test sees the trailing / kept byte for byte.
 const issuerPath = "/application/o/koko/"
 
-// Issuer is an OpenID Connect provider for tests (ADR 0060): its discovery
-// document and its key set, served over TLS on httptest.NewTLSServer, which
-// a koko server reaches when started with IdentityProvider. It logs every
-// request, and a test spoils its discovery one way at a time.
+// Issuer is an OpenID Connect provider for tests (ADR 0060), served over
+// TLS on httptest.NewTLSServer, which a koko server reaches when started
+// with IdentityProvider: its discovery document; its key set, whose ES256
+// key rotates; an authorization endpoint, which a test's Browser reaches
+// through Authorize, answering with a code for the subject the test chose,
+// or access_denied; and a token endpoint, which checks the client's
+// authentication, the redirect URI, the PKCE verifier and that each code is
+// used once, and answers an ID token. It logs every request, and a test
+// spoils its discovery, its token endpoint or one claim at a time.
 type Issuer struct {
 	t   testing.TB
 	srv *httptest.Server
@@ -43,25 +49,81 @@ type Issuer struct {
 	// answers at once. waiting counts the requests held now.
 	held    chan struct{}
 	waiting int
+	// keysOnly makes Hold hold only the key set's requests.
+	keysOnly bool
 	// requests is every request's path, in order.
 	requests []string
 	// key signs the issuer's ID tokens, and kid names it in the key set.
 	key *ecdsa.PrivateKey
 	kid int
+	// clock stamps each ID token's times: the koko server's, once a
+	// harness starts with the Issuer.
+	clock func() time.Time
+	// subject and label are the account the next authorization signs in
+	// as, and deny makes it answer access_denied instead.
+	subject, label string
+	deny           bool
+	// codes are the codes issued and not yet used.
+	codes map[string]grant
+	// spoilToken changes each ID token's header and claims before it is
+	// signed; foreign signs it with a key the key set does not serve.
+	spoilToken func(header, claims map[string]any)
+	foreign    bool
+	// tokenStatus is what the token endpoint answers in place of a token, 0
+	// for one; tokenTo, when set, is where it redirects instead, keeping
+	// the request's method and body.
+	tokenStatus int
+	tokenTo     string
+	// secrets is every secret of a flow the Issuer saw or made: the state,
+	// nonce and code challenge it was given, the codes it issued, the
+	// verifiers it was given, and the tokens it issued.
+	secrets []string
 }
+
+// grant is what a code was issued for.
+type grant struct {
+	redirectURI, challenge, nonce, subject, label string
+}
+
+// The client a koko server is registered as at an Issuer: SetIssuer sets
+// the Identity Provider to it.
+const (
+	IssuerClientID     = "koko"
+	IssuerClientSecret = "issuer-client-secret-Hq3v8Tn2Wx6"
+	// IssuerName is the name on the provider's button.
+	IssuerName = "Authentik"
+)
 
 // NewIssuer starts an Issuer, stopped when the test ends.
 func NewIssuer(t testing.TB) *Issuer {
 	t.Helper()
-	i := &Issuer{t: t}
+	i := &Issuer{t: t, clock: time.Now, subject: "subject-alice", label: "alice@idp.example.com", codes: map[string]grant{}}
 	i.RotateKey()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+issuerPath+".well-known/openid-configuration", i.discovery)
 	mux.HandleFunc("GET "+issuerPath+"jwks", i.jwks)
+	mux.HandleFunc("GET "+issuerPath+"authorize", i.authorize)
+	mux.HandleFunc("POST "+issuerPath+"token", i.token)
 	i.srv = httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		i.mu.Lock()
 		i.requests = append(i.requests, r.URL.Path)
+		held := i.held
+		if r.URL.Path == issuerPath+"authorize" || i.keysOnly && r.URL.Path != issuerPath+"jwks" {
+			held = nil
+		}
+		if held != nil {
+			i.waiting++
+		}
 		i.mu.Unlock()
+		if held != nil {
+			select {
+			case <-held:
+			case <-r.Context().Done():
+			}
+			i.mu.Lock()
+			i.waiting--
+			i.mu.Unlock()
+		}
 		mux.ServeHTTP(w, r)
 	}))
 	i.srv.StartTLS()
@@ -118,8 +180,9 @@ func (i *Issuer) RedirectDiscovery(n int, to string) {
 	i.redirects, i.redirectTo = n, to
 }
 
-// Hold makes each discovery request wait, unanswered, until Release, as a
-// provider too slow to answer does.
+// Hold makes each request the koko server makes, to discovery, the key set
+// or the token endpoint, wait, unanswered, until Release, as a provider too
+// slow to answer does.
 func (i *Issuer) Hold() {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -128,8 +191,16 @@ func (i *Issuer) Hold() {
 	}
 }
 
-// Release answers the discovery requests Hold holds, and the next ones at
-// once.
+// HoldKeys makes Hold hold only the key set's requests, as an issuer whose
+// key set alone does not answer.
+func (i *Issuer) HoldKeys() {
+	i.mu.Lock()
+	i.keysOnly = true
+	i.mu.Unlock()
+	i.Hold()
+}
+
+// Release answers the requests Hold holds, and the next ones at once.
 func (i *Issuer) Release() {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -137,9 +208,10 @@ func (i *Issuer) Release() {
 		close(i.held)
 		i.held = nil
 	}
+	i.keysOnly = false
 }
 
-// Waiting is how many discovery requests Hold holds now.
+// Waiting is how many requests Hold holds now.
 func (i *Issuer) Waiting() int {
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -183,20 +255,8 @@ func (i *Issuer) Document() map[string]any {
 
 func (i *Issuer) discovery(w http.ResponseWriter, r *http.Request) {
 	i.mu.Lock()
-	held, spoil, status, body, redirects, to := i.held, i.spoil, i.status, i.body, i.redirects, i.redirectTo
-	if held != nil {
-		i.waiting++
-	}
+	spoil, status, body, redirects, to := i.spoil, i.status, i.body, i.redirects, i.redirectTo
 	i.mu.Unlock()
-	if held != nil {
-		select {
-		case <-held:
-		case <-r.Context().Done():
-		}
-		i.mu.Lock()
-		i.waiting--
-		i.mu.Unlock()
-	}
 	hop, _ := strconv.Atoi(r.URL.Query().Get("hop"))
 	switch {
 	case to != "":

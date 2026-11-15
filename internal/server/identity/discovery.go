@@ -110,18 +110,26 @@ func unreachable(issuer string, err error) error {
 	return api.CodeProviderUnreachable.Errorf("the Identity Provider at %s did not answer: %v", issuer, err)
 }
 
+// known is an issuer's discovery as a flow uses it, and the issuer's keys,
+// which go-oidc's remote key set keeps: in memory, fetched again when a
+// token names a key id it lacks, requests that come together sharing one
+// fetch.
+type known struct {
+	doc  discovery
+	keys *oidc.RemoteKeySet
+}
+
 // discoveries keeps the discovery of the Identity Provider's issuer, and
-// the provider go-oidc makes of it, which keeps the issuer's keys: from a
-// set onwards, fetched again at the first flow after a restart, once
-// discoveryKept has passed since the last fetch, and at the next flow after
-// a failure, no sooner than retryAfter.
+// its keys: from a set onwards, fetched again at the first flow after a
+// restart, once discoveryKept has passed since the last fetch, and at the
+// next flow after a failure, no sooner than retryAfter.
 type discoveries struct {
 	client *http.Client
 	clock  func() time.Time
 
 	mu        sync.Mutex
 	issuer    string
-	found     *oidc.Provider
+	found     *known
 	fetchedAt time.Time
 	// failedAt is when a fetch for issuer last failed, zero once one
 	// succeeds, and failure why.
@@ -133,7 +141,7 @@ type discoveries struct {
 func (k *discoveries) keep(issuer string, d discovery) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	k.issuer, k.found, k.fetchedAt, k.failedAt, k.failure = issuer, k.provider(d), k.clock(), time.Time{}, nil
+	k.issuer, k.found, k.fetchedAt, k.failedAt, k.failure = issuer, k.known(d), k.clock(), time.Time{}, nil
 }
 
 // forget forgets what is kept, as removing the provider does.
@@ -143,10 +151,12 @@ func (k *discoveries) forget() {
 	k.issuer, k.found, k.failedAt, k.failure = "", nil, time.Time{}, nil
 }
 
-// get returns go-oidc's provider of issuer's discovery: the one kept, or
-// one it fetches as the rules of discoveries say, refusing as discover
-// does. Within retryAfter of a failure it refuses again without a call.
-func (k *discoveries) get(ctx context.Context, issuer string) (*oidc.Provider, error) {
+// get returns issuer's discovery and keys: those kept, or a discovery it
+// fetches as the rules of discoveries say, refusing as discover does.
+// Within retryAfter of a failure it refuses again without a call. A fetch
+// that failed because ctx, the caller's, ended is not a failure of the
+// provider's, and is not kept.
+func (k *discoveries) get(ctx context.Context, issuer string) (*known, error) {
 	k.mu.Lock()
 	now := k.clock()
 	switch {
@@ -162,17 +172,19 @@ func (k *discoveries) get(ctx context.Context, issuer string) (*oidc.Provider, e
 	d, err := discover(ctx, k.client, issuer)
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if err != nil {
+	switch {
+	case err != nil && ctx.Err() != nil:
+		return nil, err
+	case err != nil:
 		k.issuer, k.found, k.failedAt, k.failure = issuer, nil, k.clock(), err
 		return nil, err
 	}
-	k.issuer, k.found, k.fetchedAt, k.failedAt, k.failure = issuer, k.provider(d), k.clock(), time.Time{}, nil
+	k.issuer, k.found, k.fetchedAt, k.failedAt, k.failure = issuer, k.known(d), k.clock(), time.Time{}, nil
 	return k.found, nil
 }
 
-// provider is go-oidc's provider of d, whose key set fetches the issuer's
-// keys through k's client as tokens name them.
-func (k *discoveries) provider(d discovery) *oidc.Provider {
-	c := oidc.ProviderConfig{IssuerURL: d.Issuer, AuthURL: d.AuthURL, TokenURL: d.TokenURL, JWKSURL: d.JWKSURL, Algorithms: d.Algorithms}
-	return c.NewProvider(oidc.ClientContext(context.Background(), k.client))
+// known is d with a key set that fetches the issuer's keys through k's
+// client as tokens name them.
+func (k *discoveries) known(d discovery) *known {
+	return &known{doc: d, keys: oidc.NewRemoteKeySet(oidc.ClientContext(context.Background(), k.client), d.JWKSURL)}
 }

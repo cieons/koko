@@ -15,6 +15,10 @@ import (
 // carries.
 const WebURL = "https://koko.example.com"
 
+// flowCookie is the name of the cookie binding a flow through the Identity
+// Provider to the browser that began it.
+const flowCookie = "__Host-koko-oidc"
+
 // Password is the Password SignIn sets.
 const Password = "correct horse battery staple"
 
@@ -33,6 +37,9 @@ type Browser struct {
 	UserAgent string
 	// Cookie is the Sign-in cookie it holds: its value, or "" for none.
 	Cookie string
+	// FlowCookie is the cookie binding a flow through the Identity
+	// Provider to it, __Host-koko-oidc: its value, or "" for none.
+	FlowCookie string
 	// Origin is the Web URL it browses at, which each request's Host and
 	// Origin name: WebURL when it is "", or another the test set the Web
 	// URL to.
@@ -91,8 +98,9 @@ type Answer struct {
 }
 
 // Do sends method to path with body, as the browser would through the
-// proxy, and reads the answer, keeping the Sign-in cookie it sets or
-// clears.
+// proxy, and reads the answer, keeping the Sign-in cookie and the flow's
+// cookie it sets or clears. It follows no redirect, so a test sees each
+// one and may drop or swap a cookie before the next step.
 func (b *Browser) Do(method, path, body string) Answer {
 	b.t.Helper()
 	req, err := http.NewRequestWithContext(b.t.Context(), method, "http://"+b.h.web+path, strings.NewReader(body))
@@ -116,9 +124,13 @@ func (b *Browser) Do(method, path, body string) Answer {
 	if b.Cookie != "" {
 		req.AddCookie(&http.Cookie{Name: "__Host-koko", Value: b.Cookie})
 	}
+	if b.FlowCookie != "" {
+		req.AddCookie(&http.Cookie{Name: flowCookie, Value: b.FlowCookie})
+	}
 	tr := &http.Transport{}
 	defer tr.CloseIdleConnections()
-	resp, err := (&http.Client{Transport: tr}).Do(req)
+	c := &http.Client{Transport: tr, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := c.Do(req)
 	if err != nil {
 		b.t.Fatal(err)
 	}
@@ -128,11 +140,13 @@ func (b *Browser) Do(method, path, body string) Answer {
 		b.t.Fatal(err)
 	}
 	for _, c := range resp.Cookies() {
-		if c.Name == "__Host-koko" {
-			b.Cookie = c.Value
-			if c.MaxAge < 0 {
-				b.Cookie = ""
-			}
+		held := map[string]*string{"__Host-koko": &b.Cookie, flowCookie: &b.FlowCookie}[c.Name]
+		if held == nil {
+			continue
+		}
+		*held = c.Value
+		if c.MaxAge < 0 {
+			*held = ""
 		}
 	}
 	return Answer{Response: resp, Body: string(read)}

@@ -59,4 +59,11 @@ export default {
     "A setting of the Identity Provider is not valid, or its issuer's discovery document is not.",
   "error.provider_unreachable": "The Identity Provider did not answer in time. Try again later.",
   "error.provider_unset": "No Identity Provider is configured.",
+  "error.provider_refused": "The Identity Provider did not complete the sign-in. Try again, or sign in another way.",
+  "error.provider_failed": "The Identity Provider's answer could not be verified. Try again, or sign in another way.",
+  "error.identity_not_linked": "No User has this identity linked. Sign in another way, then link it on Account.",
+  "error.identity_linked": "A Linked Identity is already linked. Unlink it on Account before linking another.",
+  "error.identity_taken": "Another User has already linked this identity.",
+  "error.signin_expired":
+    "The sign-in through the Identity Provider expired or was started in another browser. Start it again.",
 };

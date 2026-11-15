@@ -193,7 +193,7 @@ func TestADiscoveryIsKeptAsTheRulesSay(t *testing.T) {
 		switch {
 		case wantErr && err == nil:
 			t.Errorf("%s succeeded, want a failure", what)
-		case !wantErr && (err != nil || p == nil || p.Endpoint().TokenURL != issuer+"token"):
+		case !wantErr && (err != nil || p == nil || p.doc.TokenURL != issuer+"token"):
 			t.Errorf("%s gave %v %v, want the issuer's provider", what, p, err)
 		}
 	}
@@ -263,5 +263,50 @@ func TestTheClientBoundsAnAnswersHeaders(t *testing.T) {
 	c, _ := testClient(srv, 5*time.Second)
 	if _, err := get(c, srv.URL); !errors.Is(err, errTooLarge) {
 		t.Errorf("an answer with headers over 1 MiB failed with %v, want errTooLarge", err)
+	}
+}
+
+// A call its caller gave up on, as when a browser leaves in the middle of
+// a sign-in, says nothing of the provider: it is not logged, and a
+// discovery it cut short is not kept as a failure.
+func TestACallItsCallerGaveUpOnIsNoFailure(t *testing.T) {
+	t.Parallel()
+	f := newFakeIssuer(t)
+	reached := make(chan struct{}, 1)
+	slow := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		reached <- struct{}{}
+		<-r.Context().Done()
+	}))
+	t.Cleanup(slow.Close)
+	c, log := testClient(slow, time.Minute)
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		<-reached
+		cancel()
+	}()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, slow.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("a call its caller cancelled failed with %v", err)
+	}
+	if strings.Contains(log.String(), "could not be reached") {
+		t.Errorf("a call its caller cancelled was logged:\n%s", log)
+	}
+
+	fc, _ := testClient(f.srv, time.Second)
+	k := &discoveries{client: fc, clock: time.Now}
+	gone, stop := context.WithCancel(t.Context())
+	stop()
+	if _, err := k.get(gone, f.srv.URL+"/"); err == nil {
+		t.Fatal("a discovery its caller had cancelled succeeded")
+	}
+	if _, err := k.get(t.Context(), f.srv.URL+"/"); err != nil {
+		t.Errorf("a flow after a discovery its caller cancelled was refused as that failure: %v", err)
 	}
 }

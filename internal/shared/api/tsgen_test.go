@@ -46,7 +46,7 @@ func generateTypeScript(dir string) (map[string]string, error) {
 	// endpoints are the web front's own JSON endpoints, under /auth/ and
 	// /terminal/files/, by their request type's name, which is each one's own.
 	endpoints := map[string]api.AuthEndpointInfo{}
-	for _, e := range slices.Concat(api.AuthEndpoints(), api.PasskeyEndpoints(), api.FilesEndpoints()) {
+	for _, e := range slices.Concat(api.AuthEndpoints(), api.PasskeyEndpoints(), api.IdentityEndpoints(), api.FilesEndpoints()) {
 		endpoints[e.Request.Name()] = e
 	}
 	structs := map[string]reflect.Type{}

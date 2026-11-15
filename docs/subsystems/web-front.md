@@ -187,6 +187,10 @@ default, is off: a koko server without it listens on nothing new.
 request in this order, reading the deployment's row at every request, so a
 change of the Web URL takes effect on the next one. Only the `/auth/`
 endpoints set the Sign-in cookie, and only they and `/v1/` read it.
+`/auth/oidc/begin` sets one other cookie, `__Host-koko-oidc`, which binds a
+flow through the Identity Provider to the browser that began it
+(`Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, no `Domain`,
+`Max-Age=600`), and only the callback reads it and clears it.
 
 1. **Before initialisation**, every request gets a `503` page saying the
    koko server is not initialised yet.
@@ -209,9 +213,22 @@ endpoints set the Sign-in cookie, and only they and `/v1/` read it.
 5. **`/terminal/socket`** and **`/terminal/workspace`** are [the web
    terminal's WebSockets](#the-web-terminals-websocket).
 6. **`/auth/`** is the web front's own endpoints, which sign a browser in
-   with a Password or a passkey, make a passkey, set a Password and sign
-   out, each a JSON `POST` of at most 4 KiB, 64 KiB for the two that carry a
-   passkey's answer ([Sign-ins](signin.md#the-auth-endpoints)).
+   with a Password, a passkey or through the Identity Provider, make a
+   passkey, link an identity, set a Password and sign out, each a JSON
+   `POST` of at most 4 KiB, 64 KiB for the two that carry a passkey's
+   answer ([Sign-ins](signin.md#the-auth-endpoints)). The one exception
+   is **`GET /auth/oidc/callback`**, where the Identity Provider sends the
+   browser back: a cross-site top-level navigation, which carries no
+   `Origin` the check could read and which `SameSite=Lax` sends both
+   cookies on. It is the one `GET` that changes state, so the flow's
+   binding stands in for the Origin check: a callback whose `state` names
+   no flow held, or whose `__Host-koko-oidc` does not match the flow's, is
+   refused as `signin_expired`, changing nothing and counting for no
+   limit, since any site can make a browser load it. It answers a `303`
+   whatever follows, which takes the code and the state out of the address
+   bar, and every answer's `Referrer-Policy: no-referrer` keeps them out of
+   the next page's `Referer` ([the Identity
+   Provider](identity.md#the-callback)).
 7. **`/terminal/files/`** is [the web terminal's
    files](#the-web-terminals-files).
 8. **`/v1/`** goes to the API as the live Sign-in the `__Host-koko` cookie

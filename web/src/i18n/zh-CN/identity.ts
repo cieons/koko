@@ -53,4 +53,10 @@ export default {
   "error.invalid_provider": "身份提供方的某项设置无效，或其签发者的发现文档无效。",
   "error.provider_unreachable": "身份提供方未在规定时间内响应，请稍后重试。",
   "error.provider_unset": "尚未配置身份提供方。",
+  "error.provider_refused": "身份提供方未完成登录。请重试，或改用其他方式登录。",
+  "error.provider_failed": "无法验证身份提供方的响应。请重试，或改用其他方式登录。",
+  "error.identity_not_linked": "没有用户关联此身份。请先以其他方式登录，再在账户页面关联。",
+  "error.identity_linked": "已存在关联身份。如需关联其他身份，请先在账户页面解除关联。",
+  "error.identity_taken": "此身份已由其他用户关联。",
+  "error.signin_expired": "通过身份提供方的登录已过期，或发起于其他浏览器。请重新开始。",
 } satisfies Record<keyof typeof en, string>;

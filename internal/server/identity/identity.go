@@ -6,6 +6,11 @@
 // Root Key, and makes every call to the provider through one bounded
 // client (client.go), keeping its discovery and keys (discovery.go).
 //
+// It also does the work of the web front's two endpoints that sign a
+// browser in, or link a User's identity, through the provider (flow.go):
+// the Authorization Code flow with PKCE, each flow held in memory under
+// its state and bound to the browser that began it by a cookie.
+//
 // A set checks a new or changed issuer's discovery before its write's
 // transaction (op.HandlePrepared), so a slow provider holds up no other
 // write. A change of issuer, or a removal, unlinks every Linked Identity
@@ -20,60 +25,66 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
-
 	"github.com/cieons/koko/internal/server/access"
 	"github.com/cieons/koko/internal/server/deployment"
+	"github.com/cieons/koko/internal/server/flow"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
+	"github.com/cieons/koko/internal/server/signin"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
 	"github.com/cieons/koko/internal/shared/timing"
 )
 
-// SignIns is the signin area's part in unlinking an identity: it ends the
-// Sign-ins made with a credential.
-type SignIns interface {
-	// EndMadeWith ends every live Sign-in of u made with the credential,
-	// for reason, by the caller named by, and counts them.
-	EndMadeWith(ctx context.Context, tx store.Tx, u api.User, credential, reason, by string) (int64, error)
-}
-
 // Service is the identity area.
 type Service struct {
+	store   *store.Store
 	rootKey *seal.RootKey
-	signIns SignIns
-	// client makes every call to the Identity Provider.
-	client      *http.Client
-	discoveries *discoveries
-	log         *slog.Logger
+	// signins starts and ends the Sign-ins, spends the Sign-in Links and
+	// keeps the rate limits.
+	signins *signin.Service
+	// client makes every call to the Identity Provider; exchange is the
+	// same client, through the same bounds, for the token exchange, which
+	// follows no redirect: one would send its body, which holds the client
+	// secret, the code and the verifier, on to wherever it points.
+	client, exchange *http.Client
+	discoveries      *discoveries
+	// clock is the koko server's clock, which a flow's request reads its
+	// time on.
+	clock func() time.Time
+	flows *flow.Store[oidcFlow]
+	log   *slog.Logger
+	// api runs a flow's outcome, as a write of the koko server's own
+	// (op.API.Do); Register sets it.
+	api *op.API
 }
 
-// New returns the identity area, which seals the client secret with
-// rootKey, ends Sign-ins through signIns, calls the provider through base's
-// transport (nil for the system's), bounded as timings say (the zero
-// Timings is the product's), keeps discoveries on clock, the koko server's,
-// and logs to log.
-func New(rootKey *seal.RootKey, signIns SignIns, base *http.Client, clock func() time.Time, timings timing.Timings, log *slog.Logger) *Service {
+// New returns the identity area, whose records live in st, which seals the
+// client secret with rootKey, starts and ends Sign-ins through signins,
+// calls the provider through base's transport (nil for the system's),
+// bounded as timings say (the zero Timings is the product's), reads the
+// time on clock, the koko server's, and logs to log.
+func New(st *store.Store, rootKey *seal.RootKey, signins *signin.Service, base *http.Client, clock func() time.Time, timings timing.Timings, log *slog.Logger) *Service {
 	t := timings.Resolve()
 	client := newClient(base, t.ProviderCall, t.ProviderTurn, log)
-	return &Service{rootKey: rootKey, signIns: signIns, client: client, discoveries: &discoveries{client: client, clock: clock}, log: log}
+	exchange := &http.Client{
+		Transport:     client.Transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	return &Service{
+		store: st, rootKey: rootKey, signins: signins, client: client, exchange: exchange,
+		discoveries: &discoveries{client: client, clock: clock}, clock: clock,
+		flows: flow.New[oidcFlow](flowLifetime, clock), log: log,
+	}
 }
 
-// Register adds the Identity Provider's operations to the API.
+// Register adds the Identity Provider's operations to the API, which also
+// runs the flows' outcomes.
 func (s *Service) Register(a *op.API) {
+	s.api = a
 	a.Handle(api.ServerOIDCShow, s.show)
 	a.HandlePrepared(api.ServerOIDCSet, s.prepareSet, s.set)
 	a.Handle(api.ServerOIDCRemove, s.remove)
-}
-
-// Discovered returns go-oidc's provider of issuer's discovery, which keeps
-// the issuer's keys, kept or fetched as discoveries says; a provider that
-// does not answer is refused with provider_unreachable, and a document no
-// longer valid with invalid_provider. A sign-in's flow calls it outside any
-// transaction.
-func (s *Service) Discovered(ctx context.Context, issuer string) (*oidc.Provider, error) {
-	return s.discoveries.get(ctx, issuer)
 }
 
 // show is server.oidc.show, for the Owner and the Administrators.
@@ -281,7 +292,7 @@ func (s *Service) unlinkAll(ctx context.Context, tx store.Tx, by string) (int, e
 		return 0, fmt.Errorf("read the Linked Identities: %w", err)
 	}
 	for _, l := range all {
-		ended, err := s.signIns.EndMadeWith(ctx, tx, l.user, l.id, api.EndIdentityUnlinked, by)
+		ended, err := s.signins.EndMadeWith(ctx, tx, l.user, l.id, api.EndIdentityUnlinked, by)
 		if err != nil {
 			return 0, err
 		}

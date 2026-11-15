@@ -354,6 +354,13 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		log:    &syncBuffer{},
 		clock:  &clock{now: time.Now().UTC().Truncate(time.Second)},
 	}
+	if o.issuer != nil {
+		// Its ID tokens are stamped on the koko server's clock, which
+		// stands still until the test moves it.
+		o.issuer.mu.Lock()
+		o.issuer.clock = h.clock.Now
+		o.issuer.mu.Unlock()
+	}
 	var updateClock updatecheck.Clock = StillClock{Time: h.clock.Now}
 	releases := noReleases
 	if o.releases != nil {

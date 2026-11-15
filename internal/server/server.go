@@ -373,7 +373,11 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	// The passkey area runs its ceremonies through the signin area, which
 	// starts their Sign-ins and spends their Sign-in Links.
 	passkeys := passkey.New(st, signins, clock, log)
-	front := web.New(a, signins, passkeys, gw, st, key, clock, cfg.Timings, log)
+	// The identity area seals the Identity Provider's client secret with
+	// the Root Key, and starts and ends the Sign-ins made through a Linked
+	// Identity through the signin area.
+	identities := identity.New(st, key, signins, cfg.IdentityClient, clock, cfg.Timings, log)
+	front := web.New(a, signins, passkeys, identities, gw, st, key, clock, cfg.Timings, log)
 	version := cmp.Or(cfg.Version, build.Read().Version)
 	// Each connection is reported every operation registered below, the
 	// operations and channels above revision 1, and the oldest koko this
@@ -436,10 +440,7 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	user.Register(a, issuer.Issue, signins, gw.Workspaces(), holdings, &changes, &lists, log)
 	signins.Register(a, &changes)
 	passkeys.Register(a)
-	// The identity area seals the Identity Provider's client secret with
-	// the Root Key, and ends the Sign-ins made through a Linked Identity it
-	// unlinks through the signin area.
-	identity.New(key, signins, cfg.IdentityClient, clock, cfg.Timings, log).Register(a)
+	identities.Register(a)
 	// The Gateway records each Sign-in it finds expired, so the signal
 	// names it to every consumer.
 	gw.RecordExpiriesWith(signins.RecordExpiry)

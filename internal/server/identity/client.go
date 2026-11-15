@@ -97,7 +97,7 @@ func (b *bounded) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	if err := b.take(ctx); err != nil {
 		cancel()
-		b.failed(req.URL, err)
+		b.failed(req, err)
 		return nil, err
 	}
 	if !redirected {
@@ -114,11 +114,11 @@ func (b *bounded) RoundTrip(req *http.Request) (*http.Response, error) {
 			b.answered()
 			return nil, err
 		}
-		b.failed(req.URL, err)
+		b.failed(req, err)
 		return nil, err
 	}
 	if resp.StatusCode >= http.StatusInternalServerError {
-		b.failed(req.URL, fmt.Errorf("it answered %s", resp.Status))
+		b.failed(req, fmt.Errorf("it answered %s", resp.Status))
 	} else {
 		b.answered()
 	}
@@ -143,16 +143,21 @@ func (b *bounded) take(ctx context.Context) error {
 	}
 }
 
-// failed logs a call to u that had no answer, or a server error, once per
-// run of such calls.
-func (b *bounded) failed(u *url.URL, err error) {
+// failed logs a call req that had no answer, or a server error, once per
+// run of such calls. A call its caller gave up on, such as a browser that
+// left in the middle of a sign-in, says nothing of the provider, and is
+// not logged.
+func (b *bounded) failed(req *http.Request, err error) {
+	if req.Context().Err() != nil {
+		return
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.failing {
 		return
 	}
 	b.failing = true
-	b.log.Warn("the identity provider could not be reached", "url", at(u), "err", err)
+	b.log.Warn("the identity provider could not be reached", "url", at(req.URL), "err", err)
 }
 
 // answered ends a run of calls that had no answer or a server error.

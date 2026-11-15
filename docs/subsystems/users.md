@@ -114,8 +114,9 @@ The Owner Removes an Administrator directly, with no demotion first.
   1. revokes every live Device Session they hold, at the call's time;
   2. voids their valid Join Codes, and those their Device Sessions and
      Sign-ins issued;
-  3. ends their live Sign-ins (`user_removed`), deletes their Password and
-     voids their unused Sign-in Links and those they issued for others
+  3. ends their live Sign-ins (`user_removed`), deletes their Password,
+     their passkeys and their Linked Identity, and voids their unused
+     Sign-in Links and those they issued for others
      ([Sign-ins](signin.md#users));
   4. deletes an Administrator's row, so a Removed User is a `member`;
   5. takes them out of every Space, and turns their Personal Space into an

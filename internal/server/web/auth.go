@@ -23,6 +23,11 @@ import (
 // so no other site under the same domain can set or read it.
 const signInCookie = "__Host-koko"
 
+// oidcCookie is the cookie that binds a flow through the Identity Provider
+// to the browser that began it. SameSite=Lax sends it on the provider's
+// top-level GET back to the callback, which Strict would not.
+const oidcCookie = "__Host-koko-oidc"
+
 // authPrefix starts the paths of the web front's own endpoints on the web
 // listener, which sign a browser in, set a Password and sign out apart from
 // the API (ADR 0043).
@@ -53,6 +58,10 @@ func attempt(r *http.Request) signin.Attempt {
 // cookie reaches the log.
 func (f *Front) serveAuth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	if r.URL.Path == api.AuthOIDCCallbackPath {
+		f.authOIDCCallback(w, r)
+		return
+	}
 	var serve func(w http.ResponseWriter, r *http.Request, body []byte) error
 	limit := api.MaxAuthBody
 	switch r.URL.Path {
@@ -74,6 +83,8 @@ func (f *Front) serveAuth(w http.ResponseWriter, r *http.Request) {
 		serve = f.authPasskeyAddBegin
 	case api.AuthPasskeyAddPath:
 		serve, limit = f.authPasskeyAdd, api.MaxPasskeyBody
+	case api.AuthOIDCBeginPath:
+		serve = f.authOIDCBegin
 	default:
 		f.refuseAPI(w, r, api.CodeUnknownOperation.Errorf("no endpoint is served at %s", r.URL.Path))
 		return
@@ -248,6 +259,48 @@ func (f *Front) authPasskeyAdd(w http.ResponseWriter, r *http.Request, body []by
 	}
 	writeJSON(w, api.AuthPasskeyAddResponse{User: added.User, Passkey: added.Passkey})
 	return nil
+}
+
+func (f *Front) authOIDCBegin(w http.ResponseWriter, r *http.Request, body []byte) error {
+	req, err := decodeAuth[api.AuthOIDCBeginRequest](r, body)
+	if err != nil {
+		return err
+	}
+	location, binding, err := f.identities.Begin(r.Context(), req, signInToken(r), attempt(r))
+	if err != nil {
+		return err
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: oidcCookie, Value: binding, Path: "/", MaxAge: api.OIDCFlowLifetime,
+		Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+	})
+	writeJSON(w, api.AuthOIDCBeginResponse{Location: location})
+	return nil
+}
+
+// authOIDCCallback is where the Identity Provider sends a browser back to:
+// the one /auth/ endpoint a GET reaches, and the one GET that changes
+// state, so its binding stands in for the Origin check. It clears the
+// flow's cookie whatever follows, and answers a 303, which takes the code
+// and the state out of the address bar and the history; the
+// Referrer-Policy every answer carries keeps them out of the next page's
+// Referer.
+func (f *Front) authOIDCCallback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		f.refuseAPI(w, r, api.CodeMethodNotAllowed.Errorf("%s is not allowed: %s takes a GET", r.Method, r.URL.Path))
+		return
+	}
+	var binding string
+	if c, err := r.Cookie(oidcCookie); err == nil {
+		binding = c.Value
+	}
+	http.SetCookie(w, &http.Cookie{Name: oidcCookie, Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	out := f.identities.Callback(r.Context(), r.URL.Query(), binding, signInToken(r), attempt(r))
+	if out.Started != nil {
+		f.setSignInCookie(w, *out.Started)
+	}
+	http.Redirect(w, r, out.Location, http.StatusSeeOther)
 }
 
 // readAnswer reads a browser's answer to a passkey's ceremony, as its

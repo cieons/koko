@@ -159,6 +159,10 @@ _Avoid_: security key, WebAuthn credential, FIDO key, token
 The one OpenID Connect provider the Owner runs and configures, such as Authentik or Keycloak, through which a User with a Linked Identity signs in to the Web UI. Error codes shorten it to `provider_`.
 _Avoid_: IdP (alone), SSO, OAuth app
 
+**Linked Identity**:
+A User's account at the Identity Provider, known by the provider's issuer and its subject, which that User linked to their koko User; at most one per User, and never matched by email or name.
+_Avoid_: SSO account, external account, federated user
+
 **Sign-in Link**:
 A one-time, time-limited link the Owner or an Administrator issues that lets one User add a way to sign in to the Web UI (a Passkey, their Linked Identity or a Password) and signs that browser in: a new User's Invite, or a reset. It replaces the Password Link, whose wire names (`password.link`, `password_link`) it keeps.
 _Avoid_: Password Link, reset link, magic link (ADR 0043 rejected a link used for every sign-in, which this is not), invite link

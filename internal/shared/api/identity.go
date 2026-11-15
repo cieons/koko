@@ -163,8 +163,93 @@ const (
 	ReasonCodeUnsupported = "code_unsupported"
 )
 
+// The codes of signing in and linking through the Identity Provider.
+var (
+	// CodeProviderRefused: the Identity Provider answered the sign-in with
+	// an error, such as the person cancelling it there.
+	CodeProviderRefused = Code{"provider_refused", http.StatusForbidden}
+	// CodeProviderFailed: the code exchange, or the ID token, failed a
+	// check.
+	CodeProviderFailed = Code{"provider_failed", http.StatusBadGateway}
+	// CodeIdentityNotLinked: no User has this identity linked; the same
+	// whether or not anyone ever had.
+	CodeIdentityNotLinked = Code{"identity_not_linked", http.StatusForbidden}
+	// CodeIdentityLinked: the User has a Linked Identity already.
+	CodeIdentityLinked = Code{"identity_linked", http.StatusConflict}
+	// CodeIdentityTaken: another User has this identity linked.
+	CodeIdentityTaken = Code{"identity_taken", http.StatusConflict}
+	// CodeSignInExpired: the provider sent back a browser with no flow it
+	// began, or after the flow's 10 minutes.
+	CodeSignInExpired = Code{"signin_expired", http.StatusBadRequest}
+)
+
 var identityCodes = []Code{
 	CodeInvalidProvider,
 	CodeProviderUnreachable,
 	CodeProviderUnset,
+	CodeProviderRefused,
+	CodeProviderFailed,
+	CodeIdentityNotLinked,
+	CodeIdentityLinked,
+	CodeIdentityTaken,
+	CodeSignInExpired,
+}
+
+// Signing in and linking through the Identity Provider on the web listener
+// (ADR 0060): a page begins a flow, which answers where to send the
+// browser, and the provider sends it back to AuthOIDCCallbackPath.
+const (
+	// AuthOIDCBeginPath begins a flow, an AuthOIDCBeginRequest, setting
+	// its binding cookie, and answers an AuthOIDCBeginResponse.
+	AuthOIDCBeginPath = "/auth/oidc/begin"
+	// AuthOIDCCallbackPath is where the provider sends the browser back
+	// to: the one /auth/ endpoint a GET reaches, which answers a 303 to the
+	// page the flow ends on.
+	AuthOIDCCallbackPath = RedirectPath
+	// OIDCPurposeSignIn signs a browser in; OIDCPurposeLink links the
+	// identity to the User of the request's Sign-in, or of a Sign-in Link.
+	OIDCPurposeSignIn = "signin"
+	OIDCPurposeLink   = "link"
+	// RefusedParam is the query parameter of the page a flow ends on
+	// refused, which names the refusal's code; LinkedParam, set to 1, says
+	// Account was reached by a link that succeeded.
+	RefusedParam = "refused"
+	LinkedParam  = "linked"
+	// OIDCFlowLifetime is how long a flow lasts, in seconds: the binding
+	// cookie's Max-Age.
+	OIDCFlowLifetime = 600
+)
+
+// AuthOIDCBegin begins a flow through the Identity Provider: signing in
+// with next, linking to the request's Sign-in, or linking through the
+// Sign-in Link whose secret is Link. It sets the flow's binding cookie and
+// answers where to send the browser. It is refused with CodeProviderUnset
+// while no provider is configured, with CodeProviderUnreachable when the
+// provider's discovery does not answer, and for linking with
+// CodeSignInRequired without a live Sign-in, or with CodeLinkUsed or
+// CodeLinkInvalid for a link no longer valid.
+var AuthOIDCBegin = AuthEndpoint[AuthOIDCBeginRequest, AuthOIDCBeginResponse]{Path: AuthOIDCBeginPath}
+
+// IdentityEndpoints returns the identity area's endpoints that take a JSON
+// POST: the callback is a GET.
+func IdentityEndpoints() []AuthEndpointInfo {
+	return []AuthEndpointInfo{AuthOIDCBegin.Info()}
+}
+
+// AuthOIDCBeginRequest begins a flow through the Identity Provider.
+type AuthOIDCBeginRequest struct {
+	// Purpose is OIDCPurposeSignIn or OIDCPurposeLink.
+	Purpose string `json:"purpose"`
+	// Next is the path of this origin a sign-in ends on, outside /signin
+	// and /link; any other is /. Only for signing in.
+	Next string `json:"next,omitzero"`
+	// Link is the secret of the Sign-in Link to link through; left out, a
+	// link is to the request's Sign-in. Only for linking.
+	Link string `json:"link,omitzero"`
+}
+
+// AuthOIDCBeginResponse is where to send the browser: the provider's
+// authorization URL for the flow.
+type AuthOIDCBeginResponse struct {
+	Location string `json:"location"`
 }

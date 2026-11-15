@@ -35,7 +35,7 @@ Provider tickets fill them):
 | `passwords` | A User's one Password, or no row: its id (`password_…`), the User, its Argon2id hash as a PHC string sealed under the Root Key for the row's id ([the Seal](seal.md)), when it was set and how (`link`, `change`, or `signin` for a first Password from a live Sign-in). Setting a Password writes a new row. |
 | `password_links` | Each Sign-in Link, under the name the Password Link had before it: its id (`passwordlink_…`), the User, the SHA-256 of its secret, what issued it (a Device Session's or a Sign-in's id, or NULL for the Unix socket), when it was issued, expires, was used and was voided. Spent links are kept. |
 | `passkeys` | Each Passkey: its id (`passkey_…`), the User, its credential id (unique), its COSE_Key as the authenticator gave it and that key's algorithm (-8 EdDSA, -7 ES256, -257 RS256), the host it was made for (`rp_id`), its name, the authenticator's last signature counter (0 for one that keeps none), its backup eligibility when made and its backup state at its last use, the Sign-in or Sign-in Link it was made through (`added_with`), when it was made and last used. None of it is secret, so none of it is sealed: a copy of the data directory signs nobody in with it. A removed Passkey's row is deleted; the log keeps it. |
-| `identities`, `identity_provider` | Each Linked Identity and the one Identity Provider, as spec #228 gives them; the Identity Provider's is in [the Identity Provider](identity.md#the-record), and `identities` is empty until the ticket that links them. |
+| `identities`, `identity_provider` | Each Linked Identity and the one Identity Provider, both in [the Identity Provider](identity.md#the-record). |
 | `signins` | Each Sign-in: its id (`signin_…`), the User, the SHA-256 of its cookie's token, how it was made (`method`: `password`, `passkey` or `identity`, `password` for every Sign-in recorded before the step) and the passkey or Linked Identity it was made with (`credential`, NULL for a Password), the browser and the system its User-Agent named (`browser` and `system`, `''` for none), the client's address at sign-in and when last used, its start, its Last used time, its expiry 30 days on, and once it ends, when, why and by whom. Ended Sign-ins are kept, as Revoked Device Sessions are. |
 
 ## Passwords
@@ -112,7 +112,8 @@ offers none.
   still drop a person's flow, and their passkey sign-in starts again; since
   an answer naming no flow held counts for no limit (below), it locks nobody
   out. A restart forgets the flows, and the page starts again.
-  The Identity Provider's flows use the same store.
+  The Identity Provider's flows use the same store, with their own
+  lifetime ([the Identity Provider](identity.md#the-flows)).
 - **Making one** ([`Service.Add`](../../internal/server/passkey/ceremony.go)),
   through a Sign-in Link or from a live Sign-in, after
   [`webauthn.Register`](../../internal/server/passkey/webauthn/webauthn.go)
@@ -197,9 +198,8 @@ offers none.
 ## Sign-in Links
 
 The Password Link, renamed (ADR 0060): one link that lets its User add a
-way to sign in, and signs that browser in: a passkey or a Password, and
-their Linked Identity once the Identity Provider's ticket of spec #228
-lands. Every
+way to sign in, and signs that browser in: a passkey, their Linked
+Identity or a Password. Every
 wire name stays: `password.link`, `password_link`, `password_links` and the
 `passwordlink_…` ids.
 
@@ -230,11 +230,13 @@ wire name stays: `password.link`, `password_link`, `password_links` and the
 - **Spending one**: `POST /auth/link` answers whom an unspent link is for and
   the ways to sign in they hold already, spending nothing; `POST
   /auth/password` with the link spends it, sets the Password and signs this
-  browser in, as `/auth/passkey/add` does with a passkey's answer.
+  browser in, as `/auth/passkey/add` does with a passkey's answer and the
+  Identity Provider's callback with a linked identity.
   Spending happens at the end of the step chosen, never at its
   start, and ends the User's other Sign-ins: `password_changed` for a
   Password, as setting one always has, and `signin_link_used` for a
-  passkey and, once it lands, a Linked Identity. A link used already is refused with
+  passkey or a Linked Identity. A refusal at the provider, or a cancelled
+  ceremony, spends nothing. A link used already is refused with
   `link_used` (410); an expired, voided, unknown or Removed User's one with
   `link_invalid` (404). Each refusal counts as a failed attempt for the
   client's address.
@@ -282,11 +284,10 @@ wire name stays: `password.link`, `password_link`, `password_links` and the
 - **Ending**: by its browser signing out, by being revoked, by the User's
   Password being set, by the Password it was made with being removed, by
   the passkey it was made with being removed (`passkey_removed`), by a
-  Sign-in Link of its User spent with a passkey (`signin_link_used`), and
-  by the User being Removed. Spec #228 adds `identity_unlinked` (an
-  identity unlinked ends those made through it), and `signin_link_used` for
-  a link spent with an identity, which the access-change signal and the
-  Gateway carry already. Ending is
+  Sign-in Link of its User spent with a passkey or an identity
+  (`signin_link_used`), by the identity it was made through being unlinked
+  (`identity_unlinked`: by a change of the provider's issuer or its
+  removal), and by the User being Removed. Ending is
   immediate: every call reads the Sign-in in its own transaction. Once the
   call that ends it commits, an `/auth/` endpoint's included, the
   access-change signal names it with its end reason (`access.Change.SignIns`,
@@ -323,9 +324,12 @@ every answer carries the listener's headers and `Cache-Control: no-store`,
 and a refusal is the API's error object. Their types are in
 [`api/signin.go`](../../internal/shared/api/signin.go), with an
 `api.AuthEndpoint` value for each (`AuthSignIn`, `AuthLink`,
-`AuthPassword`, `AuthSignOut`, `AuthMethods`, and the passkey ones in
-[`api/passkey.go`](../../internal/shared/api/passkey.go)), which the web UI's generated types carry
-([the web UI build](web-ui.md#generated-types)).
+`AuthPassword`, `AuthSignOut`, `AuthMethods`, the passkey ones in
+[`api/passkey.go`](../../internal/shared/api/passkey.go), and `AuthOIDCBegin` in
+[`api/identity.go`](../../internal/shared/api/identity.go)), which the web UI's generated types carry
+([the web UI build](web-ui.md#generated-types)). The Identity Provider's
+callback is the one `GET` among them, and answers a `303`; its flows are
+in [the Identity Provider](identity.md#signing-in-and-linking-through-it).
 
 | Endpoint | Takes | Does |
 | --- | --- | --- |
@@ -338,6 +342,8 @@ and a refusal is the API's error object. Their types are in
 | `POST /auth/passkey/signin` | `{"flow", "credential"}`, the answer as `toJSON()` gives it: `id`, `rawId`, `type`, `response.{clientDataJSON, authenticatorData, signature, userHandle}` | Signs in with the method `passkey`: sets the cookie and answers `{"user"}`. |
 | `POST /auth/passkey/add/begin` | `{"link"}`, or `{}` with the cookie | Begins making a passkey for the link's User or the Sign-in's: answers `{"flow", "options"}`, spending nothing. Without a live Sign-in or a link, `signin_required`. |
 | `POST /auth/passkey/add` | `{"flow", "credential", "name"}`, `name` only with the cookie; the answer's `response` holds `clientDataJSON` and `attestationObject` | Records the passkey: through a link spends it, signs this browser in and sets the cookie; from a Sign-in keeps it. Answers `{"user", "passkey"}`. |
+| `POST /auth/oidc/begin` | `{"purpose": "signin", "next"}`, `{"purpose": "link"}` with the cookie, or `{"purpose": "link", "link"}` | Begins a flow through the Identity Provider: sets its binding cookie and answers `{"location"}`, the provider's authorization URL. |
+| `GET /auth/oidc/callback` | `code` and `state`, or `error` | Ends the flow: a `303` to `next`, to `/account?linked=1`, or to the flow's page with `?refused=<code>`. |
 
 ## Rate limits
 
@@ -348,7 +354,8 @@ forgotten at restart. The client's address is the web listener's
 
 - **For each address**: 10 failed attempts (a wrong sign-in, a refused
   link, a wrong current Password, `passkey_refused` for an answer whose flow
-  was held) within 15 minutes, and its next attempts
+  was held, and `provider_failed` or `identity_not_linked` from a callback
+  whose binding passed) within 15 minutes, and its next attempts
   at any `/auth/` endpoint but `signout`, `methods` and
   `passkey/signin/begin` are answered `too_many_attempts`
   (429) with `Retry-After` in seconds, until the oldest failure is 15
@@ -360,8 +367,9 @@ forgotten at restart. The client's address is the web listener's
   lockout does not stop a change of Password. A
   successful sign-in and setting the Password start the count again; a
   Sign-in Link, or the 15 minutes, ends a lockout.
-- **No name for a passkey.** A passkey's sign-in names no User before it
-  verifies, so it counts for no name, and a name's lockout, which guards
+- **No name for a passkey or the provider.** A passkey's sign-in, or one
+  through the provider, names no User before it verifies, so it counts for
+  no name, and a name's lockout, which guards
   against guessing a Password, does not stop it.
 - **Locked out is not signed out**: the Sign-ins already open keep working,
   and may still change their Password; only the address's limit bounds
@@ -567,7 +575,8 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
 ## Users
 
 Removing a User ([Users](users.md#removing)) ends their live Sign-ins
-(`user_removed`), deletes their Password and their passkeys and voids their unused links in its
+(`user_removed`), deletes their Password, their passkeys and their Linked
+Identity and voids their unused links in its
 one transaction ([`Service.Remove`](../../internal/server/signin/signin.go)),
 and the unused links they issued for others
 ([`Service.VoidLinksIssuedBy`](../../internal/server/signin/signin.go)), as
@@ -578,8 +587,7 @@ anyone but the Owner and them
 A User who set a Password, or had a Sign-in, has used koko, so they are
 Removed, not deleted; deleting one who never did takes their Sign-in Links
 with them. `user.list` gains `password_set_at`, `passkeys`, a count, and
-`identity_linked_at`, `null` until the Identity Provider's ticket links
-identities; `koko user ls` says in its `SIGN-IN` column how each User signs
+`identity_linked_at`, `null` without a Linked Identity; `koko user ls` says in its `SIGN-IN` column how each User signs
 in, such as `password, 2 passkeys`, or `-` for no way.
 
 ## Logging
@@ -599,9 +607,11 @@ went back` (`passkey`). A passkey's refusal is a `sign-in refused` line
 with the reason `passkey_refused`, its `ceremony` (`signin` or `add`) and
 its User where one is known. A link's id
 keeps the attribute `password_link`. A wrong current
-Password is a `sign-in refused` line naming the Sign-in that sent it. No line, answer or error holds a Password, a link's secret, a cookie,
-an `/auth/` body, a flow id, or a WebAuthn challenge, client data,
-attestation, assertion or signature.
+Password is a `sign-in refused` line naming the Sign-in that sent it. The
+lines of a flow through the Identity Provider are in [the Identity
+Provider](identity.md#logging). No line, answer or error holds a Password,
+a link's secret, a cookie, an `/auth/` body, a flow id, or a WebAuthn
+challenge, client data, attestation, assertion or signature.
 
 ## Error codes
 

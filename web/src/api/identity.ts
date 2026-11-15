@@ -1,6 +1,7 @@
 // Code generated from internal/shared/api/identity.go by make generate; DO NOT EDIT.
 
 import type { Op } from "./api";
+import type { AuthEndpoint } from "./signin";
 
 /**
  * IdentityProvider is the one OpenID Connect provider the Owner configured,
@@ -166,3 +167,71 @@ export const CodeProviderUnreachable = "provider_unreachable";
 
 /** CodeProviderUnset: no Identity Provider is configured. */
 export const CodeProviderUnset = "provider_unset";
+
+/**
+ * CodeProviderRefused: the Identity Provider answered the sign-in with
+ * an error, such as the person cancelling it there.
+ */
+export const CodeProviderRefused = "provider_refused";
+
+/**
+ * CodeProviderFailed: the code exchange, or the ID token, failed a
+ * check.
+ */
+export const CodeProviderFailed = "provider_failed";
+
+/**
+ * CodeIdentityNotLinked: no User has this identity linked; the same
+ * whether or not anyone ever had.
+ */
+export const CodeIdentityNotLinked = "identity_not_linked";
+
+/** CodeIdentityLinked: the User has a Linked Identity already. */
+export const CodeIdentityLinked = "identity_linked";
+
+/** CodeIdentityTaken: another User has this identity linked. */
+export const CodeIdentityTaken = "identity_taken";
+
+/**
+ * CodeSignInExpired: the provider sent back a browser with no flow it
+ * began, or after the flow's 10 minutes.
+ */
+export const CodeSignInExpired = "signin_expired";
+
+/**
+ * AuthOIDCBegin begins a flow through the Identity Provider: signing in
+ * with next, linking to the request's Sign-in, or linking through the
+ * Sign-in Link whose secret is Link. It sets the flow's binding cookie and
+ * answers where to send the browser. It is refused with CodeProviderUnset
+ * while no provider is configured, with CodeProviderUnreachable when the
+ * provider's discovery does not answer, and for linking with
+ * CodeSignInRequired without a live Sign-in, or with CodeLinkUsed or
+ * CodeLinkInvalid for a link no longer valid.
+ */
+export const AuthOIDCBegin: AuthEndpoint<AuthOIDCBeginRequest, AuthOIDCBeginResponse> = {
+  path: "/auth/oidc/begin",
+};
+
+/** AuthOIDCBeginRequest begins a flow through the Identity Provider. */
+export interface AuthOIDCBeginRequest {
+  /** Purpose is OIDCPurposeSignIn or OIDCPurposeLink. */
+  purpose: string;
+  /**
+   * Next is the path of this origin a sign-in ends on, outside /signin
+   * and /link; any other is /. Only for signing in.
+   */
+  next?: string;
+  /**
+   * Link is the secret of the Sign-in Link to link through; left out, a
+   * link is to the request's Sign-in. Only for linking.
+   */
+  link?: string;
+}
+
+/**
+ * AuthOIDCBeginResponse is where to send the browser: the provider's
+ * authorization URL for the flow.
+ */
+export interface AuthOIDCBeginResponse {
+  location: string;
+}
