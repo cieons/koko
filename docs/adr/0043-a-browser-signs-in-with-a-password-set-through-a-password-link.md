@@ -1,5 +1,5 @@
 ---
-status: its "never reaches a Host through the Gateway", superseded by ADR-0053
+status: its "never reaches a Host through the Gateway", superseded by ADR-0053; its password as the one way to sign in, the Password Link, and what removing a password ends, superseded by ADR-0060
 ---
 
 # A browser signs in with a password set through a Password Link
