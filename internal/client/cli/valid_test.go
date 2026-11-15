@@ -116,7 +116,7 @@ func TestAJoinCodeOfSevenDaysJoinsAfterSixAndIsRefusedAfterSeven(t *testing.T) {
 	harness.NewDevice(t).Koko("join", late, "--json").WantError(t, 1, "invalid_join_code")
 }
 
-// A Password Link of 7d sets a Password 6 days after its issue and is
+// A Sign-in Link of 7d sets a Password 6 days after its issue and is
 // refused once its 7 days are up, whether password link or user invite
 // --web issued it.
 func TestAPasswordLinkOfSevenDaysWorksAfterSixAndIsRefusedAfterSeven(t *testing.T) {
@@ -137,7 +137,7 @@ func TestAPasswordLinkOfSevenDaysWorksAfterSixAndIsRefusedAfterSeven(t *testing.
 	}
 }
 
-// passwordLinkOf runs a command line that issues a Password Link, with
+// passwordLinkOf runs a command line that issues a Sign-in Link, with
 // --json, and returns the link.
 func passwordLinkOf(t *testing.T, h *harness.Harness, args ...string) string {
 	t.Helper()

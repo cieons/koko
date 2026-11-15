@@ -62,7 +62,7 @@ func wantRoles(t *testing.T, h *harness.Harness, want map[string]string) {
 	}
 }
 
-// wantLinkValid fails the test unless /auth/link answers the Password Link
+// wantLinkValid fails the test unless /auth/link answers the Sign-in Link
 // link as valid, or as no longer valid when valid is false.
 func wantLinkValid(t *testing.T, h *harness.Harness, link string, valid bool) {
 	t.Helper()
@@ -193,8 +193,8 @@ func TestOnlyTheOwnerPromotesAndDemotes(t *testing.T) {
 }
 
 // An Administrator does to Members what the Owner does: invites them by
-// Join Code and by Password Link, adds and revokes their devices, revokes
-// their Sign-ins, issues them a Password Link, removes their Password and
+// Join Code and by Sign-in Link, adds and revokes their devices, revokes
+// their Sign-ins, issues them a Sign-in Link, removes their Password and
 // Removes them; adds, renames and removes Spaces and changes their
 // Members; and checks for a new release, as koko server upgrade --check
 // does. The log names the Administrator's Device Session as who did it.
@@ -286,7 +286,7 @@ func TestAnAdministratorActsOnNeitherTheOwnerNorAnotherAdministrator(t *testing.
 			{[]string{"device", "add", "--user", target}, "issues a Join Code for"},
 			{[]string{"device", "revoke", target + "/" + readClientConfig(t, devices[target]).Device}, "revokes the Device Sessions of"},
 			{[]string{"signin", "revoke", signIn}, "revokes the Sign-ins of"},
-			{[]string{"password", "link", target}, "issues a Password Link for"},
+			{[]string{"password", "link", target}, "issues a Sign-in Link for"},
 			{[]string{"password", "rm", target}, "removes the Password of"},
 		} {
 			msg := eve.Koko(append(c.args, "--json")...).WantError(t, 1, "owner_only")
@@ -371,7 +371,7 @@ func TestAnAdministratorReadsEveryRecord(t *testing.T) {
 	}
 }
 
-// Promoting a User voids the unused Join Codes and Password Links that
+// Promoting a User voids the unused Join Codes and Sign-in Links that
 // someone other than the Owner and the User issued for them, so that
 // nothing an Administrator prepared for a Member becomes an
 // Administrator's; those the Owner issued, over the socket included, and
@@ -421,7 +421,7 @@ func TestPromotionVoidsWhatAnotherIssuedForTheUser(t *testing.T) {
 // Demoting an Administrator ends at once their SSH Sessions to Hosts
 // outside the Spaces they still act in, such as the Owner's Personal
 // Space, with access withdrawn, and keeps those to a Space they are a
-// Member of. It voids the unused Join Codes and Password Links they issued
+// Member of. It voids the unused Join Codes and Sign-in Links they issued
 // for other Users, and keeps those they issued for themselves.
 func TestDemotionWithdrawsWhatTheRoleGave(t *testing.T) {
 	t.Parallel()

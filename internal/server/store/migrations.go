@@ -34,6 +34,7 @@ var steps = []string{
 	"deployment_update_check.sql",
 	"administrators.sql",
 	"workspace_tabs.sql",
+	"passkeys_identities.sql",
 }
 
 //go:embed migrations/*.sql

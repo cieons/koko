@@ -14,16 +14,32 @@ import (
 
 var signinCommands = []Command{
 	{
-		Noun:    "password",
+		Noun:    "signin",
 		Verb:    "link",
-		Summary: "Issue a Password Link for a User to set their Password in a browser, valid for 15 minutes unless --valid says otherwise",
+		Summary: "Issue a Sign-in Link for a User to add a way to sign in to the web UI, which signs their browser in, valid for 15 minutes unless --valid says otherwise",
 		Args:    []Arg{{Name: "user"}},
-		Flags:   []Flag{validFlag("the Password Link")},
+		Flags:   []Flag{validFlag("the Sign-in Link")},
 		Examples: []string{
-			"koko password link alice",
-			"koko password link alice --valid 1h",
+			"koko signin link alice",
+			"koko signin link alice --valid 1h",
 		},
 		// It prints a credential (ADR 0019).
+		Tier: Irreversible,
+		Who:  OwnerOrAdministrator,
+		Op:   api.PasswordLinkIssue,
+		Run:  action(signinLink),
+	},
+	{
+		// The name the command had before the Sign-in Link (ADR 0060),
+		// kept with its --json for the scripts that call it.
+		Noun:    "password",
+		Verb:    "link",
+		Summary: "Issue a Sign-in Link, as koko signin link does, printing it under password_link as before",
+		Args:    []Arg{{Name: "user"}},
+		Flags:   []Flag{validFlag("the Sign-in Link")},
+		Examples: []string{
+			"koko password link alice",
+		},
 		Tier: Irreversible,
 		Who:  OwnerOrAdministrator,
 		Op:   api.PasswordLinkIssue,
@@ -32,7 +48,7 @@ var signinCommands = []Command{
 	{
 		Noun:    "password",
 		Verb:    "rm",
-		Summary: "Remove a User's Password and end their Sign-ins, keeping the User and their devices",
+		Summary: "Remove a User's Password and end the Sign-ins made with it, keeping the User, their devices and their other ways to sign in",
 		Args:    []Arg{{Name: "user"}},
 		Examples: []string{
 			"koko password rm alice",
@@ -86,7 +102,7 @@ var signinMappings = []mapping{
 	{api: reflect.TypeFor[api.PasswordLinkResponse](), cli: reflect.TypeFor[passwordLinkJSON]()},
 	{api: reflect.TypeFor[api.PasswordLink](), cli: reflect.TypeFor[passwordLinkJSON](), omitted: map[string]string{
 		"id":   "the link is shown once and acts on nothing by its id",
-		"link": "shown as password_link, beside its user and expires_at",
+		"link": "shown as signin_link, or as password_link by koko password link, beside its user and expires_at",
 	}},
 	{api: reflect.TypeFor[api.PasswordRemoveResponse](), cli: reflect.TypeFor[passwordRemoval]()},
 	{api: reflect.TypeFor[api.SignIn](), cli: reflect.TypeFor[signInJSON](), omitted: map[string]string{
@@ -97,38 +113,57 @@ var signinMappings = []mapping{
 	{api: reflect.TypeFor[api.SignInRevokeResponse]()},
 }
 
-// passwordLinkJSON is a Password Link just issued, in the CLI's own --json.
+// signinLinkJSON is a Sign-in Link just issued, in the CLI's own --json.
+type signinLinkJSON struct {
+	User       string `json:"user"`
+	SigninLink string `json:"signin_link"`
+	ExpiresAt  string `json:"expires_at"`
+}
+
+func (l signinLinkJSON) Human(w io.Writer) error {
+	return writeLinkLine(w, l.User, l.ExpiresAt, l.SigninLink)
+}
+
+// passwordLinkJSON is a Sign-in Link just issued, as koko password link
+// printed a Password Link before it.
 type passwordLinkJSON struct {
 	User         string `json:"user"`
 	PasswordLink string `json:"password_link"`
 	ExpiresAt    string `json:"expires_at"`
 }
 
-func passwordLinkFromAPI(l api.PasswordLink) passwordLinkJSON {
-	return passwordLinkJSON{User: l.User, PasswordLink: l.Link, ExpiresAt: l.ExpiresAt}
-}
-
 func (l passwordLinkJSON) Human(w io.Writer) error {
 	return writeLinkLine(w, l.User, l.ExpiresAt, l.PasswordLink)
 }
 
-// writeLinkLine writes what a person needs of a Password Link: for whom and
+// writeLinkLine writes what a person needs of a Sign-in Link: for whom and
 // until when, then the link to open in their browser.
 func writeLinkLine(w io.Writer, user, expiresAt, link string) error {
-	_, err := fmt.Fprintf(w, "For %s to set a Password, open this link in their browser before %s:\n%s\n", user, expiresAt, link)
+	_, err := fmt.Fprintf(w, "For %s to sign in, open this Sign-in Link in their browser before %s:\n%s\n", user, expiresAt, link)
 	return err
 }
 
-func passwordLink(ctx context.Context, in *Input) (passwordLinkJSON, error) {
+// issueLink issues the Sign-in Link the command line asks for.
+func issueLink(ctx context.Context, in *Input) (api.PasswordLink, error) {
 	validFor, err := in.validFor()
 	if err != nil {
-		return passwordLinkJSON{}, err
+		return api.PasswordLink{}, err
 	}
 	resp, err := in.Call(ctx, api.PasswordLinkIssue, api.PasswordLinkRequest{User: in.Arg("user"), ValidFor: validFor})
 	if err != nil {
-		return passwordLinkJSON{}, err
+		return api.PasswordLink{}, err
 	}
-	return passwordLinkFromAPI(resp.PasswordLink), nil
+	return resp.PasswordLink, nil
+}
+
+func signinLink(ctx context.Context, in *Input) (signinLinkJSON, error) {
+	l, err := issueLink(ctx, in)
+	return signinLinkJSON{User: l.User, SigninLink: l.Link, ExpiresAt: l.ExpiresAt}, err
+}
+
+func passwordLink(ctx context.Context, in *Input) (passwordLinkJSON, error) {
+	l, err := issueLink(ctx, in)
+	return passwordLinkJSON{User: l.User, PasswordLink: l.Link, ExpiresAt: l.ExpiresAt}, err
 }
 
 // passwordRemoval is what password rm prints: the User whose Password it
@@ -138,7 +173,7 @@ type passwordRemoval struct {
 }
 
 func (r passwordRemoval) Human(w io.Writer) error {
-	_, err := fmt.Fprintf(w, "Removed %s's Password and ended their Sign-ins. They sign in in a browser again only with a new Password Link (koko password link %s).\n", r.User, r.User)
+	_, err := fmt.Fprintf(w, "Removed %s's Password and ended the Sign-ins made with it. A Sign-in Link (koko signin link %s) lets them set another.\n", r.User, r.User)
 	return err
 }
 
@@ -151,11 +186,13 @@ func passwordRm(ctx context.Context, in *Input) (passwordRemoval, error) {
 }
 
 // signInJSON is a Sign-in in the CLI's own --json. Every field is always
-// there: ended_at and end_reason are null while it is live.
+// there: ended_at and end_reason are null while it is live, and method is
+// null from a koko server that does not say how the browser signed in.
 type signInJSON struct {
 	ID         string  `json:"id"`
 	User       string  `json:"user"`
 	Client     string  `json:"client"`
+	Method     *string `json:"method"`
 	Address    string  `json:"address"`
 	StartedAt  string  `json:"started_at"`
 	LastUsedAt string  `json:"last_used_at"`
@@ -168,6 +205,9 @@ func signInFromAPI(s api.SignIn) signInJSON {
 	j := signInJSON{
 		ID: s.ID, User: s.User, Client: s.Client, Address: s.Address, StartedAt: s.StartedAt,
 		LastUsedAt: s.LastUsedAt, ExpiresAt: s.ExpiresAt,
+	}
+	if s.Method != "" {
+		j.Method = new(s.Method)
 	}
 	if s.EndedAt != "" {
 		j.EndedAt, j.EndReason = new(s.EndedAt), new(s.EndReason)
@@ -187,13 +227,14 @@ func (l signInList) Human(w io.Writer) error {
 	ended := slices.ContainsFunc(l, func(s signInJSON) bool { return s.EndedAt != nil })
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	// A tabwriter reports a failed write when it flushes.
-	_, _ = fmt.Fprint(tw, "USER\tCLIENT\tADDRESS\tID\tSTARTED\tLAST USED\tEXPIRES")
+	_, _ = fmt.Fprint(tw, "USER\tCLIENT\tMETHOD\tADDRESS\tID\tSTARTED\tLAST USED\tEXPIRES")
 	if ended {
 		_, _ = fmt.Fprint(tw, "\tENDED")
 	}
 	_, _ = fmt.Fprintln(tw)
 	for _, s := range l {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s", s.User, s.Client, s.Address, s.ID, s.StartedAt, s.LastUsedAt, s.ExpiresAt)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", s.User, s.Client, cmp.Or(deref(s.Method), "-"), s.Address, s.ID,
+			s.StartedAt, s.LastUsedAt, s.ExpiresAt)
 		if ended {
 			end := "-"
 			if s.EndedAt != nil {

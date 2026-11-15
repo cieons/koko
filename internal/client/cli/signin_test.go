@@ -19,36 +19,40 @@ func startWebListener(t *testing.T) *harness.Harness {
 	return h
 }
 
-// password link prints the link for the User's browser, valid for 15
+// signin link prints the Sign-in Link for the User's browser, valid for 15
 // minutes unless --valid says otherwise; for people, the line says for whom
-// and until when.
-func TestPasswordLink(t *testing.T) {
+// and until when. Its alias password link prints the same link in the shape
+// it had before, under password_link.
+func TestSignInLink(t *testing.T) {
 	t.Parallel()
 	h := startWebListener(t)
-	r := h.Koko("password", "link", "bob", "--json")
-	r.WantSuccess(t)
-	harness.Golden(t, "password-link.json", r.Stdout)
-	var out struct {
-		ExpiresAt    string `json:"expires_at"`
-		PasswordLink string `json:"password_link"`
-	}
-	if err := json.Unmarshal([]byte(r.Stdout), &out); err != nil {
-		t.Fatal(err)
-	}
-	if want := h.Now().Add(15 * time.Minute).Format(time.RFC3339); out.ExpiresAt != want || !strings.HasPrefix(out.PasswordLink, harness.WebURL+"/password#") {
-		t.Errorf("password link printed %+v, want a link under the Web URL expiring at %s", out, want)
-	}
+	for _, c := range []struct{ words, golden, field string }{
+		{"signin link", "signin-link.json", "signin_link"},
+		{"password link", "password-link.json", "password_link"},
+	} {
+		r := h.Koko(append(strings.Fields(c.words), "bob", "--json")...)
+		r.WantSuccess(t)
+		harness.Golden(t, c.golden, r.Stdout)
+		var out map[string]string
+		if err := json.Unmarshal([]byte(r.Stdout), &out); err != nil {
+			t.Fatal(err)
+		}
+		if want := h.Now().Add(15 * time.Minute).Format(time.RFC3339); len(out) != 3 || out["user"] != "bob" || out["expires_at"] != want ||
+			!strings.HasPrefix(out[c.field], harness.WebURL+"/link#") {
+			t.Errorf("%s printed %+v, want bob's link under the Web URL as %s, expiring at %s", c.words, out, c.field, want)
+		}
 
-	r = h.Koko("password", "link", "bob", "--valid", "2d")
-	r.WantSuccess(t)
-	want := "For bob to set a Password, open this link in their browser before " + h.Now().Add(48*time.Hour).Format(time.RFC3339) + ":\n" + harness.WebURL + "/password#"
-	if !strings.HasPrefix(r.Stdout, want) {
-		t.Errorf("password link printed %q, want it to start %q", r.Stdout, want)
+		r = h.Koko(append(strings.Fields(c.words), "bob", "--valid", "2d")...)
+		r.WantSuccess(t)
+		want := "For bob to sign in, open this Sign-in Link in their browser before " + h.Now().Add(48*time.Hour).Format(time.RFC3339) + ":\n" + harness.WebURL + "/link#"
+		if !strings.HasPrefix(r.Stdout, want) {
+			t.Errorf("%s printed %q, want it to start %q", c.words, r.Stdout, want)
+		}
 	}
 }
 
 // password link is refused without a Web URL, to a Member before the name
-// is read, and for a Removed User.
+// is read, and for a Removed User, as signin link is.
 func TestPasswordLinkRefusals(t *testing.T) {
 	t.Parallel()
 	h := harness.Start(t)
@@ -66,10 +70,11 @@ func TestPasswordLinkRefusals(t *testing.T) {
 	}
 	h.Koko("user", "remove", "bob").WantSuccess(t)
 	h.Koko("password", "link", "bob", "--json").WantError(t, 1, "user_removed")
+	h.Koko("signin", "link", "bob", "--json").WantError(t, 1, "user_removed")
 }
 
-// user invite --web creates the Member with a Password Link instead of a
-// Join Code.
+// user invite --web creates the Member with a Sign-in Link instead of a
+// Join Code, printed as signin_link and, as before it, password_link.
 func TestUserInviteWeb(t *testing.T) {
 	t.Parallel()
 	h := startWebListener(t)
@@ -79,7 +84,7 @@ func TestUserInviteWeb(t *testing.T) {
 
 	r = h.Koko("user", "invite", "frank", "--web")
 	r.WantSuccess(t)
-	if !strings.Contains(r.Stdout, "Invited frank (user_") || !strings.Contains(r.Stdout, "For frank to set a Password, open this link in their browser before ") {
+	if !strings.Contains(r.Stdout, "Invited frank (user_") || !strings.Contains(r.Stdout, "For frank to sign in, open this Sign-in Link in their browser before ") {
 		t.Errorf("user invite --web printed %q", r.Stdout)
 	}
 }
@@ -102,7 +107,8 @@ func TestSignInsFromTheCLI(t *testing.T) {
 	}
 	r = h.Koko("signin", "ls")
 	r.WantSuccess(t)
-	if !strings.HasPrefix(r.Stdout, "USER  CLIENT            ADDRESS     ID") || !strings.Contains(r.Stdout, "bob   Firefox on Linux  192.0.2.10  "+listed[0].ID) {
+	if !strings.HasPrefix(r.Stdout, "USER  CLIENT            METHOD    ADDRESS     ID") ||
+		!strings.Contains(r.Stdout, "bob   Firefox on Linux  password  192.0.2.10  "+listed[0].ID) {
 		t.Errorf("signin ls printed:\n%s", r.Stdout)
 	}
 	r = h.Koko("user", "ls", "--json")

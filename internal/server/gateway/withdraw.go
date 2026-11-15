@@ -274,12 +274,15 @@ func relayWithdrawal(ctx context.Context, tx store.Tx, t *tunnel, who access.Ide
 // for its pages' detach and, when it takes back the SSH Sessions it opened,
 // for their end, whose notice says why.
 var signInEnds = map[string]struct{ reason, why string }{
-	api.EndSignedOut:       {reason: "signed out"},
-	api.EndExpired:         {reason: "signin expired"},
-	api.EndRevoked:         {reason: "signin revoked", why: "this browser's Sign-in was revoked"},
-	api.EndPasswordChanged: {reason: "password changed", why: "the Password was changed"},
-	api.EndPasswordRemoved: {reason: "password removed", why: "the Password was removed"},
-	api.EndUserRemoved:     {reason: "user removed"},
+	api.EndSignedOut:        {reason: "signed out"},
+	api.EndExpired:          {reason: "signin expired"},
+	api.EndRevoked:          {reason: "signin revoked", why: "this browser's Sign-in was revoked"},
+	api.EndPasswordChanged:  {reason: "password changed", why: "the Password was changed"},
+	api.EndPasswordRemoved:  {reason: "password removed", why: "the Password was removed"},
+	api.EndPasskeyRemoved:   {reason: "passkey removed", why: "the passkey was removed"},
+	api.EndIdentityUnlinked: {reason: "identity unlinked", why: "the Linked Identity was unlinked"},
+	api.EndSignInLinkUsed:   {reason: "signin link used", why: "a Sign-in Link was used"},
+	api.EndUserRemoved:      {reason: "user removed"},
 }
 
 // takesBack tells whether a Sign-in that ended for reason takes back the

@@ -13,13 +13,16 @@ const (
 	MaxPasswordLength = 128
 )
 
-// PasswordLink is a Password Link just issued, as the API returns it once:
-// its secret is never stored and never shown again.
+// PasswordLink is a Sign-in Link just issued, as the API returns it once:
+// its secret is never stored and never shown again. It keeps the name of the
+// Password Link it was before (ADR 0060).
 type PasswordLink struct {
 	ID string `json:"id"`
-	// User is the name of the User whose Password the link sets.
+	// User is the name of the User the link signs in.
 	User string `json:"user"`
-	// Link is the link itself: the Web URL followed by /password#<secret>.
+	// Link is the link itself: the Web URL followed by /link#<secret>. A
+	// koko server before the Sign-in Link answered /password#<secret>,
+	// which the web UI still opens.
 	Link string `json:"link"`
 	// ExpiresAt is when the link stops working, as long after its issue as
 	// the request's valid_for chose, 15 minutes by default, as RFC 3339 in
@@ -35,10 +38,26 @@ const (
 	EndPasswordChanged = "password_changed"
 	EndPasswordRemoved = "password_removed"
 	EndUserRemoved     = "user_removed"
+	// EndPasskeyRemoved ends the Sign-ins made with a passkey removed.
+	EndPasskeyRemoved = "passkey_removed"
+	// EndIdentityUnlinked ends the Sign-ins made through a Linked Identity
+	// unlinked.
+	EndIdentityUnlinked = "identity_unlinked"
+	// EndSignInLinkUsed ends a User's other Sign-ins once a Sign-in Link of
+	// theirs is spent with a passkey or their Linked Identity.
+	EndSignInLinkUsed = "signin_link_used"
 )
 
-// SignIn is a Sign-in as the API returns it: one browser signed in with a
-// User's Password. Every time is RFC 3339 in UTC to the second.
+// How a Sign-in was made, as SignIn.Method names it: with the User's
+// Password, a Passkey or their Linked Identity (ADR 0060).
+const (
+	MethodPassword = "password"
+	MethodPasskey  = "passkey"
+	MethodIdentity = "identity"
+)
+
+// SignIn is a Sign-in as the API returns it: one browser signed in as a
+// User. Every time is RFC 3339 in UTC to the second.
 type SignIn struct {
 	ID string `json:"id"`
 	// User is the name of the User the browser is signed in as.
@@ -53,6 +72,10 @@ type SignIn struct {
 	// System is the system its User-Agent named at sign-in, such as
 	// "iPhone"; left out when it named none koko recognises.
 	System string `json:"system,omitempty"`
+	// Method is how the browser signed in: "password", "passkey" or
+	// "identity". Every Sign-in recorded before koko kept it was made with a
+	// Password. A koko server before then answers none.
+	Method string `json:"method"`
 	// Address is the client's address when the Sign-in was last used, as
 	// the reverse proxy passed it on.
 	Address string `json:"address"`
@@ -67,7 +90,8 @@ type SignIn struct {
 	// EndedAt is when the Sign-in ended; empty while it is live.
 	EndedAt string `json:"ended_at,omitempty"`
 	// EndReason is why it ended: "signed_out", "expired", "revoked",
-	// "password_changed", "password_removed" or "user_removed"; empty while
+	// "password_changed", "password_removed", "passkey_removed",
+	// "identity_unlinked", "signin_link_used" or "user_removed"; empty while
 	// it is live.
 	EndReason string `json:"end_reason,omitempty"`
 }
@@ -76,9 +100,11 @@ type SignIn struct {
 type CurrentSignIn struct {
 	ID string `json:"id"`
 	// Client, Browser and System name the browser, as SignIn's do.
-	Client    string `json:"client"`
-	Browser   string `json:"browser,omitempty"`
-	System    string `json:"system,omitempty"`
+	Client  string `json:"client"`
+	Browser string `json:"browser,omitempty"`
+	System  string `json:"system,omitempty"`
+	// Method is how the browser signed in, as SignIn's is.
+	Method    string `json:"method"`
 	StartedAt string `json:"started_at"`
 	ExpiresAt string `json:"expires_at"`
 }
@@ -97,7 +123,7 @@ func ClientLabel(browser, system string) string {
 	return browser + " on " + system
 }
 
-// PasswordLinkRequest issues a Password Link for the User Name names.
+// PasswordLinkRequest issues a Sign-in Link for the User Name names.
 type PasswordLinkRequest struct {
 	User string `json:"user"`
 	// ValidFor is how long the link stays valid, in seconds, 60 to 604,800
@@ -105,7 +131,7 @@ type PasswordLinkRequest struct {
 	ValidFor *int `json:"valid_for,omitzero"`
 }
 
-// PasswordLinkResponse is the Password Link password.link issued.
+// PasswordLinkResponse is the Sign-in Link password.link issued.
 type PasswordLinkResponse struct {
 	PasswordLink PasswordLink `json:"password_link"`
 }
@@ -146,7 +172,7 @@ type SignInRevokeResponse struct {
 
 // The signin operations.
 var (
-	// PasswordLinkIssue issues a Password Link for a User who is not Removed,
+	// PasswordLinkIssue issues a Sign-in Link for a User who is not Removed,
 	// the Owner included, voiding their earlier unused one. Only the Owner
 	// or an Administrator issues one, and a Member is refused before the
 	// name is read; only the Owner issues one for the Owner or another
@@ -154,9 +180,9 @@ var (
 	// refused with CodeWebURLUnset while the Web URL is not set, and a
 	// ValidFor outside 60 to 604,800 seconds with CodeInvalidValue.
 	PasswordLinkIssue = Op[PasswordLinkRequest, PasswordLinkResponse]{Name: "password.link", Write: true}
-	// PasswordRemove removes a User's Password, ends their Sign-ins and
-	// voids their unused Password Link, keeping the User and their
-	// devices. A User without a Password is refused with CodeNoPassword.
+	// PasswordRemove removes a User's Password, ends the Sign-ins made
+	// with it and voids their unused Sign-in Link, keeping the User, their
+	// devices and their other ways to sign in. A User without a Password is refused with CodeNoPassword.
 	// Only the Owner or an Administrator removes one, and only the Owner
 	// removes the Owner's or another Administrator's (CodeOwnerOnly).
 	PasswordRemove = Op[PasswordRemoveRequest, PasswordRemoveResponse]{Name: "password.remove", Write: true}
@@ -180,7 +206,7 @@ var signinOperations = []Operation{
 
 // The signin area's codes.
 var (
-	// CodeWebURLUnset: a Password Link would name no address, since the
+	// CodeWebURLUnset: a Sign-in Link would name no address, since the
 	// Owner has not set the Web URL (koko server set web_url=).
 	CodeWebURLUnset = Code{"web_url_unset", http.StatusConflict}
 	// CodeInvalidPassword: a new Password breaks the rule: 15 to 128
@@ -192,9 +218,9 @@ var (
 	// CodeTooManyAttempts: too many failed attempts came from this address,
 	// or for this User name; the Retry-After header says when to try again.
 	CodeTooManyAttempts = Code{"too_many_attempts", http.StatusTooManyRequests}
-	// CodeLinkUsed: the Password Link was used already.
+	// CodeLinkUsed: the Sign-in Link was used already.
 	CodeLinkUsed = Code{"link_used", http.StatusGone}
-	// CodeLinkInvalid: the Password Link expired, was voided by a newer
+	// CodeLinkInvalid: the Sign-in Link expired, was voided by a newer
 	// one, is for a Removed User, or was never issued.
 	CodeLinkInvalid = Code{"link_invalid", http.StatusNotFound}
 	// CodeUnknownSignIn: no Sign-in the caller may see has the id given.
@@ -222,10 +248,10 @@ const (
 	// Sign-in cookie, and answers an AuthSignInResponse.
 	AuthSignInPath = "/auth/signin"
 	// AuthLinkPath answers, with an AuthLinkResponse, whom the unspent
-	// Password Link of an AuthLinkRequest is for, spending nothing.
+	// Sign-in Link of an AuthLinkRequest is for, spending nothing.
 	AuthLinkPath = "/auth/link"
 	// AuthPasswordPath sets a Password with an AuthPasswordRequest, through
-	// a Password Link or by the current Password, and answers an
+	// a Sign-in Link or by the current Password, and answers an
 	// AuthSignInResponse.
 	AuthPasswordPath = "/auth/password"
 	// AuthSignOutPath ends the request's Sign-in and clears its cookie,
@@ -268,15 +294,17 @@ var (
 	// CodeWrongPassword, and an address or name past its limit with
 	// CodeTooManyAttempts.
 	AuthSignIn = AuthEndpoint[AuthSignInRequest, AuthSignInResponse]{Path: AuthSignInPath}
-	// AuthLink answers whom an unspent Password Link is for, spending
+	// AuthLink answers whom an unspent Sign-in Link is for, spending
 	// nothing. A link used already is refused with CodeLinkUsed, and one
 	// that expired, was voided or was never issued with CodeLinkInvalid.
 	AuthLink = AuthEndpoint[AuthLinkRequest, AuthLinkResponse]{Path: AuthLinkPath}
-	// AuthPassword sets the User's Password: through a Password Link,
-	// spending it and signing this browser in, or by the current Password,
-	// keeping this Sign-in and ending the User's others. A Password that
-	// breaks the rule is refused with CodeInvalidPassword, and a wrong
-	// current one with CodeWrongPassword.
+	// AuthPassword sets the User's Password: through a Sign-in Link,
+	// spending it and signing this browser in; by the current Password,
+	// keeping this Sign-in and ending the User's others; or, for a User
+	// without one, from a live Sign-in alone, ending nothing. A Password
+	// that breaks the rule is refused with CodeInvalidPassword, and a wrong
+	// or missing current one, for a User who has one, with
+	// CodeWrongPassword.
 	AuthPassword = AuthEndpoint[AuthPasswordRequest, AuthSignInResponse]{Path: AuthPasswordPath}
 	// AuthSignOut ends this browser's Sign-in and clears its cookie.
 	AuthSignOut = AuthEndpoint[AuthSignOutRequest, AuthSignOutResponse]{Path: AuthSignOutPath}
@@ -298,23 +326,33 @@ type AuthSignInResponse struct {
 	User User `json:"user"`
 }
 
-// AuthLinkRequest names a Password Link by its secret, the part of the
+// AuthLinkRequest names a Sign-in Link by its secret, the part of the
 // link after #.
 type AuthLinkRequest struct {
 	Link string `json:"link"`
 }
 
-// AuthLinkResponse is whom an unspent Password Link is for.
+// AuthLinkResponse is whom an unspent Sign-in Link is for, and the ways
+// to sign in they hold already, so that the page can say what a choice
+// replaces.
 type AuthLinkResponse struct {
 	// User is the name the User signs in with.
 	User      string `json:"user"`
 	ExpiresAt string `json:"expires_at"`
+	// PasswordSet says the User has a Password, which one set through the
+	// link replaces.
+	PasswordSet bool `json:"password_set"`
+	// Passkeys is how many Passkeys the User has.
+	Passkeys int `json:"passkeys"`
+	// IdentityLinked says the User has a Linked Identity.
+	IdentityLinked bool `json:"identity_linked"`
 }
 
-// AuthPasswordRequest sets the User's Password: through a Password Link,
+// AuthPasswordRequest sets the User's Password: through a Sign-in Link,
 // given Link, which signs this browser in; or, given Current with the
 // Sign-in cookie, by the current Password, which keeps this Sign-in and
-// ends the User's others.
+// ends the User's others; or, given neither with the cookie, a first
+// Password for a User who has none, which ends nothing.
 type AuthPasswordRequest struct {
 	Link     string `json:"link,omitzero"`
 	Current  string `json:"current,omitzero"`

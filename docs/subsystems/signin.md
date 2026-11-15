@@ -1,10 +1,11 @@
-# Passwords, Password Links and Sign-ins
+# Passwords, Sign-in Links and Sign-ins
 
 How a browser signs in to the web UI on the web listener, at the Web URL
-([ADR 0043](../adr/0043-a-browser-signs-in-with-a-password-set-through-a-password-link.md)):
-each User's one Password, the Password Links the Owner or an
-Administrator issues to set it,
-the Sign-ins, the web front's `/auth/` endpoints, the rate limits, and what
+([ADR 0043](../adr/0043-a-browser-signs-in-with-a-password-set-through-a-password-link.md),
+[ADR 0060](../adr/0060-a-browser-signs-in-with-a-passkey-through-the-owners-identity-provider-or-with-a-password.md)):
+each User's one Password, the Sign-in Links the Owner or an
+Administrator issues for a User to add a way to sign in,
+the Sign-ins and how each was made, the web front's `/auth/` endpoints, the rate limits, and what
 a Sign-in may do. The source is
 [`internal/server/signin`](../../internal/server/signin/signin.go), with the
 `/auth/` endpoints and the cookie in
@@ -15,15 +16,20 @@ The web listener itself, its Host and Origin checks and its headers are in
 
 ## The record
 
-Two migration steps, [`signins.sql`](../../internal/server/store/migrations/signins.sql)
-and [`signins_browser_system.sql`](../../internal/server/store/migrations/signins_browser_system.sql),
-which keeps a Sign-in's browser and system apart in place of its label:
+Three migration steps, [`signins.sql`](../../internal/server/store/migrations/signins.sql),
+[`signins_browser_system.sql`](../../internal/server/store/migrations/signins_browser_system.sql),
+which keeps a Sign-in's browser and system apart in place of its label,
+and [`passkeys_identities.sql`](../../internal/server/store/migrations/passkeys_identities.sql),
+which adds a Sign-in's method and the tables of passkeys, Linked
+Identities and the Identity Provider (spec #228; the passkey and Identity
+Provider tickets fill them):
 
 | Table | What it holds |
 | --- | --- |
 | `passwords` | A User's one Password, or no row: its id (`password_…`), the User, its Argon2id hash as a PHC string sealed under the Root Key for the row's id ([the Seal](seal.md)), when it was set and how (`link` or `change`). Setting a Password writes a new row. |
-| `password_links` | Each Password Link: its id (`passwordlink_…`), the User, the SHA-256 of its secret, what issued it (a Device Session's or a Sign-in's id, or NULL for the Unix socket), when it was issued, expires, was used and was voided. Spent links are kept. |
-| `signins` | Each Sign-in: its id (`signin_…`), the User, the SHA-256 of its cookie's token, the browser and the system its User-Agent named (`browser` and `system`, `''` for none), the client's address at sign-in and when last used, its start, its Last used time, its expiry 30 days on, and once it ends, when, why and by whom. Ended Sign-ins are kept, as Revoked Device Sessions are. |
+| `password_links` | Each Sign-in Link, under the name the Password Link had before it: its id (`passwordlink_…`), the User, the SHA-256 of its secret, what issued it (a Device Session's or a Sign-in's id, or NULL for the Unix socket), when it was issued, expires, was used and was voided. Spent links are kept. |
+| `passkeys`, `identities`, `identity_provider` | Each Passkey, each Linked Identity and the one Identity Provider, as spec #228 gives them; empty until the tickets that make them. |
+| `signins` | Each Sign-in: its id (`signin_…`), the User, the SHA-256 of its cookie's token, how it was made (`method`: `password`, `passkey` or `identity`, `password` for every Sign-in recorded before the step) and the passkey or Linked Identity it was made with (`credential`, NULL for a Password), the browser and the system its User-Agent named (`browser` and `system`, `''` for none), the client's address at sign-in and when last used, its start, its Last used time, its expiry 30 days on, and once it ends, when, why and by whom. Ended Sign-ins are kept, as Revoked Device Sessions are. |
 
 ## Passwords
 
@@ -43,28 +49,43 @@ which keeps a Sign-in's browser and system apart in place of its label:
   its timing tells nothing.
 - **Setting a Password**, through a link or by the current one, ends every
   other Sign-in of the User (`password_changed`), voids their unused
-  Password Links, and starts their name's count of failed sign-ins again.
+  Sign-in Links, and starts their name's count of failed sign-ins again.
+- **A first Password from a live Sign-in.** A User without a Password, signed
+  in another way, sets one with `/auth/password` and the cookie, giving no
+  current one. It ends no Sign-in and voids no link: the Sign-in it comes
+  from is of a way they hold already. A User who has a Password gives the
+  current one, as before; without it the change is refused
+  `wrong_password`, counted as a wrong current Password.
 - **`password.remove`** (`koko password rm <user>`, the Owner or an
-  Administrator, irreversible tier) deletes the Password, ends the User's
-  Sign-ins (`password_removed`) and voids their unused link, keeping the
-  User and their devices. A Member is refused with `owner_only` before the
+  Administrator, irreversible tier) deletes the Password, ends the Sign-ins
+  made with it (`password_removed`) and voids the User's unused link,
+  keeping the User, their devices and the Sign-ins made another way. A Member is refused with `owner_only` before the
   name is read, and an Administrator naming the Owner or another
   Administrator with `owner_only` once it is
   ([`Identity.MayActOn`](../../internal/server/access/access.go)). A User
   without one is refused with `no_password` (409), changing nothing.
 
-## Password Links
+## Sign-in Links
 
-- **What one is**: the Web URL followed by `/password#<secret>`, the secret
+The Password Link, renamed (ADR 0060): one link that lets its User add a
+way to sign in, and signs that browser in. A Password is the only way it
+offers until the passkey and Identity Provider tickets of spec #228. Every
+wire name stays: `password.link`, `password_link`, `password_links` and the
+`passwordlink_…` ids.
+
+- **What one is**: the Web URL followed by `/link#<secret>`, the secret
   128 random bits as 26 base32 characters (`crypto/rand.Text`), kept only as
   its SHA-256. It sits in the fragment, which no browser sends, so it reaches
-  no proxy log and no `Referer`.
+  no proxy log and no `Referer`. A link a koko server issued before, the Web
+  URL followed by `/password#<secret>`, keeps working until it expires: the
+  web UI opens the same page at `/password`.
 - **Issuing** ([`Service.IssueLink`](../../internal/server/signin/signin.go)),
   by the Owner or an Administrator, for any User not Removed, the Owner
   included:
   `user.invite` with `web: true` (`koko user invite <name> --web`) creates
   the User with a link instead of a Join Code; `password.link` (`koko
-  password link <user>`) issues one for an existing User. A Member is
+  signin link <user>`, and `koko password link <user>` as before) issues one
+  for an existing User. A Member is
   refused with `owner_only` before the name is read; an Administrator
   issues one for a Member or for themselves, and is refused with
   `owner_only` for the Owner or another Administrator. Both take `valid_for`
@@ -76,9 +97,13 @@ which keeps a Sign-in's browser and system apart in place of its label:
   promoting a User voids their unused links issued by anyone but the Owner
   and the User, and demoting an Administrator voids the unused links they
   issued for other Users.
-- **Spending one**: `POST /auth/link` answers whom an unspent link is for,
-  spending nothing; `POST /auth/password` with the link spends it, sets the
-  Password and signs this browser in. A link used already is refused with
+- **Spending one**: `POST /auth/link` answers whom an unspent link is for and
+  the ways to sign in they hold already, spending nothing; `POST
+  /auth/password` with the link spends it, sets the Password and signs this
+  browser in. Spending happens at the end of the step chosen, never at its
+  start, and ends the User's other Sign-ins: `password_changed` for a
+  Password, as setting one always has, and `signin_link_used` for the steps
+  the later tickets add. A link used already is refused with
   `link_used` (410); an expired, voided, unknown or Removed User's one with
   `link_invalid` (404). Each refusal counts as a failed attempt for the
   client's address.
@@ -118,8 +143,18 @@ which keeps a Sign-in's browser and system apart in place of its label:
   requests, and records an expired one the same way (`RecordExpiry`); the
   SSH Sessions it opened go on
   ([the Gateway](gateway.md#what-only-detaches)).
+- **The method**: how the browser signed in, `password`, `passkey` or
+  `identity`, recorded when the Sign-in starts ([`start`](../../internal/server/signin/auth.go))
+  with the passkey or Linked Identity it was made with. A Sign-in made by
+  spending a link has its step's method. Every Sign-in a Password makes
+  records `password`.
 - **Ending**: by its browser signing out, by being revoked, by the User's
-  Password being set or removed, and by the User being Removed. Ending is
+  Password being set, by the Password it was made with being removed, and
+  by the User being Removed. Spec #228 adds the reasons `passkey_removed`
+  (a passkey removed ends the Sign-ins made with it), `identity_unlinked`
+  (an identity unlinked ends those made through it) and `signin_link_used`
+  (a Sign-in Link spent with a passkey or an identity ends the User's
+  others), which the access-change signal and the Gateway carry already. Ending is
   immediate: every call reads the Sign-in in its own transaction. Once the
   call that ends it commits, an `/auth/` endpoint's included, the
   access-change signal names it with its end reason (`access.Change.SignIns`,
@@ -132,10 +167,11 @@ which keeps a Sign-in's browser and system apart in place of its label:
   answers the caller's own Sign-ins, everyone's for the Owner or an
   Administrator, without the ended ones unless `all`; a Member naming
   another User gets none. Its
-  `--json` is a bare array of `{"id", "user", "client", "address",
+  `--json` is a bare array of `{"id", "user", "client", "method", "address",
   "started_at", "last_used_at", "expires_at", "ended_at", "end_reason"}`,
-  the last two `null` while it is live; `address` is the client's when the
-  Sign-in was last used.
+  the last two `null` while it is live, and `method` `null` from a koko
+  server before it; `address` is the client's when the Sign-in was last
+  used. Its text has a `METHOD` column, `-` for none.
 - **`signin.revoke`** (`koko signin revoke <id>`, irreversible tier) ends a
   live Sign-in, anyone's own, anyone's for the Owner and any Member's for
   an Administrator, and answers it as it left it; an ended one is answered
@@ -158,8 +194,8 @@ and a refusal is the API's error object. Their types are in
 | Endpoint | Takes | Does |
 | --- | --- | --- |
 | `POST /auth/signin` | `{"name", "password"}` | Signs in: sets the cookie and answers `{"user"}`. A wrong name or Password is `wrong_password` (401), the same bytes whatever the name. |
-| `POST /auth/link` | `{"link"}`, the secret after `#` | Answers `{"user", "expires_at"}`, spending nothing. |
-| `POST /auth/password` | `{"link", "password"}`, or `{"current", "password"}` with the cookie | Sets the Password through a link, signing this browser in, or changes it, keeping this Sign-in; answers `{"user"}`. A wrong `current` is `wrong_password`. |
+| `POST /auth/link` | `{"link"}`, the secret after `#` | Answers `{"user", "expires_at", "password_set", "passkeys", "identity_linked"}`, spending nothing: whether the User has a Password, how many passkeys and whether a Linked Identity, so the page can say what a choice replaces. |
+| `POST /auth/password` | `{"link", "password"}`, `{"current", "password"}` with the cookie, or `{"password"}` alone with the cookie | Sets the Password through a link, signing this browser in; changes it, keeping this Sign-in; or sets a first one for a User who has none, ending nothing; answers `{"user"}`. A wrong `current`, or none for a User with a Password, is `wrong_password`. |
 | `POST /auth/signout` | `{}` with the cookie | Ends this Sign-in (`signed_out`) and clears the cookie; without a live one it only clears it. |
 
 ## Rate limits
@@ -180,7 +216,7 @@ forgotten at restart. The client's address is the web listener's
   hashing. A wrong current Password counts for the User's name too, but a
   lockout does not stop a change of Password. A
   successful sign-in and setting the Password start the count again; a
-  Password Link, or the 15 minutes, ends a lockout.
+  Sign-in Link, or the 15 minutes, ends a lockout.
 - **Locked out is not signed out**: the Sign-ins already open keep working,
   and may still change their Password; only the address's limit bounds
   that.
@@ -223,7 +259,7 @@ opened ([the Gateway](gateway.md#what-only-detaches)). The terminal is the web f
 `/auth/` is, so no operation is added and the access matrix gains no row.
 
 `user.current` answers the Sign-in as `signin`, `{"id", "client",
-"browser", "system", "started_at", "expires_at"}`, `browser` and `system`
+"browser", "system", "method", "started_at", "expires_at"}`, `browser` and `system`
 left out for none, in place of `device_session`. Log lines that
 name who acted (`issued_by`, `revoked_by`, `removed_by`, `ended_by`,
 `enrolled_by`) give a Sign-in's id ([`Identity.By`](../../internal/server/access/access.go)).
@@ -305,18 +341,21 @@ anyone but the Owner and them
 ([`Service.VoidLinksOthersIssuedFor`](../../internal/server/signin/signin.go),
 [Users](users.md#administrators)).
 A User who set a Password, or had a Sign-in, has used koko, so they are
-Removed, not deleted; deleting one who never did takes their Password Links
+Removed, not deleted; deleting one who never did takes their Sign-in Links
 with them. `user.list` gains `password_set_at`.
 
 ## Logging
 
 At info level, once its transaction commits, with the User, the Sign-in's or
 link's id and the client's address where there is one: `signed in` (with
-`client`), `sign-in refused` (with `reason`, and `user` only when a User
-holds the name), `signed out`, `sign-in revoked` (`revoked_by`), `sign-in
-ended` (`reason`, `ended_by`), `password link issued` (`expires_at`,
-`issued_by`), `password link refused` (`reason`), `password set` (`how`:
-`link` or `change`) and `password removed` (`removed_by`). A wrong current
+`method`, the passkey's or identity's id under its method's name for
+those, and `client`), `sign-in refused` (with `reason`, and `user` only
+when a User holds the name), `signed out`, `sign-in revoked`
+(`revoked_by`), `sign-in ended` (`reason`, `ended_by`), `sign-in link
+issued` (`expires_at`, `issued_by`), `sign-in link refused` (`reason`),
+`password set` (`how`: `link`, `change`, or `signin` for a first Password
+from a live Sign-in) and `password removed` (`removed_by`). A link's id
+keeps the attribute `password_link`. A wrong current
 Password is a `sign-in refused` line naming the Sign-in that sent it. No line holds a Password, a link's secret, a cookie
 or an `/auth/` body.
 
@@ -324,12 +363,12 @@ or an `/auth/` body.
 
 | Code | Status | When |
 | --- | --- | --- |
-| `web_url_unset` | 409 | A Password Link was asked for while the Web URL is not set. |
+| `web_url_unset` | 409 | A Sign-in Link was asked for while the Web URL is not set. |
 | `invalid_password` | 400 | A new Password breaks the rule. |
 | `wrong_password` | 401 | The name or the Password given is wrong. |
 | `too_many_attempts` | 429 | The address or the name is past its limit; `Retry-After` says when to try again. |
-| `link_used` | 410 | The Password Link was used already. |
-| `link_invalid` | 404 | The Password Link expired, was voided, is a Removed User's or was never issued. |
+| `link_used` | 410 | The Sign-in Link was used already. |
+| `link_invalid` | 404 | The Sign-in Link expired, was voided, is a Removed User's or was never issued. |
 | `unknown_signin` | 404 | No Sign-in the caller may see has the id. |
 | `no_password` | 409 | The User has no Password to remove. |
 | `device_only` | 403 | `web.start` from a Sign-in. |
@@ -339,19 +378,25 @@ or an `/auth/` body.
 - [`internal/server/web/signin_test.go`](../../internal/server/web/signin_test.go),
   S1 through the web listener with the harness's `Browser`
   ([`browser.go`](../../internal/harness/browser.go)) and `h.SignIn`: a
-  Password Link setting the Password and the cookie's attributes, and the
+  Sign-in Link setting the Password and the cookie's attributes, and the
   Sign-in's browser and system in `user.current` and `signin.list`; wrong
   names and Passwords answered the same bytes; the address limit with
   `Retry-After`, of each kind of failure, and attempts sent at once; the
   name limit, its lockout,
   an open Sign-in still working, a name no User holds, and the count
   started again by a sign-in and by a link; the 7 and 30 days and Last used
-  moving once a minute; every way a Sign-in ends; Password Links refused,
+  moving once a minute; every way a Sign-in ends; Sign-in Links refused,
   voided, spent and expired; the Password rule; what a Sign-in may do; an
   Administrator's Sign-in listing every Sign-in, revoking a Member's,
   removing their Password and issuing them a link, and refused each on the
   Owner and another Administrator; the
   log lines and no secret in them; removing a User invited for the web.
+- [`internal/server/web/signin_link_test.go`](../../internal/server/web/signin_link_test.go):
+  a Sign-in Link of the `/link#` form, the web UI served at `/link` and
+  `/password`, `/auth/link`'s fields, and the method of the Sign-ins it
+  makes; `password.remove` ending only the Password's Sign-ins beside one
+  recorded with a passkey, a first Password set from that Sign-in, ending
+  nothing, and a User with a Password still asked for the current one.
 - [`internal/server/signin/hash_test.go`](../../internal/server/signin/hash_test.go):
   the hash sealed, absent in plain from the data directory, of the stated
   parameters, and an older one rehashed at sign-in;
@@ -360,16 +405,24 @@ or an `/auth/` body.
   `User-Agent` and their English label, the limits' bound.
 - [`signins_browser_system_test.go`](../../internal/server/store/signins_browser_system_test.go):
   a Sign-in recorded before the browser and the system were kept apart
-  keeps what its label said.
+  keeps what its label said;
+  [`passkeys_identities_test.go`](../../internal/server/store/passkeys_identities_test.go):
+  every Sign-in recorded before reads `password`, nothing else changes, and
+  the koko before the step refuses the database, naming its snapshot.
 - The access matrix's two Sign-in callers, and
   `TestAnEndedSignInIsRefusedByEveryOperation` in
   [`revoked_test.go`](../../internal/server/revoked_test.go)
   ([the access matrix](access.md#the-access-matrix)).
 - [`internal/client/cli/signin_test.go`](../../internal/client/cli/signin_test.go)
   and [`valid_test.go`](../../internal/client/cli/valid_test.go): `koko
-  password link`, `password rm`, `signin ls`, `signin revoke` and `user
+  signin link` and its alias `password link`, each in its own shape,
+  `password rm`, `signin ls` with its method, `signin revoke` and `user
   invite --web` with their goldens, a Member's own Sign-ins, `--valid` on
-  both and a link of 7 days.
+  both and a link of 7 days;
+  [`signin_skew_test.go`](../../internal/client/cli/signin_skew_test.go):
+  `signin link` against a koko server before the Sign-in Link printing its
+  `/password#` link and `signin ls` no method, and an older CLI's
+  `password link` against this one.
 - [`signin.test.tsx`](../../web/src/pages/signin/signin.test.tsx), Vitest
   against the [fake API](web-ui.md#testing-pages)'s `/auth/` endpoints, axe
   on each state: Sign in outside the frame with its `autocomplete`, its

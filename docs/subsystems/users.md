@@ -59,7 +59,7 @@ object.
   nothing and logs nothing, and answers the User as they are. An invited
   User who has not joined can be promoted.
 - **Promoting**, in one transaction, adds the row and voids the User's
-  unused Join Codes and Password Links issued by anyone but the Owner and
+  unused Join Codes and Sign-in Links issued by anyone but the Owner and
   the User themselves: those an Administrator issued, so a code an
   Administrator prepared for a Member never becomes an Administrator's. A
   code issued over the Unix socket, or by the Owner's or the User's own
@@ -69,7 +69,7 @@ object.
   read `koko device ls --user <user>`, each device with who added it, and
   `koko signin ls --user <user>` before promoting.
 - **Demoting**, in one transaction, deletes the row and voids the unused
-  Join Codes and Password Links the Administrator issued for other Users,
+  Join Codes and Sign-in Links the Administrator issued for other Users,
   from any of their Device Sessions or Sign-ins; those they issued for
   themselves stay. Once it commits, the access-change signal names the
   User in `Narrowed`, so their SSH Sessions and web terminals to Hosts
@@ -99,7 +99,7 @@ The Owner Removes an Administrator directly, with no demotion first.
 - **A Removed User** is refused with `user_removed`: there is nothing left to
   remove.
 - **Deleting** a User who never used koko removes their row, their Join
-  Codes and Password Links (all unused) and their Personal Space, and their memberships go with the
+  Codes and Sign-in Links (all unused) and their Personal Space, and their memberships go with the
   row (`ON DELETE CASCADE`); the name is free again. The Personal Space must
   hold nothing: while it holds a Host, a Retired Host or a Secret, the call is
   refused with `space_not_empty`, naming what is left
@@ -110,7 +110,7 @@ The Owner Removes an Administrator directly, with no demotion first.
   2. voids their valid Join Codes, and those their Device Sessions and
      Sign-ins issued;
   3. ends their live Sign-ins (`user_removed`), deletes their Password and
-     voids their unused Password Links and those they issued for others
+     voids their unused Sign-in Links and those they issued for others
      ([Sign-ins](signin.md#users));
   4. deletes an Administrator's row, so a Removed User is a `member`;
   5. takes them out of every Space, and turns their Personal Space into an

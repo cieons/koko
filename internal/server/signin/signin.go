@@ -1,11 +1,13 @@
 // Package signin is the signin area of the koko server: how a browser signs
-// in to the web UI on the web listener (ADR 0043). It holds each User's one
-// Password, its Argon2id hash sealed under the Root Key; the Password Links
-// the Owner issues for a User to set it; and the Sign-ins, one per browser
-// signed in. It serves password.link, password.remove, signin.list and
-// signin.revoke, and the work of the web front's /auth/ endpoints (auth.go),
-// with their rate limits; and it takes the user area's part in an Invite
-// for the web and in removing a User.
+// in to the web UI on the web listener (ADR 0043, ADR 0060). It holds each
+// User's one Password, its Argon2id hash sealed under the Root Key; the
+// Sign-in Links the Owner or an Administrator issues for a User to add a
+// way to sign in; and the Sign-ins, one per browser signed in, each with
+// how it was made. It is the one place that starts and ends a Sign-in. It
+// serves password.link, password.remove, signin.list and signin.revoke, and
+// the work of the web front's /auth/ endpoints (auth.go), with their rate
+// limits; and it takes the user area's part in an Invite for the web and in
+// removing a User.
 package signin
 
 import (
@@ -38,11 +40,18 @@ const (
 )
 
 // How a Password was last set, as passwords.set_how and the "password set"
-// log line name it.
+// log line name it: through a Sign-in Link, by the current one, or as a
+// first Password from a live Sign-in.
 const (
 	setByLink   = "link"
 	setByChange = "change"
+	setBySignIn = "signin"
 )
+
+// linkPath is where a Sign-in Link opens the web UI, before the # and its
+// secret. Links a koko server issued before the Sign-in Link open
+// /password, which the web UI keeps.
+const linkPath = "/link"
 
 // Service is the signin area: its operations, the /auth/ endpoints' work,
 // and its part in the user area's operations.
@@ -80,12 +89,12 @@ func (s *Service) Register(a *op.API, changes *access.Signal) {
 	a.Handle(api.SignInRevoke, s.revoke)
 }
 
-// link is password.link: a Password Link for a User who is not Removed.
+// link is password.link: a Sign-in Link for a User who is not Removed.
 // Only the Owner or an Administrator issues one, and a Member is refused
 // before the name is read; only the Owner issues one for the Owner or an
 // Administrator other than the caller.
 func (s *Service) link(ctx context.Context, tx store.Tx, caller op.Caller, req api.PasswordLinkRequest) (api.PasswordLinkResponse, error) {
-	who, err := access.Administers(ctx, tx, caller, "issues Password Links")
+	who, err := access.Administers(ctx, tx, caller, "issues Sign-in Links")
 	if err != nil {
 		return api.PasswordLinkResponse{}, err
 	}
@@ -93,7 +102,7 @@ func (s *Service) link(ctx context.Context, tx store.Tx, caller op.Caller, req a
 	if err != nil {
 		return api.PasswordLinkResponse{}, err
 	}
-	if err := who.MayActOn(u, "issues a Password Link for"); err != nil {
+	if err := who.MayActOn(u, "issues a Sign-in Link for"); err != nil {
 		return api.PasswordLinkResponse{}, err
 	}
 	l, err := s.IssueLink(ctx, tx, who, u, req.ValidFor)
@@ -103,7 +112,7 @@ func (s *Service) link(ctx context.Context, tx store.Tx, caller op.Caller, req a
 	return api.PasswordLinkResponse{PasswordLink: l}, nil
 }
 
-// IssueLink issues, as who, a Password Link for u, valid from the call's
+// IssueLink issues, as who, a Sign-in Link for u, valid from the call's
 // time for as long as validFor chooses, 15 minutes by default, and voids u's
 // earlier unused one, so only the newest works. It is refused with
 // api.CodeWebURLUnset while the Web URL is not set, since the link would
@@ -119,7 +128,7 @@ func (s *Service) IssueLink(ctx context.Context, tx store.Tx, who access.Identit
 		return api.PasswordLink{}, err
 	}
 	if webURL == "" {
-		return api.PasswordLink{}, api.CodeWebURLUnset.Errorf("a Password Link names the Web URL, which is not set: set it with koko server set web_url=https://… on the koko server's machine")
+		return api.PasswordLink{}, api.CodeWebURLUnset.Errorf("a Sign-in Link names the Web URL, which is not set: set it with koko server set web_url=https://… on the koko server's machine")
 	}
 	now := op.Now(ctx)
 	if _, err := voidLinks(ctx, tx, u.ID, now); err != nil {
@@ -129,22 +138,23 @@ func (s *Service) IssueLink(ctx context.Context, tx store.Tx, who access.Identit
 	l := api.PasswordLink{
 		ID:        store.NewID(linkPrefix),
 		User:      u.Name,
-		Link:      webURL + "/password#" + secret,
+		Link:      webURL + linkPath + "#" + secret,
 		ExpiresAt: now.Add(validity).Format(time.RFC3339),
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO password_links (id, user_id, secret_hash, issued_by, issued_at, expires_at)
 		VALUES (?, ?, ?, ?, ?, ?)`, l.ID, u.ID, linkHash(secret), who.Issuer(), now.Format(time.RFC3339), l.ExpiresAt)
 	if err != nil {
-		return api.PasswordLink{}, fmt.Errorf("record a Password Link for %s: %w", u.Name, err)
+		return api.PasswordLink{}, fmt.Errorf("record a Sign-in Link for %s: %w", u.Name, err)
 	}
-	afterCommit(ctx, s.log, "password link issued", "user", u.Name, "password_link", l.ID,
+	afterCommit(ctx, s.log, "sign-in link issued", "user", u.Name, "password_link", l.ID,
 		"expires_at", l.ExpiresAt, "issued_by", who.By())
 	return l, nil
 }
 
 // removePassword is password.remove: it deletes a User's Password, ends
-// their Sign-ins and voids their unused Password Link, keeping the User and
-// their devices. Only the Owner or an Administrator removes one, and a
+// the Sign-ins made with it ("password_removed") and voids their unused
+// Sign-in Link, keeping the User, their devices and the Sign-ins made
+// another way. Only the Owner or an Administrator removes one, and a
 // Member is refused before the name is read; only the Owner removes the
 // Owner's or another Administrator's.
 func (s *Service) removePassword(ctx context.Context, tx store.Tx, caller op.Caller, req api.PasswordRemoveRequest) (api.PasswordRemoveResponse, error) {
@@ -171,7 +181,7 @@ func (s *Service) removePassword(ctx context.Context, tx store.Tx, caller op.Cal
 		return api.PasswordRemoveResponse{}, api.CodeNoPassword.Errorf("%s has no Password", u.Name)
 	}
 	now := op.Now(ctx)
-	if _, err := s.endAll(ctx, tx, u, api.EndPasswordRemoved, who.By(), ""); err != nil {
+	if _, err := s.endWhere(ctx, tx, u, api.EndPasswordRemoved, who.By(), "s.method = ?2", api.MethodPassword); err != nil {
 		return api.PasswordRemoveResponse{}, err
 	}
 	if _, err := voidLinks(ctx, tx, u.ID, now); err != nil {
@@ -252,9 +262,11 @@ func (s *Service) revoke(ctx context.Context, tx store.Tx, caller op.Caller, req
 	return api.SignInRevokeResponse{SignIn: si}, nil
 }
 
-// Used tells whether u ever used koko in a browser: set a Password, which
-// always signs a browser in, or had a Sign-in, ended ones included. The
-// user area deletes only a User who never did, nor joined a device.
+// Used tells whether u ever used koko in a browser: had a Sign-in, ended
+// ones included, or set a Password. Adding any way to sign in, a Password
+// through a Sign-in Link, a Passkey or a Linked Identity, signs a browser
+// in and leaves a Sign-in. The user area deletes only a User who never did,
+// nor joined a device.
 func (s *Service) Used(ctx context.Context, tx store.Tx, u api.User) (bool, error) {
 	var used bool
 	err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM passwords WHERE user_id = ?1)
@@ -265,18 +277,18 @@ func (s *Service) Used(ctx context.Context, tx store.Tx, u api.User) (bool, erro
 	return used, nil
 }
 
-// Delete deletes the Password Links of u, a User who never used koko, as the
+// Delete deletes the Sign-in Links of u, a User who never used koko, as the
 // user area deletes them.
 func (s *Service) Delete(ctx context.Context, tx store.Tx, u api.User) error {
 	if _, err := tx.ExecContext(ctx, "DELETE FROM password_links WHERE user_id = ?", u.ID); err != nil {
-		return fmt.Errorf("delete the Password Links of %s: %w", u.Name, err)
+		return fmt.Errorf("delete the Sign-in Links of %s: %w", u.Name, err)
 	}
 	return nil
 }
 
 // Remove takes browser access from u as the user area Removes them, by
 // being the caller named by: it ends every live Sign-in of theirs
-// ("user_removed"), deletes their Password and voids their unused Password
+// ("user_removed"), deletes their Password and voids their unused Sign-in
 // Links, and says how many Sign-ins and links it ended.
 func (s *Service) Remove(ctx context.Context, tx store.Tx, u api.User, by string) (signInsEnded, linksVoided int64, err error) {
 	if signInsEnded, err = s.endAll(ctx, tx, u, api.EndUserRemoved, by, ""); err != nil {
@@ -295,8 +307,16 @@ func (s *Service) Remove(ctx context.Context, tx store.Tx, u api.User, by string
 // reason, by being the caller named by, logging each once the call
 // commits, and says how many it ended.
 func (s *Service) endAll(ctx context.Context, tx store.Tx, u api.User, reason, by, keep string) (int64, error) {
+	return s.endWhere(ctx, tx, u, reason, by, "s.id != ?2", keep)
+}
+
+// endWhere ends, at the call's time, every live Sign-in of u that the SQL
+// condition where selects, reading arg as ?2, for reason, by being the
+// caller named by, logging each once the call commits, and says how many it
+// ended.
+func (s *Service) endWhere(ctx context.Context, tx store.Tx, u api.User, reason, by, where string, arg any) (int64, error) {
 	now := op.Now(ctx)
-	live, err := access.SignIns(ctx, tx, now, "u.id = ?1 AND s.ended_at IS NULL AND s.id != ?2", u.ID, keep)
+	live, err := access.SignIns(ctx, tx, now, "u.id = ?1 AND s.ended_at IS NULL AND "+where, u.ID, arg)
 	if err != nil {
 		return 0, err
 	}
@@ -333,38 +353,38 @@ func (s *Service) end(ctx context.Context, tx store.Tx, ids []string, now time.T
 	return nil
 }
 
-// voidLinks voids, at now, every valid Password Link of the User userID,
+// voidLinks voids, at now, every valid Sign-in Link of the User userID,
 // and says how many.
 func voidLinks(ctx context.Context, tx store.Tx, userID string, now time.Time) (int64, error) {
 	return voidLinksWhere(ctx, tx, now, "user_id = ?2", userID)
 }
 
-// VoidLinksOthersIssuedFor voids u's valid Password Links issued by anyone
+// VoidLinksOthersIssuedFor voids u's valid Sign-in Links issued by anyone
 // but the Owner and u themselves, as promoting u does, and says how many.
 // The Unix socket, which acts as the Owner, issues with no issued_by.
 func (s *Service) VoidLinksOthersIssuedFor(ctx context.Context, tx store.Tx, u api.User) (int64, error) {
 	return voidLinksWhere(ctx, tx, op.Now(ctx), access.IssuedForUserByOthers, u.ID)
 }
 
-// VoidLinksIssuedBy voids the valid Password Links u issued for other
+// VoidLinksIssuedBy voids the valid Sign-in Links u issued for other
 // Users, from any of their Device Sessions or Sign-ins, as demoting or
 // Removing u does, and says how many.
 func (s *Service) VoidLinksIssuedBy(ctx context.Context, tx store.Tx, u api.User) (int64, error) {
 	return voidLinksWhere(ctx, tx, op.Now(ctx), access.IssuedByUserForOthers, u.ID)
 }
 
-// voidLinksWhere voids, at now, every valid Password Link the SQL
+// voidLinksWhere voids, at now, every valid Sign-in Link the SQL
 // condition where selects, which reads userID as ?2, and says how many.
 func voidLinksWhere(ctx context.Context, tx store.Tx, now time.Time, where, userID string) (int64, error) {
 	stamp := now.Format(time.RFC3339)
 	res, err := tx.ExecContext(ctx, `UPDATE password_links SET voided_at = ?1
 		WHERE `+where+` AND used_at IS NULL AND voided_at IS NULL AND expires_at > ?1`, stamp, userID)
 	if err != nil {
-		return 0, fmt.Errorf("void the Password Links for %s: %w", userID, err)
+		return 0, fmt.Errorf("void the Sign-in Links for %s: %w", userID, err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return 0, fmt.Errorf("void the Password Links for %s: %w", userID, err)
+		return 0, fmt.Errorf("void the Sign-in Links for %s: %w", userID, err)
 	}
 	return n, nil
 }
@@ -385,14 +405,15 @@ func checkPassword(u api.User, password string) (string, error) {
 	return p, nil
 }
 
-// Hash labels keep the secrets of a Password Link and of a Sign-in's cookie
-// apart from every other hash koko keeps.
+// Hash labels keep the secrets of a Sign-in Link and of a Sign-in's cookie
+// apart from every other hash koko keeps. A Sign-in Link keeps the label of
+// the Password Link it was before, so a link issued earlier still works.
 const (
 	linkLabel   = "koko password link\x00"
 	signInLabel = "koko sign-in\x00"
 )
 
-// linkHash is what the koko server keeps of a Password Link: the SHA-256 of
+// linkHash is what the koko server keeps of a Sign-in Link: the SHA-256 of
 // its secret. The secret's 128 random bits make a slow hash needless.
 func linkHash(secret string) []byte {
 	sum := sha256.Sum256([]byte(linkLabel + secret))

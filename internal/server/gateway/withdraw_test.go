@@ -233,7 +233,10 @@ func TestARecheckTakesBackOnlyWhatItsOpenerTookBack(t *testing.T) {
 // signing out and expiring takes back the SSH Sessions it opened, a way
 // the Gateway does not know among them: it fails closed.
 func TestEverySignInEndTakesBackButLeaving(t *testing.T) {
-	for _, reason := range []string{api.EndSignedOut, api.EndExpired, api.EndRevoked, api.EndPasswordChanged, api.EndPasswordRemoved, api.EndUserRemoved, "a way added later"} {
+	for _, reason := range []string{
+		api.EndSignedOut, api.EndExpired, api.EndRevoked, api.EndPasswordChanged, api.EndPasswordRemoved,
+		api.EndPasskeyRemoved, api.EndIdentityUnlinked, api.EndSignInLinkUsed, api.EndUserRemoved, "a way added later",
+	} {
 		leaves := reason == api.EndSignedOut || reason == api.EndExpired
 		if got := takesBack(reason); got == leaves {
 			t.Errorf("takesBack(%q) = %v, want %v", reason, got, !leaves)

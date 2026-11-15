@@ -144,7 +144,7 @@ func (s *Service) SignIn(ctx context.Context, req api.AuthSignInRequest, a Attem
 				return err
 			}
 		}
-		started, err = s.start(ctx, tx, u, a)
+		started, err = s.start(ctx, tx, u, a, api.MethodPassword, "")
 		return err
 	})
 	if err != nil {
@@ -165,9 +165,11 @@ func (s *Service) signInFailed(name string, held bool, a Attempt) error {
 	return wrongPassword()
 }
 
-// start records a new Sign-in of u from a, at the call's time, and logs it
-// once the call commits.
-func (s *Service) start(ctx context.Context, tx store.Tx, u api.User, a Attempt) (Started, error) {
+// start records a new Sign-in of u from a, at the call's time, made with
+// method (api.MethodPassword, ...) and credential, the id of the passkey or
+// Linked Identity it was made with, "" for a Password, and logs it once the
+// call commits.
+func (s *Service) start(ctx context.Context, tx store.Tx, u api.User, a Attempt, method, credential string) (Started, error) {
 	now := op.Now(ctx)
 	var b [32]byte
 	_, _ = rand.Read(b[:]) // crypto/rand.Read never fails
@@ -177,17 +179,21 @@ func (s *Service) start(ctx context.Context, tx store.Tx, u api.User, a Attempt)
 	browser, system := clientOf(a.UserAgent)
 	stamp := now.Format(time.RFC3339)
 	_, err := tx.ExecContext(ctx, `INSERT INTO signins
-		(id, user_id, token_hash, browser, system, started_address, address, started_at, last_used_at, expires_at)
-		VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?7, ?8)`,
-		id, u.ID, tokenHash(token), browser, system, a.Address, stamp, expires.Format(time.RFC3339))
+		(id, user_id, token_hash, browser, system, started_address, address, started_at, last_used_at, expires_at, method, credential)
+		VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?7, ?8, ?9, nullif(?10, ''))`,
+		id, u.ID, tokenHash(token), browser, system, a.Address, stamp, expires.Format(time.RFC3339), method, credential)
 	if err != nil {
 		return Started{}, fmt.Errorf("record a Sign-in of %s: %w", u.Name, err)
 	}
-	afterCommit(ctx, s.log, "signed in", "user", u.Name, "signin", id, "client", api.ClientLabel(browser, system), "address", a.Address)
+	attrs := []any{"user", u.Name, "signin", id, "method", method}
+	if credential != "" {
+		attrs = append(attrs, method, credential)
+	}
+	afterCommit(ctx, s.log, "signed in", append(attrs, "client", api.ClientLabel(browser, system), "address", a.Address)...)
 	return Started{ID: id, Token: token, User: u, Expires: expires}, nil
 }
 
-// link is a Password Link as its record holds it, with its User.
+// link is a Sign-in Link as its record holds it, with its User.
 type link struct {
 	id   string
 	user api.User
@@ -195,7 +201,7 @@ type link struct {
 	expiresAt string
 }
 
-// readLink returns the valid Password Link whose secret is secret, at now.
+// readLink returns the valid Sign-in Link whose secret is secret, at now.
 // One used already is refused with api.CodeLinkUsed; one that expired, was
 // voided, is a Removed User's or was never issued, with api.CodeLinkInvalid.
 func readLink(ctx context.Context, tx store.Tx, secret string, now time.Time) (link, error) {
@@ -204,23 +210,23 @@ func readLink(ctx context.Context, tx store.Tx, secret string, now time.Time) (l
 	err := tx.QueryRowContext(ctx, `SELECT l.id, u.id, u.name, `+access.Role+`, u.created_at, u.removed_at, l.expires_at, l.used_at, l.voided_at
 		FROM password_links l JOIN users u ON u.id = l.user_id WHERE l.secret_hash = ?`, linkHash(secret)).
 		Scan(&l.id, &l.user.ID, &l.user.Name, &l.user.Role, &l.user.CreatedAt, &removed, &l.expiresAt, &used, &voided)
-	invalid := api.CodeLinkInvalid.Errorf("this Password Link has expired or is no longer valid: ask the Owner for a new one")
+	invalid := api.CodeLinkInvalid.Errorf("this Sign-in Link has expired or is no longer valid: ask the Owner or an Administrator for a new one")
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return link{}, invalid
 	case err != nil:
-		return link{}, fmt.Errorf("read the Password Link: %w", err)
+		return link{}, fmt.Errorf("read the Sign-in Link: %w", err)
 	case used.Valid:
-		return l, api.CodeLinkUsed.Errorf("this Password Link was used already: ask the Owner for a new one")
+		return l, api.CodeLinkUsed.Errorf("this Sign-in Link was used already: ask the Owner or an Administrator for a new one")
 	case voided.Valid, removed.Valid, l.expiresAt <= now.Format(time.RFC3339):
 		return l, invalid
 	}
 	return l, nil
 }
 
-// Link answers whom the valid Password Link whose secret is secret is for,
-// spending nothing. A refused link counts as a failed attempt for the
-// client's address.
+// Link answers whom the valid Sign-in Link whose secret is secret is for,
+// and the ways to sign in they hold already, spending nothing. A refused
+// link counts as a failed attempt for the client's address.
 func (s *Service) Link(ctx context.Context, secret string, a Attempt) (api.AuthLinkResponse, error) {
 	now := s.now()
 	end, err := s.beginLink(a, now)
@@ -228,29 +234,41 @@ func (s *Service) Link(ctx context.Context, secret string, a Attempt) (api.AuthL
 		return api.AuthLinkResponse{}, err
 	}
 	var l link
+	var resp api.AuthLinkResponse
 	err = s.store.Read(ctx, func(tx store.Tx) (err error) {
-		l, err = readLink(ctx, tx, secret, now)
-		return err
+		if l, err = readLink(ctx, tx, secret, now); err != nil {
+			return err
+		}
+		err = tx.QueryRowContext(ctx, `SELECT
+			EXISTS (SELECT 1 FROM passwords WHERE user_id = ?1),
+			(SELECT count(*) FROM passkeys WHERE user_id = ?1),
+			EXISTS (SELECT 1 FROM identities WHERE user_id = ?1)`, l.user.ID).
+			Scan(&resp.PasswordSet, &resp.Passkeys, &resp.IdentityLinked)
+		if err != nil {
+			return fmt.Errorf("read the ways %s signs in: %w", l.user.Name, err)
+		}
+		return nil
 	})
 	end(s.linkRefused(l, err, a))
 	if err != nil {
 		return api.AuthLinkResponse{}, err
 	}
-	return api.AuthLinkResponse{User: l.user.Name, ExpiresAt: l.expiresAt}, nil
+	resp.User, resp.ExpiresAt = l.user.Name, l.expiresAt
+	return resp, nil
 }
 
-// beginLink starts, at now, an attempt from a to spend or read a Password
+// beginLink starts, at now, an attempt from a to spend or read a Sign-in
 // Link, which only its address's limit bounds, or refuses it.
 func (s *Service) beginLink(a Attempt, now time.Time) (end func(failed bool), err error) {
 	wait, end := s.limiter.begin(a.Address, "", now)
 	if wait > 0 {
-		s.log.Info("password link refused", "reason", api.CodeTooManyAttempts.Name, "address", a.Address)
+		s.log.Info("sign-in link refused", "reason", api.CodeTooManyAttempts.Name, "address", a.Address)
 		return nil, limited(wait)
 	}
 	return end, nil
 }
 
-// linkRefused tells whether err refuses the Password Link l, which counts as
+// linkRefused tells whether err refuses the Sign-in Link l, which counts as
 // a failed attempt from a, and logs it when it does.
 func (s *Service) linkRefused(l link, err error, a Attempt) bool {
 	e, coded := errors.AsType[*api.Error](err)
@@ -261,11 +279,11 @@ func (s *Service) linkRefused(l link, err error, a Attempt) bool {
 	if l.id != "" {
 		attrs = append(attrs, "user", l.user.Name, "password_link", l.id)
 	}
-	s.log.Info("password link refused", attrs...)
+	s.log.Info("sign-in link refused", attrs...)
 	return true
 }
 
-// SetByLink sets a User's Password through their Password Link, spending
+// SetByLink sets a User's Password through their Sign-in Link, spending
 // it, and signs this browser in: every other Sign-in of the User ends
 // ("password_changed"), their unused links are voided, and their name's
 // count of failed sign-ins starts again. The new Password must follow the
@@ -305,12 +323,12 @@ func (s *Service) SetByLink(ctx context.Context, secret, password string, a Atte
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, "UPDATE password_links SET used_at = ? WHERE id = ?", now.Format(time.RFC3339), l.id); err != nil {
-			return fmt.Errorf("spend the Password Link %s: %w", l.id, err)
+			return fmt.Errorf("spend the Sign-in Link %s: %w", l.id, err)
 		}
 		if _, err := voidLinks(ctx, tx, l.user.ID, now); err != nil {
 			return err
 		}
-		if started, err = s.start(ctx, tx, l.user, a); err != nil {
+		if started, err = s.start(ctx, tx, l.user, a, api.MethodPassword, ""); err != nil {
 			return err
 		}
 		if _, err := s.endAll(ctx, tx, l.user, api.EndPasswordChanged, started.ID, started.ID); err != nil {
@@ -330,10 +348,15 @@ func (s *Service) SetByLink(ctx context.Context, secret, password string, a Atte
 // Change changes the Password of the User the Sign-in whose cookie carries
 // token is of, given their current one, keeping this Sign-in and ending
 // their others ("password_changed"), and voiding their unused links. A
-// wrong current Password is refused with api.CodeWrongPassword and counts
-// as a failure for the client's address and for the User's name. Only the
-// address's limit bounds it: a lockout of the name stops new sign-ins, not
-// the Sign-ins open already.
+// wrong current Password, or none for a User who has one, is refused with
+// api.CodeWrongPassword and counts as a failure for the client's address
+// and for the User's name. Only the address's limit bounds it: a lockout
+// of the name stops new sign-ins, not the Sign-ins open already.
+//
+// For a User without a Password, given no current one, it sets their first
+// Password, ending nothing: the Sign-in it comes from is of a way to sign
+// in they hold already, and their Sign-in Link, if any, stays theirs to
+// spend.
 func (s *Service) Change(ctx context.Context, token string, req api.AuthPasswordRequest, a Attempt) (api.User, error) {
 	now := s.now()
 	var si api.SignIn
@@ -364,43 +387,56 @@ func (s *Service) Change(ctx context.Context, token string, req api.AuthPassword
 	if err != nil {
 		return api.User{}, err
 	}
-	current := norm.NFC.String(req.Current)
-	match := false
-	if has {
-		if match, _, err = s.hasher.verify(ctx, pw.phc, current); err != nil {
-			return api.User{}, err
+	first := !has && req.Current == ""
+	if !first {
+		current := norm.NFC.String(req.Current)
+		match := false
+		if has {
+			if match, _, err = s.hasher.verify(ctx, pw.phc, current); err != nil {
+				return api.User{}, err
+			}
 		}
-	}
-	if !match {
-		failed = true
-		s.limiter.countNameFailure(u.Name, now)
-		s.log.Info("sign-in refused", "reason", api.CodeWrongPassword.Name, "address", a.Address, "user", u.Name, "signin", si.ID)
-		return api.User{}, api.CodeWrongPassword.Errorf("the current Password is wrong")
+		if !match {
+			failed = true
+			s.limiter.countNameFailure(u.Name, now)
+			s.log.Info("sign-in refused", "reason", api.CodeWrongPassword.Name, "address", a.Address, "user", u.Name, "signin", si.ID)
+			return api.User{}, wrongCurrent()
+		}
 	}
 	phc, err := s.hasher.hash(ctx, p)
 	if err != nil {
 		return api.User{}, err
 	}
+	how := setByChange
+	if first {
+		how = setBySignIn
+	}
 	err = s.api.Do(ctx, func(ctx context.Context, tx store.Tx) error {
 		now := op.Now(ctx)
-		// The Sign-in may have ended, or the Password changed, while it
-		// was hashed.
+		// The Sign-in may have ended, or the Password changed or been
+		// set, while it was hashed.
 		if _, err := liveByToken(ctx, tx, token, now); err != nil {
 			return err
 		}
-		if latest, has, err := s.readPassword(ctx, tx, u.ID); err != nil || !has || latest.id != pw.id {
-			return cmp.Or[error](err, api.CodeWrongPassword.Errorf("the current Password is wrong"))
+		latest, has, err := s.readPassword(ctx, tx, u.ID)
+		switch {
+		case err != nil:
+			return err
+		case first && has, !first && (!has || latest.id != pw.id):
+			return wrongCurrent()
 		}
-		if err := s.writePassword(ctx, tx, u.ID, phc, setByChange, now); err != nil {
+		if err := s.writePassword(ctx, tx, u.ID, phc, how, now); err != nil {
 			return err
 		}
-		if _, err := voidLinks(ctx, tx, u.ID, now); err != nil {
-			return err
+		if !first {
+			if _, err := voidLinks(ctx, tx, u.ID, now); err != nil {
+				return err
+			}
+			if _, err := s.endAll(ctx, tx, u, api.EndPasswordChanged, si.ID, si.ID); err != nil {
+				return err
+			}
 		}
-		if _, err := s.endAll(ctx, tx, u, api.EndPasswordChanged, si.ID, si.ID); err != nil {
-			return err
-		}
-		afterCommit(ctx, s.log, "password set", "user", u.Name, "how", setByChange, "signin", si.ID, "address", a.Address)
+		afterCommit(ctx, s.log, "password set", "user", u.Name, "how", how, "signin", si.ID, "address", a.Address)
 		return nil
 	})
 	if err != nil {
@@ -408,6 +444,12 @@ func (s *Service) Change(ctx context.Context, token string, req api.AuthPassword
 	}
 	s.limiter.resetName(u.Name)
 	return u, nil
+}
+
+// wrongCurrent is the refusal of a change of Password whose current one is
+// wrong or missing.
+func wrongCurrent() error {
+	return api.CodeWrongPassword.Errorf("the current Password is wrong")
 }
 
 // SignOut ends the Sign-in whose cookie carries token ("signed_out"), when

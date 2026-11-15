@@ -49,7 +49,7 @@ func (h *Harness) Browser() *Browser {
 	return &Browser{t: h.t, h: h, Address: "192.0.2.10", UserAgent: "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"}
 }
 
-// SignIn issues a Password Link for the User named user over the Unix
+// SignIn issues a Sign-in Link for the User named user over the Unix
 // socket, and returns a new Browser that spent it, setting Password, so it
 // is signed in as user.
 func (h *Harness) SignIn(user string) *Browser {
@@ -57,16 +57,16 @@ func (h *Harness) SignIn(user string) *Browser {
 	b := h.Browser()
 	resp, err := h.Call(api.PasswordLinkIssue, api.PasswordLinkRequest{User: user})
 	if err != nil {
-		h.t.Fatalf("issue a Password Link for %s: %v", user, err)
+		h.t.Fatalf("issue a Sign-in Link for %s: %v", user, err)
 	}
 	status, body := b.Post(api.AuthPasswordPath, api.AuthPasswordRequest{Link: LinkSecret(resp.PasswordLink.Link), Password: Password})
 	if status != http.StatusOK || b.Cookie == "" {
-		h.t.Fatalf("set %s's Password through their Password Link: %d %s", user, status, body)
+		h.t.Fatalf("set %s's Password through their Sign-in Link: %d %s", user, status, body)
 	}
 	return b
 }
 
-// LinkSecret is the secret of a Password Link: the part after #.
+// LinkSecret is the secret of a Sign-in Link: the part after #.
 func LinkSecret(link string) string {
 	_, secret, _ := strings.Cut(link, "#")
 	return secret

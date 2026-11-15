@@ -17,7 +17,7 @@ no row, or when either depends (directly or not) on a group it may not use.
 | Group | Directory | Holds | May not depend on |
 | --- | --- | --- | --- |
 | shared | `internal/shared/` | API types and error codes (`api`), name rules (`name`), the Server Address's form (`serveraddr`), the Web URL's form (`weburl`), the wire constants, the version and operations report, the channel adapter, how a join carries its secret and what a Tunnel's two ends agree on (`wire`), the build report (`build`), the P0 timing constants and their hook (`timing`), the liveness watch of an SSH connection, which both ends of a Device Connection run (`liveness`), the SSH connection every channel koko opens goes through, whose opens fail once it has ended (`sshconn`), the resumable stream (`resumable`), the Join Code codec (`joincode`), the port-owner lookup (`portowner`), what `koko server install` and `kokod install`, and `kokod run` and the start-up, agree on: the request, the reports as the JSON `kokod` prints, the koko server's paths and platforms, and the error codes koko and kokod both report (`install`), the record's value rules: a Host's fields, a Service's ports, Attribute keys, the Preset Attributes and the four types of values, the Note (`record`), finding a koko release, downloading one of its assets and checking it against `SHA256SUMS` and its build, for `koko update`, `koko server install` and the koko server's update check (`release`), the order of koko's versions (`compat`) | server, client |
-| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), the mount table and the network-filesystem check, which the installer and start-up share (`filesystem`), one package per area (`space`, `user`, `device`, `host`, `service`, `attr`, `secret`, `web`: the web front, `signin`: Passwords, Password Links and Sign-ins), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`), the Gateway (`gateway`), the web terminal's emulator (`vt`), the check for a new koko release (`updatecheck`), the host-list signal (`hostlist`), `kokod`'s command line, with `kokod run`'s flags and the settings they make (`kokod`) | client |
+| server-only | `internal/server/` | the koko server process (`server`), store (`store`), operation framework (`op`), transport (`transport`), the access check (`access`), the Root Key and the Seal (`seal`), the koko server's own record and keys (`deployment`), the mount table and the network-filesystem check, which the installer and start-up share (`filesystem`), one package per area (`space`, `user`, `device`, `host`, `service`, `attr`, `secret`, `web`: the web front, `signin`: Passwords, Sign-in Links and Sign-ins), the filtering and sorting of lists (`query`), the embedded web UI (`webui`), the Host connector (`hostconn`), Enroll (`enroll`), the installer (`installer`), the Gateway (`gateway`), the web terminal's emulator (`vt`), the check for a new koko release (`updatecheck`), the host-list signal (`hostlist`), `kokod`'s command line, with `kokod run`'s flags and the settings they make (`kokod`) | client |
 | client-only | `internal/client/` | the command tree, parser, runner, output layer and the CLI's `--json` types (`cli`), the connection to the koko server (`serverconn`), the API client (`apiclient`), the device's files of its join, koko's ssh_config and known_hosts, and the Include line (`devicefiles`), the Device Mux and the client of its local protocol (`devicemux`), the device end of a Tunnel (`tunnel`) | server |
 
 A package that holds only tests is in no group, since only non-test
@@ -115,7 +115,7 @@ calls after the `areas` list: `device` and `user` take the Join Code issuer,
 which reads the host key with the Root Key ([Join Codes](join-codes.md#issuing));
 `user` also takes the `holdings` list, to refuse deleting a User whose
 Personal Space holds a record ([Users](users.md#removing)), and the signin
-area as its `user.Browsers`, which issues an Invite's Password Link and does
+area as its `user.Browsers`, which issues an Invite's Sign-in Link and does
 its part in removing a User, since `signin` imports `user`. The signin area
 seals Password hashes with the Root Key and runs the `/auth/` endpoints'
 writes through `op.API.Do`, so `server.Start` makes it
@@ -304,7 +304,7 @@ it is stopped as ssh stops it, its pipes closed and a SIGHUP sent.
 [`harness.Golden`](../../internal/harness/golden.go)
 compares output with `testdata/<name>` after replacing each record id with a
 numbered placeholder (`"space_<1>"`), each Join Code with `koko_<code>`,
-each Password Link's secret with `/password#<secret>`,
+each Sign-in Link's secret with `/link#<secret>` (`/password#<secret>` in the form before it),
 each SHA-256 fingerprint with `SHA256:<fingerprint>` and each time with
 `<time>`; `go test -update` rewrites the files.
 [`frozen.Check`](../../internal/harness/frozen/frozen.go) checks a golden
@@ -379,7 +379,7 @@ URL's Host and Origin, `X-Forwarded-For` from its `Address`, its
 `UserAgent`), which keeps the Sign-in cookie it is given:
 `b.Do(method, path, body)`, `b.Post(path, req)` and `b.Send(op, body)`, the
 last as `d.Send` is for a device; `h.SignIn(user)` is such a browser
-signed in as the User, through a Password Link it issues and spends,
+signed in as the User, through a Sign-in Link it issues and spends,
 setting `harness.Password`.
 [`b.TerminalPage()`](../../internal/harness/webterminal.go) is that
 browser's page of the web terminal, and `harness.KokoWebTerminalPage(t,

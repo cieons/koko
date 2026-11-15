@@ -24,7 +24,7 @@ async function atAccount(s: SignIns = signIns(), caller: User = bob, region = "B
   const api = fakeApi();
   api.on(UserCurrent, () => ({
     user: caller,
-    signin: { id: `signin_${caller.name}_1`, client: "Firefox on Linux", ...firefox, started_at: "", expires_at: "" },
+    signin: { id: `signin_${caller.name}_1`, client: "Firefox on Linux", ...firefox, method: "password", started_at: "", expires_at: "" },
   }));
   serve(api, world(), caller);
   serveSignIns(api, s, caller);

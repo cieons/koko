@@ -74,7 +74,7 @@ const Role = `CASE WHEN u.role = 'owner' THEN 'owner'
 	WHEN EXISTS (SELECT 1 FROM administrators a WHERE a.user_id = u.id) THEN 'administrator'
 	ELSE 'member' END`
 
-// Conditions on a Join Code or a Password Link, as their records hold them
+// Conditions on a Join Code or a Sign-in Link, as their records hold them
 // (user_id, the User it is for, and issued_by, the Device Session or Sign-in
 // that issued it, NULL for the Unix socket, which acts as the Owner), about
 // the User whose id the query gives as ?2. A change of that User's role or
@@ -349,7 +349,7 @@ const (
 // one way a Sign-in record is read, so who is calling and the signin
 // operations answer alike.
 func SignIns(ctx context.Context, tx store.Tx, now time.Time, where string, args ...any) ([]api.SignIn, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT s.id, u.name, s.browser, s.system, s.address, s.started_at, s.last_used_at,
+	rows, err := tx.QueryContext(ctx, `SELECT s.id, u.name, s.browser, s.system, s.method, s.address, s.started_at, s.last_used_at,
 			s.expires_at, s.ended_at, s.end_reason
 		FROM signins s JOIN users u ON u.id = s.user_id
 		WHERE `+where+` ORDER BY u.name, s.started_at, s.id`, args...)
@@ -361,7 +361,7 @@ func SignIns(ctx context.Context, tx store.Tx, now time.Time, where string, args
 	for rows.Next() {
 		var s api.SignIn
 		var ended, reason sql.NullString
-		err := rows.Scan(&s.ID, &s.User, &s.Browser, &s.System, &s.Address, &s.StartedAt, &s.LastUsedAt, &s.ExpiresAt, &ended, &reason)
+		err := rows.Scan(&s.ID, &s.User, &s.Browser, &s.System, &s.Method, &s.Address, &s.StartedAt, &s.LastUsedAt, &s.ExpiresAt, &ended, &reason)
 		if err != nil {
 			return nil, fmt.Errorf("read Sign-ins: %w", err)
 		}

@@ -22,7 +22,7 @@ var userCommands = []Command{
 			{
 				Name:    "web",
 				Bool:    true,
-				Summary: "issue a Password Link, for a person who will use the web UI in a browser, instead of a Join Code",
+				Summary: "issue a Sign-in Link, for a person who will use the web UI in a browser, instead of a Join Code",
 			},
 			validFlag("the Invite"),
 		},
@@ -165,11 +165,14 @@ func userLs(ctx context.Context, in *Input) (userList, error) {
 }
 
 // invitation is what user invite prints: the User it created and their
-// Invite, a Join Code, or with --web a Password Link and its expiry.
+// Invite, a Join Code, or with --web a Sign-in Link and its expiry. The link
+// shows as signin_link, and as password_link, its name before the Sign-in
+// Link, for the scripts that read it.
 type invitation struct {
 	User         userJSON      `json:"user"`
 	JoinCode     *joinCodeJSON `json:"join_code,omitzero"`
 	PasswordLink string        `json:"password_link,omitzero"`
+	SigninLink   string        `json:"signin_link,omitzero"`
 	ExpiresAt    string        `json:"expires_at,omitzero"`
 }
 
@@ -178,7 +181,7 @@ func (i invitation) Human(w io.Writer) error {
 		return err
 	}
 	if i.JoinCode == nil {
-		return writeLinkLine(w, i.User.Name, i.ExpiresAt, i.PasswordLink)
+		return writeLinkLine(w, i.User.Name, i.ExpiresAt, i.SigninLink)
 	}
 	return i.JoinCode.writeJoinLine(w)
 }
@@ -195,7 +198,8 @@ func userInvite(ctx context.Context, in *Input) (invitation, error) {
 	i := invitation{User: userFromAPI(resp.User)}
 	switch {
 	case resp.PasswordLink != nil:
-		i.PasswordLink, i.ExpiresAt = resp.PasswordLink.Link, resp.PasswordLink.ExpiresAt
+		i.SigninLink, i.ExpiresAt = resp.PasswordLink.Link, resp.PasswordLink.ExpiresAt
+		i.PasswordLink = i.SigninLink
 	case resp.JoinCode != nil:
 		i.JoinCode = new(joinCodeFromAPI(*resp.JoinCode))
 	}

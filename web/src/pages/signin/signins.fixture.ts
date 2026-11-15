@@ -23,6 +23,7 @@ export function signIn(user: string, n: number, client: Client, more: Partial<Si
     user,
     client: browser === undefined ? "Browser" : system === undefined ? browser : `${browser} on ${system}`,
     ...client,
+    method: "password",
     address: "203.0.113.7",
     started_at: "2026-11-03T09:00:00Z",
     last_used_at: "2026-11-07T09:00:00Z",

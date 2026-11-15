@@ -80,7 +80,7 @@ The part of the koko server that ends every SSH Session and opens its own SSH co
 _Avoid_: bastion, jump host, proxy
 
 **Web UI**:
-The pages a koko server serves to a browser: through `koko web`, as the User of the device running it, or at its Web URL, to a User signed in with their Password.
+The pages a koko server serves to a browser: through `koko web`, as the User of the device running it, or at its Web URL, to a User signed in there.
 _Avoid_: dashboard, console, admin panel, portal
 
 **Web URL**:
@@ -130,7 +130,7 @@ The Space every User has to themselves, named after them, where what they record
 _Avoid_: home, private space
 
 **Invite**:
-What creates a new User, issued by the Owner or an Administrator: their first Join Code, or their first Password Link.
+What creates a new User, issued by the Owner or an Administrator: their first Join Code, or their first Sign-in Link.
 _Avoid_: enroll, signup, registration, invite link
 
 **Removed**:
@@ -148,15 +148,15 @@ A one-time code, valid for 15 minutes unless its issuer chooses up to 7 days, th
 _Avoid_: token, pairing code, invite code, enrollment code
 
 **Password**:
-The one secret a User may set to sign in to the Web UI in a browser; it never reaches a Host.
+A secret a User may set to sign in to the Web UI in a browser, beside or instead of Passkeys and a Linked Identity; it never reaches a Host.
 _Avoid_: credential, passphrase
 
-**Password Link**:
-A one-time, time-limited link the Owner or an Administrator issues that lets one User set their Password in a browser: a new User's Invite, or a reset.
-_Avoid_: reset link, magic link, invite link
+**Sign-in Link**:
+A one-time, time-limited link the Owner or an Administrator issues that lets one User add a way to sign in to the Web UI (a Passkey, their Linked Identity or a Password) and signs that browser in: a new User's Invite, or a reset. It replaces the Password Link, whose wire names (`password.link`, `password_link`) it keeps.
+_Avoid_: Password Link, reset link, magic link (ADR 0043 rejected a link used for every sign-in, which this is not), invite link
 
 **Sign-in**:
-One browser signed in with a User's Password, until it signs out, expires or is revoked; it is not a Device Session, and it reaches a Host only through the Web terminal. Its signing out or expiry detaches its pages, and its revocation ends the SSH Sessions it opened.
+One browser signed in as a User, with their Password, a Passkey or their Linked Identity, until it signs out, expires or is revoked; it is not a Device Session, and it reaches a Host only through the Web terminal. Its signing out or expiry detaches its pages, and its revocation ends the SSH Sessions it opened.
 _Avoid_: web session, session (alone), login, cookie
 
 **Device Session**:

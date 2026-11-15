@@ -2,6 +2,7 @@
   "id": "signin_<1>",
   "user": "bob",
   "client": "Firefox on Linux",
+  "method": "password",
   "address": "192.0.2.10",
   "started_at": "<time>",
   "last_used_at": "<time>",

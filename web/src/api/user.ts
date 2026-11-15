@@ -37,7 +37,7 @@ export interface UserInviteRequest {
    */
   valid_for?: number;
   /**
-   * Web makes the Invite a Password Link, for a person who will use the
+   * Web makes the Invite a Sign-in Link, for a person who will use the
    * web UI in a browser, instead of a Join Code.
    */
   web?: boolean;
@@ -45,7 +45,7 @@ export interface UserInviteRequest {
 
 /**
  * UserInviteResponse is the User user.invite created and their Invite: their
- * first Join Code, or with web their first Password Link.
+ * first Join Code, or with web their first Sign-in Link.
  */
 export interface UserInviteResponse {
   user: User;
@@ -133,7 +133,7 @@ export interface UserDemoteResponse {
 
 /**
  * UserInvite creates a Member with their Personal Space and issues their
- * first Join Code, or with Web their first Password Link, in one
+ * first Join Code, or with Web their first Sign-in Link, in one
  * transaction. A name any User, Removed ones included, or any Space
  * holds is refused with CodeNameTaken, a ValidFor outside 60 to 604,800
  * seconds with CodeInvalidValue, and Web while the Web URL is not set
@@ -168,12 +168,12 @@ export const UserList: Op<UserListRequest, UserListResponse> = {
 
 /**
  * UserRemove deletes a User who never used koko, with their
- * memberships, their Join Codes, their Password Links and their
+ * memberships, their Join Codes, their Sign-in Links and their
  * Personal Space, which must hold nothing (CodeSpaceNotEmpty), and
  * Removes any other User, in one transaction: it revokes their Device
  * Sessions, voids their valid Join Codes and those their Device
  * Sessions issued, ends their Sign-ins, deletes their Password, voids
- * their unused Password Links, takes them out of every Space,
+ * their unused Sign-in Links, takes them out of every Space,
  * and turns their Personal Space into an ordinary shared Space with no
  * Members, which the Owner and the Administrators see; an
  * Administrator's role goes with them. Once it commits, their Device
@@ -190,7 +190,7 @@ export const UserRemove: Op<UserRemoveRequest, UserRemoveResponse> = {
 
 /**
  * UserPromote makes a Member an Administrator, and in the same
- * transaction voids their unused Join Codes and Password Links issued
+ * transaction voids their unused Join Codes and Sign-in Links issued
  * by anyone but the Owner and the User themselves. Only the Owner
  * promotes (CodeOwnerOnly); the Owner is refused with
  * CodeOwnerNotRemovable, a Removed User with CodeUserRemoved. An
@@ -204,7 +204,7 @@ export const UserPromote: Op<UserPromoteRequest, UserPromoteResponse> = {
 
 /**
  * UserDemote makes an Administrator a Member again, and in the same
- * transaction voids the unused Join Codes and Password Links they
+ * transaction voids the unused Join Codes and Sign-in Links they
  * issued for other Users. Once it commits, their SSH Sessions to Hosts
  * outside the Spaces they still act in end. Only the Owner demotes
  * (CodeOwnerOnly); the Owner is refused with CodeOwnerNotRemovable, a

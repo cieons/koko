@@ -61,6 +61,14 @@ so a Host removed from the record leaves its tab. The Gateway's Workspaces
 are its one reader and writer
 ([the Gateway](gateway.md#the-web-terminal)).
 
+`passkeys_identities.sql` adds what a browser signs in with besides a
+Password ([ADR 0060](../adr/0060-a-browser-signs-in-with-a-passkey-through-the-owners-identity-provider-or-with-a-password.md)):
+the tables `passkeys`, `identities` and `identity_provider`, and on
+`signins` how each was made, `method` (`password` by default, which every
+earlier Sign-in reads), and `credential`, the passkey or Linked Identity it
+was made with ([Sign-ins](signin.md#the-record)). It is the one step of
+spec #228: the tickets that fill the tables add none.
+
 [`upgrade`](../../internal/server/store/migrations.go) runs at every `Open`,
 so an upgrade needs no separate step. By `user_version` against the binary's
 schema version:
@@ -152,6 +160,10 @@ and the one-Owner index still refusing a second Owner.
 [`workspace_tabs_test.go`](../../internal/server/store/workspace_tabs_test.go)
 runs `workspace_tabs.sql` on a database at the schema before it: every
 record kept, the new table empty, and its rows going with their User.
+[`passkeys_identities_test.go`](../../internal/server/store/passkeys_identities_test.go)
+runs `passkeys_identities.sql` on a database at the schema before it: every
+Sign-in reading `password` and nothing else changed, then the koko before
+it refusing the database, naming the snapshot.
 [`peek_test.go`](../../internal/server/store/peek_test.go) shows `Peek`
 finding nothing without a database or in an empty one, reading an older
 schema beside the koko that holds it without migrating or snapshotting it,

@@ -24,7 +24,7 @@ type roles struct {
 }
 
 // promote is user.promote: in one transaction it makes a Member an
-// Administrator and voids their unused Join Codes and Password Links issued
+// Administrator and voids their unused Join Codes and Sign-in Links issued
 // by anyone but the Owner and the User themselves, so that a code an
 // Administrator prepared for them never becomes an Administrator's. Once
 // it commits, the host-list signal names the User, whose devices then see
@@ -64,7 +64,7 @@ func (r roles) promote(ctx context.Context, tx store.Tx, caller op.Caller, req a
 }
 
 // demote is user.demote: in one transaction it makes an Administrator a
-// Member again and voids the unused Join Codes and Password Links they
+// Member again and voids the unused Join Codes and Sign-in Links they
 // issued for other Users, with rights they no longer hold. Once it commits,
 // the access-change signal names their live Device Sessions and Sign-ins,
 // so that their SSH Sessions to Hosts outside the Spaces they still act in

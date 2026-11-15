@@ -92,8 +92,8 @@ the code joins ([the Device Connection](device-connection.md)).
 
 `koko device add [<device>] [--user <user>] [--valid <duration>]` and `koko
 user invite <user> [--valid <duration>]` print the code (`user invite
---web` prints a Password Link instead, valid as `--valid` says too:
-[Sign-ins](signin.md#password-links)) ([the
+--web` prints a Sign-in Link instead, valid as `--valid` says too:
+[Sign-ins](signin.md#sign-in-links)) ([the
 CLI](cli.md#the-commands-so-far)); both are in the irreversible tier, since
 they print a credential (ADR 0019). `--valid` takes a whole number of
 minutes, hours or days from `1m` to `7d`, such as `30m`, `12h` or `7d`, and

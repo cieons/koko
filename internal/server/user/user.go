@@ -31,24 +31,24 @@ const idPrefix = "user"
 type IssueFunc func(ctx context.Context, tx store.Tx, caller op.Caller, req api.DeviceAddRequest) (api.JoinCode, error)
 
 // Browsers is the signin area's part in the user area's operations: a
-// User's Password, Password Links and Sign-ins, which the user area does
+// User's Password, Sign-in Links and Sign-ins, which the user area does
 // not read itself (signin.Service).
 type Browsers interface {
-	// IssueLink issues, as who, a Password Link for u, valid for as long as
+	// IssueLink issues, as who, a Sign-in Link for u, valid for as long as
 	// validFor chooses.
 	IssueLink(ctx context.Context, tx store.Tx, who access.Identity, u api.User, validFor *int) (api.PasswordLink, error)
 	// Used tells whether u ever set a Password or had a Sign-in.
 	Used(ctx context.Context, tx store.Tx, u api.User) (bool, error)
-	// Delete deletes the Password Links of u, a User being deleted.
+	// Delete deletes the Sign-in Links of u, a User being deleted.
 	Delete(ctx context.Context, tx store.Tx, u api.User) error
 	// Remove ends u's Sign-ins, deletes their Password and voids their
-	// unused Password Links, as by names the caller, and counts them.
+	// unused Sign-in Links, as by names the caller, and counts them.
 	Remove(ctx context.Context, tx store.Tx, u api.User, by string) (signInsEnded, linksVoided int64, err error)
-	// VoidLinksOthersIssuedFor voids u's unused Password Links issued by
+	// VoidLinksOthersIssuedFor voids u's unused Sign-in Links issued by
 	// anyone but the Owner and u themselves, as promoting u does, and
 	// counts them.
 	VoidLinksOthersIssuedFor(ctx context.Context, tx store.Tx, u api.User) (int64, error)
-	// VoidLinksIssuedBy voids the unused Password Links u issued for other
+	// VoidLinksIssuedBy voids the unused Sign-in Links u issued for other
 	// Users, as demoting or Removing u does, and counts them.
 	VoidLinksIssuedBy(ctx context.Context, tx store.Tx, u api.User) (int64, error)
 }
@@ -61,7 +61,7 @@ type Workspaces interface {
 }
 
 // Register adds the user operations to the API; issue issues an invited
-// User's first Join Code, browsers their first Password Link and their
+// User's first Join Code, browsers their first Sign-in Link and their
 // part in removing them, workspaces delete a Removed User's tabs, and
 // holdings count what the areas record in the Personal Space of a User
 // being deleted, which must hold nothing. Each User Removed or demoted is
@@ -86,7 +86,7 @@ func current(ctx context.Context, tx store.Tx, caller op.Caller, _ api.UserCurre
 	resp := api.UserCurrentResponse{User: who.User, DeviceSession: who.DeviceSession}
 	if si := who.SignIn; si != nil {
 		resp.SignIn = &api.CurrentSignIn{
-			ID: si.ID, Client: si.Client, Browser: si.Browser, System: si.System,
+			ID: si.ID, Client: si.Client, Browser: si.Browser, System: si.System, Method: si.Method,
 			StartedAt: si.StartedAt, ExpiresAt: si.ExpiresAt,
 		}
 	}
@@ -137,7 +137,7 @@ func listed(ctx context.Context, tx store.Tx, where string, args ...any) ([]api.
 
 // invite is user.invite: in one transaction it creates the Member with their
 // Personal Space, and issues their first Join Code, whose device the Invite
-// does not name, or with req.Web their first Password Link. Only the Owner
+// does not name, or with req.Web their first Sign-in Link. Only the Owner
 // or an Administrator invites, and a Member is refused before the name is
 // checked, so the refusal says nothing of who holds it.
 func invite(issue IssueFunc, browsers Browsers) op.Func[api.UserInviteRequest, api.UserInviteResponse] {
@@ -277,7 +277,7 @@ func (r remover) remove(ctx context.Context, tx store.Tx, caller op.Caller, req 
 // In the call's transaction it revokes every Device Session they hold, voids
 // their valid Join Codes and those their Device Sessions and Sign-ins
 // issued, ends their Sign-ins, deletes their Password and voids their
-// unused Password Links and those they issued, takes away an
+// unused Sign-in Links and those they issued, takes away an
 // Administrator's role, takes them out of every Space, passes their
 // Personal Space to the Owner and the Administrators, deletes their
 // Workspace, and marks them Removed, keeping the record so their name is
@@ -368,7 +368,7 @@ func afterCommit(ctx context.Context, log *slog.Logger, msg string, attrs ...any
 }
 
 // delete deletes u, a User who never used koko, with their Personal Space,
-// which must hold nothing, their Join Codes and their Password Links, which
+// which must hold nothing, their Join Codes and their Sign-in Links, which
 // are all unused; their memberships go with them (ON DELETE CASCADE). Their name is free again.
 // Once it commits, the deletion is logged, by being what deleted them.
 func (r remover) delete(ctx context.Context, tx store.Tx, u api.User, by string) error {

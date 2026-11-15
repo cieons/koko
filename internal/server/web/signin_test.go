@@ -68,7 +68,7 @@ func wantSignedOut(t *testing.T, b *harness.Browser) {
 	wantCode(t, status, body, api.CodeSignInRequired.Name)
 }
 
-// inviteForWeb invites user with --web and returns their Password Link.
+// inviteForWeb invites user with --web and returns their Sign-in Link.
 func inviteForWeb(t *testing.T, h *harness.Harness, user string, args ...string) string {
 	t.Helper()
 	r := h.Koko(append([]string{"user", "invite", user, "--web", "--json"}, args...)...)
@@ -82,7 +82,7 @@ func inviteForWeb(t *testing.T, h *harness.Harness, user string, args ...string)
 	return out.PasswordLink
 }
 
-// passwordLink issues a Password Link for user and returns it.
+// passwordLink issues a Sign-in Link for user and returns it.
 func passwordLink(t *testing.T, h *harness.Harness, user string) string {
 	t.Helper()
 	resp, err := h.Call(api.PasswordLinkIssue, api.PasswordLinkRequest{User: user})
@@ -107,7 +107,7 @@ func signInID(t *testing.T, h *harness.Harness, user string) string {
 	return resp.SignIns[0].ID
 }
 
-// An invited person opens their Password Link: /auth/link names them
+// An invited person opens their Sign-in Link: /auth/link names them
 // without spending it, /auth/password sets the Password and signs the
 // browser in with the __Host-koko cookie, and they sign in again with
 // their name and Password. Every /auth/ answer carries the security headers
@@ -116,8 +116,8 @@ func TestAPasswordLinkSetsThePasswordAndSignsIn(t *testing.T) {
 	t.Parallel()
 	h := startSignIns(t)
 	link := inviteForWeb(t, h, "erin")
-	if !regexp.MustCompile(`^https://koko\.example\.com/password#[A-Z2-7]{26}$`).MatchString(link) {
-		t.Fatalf("the Password Link is %q, want the Web URL, /password and a 26-character secret after #", link)
+	if !regexp.MustCompile(`^https://koko\.example\.com/link#[A-Z2-7]{26}$`).MatchString(link) {
+		t.Fatalf("the Sign-in Link is %q, want the Web URL, /link and a 26-character secret after #", link)
 	}
 	b := h.Browser()
 	b.UserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Mobile/15E148 Safari/604.1"
@@ -289,10 +289,10 @@ func TestTenFailuresForOneNameLockIt(t *testing.T) {
 
 	fail("bob", 10)
 	if status, body := setPassword(at("192.0.2.55"), passwordLink(t, h, "bob"), "the second password of bob"); status != http.StatusOK {
-		t.Fatalf("the Password Link answered %d %s", status, body)
+		t.Fatalf("the Sign-in Link answered %d %s", status, body)
 	}
 	if status, body := signIn(at("192.0.2.56"), "bob", "the second password of bob"); status != http.StatusOK {
-		t.Errorf("a Password Link did not end the lockout: %d %s", status, body)
+		t.Errorf("a Sign-in Link did not end the lockout: %d %s", status, body)
 	}
 }
 
@@ -419,7 +419,7 @@ func TestASignInEnds(t *testing.T) {
 	}
 }
 
-// A Password Link: refused without a Web URL, and to a Member before the
+// A Sign-in Link: refused without a Web URL, and to a Member before the
 // name is read; a newer one voids the older; it is spent once, ending
 // every Sign-in of its User and signing this browser in; and an expired, a
 // voided, an unknown and a Removed User's link is refused link_invalid.
@@ -553,7 +553,7 @@ func TestAnAdministratorsSignInActsOnMembersOnly(t *testing.T) {
 		}{
 			{api.SignInRevoke, fmt.Sprintf(`{"id": %q}`, ids[u]), "revokes the Sign-ins of"},
 			{api.PasswordRemove, fmt.Sprintf(`{"user": %q}`, u), "removes the Password of"},
-			{api.PasswordLinkIssue, fmt.Sprintf(`{"user": %q}`, u), "issues a Password Link for"},
+			{api.PasswordLinkIssue, fmt.Sprintf(`{"user": %q}`, u), "issues a Sign-in Link for"},
 		} {
 			status, body := admin.Send(c.op, []byte(c.body))
 			wantCode(t, status, string(body), api.CodeOwnerOnly.Name)
@@ -607,15 +607,16 @@ func TestTheSignInLogLines(t *testing.T) {
 
 	log := h.Log()
 	for _, want := range []string{
-		`msg="password link issued" user=bob password_link=passwordlink_`,
+		`msg="sign-in link issued" user=bob password_link=passwordlink_`,
 		`msg="password set" user=bob how=link password_link=passwordlink_`,
 		`msg="signed in" user=bob signin=signin_`,
+		` method=password client="Firefox on Linux"`,
 		`client="Firefox on Linux" address=192.0.2.10`,
 		`msg="password set" user=bob how=change signin=signin_`,
 		`msg="sign-in refused" reason=wrong_password address=192.0.2.10 user=bob signin=signin_`,
 		`msg="sign-in refused" reason=wrong_password address=192.0.2.10 user=bob`,
 		`msg="sign-in refused" reason=wrong_password address=192.0.2.10` + "\n",
-		`msg="password link refused" reason=link_used address=192.0.2.10 user=bob`,
+		`msg="sign-in link refused" reason=link_used address=192.0.2.10 user=bob`,
 		`msg="sign-in revoked" user=bob signin=signin_`,
 		`revoked_by="unix socket"`,
 		`msg="signed out" user=bob signin=signin_`,

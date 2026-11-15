@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// How long a Join Code or a Password Link stays valid from its issue (ADR
+// How long a Join Code or a Sign-in Link stays valid from its issue (ADR
 // 0044): DefaultValidity, unless the request that issues it chooses from
 // MinValidity to MaxValidity with valid_for.
 const (
@@ -14,7 +14,7 @@ const (
 	MaxValidity     = 7 * 24 * time.Hour
 )
 
-// Validity is how long the Join Code or Password Link a request issues
+// Validity is how long the Join Code or Sign-in Link a request issues
 // stays valid, given the request's valid_for: that many seconds, or
 // DefaultValidity when it is nil. Any number of seconds outside MinValidity
 // to MaxValidity is refused with CodeInvalidValue.
