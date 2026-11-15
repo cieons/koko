@@ -29,7 +29,10 @@ import {
   registration,
   serveCeremonies,
   serveMethods,
+  settled,
   signsInWithoutUserHandle,
+  type Waiting,
+  waiting,
 } from "./passkeys.fixture";
 import { firefox, serveSignIns, signIn, signIns } from "./signins.fixture";
 
@@ -104,38 +107,11 @@ function list(b: BufferSource | undefined): number[] {
   return Array.from(ArrayBuffer.isView(b) ? new Uint8Array(b.buffer, b.byteOffset, b.byteLength) : new Uint8Array(b));
 }
 
-/** Waiting is a call the test holds: settle answers it, and answered is that answer once given. */
-interface Waiting<T> {
-  settle: (answer: T) => void;
-  answered: Promise<T>;
-}
-
-/** waiting is a Waiting for one call, whose promise the call returns as its answer. */
-function waiting<T>(): Waiting<T> & { promise: Promise<T> } {
-  let settle: (answer: T) => void = () => undefined;
-  const promise = new Promise<T>((resolve) => (settle = resolve));
-  return { settle: (answer) => settle(answer), answered: promise, promise };
-}
-
 /** pending makes the next ceremony of fn's kind wait for the test to settle it. */
 function pending(fn: Authenticator["create"] | Authenticator["get"]): Waiting<unknown> {
   const w = waiting<unknown>();
   fn.mockImplementationOnce(() => w.promise);
   return w;
-}
-
-/**
- * settled settles a held call with answer and waits, inside act, until the
- * page has done all it does with it: the answer itself, then one turn of
- * the event loop, by which every continuation the answer queued has run,
- * a post the page would send among them. It waits for no fixed time.
- */
-async function settled<T>(call: Waiting<T>, answer: T): Promise<void> {
-  await act(async () => {
-    call.settle(answer);
-    await call.answered;
-  });
-  await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
 }
 
 /** madeNow is a new passkey's credential as the fake authenticator answers one. */
@@ -830,7 +806,7 @@ test("through koko web the passkeys are listed with Remove, and one sentence say
   renderAt("/account");
 
   await waitFor(() => expect(passkeysIn()).toHaveLength(3));
-  expect(screen.getByText("Passkeys are added in a browser signed in at the Web URL.")).toBeDefined();
+  expect(screen.getByText("Passkeys are added, and an identity is linked, in a browser signed in at the Web URL.")).toBeDefined();
   expect(screen.queryByRole("button", { name: "Add a passkey" })).toBeNull();
   expect(screen.queryByLabelText("Name")).toBeNull();
   expect(api.requests(AuthMethods)).toEqual([]); // koko web has no /auth/ endpoints
@@ -850,7 +826,7 @@ test("for the Local caller the Owner's passkeys are listed, with the same senten
   renderAt("/account");
 
   await waitFor(() => expect(passkeysIn()).toHaveLength(1));
-  expect(screen.getByText("Passkeys are added in a browser signed in at the Web URL.")).toBeDefined();
+  expect(screen.getByText("Passkeys are added, and an identity is linked, in a browser signed in at the Web URL.")).toBeDefined();
   expect(screen.queryByRole("button", { name: "Add a passkey" })).toBeNull();
 });
 
@@ -859,7 +835,7 @@ test("a browser without WebAuthn lists the passkeys without Add a passkey", asyn
 
   expect(passkeysIn()).toHaveLength(3);
   expect(screen.queryByRole("button", { name: "Add a passkey" })).toBeNull();
-  expect(screen.queryByText("Passkeys are added in a browser signed in at the Web URL.")).toBeNull();
+  expect(screen.queryByText("Passkeys are added, and an identity is linked, in a browser signed in at the Web URL.")).toBeNull();
 });
 
 test("a User without a Password, signed in with a passkey, sets a first one, and is then offered to change it", async () => {
@@ -1013,7 +989,7 @@ test("Make an Administrator lists the User's passkeys, each with who made the li
   fireEvent.click(await within(panel).findByRole("button", { name: "Make an Administrator" }));
   const dialog = await screen.findByRole("alertdialog", { name: "Make bob an Administrator" });
   await within(dialog).findByRole("heading", { name: "Passkeys" });
-  expect(dialog.textContent).toContain("Their live devices, passkeys and Sign-ins below stay theirs");
+  expect(dialog.textContent).toContain("Their live devices, passkeys, Linked Identity and Sign-ins below stay theirs");
   expect(within(dialog).getByText("Firefox on Linux, added by bob in a signed-in browser")).toBeDefined();
   expect(within(dialog).getByText("iPhone, made through a Sign-in Link from eve")).toBeDefined();
   expect(api.requests(PasskeyList)).toContainEqual({ user: "bob" });

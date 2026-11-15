@@ -1,7 +1,8 @@
 import type en from "../en/identity";
 
 // The identity area's messages: the Identity provider panel over Access,
-// and its API error codes.
+// signing in and linking through it, a Linked Identity on Account and in
+// a person's panel, and its API error codes.
 export default {
   "identity.provider": "身份提供方",
   "identity.issuer": "签发者 URL",
@@ -50,6 +51,25 @@ export default {
   "identity.reason.issuer_mismatch": "发现文档所列签发者与所填不同。签发者 URL 须与之完全一致，包括末尾的 /。",
   "identity.reason.endpoint_missing": "发现文档未提供 https:// 授权端点、令牌端点或密钥集端点。",
   "identity.reason.code_unsupported": "该提供方不支持 koko 登录所用的授权码流程。",
+  "identity.continue": "通过 {name} 继续",
+  "identity.link.again": "请重新打开登录链接，以选择其他方式。",
+  "identity.linked.title": "关联身份",
+  "identity.linkedAs": "已关联为 {label}",
+  "identity.byLink": "经由 {by} 签发的登录链接",
+  "identity.linkedOn": "{date} 关联",
+  "identity.noIdentity": "无关联身份。",
+  "identity.summary": "已关联身份",
+  "identity.link": "关联 {name}",
+  "identity.linked.done": "身份已关联。",
+  "identity.unlink": "解除关联",
+  "identity.unlink.title": "解除关联身份 {label}",
+  "identity.unlink.consequence": "通过该身份登录的浏览器将退出登录。",
+  "identity.unlink.consequenceHere": "当前浏览器通过该身份登录，将随之退出登录，通过其登录的其他浏览器亦同。",
+  "identity.unlink.consequenceLast": "通过该身份登录的浏览器将退出登录。这是 {name} 仅剩的登录方式，解除关联后其下次登录须使用登录链接。",
+  "identity.unlink.consequenceHereLast": "当前浏览器通过该身份登录，将随之退出登录，通过其登录的其他浏览器亦同。这是 {name} 仅剩的登录方式，解除关联后其下次登录须使用登录链接。",
+  "identity.unlink.done": "已解除关联身份 {label}。",
+  "identity.promote.byLink": "{label}，经由 {by} 签发的登录链接关联",
+  "identity.promote.own": "{label}，由 {name} 在已登录的浏览器中关联",
   "error.invalid_provider": "身份提供方的某项设置无效，或其签发者的发现文档无效。",
   "error.provider_unreachable": "身份提供方未在规定时间内响应，请稍后重试。",
   "error.provider_unset": "尚未配置身份提供方。",

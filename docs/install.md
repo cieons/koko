@@ -985,8 +985,11 @@ is refused at start.
 The web UI is reached in two ways. `koko web` serves it to the person
 running it, on a joined device or on the koko server's machine, and needs
 nothing more. A person who does not use the CLI, such as a teammate who
-records Hosts from a phone, signs in instead at the **Web URL**, with
-their User name and a Password. For that, the koko server serves the web
+records Hosts from a phone, signs in instead at the **Web URL**, in one
+of three ways: with a passkey, which their phone, computer or password
+manager keeps; through the Owner's identity provider, an OpenID Connect
+provider such as Authentik, Keycloak or Pocket ID; or with their User name
+and a Password. For that, the koko server serves the web
 UI over plain HTTP on a second listener, the web listener, to a reverse
 proxy such as Caddy, which holds a domain and its TLS certificate, since
 koko does no TLS itself
@@ -997,7 +1000,9 @@ Password sent to it would cross the network unencrypted. It also takes the
 client's address from the last entry of the `X-Forwarded-For` header,
 which the proxy appends, so a client that reached it directly could choose
 the address the per-address sign-in limit counts; only the limit for each
-name would still hold. Bind it to the loopback address, as below, and do
+name would still hold. Passkeys and the identity provider need the Web URL's
+`https://` address too: a browser makes no passkey for a plain HTTP page,
+and the provider sends the browser back to that address. Bind it to the loopback address, as below, and do
 not open its port in the provider's firewall.
 
 ### Turning the listener on
@@ -1113,7 +1118,14 @@ device or a browser cannot. Until it is set, the web listener answers every
 request with a page naming this command. The koko server then answers only
 requests whose `Host` header names the Web URL's host and port. Changing
 the Web URL takes effect at once: Sign-in Links issued for the old
-address stop working, and every browser signs in again.
+address stop working, and every browser signs in again. A passkey belongs
+to the host it was made for, so after a change of host each person adds a
+passkey at the new one, and the old ones work again only if the Web URL
+names their host again; `koko server set` says how many belong to another
+host. A change of port alone keeps every passkey. The identity provider's
+redirect URI changes with the Web URL, and is registered at the provider
+again ([Signing in through an identity provider](#signing-in-through-an-identity-provider)).
+A Web URL whose host is an IP address cannot have passkeys.
 `koko server set --unset web_url` stops browser access and keeps the
 listener.
 
@@ -1137,27 +1149,76 @@ any of their devices or in a browser signed in as them, and the Owner also
 on the koko server's machine (`docker exec koko` in a container). bob becomes a Member of a Space as any Member does:
 `koko space member add <space> bob`, or in the Invite itself.
 
-Opened in a browser, the link shows the User name and asks for a Password:
-at least 15 characters and at most 128, any characters allowed, other
-than the User name itself. Once it is
-set, the browser is signed in. From then on, bob signs in at
-`https://koko.example.com` with the name `bob` and that Password.
+Opened in a browser, the link shows the User name and offers the ways to
+sign in:
 
-### Resetting and removing a Password
+- **Create a passkey**: the browser asks the device or password manager to
+  make one for the Web URL. From then on, bob signs in at
+  `https://koko.example.com` with **Sign in with a passkey**, typing
+  nothing.
+- **Continue with Authentik**, named after the identity provider, when the
+  Owner has set one: bob signs in at the provider, and that account is
+  linked to bob. From then on, bob signs in with that button.
+- **Set a Password instead**: at least 15 characters and at most 128, any
+  characters allowed, other than the User name itself. From then on, bob
+  signs in with the name `bob` and that Password.
 
-A User who has lost their Password gets a new Sign-in Link, as does a User
-of the CLI who wants to use a browser too, the Owner included:
+Whichever bob chooses, the link is spent once it is done, and the browser
+is signed in. A cancelled passkey, or a refusal at the provider, leaves the
+link usable. bob adds the other ways later on the Account page, under
+**Sign-in**: **Add a passkey**, **Link Authentik**, or a Password.
+
+### Signing in through an identity provider
+
+The Owner may set one OpenID Connect provider that the team already signs
+in to, such as Authentik, Keycloak, Pocket ID, Authelia or Zitadel. Nobody
+gets a User by signing in there: each User is still invited, and links
+their own account at the provider from the Account page or through a
+Sign-in Link. An account is matched by the provider's issuer and its
+subject alone, never by email or name.
+
+At the provider, register a confidential client for koko that uses the
+authorization code flow with PKCE, the scopes `openid profile email`, and
+this **redirect URI**: the Web URL followed by `/auth/oidc/callback`, such
+as `https://koko.example.com/auth/oidc/callback`. `koko server oidc show`
+prints it. Then give koko the provider's issuer, the client ID and secret,
+and the name on the button, as the Owner, on any of their devices, in a
+browser signed in as them, or on the koko server's machine:
+
+```sh
+koko server oidc set --issuer https://idp.example.com/application/o/koko/ \
+  --client-id koko --name Authentik --client-secret
+```
+
+`--client-secret` reads the secret from a prompt, from stdin, or with
+`--client-secret-file <file>`, never from the command line. The issuer is
+compared byte for byte with what the provider names, a trailing `/`
+included: koko checks the provider's discovery document before it saves,
+and refuses an issuer whose document does not match. The client secret is
+only checked at the first sign-in, so try the button once. In the web UI,
+the same settings are under **Identity provider** on the Access page.
+
+Changing the issuer, or `koko server oidc rm`, unlinks every account and
+signs out the browsers signed in through them; changing the client or the
+name keeps them. A sign-out at the provider does not sign anyone out of
+koko: to cut someone off, unlink their identity (`koko identity unlink
+bob`, or **Unlink** in their panel) or remove them.
+
+### Resetting and removing a way to sign in
+
+A User who has lost their Password, their passkeys or their account at the
+provider gets a new Sign-in Link, as does a User of the CLI who wants to
+use a browser too, the Owner included:
 
 ```sh
 koko signin link bob
 ```
 
 It takes `--valid` as the Invite does, and voids bob's earlier link if it
-was not used. Setting a Password through it signs out every browser
-signed in as bob. `koko password link bob`, its name before, works too.
-In the web UI, it is **Issue Sign-in Link** in bob's
-panel on the Access page, where each person's row says whether they have
-a Password.
+was not used. Spending it, whichever way bob chooses, signs out every other
+browser signed in as bob. `koko password link bob`, its name before, works
+too. In the web UI, it is **Issue Sign-in Link** in bob's panel on the
+Access page, where each person's row says how they sign in.
 
 To take browser access away and keep the User, their Spaces and their
 devices:
@@ -1166,8 +1227,11 @@ devices:
 koko password rm bob
 ```
 
-This deletes the Password and signs out every browser signed in with it; it
-is **Remove Password** in bob's panel. `koko user remove bob` Removes bob
+This deletes the Password and signs out the browsers signed in with it; it
+is **Remove Password** in bob's panel. In the same way, `koko passkey ls
+--user bob` and `koko passkey rm <id>` remove a passkey, and `koko identity
+unlink bob` unlinks bob's account at the provider, each signing out only
+the browsers signed in with it; bob does the same on the Account page. `koko user remove bob` Removes bob
 altogether, ending their browsers' Sign-ins with everything else, or
 deletes bob when they never used koko.
 
@@ -1175,7 +1239,9 @@ deletes bob when they never used koko.
 
 Each browser signed in is a Sign-in. It ends when the browser signs out,
 after 7 days unused, 30 days after it began, when the User's Password is
-set or removed, or when it is revoked:
+set or removed, when the passkey or the account at the provider it was made
+with is removed or unlinked, when a Sign-in Link of the User is spent, or
+when it is revoked:
 
 ```sh
 koko signin ls
@@ -1183,7 +1249,8 @@ koko signin revoke <id>
 ```
 
 `koko signin ls` lists the caller's own Sign-ins, and every User's for the
-Owner or an Administrator; `--all` adds the ended ones. In the web UI, each person sees their
+Owner or an Administrator, each with how it signed in; `--all` adds the
+ended ones. In the web UI, each person sees their
 own under **Browser Sign-ins** on the Account page, where **Change
 Password** also changes their Password and signs out their other browsers.
 The Owner or an Administrator sees a person's Sign-ins in that person's
@@ -1192,8 +1259,9 @@ page, with **Revoke**.
 
 After 10 wrong Passwords in a row for one name, sign-ins with that name
 are refused for 15 minutes, or until a Password is set through a Sign-in
-Link. After 10 failed attempts from one address within 15 minutes, that
-address is refused until the oldest is 15 minutes old. Browsers already
+Link. After 10 failed attempts from one address within 15 minutes, a
+refused passkey or provider sign-in among them, that address is refused
+until the oldest is 15 minutes old. Browsers already
 signed in keep working.
 
 ### What a browser User can do

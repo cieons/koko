@@ -1,3 +1,4 @@
+import { act } from "@testing-library/react";
 import { onTestFinished, vi } from "vitest";
 
 import {
@@ -17,6 +18,8 @@ import { passkey, type World } from "../space/access.fixture";
 // the tests of Sign in, a Sign-in Link's page and Account: the fake
 // authenticator stands in for navigator.credentials and PublicKeyCredential,
 // which jsdom lacks, and answers fixed bytes the tests read back encoded.
+// /auth/methods, and a call a test holds until it settles it, serve the
+// tests of the Identity Provider's pages too.
 
 /** bytes are text's UTF-8 bytes, as an authenticator's answer carries them. */
 export function bytes(text: string): Uint8Array<ArrayBuffer> {
@@ -141,10 +144,11 @@ export function cancel(): DOMException {
 
 /**
  * serveMethods makes /auth/methods answer whether passkeys work at the Web
- * URL, as the koko server does: false for a host that is an IP address.
+ * URL, as the koko server does: false for a host that is an IP address;
+ * and the Identity Provider's name, or null for none configured.
  */
-export function serveMethods(api: FakeApi, passkeys = true): void {
-  api.on(AuthMethods, () => ({ passkeys, provider: null }));
+export function serveMethods(api: FakeApi, passkeys = true, provider: string | null = null): void {
+  api.on(AuthMethods, () => ({ passkeys, provider: provider === null ? null : { name: provider } }));
 }
 
 /**
@@ -164,4 +168,31 @@ export function serveCeremonies(api: FakeApi, w: World, user: User): void {
     w.passkeys = [...w.passkeys, added];
     return { user, passkey: added };
   });
+}
+
+/** Waiting is a call the test holds: settle answers it, and answered is that answer once given. */
+export interface Waiting<T> {
+  settle: (answer: T) => void;
+  answered: Promise<T>;
+}
+
+/** waiting is a Waiting for one call, whose promise the call returns as its answer. */
+export function waiting<T>(): Waiting<T> & { promise: Promise<T> } {
+  let settle: (answer: T) => void = () => undefined;
+  const promise = new Promise<T>((resolve) => (settle = resolve));
+  return { settle: (answer) => settle(answer), answered: promise, promise };
+}
+
+/**
+ * settled settles a held call with answer and waits, inside act, until the
+ * page has done all it does with it: the answer itself, then one turn of
+ * the event loop, by which every continuation the answer queued has run,
+ * a post the page would send among them. It waits for no fixed time.
+ */
+export async function settled<T>(call: Waiting<T>, answer: T): Promise<void> {
+  await act(async () => {
+    call.settle(answer);
+    await call.answered;
+  });
+  await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
 }

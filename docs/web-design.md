@@ -994,7 +994,7 @@ For the Owner and an Administrator:
 - Under it, one panel holding the list of the tab chosen, a row per person
   or Space, each a link to its panel. A person's row: initial, name,
   "Owner" or "Administrator" where so, and a one-line summary, "16 Spaces
-  · 2 devices · Password set · 2 passkeys", "No Space · Invited, not yet
+  · 2 devices · Password set · 2 passkeys · Linked", "No Space · Invited, not yet
   in", "Every Space · 1 device" for the Owner and an Administrator. A Space's row: name and "30 Members · 40 Hosts ·
   0 Secrets". The summary is beside the name once the list itself is
   42rem wide (container query) and under it below that, as on a phone.
@@ -1011,11 +1011,16 @@ For the Owner and an Administrator:
   shared Spaces they are not in, each Space a link to its panel with
   **Take out**; and the Personal Space's counts; Devices with Add device and Revoke, and "Show
   Revoked devices"; **Sign-in**: the Password ("set on <date>" or none)
-  with Remove Password, the passkeys, each with Remove, and Issue Sign-in
-  Link; Browser Sign-ins with Revoke; for the Owner,
+  with Remove Password, the passkeys, each with Remove, the Linked
+  Identity under the provider's name, or "Linked identity" where it is
+  not known ("Linked as <label>", who issued the
+  Sign-in Link it came through, linked, last used) with Unlink, which
+  asks first as on Account, and Issue Sign-in Link; Browser Sign-ins with
+  Revoke; for the Owner,
   **Make an Administrator**, which asks first and lists the User's live
   devices, each with who added it, their passkeys, each with who issued
-  the Sign-in Link it was made through, and live Sign-ins, or **Make a
+  the Sign-in Link it was made through, their Linked Identity, with who
+  issued the link it was linked through, and live Sign-ins, or **Make a
   Member**, which does not; Remove User at the foot, which asks first and
   then says whether the User was deleted or Removed. An Administrator or
   the Owner is "Every Space" in place of the Spaces. Viewing the Owner or
@@ -1092,11 +1097,20 @@ handle that failure; the build does.
   changed. Remove asks first and says who is signed out: this browser, when
   it signed in with that passkey, else the browsers signed in with it;
   that the device or password manager keeps it; and, for the User's last
-  way to sign in, that the next sign-in needs a Sign-in Link. **This browser** (Language
+  way to sign in, that the next sign-in needs a Sign-in Link. Then the
+  Identity Provider, under its name: "Linked as <label>", linked and last
+  used, with **Unlink**, which asks first as Remove does, or, for a
+  browser signed in, **Link <name>** (secondary), which goes to the
+  provider; back from it, a toast says the identity is linked, or the
+  refusal shows in the section. Without a provider and without an
+  identity there is no section. Through `koko web` or for the Local
+  caller the identity is listed under "Linked identity" with Unlink, and
+  the passkeys' sentence says an identity is linked at the Web URL too. **This browser** (Language
   and Appearance as segments, which mirror the rail's); **Devices** (this
   one marked, Add device, Revoke as above, and "Show Revoked devices",
   `all=1` in the URL); **Browser Sign-ins** (each with how it signed in,
-  "with a passkey", "with a Password" or "through the identity provider";
+  "with a passkey", "with a Password" or "through <name>", the provider's
+  name, or "through the identity provider" where it is not known;
   this browser marked; revoking it signs out); **Personal Space** (counts and a link). Two columns once
   the page's own room is 56rem wide (container query).
 - For the Local caller there is no device to mark and no Sign-in; the
@@ -1107,26 +1121,37 @@ handle that failure; the build does.
 Outside the frame: the wordmark, then one panel 26rem wide, then the two
 languages as buttons.
 
-- **Sign in**: **Sign in with a passkey** (primary), a divider, then
-  name, Password and **Sign in** (secondary); without WebAuthn, or where
-  `/auth/methods` says passkeys do not work at the Web URL (its host an IP
-  address), no passkey action and Sign in primary. With WebAuthn the panel
-  shows Loading until `/auth/methods` answers, so no passkey action shows
-  and then goes; a failed `/auth/methods` offers it. A refusal above them (`passkey_refused`,
-  `wrong_password`, `too_many_attempts` with the minutes); a ceremony the
-  person cancels shows nothing. One line, "The Owner or an Administrator
+- **Sign in**: **Sign in with a passkey** (primary), **Continue with
+  <name>** (secondary) where `/auth/methods` names the Identity Provider,
+  a divider, then name, Password and **Sign in** (secondary); without
+  WebAuthn, or where `/auth/methods` says passkeys do not work at the Web
+  URL (its host an IP address), no passkey action, and the first action
+  left primary, Sign in when there is no other. The panel shows Loading
+  until `/auth/methods` answers, so no action shows and then goes; a
+  failed `/auth/methods` offers a passkey and no provider. A refusal above
+  them (`passkey_refused`, `wrong_password`, `provider_unreachable`,
+  `too_many_attempts` with the minutes, or the one the provider's callback
+  came back with as `?refused=`); a ceremony the person cancels shows
+  nothing. One line, "The Owner or an Administrator
   can send you a Sign-in Link."
 - **A Sign-in Link's page** (`/link`, and `/password` for a link issued
   before it), titled Set up sign-in: "For <name>."; **Create a passkey**
-  (primary) and **Set a Password instead** (secondary), which opens Set a
+  (primary), **Continue with <name>** (secondary, primary without a
+  passkey) where a provider is configured and the User has no Linked
+  Identity, and **Set a Password instead** (secondary), which opens Set a
   Password: when they have a Password, a line that one set here replaces
   it; New Password with a count toward 15; again; **Set Password and sign
   in**; **Back** to the choices. Without WebAuthn, or where passkeys do
-  not work at the Web URL, the page is Set a Password at once. A ceremony cancelled shows nothing, a refusal shows
+  not work at the Web URL, and with no provider to offer, the page is Set
+  a Password at once. A ceremony cancelled shows nothing, a refusal shows
   above the choices. `link_used` and `link_invalid` each replace the page
-  with what happened and "Go to Sign in".
+  with what happened and "Go to Sign in". Back from the provider refused,
+  at `/link?refused=` with no link, the page shows the refusal and "Open
+  your Sign-in Link again to choose another way."
 - On either page, a passkey's last answer that comes after the page closed
-  goes nowhere: a toast says "This browser is signed in as <name>."
+  goes nowhere: a toast says "This browser is signed in as <name>."; a
+  begin through the provider answered after the page closed sends the
+  browser nowhere.
 
 ### Page not found
 

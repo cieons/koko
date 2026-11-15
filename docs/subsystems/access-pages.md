@@ -11,8 +11,8 @@ the CLI also has. How they look is [the web UI's
 design](../web-design.md#access-access); what the operations do is in [the
 access check and Spaces](access.md), [Users](users.md), [Join
 Codes](join-codes.md) and [revoking](device-connection.md#revoking).
-One's own ways to sign in (passkeys and Password) and Browser Sign-ins
-are on Account, and, for the Owner and the Administrators, anyone's in
+One's own ways to sign in (passkeys, Password and Linked Identity) and
+Browser Sign-ins are on Account, and, for the Owner and the Administrators, anyone's in
 their panel ([Sign-ins](signin.md#the-web-uis-pages)).
 
 ## The pages
@@ -42,9 +42,12 @@ shared Spaces), beside one search field that narrows the list shown by
 name, whatever its case, and Reset view. A person's row is a link to their
 panel: the initial, the name, "Owner" or "Administrator" where so, and a one-line summary of
 the shared Spaces they are a Member of and how they get in ("16 Spaces ·
-2 devices · Password set · 2 passkeys", the passkeys counted by
-`user.list`'s `passkeys`; "No Space · Invited, not yet in" for one who
-never had a device, a Password or a passkey, from `device.list` with `all`; "Every
+2 devices · Password set · 2 passkeys · Linked", the passkeys counted by
+`user.list`'s `passkeys`, and "Linked" for a User whose
+`identity_linked_at` says they linked their identity at the Identity
+Provider; "No Space · Invited, not yet in" for one who
+never had a device, a Password, a passkey or a Linked Identity, from
+`device.list` with `all`; "Every
 Space · …" for the Owner and an Administrator; "Removed" for a Removed
 User). The Owner comes first, then the Administrators, then the Members,
 and the Removed Users last. A Space's row is a link to its panel:
@@ -87,7 +90,8 @@ panel with **Take out**; for the Owner and an Administrator, "Every
 Space" in place of those; their Personal Space's
 counts with a link to its Hosts; their devices; **Sign-in**: their
 Password with Remove Password, their passkeys (`passkey.list` naming
-them), each with Remove, and Issue Sign-in Link; their Browser Sign-ins; for the Owner,
+them), each with Remove, their Linked Identity (`identity.list` naming
+them) with Unlink, and Issue Sign-in Link; their Browser Sign-ins; for the Owner,
 **Make an Administrator** for a Member or **Make a Member** for an
 Administrator; and Remove User. It finds the User in `user.list` with
 `all`, so a Removed User's panel opens too, its subtitle saying when they
@@ -99,8 +103,8 @@ themselves, the Owner on anyone, and an Administrator on a Member. Where
 the caller may not act on the person, as an Administrator viewing the
 Owner or another Administrator, the panel shows their role, Spaces,
 devices and Sign-ins and none of the actions on them: no Add device,
-Revoke, Issue Sign-in Link, Remove Password, a passkey's Remove, Remove User, Make an
-Administrator or Make a Member. One's own panel offers what the caller may
+Revoke, Issue Sign-in Link, Remove Password, a passkey's Remove, Unlink,
+Remove User, Make an Administrator or Make a Member. One's own panel offers what the caller may
 do on themselves, and neither role action nor Remove User.
 
 **Make an Administrator** asks first (`user.promote`, the irreversible
@@ -110,17 +114,21 @@ every Secret and manage every Member", and lists the User's live devices
 `<user>/<device>`, or "in a browser or on the koko server's machine"
 without one), their passkeys (`passkey.list`), each with who issued the
 Sign-in Link it was made through (`added_by`), or "added by <name> in a
-signed-in browser" for one made from their own Sign-in, and their live
-Sign-ins (`signin.list`), since a promotion keeps them; its button waits
-until all three are read. **Make a Member**
+signed-in browser" for one made from their own Sign-in, their Linked
+Identity (`identity.list`, read only while `user.list`'s
+`identity_linked_at` says they have one), with who issued the Sign-in Link
+it was linked through (`linked_by`), or "linked by <name> in a signed-in
+browser", and their live Sign-ins (`signin.list`), since a promotion keeps
+them; its button waits until all are read. **Make a Member**
 (`user.demote`) does not ask, as Take out does not. Either is one button
 that keeps the focus as the role changes, and the panel then shows the
 new role.
 
 **Account** shows the User's name and role and how this browser got in
 (through `koko web` on a device, a Sign-in, or the Local caller), with
-Sign out by the title for a Sign-in; Sign-in, their passkeys and Password
-([Sign-ins](signin.md#the-web-uis-pages)); This browser, Language
+Sign out by the title for a Sign-in; Sign-in, their passkeys, Password and
+Linked Identity, with Link <name> for a browser signed in where the
+Identity Provider is configured ([Sign-ins](signin.md#the-web-uis-pages)); This browser, Language
 and Appearance as segments that set what the frame's menus set; the
 caller's devices; their Browser Sign-ins; and their Personal Space. The
 account panel links to it.
@@ -153,6 +161,8 @@ and replacing the history entry ([`movedTo`](../../web/src/shell/router.tsx)).
 | Issue a Sign-in Link (`password.link`, with `valid_for` unless 15 minutes), in a person's panel; disabled, saying why, while the Web URL is unset (`server.show`) | anyone for themselves; the Owner for anyone; an Administrator for a Member; each for a User not Removed | no |
 | Remove a Password (`password.remove`), ending the Sign-ins made with it, in a person's panel | anyone for their own; the Owner for anyone's; an Administrator for a Member's; each for a User with one | yes |
 | Remove a passkey (`passkey.remove`), ending the Sign-ins made with it, on Account and in a person's panel | anyone for their own; the Owner for anyone's; an Administrator for a Member's | yes, saying who is signed out, that the device keeps it, and for the User's last way to sign in that the next sign-in needs a Sign-in Link |
+| Unlink a Linked Identity (`identity.unlink`, naming the User in a person's panel and no one on Account), ending the Sign-ins made through it, on Account and in a person's panel | anyone for their own; the Owner for anyone's; an Administrator for a Member's | yes, saying who is signed out, and for the User's last way to sign in that the next sign-in needs a Sign-in Link |
+| Link one's identity (`/auth/oidc/begin` with `{"purpose": "link"}`, then the Identity Provider), on Account | a browser signed in, for its own User without one, where `/auth/methods` names the provider | no |
 | Add a passkey (`/auth/passkey/add/begin` and `/auth/passkey/add` with a name), on Account | a browser signed in, with WebAuthn, for its own User, where `/auth/methods` says passkeys work at the Web URL; otherwise one sentence says they need a Web URL whose host is a domain name | no |
 | Revoke a live Sign-in (`signin.revoke`), on Account and in a person's panel | anyone for their own; the Owner for anyone's; an Administrator for a Member's | yes |
 | Make a Member an Administrator (`user.promote`), in a person's panel, the question listing their live devices with who added each and their live Sign-ins | the Owner | yes |
@@ -298,6 +308,13 @@ koko server whose writes change what it answers
   person's passkeys, Remove asking first, and the last way to sign in; an
   Administrator viewing the Owner's without Remove; Make an Administrator
   listing the passkeys with who made their links.
+- [`identities.test.tsx`](../../web/src/pages/signin/identities.test.tsx)
+  ([Sign-ins](signin.md#verifying)): Access's summary saying Linked, in
+  both languages; a person's Linked Identity with who issued its link,
+  Unlink asking first, then Access without it, and the last way to sign
+  in; none read for a User without one; an Administrator viewing the
+  Owner's without Unlink; Make an Administrator listing it with who
+  issued its link, or linked from their own Sign-in, or none.
 - [`devices.test.tsx`](../../web/src/pages/device/devices.test.tsx): a
   Member's Account, its devices and Personal Space, and no control for
   the Owner and the Administrators; an Administrator's Account naming the

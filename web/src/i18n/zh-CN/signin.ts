@@ -47,6 +47,7 @@ export default {
   "signin.method.password": "凭密码",
   "signin.method.passkey": "凭通行密钥",
   "signin.method.identity": "通过身份提供方",
+  "signin.method.identityNamed": "通过 {name}",
   "signin.signins.title": "浏览器登录会话",
   "signin.signins.none": "{name} 当前未在任何浏览器中登录。",
   "signin.signins.here": "当前浏览器",

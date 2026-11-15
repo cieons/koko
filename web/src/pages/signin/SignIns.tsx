@@ -28,19 +28,26 @@ export interface SignInsProps {
   changes?: number;
   /** acts offers Revoke: false where the caller may not act on user, as an Administrator on the Owner. */
   acts?: boolean;
+  /**
+   * provider is the Identity Provider's name, which a Sign-in made through
+   * it is said to be made through; null or undefined where none is
+   * configured or the page cannot ask, saying the identity provider.
+   */
+  provider?: string | null;
   className?: string;
 }
 
 /**
  * SignIns lists one User's Browser Sign-ins (signin.list naming them), each
- * with the way it signed in, the ended ones when asked for, this browser's
+ * with the way it signed in, through the Identity Provider by its name
+ * where the page knows it, the ended ones when asked for, this browser's
  * marked "This browser"; and
  * revokes a live one once the caller confirms (signin.revoke). Revoking
  * this browser's own signs it out, to Sign in. Account shows the caller's
  * own; a person's panel, the Owner's and the Administrators' alone, shows
  * that person's, without Revoke where the caller may not act on them.
  */
-export function SignIns({ user, level, changes = 0, acts = true, className = "" }: SignInsProps) {
+export function SignIns({ user, level, changes = 0, acts = true, provider, className = "" }: SignInsProps) {
   const t = useT();
   const language = useLanguage();
   const caller = useCaller();
@@ -72,13 +79,13 @@ export function SignIns({ user, level, changes = 0, acts = true, className = "" 
             <ul className="flex flex-col">
               {signins.map((s) => {
                 const live = s.ended_at === undefined;
-                const method = methodKeys[s.method ?? "password"];
+                const method = methodText(t, s.method, provider);
                 return (
                   <li key={s.id} className="flex items-center justify-between gap-4 border-t border-line py-3">
                     <div className="min-w-0">
                       <p className="flex flex-wrap items-center gap-2">
                         <span className={`t-name ${live ? "" : "text-muted line-through"}`}>{browserName(t, s)}</span>
-                        {method !== undefined && <span className="text-muted">{t(method)}</span>}
+                        {method !== undefined && <span className="text-muted">{method}</span>}
                         {s.id === caller.signin?.id && (
                           <Chip color="accent" variant="soft">
                             {t("signin.signins.here")}
@@ -147,6 +154,19 @@ const methodKeys: Readonly<Record<string, MessageKey>> = {
   passkey: "signin.method.passkey",
   identity: "signin.method.identity",
 };
+
+/**
+ * methodText says how a Sign-in was made, by its method: through the
+ * Identity Provider by its name where provider gives one; undefined for a
+ * way this web UI does not know.
+ */
+function methodText(t: Translate, method: string | undefined, provider: string | null | undefined): string | undefined {
+  if (method === "identity" && typeof provider === "string") {
+    return t("signin.method.identityNamed", { name: provider });
+  }
+  const key = methodKeys[method ?? "password"];
+  return key === undefined ? undefined : t(key);
+}
 
 /** endReasons are the message of each reason a Sign-in ended (api.EndSignedOut and the rest). */
 const endReasons: Readonly<Record<string, MessageKey>> = {

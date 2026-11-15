@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import type {
   PasskeyAssertion,
@@ -6,8 +6,6 @@ import type {
   PasskeyRegistration,
   PasskeyRequestOptions,
 } from "../../api/passkey";
-import { AuthMethods } from "../../api/signin";
-import { post } from "../../client";
 
 // The page's side of a passkey's ceremonies (docs/subsystems/signin.md,
 // "Passkeys"): koko's options and answers carry every binary member in
@@ -18,34 +16,6 @@ import { post } from "../../client";
 /** passkeysAvailable says the browser makes and uses passkeys: without PublicKeyCredential the page offers no passkey action. */
 export function passkeysAvailable(): boolean {
   return typeof window.PublicKeyCredential === "function" && typeof navigator.credentials === "object";
-}
-
-/**
- * usePasskeysOffered says whether a page offers passkey actions: the
- * browser has WebAuthn (passkeysAvailable) and /auth/methods answers that
- * passkeys work at the Web URL, whose host is no IP address. It is
- * undefined while /auth/methods has not answered, which a browser without
- * WebAuthn never asks, nor a page that asks with enabled false, as one
- * through koko web, which has no /auth/ endpoints. A failed /auth/methods
- * offers them, since the browser's own refusal still shows.
- */
-export function usePasskeysOffered(enabled = true): boolean | undefined {
-  const browser = enabled && passkeysAvailable();
-  const [server, setServer] = useState<boolean>();
-  useEffect(() => {
-    if (!browser) {
-      return;
-    }
-    let latest = true;
-    post(AuthMethods, {}).then(
-      ({ passkeys }) => latest && setServer(passkeys),
-      () => latest && setServer(true),
-    );
-    return () => {
-      latest = false;
-    };
-  }, [browser]);
-  return browser ? server : false;
 }
 
 /** toBase64url is bytes in base64url without padding, as koko's API carries them. */
@@ -173,9 +143,11 @@ export function cancelled(error: unknown): boolean {
 }
 
 /**
- * Ceremony is one passkey ceremony a page or panel runs: signal aborts the
- * browser's prompt once the page has closed, and open tells, after each
- * wait, whether it still is, so that nothing is sent after it closed.
+ * Ceremony is one passkey ceremony a page or panel runs, or one begin
+ * through the Identity Provider: signal aborts the browser's prompt once
+ * the page has closed, and open tells, after each wait, whether it still
+ * is, so that nothing is sent, and the browser sent nowhere, after it
+ * closed.
  */
 export interface Ceremony {
   signal: AbortSignal;

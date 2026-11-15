@@ -20,6 +20,7 @@ import {
   ValidForChoice,
   validForRequest,
 } from "../device/IssueDialog";
+import { LinkedIdentity } from "./LinkedIdentity";
 import { Passkeys } from "./Passkeys";
 import { useWebURL } from "./webURL";
 
@@ -28,13 +29,25 @@ import { useWebURL } from "./webURL";
  * and the Administrators' alone (docs/web-design.md, "Access"): their
  * Password, set on which date, or none, with Remove Password, asking
  * first, while there is one; their passkeys (Passkeys), each with Remove;
- * and Issue Sign-in Link, which needs the Web URL (server.show) and is
- * disabled with the reason while it is unset. The actions show only where
- * the caller may act on the person (acts). onChanged hears a Password
- * removed, so the panel and Access show it; the section's heading then
- * takes the focus Remove Password had.
+ * their Linked Identity (LinkedIdentity), with Unlink, titled by the
+ * Identity Provider's name (provider) where the page knows it; and Issue
+ * Sign-in Link, which needs the Web URL (server.show) and is disabled with
+ * the reason while it is unset. The actions show only where the caller may
+ * act on the person (acts). onChanged hears a Password removed or the
+ * identity unlinked, so the panel and Access show it; the section's
+ * heading then takes the focus Remove Password had.
  */
-export function PersonSignIn({ user, acts, onChanged }: { user: User; acts: boolean; onChanged: () => void }) {
+export function PersonSignIn({
+  user,
+  acts,
+  provider,
+  onChanged,
+}: {
+  user: User;
+  acts: boolean;
+  provider: string | null | undefined;
+  onChanged: () => void;
+}) {
   const t = useT();
   const webURL = useWebURL();
   const [dialog, setDialog] = useState<"issue" | "remove">();
@@ -66,6 +79,7 @@ export function PersonSignIn({ user, acts, onChanged }: { user: User; acts: bool
         otherWays={set !== undefined || user.identity_linked_at !== undefined}
         add="none"
       />
+      <LinkedIdentity user={user} provider={provider} level={4} acts={acts} link={false} onUnlinked={onChanged} />
       {acts && (
         <div className="flex flex-col items-start gap-2">
           {webURL.reason !== undefined && <p className="t-label">{webURL.reason(t)}</p>}

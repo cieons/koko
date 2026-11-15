@@ -1,4 +1,5 @@
 import { DeviceAdd, DeviceList, DeviceRevoke, type DeviceSession } from "../../api/device";
+import { type Identity, IdentityList, IdentityUnlink } from "../../api/identity";
 import { type Passkey, PasskeyList, PasskeyRemove } from "../../api/passkey";
 import { ServerShow } from "../../api/server";
 import { PasswordLinkIssue, PasswordRemove, SignInList } from "../../api/signin";
@@ -80,6 +81,24 @@ export function passkey(user: string, name: string, more: Partial<Passkey> = {})
   };
 }
 
+/**
+ * identity is the Linked Identity of user at https://id.example.com,
+ * labelled label, linked from its User's own Sign-in and never used.
+ */
+export function identity(user: string, label: string, more: Partial<Identity> = {}): Identity {
+  return {
+    id: `identity_${user}`,
+    user,
+    issuer: "https://id.example.com",
+    subject: `subject-${user}`,
+    label,
+    linked_by: null,
+    linked_at: "2026-11-04T09:00:00Z",
+    last_used_at: null,
+    ...more,
+  };
+}
+
 /** World is what the fake koko server holds. */
 export interface World {
   users: User[];
@@ -87,6 +106,8 @@ export interface World {
   devices: DeviceSession[];
   /** passkeys are every User's Passkeys, which user.list counts. */
   passkeys: Passkey[];
+  /** identities are every User's Linked Identity, at most one each, which user.list dates. */
+  identities: Identity[];
   /** webURL is the Web URL, or null while it is not set. */
   webURL: string | null;
 }
@@ -114,6 +135,7 @@ export function world(): World {
       device("bob", "old", { revoked_at: "2026-11-04T09:00:00Z" }),
     ],
     passkeys: [],
+    identities: [],
     webURL: "https://koko.example.com",
   };
 }
@@ -146,8 +168,8 @@ export const joinCode = "koko_JOINCODE";
 
 /**
  * serve makes the fake API answer from w as the koko server answers caller:
- * the Owner and an Administrator see every Space, Device Session and
- * Passkey, a Member their own. Acting on another User's credentials or role follows
+ * the Owner and an Administrator see every Space, Device Session,
+ * Passkey and Linked Identity, a Member their own. Acting on another User's credentials or role follows
  * the access check's rule (mayActOn), and only the Owner promotes and
  * demotes. Each write changes w.
  */
@@ -199,13 +221,19 @@ export function serve(api: FakeApi, w: World, caller: User = alice): void {
   };
   // No browser is signed in, unless a test serves Sign-ins (signins.fixture.ts).
   api.on(SignInList, () => ({ signins: [] }));
-  // user.list counts each User's Passkeys, as the koko server does, leaving the count out at none.
+  // user.list counts each User's Passkeys and dates their Linked Identity, as the koko server does,
+  // leaving either out at none.
   api.on(UserList, ({ all }) => ({
     users: w.users
       .filter((u) => all === true || u.removed_at === undefined)
       .map((u) => {
         const passkeys = w.passkeys.filter((p) => p.user === u.name).length;
-        return passkeys === 0 ? u : { ...u, passkeys };
+        const linked = w.identities.find((i) => i.user === u.name)?.linked_at;
+        return {
+          ...u,
+          ...(passkeys === 0 ? {} : { passkeys }),
+          ...(linked === undefined ? {} : { identity_linked_at: linked }),
+        };
       }),
   }));
   api.on(PasskeyList, ({ user }) => ({
@@ -221,6 +249,26 @@ export function serve(api: FakeApi, w: World, caller: User = alice): void {
     actOn(found.user);
     w.passkeys = w.passkeys.filter((p) => p.id !== id);
     return { passkey: found, signins_ended: 0 };
+  });
+  // A Member naming another User gets none, as the koko server answers, whether or not they have one.
+  api.on(IdentityList, ({ user }) => ({
+    identities: w.identities.filter(
+      (i) => i.user === (user ?? caller.name) && (administers || i.user === caller.name),
+    ),
+  }));
+  api.on(IdentityUnlink, ({ user }) => {
+    const of = user ?? caller.name;
+    if (of !== caller.name && !administers) {
+      throw refusal("owner_only", 403);
+    }
+    actOn(of);
+    const found = w.identities.find((i) => i.user === of);
+    if (!found) {
+      throw refusal("no_identity", 409);
+    }
+    w.identities = w.identities.filter((i) => i.id !== found.id);
+    w.users = w.users.map((u) => (u.name === of ? { ...u, identity_linked_at: undefined } : u));
+    return { identity: found, signins_ended: 0 };
   });
   api.on(SpaceList, () => ({ spaces: w.spaces.filter(sees) }));
   api.on(SpaceShow, ({ name }) => ({ space: find(name) }));

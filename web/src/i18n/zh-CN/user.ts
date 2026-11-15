@@ -28,7 +28,7 @@ export default {
   "user.promote": "设为管理员",
   "user.promote.title": "将 {name} 设为管理员",
   "user.promote.consequence":
-    "{name} 将可查看并操作全部空间、读取全部机密，并管理全部成员。以下有效设备、通行密钥与登录会话将予保留，请先逐一确认均属其本人。",
+    "{name} 将可查看并操作全部空间、读取全部机密，并管理全部成员。以下有效设备、通行密钥、关联身份与登录会话将予保留，请先逐一确认均属其本人。",
   "user.promote.devices": "有效设备",
   "user.promote.device": "{device}，由 {by} 添加",
   "user.promote.deviceElsewhere": "{device}，经浏览器或在 koko 服务器本机添加",

@@ -46,6 +46,7 @@ export default {
   "signin.method.password": "with a Password",
   "signin.method.passkey": "with a passkey",
   "signin.method.identity": "through the identity provider",
+  "signin.method.identityNamed": "through {name}",
   "signin.signins.title": "Browser Sign-ins",
   "signin.signins.none": "No browser is signed in as {name}.",
   "signin.signins.here": "This browser",

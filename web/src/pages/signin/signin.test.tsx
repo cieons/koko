@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { DeviceAdd } from "../../api/device";
-import { AuthLink, AuthPassword, AuthSignIn } from "../../api/signin";
+import { AuthLink, AuthMethods, AuthPassword, AuthSignIn } from "../../api/signin";
 import { UserCurrent } from "../../api/user";
 import { expectAccessible } from "../../test/axe";
 import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
@@ -39,11 +39,12 @@ function type(name: string, value: string): void {
 
 // Sign in.
 
-test("Sign in is outside the frame, asks for the User name and Password the browser can fill, and calls nothing first", async () => {
+test("Sign in is outside the frame, asks for the User name and Password the browser can fill, and asks /auth/methods alone first", async () => {
   const api = fakeApi();
   renderAt("/signin");
 
   expect(await screen.findByRole("heading", { level: 1, name: "Sign in" })).toBeDefined();
+  await screen.findByLabelText("User name", { selector: "input" });
   expect(screen.queryByRole("button", { name: /^Language:/ })).toBeNull(); // no frame
   expect(screen.queryByRole("navigation", { name: "Main" })).toBeNull();
   expect(field("User name").getAttribute("autocomplete")).toBe("username");
@@ -51,14 +52,14 @@ test("Sign in is outside the frame, asks for the User name and Password the brow
   expect(field("Password").type).toBe("password");
   expect(screen.getByText("The Owner or an Administrator can send you a Sign-in Link.")).toBeDefined();
   await waitFor(() => expect(document.title).toBe("Sign in · koko"));
-  expect(api.calls).toEqual([]);
+  expect(api.calls.map((c) => [c.path, c.request])).toEqual([[AuthMethods.path, {}]]);
   await expectAccessible();
 });
 
 test("Sign in checks its fields when submitted and sends nothing while one is empty", async () => {
   const api = fakeApi();
   renderAt("/signin");
-  await screen.findByRole("heading", { level: 1, name: "Sign in" });
+  await screen.findByLabelText("User name", { selector: "input" });
 
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
@@ -70,7 +71,7 @@ test("Sign in checks its fields when submitted and sends nothing while one is em
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   await waitFor(() => expect(document.activeElement).toBe(field("Password")));
   expect(screen.queryByText("Enter the User name.")).toBeNull();
-  expect(api.calls).toEqual([]);
+  expect(api.requests(AuthSignIn)).toEqual([]);
 });
 
 test("Sign in signs in and goes on to the page next names", async () => {
@@ -78,7 +79,7 @@ test("Sign in signs in and goes on to the page next names", async () => {
   api.on(AuthSignIn, () => ({ user: bob }));
   signedIn(api);
   renderAt("/signin?next=%2Faccount%3Fall%3D1");
-  await screen.findByRole("heading", { level: 1, name: "Sign in" });
+  await screen.findByLabelText("User name", { selector: "input" });
 
   type("User name", "bob");
   type("Password", password);
@@ -114,7 +115,7 @@ test("Sign in refused shows why above the fields and keeps what was typed", asyn
     throw refusal("wrong_password", 401);
   });
   renderAt("/signin");
-  await screen.findByRole("heading", { level: 1, name: "Sign in" });
+  await screen.findByLabelText("User name", { selector: "input" });
 
   type("User name", "bob");
   type("Password", "not the password");
@@ -133,7 +134,7 @@ test("Sign in refused too_many_attempts says in how many minutes to try again", 
     throw refusal("too_many_attempts", 429, 541);
   });
   renderAt("/signin");
-  await screen.findByRole("heading", { level: 1, name: "Sign in" });
+  await screen.findByLabelText("User name", { selector: "input" });
 
   type("User name", "bob");
   type("Password", password);
@@ -147,7 +148,7 @@ test("Sign in refused too_many_attempts says in how many minutes to try again", 
 test("Sign in's language buttons choose the language, which the browser keeps", async () => {
   fakeApi();
   renderAt("/signin");
-  await screen.findByRole("heading", { level: 1, name: "Sign in" });
+  await screen.findByLabelText("User name", { selector: "input" });
 
   fireEvent.click(screen.getByRole("button", { name: "简体中文" }));
 

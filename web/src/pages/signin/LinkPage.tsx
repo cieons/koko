@@ -1,5 +1,5 @@
 import { Button, buttonVariants } from "@heroui/react";
-import { FingerprintPattern } from "lucide-react";
+import { FingerprintPattern, LogIn } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { Link } from "react-aria-components";
 
@@ -7,22 +7,29 @@ import { AuthPasskeyAdd, AuthPasskeyAddBegin } from "../../api/passkey";
 import { AuthLink, AuthPassword, CodeLinkInvalid, CodeLinkUsed } from "../../api/signin";
 import { ApiError, post } from "../../client";
 import { useCount, useT } from "../../shell/i18n";
-import { navigate, signInPage } from "../../shell/router";
+import { navigate, signInPage, useSearchParams } from "../../shell/router";
 import { Form } from "../../ui/Form";
 import { notify } from "../../ui/notify";
 import { AlertLine, Loading } from "../../ui/states";
 import { Door } from "./Door";
 import { useLinkSecret } from "./linkSecret";
+import { useMethods } from "./methods";
 import { PasswordFields } from "./PasswordFields";
+import { continueWithProvider, refusedFrom } from "./provider";
 import { refusalText } from "./refusal";
-import { cancelled, makePasskey, useCeremony, usePasskeysOffered } from "./webauthn";
+import { cancelled, makePasskey, useCeremony } from "./webauthn";
 
-/** Step is where a Sign-in Link's page is: reading the link, its choices, a link that no longer works, or a read that failed. */
+/**
+ * Step is where a Sign-in Link's page is: reading the link, its choices, a
+ * link that no longer works, a read that failed, or a refusal the Identity
+ * Provider's callback came back with, the link's secret no longer known.
+ */
 type Step =
   | { kind: "reading" }
-  | { kind: "ready"; user: string; passwordSet: boolean }
+  | { kind: "ready"; user: string; passwordSet: boolean; identityLinked: boolean }
   | { kind: "gone"; code: typeof CodeLinkUsed | typeof CodeLinkInvalid }
-  | { kind: "failed"; error: unknown };
+  | { kind: "failed"; error: unknown }
+  | { kind: "refused"; error: ApiError };
 
 /** gone is the Step of a refusal that says the link no longer works, or undefined for any other. */
 function gone(error: unknown): Step | undefined {
@@ -39,27 +46,37 @@ function gone(error: unknown): Step | undefined {
  * of the URL's fragment (takingLinkSecret); it asks /auth/link whom the
  * link is for, spending nothing, and shows "For <name>." with two choices:
  * Create a passkey, which makes one through the link
- * (/auth/passkey/add/begin, the browser's ceremony, /auth/passkey/add),
- * and Set a Password instead, which opens the new Password twice, saying it
- * replaces their Password when they have one, for /auth/password. Either
- * spends the link and signs this browser in. A browser without WebAuthn,
- * or a Web URL passkeys do not work at (/auth/methods, usePasskeysOffered),
- * gets the Password's fields at once; the page shows Loading until both
- * /auth/link and /auth/methods have answered. A passkey's answer whose page
- * closed meanwhile says in a toast that this browser is signed in, instead
- * of going on. A link used already or no longer
- * valid replaces the page with what happened and Go to Sign in. The secret
- * is sent only while the page is open: a ceremony whose page closed, as for
- * another link, sends nothing more.
+ * (/auth/passkey/add/begin, the browser's ceremony, /auth/passkey/add);
+ * Continue with the Identity Provider, for a User with no Linked Identity
+ * where /auth/methods names one, which begins linking through the link and
+ * sends the browser to the provider; and Set a Password instead, which
+ * opens the new Password twice, saying it replaces their Password when they
+ * have one, for /auth/password. Each spends the link and signs this browser
+ * in, the provider's once its callback links the identity. A browser
+ * without WebAuthn, or a Web URL passkeys do not work at (useMethods),
+ * with no provider to offer, gets the Password's fields at once; the page
+ * shows Loading until both /auth/link and /auth/methods have answered. A
+ * passkey's answer whose page closed meanwhile says in a toast that this
+ * browser is signed in, instead of going on. A link used already or no
+ * longer valid replaces the page with what happened and Go to Sign in. The
+ * callback's refusal comes back to /link?refused=<code> without the
+ * secret, and the page shows it and asks for the link to be opened again;
+ * link_used and link_invalid show as from any other call. The secret is
+ * sent only while the page is open: a ceremony or begin whose page closed,
+ * as for another link, sends nothing more and goes nowhere.
  */
 export function LinkPage() {
   // Each link gets a page of its own, so nothing typed for one stays for the next.
   const secret = useLinkSecret();
-  return <ForLink key={secret} secret={secret} />;
+  const [params] = useSearchParams();
+  return <ForLink key={secret} secret={secret} refused={params.get("refused")} />;
 }
 
-/** ForLink is the page of the link of secret, once the route has taken it. */
-function ForLink({ secret }: { secret: string | undefined }) {
+/**
+ * ForLink is the page of the link of secret, once the route has taken it;
+ * without one, the callback's refusal when the page was opened with one.
+ */
+function ForLink({ secret, refused }: { secret: string | undefined; refused: string | null }) {
   const t = useT();
   const count = useCount();
   const [step, setStep] = useState<Step>({ kind: "reading" });
@@ -67,13 +84,16 @@ function ForLink({ secret }: { secret: string | undefined }) {
   const [value, setValue] = useState("");
   const [again, setAgain] = useState("");
   const [pending, setPending] = useState(false);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<"passkey" | "provider">();
   const [error, setError] = useState<unknown>();
   const begin = useCeremony();
-  const passkeys = usePasskeysOffered();
-  // chosen says Set a Password instead was chosen; without passkeys the Password's fields show at once.
+  // A page with no link to read asks nothing.
+  const methods = useMethods(secret !== undefined && secret !== "");
+  const provider = step.kind === "ready" && !step.identityLinked ? (methods?.provider ?? null) : null;
+  const choices = methods !== undefined && (methods.passkeys || provider !== null);
+  // chosen says Set a Password instead was chosen; with no other choice the Password's fields show at once.
   const [chosen, setChosen] = useState(false);
-  const password = passkeys === false || chosen;
+  const password = !choices || chosen;
   // The line saying a Password set here replaces theirs describes the submit, so a screen reader tabbing to it hears it.
   const replaces = useId();
 
@@ -82,19 +102,25 @@ function ForLink({ secret }: { secret: string | undefined }) {
       return;
     }
     if (secret === "") {
-      setStep({ kind: "gone", code: CodeLinkInvalid });
+      const error = refusedFrom(refused);
+      setStep(
+        error === undefined
+          ? { kind: "gone", code: CodeLinkInvalid }
+          : (gone(error) ?? { kind: "refused", error }),
+      );
       return;
     }
     let latest = true;
     setStep({ kind: "reading" });
     post(AuthLink, { link: secret }).then(
-      ({ user, password_set }) => latest && setStep({ kind: "ready", user, passwordSet: password_set }),
+      ({ user, password_set, identity_linked }) =>
+        latest && setStep({ kind: "ready", user, passwordSet: password_set, identityLinked: identity_linked }),
       (failure: unknown) => latest && setStep(gone(failure) ?? { kind: "failed", error: failure }),
     );
     return () => {
       latest = false;
     };
-  }, [secret, reads]);
+  }, [secret, refused, reads]);
 
   // Each press begins a ceremony of its own, since the koko server's flow is taken by its first answer.
   const create = async () => {
@@ -102,7 +128,7 @@ function ForLink({ secret }: { secret: string | undefined }) {
     if (secret === undefined || ceremony === undefined) {
       return;
     }
-    setCreating(true);
+    setCreating("passkey");
     setError(undefined);
     try {
       const { flow, options } = await post(AuthPasskeyAddBegin, { link: secret });
@@ -129,7 +155,31 @@ function ForLink({ secret }: { secret: string | undefined }) {
       } else if (!cancelled(failure)) {
         setError(failure);
       }
-      setCreating(false);
+      setCreating(undefined);
+    }
+  };
+
+  // The link goes to the koko server with the press alone; a begin answered after the page closed goes nowhere.
+  const withProvider = async () => {
+    const page = begin();
+    if (secret === undefined || page === undefined) {
+      return;
+    }
+    setCreating("provider");
+    setError(undefined);
+    try {
+      await continueWithProvider({ purpose: "link", link: secret }, page.open);
+    } catch (failure) {
+      if (!page.open()) {
+        return;
+      }
+      const next = gone(failure);
+      if (next) {
+        setStep(next);
+      } else {
+        setError(failure);
+      }
+      setCreating(undefined);
     }
   };
 
@@ -166,9 +216,19 @@ function ForLink({ secret }: { secret: string | undefined }) {
       </Door>
     );
   }
-  if (step.kind !== "ready" || passkeys === undefined) {
+  if (step.kind === "refused") {
     return (
-      <Door title={t(passkeys === false ? "signin.set.title" : "passkey.link.title")}>
+      <Door title={t("passkey.link.title")}>
+        <div className="flex flex-col gap-4">
+          <AlertLine>{refusalText(t, count, step.error)}</AlertLine>
+          <p>{t("identity.link.again")}</p>
+        </div>
+      </Door>
+    );
+  }
+  if (step.kind !== "ready" || methods === undefined) {
+    return (
+      <Door title={t("passkey.link.title")}>
         {step.kind !== "failed" ? (
           <Loading />
         ) : (
@@ -188,10 +248,24 @@ function ForLink({ secret }: { secret: string | undefined }) {
       <Door title={t("passkey.link.title")} lead={t("signin.set.lead", { name: user })}>
         <div className="flex flex-col gap-3">
           {error !== undefined && <AlertLine>{refusalText(t, count, error)}</AlertLine>}
-          <Button size="lg" fullWidth isPending={creating} onPress={() => void create()}>
-            <FingerprintPattern aria-hidden className="size-5" />
-            {t("passkey.link.create")}
-          </Button>
+          {methods.passkeys && (
+            <Button size="lg" fullWidth isPending={creating === "passkey"} onPress={() => void create()}>
+              <FingerprintPattern aria-hidden className="size-5" />
+              {t("passkey.link.create")}
+            </Button>
+          )}
+          {provider !== null && (
+            <Button
+              size="lg"
+              fullWidth
+              variant={methods.passkeys ? "secondary" : "primary"}
+              isPending={creating === "provider"}
+              onPress={() => void withProvider()}
+            >
+              <LogIn aria-hidden className="size-5" />
+              {t("identity.continue", { name: provider })}
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="lg"
@@ -229,7 +303,7 @@ function ForLink({ secret }: { secret: string | undefined }) {
         >
           {t("signin.set.submit")}
         </Button>
-        {passkeys && (
+        {choices && (
           <Button
             variant="tertiary"
             fullWidth

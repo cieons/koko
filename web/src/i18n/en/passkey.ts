@@ -19,7 +19,7 @@ export default {
   "passkey.add.nameTooLong": "The name must be at most 64 characters long.",
   "passkey.add.nameInvalid": "The name must be 1 to 64 characters long, with no control characters.",
   "passkey.add.done": "The passkey {name} is added.",
-  "passkey.viaBrowser": "Passkeys are added in a browser signed in at the Web URL.",
+  "passkey.viaBrowser": "Passkeys are added, and an identity is linked, in a browser signed in at the Web URL.",
   "passkey.needsDomain": "Passkeys need a Web URL whose host is a domain name, not an IP address.",
   "passkey.signedIn": "This browser is signed in as {name}.",
   "passkey.exists": "This device or password manager already holds a passkey of this User.",

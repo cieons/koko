@@ -27,7 +27,7 @@ export default {
   "user.promote": "Make an Administrator",
   "user.promote.title": "Make {name} an Administrator",
   "user.promote.consequence":
-    "{name} will see and act in every Space, read every Secret and manage every Member. Their live devices, passkeys and Sign-ins below stay theirs: check that each is theirs before going on.",
+    "{name} will see and act in every Space, read every Secret and manage every Member. Their live devices, passkeys, Linked Identity and Sign-ins below stay theirs: check that each is theirs before going on.",
   "user.promote.devices": "Live devices",
   "user.promote.device": "{device}, added by {by}",
   "user.promote.deviceElsewhere": "{device}, added in a browser or on the koko server's machine",

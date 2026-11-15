@@ -3,6 +3,7 @@ import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 
 import { DeviceList } from "../../api/device";
+import { IdentityList } from "../../api/identity";
 import { PasskeyList } from "../../api/passkey";
 import { SignInList } from "../../api/signin";
 import { CodeSpaceNotEmpty, type Space, SpaceShow } from "../../api/space";
@@ -22,6 +23,7 @@ import { notify } from "../../ui/notify";
 import { SidePanel } from "../../ui/SidePanel";
 import { AlertLine, Loaded, Loading, Refusal } from "../../ui/states";
 import { Devices } from "../device/Devices";
+import { useMethods } from "../signin/methods";
 import { PersonSignIn } from "../signin/PersonSignIn";
 import { SignIns } from "../signin/SignIns";
 import type { Membership } from "../space/membership";
@@ -47,7 +49,8 @@ export interface PersonPanelProps {
  * that they see every Space; and their Personal Space's counts; their
  * devices (Devices), with Add device for them and Revoke; their ways to
  * sign in (PersonSignIn): their Password with Remove Password, their
- * passkeys with Remove, and Issue Sign-in Link; and their Browser Sign-ins
+ * passkeys with Remove, their Linked Identity with Unlink, and Issue
+ * Sign-in Link; and their Browser Sign-ins
  * with Revoke; for the Owner, Make an Administrator, which asks first, or
  * Make a Member; and Remove User, which asks first and then says whether
  * the User was deleted or Removed. Where the caller may not act on the
@@ -83,7 +86,7 @@ export function PersonPanel({ name, shared, membership, onChanged, onClose }: Pe
               membership={membership}
               space={space}
               onSpace={setSpace}
-              onPassword={() => {
+              onSignIn={() => {
                 users.reload();
                 onChanged();
               }}
@@ -110,7 +113,7 @@ function Person({
   membership,
   space,
   onSpace,
-  onPassword,
+  onSignIn,
   onRole,
   onRemoved,
 }: {
@@ -120,8 +123,8 @@ function Person({
   /** space is the Space picked in Add to a Space, which the panel holds. */
   space: string | null;
   onSpace: (space: string | null) => void;
-  /** onPassword hears the User's Password removed, so the panel and Access show it. */
-  onPassword: () => void;
+  /** onSignIn hears the User's Password removed or identity unlinked, so the panel and Access show it. */
+  onSignIn: () => void;
   /** onRole hears the User's role changed, so the panel and Access show it. */
   onRole: () => void;
   onRemoved: () => void;
@@ -133,8 +136,10 @@ function Person({
   const self = user.name === caller.user.name;
   const [all, setAll] = useState(false);
   const [removing, setRemoving] = useState(false);
-  // Removing the Password ends the Sign-ins made with it, which are read again then.
-  const [passwordChanges, setPasswordChanges] = useState(0);
+  // Removing the Password, or unlinking the identity, ends the Sign-ins made with it, which are read again then.
+  const [signInChanges, setSignInChanges] = useState(0);
+  // The Identity Provider's name, which only a browser on the web listener can ask.
+  const provider = useMethods(caller.signin !== undefined)?.provider;
   return (
     <>
       <section className="flex flex-col gap-3">
@@ -152,12 +157,13 @@ function Person({
       <PersonSignIn
         user={user}
         acts={acts}
+        provider={provider}
         onChanged={() => {
-          setPasswordChanges((n) => n + 1);
-          onPassword();
+          setSignInChanges((n) => n + 1);
+          onSignIn();
         }}
       />
-      <SignIns user={user.name} level={3} changes={passwordChanges} acts={acts} />
+      <SignIns user={user.name} level={3} changes={signInChanges} acts={acts} provider={provider} />
       {caller.owner && !owner && <Role user={user} onChanged={onRole} />}
       {acts && !owner && !self && (
         <section className="mt-2 flex flex-col items-start gap-3 border-t border-line pt-6">
@@ -340,7 +346,7 @@ function Role({ user, onChanged }: { user: User; onChanged: () => void }) {
       <Refusal error={demote.error} />
       {promoting && (
         <Promote
-          name={name}
+          user={user}
           onPromoted={() => {
             setPromoting(false);
             changed("user.promoted");
@@ -355,21 +361,32 @@ function Role({ user, onChanged }: { user: User; onChanged: () => void }) {
 /**
  * Promote makes a Member an Administrator, asking first: what it gives, and
  * the User's live devices, each with who added it, their passkeys, each
- * with who issued the Sign-in Link it was made through, and their live
+ * with who issued the Sign-in Link it was made through, their Linked
+ * Identity, with who issued the link it was linked through, read only
+ * while user.identity_linked_at says they have one, and their live
  * Sign-ins, which promotion keeps, for the Owner to read before acting
- * (ADR 0056). The action waits until all three are read.
+ * (ADR 0056). The action waits until all are read.
  */
-function Promote({ name, onPromoted, onCancel }: { name: string; onPromoted: () => void; onCancel: () => void }) {
+function Promote({ user, onPromoted, onCancel }: { user: User; onPromoted: () => void; onCancel: () => void }) {
   const t = useT();
+  const { name } = user;
   const promote = useWrite(UserPromote);
   const devices = useRead(DeviceList, { user: name });
   const passkeys = useRead(PasskeyList, { user: name });
+  const linked = user.identity_linked_at !== undefined;
+  const identities = useRead(IdentityList, { user: name }, { enabled: linked });
   const signins = useRead(SignInList, { user: name });
+  const identitiesRead = linked ? identities.data?.identities : [];
   const kept =
-    devices.data && passkeys.data && signins.data
-      ? { devices: devices.data.device_sessions, passkeys: passkeys.data.passkeys, signins: signins.data.signins }
+    devices.data && passkeys.data && identitiesRead && signins.data
+      ? {
+          devices: devices.data.device_sessions,
+          passkeys: passkeys.data.passkeys,
+          identities: identitiesRead,
+          signins: signins.data.signins,
+        }
       : undefined;
-  const failed = devices.error ?? passkeys.error ?? signins.error;
+  const failed = devices.error ?? passkeys.error ?? identities.error ?? signins.error;
   return (
     <ConfirmDialog
       title={t("user.promote.title", { name })}
@@ -397,6 +414,17 @@ function Promote({ name, onPromoted, onCancel }: { name: string; onPromoted: () 
                   p.added_by === null
                     ? t("passkey.promote.own", { passkey: p.name, name })
                     : t("passkey.promote.byLink", { passkey: p.name, by: p.added_by }),
+              }))}
+            />
+            <Kept
+              title={t("identity.linked.title")}
+              none={t("identity.noIdentity")}
+              items={kept.identities.map((i) => ({
+                id: i.id,
+                text:
+                  i.linked_by === null
+                    ? t("identity.promote.own", { label: i.label, name })
+                    : t("identity.promote.byLink", { label: i.label, by: i.linked_by }),
               }))}
             />
             <Kept

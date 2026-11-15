@@ -438,11 +438,7 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
   `navigator.credentials` (`passkeysAvailable`) gets neither Sign in with
   a passkey, nor Create a passkey, nor Add a passkey; it still lists and
   removes passkeys. Nor does a browser where `/auth/methods` answers
-  `passkeys` false, the Web URL's host being an IP address
-  (`usePasskeysOffered`): Sign in and a Sign-in Link's page ask it, and
-  Account for a browser on the web listener, never through `koko web`; a
-  failed `/auth/methods` offers passkeys, since the browser's own refusal
-  still shows. A ceremony the person cancels or lets time out
+  `passkeys` false, the Web URL's host being an IP address. A ceremony the person cancels or lets time out
   (`NotAllowedError`), or that the page aborts as it closes (`AbortError`),
   shows nothing; `InvalidStateError`, the device holding one of the User's
   passkeys already, says so, and any other failure says the browser could
@@ -454,6 +450,25 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
   the page's closing aborts the prompt. A last answer that comes after
   the page closed, which signed this browser in, goes nowhere: a toast says
   "This browser is signed in as <name>.", from the answer's User.
+- **The ways a page offers** ([`useMethods`](../../web/src/pages/signin/methods.ts)):
+  Sign in, a Sign-in Link's page, and Account and a person's panel in a
+  browser on the web listener, each ask `/auth/methods` once, in any
+  browser, and hand its answer down: whether passkeys work at the Web URL,
+  and the Identity Provider's name. Through `koko web` or for the Local
+  caller, which have no `/auth/` endpoints, nothing asks it, and the
+  provider's name is not known there. A failed `/auth/methods` offers
+  passkeys, since the browser's own refusal still shows, and no provider.
+- **The Identity Provider** ([`provider.ts`](../../web/src/pages/signin/provider.ts)):
+  Continue with <name>, on Sign in and a Sign-in Link's page, and Link
+  <name>, on Account, post `/auth/oidc/begin` and send the browser to the
+  `location` it answers ([`leaveFor`](../../web/src/shell/leave.ts)), only
+  while the page that began it is open (`useCeremony`): a begin answered
+  after the page closed goes nowhere. Each press begins a flow of its own,
+  and the button stays pending until the browser leaves. The provider's
+  callback ([the Identity Provider](identity.md#the-callback)) comes back
+  to Sign in, Account or a Sign-in Link's page with `?refused=<code>`; a
+  page shows only the twelve codes the callback sends, each with its
+  code's message (`refusedFrom`), and ignores any other.
 - **Sign in** ([`SignInPage`](../../web/src/pages/signin/SignInPage.tsx),
   `/signin`), outside the frame: **Sign in with a passkey**, the primary
   action, where the browser has WebAuthn and `/auth/methods` offers
@@ -461,12 +476,19 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
   `navigator.credentials.get()`, then `/auth/passkey/signin`; then a
   divider and the User name and Password (`autocomplete` `username` and
   `current-password`), posted to `/auth/signin`, **Sign in** secondary
-  beside a passkey and primary without one. With WebAuthn the panel shows
-  Loading until `/auth/methods` answers, so no passkey action shows and
-  then goes. Either goes on to the page
+  beside a passkey or the provider and primary without either. **Continue
+  with <name>**, where `/auth/methods` names the Identity Provider, comes
+  after the passkey, secondary beside it and primary without it, and
+  begins `{"purpose": "signin", "next"}`, `next` the page Sign in would go
+  on to, left out when the URL names none. The panel shows Loading until
+  `/auth/methods` answers, so no action shows and then goes. A passkey or a
+  Password goes on to the page
   `next` names, followed only when it is a path of this origin, else
-  `/`, replacing the history entry. A refusal shows above them:
-  `passkey_refused`, `wrong_password`, or `too_many_attempts` with the
+  `/`, replacing the history entry; the provider's callback goes there
+  itself. A refusal shows above them:
+  `passkey_refused`, `wrong_password`, the begin's, such as
+  `provider_unreachable`, the callback's `?refused=<code>`, which shows
+  until the next try, or `too_many_attempts` with the
   minutes its `Retry-After` leaves. One line says the Owner or an
   Administrator can send a Sign-in Link.
   The shell sends a browser here, with `next`, when any call is answered
@@ -481,17 +503,25 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
   without it at once, before the page's chunk loads, and again when
   another link is opened on the page; the page then, afresh for each link,
   asks `/auth/link` whom the link is for, and shows Set up sign-in: "For
-  <name>.", **Create a passkey** (primary) and **Set a Password instead**
-  (secondary). Create a passkey posts the link to
+  <name>.", **Create a passkey** (primary), **Continue with <name>** where
+  `/auth/methods` names the Identity Provider and `/auth/link`'s
+  `identity_linked` says the User has no Linked Identity, secondary beside
+  a passkey and primary without one, and **Set a Password instead**
+  (secondary). Continue with <name> begins `{"purpose": "link", "link"}`
+  and sends the browser to the provider, whose callback links the
+  identity, spends the link and signs this browser in. Create a passkey
+  posts the link to
   `/auth/passkey/add/begin`, makes the passkey with
   `navigator.credentials.create()` and posts its answer to
   `/auth/passkey/add`, which spends the link, names the passkey with the
   browser's label and signs this browser in; then `/`. The secret is sent
   only while the page is open: another link opened as the browser makes
   the passkey closes the first one's page, and its answer is not sent. Set
-  a Password instead, or the page at once in a browser without WebAuthn or
-  where `/auth/methods` offers no passkeys (the page shows Loading until
-  both `/auth/link` and `/auth/methods` have answered), shows Set a Password, with Back to the choices beside a passkey: a line
+  a Password instead, or the page at once where there is no other choice,
+  in a browser without WebAuthn or where `/auth/methods` offers no
+  passkeys, with no provider to offer (the page shows Loading until both
+  `/auth/link` and `/auth/methods` have answered), shows Set a Password,
+  with Back to the choices where there were any: a line
   saying a Password set there replaces theirs when
   `password_set` says they have one, which describes the submit button
   (`aria-describedby`), and the new Password twice
@@ -502,7 +532,11 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
   the link and the Password to `/auth/password`, which signs this browser
   in, and goes to `/`. `link_used` and `link_invalid`, from any call,
   and a URL with no fragment, replace the page with what happened and Go
-  to Sign in.
+  to Sign in. A flow through the link that the callback refused comes back
+  to `/link?refused=<code>`, with no fragment and so no secret: the page
+  shows the refusal and "Open your Sign-in Link again to choose another
+  way.", since the link was not spent, and calls nothing; `link_used` and
+  `link_invalid` there show as from any call.
 - Both show koko's wordmark, one panel and the two languages as buttons
   ([`Door`](../../web/src/pages/signin/Door.tsx)).
 - **Account's Sign-in**, one panel, its lead line naming how this browser
@@ -521,7 +555,8 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
     `/auth/methods` offers no passkeys, one sentence says in its place that
     passkeys need a Web URL whose host is a domain name. Through
     `koko web` or for the Local caller they are listed with Remove, and one
-    sentence says passkeys are added in a browser signed in at the Web URL.
+    sentence says passkeys are added, and an identity linked, in a browser
+    signed in at the Web URL.
     Remove (`passkey.remove`) asks first and says who is signed out: this
     browser, when its Sign-in was made with that passkey (`user.current`'s
     `signin.credential`), else the browsers signed in with it; that the
@@ -530,6 +565,28 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
     Identity and no other passkey), that their next sign-in needs a Sign-in
     Link. Removing this browser's own goes
     to Sign in; otherwise the focus moves to the heading.
+  - **The Linked Identity** ([`LinkedIdentity`](../../web/src/pages/signin/LinkedIdentity.tsx)),
+    a section titled by the Identity Provider's name, or "Linked identity"
+    where it is not known: "Linked as <label>" (`identity.list`, with no
+    `user`, read only while `user.current`'s `identity_linked_at` says
+    there is one), who issued the Sign-in Link it was linked through, when
+    it was linked and last used, and **Unlink** (`identity.unlink`, with no
+    `user`). Unlink asks first and says who is signed out: this browser,
+    when its Sign-in was made through it (`signin.method` `identity`, its
+    `credential` the identity's id), else the browsers signed in through
+    it; and, when it is the User's last way to sign in (no Password and no
+    passkey), that their next sign-in needs a Sign-in Link. Unlinking this
+    browser's own goes to Sign in; otherwise the page reads the User again
+    and the focus moves to the heading. Without one, a browser signed in
+    where `/auth/methods` names the provider gets **Link <name>**, which
+    begins `{"purpose": "link"}`. The callback comes back to Account with
+    `?linked=1`, which a toast confirms, or `?refused=<code>`, shown in the
+    section until the next try; both leave the URL once read, in place of
+    its history entry. Through `koko web` or for the Local caller the
+    identity is listed with Unlink, and the passkeys' sentence says where
+    one is linked. With neither an identity, a provider nor a refusal there
+    is no section; one whose identity was unlinked says "No Linked
+    Identity.".
   - **Password** ([`ChangePassword`](../../web/src/pages/signin/ChangePassword.tsx)),
     for a browser signed in: for a User who has one (`user.current`'s
     `password_set_at`), the current Password, then the new one twice as Set
@@ -543,8 +600,9 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
 - **Browser Sign-ins** ([`SignIns`](../../web/src/pages/signin/SignIns.tsx)),
   on Account for one's own (`signin.list` naming the User): each browser's
   label and how it signed in (its `method`: "with a passkey", "with a
-  Password" or "through the identity provider", a Password for a koko
-  server that names none), this browser's marked, its address in the code face, when it was
+  Password", or "through <name>", the Identity Provider's name where the
+  page asked `/auth/methods` for it, else "through the identity provider";
+  a Password for a koko server that names none), this browser's marked, its address in the code face, when it was
   last used and when it ends; "Show ended Sign-ins" adds the ended ones,
   struck through, with when and why. Revoke asks first and says what
   follows, without assuming a Password; revoking this browser's own goes
@@ -555,6 +613,9 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
   that they have none; their passkeys (`passkey.list` naming them), as on
   Account, each with Remove, the last way to sign in counted from
   `user.list`'s `password_set_at`, `passkeys` and `identity_linked_at`;
+  their Linked Identity, as on Account, with `identity.list` and
+  `identity.unlink` naming them, read only while `user.list`'s
+  `identity_linked_at` says they have one, with Unlink and no Link;
   **Issue Sign-in Link** (`password.link`), valid
   for the time chosen and shown once, disabled, saying why, while
   `server.show` answers no Web URL ([`useWebURL`](../../web/src/pages/signin/webURL.ts)),
@@ -562,8 +623,9 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
   working; and **Remove Password** (`password.remove`), asking first,
   saying that the Sign-ins made with the Password end and, for one's own
   from a browser signed in with it (`user.current`'s `signin.method`), that
-  this browser is signed out too; after it the panel and Access show none, the
-  Sign-ins are read again, and the section's heading takes the focus.
+  this browser is signed out too; after it, or an Unlink, the panel and
+  Access show what is left, the Sign-ins are read again, and the section's
+  heading takes the focus.
   Viewing the Owner or another Administrator, an Administrator sees them
   without any action. Their Browser Sign-ins follow, as on Account, Revoke
   saying that User is signed out of that browser. Invite's In a browser issues a Sign-in
@@ -748,6 +810,34 @@ challenge, client data, attestation, assertion or signature.
   Chinese. A person's passkeys, their last way, an Administrator viewing
   the Owner's, Make an Administrator listing them with who made their
   links, and Access's summary.
+- [`identities.test.tsx`](../../web/src/pages/signin/identities.test.tsx),
+  with `leaveFor` stood in for, axe on each state: Continue with <name> on
+  Sign in after the passkey, primary without WebAuthn, and none without a
+  provider; its begin with `next`, a `next` of another origin as `/`, and
+  none; a refused begin and the next press; a begin answered after Sign in
+  closed going nowhere; each of the callback's twelve codes as
+  `?refused=`, shown until the next try, and a code it never sends
+  ignored; in Chinese. A Sign-in Link's page offering it after Create a
+  passkey, none for a User with a Linked Identity or without a provider,
+  its begin posting the secret, first without WebAuthn with Back to it,
+  Set a Password at once with neither; a begin answered after another
+  link closed the page going nowhere, the secret sent once; a refused
+  begin in place and `link_used` replacing the choices;
+  `/link?refused=<code>` asking for the link again and calling nothing,
+  `link_used`, `link_invalid` and an unknown code there; `/password`; in
+  Chinese. Account's section by the provider's name; Unlink of this
+  browser's own going to Sign in, and of another offering Link again with
+  the focus on the heading; the last way, and a passkey making it not the
+  last; the identity making one passkey not the last; Link with
+  `{"purpose": "link"}`, refused in place, and going nowhere once Account
+  closed; `?linked=1`'s toast and `?refused=` in place, each leaving the
+  URL; no section without a provider or an identity; one at a provider
+  since removed; through `koko web`; in Chinese. A Browser Sign-in
+  "through <name>" in both languages. A person's identity with who issued
+  its link, Unlink and Access's summary; their last way; none read without
+  one; an Administrator viewing the Owner's; Make an Administrator listing
+  it with who issued its link, linked from their own Sign-in, or none; the
+  summary in Chinese.
 - [`signin.test.tsx`](../../web/src/pages/signin/signin.test.tsx), Vitest
   against the [fake API](web-ui.md#testing-pages)'s `/auth/` endpoints, axe
   on each state: Sign in outside the frame with its `autocomplete`, its

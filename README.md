@@ -56,8 +56,10 @@ upgrading, going back and restoring. Without systemd, run the image
 The web UI opens with `koko web` on any joined device. People who do not
 use the CLI, such as a teammate on a phone, use it in a browser instead:
 the koko server serves it to a reverse proxy, such as Caddy, that holds a
-domain and its certificate, and each person signs in with a Password,
-which they set through a one-time Sign-in Link the Owner or an Administrator issues. Signed in, they
+domain and its certificate. Each person signs in with a passkey, through
+the Owner's OpenID Connect identity provider, such as Authentik or
+Keycloak, or with a Password, whichever they set up through a one-time
+Sign-in Link the Owner or an Administrator issues. Signed in, they
 keep the record their Spaces allow. Either way, the web UI's terminal opens
 SSH Sessions, each in a tab of its own, to the Hosts the person may reach,
 and its Files panel uploads and downloads files on them

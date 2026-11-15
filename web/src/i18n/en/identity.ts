@@ -1,5 +1,6 @@
 // The identity area's messages: the Identity provider panel over Access,
-// and its API error codes.
+// signing in and linking through it, a Linked Identity on Account and in
+// a person's panel, and its API error codes.
 export default {
   "identity.provider": "Identity provider",
   "identity.issuer": "Issuer URL",
@@ -55,6 +56,28 @@ export default {
   "identity.reason.endpoint_missing":
     "The discovery document gives no https:// authorization, token or key set endpoint.",
   "identity.reason.code_unsupported": "The provider does not offer the authorization code flow koko signs in with.",
+  "identity.continue": "Continue with {name}",
+  "identity.link.again": "Open your Sign-in Link again to choose another way.",
+  "identity.linked.title": "Linked identity",
+  "identity.linkedAs": "Linked as {label}",
+  "identity.byLink": "Through a Sign-in Link from {by}",
+  "identity.linkedOn": "Linked {date}",
+  "identity.noIdentity": "No Linked Identity.",
+  "identity.summary": "Linked",
+  "identity.link": "Link {name}",
+  "identity.linked.done": "The identity is linked.",
+  "identity.unlink": "Unlink",
+  "identity.unlink.title": "Unlink the identity {label}",
+  "identity.unlink.consequence": "The browsers signed in through it are signed out.",
+  "identity.unlink.consequenceHere":
+    "This browser signed in through it, so this browser is signed out, as is any other browser signed in through it.",
+  "identity.unlink.consequenceLast":
+    "The browsers signed in through it are signed out. It is the last way {name} has to sign in, so their next sign-in needs a Sign-in Link.",
+  "identity.unlink.consequenceHereLast":
+    "This browser signed in through it, so this browser is signed out, as is any other browser signed in through it. It is the last way {name} has to sign in, so their next sign-in needs a Sign-in Link.",
+  "identity.unlink.done": "The identity {label} is unlinked.",
+  "identity.promote.byLink": "{label}, linked through a Sign-in Link from {by}",
+  "identity.promote.own": "{label}, linked by {name} in a signed-in browser",
   "error.invalid_provider":
     "A setting of the Identity Provider is not valid, or its issuer's discovery document is not.",
   "error.provider_unreachable": "The Identity Provider did not answer in time. Try again later.",

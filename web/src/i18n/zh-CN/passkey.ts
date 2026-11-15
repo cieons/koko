@@ -21,7 +21,7 @@ export default {
   "passkey.add.nameTooLong": "名称不得超过 64 个字符。",
   "passkey.add.nameInvalid": "名称长度须为 1 至 64 个字符，且不得包含控制字符。",
   "passkey.add.done": "已添加通行密钥 {name}。",
-  "passkey.viaBrowser": "通行密钥须在经由 Web 地址登录的浏览器中添加。",
+  "passkey.viaBrowser": "通行密钥的添加与身份的关联，均须在经由 Web 地址登录的浏览器中进行。",
   "passkey.needsDomain": "通行密钥要求 Web 地址的主机为域名，而非 IP 地址。",
   "passkey.signedIn": "当前浏览器已以 {name} 的身份登录。",
   "passkey.exists": "此设备或密码管理器中已存有该用户的通行密钥。",

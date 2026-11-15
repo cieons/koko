@@ -301,7 +301,8 @@ function Lists({
 
 /**
  * waysIn says how a User gets in: their live devices, whether they set a
- * Password, and how many passkeys they have; "Invited, not yet in" for one
+ * Password, how many passkeys they have, and whether they linked their
+ * identity at the Identity Provider; "Invited, not yet in" for one
  * who has none of those and never had a device; "Removed" for a Removed
  * User.
  */
@@ -315,6 +316,7 @@ function waysIn(t: Translate, count: Count, user: User, devices: readonly Device
     ...(live > 0 ? [count("device.count", live)] : []),
     ...(user.password_set_at === undefined ? [] : [t("user.passwordSet")]),
     ...(user.passkeys === undefined || user.passkeys === 0 ? [] : [count("passkey.count", user.passkeys)]),
+    ...(user.identity_linked_at === undefined ? [] : [t("identity.summary")]),
   ];
   if (parts.length > 0) {
     return parts.join(" · ");
