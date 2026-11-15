@@ -2,14 +2,17 @@ package identity_test
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json/v2"
 	"errors"
 	"io/fs"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -214,8 +217,17 @@ func TestASettingKokoDoesNotTakeIsRefused(t *testing.T) {
 		"a name ending in a space": with(func(r *api.ServerOIDCSetRequest) { r.Name = new("Authentik ") }),
 	} {
 		_, err := h.Call(api.ServerOIDCSet, req)
-		if code(t, err) != api.CodeInvalidProvider.Name {
-			t.Errorf("%s answered %v, want invalid_provider", name, err)
+		reason := api.ReasonNameInvalid
+		switch {
+		case *req.Issuer != *base.Issuer:
+			reason = api.ReasonIssuerInvalid
+		case *req.ClientID != *base.ClientID:
+			reason = api.ReasonClientIDInvalid
+		case *req.ClientSecret != *base.ClientSecret:
+			reason = api.ReasonClientSecretInvalid
+		}
+		if e, _ := errors.AsType[*api.Error](err); code(t, err) != api.CodeInvalidProvider.Name || e.Reason != reason {
+			t.Errorf("%s answered %v, want invalid_provider for %s", name, err, reason)
 		}
 		if strings.Contains(err.Error(), secret) {
 			t.Errorf("the refusal of %s quotes the client secret: %v", name, err)
@@ -242,27 +254,59 @@ func TestADiscoveryKokoDoesNotTakeIsRefused(t *testing.T) {
 	t.Parallel()
 	iss := harness.NewIssuer(t)
 	h := start(t, iss)
+	var plainCalls atomic.Int32
+	plain := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { plainCalls.Add(1) }))
+	t.Cleanup(plain.Close)
 	for _, c := range []struct {
 		name   string
 		spoil  func(doc map[string]any)
 		status int
-		want   api.Code
-		says   string
+		// body, redirects and to set the Issuer's knobs of the same names.
+		body      []byte
+		redirects int
+		to        string
+		want      api.Code
+		reason    string
+		says      string
 	}{
-		{name: "another issuer", spoil: func(d map[string]any) { d["issuer"] = strings.TrimSuffix(iss.URL(), "/") }, want: api.CodeInvalidProvider, says: "byte for byte"},
-		{name: "no token endpoint", spoil: func(d map[string]any) { delete(d, "token_endpoint") }, want: api.CodeInvalidProvider, says: "token_endpoint"},
-		{name: "an http:// authorization endpoint", spoil: func(d map[string]any) { d["authorization_endpoint"] = "http://idp.example.com/authorize" }, want: api.CodeInvalidProvider, says: "authorization_endpoint"},
-		{name: "no key set", spoil: func(d map[string]any) { delete(d, "jwks_uri") }, want: api.CodeInvalidProvider, says: "jwks_uri"},
-		{name: "no code response type", spoil: func(d map[string]any) { d["response_types_supported"] = []string{"id_token"} }, want: api.CodeInvalidProvider, says: "response_types_supported"},
-		{name: "no document", status: http.StatusNotFound, want: api.CodeInvalidProvider, says: "404"},
+		{name: "another issuer", spoil: func(d map[string]any) { d["issuer"] = strings.TrimSuffix(iss.URL(), "/") }, want: api.CodeInvalidProvider, reason: api.ReasonIssuerMismatch, says: "byte for byte"},
+		{name: "no token endpoint", spoil: func(d map[string]any) { delete(d, "token_endpoint") }, want: api.CodeInvalidProvider, reason: api.ReasonEndpointMissing, says: "token_endpoint"},
+		{name: "an http:// authorization endpoint", spoil: func(d map[string]any) { d["authorization_endpoint"] = "http://idp.example.com/authorize" }, want: api.CodeInvalidProvider, reason: api.ReasonEndpointMissing, says: "authorization_endpoint"},
+		{name: "no key set", spoil: func(d map[string]any) { delete(d, "jwks_uri") }, want: api.CodeInvalidProvider, reason: api.ReasonEndpointMissing, says: "jwks_uri"},
+		{name: "no code response type", spoil: func(d map[string]any) { d["response_types_supported"] = []string{"id_token"} }, want: api.CodeInvalidProvider, reason: api.ReasonCodeUnsupported, says: "response_types_supported"},
+		{name: "no document", status: http.StatusNotFound, want: api.CodeInvalidProvider, reason: api.ReasonNoDiscovery, says: "404"},
+		{name: "a body that is not JSON", body: []byte("<html>sign in</html>"), want: api.CodeInvalidProvider, reason: api.ReasonDiscoveryUnreadable, says: "not the JSON"},
+		{name: "a body over 1 MiB", body: bytes.Repeat([]byte(" "), 1<<20+1), want: api.CodeInvalidProvider, reason: api.ReasonDiscoveryUnreadable, says: "over 1048576 bytes"},
+		{name: "4 redirects", redirects: 4, want: api.CodeInvalidProvider, reason: api.ReasonDiscoveryUnreadable, says: "redirected more than 3 times"},
+		{name: "a redirect to http://", to: plain.URL, want: api.CodeInvalidProvider, reason: api.ReasonDiscoveryUnreadable, says: "https:// only"},
 		{name: "a server error", status: http.StatusServiceUnavailable, want: api.CodeProviderUnreachable, says: "503"},
 	} {
 		iss.Spoil(c.spoil)
 		iss.AnswerDiscovery(c.status)
+		iss.ServeDiscovery(c.body)
+		iss.RedirectDiscovery(c.redirects, c.to)
 		_, err := h.Call(api.ServerOIDCSet, full(iss))
-		if code(t, err) != c.want.Name || !strings.Contains(err.Error(), c.says) {
-			t.Errorf("a discovery with %s answered %v, want %s saying %s", c.name, err, c.want.Name, c.says)
+		e, _ := errors.AsType[*api.Error](err)
+		if code(t, err) != c.want.Name || e.Reason != c.reason || !strings.Contains(err.Error(), c.says) {
+			t.Errorf("a discovery with %s answered %v (reason %q), want %s saying %s (reason %q)", c.name, err, e.Reason, c.want.Name, c.says, c.reason)
 		}
+	}
+	iss.Spoil(nil)
+	iss.AnswerDiscovery(0)
+	iss.ServeDiscovery(nil)
+	iss.RedirectDiscovery(3, "")
+	if _, err := h.Call(api.ServerOIDCSet, full(iss)); err != nil {
+		t.Errorf("a discovery after 3 redirects was refused: %v", err)
+	}
+	if _, err := h.Call(api.ServerOIDCRemove, api.ServerOIDCRemoveRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	iss.RedirectDiscovery(0, "")
+	if n := strings.Count(h.Log(), `msg="the identity provider could not be reached"`); n != 1 {
+		t.Errorf("the log has %d lines for the provider's server error, want 1:\n%s", n, h.Log())
+	}
+	if n := plainCalls.Load(); n != 0 {
+		t.Errorf("the http:// server was called %d times, want none", n)
 	}
 	iss.Spoil(nil)
 	iss.AnswerDiscovery(0)
@@ -550,7 +594,9 @@ func TestRemovingTheProviderUnlinksEveryIdentity(t *testing.T) {
 func TestTheCallsInFlightAreBounded(t *testing.T) {
 	t.Parallel()
 	iss := harness.NewIssuer(t)
-	h := start(t, iss, harness.Timings(timing.Timings{ProviderTurn: 200 * time.Millisecond}))
+	dir := t.TempDir()
+	// The held calls' own bound is far beyond the test's steps.
+	h := start(t, iss, harness.DataDir(dir), harness.Timings(timing.Timings{ProviderTurn: 200 * time.Millisecond, ProviderCall: time.Minute}))
 	iss.Hold()
 	var held sync.WaitGroup
 	errs := make(chan error, 4)
@@ -567,8 +613,14 @@ func TestTheCallsInFlightAreBounded(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	// While they wait, other writes go on.
+	// While they wait, other writes go on, and no read transaction pins the
+	// store: a checkpoint of everything written since completes.
 	h.Koko("space", "add", "ops").WantSuccess(t)
+	var busy, frames, done int
+	peek(t, dir, "PRAGMA wal_checkpoint(TRUNCATE)", &busy, &frames, &done)
+	if busy != 0 {
+		t.Errorf("a checkpoint while the calls wait was blocked (busy %d, %d of %d frames): a transaction is held", busy, done, frames)
+	}
 	for range 2 {
 		if _, err := h.Call(api.ServerOIDCSet, full(iss)); code(t, err) != api.CodeProviderUnreachable.Name {
 			t.Errorf("a fifth call answered %v, want provider_unreachable", err)
@@ -587,5 +639,72 @@ func TestTheCallsInFlightAreBounded(t *testing.T) {
 		if err != nil {
 			t.Errorf("a call held in flight failed once answered: %v", err)
 		}
+	}
+}
+
+// peek runs query on the koko.db in dir, beside its running koko server,
+// and scans its one row into dest.
+func peek(t *testing.T, dir, query string, dest ...any) {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(dir, "koko.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if err := db.QueryRowContext(t.Context(), query).Scan(dest...); err != nil {
+		t.Fatalf("%s: %v", query, err)
+	}
+}
+
+// A call the provider does not answer within its bound is
+// provider_unreachable, changing nothing.
+func TestACallThatTimesOutIsUnreachable(t *testing.T) {
+	t.Parallel()
+	iss := harness.NewIssuer(t)
+	h := start(t, iss, harness.Timings(timing.Timings{ProviderCall: 200 * time.Millisecond}))
+	iss.Hold()
+	if _, err := h.Call(api.ServerOIDCSet, full(iss)); code(t, err) != api.CodeProviderUnreachable.Name {
+		t.Errorf("a discovery that never answers gave %v, want provider_unreachable", err)
+	}
+	if got := shown(t, h).Provider; got != nil {
+		t.Errorf("the timed-out set left the provider %+v, want none", got)
+	}
+}
+
+// A set naming no setting is refused with invalid_request, and one whose
+// settings are the stored ones writes nothing: no new id, no log line.
+// Every other change writes the row under a new id, its secret sealed
+// anew.
+func TestEveryChangeWritesANewRowAndNoChangeNone(t *testing.T) {
+	t.Parallel()
+	iss := harness.NewIssuer(t)
+	dir := t.TempDir()
+	h := start(t, iss, harness.DataDir(dir))
+	if _, err := h.Call(api.ServerOIDCSet, full(iss)); err != nil {
+		t.Fatal(err)
+	}
+	row := func() (id string, sealed []byte) {
+		peek(t, dir, "SELECT id, secret FROM identity_provider", &id, &sealed)
+		return id, sealed
+	}
+	id, sealed := row()
+	if _, err := h.Call(api.ServerOIDCSet, api.ServerOIDCSetRequest{}); code(t, err) != api.CodeInvalidRequest.Name {
+		t.Errorf("a set naming no setting answered %v, want invalid_request", err)
+	}
+	lines := strings.Count(h.Log(), `msg="identity provider set"`)
+	if _, err := h.Call(api.ServerOIDCSet, full(iss)); err != nil {
+		t.Fatal(err)
+	}
+	if again, sealedAgain := row(); again != id || !bytes.Equal(sealedAgain, sealed) {
+		t.Errorf("a set of the stored settings rewrote the row: %s, want %s unchanged", again, id)
+	}
+	if n := strings.Count(h.Log(), `msg="identity provider set"`); n != lines {
+		t.Errorf("a set of the stored settings logged %d lines, want none", n-lines)
+	}
+	if _, err := h.Call(api.ServerOIDCSet, api.ServerOIDCSetRequest{Name: new("Keycloak")}); err != nil {
+		t.Fatal(err)
+	}
+	if renamed, sealedAgain := row(); renamed == id || bytes.Equal(sealedAgain, sealed) {
+		t.Errorf("a rename kept the row's id %s or its sealed secret, want both new", renamed)
 	}
 }

@@ -16,13 +16,20 @@ export class ApiError extends Error {
    * has none.
    */
   readonly items?: readonly ItemError[];
+  /**
+   * reason, when the refusal has one, says which of its code's reasons it
+   * was refused for, as a word a page words in its own language, such as
+   * invalid_provider's issuer_mismatch.
+   */
+  readonly reason?: string;
 
-  constructor(code: string, message: string, retryAfter?: number, items?: readonly ItemError[]) {
+  constructor(code: string, message: string, retryAfter?: number, items?: readonly ItemError[], reason?: string) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     this.retryAfter = retryAfter;
     this.items = items;
+    this.reason = reason;
   }
 }
 
@@ -146,7 +153,13 @@ function answered<Resp>({ response, body }: { response: Response; body: string }
   if (!response.ok) {
     const { error } = parsed as ErrorResponse;
     const retryAfter = Number.parseInt(response.headers.get("Retry-After") ?? "", 10);
-    throw new ApiError(error.code, error.message, Number.isNaN(retryAfter) ? undefined : retryAfter, error.items);
+    throw new ApiError(
+      error.code,
+      error.message,
+      Number.isNaN(retryAfter) ? undefined : retryAfter,
+      error.items,
+      error.reason,
+    );
   }
   return parsed as Resp;
 }

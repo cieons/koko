@@ -15,6 +15,11 @@ type Error struct {
 	// Items, in the refusal of a batch of several items, holds each item at
 	// fault, in the order of the batch; every other error leaves it out.
 	Items []ItemError `json:"items,omitempty"`
+	// Reason, when set, says which of the reasons its code has a refusal
+	// was refused for, as a word, for the web UI to word in its own
+	// language, such as invalid_provider's issuer_mismatch; the message
+	// says it in English.
+	Reason string `json:"reason,omitempty"`
 }
 
 // ItemError is one item at fault in a refused batch: its index in the

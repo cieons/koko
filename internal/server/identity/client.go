@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -40,13 +41,20 @@ var errNoTurn = fmt.Errorf("%d calls to the Identity Provider were in flight, an
 // newClient returns the client of every call to the Identity Provider:
 // base's transport, which tests replace to trust their in-process issuer,
 // over https:// alone, following at most maxRedirects redirects, each call
-// bounded by call and its answer read up to maxAnswer bytes, with at most
-// maxInFlight in flight, a call waiting up to turn for its turn. It logs
-// once, to log, when a run of calls the provider does not answer starts.
+// bounded by call, its redirects included, and its answer, headers and
+// body, read up to maxAnswer bytes, with at most maxInFlight in flight, a
+// call waiting up to turn for its turn. It logs once, to log, when a run of
+// calls the provider does not answer, or answers with a server error,
+// starts.
 func newClient(base *http.Client, call, turn time.Duration, log *slog.Logger) *http.Client {
 	rt := http.DefaultTransport
 	if base != nil && base.Transport != nil {
 		rt = base.Transport
+	}
+	if t, ok := rt.(*http.Transport); ok {
+		t = t.Clone()
+		t.MaxResponseHeaderBytes = maxAnswer
+		rt = t
 	}
 	return &http.Client{
 		Transport: &bounded{base: rt, call: call, turn: turn, turns: make(chan struct{}, maxInFlight), log: log},
@@ -76,19 +84,44 @@ func (b *bounded) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.URL.Scheme != "https" {
 		return nil, fmt.Errorf("%w, not %s", errNotHTTPS, at(req.URL))
 	}
-	if err := b.take(req.Context()); err != nil {
+	// A redirect's request carries the call's deadline on the request it
+	// follows, which this transport gave the deadline; the first sets it
+	// once it has its turn.
+	ctx, cancel := req.Context(), context.CancelFunc(func() {})
+	deadline, redirected := time.Time{}, req.Response != nil && req.Response.Request != nil
+	if redirected {
+		deadline, redirected = req.Response.Request.Context().Deadline()
+	}
+	if redirected {
+		ctx, cancel = context.WithDeadline(ctx, deadline)
+	}
+	if err := b.take(ctx); err != nil {
+		cancel()
 		b.failed(req.URL, err)
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(req.Context(), b.call)
+	if !redirected {
+		ctx, cancel = context.WithTimeout(ctx, b.call)
+	}
 	resp, err := b.base.RoundTrip(req.WithContext(ctx))
 	if err != nil {
 		cancel()
 		<-b.turns
+		if strings.Contains(err.Error(), "server response headers exceeded") {
+			// net/http's refusal of MaxResponseHeaderBytes, which it
+			// gives no error value of its own.
+			err = fmt.Errorf("%w: %w", errTooLarge, err)
+			b.answered()
+			return nil, err
+		}
 		b.failed(req.URL, err)
 		return nil, err
 	}
-	b.answered()
+	if resp.StatusCode >= http.StatusInternalServerError {
+		b.failed(req.URL, fmt.Errorf("it answered %s", resp.Status))
+	} else {
+		b.answered()
+	}
 	resp.Body = &answer{body: resp.Body, left: maxAnswer, done: sync.OnceFunc(func() {
 		cancel()
 		<-b.turns
@@ -110,7 +143,8 @@ func (b *bounded) take(ctx context.Context) error {
 	}
 }
 
-// failed logs a call to u that had no answer, once per run of such calls.
+// failed logs a call to u that had no answer, or a server error, once per
+// run of such calls.
 func (b *bounded) failed(u *url.URL, err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -121,7 +155,7 @@ func (b *bounded) failed(u *url.URL, err error) {
 	b.log.Warn("the identity provider could not be reached", "url", at(u), "err", err)
 }
 
-// answered ends a run of calls that had no answer.
+// answered ends a run of calls that had no answer or a server error.
 func (b *bounded) answered() {
 	b.mu.Lock()
 	defer b.mu.Unlock()

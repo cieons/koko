@@ -1042,10 +1042,11 @@ For the Owner and an Administrator:
   Issuer URL, Client ID, Client secret (an empty password field, "Set.
   Leave the field empty to keep it." once one is stored) and Name; the
   redirect URI with Copy; one line that the first sign-in checks the
-  client; **Remove** at the foot, **Cancel** and **Save**. Save shows
-  `invalid_provider` or `provider_unreachable` in place, and asks first
-  when the issuer changes, naming how many Linked Identities it unlinks;
-  Remove asks first. Without a Web URL the fields and Save are disabled,
+  client; **Remove** at the foot, **Cancel** and **Save**, disabled while
+  nothing has changed. Save shows `invalid_provider`, worded by the check
+  that failed, or `provider_unreachable` in place, keeping the secret
+  typed, and asks first when the issuer changes, naming how many Linked
+  Identities it unlinks, or that none is; Remove asks first. Without a Web URL the fields and Save are disabled,
   with one line saying why. An Administrator sees the settings and the
   redirect URI without any action, or "No identity provider is
   configured."

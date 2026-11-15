@@ -33,6 +33,8 @@ class Refusal extends Error {
   readonly status: number;
   readonly retryAfter?: number;
   readonly items?: ItemError[];
+  /** reason is the refusal's reason, for a code that gives one. */
+  reason?: string;
 
   constructor(code: string, status: number, retryAfter?: number, items?: ItemError[], message?: string) {
     super(message ?? `the fake API refused with ${code}`);
@@ -50,6 +52,13 @@ class Refusal extends Error {
  */
 export function refusal(code: string, status = 400, retryAfter?: number): Refusal {
   return new Refusal(code, status, retryAfter);
+}
+
+/** refusalBecause is a refusal with code, its HTTP status and the reason it gives, as invalid_provider gives one. */
+export function refusalBecause(code: string, status: number, reason: string): Refusal {
+  const r = new Refusal(code, status);
+  r.reason = reason;
+  return r;
 }
 
 /**
@@ -151,8 +160,8 @@ export class FakeApi {
   };
 }
 
-function refuse({ code, status, retryAfter, items }: Refusal, message: string): Response {
-  const answer: ErrorResponse = { error: { code, message, ...(items && { items }) } };
+function refuse({ code, status, retryAfter, items, reason }: Refusal, message: string): Response {
+  const answer: ErrorResponse = { error: { code, message, ...(items && { items }), ...(reason && { reason }) } };
   const headers = retryAfter === undefined ? undefined : { "Retry-After": String(retryAfter) };
   return Response.json(answer, { status, headers });
 }

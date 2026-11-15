@@ -12,6 +12,13 @@ export interface Error {
    * fault, in the order of the batch; every other error leaves it out.
    */
   items?: ItemError[];
+  /**
+   * Reason, when set, says which of the reasons its code has a refusal
+   * was refused for, as a word, for the web UI to word in its own
+   * language, such as invalid_provider's issuer_mismatch; the message
+   * says it in English.
+   */
+  reason?: string;
 }
 
 /**

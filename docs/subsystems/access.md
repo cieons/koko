@@ -50,9 +50,12 @@ membership.
   taken, free, unseen or unknown, and learns nothing about the records.
   `space.add`, `space.rename`, `space.remove`, `space.member.add`,
   `space.member.remove`, `user.invite`, `user.list`, `user.remove`,
-  `password.link`, `password.remove`, `server.check_update` and
-  `server.upgrade` do so. `user.promote` and `user.demote` ask
-  `access.OwnerOnly` the same way ([Users](users.md#administrators)).
+  `password.link`, `password.remove`, `server.check_update`,
+  `server.upgrade` and `server.oidc.show` do so. `user.promote` and
+  `user.demote` ask `access.OwnerOnly` the same way
+  ([Users](users.md#administrators)), and so do `server.oidc.set` and
+  `server.oidc.remove`, whose refusal comes before any setting is checked
+  or the provider asked ([the Identity Provider](identity.md#the-operations)).
   `server.set` stays the Local caller's alone (`local_only`), the Owner's
   devices included. `device.add` is anyone's for their own User; naming
   another User is refused with `owner_only` before that User is looked up,

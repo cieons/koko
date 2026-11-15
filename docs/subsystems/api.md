@@ -151,7 +151,11 @@ first call, through the dial it was given, and for each call:
   at fault as `{"index", "code", "message"}`, its place in the batch counted
   from 0 and the code and message it would be refused with alone, in the
   batch's order. Every other error leaves `items` out. See
-  [batches](#batches).
+  [batches](#batches). A code whose refusals have several causes a page
+  words apart may add `reason`, one snake_case word among those the code
+  documents, such as `invalid_provider`'s `issuer_mismatch`
+  ([the Identity Provider](identity.md#error-codes)); the message says it
+  in English, and an error without one leaves it out.
 
 | Code | Status | When |
 | --- | --- | --- |

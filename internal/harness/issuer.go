@@ -31,8 +31,14 @@ type Issuer struct {
 	// serves it as it is.
 	spoil func(doc map[string]any)
 	// status is what discovery answers in place of the document, 0 for
+	// the document; body, when set, is the bytes it answers in place of
 	// the document.
 	status int
+	body   []byte
+	// redirects is how many times discovery redirects to itself before it
+	// answers, and redirectTo, when set, where it redirects at once.
+	redirects  int
+	redirectTo string
 	// held makes each discovery request wait until it is closed; nil
 	// answers at once. waiting counts the requests held now.
 	held    chan struct{}
@@ -92,6 +98,24 @@ func (i *Issuer) AnswerDiscovery(status int) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	i.status = status
+}
+
+// ServeDiscovery makes discovery answer body, 200 OK, in place of its
+// document, such as one that is not JSON or is too large; nil serves the
+// document again.
+func (i *Issuer) ServeDiscovery(body []byte) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.body = body
+}
+
+// RedirectDiscovery makes discovery redirect n times to itself before it
+// answers, and, when to is not empty, redirect to it at once instead, such
+// as to an http:// URL.
+func (i *Issuer) RedirectDiscovery(n int, to string) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.redirects, i.redirectTo = n, to
 }
 
 // Hold makes each discovery request wait, unanswered, until Release, as a
@@ -159,7 +183,7 @@ func (i *Issuer) Document() map[string]any {
 
 func (i *Issuer) discovery(w http.ResponseWriter, r *http.Request) {
 	i.mu.Lock()
-	held, spoil, status := i.held, i.spoil, i.status
+	held, spoil, status, body, redirects, to := i.held, i.spoil, i.status, i.body, i.redirects, i.redirectTo
 	if held != nil {
 		i.waiting++
 	}
@@ -173,8 +197,19 @@ func (i *Issuer) discovery(w http.ResponseWriter, r *http.Request) {
 		i.waiting--
 		i.mu.Unlock()
 	}
-	if status != 0 {
+	hop, _ := strconv.Atoi(r.URL.Query().Get("hop"))
+	switch {
+	case to != "":
+		http.Redirect(w, r, to, http.StatusFound)
+		return
+	case hop < redirects:
+		http.Redirect(w, r, r.URL.Path+"?hop="+strconv.Itoa(hop+1), http.StatusFound)
+		return
+	case status != 0:
 		http.Error(w, http.StatusText(status), status)
+		return
+	case body != nil:
+		_, _ = w.Write(body)
 		return
 	}
 	doc := i.Document()

@@ -49,13 +49,13 @@ func discover(ctx context.Context, client *http.Client, issuer string) (discover
 	where := strings.TrimSuffix(issuer, "/") + discoveryPath
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, where, nil)
 	if err != nil {
-		return discovery{}, api.CodeInvalidProvider.Errorf("the issuer's discovery document cannot be asked for at %s: %v", where, err)
+		return discovery{}, invalid(api.ReasonIssuerInvalid, "the issuer's discovery document cannot be asked for at %s: %v", where, err)
 	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
 		if wrongAnswer(err) {
-			return discovery{}, api.CodeInvalidProvider.Errorf("the issuer's discovery document at %s cannot be read: %v", where, err)
+			return discovery{}, invalid(api.ReasonDiscoveryUnreadable, "the issuer's discovery document at %s cannot be read: %v", where, err)
 		}
 		return discovery{}, unreachable(issuer, err)
 	}
@@ -63,17 +63,17 @@ func discover(ctx context.Context, client *http.Client, issuer string) (discover
 	body, err := io.ReadAll(resp.Body)
 	switch {
 	case err != nil && wrongAnswer(err):
-		return discovery{}, api.CodeInvalidProvider.Errorf("the issuer's discovery document at %s cannot be read: %v", where, err)
+		return discovery{}, invalid(api.ReasonDiscoveryUnreadable, "the issuer's discovery document at %s cannot be read: %v", where, err)
 	case err != nil:
 		return discovery{}, unreachable(issuer, err)
 	case resp.StatusCode >= http.StatusInternalServerError:
 		return discovery{}, unreachable(issuer, fmt.Errorf("its discovery document at %s answered %s", where, resp.Status))
 	case resp.StatusCode != http.StatusOK:
-		return discovery{}, api.CodeInvalidProvider.Errorf("the issuer has no discovery document at %s, which answered %s: is the issuer right?", where, resp.Status)
+		return discovery{}, invalid(api.ReasonNoDiscovery, "the issuer has no discovery document at %s, which answered %s: is the issuer right?", where, resp.Status)
 	}
 	var d discovery
 	if err := json.Unmarshal(body, &d); err != nil {
-		return discovery{}, api.CodeInvalidProvider.Errorf("the issuer's discovery document at %s is not the JSON of one: %v", where, err)
+		return discovery{}, invalid(api.ReasonDiscoveryUnreadable, "the issuer's discovery document at %s is not the JSON of one: %v", where, err)
 	}
 	return d, d.check(issuer, where)
 }
@@ -82,18 +82,18 @@ func discover(ctx context.Context, client *http.Client, issuer string) (discover
 // gives https:// endpoints and lists the code response type.
 func (d discovery) check(issuer, where string) error {
 	if d.Issuer != issuer {
-		return api.CodeInvalidProvider.Errorf("the discovery document at %s names the issuer %q, not %q: the two must match byte for byte, a trailing / included",
+		return invalid(api.ReasonIssuerMismatch, "the discovery document at %s names the issuer %q, not %q: the two must match byte for byte, a trailing / included",
 			where, d.Issuer, issuer)
 	}
 	for _, e := range []struct{ name, url string }{
 		{"authorization_endpoint", d.AuthURL}, {"token_endpoint", d.TokenURL}, {"jwks_uri", d.JWKSURL},
 	} {
 		if u, err := url.Parse(e.url); err != nil || u.Scheme != "https" || u.Host == "" {
-			return api.CodeInvalidProvider.Errorf("the discovery document at %s gives no https:// %s", where, e.name)
+			return invalid(api.ReasonEndpointMissing, "the discovery document at %s gives no https:// %s", where, e.name)
 		}
 	}
 	if !slices.Contains(d.ResponseTypes, "code") {
-		return api.CodeInvalidProvider.Errorf("the discovery document at %s does not list code in response_types_supported, which koko's sign-in needs", where)
+		return invalid(api.ReasonCodeUnsupported, "the discovery document at %s does not list code in response_types_supported, which koko's sign-in needs", where)
 	}
 	return nil
 }

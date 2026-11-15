@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"database/sql"
 	"encoding/json/v2"
 	"os"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/cieons/koko/internal/harness"
+	"github.com/cieons/koko/internal/server/seal"
+	_ "github.com/cieons/koko/internal/server/store" // registers the sqlite driver
 )
 
 // oidcSecret is the client secret the tests set, which no output holds.
@@ -19,10 +22,10 @@ const idpURL = "https://idp.example.com/application/o/koko/"
 // startOIDC starts a koko server with its web listener and Web URL, whose
 // calls to the Identity Provider reach a new Issuer, with the Member bob
 // invited.
-func startOIDC(t *testing.T) (*harness.Harness, *harness.Issuer) {
+func startOIDC(t *testing.T, opts ...harness.Option) (*harness.Harness, *harness.Issuer) {
 	t.Helper()
 	iss := harness.NewIssuer(t)
-	h := harness.Start(t, harness.WebListen("127.0.0.1:0"), harness.IdentityProvider(iss))
+	h := harness.Start(t, append([]harness.Option{harness.WebListen("127.0.0.1:0"), harness.IdentityProvider(iss)}, opts...)...)
 	h.Koko("server", "set", "web_url="+harness.WebURL).WantSuccess(t)
 	h.Koko("user", "invite", "bob").WantSuccess(t)
 	return h, iss
@@ -44,7 +47,31 @@ func goldenOIDC(t *testing.T, iss *harness.Issuer, name, out string) {
 // Linked Identities it unlinked.
 func TestServerOIDCSetReadsTheSecretWithoutArgv(t *testing.T) {
 	t.Parallel()
-	h, iss := startOIDC(t)
+	dir, keyFile := t.TempDir(), harness.NewRootKeyFile(t)
+	h, iss := startOIDC(t, harness.DataDir(dir), harness.RootKeyFile(keyFile))
+	// stored is the client secret the koko server keeps, opened.
+	stored := func() string {
+		t.Helper()
+		db, err := sql.Open("sqlite", filepath.Join(dir, "koko.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = db.Close() }()
+		var id string
+		var sealed []byte
+		if err := db.QueryRowContext(t.Context(), "SELECT id, secret FROM identity_provider").Scan(&id, &sealed); err != nil {
+			t.Fatal(err)
+		}
+		key, err := seal.Load(keyFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		secret, err := key.Open(id, sealed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(secret)
+	}
 	first := []string{"server", "oidc", "set", "--issuer", iss.URL(), "--client-id", "koko", "--name", "Authentik"}
 
 	file := filepath.Join(t.TempDir(), "secret.txt")
@@ -54,18 +81,27 @@ func TestServerOIDCSetReadsTheSecretWithoutArgv(t *testing.T) {
 	r := h.Koko(append(first, "--client-secret-file", file, "--json")...)
 	r.WantSuccess(t)
 	goldenOIDC(t, iss, "server-oidc-set.json", r.Stdout)
+	if got := stored(); got != oidcSecret {
+		t.Errorf("the koko server keeps %q from the file, want %q", got, oidcSecret)
+	}
 
-	r = h.KokoStdin(oidcSecret+"\n", "server", "oidc", "set", "--client-secret", "--name", "Keycloak")
+	r = h.KokoStdin(oidcSecret+"-stdin\n", "server", "oidc", "set", "--client-secret", "--name", "Keycloak")
 	r.WantSuccess(t)
 	goldenOIDC(t, iss, "server-oidc-set.txt", r.Stdout)
+	if got := stored(); got != oidcSecret+"-stdin" {
+		t.Errorf("the koko server keeps %q from stdin, want %q", got, oidcSecret+"-stdin")
+	}
 
-	term := harness.NewTerminal(oidcSecret)
+	term := harness.NewTerminal(oidcSecret + "-typed")
 	r = h.KokoTerminal(term, "server", "oidc", "set", "--client-secret", "--json")
 	if r.Status != 0 {
 		t.Fatalf("server oidc set with a prompt exited %d: %s", r.Status, r.Stderr)
 	}
 	if !strings.Contains(r.Stderr, "Enter the client secret: ") || strings.Contains(r.Stderr+r.Stdout, oidcSecret) {
 		t.Errorf("the prompt printed %q and %q, want it to ask for the client secret and echo nothing", r.Stdout, r.Stderr)
+	}
+	if got := stored(); got != oidcSecret+"-typed" {
+		t.Errorf("the koko server keeps %q from the prompt, want %q", got, oidcSecret+"-typed")
 	}
 
 	// The secret is the one read, its line ending taken off: a set naming

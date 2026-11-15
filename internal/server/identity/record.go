@@ -89,9 +89,13 @@ func deleteProvider(ctx context.Context, tx store.Tx) error {
 }
 
 // merge returns the Identity Provider req makes of current, nil while none
-// is configured, checking each setting req names: a first set names all
-// four, refused with invalid_request naming those missing.
+// is configured, checking each setting req names: a set names at least
+// one, and a first set all four, refused with invalid_request naming those
+// missing.
 func merge(current *provider, req api.ServerOIDCSetRequest) (*provider, error) {
+	if req == (api.ServerOIDCSetRequest{}) {
+		return nil, api.CodeInvalidRequest.Errorf("server.oidc.set names no setting: name issuer, client_id, client_secret or name")
+	}
 	var p provider
 	if current != nil {
 		p = *current
@@ -122,13 +126,13 @@ func merge(current *provider, req api.ServerOIDCSetRequest) (*provider, error) {
 		p.issuer = *req.Issuer
 	}
 	if req.ClientID != nil {
-		if err := checkText("client_id", *req.ClientID, api.MaxClientIDLength); err != nil {
+		if err := checkText("client_id", api.ReasonClientIDInvalid, *req.ClientID, api.MaxClientIDLength); err != nil {
 			return nil, err
 		}
 		p.clientID = *req.ClientID
 	}
 	if req.ClientSecret != nil {
-		if err := checkText("client_secret", *req.ClientSecret, api.MaxClientSecretLength); err != nil {
+		if err := checkText("client_secret", api.ReasonClientSecretInvalid, *req.ClientSecret, api.MaxClientSecretLength); err != nil {
 			return nil, err
 		}
 		p.secret = *req.ClientSecret
@@ -149,14 +153,14 @@ func merge(current *provider, req api.ServerOIDCSetRequest) (*provider, error) {
 // byte for byte.
 func checkIssuer(issuer string) error {
 	refuse := func(why string) error {
-		return api.CodeInvalidProvider.Errorf("issuer is %q, which %s: an issuer is an https:// URL, a path allowed, such as https://idp.example.com/application/o/koko/",
+		return invalid(api.ReasonIssuerInvalid, "issuer is %q, which %s: an issuer is an https:// URL, a path allowed, such as https://idp.example.com/application/o/koko/",
 			issuer, why)
 	}
 	switch {
 	case issuer == "":
-		return api.CodeInvalidProvider.Errorf("issuer cannot be empty: an issuer is an https:// URL, a path allowed, such as https://idp.example.com/application/o/koko/")
+		return invalid(api.ReasonIssuerInvalid, "issuer cannot be empty: an issuer is an https:// URL, a path allowed, such as https://idp.example.com/application/o/koko/")
 	case len(issuer) > api.MaxIssuerLength:
-		return api.CodeInvalidProvider.Errorf("issuer is %d bytes long, over the %d an issuer may be", len(issuer), api.MaxIssuerLength)
+		return invalid(api.ReasonIssuerInvalid, "issuer is %d bytes long, over the %d an issuer may be", len(issuer), api.MaxIssuerLength)
 	case strings.IndexFunc(issuer, func(r rune) bool { return r <= ' ' || r >= 0x7f }) >= 0:
 		return refuse("holds a space or a character outside printable ASCII")
 	case !strings.HasPrefix(issuer, "https://"):
@@ -176,17 +180,17 @@ func checkIssuer(issuer string) error {
 	return nil
 }
 
-// checkText refuses a setting field that is empty, over max bytes, or holds
+// checkText refuses, for reason, a setting field that is empty, over max bytes, or holds
 // a control character, such as the line ending a file of the client
 // secret may have kept.
-func checkText(field, value string, max int) error {
+func checkText(field, reason, value string, max int) error {
 	switch {
 	case value == "":
-		return api.CodeInvalidProvider.Errorf("%s cannot be empty", field)
+		return invalid(reason, "%s cannot be empty", field)
 	case len(value) > max:
-		return api.CodeInvalidProvider.Errorf("%s is %d bytes long, over the %d it may be", field, len(value), max)
+		return invalid(reason, "%s is %d bytes long, over the %d it may be", field, len(value), max)
 	case strings.IndexFunc(value, unicode.IsControl) >= 0:
-		return api.CodeInvalidProvider.Errorf("%s holds a control character, such as a line ending", field)
+		return invalid(reason, "%s holds a control character, such as a line ending", field)
 	}
 	return nil
 }
@@ -197,11 +201,19 @@ func checkName(name string) error {
 	n := utf8.RuneCountInString(name)
 	switch {
 	case n == 0 || n > api.MaxProviderNameLength:
-		return api.CodeInvalidProvider.Errorf("name is %d characters long, and a name is 1 to %d, such as Authentik", n, api.MaxProviderNameLength)
+		return invalid(api.ReasonNameInvalid, "name is %d characters long, and a name is 1 to %d, such as Authentik", n, api.MaxProviderNameLength)
 	case strings.IndexFunc(name, unicode.IsControl) >= 0:
-		return api.CodeInvalidProvider.Errorf("name holds a control character")
+		return invalid(api.ReasonNameInvalid, "name holds a control character")
 	case strings.TrimSpace(name) != name:
-		return api.CodeInvalidProvider.Errorf("name %q starts or ends with a space", name)
+		return invalid(api.ReasonNameInvalid, "name %q starts or ends with a space", name)
 	}
 	return nil
+}
+
+// invalid is an invalid_provider refusal for reason, one of the api.Reason
+// words, saying why in English in format.
+func invalid(reason, format string, args ...any) *api.Error {
+	e := api.CodeInvalidProvider.Errorf(format, args...)
+	e.Reason = reason
+	return e
 }

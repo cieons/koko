@@ -138,6 +138,31 @@ var (
 	CodeProviderUnset = Code{"provider_unset", http.StatusConflict}
 )
 
+// The reasons of an invalid_provider refusal, as Error.Reason names them.
+const (
+	// ReasonIssuerInvalid, ReasonClientIDInvalid,
+	// ReasonClientSecretInvalid and ReasonNameInvalid: a setting breaks its
+	// rule.
+	ReasonIssuerInvalid       = "issuer_invalid"
+	ReasonClientIDInvalid     = "client_id_invalid"
+	ReasonClientSecretInvalid = "client_secret_invalid"
+	ReasonNameInvalid         = "name_invalid"
+	// ReasonNoDiscovery: nothing at the issuer's discovery URL answered
+	// with a document (a 4xx).
+	ReasonNoDiscovery = "no_discovery"
+	// ReasonDiscoveryUnreadable: the answer is not a document koko reads:
+	// not JSON, over 1 MiB, or redirected more than 3 times or to http://.
+	ReasonDiscoveryUnreadable = "discovery_unreadable"
+	// ReasonIssuerMismatch: the document names another issuer, byte for
+	// byte.
+	ReasonIssuerMismatch = "issuer_mismatch"
+	// ReasonEndpointMissing: it gives no https:// authorization, token or
+	// key set endpoint.
+	ReasonEndpointMissing = "endpoint_missing"
+	// ReasonCodeUnsupported: it does not list the code response type.
+	ReasonCodeUnsupported = "code_unsupported"
+)
+
 var identityCodes = []Code{
 	CodeInvalidProvider,
 	CodeProviderUnreachable,

@@ -165,6 +165,15 @@ func (s *Service) set(ctx context.Context, tx store.Tx, caller op.Caller, req ap
 	if err != nil {
 		return api.ServerOIDCSetResponse{}, err
 	}
+	if current != nil && *next == *current {
+		// Nothing changes: no write, no new id, and no log line.
+		linked, err := countIdentities(ctx, tx)
+		if err != nil {
+			return api.ServerOIDCSetResponse{}, err
+		}
+		redirect, err := redirectURI(ctx, tx)
+		return api.ServerOIDCSetResponse{Provider: current.answer(linked), RedirectURI: redirect}, err
+	}
 	issuerChanged := current == nil || next.issuer != current.issuer
 	if issuerChanged && c.issuer != next.issuer {
 		return api.ServerOIDCSetResponse{}, api.CodeInvalidRequest.Errorf("the Identity Provider's issuer changed while this set was checked: set it again")

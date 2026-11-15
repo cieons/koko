@@ -224,3 +224,44 @@ func TestADiscoveryIsKeptAsTheRulesSay(t *testing.T) {
 		t.Errorf("a flow after a set fetched discovery again: %v", err)
 	}
 }
+
+// A call's bound covers its redirects too: four hops, each well within it
+// alone, take the call past it together.
+func TestTheCallsBoundCoversItsRedirects(t *testing.T) {
+	t.Parallel()
+	const hop = 150 * time.Millisecond
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n, _ := strconv.Atoi(strings.TrimPrefix(r.URL.Path, "/"))
+		select {
+		case <-time.After(hop):
+		case <-r.Context().Done():
+			return
+		}
+		if n > 0 {
+			http.Redirect(w, r, fmt.Sprintf("/%d", n-1), http.StatusFound)
+			return
+		}
+		_, _ = io.WriteString(w, "here")
+	}))
+	t.Cleanup(srv.Close)
+	c, _ := testClient(srv, 3*hop)
+	if body, err := get(c, srv.URL+"/0"); err != nil || string(body) != "here" {
+		t.Fatalf("a call of 1 hop within its bound gave %q %v", body, err)
+	}
+	if _, err := get(c, srv.URL+"/3"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("a call of 4 hops past its bound failed with %v, want its deadline", err)
+	}
+}
+
+// An answer's headers count toward its 1 MiB too.
+func TestTheClientBoundsAnAnswersHeaders(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Big", strings.Repeat("a", maxAnswer+1))
+	}))
+	t.Cleanup(srv.Close)
+	c, _ := testClient(srv, 5*time.Second)
+	if _, err := get(c, srv.URL); !errors.Is(err, errTooLarge) {
+		t.Errorf("an answer with headers over 1 MiB failed with %v, want errTooLarge", err)
+	}
+}

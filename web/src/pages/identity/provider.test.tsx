@@ -10,7 +10,7 @@ import {
 } from "../../api/identity";
 import type { User } from "../../api/user";
 import { expectAccessible } from "../../test/axe";
-import { type FakeApi, fakeApi, refusal } from "../../test/fakeApi";
+import { type FakeApi, fakeApi, refusal, refusalBecause } from "../../test/fakeApi";
 import { actAs, alerts, preferLanguages, renderAt } from "../../test/pages";
 import { administered, alice, bob, eve, serve, world } from "../space/access.fixture";
 
@@ -98,13 +98,18 @@ test("the Owner's first save needs every field, and sends all four", async () =>
   expect(within(panel).queryByRole("button", { name: "Remove" })).toBeNull();
   await expectAccessible();
 
-  fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
-  for (const message of ["Enter the issuer URL.", "Enter the client ID.", "Enter the client secret.", "Enter the name."]) {
-    expect(await within(panel).findByText(message)).toBeDefined();
-  }
+  // Nothing typed, nothing to save.
+  expect(within(panel).getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
   type(panel, "Issuer URL", "http://idp.example.com/");
   fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
-  expect(await within(panel).findByText("The issuer URL must start with https://.")).toBeDefined();
+  for (const message of [
+    "The issuer URL must start with https://.",
+    "Enter the client ID.",
+    "Enter the client secret.",
+    "Enter the name.",
+  ]) {
+    expect(await within(panel).findByText(message)).toBeDefined();
+  }
   expect(api.requests(ServerOIDCSet)).toEqual([]);
 
   type(panel, "Issuer URL", authentik.issuer);
@@ -117,7 +122,7 @@ test("the Owner's first save needs every field, and sends all four", async () =>
   expect(api.requests(ServerOIDCSet)).toEqual([
     { issuer: authentik.issuer, client_id: "koko", client_secret: "s3cret", name: "Authentik" },
   ]);
-  // The secret is dropped as it is sent; the stored one is kept from now on.
+  // The secret is dropped once saved; the stored one is kept from now on.
   expect(within(panel).getByLabelText("Client secret")).toHaveProperty("value", "");
   expect(within(panel).getByText("Set. Leave the field empty to keep it.")).toBeDefined();
 });
@@ -136,24 +141,77 @@ test("a save sends only what changed, and an empty secret field keeps the stored
   fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
   await waitFor(() => expect(api.requests(ServerOIDCSet)).toHaveLength(2));
   expect(api.requests(ServerOIDCSet)).toEqual([{ name: "Keycloak" }, { client_secret: "n3w" }]);
+  // Nothing left changed, nothing to save.
+  await waitFor(() => expect(within(panel).getByRole("button", { name: "Save" })).toHaveProperty("disabled", true));
   // No change of issuer, so nothing asked first.
   expect(screen.queryByRole("alertdialog", { name: /^Change the issuer/ })).toBeNull();
 });
 
-test("a refusal shows in place: a provider set wrongly, or one that did not answer", async () => {
+test("a refusal shows in place, saying which check of the provider failed", async () => {
   const { api, panel } = await at({ provider: authentik, redirect_uri: redirect });
-  for (const [code, status, message] of [
-    ["invalid_provider", 400, "A setting of the Identity Provider is not valid, or its issuer's discovery document is not."],
-    ["provider_unreachable", 502, "The Identity Provider did not answer in time. Try again later."],
+  for (const [code, status, reason, message] of [
+    [
+      "invalid_provider",
+      400,
+      "issuer_mismatch",
+      "The discovery document names a different issuer. The issuer URL must match it exactly, a trailing / included.",
+    ],
+    [
+      "invalid_provider",
+      400,
+      "endpoint_missing",
+      "The discovery document gives no https:// authorization, token or key set endpoint.",
+    ],
+    // A reason this page does not know words as its code does.
+    [
+      "invalid_provider",
+      400,
+      "newer_reason",
+      "A setting of the Identity Provider is not valid, or its issuer's discovery document is not.",
+    ],
+    ["provider_unreachable", 502, undefined, "The Identity Provider did not answer in time. Try again later."],
   ] as const) {
     api.on(ServerOIDCSet, () => {
-      throw refusal(code, status);
+      throw reason === undefined ? refusal(code, status) : refusalBecause(code, status, reason);
     });
-    type(panel, "Client ID", `koko-${code}`);
+    type(panel, "Client ID", `koko-${reason ?? code}`);
     fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(alerts()).toContain(message));
   }
   expect(screen.getByRole("dialog", { name: /^Identity provider/ })).toBeDefined();
+});
+
+test("a refused save keeps the secret typed, so saving again sends it", async () => {
+  const { api, panel } = await at({ provider: authentik, redirect_uri: redirect });
+  let refuse = true;
+  api.on(ServerOIDCSet, (req) => {
+    if (refuse) {
+      throw refusal("provider_unreachable", 502);
+    }
+    return { provider: { ...authentik, client_id: req.client_id ?? authentik.client_id }, redirect_uri: redirect, identities_unlinked: 0 };
+  });
+  type(panel, "Client ID", "koko-2");
+  type(panel, "Client secret", "n3w");
+  fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(alerts()).toContain("The Identity Provider did not answer in time. Try again later."));
+  expect(within(panel).getByLabelText("Client secret")).toHaveProperty("value", "n3w");
+
+  refuse = false;
+  fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
+  expect(await screen.findByText("Authentik saved.")).toBeDefined();
+  expect(api.requests(ServerOIDCSet)).toEqual([
+    { client_id: "koko-2", client_secret: "n3w" },
+    { client_id: "koko-2", client_secret: "n3w" },
+  ]);
+  expect(within(panel).getByLabelText("Client secret")).toHaveProperty("value", "");
+});
+
+test("a changed issuer with no Linked Identity asks first, saying none is unlinked", async () => {
+  const { panel } = await at({ provider: { ...authentik, linked_identities: 0 }, redirect_uri: redirect });
+  type(panel, "Issuer URL", "https://login.example.com/realms/koko");
+  fireEvent.click(within(panel).getByRole("button", { name: "Save" }));
+  const asking = await screen.findByRole("alertdialog", { name: "Change the issuer of Authentik" });
+  expect(within(asking).getByText("No Linked Identity is at the current issuer, so none is unlinked.")).toBeDefined();
 });
 
 test("a changed issuer asks first, naming how many Linked Identities it unlinks", async () => {

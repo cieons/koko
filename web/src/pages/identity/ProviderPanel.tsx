@@ -11,7 +11,9 @@ import {
 } from "../../api/identity";
 import { useCaller } from "../../shell/caller";
 import { type Read, useRead, useWrite } from "../../shell/data";
-import { errorMessage, useCount, useT } from "../../shell/i18n";
+import { ApiError } from "../../client";
+import { catalogues, type MessageKey } from "../../i18n/catalogues";
+import { errorMessage, type Translate, useCount, useT } from "../../shell/i18n";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { CopyButton } from "../../ui/copy";
 import { Field } from "../../ui/fields";
@@ -98,12 +100,12 @@ function ProviderForm({ read, onClose }: { read: Read<ServerOIDCShowResponse>; o
     ...(secret !== "" ? { client_secret: secret } : {}),
   });
   const save = async () => {
-    const sent = request();
-    setSecret("");
-    const { response, error } = await set.send(sent);
+    // The secret stays in its field until it is saved, so a retry after a
+    // refusal sends it again; the panel drops it as it closes.
+    const { response, error } = await set.send(request());
     if (closed.current) {
       if (response === undefined) {
-        notifyRefusal(errorMessage(t, error));
+        notifyRefusal(refusalMessage(t, error));
       } else {
         notify(saved(response.provider.name, response.identities_unlinked));
       }
@@ -111,6 +113,7 @@ function ProviderForm({ read, onClose }: { read: Read<ServerOIDCShowResponse>; o
     }
     setConfirm(undefined);
     if (response !== undefined) {
+      setSecret("");
       setStored(response.provider);
       setValues(valuesOf(response.provider));
       notify(saved(response.provider.name, response.identities_unlinked));
@@ -119,12 +122,19 @@ function ProviderForm({ read, onClose }: { read: Read<ServerOIDCShowResponse>; o
   };
   const saved = (name: string, unlinked: number) =>
     unlinked === 0 ? t("identity.saved", { name }) : count("identity.savedUnlinked", unlinked, { name });
+  // linked is how many Linked Identities a change of issuer or a removal
+  // unlinks, as the page last read it; asking first reads it again.
+  const linked = read.data?.provider?.linked_identities ?? stored?.linked_identities ?? 0;
+  const ask = (question: "issuer" | "remove") => {
+    read.reload();
+    setConfirm(question);
+  };
   const submit = () => {
-    if (stored === undefined || disabled) {
+    if (stored === undefined || disabled || !changed) {
       return;
     }
     if (stored !== null && values.issuer !== stored.issuer) {
-      setConfirm("issuer");
+      ask("issuer");
     } else {
       void save();
     }
@@ -175,7 +185,6 @@ function ProviderForm({ read, onClose }: { read: Read<ServerOIDCShowResponse>; o
         label={t("identity.name")}
         value={values.name}
         onChange={field("name")}
-        description={t("identity.name.hint")}
         isDisabled={disabled}
         validate={(v) =>
           v.trim() === "" ? t("identity.name.required") : [...v].length > maxName ? t("identity.name.tooLong") : undefined
@@ -183,20 +192,20 @@ function ProviderForm({ read, onClose }: { read: Read<ServerOIDCShowResponse>; o
       />
       {redirect !== null && <RedirectURI uri={redirect} />}
       {!disabled && <p className="t-label">{t("identity.secret.checked")}</p>}
-      <Refusal error={set.error} />
+      <Refusal error={set.error === undefined ? undefined : refusalMessage(t, set.error)} />
     </>
   );
   const footer = (
     <>
       {stored && (
-        <Button variant="danger-soft" className="mr-auto" onPress={() => setConfirm("remove")}>
+        <Button variant="danger-soft" className="mr-auto" onPress={() => ask("remove")}>
           {t("identity.remove")}
         </Button>
       )}
       <Button variant="tertiary" onPress={onClose}>
         {t("shell.cancel")}
       </Button>
-      <Button type="submit" isPending={set.pending} isDisabled={disabled}>
+      <Button type="submit" isPending={set.pending} isDisabled={disabled || !changed}>
         {t("identity.save")}
       </Button>
     </>
@@ -215,7 +224,9 @@ function ProviderForm({ read, onClose }: { read: Read<ServerOIDCShowResponse>; o
       {confirm === "issuer" && stored && (
         <ConfirmDialog
           title={t("identity.issuerChange.title", { name: stored.name })}
-          consequence={count("identity.issuerChange.consequence", stored.linked_identities)}
+          consequence={
+            linked === 0 ? t("identity.issuerChange.none") : count("identity.issuerChange.consequence", linked)
+          }
           confirm={t("identity.issuerChange.confirm")}
           pending={set.pending}
           onConfirm={() => void save()}
@@ -225,7 +236,7 @@ function ProviderForm({ read, onClose }: { read: Read<ServerOIDCShowResponse>; o
       {confirm === "remove" && stored && (
         <ConfirmDialog
           title={t("identity.remove.title", { name: stored.name })}
-          consequence={count("identity.remove.consequence", stored.linked_identities)}
+          consequence={linked === 0 ? t("identity.remove.none") : count("identity.remove.consequence", linked)}
           confirm={t("identity.remove")}
           pending={remove.pending}
           error={remove.error}
@@ -289,7 +300,21 @@ function RedirectURI({ uri }: { uri: string }): ReactNode {
         <span className="t-code min-w-0 flex-1 break-all">{uri}</span>
         <CopyButton value={uri} label={t("identity.redirect.copy")} size="sm" />
       </div>
-      <p className="t-label">{t("identity.redirect.hint")}</p>
     </section>
   );
+}
+
+/**
+ * refusalMessage is how the panel words a refused save: for
+ * invalid_provider, the check its reason names, in the reader's language;
+ * otherwise its code's message.
+ */
+function refusalMessage(t: Translate, error: unknown): string {
+  if (error instanceof ApiError && error.code === "invalid_provider" && error.reason !== undefined) {
+    const key = `identity.reason.${error.reason}`;
+    if (key in catalogues.en) {
+      return t(key as MessageKey);
+    }
+  }
+  return errorMessage(t, error);
 }

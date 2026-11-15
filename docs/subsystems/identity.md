@@ -45,8 +45,10 @@ included, and only the Owner acts on the Owner's credentials (ADR 0056).
 ### Setting it
 
 `server.oidc.set` takes the four settings, each optional, and changes only
-those it names. The first set names all four, or is refused with
-`invalid_request` naming those missing. It is refused with `web_url_unset`
+those it names. It names at least one, and the first set all four, or is
+refused with `invalid_request` naming those missing. A set whose settings
+are all the stored ones writes nothing and logs nothing; every other
+writes the row under a new id. It is refused with `web_url_unset`
 while the Web URL is not set, since the redirect URI is part of it.
 
 | Setting | Rule, refused with `invalid_provider` |
@@ -62,9 +64,10 @@ its write's transaction (`op.HandlePrepared`), outside any transaction.
 The document must name the same `issuer`, give `https://`
 `authorization_endpoint`, `token_endpoint` and `jwks_uri`, and list `code` in
 `response_types_supported`. Anything else is `invalid_provider`, saying
-which; so is an answer of 4xx, one that is not JSON, one over 1 MiB, more
-than 3 redirects or a redirect to `http://`. No answer, or an answer of
-5xx, is `provider_unreachable`. Either changes nothing. The write checks
+which; so is an answer of 4xx, one that is not JSON, one whose headers or
+body are over 1 MiB, more than 3 redirects or a redirect to `http://`. No
+answer within the call's bound, or an answer of 5xx, is
+`provider_unreachable`. Either changes nothing. The write checks
 again who calls, the Web URL and the settings; an issuer another set
 changed in between, which this set did not check, is refused with
 `invalid_request`. The client secret cannot be checked without a sign-in.
@@ -89,9 +92,10 @@ sign-in) the token exchange, goes through one client
   system's;
 - `https://` only, the first request and every redirect, with at most 3
   redirects;
-- each call bounded by `timing.ProviderCall` (10 s), its answer read
-  included, and its answer read up to 1 MiB, past which it fails rather
-  than cut short;
+- each call bounded by `timing.ProviderCall` (10 s), from its first
+  request to its answer read, every redirect included, and its answer,
+  headers and body, read up to 1 MiB, past which it fails rather than cut
+  short;
 - at most 4 calls in flight across the koko server; a fifth waits up to
   `timing.ProviderTurn` (10 s) for its turn, then fails as one with no
   answer, `provider_unreachable`.
@@ -121,7 +125,8 @@ At info level, once the transaction commits:
 
 At warn level, `the identity provider could not be reached`, with the
 call's URL without its query and the error, once per run of calls without
-an answer: the next answer ends the run.
+an answer or answered with a server error (5xx): the next other answer
+ends the run.
 
 No line, answer or error holds the client secret.
 
@@ -129,7 +134,7 @@ No line, answer or error holds the client secret.
 
 | Code | Status | When |
 | --- | --- | --- |
-| `invalid_provider` | 400 | A setting is not one koko takes, or the issuer's discovery is not valid; the message says which. |
+| `invalid_provider` | 400 | A setting is not one koko takes, or the issuer's discovery is not valid; the message says which, and `reason` names it: `issuer_invalid`, `client_id_invalid`, `client_secret_invalid` or `name_invalid` for a setting; `no_discovery` (a 4xx), `discovery_unreadable` (not JSON, over 1 MiB, more than 3 redirects or one to `http://`), `issuer_mismatch`, `endpoint_missing` or `code_unsupported` for the discovery. |
 | `provider_unreachable` | 502 | The provider did not answer in time, or answered with a server error. |
 | `provider_unset` | 409 | No Identity Provider is configured. |
 | `web_url_unset` | 409 | `server.oidc.set` while the Web URL is not set. |
