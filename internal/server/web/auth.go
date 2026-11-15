@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"io"
@@ -10,7 +11,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cieons/koko/internal/server/identity"
 	"github.com/cieons/koko/internal/server/signin"
+	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/shared/api"
 )
 
@@ -50,6 +53,7 @@ func attempt(r *http.Request) signin.Attempt {
 func (f *Front) serveAuth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	var serve func(w http.ResponseWriter, r *http.Request, body []byte) error
+	limit := api.MaxAuthBody
 	switch r.URL.Path {
 	case api.AuthSignInPath:
 		serve = f.authSignIn
@@ -59,6 +63,16 @@ func (f *Front) serveAuth(w http.ResponseWriter, r *http.Request) {
 		serve = f.authPassword
 	case api.AuthSignOutPath:
 		serve = f.authSignOut
+	case api.AuthMethodsPath:
+		serve = f.authMethods
+	case api.AuthPasskeySignInBeginPath:
+		serve = f.authPasskeySignInBegin
+	case api.AuthPasskeySignInPath:
+		serve, limit = f.authPasskeySignIn, api.MaxPasskeyBody
+	case api.AuthPasskeyAddBeginPath:
+		serve = f.authPasskeyAddBegin
+	case api.AuthPasskeyAddPath:
+		serve, limit = f.authPasskeyAdd, api.MaxPasskeyBody
 	default:
 		f.refuseAPI(w, r, api.CodeUnknownOperation.Errorf("no endpoint is served at %s", r.URL.Path))
 		return
@@ -72,13 +86,13 @@ func (f *Front) serveAuth(w http.ResponseWriter, r *http.Request) {
 		f.refuseAPI(w, r, api.CodeUnsupportedMediaType.Errorf("the request body must be application/json"))
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, api.MaxAuthBody+1))
+	body, err := io.ReadAll(io.LimitReader(r.Body, int64(limit)+1))
 	if err != nil {
 		f.refuseAPI(w, r, api.CodeInvalidRequest.Errorf("read the request body: %v", err))
 		return
 	}
-	if len(body) > api.MaxAuthBody {
-		f.refuseAPI(w, r, api.CodeRequestTooLarge.Errorf("the request body is over the limit of %d KiB of %s", api.MaxAuthBody>>10, r.URL.Path))
+	if len(body) > limit {
+		f.refuseAPI(w, r, api.CodeRequestTooLarge.Errorf("the request body is over the limit of %d KiB of %s", limit>>10, r.URL.Path))
 		return
 	}
 	if err := serve(w, r, body); err != nil {
@@ -148,6 +162,100 @@ func (f *Front) authSignOut(w http.ResponseWriter, r *http.Request, body []byte)
 	http.SetCookie(w, &http.Cookie{Name: signInCookie, Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	writeJSON(w, api.AuthSignOutResponse{})
 	return nil
+}
+
+func (f *Front) authMethods(w http.ResponseWriter, r *http.Request, body []byte) error {
+	if _, err := decodeAuth[api.AuthMethodsRequest](r, body); err != nil {
+		return err
+	}
+	var resp api.AuthMethodsResponse
+	err := f.store.Read(r.Context(), func(tx store.Tx) (err error) {
+		resp.Provider, err = identity.Button(r.Context(), tx)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	writeJSON(w, resp)
+	return nil
+}
+
+func (f *Front) authPasskeySignInBegin(w http.ResponseWriter, r *http.Request, body []byte) error {
+	if _, err := decodeAuth[api.AuthPasskeySignInBeginRequest](r, body); err != nil {
+		return err
+	}
+	resp, err := f.passkeys.BeginSignIn(r.Context(), attempt(r))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, resp)
+	return nil
+}
+
+func (f *Front) authPasskeySignIn(w http.ResponseWriter, r *http.Request, body []byte) error {
+	in, err := decodeAuth[struct {
+		Flow       string         `json:"flow"`
+		Credential jsontext.Value `json:"credential"`
+	}](r, body)
+	if err != nil {
+		return err
+	}
+	req := api.AuthPasskeySignInRequest{Flow: in.Flow}
+	readAnswer(in.Credential, &req.Credential)
+	started, err := f.passkeys.SignIn(r.Context(), req, attempt(r))
+	if err != nil {
+		return err
+	}
+	f.setSignInCookie(w, started)
+	writeJSON(w, api.AuthSignInResponse{User: started.User})
+	return nil
+}
+
+func (f *Front) authPasskeyAddBegin(w http.ResponseWriter, r *http.Request, body []byte) error {
+	req, err := decodeAuth[api.AuthPasskeyAddBeginRequest](r, body)
+	if err != nil {
+		return err
+	}
+	resp, err := f.passkeys.BeginAdd(r.Context(), req, signInToken(r), attempt(r))
+	if err != nil {
+		return err
+	}
+	writeJSON(w, resp)
+	return nil
+}
+
+func (f *Front) authPasskeyAdd(w http.ResponseWriter, r *http.Request, body []byte) error {
+	in, err := decodeAuth[struct {
+		Flow       string         `json:"flow"`
+		Credential jsontext.Value `json:"credential"`
+		Name       string         `json:"name,omitzero"`
+	}](r, body)
+	if err != nil {
+		return err
+	}
+	req := api.AuthPasskeyAddRequest{Flow: in.Flow, Name: in.Name}
+	readAnswer(in.Credential, &req.Credential)
+	added, err := f.passkeys.Add(r.Context(), req, signInToken(r), attempt(r))
+	if err != nil {
+		return err
+	}
+	if added.Started != nil {
+		f.setSignInCookie(w, *added.Started)
+	}
+	writeJSON(w, api.AuthPasskeyAddResponse{User: added.User, Passkey: added.Passkey})
+	return nil
+}
+
+// readAnswer reads a browser's answer to a passkey's ceremony, as its
+// PublicKeyCredential.toJSON() gives it, into answer: the members koko
+// does not read, which browsers add to, are left unread. An answer that
+// does not read is left empty, which the passkey area refuses as one that
+// does not verify, once it has taken the flow the request names.
+func readAnswer[T any](raw jsontext.Value, answer *T) {
+	if err := json.Unmarshal(raw, answer); err != nil {
+		var zero T
+		*answer = zero
+	}
 }
 
 // setSignInCookie gives the browser the cookie of the Sign-in started, for

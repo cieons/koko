@@ -287,6 +287,35 @@ export const AuthSignOut: AuthEndpoint<AuthSignOutRequest, AuthSignOutResponse> 
   path: "/auth/signout",
 };
 
+/**
+ * AuthMethods answers whether an Identity Provider is configured, and
+ * the name on its button. It counts for no rate limit.
+ */
+export const AuthMethods: AuthEndpoint<AuthMethodsRequest, AuthMethodsResponse> = {
+  path: "/auth/methods",
+};
+
+/** AuthMethodsRequest asks for the ways to sign in. */
+export type AuthMethodsRequest = Record<string, never>;
+
+/**
+ * AuthMethodsResponse is the ways to sign in beside a Password and a
+ * passkey.
+ */
+export interface AuthMethodsResponse {
+  /**
+   * Provider is the Identity Provider's button; null while none is
+   * configured.
+   */
+  provider: AuthProvider | null;
+}
+
+/** AuthProvider is the Identity Provider as Sign in shows it. */
+export interface AuthProvider {
+  /** Name is the name on its button, such as "Authentik". */
+  name: string;
+}
+
 /** AuthSignInRequest signs in as the User Name names. */
 export interface AuthSignInRequest {
   name: string;

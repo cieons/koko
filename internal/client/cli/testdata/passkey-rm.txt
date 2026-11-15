@@ -1,0 +1,1 @@
+Removed the passkey Laptop (passkey_<i>) of bob; no Sign-in made with it was live. The device or password manager that holds it keeps it until it is removed there too.

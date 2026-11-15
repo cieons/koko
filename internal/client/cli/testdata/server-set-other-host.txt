@@ -1,0 +1,2 @@
+Changed the Web URL to https://other.example.com. The web listener answers only requests for it, as the reverse proxy passes them on.
+1 passkey was made for another host than the Web URL's, and is refused until the Web URL names that host again. Its User adds one at the Web URL, and removes the old one with koko passkey rm.

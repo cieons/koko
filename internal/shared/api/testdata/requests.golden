@@ -276,3 +276,9 @@ client_secret 1 string
 name 1 string
 
 == server.oidc.remove 1
+
+== passkey.list 1
+user 1 string
+
+== passkey.remove 1
+id 1 string

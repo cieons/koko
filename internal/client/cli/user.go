@@ -7,6 +7,7 @@ import (
 	"io"
 	"reflect"
 	"slices"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/cieons/koko/internal/shared/api"
@@ -99,26 +100,56 @@ var userCommands = []Command{
 }
 
 // userJSON is a User in the CLI's own --json. removed_at is null while the
-// User belongs to the koko server, and password_set_at while they have no
-// Password.
+// User belongs to the koko server, password_set_at while they have no
+// Password, and identity_linked_at while they have no Linked Identity;
+// passkeys counts their Passkeys. A koko server before passkeys answers
+// none of either.
 type userJSON struct {
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	Role          string  `json:"role"`
-	CreatedAt     string  `json:"created_at"`
-	RemovedAt     *string `json:"removed_at"`
-	PasswordSetAt *string `json:"password_set_at"`
+	ID               string  `json:"id"`
+	Name             string  `json:"name"`
+	Role             string  `json:"role"`
+	CreatedAt        string  `json:"created_at"`
+	RemovedAt        *string `json:"removed_at"`
+	PasswordSetAt    *string `json:"password_set_at"`
+	Passkeys         int     `json:"passkeys"`
+	IdentityLinkedAt *string `json:"identity_linked_at"`
 }
 
 func userFromAPI(u api.User) userJSON {
-	j := userJSON{ID: u.ID, Name: u.Name, Role: u.Role, CreatedAt: u.CreatedAt}
+	j := userJSON{ID: u.ID, Name: u.Name, Role: u.Role, CreatedAt: u.CreatedAt, Passkeys: u.Passkeys}
 	if u.RemovedAt != "" {
 		j.RemovedAt = new(u.RemovedAt)
 	}
 	if u.PasswordSetAt != "" {
 		j.PasswordSetAt = new(u.PasswordSetAt)
 	}
+	if u.IdentityLinkedAt != "" {
+		j.IdentityLinkedAt = new(u.IdentityLinkedAt)
+	}
 	return j
+}
+
+// signInWays is how a User signs in in a browser, as koko user ls's
+// SIGN-IN column says it: "password, 2 passkeys, identity", or "-" for
+// none.
+func (u userJSON) signInWays() string {
+	var ways []string
+	if u.PasswordSetAt != nil {
+		ways = append(ways, "password")
+	}
+	switch {
+	case u.Passkeys == 1:
+		ways = append(ways, "1 passkey")
+	case u.Passkeys > 1:
+		ways = append(ways, fmt.Sprintf("%d passkeys", u.Passkeys))
+	}
+	if u.IdentityLinkedAt != nil {
+		ways = append(ways, "identity")
+	}
+	if len(ways) == 0 {
+		return "-"
+	}
+	return strings.Join(ways, ", ")
 }
 
 var userMappings = []mapping{
@@ -137,13 +168,13 @@ func (l userList) Human(w io.Writer) error {
 	removed := slices.ContainsFunc(l, func(u userJSON) bool { return u.RemovedAt != nil })
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	// A tabwriter reports a failed write when it flushes.
-	_, _ = fmt.Fprint(tw, "NAME\tROLE\tID\tCREATED\tPASSWORD")
+	_, _ = fmt.Fprint(tw, "NAME\tROLE\tID\tCREATED\tSIGN-IN")
 	if removed {
 		_, _ = fmt.Fprint(tw, "\tREMOVED")
 	}
 	_, _ = fmt.Fprintln(tw)
 	for _, u := range l {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s", u.Name, u.Role, u.ID, u.CreatedAt, cmp.Or(deref(u.PasswordSetAt), "-"))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s", u.Name, u.Role, u.ID, u.CreatedAt, u.signInWays())
 		if removed {
 			_, _ = fmt.Fprintf(tw, "\t%s", cmp.Or(deref(u.RemovedAt), "-"))
 		}

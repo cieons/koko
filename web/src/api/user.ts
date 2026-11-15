@@ -26,6 +26,17 @@ export interface User {
    * none, and in every other answer.
    */
   password_set_at?: string;
+  /**
+   * Passkeys is how many Passkeys the User has, as user.list answers it;
+   * left out at none, and in every other answer.
+   */
+  passkeys?: number;
+  /**
+   * IdentityLinkedAt is when the User linked their identity at the
+   * Identity Provider, RFC 3339 in UTC to the second, as user.list
+   * answers it; empty while they have none, and in every other answer.
+   */
+  identity_linked_at?: string;
 }
 
 /** UserInviteRequest invites a new User under a name no User or Space holds. */

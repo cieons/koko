@@ -208,8 +208,10 @@ endpoints set the Sign-in cookie, and only they and `/v1/` read it.
    too.
 5. **`/terminal/socket`** and **`/terminal/workspace`** are [the web
    terminal's WebSockets](#the-web-terminals-websocket).
-6. **`/auth/`** is the web front's own endpoints, which sign a browser in,
-   set a Password and sign out ([Sign-ins](signin.md#the-auth-endpoints)).
+6. **`/auth/`** is the web front's own endpoints, which sign a browser in
+   with a Password or a passkey, make a passkey, set a Password and sign
+   out, each a JSON `POST` of at most 4 KiB, 64 KiB for the two that carry a
+   passkey's answer ([Sign-ins](signin.md#the-auth-endpoints)).
 7. **`/terminal/files/`** is [the web terminal's
    files](#the-web-terminals-files).
 8. **`/v1/`** goes to the API as the live Sign-in the `__Host-koko` cookie

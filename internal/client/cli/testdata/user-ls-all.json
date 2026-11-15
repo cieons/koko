@@ -5,7 +5,9 @@
     "role": "owner",
     "created_at": "<time>",
     "removed_at": null,
-    "password_set_at": null
+    "password_set_at": null,
+    "passkeys": 0,
+    "identity_linked_at": null
   },
   {
     "id": "user_<2>",
@@ -13,7 +15,9 @@
     "role": "member",
     "created_at": "<time>",
     "removed_at": null,
-    "password_set_at": null
+    "password_set_at": null,
+    "passkeys": 0,
+    "identity_linked_at": null
   },
   {
     "id": "user_<3>",
@@ -21,6 +25,8 @@
     "role": "member",
     "created_at": "<time>",
     "removed_at": "<time>",
-    "password_set_at": null
+    "password_set_at": null,
+    "passkeys": 0,
+    "identity_linked_at": null
   }
 ]

@@ -212,7 +212,12 @@ loaded and runs with. Each returns `{"server": {...}}`
   clears it; the Server Address is never cleared, and an unset of anything
   else, or a Web URL both set and cleared, is `invalid_request`. A change
   takes effect on the web listener's next request
-  ([the web listener](web-front.md#the-web-listener)).
+  ([the web listener](web-front.md#the-web-listener)). A Passkey belongs to
+  the host it was made for: a change of host leaves each recorded and
+  listed, refused until the Web URL names its host again, and a change of
+  port alone keeps every one. `server.set` answers how many belong to
+  another host than the Web URL's as it left it (`other_host_passkeys`),
+  every one with the Web URL cleared ([Passkeys](signin.md#passkeys)).
 
 The CLI refuses a `key=value` other than `address=`, `web_url=` and
 `update_check=`, an address that is not a Server Address, a Web URL that is
@@ -220,8 +225,10 @@ not one, an `update_check=` other than `on` or `off`, an `--unset` of
 anything but `web_url`, and a `server set` naming nothing, with exit 2,
 before any call. `koko server show` prints the web listener's
 address, or `off`, and the Web URL, or `not set`; `koko server set
-web_url=` says what changed, and how to turn the web listener on while it
-is off.
+web_url=` says what changed, how many passkeys belong to another host than
+the new Web URL's, when any do, and how to turn the web listener on while it
+is off. Its `--json` prints the settings as `server show` does, and leaves
+the count out.
 
 ## The update check
 

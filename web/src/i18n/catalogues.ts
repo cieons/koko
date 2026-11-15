@@ -12,6 +12,7 @@ import enErrors from "./en/errors";
 import enFiles from "./en/files";
 import enHost from "./en/host";
 import enIdentity from "./en/identity";
+import enPasskey from "./en/passkey";
 import enSecret from "./en/secret";
 import enServer from "./en/server";
 import enService from "./en/service";
@@ -28,6 +29,7 @@ import zhErrors from "./zh-CN/errors";
 import zhFiles from "./zh-CN/files";
 import zhHost from "./zh-CN/host";
 import zhIdentity from "./zh-CN/identity";
+import zhPasskey from "./zh-CN/passkey";
 import zhSecret from "./zh-CN/secret";
 import zhServer from "./zh-CN/server";
 import zhService from "./zh-CN/service";
@@ -55,6 +57,7 @@ const en = {
   ...enFiles,
   ...enTerminal,
   ...enIdentity,
+  ...enPasskey,
 };
 
 /** MessageKey is the key of a message, such as "shell.language". */
@@ -80,6 +83,7 @@ const zhCN: Catalogue = {
   ...zhFiles,
   ...zhTerminal,
   ...zhIdentity,
+  ...zhPasskey,
 };
 
 /** The languages the web UI ships, English first: the default. */

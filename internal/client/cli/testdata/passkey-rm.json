@@ -1,0 +1,13 @@
+{
+  "passkey": {
+    "id": "passkey_<1>",
+    "user": "bob",
+    "name": "Firefox on Linux",
+    "host": "koko.example.com",
+    "synced": false,
+    "added_by": "alice",
+    "added_at": "<time>",
+    "last_used_at": null
+  },
+  "signins_ended": 1
+}

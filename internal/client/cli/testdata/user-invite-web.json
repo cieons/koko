@@ -5,7 +5,9 @@
     "role": "member",
     "created_at": "<time>",
     "removed_at": null,
-    "password_set_at": null
+    "password_set_at": null,
+    "passkeys": 0,
+    "identity_linked_at": null
   },
   "password_link": "https://koko.example.com/link#<secret>",
   "signin_link": "https://koko.example.com/link#<secret>",

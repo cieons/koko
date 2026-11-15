@@ -173,6 +173,11 @@ func orNone(s *string, none string) string {
 // deployment as it left it, and, for people, what changed.
 type serverChanged struct {
 	serverJSON
+	// otherHostPasskeys is how many Passkeys were made for a host other
+	// than the Web URL's, each refused until the Web URL names its host
+	// again; 0 from a koko server before passkeys. Its --json prints the
+	// settings alone, as server show does, so only its text says it.
+	otherHostPasskeys int
 	// address and webURL tell that the Server Address, or the Web URL,
 	// changed, and updateCheck that the update_check setting was set.
 	address, webURL, updateCheck bool
@@ -194,6 +199,13 @@ koko connect %s
 		b.WriteString("Cleared the Web URL. The web listener answers every request with a page naming koko server set web_url=https://… until it is set again.\n")
 	default:
 		fmt.Fprintf(&b, "Changed the Web URL to %s. The web listener answers only requests for it, as the reverse proxy passes them on.\n", *s.WebURL)
+	}
+	switch n := s.otherHostPasskeys; {
+	case !s.webURL || n == 0:
+	case n == 1:
+		b.WriteString("1 passkey was made for another host than the Web URL's, and is refused until the Web URL names that host again. Its User adds one at the Web URL, and removes the old one with koko passkey rm.\n")
+	default:
+		fmt.Fprintf(&b, "%d passkeys were made for another host than the Web URL's, and are refused until the Web URL names that host again. Their Users add new ones at the Web URL, and remove the old ones with koko passkey rm.\n", n)
 	}
 	if s.webURL && s.WebListen == nil {
 		b.WriteString("The web listener is off: turn it on with koko server install --web-listen 127.0.0.1:7823, or with KOKO_WEB_LISTEN in a container.\n")
@@ -258,7 +270,7 @@ func serverSet(ctx context.Context, in *Input) (serverChanged, error) {
 		return serverChanged{}, err
 	}
 	return serverChanged{
-		serverJSON: serverFromAPI(resp.Server), address: req.Address != nil,
+		serverJSON: serverFromAPI(resp.Server), otherHostPasskeys: resp.OtherHostPasskeys, address: req.Address != nil,
 		webURL: req.WebURL != nil || len(req.Unset) > 0, updateCheck: req.UpdateCheck != nil,
 	}, nil
 }

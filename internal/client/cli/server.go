@@ -106,7 +106,9 @@ const serverNote = "The koko server's process is kokod run, which systemd and th
 var serverMappings = []mapping{
 	{api: reflect.TypeFor[api.ServerInitResponse](), cli: reflect.TypeFor[installedJSON]()},
 	{api: reflect.TypeFor[api.ServerShowResponse]()},
-	{api: reflect.TypeFor[api.ServerSetResponse]()},
+	{api: reflect.TypeFor[api.ServerSetResponse](), omitted: map[string]string{
+		"other_host_passkeys": "koko server set --json prints the settings as koko server show does; its text says how many passkeys belong to another host",
+	}},
 	{
 		api: reflect.TypeFor[api.Server](),
 		cli: reflect.TypeFor[serverJSON](),

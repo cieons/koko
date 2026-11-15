@@ -39,6 +39,7 @@ import (
 	"github.com/cieons/koko/internal/server/deployment"
 	"github.com/cieons/koko/internal/server/gateway"
 	"github.com/cieons/koko/internal/server/op"
+	"github.com/cieons/koko/internal/server/passkey"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/signin"
 	"github.com/cieons/koko/internal/server/store"
@@ -63,6 +64,8 @@ type Front struct {
 	// signins answers the web listener's /auth/ endpoints and its Sign-in
 	// cookies.
 	signins *signin.Service
+	// passkeys answers the web listener's passkey endpoints.
+	passkeys *passkey.Service
 	// gateway opens the web terminals' SSH Sessions (terminal.go).
 	gateway *gateway.Gateway
 	files   fs.FS
@@ -87,13 +90,13 @@ type Front struct {
 
 // New returns the web front, which hands authenticated /v1/ requests to api,
 // signs koko web's cookies with the cookie key kept in st under rootKey,
-// signs browsers in on the web listener through signins, hands web
+// signs browsers in on the web listener through signins and passkeys, hands web
 // terminals to gw, reads a token's expiry on clock, the koko server's, and
 // waits as timings say (the zero Timings is the product's).
-func New(api http.Handler, signins *signin.Service, gw *gateway.Gateway, st *store.Store, rootKey *seal.RootKey, clock func() time.Time, timings timing.Timings, log *slog.Logger) *Front {
+func New(api http.Handler, signins *signin.Service, passkeys *passkey.Service, gw *gateway.Gateway, st *store.Store, rootKey *seal.RootKey, clock func() time.Time, timings timing.Timings, log *slog.Logger) *Front {
 	timings = timings.Resolve()
 	return &Front{
-		api: api, signins: signins, gateway: gw, files: webui.FS(), store: st, rootKey: rootKey,
+		api: api, signins: signins, passkeys: passkeys, gateway: gw, files: webui.FS(), store: st, rootKey: rootKey,
 		log: log, clock: clock, timings: timings, runs: newRuns(),
 		uploads: newUploads(timings.UploadIdle), downloads: newDownloads(),
 	}

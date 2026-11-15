@@ -1,0 +1,3 @@
+USER  NAME              ID                HOST              SYNCED  ADDED BY  ADDED                 LAST USED
+bob   Firefox on Linux  passkey_<i>  koko.example.com  no      alice     <time>  -
+bob   Laptop            passkey_<ii>  koko.example.com  no      -         <time>  -

@@ -31,6 +31,7 @@ var areaRows = [][]row{
 	serviceRows,
 	signinRows,
 	identityRows,
+	passkeyRows,
 }
 
 // A row states, for one operation, the answer each caller gets.
@@ -253,6 +254,9 @@ type fixture struct {
 	// signIns are the ids of the Sign-ins of alice and frank, and of the
 	// caller's User through a Sign-in, by User.
 	signIns map[string]string
+	// passkeys are the ids of the Passkeys of alice, frank and dave, by
+	// User.
+	passkeys map[string]string
 }
 
 // A template is the data directory of a stopped koko server holding a
@@ -268,6 +272,8 @@ type template struct {
 	cookie string
 	// signIns are the ids of the template's Sign-ins, by User.
 	signIns map[string]string
+	// passkeys are the ids of the template's Passkeys, by User.
+	passkeys map[string]string
 }
 
 // templateKey names a template: whether ops is recorded, and the User
@@ -311,7 +317,7 @@ func newTemplates(t *testing.T, rows []row) map[templateKey]template {
 
 func newTemplate(t *testing.T, k templateKey) template {
 	t.Helper()
-	tmpl := template{dataDir: t.TempDir(), rootKey: harness.NewRootKeyFile(t), withTarget: k.withTarget, signIns: map[string]string{}}
+	tmpl := template{dataDir: t.TempDir(), rootKey: harness.NewRootKeyFile(t), withTarget: k.withTarget, signIns: map[string]string{}, passkeys: map[string]string{}}
 	h := harness.Start(t, harness.DataDir(tmpl.dataDir), harness.RootKeyFile(tmpl.rootKey), harness.WebListen("127.0.0.1:0"))
 	for _, u := range []string{"bob", "carol", "dave", administrator, otherAdministrator} {
 		h.Koko("user", "invite", u).WantSuccess(t)
@@ -335,7 +341,16 @@ func newTemplate(t *testing.T, k templateKey) template {
 		if u == k.signedIn {
 			tmpl.cookie = b.Cookie
 		}
+		if u == harness.Owner || u == otherAdministrator {
+			tmpl.passkeys[u] = addPasskey(t, b, "")
+		}
 	}
+	// dave makes his through a Sign-in Link, which signs in no caller.
+	link, err := h.Call(api.PasswordLinkIssue, api.PasswordLinkRequest{User: "dave"})
+	if err != nil {
+		t.Fatalf("issue a Sign-in Link for dave: %v", err)
+	}
+	tmpl.passkeys["dave"] = addPasskey(t, h.Browser(), link.PasswordLink.Link)
 	if k.signedIn == "" {
 		// password.link's rows need the Web URL unset for every caller
 		// but those through a Sign-in, whose browser sets it.
@@ -345,6 +360,18 @@ func newTemplate(t *testing.T, k templateKey) template {
 	}
 	h.Stop()
 	return tmpl
+}
+
+// addPasskey makes a passkey from b, through link or from b's Sign-in when
+// link is "", and returns its id.
+func addPasskey(t *testing.T, b *harness.Browser, link string) string {
+	t.Helper()
+	status, body := b.AddPasskey(harness.NewAuthenticator(harness.WebURL), link, "")
+	var resp api.AuthPasskeyAddResponse
+	if err := json.Unmarshal([]byte(body), &resp); status != http.StatusOK || err != nil {
+		t.Fatalf("make a passkey: %d %s", status, body)
+	}
+	return resp.Passkey.ID
 }
 
 // signInID is the id of the Sign-in b holds.
@@ -369,7 +396,7 @@ func newFixture(t *testing.T, tmpl template, c caller) *fixture {
 	if c.signedIn() {
 		opts = append(opts, harness.WebListen("127.0.0.1:0"))
 	}
-	return &fixture{t: t, h: harness.Start(t, opts...), withTarget: tmpl.withTarget, cookie: tmpl.cookie, signIns: tmpl.signIns}
+	return &fixture{t: t, h: harness.Start(t, opts...), withTarget: tmpl.withTarget, cookie: tmpl.cookie, signIns: tmpl.signIns, passkeys: tmpl.passkeys}
 }
 
 // send makes r's call as c, joining a device of c's User for it, or

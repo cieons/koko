@@ -32,6 +32,7 @@ import (
 	"github.com/cieons/koko/internal/server/hostlist"
 	"github.com/cieons/koko/internal/server/identity"
 	"github.com/cieons/koko/internal/server/op"
+	"github.com/cieons/koko/internal/server/passkey"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/secret"
 	"github.com/cieons/koko/internal/server/service"
@@ -369,7 +370,10 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	gw := gateway.New(st, key, clock, cfg.Timings, bound, log)
 	// The web area's front holds the runs of koko web, so it registers its
 	// operation itself, below.
-	front := web.New(a, signins, gw, st, key, clock, cfg.Timings, log)
+	// The passkey area runs its ceremonies through the signin area, which
+	// starts their Sign-ins and spends their Sign-in Links.
+	passkeys := passkey.New(st, signins, clock, log)
+	front := web.New(a, signins, passkeys, gw, st, key, clock, cfg.Timings, log)
 	version := cmp.Or(cfg.Version, build.Read().Version)
 	// Each connection is reported every operation registered below, the
 	// operations and channels above revision 1, and the oldest koko this
@@ -431,6 +435,7 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	device.Register(a, issuer, &changes, log)
 	user.Register(a, issuer.Issue, signins, gw.Workspaces(), holdings, &changes, &lists, log)
 	signins.Register(a, &changes)
+	passkeys.Register(a)
 	// The identity area seals the Identity Provider's client secret with
 	// the Root Key, and ends the Sign-ins made through a Linked Identity it
 	// unlinks through the signin area.

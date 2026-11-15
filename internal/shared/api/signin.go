@@ -257,7 +257,12 @@ const (
 	// AuthSignOutPath ends the request's Sign-in and clears its cookie,
 	// answering an AuthSignOutResponse.
 	AuthSignOutPath = "/auth/signout"
-	// MaxAuthBody is the largest body an /auth/ endpoint reads.
+	// AuthMethodsPath answers, with an AuthMethodsResponse, the ways to
+	// sign in beside a Password and a passkey: the Identity Provider's
+	// button, when one is configured.
+	AuthMethodsPath = "/auth/methods"
+	// MaxAuthBody is the largest body an /auth/ endpoint reads, but for
+	// the two that carry a passkey's answer (MaxPasskeyBody).
 	MaxAuthBody = 4 << 10
 )
 
@@ -308,11 +313,32 @@ var (
 	AuthPassword = AuthEndpoint[AuthPasswordRequest, AuthSignInResponse]{Path: AuthPasswordPath}
 	// AuthSignOut ends this browser's Sign-in and clears its cookie.
 	AuthSignOut = AuthEndpoint[AuthSignOutRequest, AuthSignOutResponse]{Path: AuthSignOutPath}
+	// AuthMethods answers whether an Identity Provider is configured, and
+	// the name on its button. It counts for no rate limit.
+	AuthMethods = AuthEndpoint[AuthMethodsRequest, AuthMethodsResponse]{Path: AuthMethodsPath}
 )
 
-// AuthEndpoints returns every /auth/ endpoint.
+// AuthEndpoints returns the /auth/ endpoints but the passkey ones
+// (PasskeyEndpoints).
 func AuthEndpoints() []AuthEndpointInfo {
-	return []AuthEndpointInfo{AuthSignIn.Info(), AuthLink.Info(), AuthPassword.Info(), AuthSignOut.Info()}
+	return []AuthEndpointInfo{AuthSignIn.Info(), AuthLink.Info(), AuthPassword.Info(), AuthSignOut.Info(), AuthMethods.Info()}
+}
+
+// AuthMethodsRequest asks for the ways to sign in.
+type AuthMethodsRequest struct{}
+
+// AuthMethodsResponse is the ways to sign in beside a Password and a
+// passkey.
+type AuthMethodsResponse struct {
+	// Provider is the Identity Provider's button; null while none is
+	// configured.
+	Provider *AuthProvider `json:"provider"`
+}
+
+// AuthProvider is the Identity Provider as Sign in shows it.
+type AuthProvider struct {
+	// Name is the name on its button, such as "Authentik".
+	Name string `json:"name"`
 }
 
 // AuthSignInRequest signs in as the User Name names.

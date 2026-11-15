@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/cieons/koko/internal/server/deployment"
 	"github.com/cieons/koko/internal/server/installer"
 	"github.com/cieons/koko/internal/server/op"
+	"github.com/cieons/koko/internal/server/passkey"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/store"
 	"github.com/cieons/koko/internal/server/transport"
@@ -129,12 +131,29 @@ func (s *settings) set(ctx context.Context, tx store.Tx, _ op.Caller, req api.Se
 	if err != nil {
 		return api.ServerSetResponse{}, err
 	}
+	otherHost, err := passkey.OtherHost(ctx, tx, webURLHost(srv.WebURL))
+	if err != nil {
+		return api.ServerSetResponse{}, err
+	}
 	if turnedOff {
 		// As the checker is once it follows the setting: turned off, it
 		// forgets what it found.
 		srv.UpdateCheck = updateCheckJSON(false, updatecheck.Result{})
 	}
-	return api.ServerSetResponse{Server: srv}, nil
+	return api.ServerSetResponse{Server: srv, OtherHostPasskeys: otherHost}, nil
+}
+
+// webURLHost is the host of the Web URL webURL names, without its port: the
+// host a Passkey is made for. It is "" with no Web URL.
+func webURLHost(webURL *string) string {
+	if webURL == nil {
+		return ""
+	}
+	u, err := url.Parse(*webURL)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
 }
 
 // checkUpdate checks for a new koko release at once, for the Owner or an

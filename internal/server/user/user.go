@@ -93,8 +93,8 @@ func current(ctx context.Context, tx store.Tx, caller op.Caller, _ api.UserCurre
 	return resp, nil
 }
 
-// list is user.list: the Users by name, each with when they set their
-// Password, the Removed ones only with req.All. Only the Owner or an
+// list is user.list: the Users by name, each with the ways they sign in in
+// a browser, the Removed ones only with req.All. Only the Owner or an
 // Administrator lists Users.
 func list(ctx context.Context, tx store.Tx, caller op.Caller, req api.UserListRequest) (api.UserListResponse, error) {
 	if _, err := access.Administers(ctx, tx, caller, "lists Users"); err != nil {
@@ -108,11 +108,14 @@ func list(ctx context.Context, tx store.Tx, caller op.Caller, req api.UserListRe
 }
 
 // listed returns the Users the SQL condition where selects with args, by
-// name, as user.list answers them: each with when they set their Password.
+// name, as user.list answers them: each with the ways they sign in in a
+// browser, when they set their Password, how many Passkeys they have and
+// when they linked their identity.
 // The condition reads the User as u.
 func listed(ctx context.Context, tx store.Tx, where string, args ...any) ([]api.User, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT u.id, u.name, `+access.Role+`, u.created_at, u.removed_at, p.set_at
-		FROM users u LEFT JOIN passwords p ON p.user_id = u.id
+	rows, err := tx.QueryContext(ctx, `SELECT u.id, u.name, `+access.Role+`, u.created_at, u.removed_at, p.set_at,
+			(SELECT count(*) FROM passkeys k WHERE k.user_id = u.id), i.linked_at
+		FROM users u LEFT JOIN passwords p ON p.user_id = u.id LEFT JOIN identities i ON i.user_id = u.id
 		WHERE `+where+` ORDER BY u.name`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list the Users: %w", err)
@@ -121,9 +124,9 @@ func listed(ctx context.Context, tx store.Tx, where string, args ...any) ([]api.
 	var users []api.User
 	for rows.Next() {
 		var u api.User
-		var removed, passwordSet sql.NullString
-		err := rows.Scan(&u.ID, &u.Name, &u.Role, &u.CreatedAt, &removed, &passwordSet)
-		u.RemovedAt, u.PasswordSetAt = removed.String, passwordSet.String
+		var removed, passwordSet, identityLinked sql.NullString
+		err := rows.Scan(&u.ID, &u.Name, &u.Role, &u.CreatedAt, &removed, &passwordSet, &u.Passkeys, &identityLinked)
+		u.RemovedAt, u.PasswordSetAt, u.IdentityLinkedAt = removed.String, passwordSet.String, identityLinked.String
 		if err != nil {
 			return nil, fmt.Errorf("list the Users: %w", err)
 		}

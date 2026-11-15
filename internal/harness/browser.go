@@ -33,6 +33,18 @@ type Browser struct {
 	UserAgent string
 	// Cookie is the Sign-in cookie it holds: its value, or "" for none.
 	Cookie string
+	// Origin is the Web URL it browses at, which each request's Host and
+	// Origin name: WebURL when it is "", or another the test set the Web
+	// URL to.
+	Origin string
+}
+
+// origin is the Web URL b browses at.
+func (b *Browser) origin() string {
+	if b.Origin != "" {
+		return b.Origin
+	}
+	return WebURL
 }
 
 // Browser returns a new browser on h's web listener, from the address
@@ -87,10 +99,10 @@ func (b *Browser) Do(method, path, body string) Answer {
 	if err != nil {
 		b.t.Fatal(err)
 	}
-	req.Host = strings.TrimPrefix(WebURL, "https://")
+	req.Host = strings.TrimPrefix(b.origin(), "https://")
 	req.Header.Set("User-Agent", b.UserAgent)
 	if method == http.MethodPost {
-		req.Header.Set("Origin", WebURL)
+		req.Header.Set("Origin", b.origin())
 		req.Header.Set("Content-Type", "application/json")
 		// As the web UI's client sends it with every call, a write's
 		// included.

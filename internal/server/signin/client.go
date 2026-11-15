@@ -1,6 +1,10 @@
 package signin
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/cieons/koko/internal/shared/api"
+)
 
 // A browser or a system, as a Sign-in names it, found in a User-Agent by the
 // first of its marks that it holds.
@@ -35,6 +39,13 @@ var systems = []uaName{
 // "Safari" and "iPhone", each "" when it names none of the common ones.
 func clientOf(userAgent string) (browser, system string) {
 	return find(browsers, userAgent), find(systems, userAgent)
+}
+
+// Label is the English label of the browser a User-Agent names, as a
+// Sign-in's client: "Safari on iPhone", the browser alone, or "Browser".
+// A Passkey made through a Sign-in Link is named with it.
+func Label(userAgent string) string {
+	return api.ClientLabel(clientOf(userAgent))
 }
 
 func find(names []uaName, userAgent string) string {

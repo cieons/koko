@@ -30,13 +30,18 @@ Revoked ones included, never set a Password and never had a Sign-in
 
 `koko user ls [--all]` (`user.list`, the Owner or an Administrator, read
 tier) lists the Users by name, each with their role (`owner`,
-`administrator` or `member`; a Removed User is a `member`), created time and when they set their
-Password (`PASSWORD`, `-` for none); `--all` adds the Removed ones, whose
+`administrator` or `member`; a Removed User is a `member`), created time and how they
+sign in in a browser (`SIGN-IN`: `password`, `2 passkeys` and `identity`
+as they hold each, such as `password, 2 passkeys`, or `-` for none); `--all` adds the Removed ones, whose
 `removed_at` says when. A User deleted is listed by neither. Its `--json`
 is a bare array of `{"id", "name", "role", "created_at", "removed_at",
-"password_set_at"}`, `removed_at` being `null` while the User belongs to
-the koko server and `password_set_at` while they have no Password; `user
-invite` prints a User in the same shape, `password_set_at` `null`.
+"password_set_at", "passkeys", "identity_linked_at"}`, `removed_at` being `null` while the User belongs to
+the koko server, `password_set_at` while they have no Password, `passkeys`
+how many Passkeys they hold, and `identity_linked_at` `null` while they
+have no Linked Identity; `user invite` prints a User in the same shape,
+`password_set_at` and `identity_linked_at` `null` and `passkeys` 0.
+An older CLI's `PASSWORD` column shows `-` for a User with passkeys alone
+([Sign-ins](signin.md#passkeys)).
 
 ## Administrators
 
@@ -195,7 +200,8 @@ transaction commits.
 - [`user_test.go`](../../internal/client/cli/user_test.go): `koko user ls`
   with and without `--all`, for people, and the Owner-only refusals;
   [`signin_test.go`](../../internal/client/cli/signin_test.go): its
-  `password_set_at`.
+  `password_set_at`; [`passkey_test.go`](../../internal/client/cli/passkey_test.go):
+  its `SIGN-IN` column, `passkeys` and `identity_linked_at`.
 - [`internal/server/web/signin_test.go`](../../internal/server/web/signin_test.go):
   Removing a User who only set a Password, ending their Sign-in and counting
   it, and deleting one invited with `--web` who never set it, with their

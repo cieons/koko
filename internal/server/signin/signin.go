@@ -288,14 +288,18 @@ func (s *Service) Delete(ctx context.Context, tx store.Tx, u api.User) error {
 
 // Remove takes browser access from u as the user area Removes them, by
 // being the caller named by: it ends every live Sign-in of theirs
-// ("user_removed"), deletes their Password and voids their unused Sign-in
-// Links, and says how many Sign-ins and links it ended.
+// ("user_removed"), deletes their Password and their Passkeys and voids
+// their unused Sign-in Links, and says how many Sign-ins and links it
+// ended.
 func (s *Service) Remove(ctx context.Context, tx store.Tx, u api.User, by string) (signInsEnded, linksVoided int64, err error) {
 	if signInsEnded, err = s.endAll(ctx, tx, u, api.EndUserRemoved, by, ""); err != nil {
 		return 0, 0, err
 	}
 	if _, err := tx.ExecContext(ctx, "DELETE FROM passwords WHERE user_id = ?", u.ID); err != nil {
 		return 0, 0, fmt.Errorf("remove the Password of %s: %w", u.Name, err)
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM passkeys WHERE user_id = ?", u.ID); err != nil {
+		return 0, 0, fmt.Errorf("remove the Passkeys of %s: %w", u.Name, err)
 	}
 	if linksVoided, err = voidLinks(ctx, tx, u.ID, op.Now(ctx)); err != nil {
 		return 0, 0, err

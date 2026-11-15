@@ -30,6 +30,13 @@ type User struct {
 	// UTC to the second, as user.list answers it; empty while they have
 	// none, and in every other answer.
 	PasswordSetAt string `json:"password_set_at,omitempty"`
+	// Passkeys is how many Passkeys the User has, as user.list answers it;
+	// left out at none, and in every other answer.
+	Passkeys int `json:"passkeys,omitzero"`
+	// IdentityLinkedAt is when the User linked their identity at the
+	// Identity Provider, RFC 3339 in UTC to the second, as user.list
+	// answers it; empty while they have none, and in every other answer.
+	IdentityLinkedAt string `json:"identity_linked_at,omitempty"`
 }
 
 // UserInviteRequest invites a new User under a name no User or Space holds.

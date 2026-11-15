@@ -194,6 +194,12 @@ export interface ServerSetRequest {
 /** ServerSetResponse is the koko server's deployment as server.set left it. */
 export interface ServerSetResponse {
   server: Server;
+  /**
+   * OtherHostPasskeys is how many Passkeys were made for a host other
+   * than the Web URL's, as the set left it: each is refused until the Web
+   * URL names its host again. With the Web URL cleared, every Passkey.
+   */
+  other_host_passkeys: number;
 }
 
 /**

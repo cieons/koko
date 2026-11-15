@@ -160,6 +160,7 @@ var codes = [][]Code{
 	signinCodes,
 	filesCodes,
 	identityCodes,
+	passkeyCodes,
 }
 
 // Codes returns every error code the API answers with.

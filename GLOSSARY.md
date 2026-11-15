@@ -151,6 +151,10 @@ _Avoid_: token, pairing code, invite code, enrollment code
 A secret a User may set to sign in to the Web UI in a browser, beside or instead of Passkeys and a Linked Identity; it never reaches a Host.
 _Avoid_: credential, passphrase
 
+**Passkey**:
+A key pair a User's device or password manager makes for the koko server's Web URL, which signs them in to the Web UI in a browser in place of their Password, once the device has checked it is them.
+_Avoid_: security key, WebAuthn credential, FIDO key, token
+
 **Identity Provider**:
 The one OpenID Connect provider the Owner runs and configures, such as Authentik or Keycloak, through which a User with a Linked Identity signs in to the Web UI. Error codes shorten it to `provider_`.
 _Avoid_: IdP (alone), SSO, OAuth app

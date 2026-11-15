@@ -144,7 +144,7 @@ func (s *Service) SignIn(ctx context.Context, req api.AuthSignInRequest, a Attem
 				return err
 			}
 		}
-		started, err = s.start(ctx, tx, u, a, api.MethodPassword, "")
+		started, err = s.Start(ctx, tx, u, a, api.MethodPassword, "")
 		return err
 	})
 	if err != nil {
@@ -165,11 +165,11 @@ func (s *Service) signInFailed(name string, held bool, a Attempt) error {
 	return wrongPassword()
 }
 
-// start records a new Sign-in of u from a, at the call's time, made with
+// Start records a new Sign-in of u from a, at the call's time, made with
 // method (api.MethodPassword, ...) and credential, the id of the passkey or
 // Linked Identity it was made with, "" for a Password, and logs it once the
 // call commits.
-func (s *Service) start(ctx context.Context, tx store.Tx, u api.User, a Attempt, method, credential string) (Started, error) {
+func (s *Service) Start(ctx context.Context, tx store.Tx, u api.User, a Attempt, method, credential string) (Started, error) {
 	now := op.Now(ctx)
 	var b [32]byte
 	_, _ = rand.Read(b[:]) // crypto/rand.Read never fails
@@ -193,35 +193,49 @@ func (s *Service) start(ctx context.Context, tx store.Tx, u api.User, a Attempt,
 	return Started{ID: id, Token: token, User: u, Expires: expires}, nil
 }
 
-// link is a Sign-in Link as its record holds it, with its User.
-type link struct {
-	id   string
-	user api.User
-	// expiresAt is RFC 3339 in UTC to the second.
-	expiresAt string
+// Link is a valid Sign-in Link as its record holds it, with its User.
+type Link struct {
+	ID   string
+	User api.User
+	// ExpiresAt is RFC 3339 in UTC to the second.
+	ExpiresAt string
 }
 
 // readLink returns the valid Sign-in Link whose secret is secret, at now.
 // One used already is refused with api.CodeLinkUsed; one that expired, was
 // voided, is a Removed User's or was never issued, with api.CodeLinkInvalid.
-func readLink(ctx context.Context, tx store.Tx, secret string, now time.Time) (link, error) {
-	var l link
+func readLink(ctx context.Context, tx store.Tx, secret string, now time.Time) (Link, error) {
+	return readLinkWhere(ctx, tx, now, "l.secret_hash = ?", linkHash(secret))
+}
+
+// readLinkWhere returns the valid Sign-in Link the SQL condition where
+// selects with arg, at now, refused as readLink refuses one.
+func readLinkWhere(ctx context.Context, tx store.Tx, now time.Time, where string, arg any) (Link, error) {
+	var l Link
 	var removed, used, voided sql.NullString
-	err := tx.QueryRowContext(ctx, `SELECT l.id, u.id, u.name, `+access.Role+`, u.created_at, u.removed_at, l.expires_at, l.used_at, l.voided_at
-		FROM password_links l JOIN users u ON u.id = l.user_id WHERE l.secret_hash = ?`, linkHash(secret)).
-		Scan(&l.id, &l.user.ID, &l.user.Name, &l.user.Role, &l.user.CreatedAt, &removed, &l.expiresAt, &used, &voided)
+	err := tx.QueryRowContext(ctx, `SELECT l.ID, u.id, u.name, `+access.Role+`, u.created_at, u.removed_at, l.expires_at, l.used_at, l.voided_at
+		FROM password_links l JOIN users u ON u.id = l.user_id WHERE `+where, arg).
+		Scan(&l.ID, &l.User.ID, &l.User.Name, &l.User.Role, &l.User.CreatedAt, &removed, &l.ExpiresAt, &used, &voided)
 	invalid := api.CodeLinkInvalid.Errorf("this Sign-in Link has expired or is no longer valid: ask the Owner or an Administrator for a new one")
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return link{}, invalid
+		return Link{}, invalid
 	case err != nil:
-		return link{}, fmt.Errorf("read the Sign-in Link: %w", err)
+		return Link{}, fmt.Errorf("read the Sign-in Link: %w", err)
 	case used.Valid:
 		return l, api.CodeLinkUsed.Errorf("this Sign-in Link was used already: ask the Owner or an Administrator for a new one")
-	case voided.Valid, removed.Valid, l.expiresAt <= now.Format(time.RFC3339):
+	case voided.Valid, removed.Valid, l.ExpiresAt <= now.Format(time.RFC3339):
 		return l, invalid
 	}
 	return l, nil
+}
+
+// CheckLink returns the valid Sign-in Link whose secret is secret, at now,
+// spending nothing, for a way to sign in that another area adds through
+// it. One used, expired, voided, a Removed User's or never issued is
+// refused as /auth/link refuses it; LinkRefused counts and logs that.
+func (s *Service) CheckLink(ctx context.Context, tx store.Tx, secret string, now time.Time) (Link, error) {
+	return readLink(ctx, tx, secret, now)
 }
 
 // Link answers whom the valid Sign-in Link whose secret is secret is for,
@@ -233,7 +247,7 @@ func (s *Service) Link(ctx context.Context, secret string, a Attempt) (api.AuthL
 	if err != nil {
 		return api.AuthLinkResponse{}, err
 	}
-	var l link
+	var l Link
 	var resp api.AuthLinkResponse
 	err = s.store.Read(ctx, func(tx store.Tx) (err error) {
 		if l, err = readLink(ctx, tx, secret, now); err != nil {
@@ -242,18 +256,18 @@ func (s *Service) Link(ctx context.Context, secret string, a Attempt) (api.AuthL
 		err = tx.QueryRowContext(ctx, `SELECT
 			EXISTS (SELECT 1 FROM passwords WHERE user_id = ?1),
 			(SELECT count(*) FROM passkeys WHERE user_id = ?1),
-			EXISTS (SELECT 1 FROM identities WHERE user_id = ?1)`, l.user.ID).
+			EXISTS (SELECT 1 FROM identities WHERE user_id = ?1)`, l.User.ID).
 			Scan(&resp.PasswordSet, &resp.Passkeys, &resp.IdentityLinked)
 		if err != nil {
-			return fmt.Errorf("read the ways %s signs in: %w", l.user.Name, err)
+			return fmt.Errorf("read the ways %s signs in: %w", l.User.Name, err)
 		}
 		return nil
 	})
-	end(s.linkRefused(l, err, a))
+	end(s.LinkRefused(l, err, a))
 	if err != nil {
 		return api.AuthLinkResponse{}, err
 	}
-	resp.User, resp.ExpiresAt = l.user.Name, l.expiresAt
+	resp.User, resp.ExpiresAt = l.User.Name, l.ExpiresAt
 	return resp, nil
 }
 
@@ -268,16 +282,71 @@ func (s *Service) beginLink(a Attempt, now time.Time) (end func(failed bool), er
 	return end, nil
 }
 
-// linkRefused tells whether err refuses the Sign-in Link l, which counts as
+// BeginAttempt starts an attempt from a that only its address's limit
+// bounds, at the request's time, or refuses it with a *Limited: a
+// passkey's answer, or adding one, for which no name counts, since none is
+// typed. The caller calls end once, with whether the attempt failed, which
+// counts it for the address.
+func (s *Service) BeginAttempt(a Attempt) (end func(failed bool), err error) {
+	wait, end := s.limiter.begin(a.Address, "", s.now())
+	if wait > 0 {
+		s.log.Info("sign-in refused", "reason", api.CodeTooManyAttempts.Name, "address", a.Address)
+		return nil, limited(wait)
+	}
+	return end, nil
+}
+
+// SpendLink spends, in the call's transaction, the Sign-in Link whose id
+// is id once a way to sign in that another area adds through it, such as a
+// Passkey, is recorded, and signs this browser in with method and
+// credential: the User's other Sign-ins end ("signin_link_used"), their
+// unused links are voided and, once the call commits, their name's count
+// of failed sign-ins starts again. A link no longer valid is refused as
+// CheckLink refuses it, and LinkRefused counts and logs that.
+func (s *Service) SpendLink(ctx context.Context, tx store.Tx, id string, a Attempt, method, credential string) (Link, Started, error) {
+	now := op.Now(ctx)
+	l, err := readLinkWhere(ctx, tx, now, "l.id = ?", id)
+	if err != nil {
+		return l, Started{}, err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE password_links SET used_at = ? WHERE id = ?", now.Format(time.RFC3339), l.ID); err != nil {
+		return l, Started{}, fmt.Errorf("spend the Sign-in Link %s: %w", l.ID, err)
+	}
+	if _, err := voidLinks(ctx, tx, l.User.ID, now); err != nil {
+		return l, Started{}, err
+	}
+	started, err := s.Start(ctx, tx, l.User, a, method, credential)
+	if err != nil {
+		return l, Started{}, err
+	}
+	if _, err := s.endAll(ctx, tx, l.User, api.EndSignInLinkUsed, started.ID, started.ID); err != nil {
+		return l, Started{}, err
+	}
+	op.AfterTx(ctx, func(committed bool) {
+		if committed {
+			s.limiter.resetName(l.User.Name)
+		}
+	})
+	return l, started, nil
+}
+
+// Live returns the live Sign-in whose cookie carries token, at now, for an
+// /auth/ request that acts from it; any other is refused with
+// api.CodeSignInRequired.
+func (s *Service) Live(ctx context.Context, tx store.Tx, token string, now time.Time) (api.SignIn, error) {
+	return liveByToken(ctx, tx, token, now)
+}
+
+// LinkRefused tells whether err refuses the Sign-in Link l, which counts as
 // a failed attempt from a, and logs it when it does.
-func (s *Service) linkRefused(l link, err error, a Attempt) bool {
+func (s *Service) LinkRefused(l Link, err error, a Attempt) bool {
 	e, coded := errors.AsType[*api.Error](err)
 	if !coded || (e.Code != api.CodeLinkUsed.Name && e.Code != api.CodeLinkInvalid.Name) {
 		return false
 	}
 	attrs := []any{"reason", e.Code, "address", a.Address}
-	if l.id != "" {
-		attrs = append(attrs, "user", l.user.Name, "password_link", l.id)
+	if l.ID != "" {
+		attrs = append(attrs, "user", l.User.Name, "password_link", l.ID)
 	}
 	s.log.Info("sign-in link refused", attrs...)
 	return true
@@ -295,8 +364,8 @@ func (s *Service) SetByLink(ctx context.Context, secret, password string, a Atte
 	if err != nil {
 		return Started{}, err
 	}
-	var l link
-	defer func() { end(s.linkRefused(l, err, a)) }()
+	var l Link
+	defer func() { end(s.LinkRefused(l, err, a)) }()
 	err = s.store.Read(ctx, func(tx store.Tx) (err error) {
 		l, err = readLink(ctx, tx, secret, now)
 		return err
@@ -304,7 +373,7 @@ func (s *Service) SetByLink(ctx context.Context, secret, password string, a Atte
 	if err != nil {
 		return Started{}, err
 	}
-	p, err := checkPassword(l.user, password)
+	p, err := checkPassword(l.User, password)
 	if err != nil {
 		return Started{}, err
 	}
@@ -319,29 +388,29 @@ func (s *Service) SetByLink(ctx context.Context, secret, password string, a Atte
 		if l, err = readLink(ctx, tx, secret, now); err != nil {
 			return err
 		}
-		if err := s.writePassword(ctx, tx, l.user.ID, phc, setByLink, now); err != nil {
+		if err := s.writePassword(ctx, tx, l.User.ID, phc, setByLink, now); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE password_links SET used_at = ? WHERE id = ?", now.Format(time.RFC3339), l.id); err != nil {
-			return fmt.Errorf("spend the Sign-in Link %s: %w", l.id, err)
+		if _, err := tx.ExecContext(ctx, "UPDATE password_links SET used_at = ? WHERE id = ?", now.Format(time.RFC3339), l.ID); err != nil {
+			return fmt.Errorf("spend the Sign-in Link %s: %w", l.ID, err)
 		}
-		if _, err := voidLinks(ctx, tx, l.user.ID, now); err != nil {
+		if _, err := voidLinks(ctx, tx, l.User.ID, now); err != nil {
 			return err
 		}
-		if started, err = s.start(ctx, tx, l.user, a, api.MethodPassword, ""); err != nil {
+		if started, err = s.Start(ctx, tx, l.User, a, api.MethodPassword, ""); err != nil {
 			return err
 		}
-		if _, err := s.endAll(ctx, tx, l.user, api.EndPasswordChanged, started.ID, started.ID); err != nil {
+		if _, err := s.endAll(ctx, tx, l.User, api.EndPasswordChanged, started.ID, started.ID); err != nil {
 			return err
 		}
-		afterCommit(ctx, s.log, "password set", "user", l.user.Name, "how", setByLink, "password_link", l.id,
+		afterCommit(ctx, s.log, "password set", "user", l.User.Name, "how", setByLink, "password_link", l.ID,
 			"signin", started.ID, "address", a.Address)
 		return nil
 	})
 	if err != nil {
 		return Started{}, err
 	}
-	s.limiter.resetName(l.user.Name)
+	s.limiter.resetName(l.User.Name)
 	return started, nil
 }
 

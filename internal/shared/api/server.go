@@ -163,6 +163,10 @@ type ServerSetRequest struct {
 // ServerSetResponse is the koko server's deployment as server.set left it.
 type ServerSetResponse struct {
 	Server Server `json:"server"`
+	// OtherHostPasskeys is how many Passkeys were made for a host other
+	// than the Web URL's, as the set left it: each is refused until the Web
+	// URL names its host again. With the Web URL cleared, every Passkey.
+	OtherHostPasskeys int `json:"other_host_passkeys"`
 }
 
 // ServerCheckUpdateRequest asks the koko server to check for a new koko
