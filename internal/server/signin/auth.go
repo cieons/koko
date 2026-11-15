@@ -354,9 +354,9 @@ func (s *Service) SetByLink(ctx context.Context, secret, password string, a Atte
 // of the name stops new sign-ins, not the Sign-ins open already.
 //
 // For a User without a Password, given no current one, it sets their first
-// Password, ending nothing: the Sign-in it comes from is of a way to sign
-// in they hold already, and their Sign-in Link, if any, stays theirs to
-// spend.
+// Password, ending no Sign-in, since the Sign-in it comes from is of a way
+// to sign in they hold already; it voids their unused Sign-in Link, as
+// every way of setting a Password does.
 func (s *Service) Change(ctx context.Context, token string, req api.AuthPasswordRequest, a Attempt) (api.User, error) {
 	now := s.now()
 	var si api.SignIn
@@ -428,10 +428,10 @@ func (s *Service) Change(ctx context.Context, token string, req api.AuthPassword
 		if err := s.writePassword(ctx, tx, u.ID, phc, how, now); err != nil {
 			return err
 		}
+		if _, err := voidLinks(ctx, tx, u.ID, now); err != nil {
+			return err
+		}
 		if !first {
-			if _, err := voidLinks(ctx, tx, u.ID, now); err != nil {
-				return err
-			}
 			if _, err := s.endAll(ctx, tx, u, api.EndPasswordChanged, si.ID, si.ID); err != nil {
 				return err
 			}

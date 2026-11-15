@@ -94,8 +94,9 @@ func TestASignInLinkOpensAtLinkAndSetsAPassword(t *testing.T) {
 
 // password.remove ends only the Sign-ins made with the Password, leaving
 // those made another way live, and from such a live Sign-in a User with no
-// Password sets a first one, ending no Sign-in and voiding no Sign-in Link.
-// One with a Password is still asked for the current one. /auth/link counts the passkeys and the Linked
+// Password sets a first one, ending no Sign-in and voiding their unused
+// Sign-in Link, as every way of setting a Password does. One with a
+// Password is still asked for the current one. /auth/link counts the passkeys and the Linked
 // Identity of the User it is for.
 func TestRemovingAPasswordEndsOnlyItsSignIns(t *testing.T) {
 	t.Parallel()
@@ -184,7 +185,9 @@ func TestRemovingAPasswordEndsOnlyItsSignIns(t *testing.T) {
 		t.Errorf("the log does not say bob set a first Password from %s:\n%s", passkeySignIn, h.Log())
 	}
 
-	if got := linkFor(t, h.Browser(), link); !got.PasswordSet || got.Passkeys != 1 || !got.IdentityLinked {
+	status, body = h.Browser().Post(api.AuthLinkPath, api.AuthLinkRequest{Link: harness.LinkSecret(link)})
+	wantCode(t, status, body, api.CodeLinkInvalid.Name)
+	if got := linkFor(t, h.Browser(), passwordLink(t, h, "bob")); !got.PasswordSet || got.Passkeys != 1 || !got.IdentityLinked {
 		t.Errorf("/auth/link answered %+v for bob, want his Password, his 1 passkey and his Linked Identity", got)
 	}
 }

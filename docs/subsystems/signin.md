@@ -26,7 +26,7 @@ Provider tickets fill them):
 
 | Table | What it holds |
 | --- | --- |
-| `passwords` | A User's one Password, or no row: its id (`password_…`), the User, its Argon2id hash as a PHC string sealed under the Root Key for the row's id ([the Seal](seal.md)), when it was set and how (`link` or `change`). Setting a Password writes a new row. |
+| `passwords` | A User's one Password, or no row: its id (`password_…`), the User, its Argon2id hash as a PHC string sealed under the Root Key for the row's id ([the Seal](seal.md)), when it was set and how (`link`, `change`, or `signin` for a first Password from a live Sign-in). Setting a Password writes a new row. |
 | `password_links` | Each Sign-in Link, under the name the Password Link had before it: its id (`passwordlink_…`), the User, the SHA-256 of its secret, what issued it (a Device Session's or a Sign-in's id, or NULL for the Unix socket), when it was issued, expires, was used and was voided. Spent links are kept. |
 | `passkeys`, `identities`, `identity_provider` | Each Passkey, each Linked Identity and the one Identity Provider, as spec #228 gives them; empty until the tickets that make them. |
 | `signins` | Each Sign-in: its id (`signin_…`), the User, the SHA-256 of its cookie's token, how it was made (`method`: `password`, `passkey` or `identity`, `password` for every Sign-in recorded before the step) and the passkey or Linked Identity it was made with (`credential`, NULL for a Password), the browser and the system its User-Agent named (`browser` and `system`, `''` for none), the client's address at sign-in and when last used, its start, its Last used time, its expiry 30 days on, and once it ends, when, why and by whom. Ended Sign-ins are kept, as Revoked Device Sessions are. |
@@ -52,8 +52,9 @@ Provider tickets fill them):
   Sign-in Links, and starts their name's count of failed sign-ins again.
 - **A first Password from a live Sign-in.** A User without a Password, signed
   in another way, sets one with `/auth/password` and the cookie, giving no
-  current one. It ends no Sign-in and voids no link: the Sign-in it comes
-  from is of a way they hold already. A User who has a Password gives the
+  current one. It ends no Sign-in, since the Sign-in it comes from is of a
+  way they hold already, and voids their unused Sign-in Link, as every way
+  of setting a Password does. A User who has a Password gives the
   current one, as before; without it the change is refused
   `wrong_password`, counted as a wrong current Password.
 - **`password.remove`** (`koko password rm <user>`, the Owner or an
@@ -195,7 +196,7 @@ and a refusal is the API's error object. Their types are in
 | --- | --- | --- |
 | `POST /auth/signin` | `{"name", "password"}` | Signs in: sets the cookie and answers `{"user"}`. A wrong name or Password is `wrong_password` (401), the same bytes whatever the name. |
 | `POST /auth/link` | `{"link"}`, the secret after `#` | Answers `{"user", "expires_at", "password_set", "passkeys", "identity_linked"}`, spending nothing: whether the User has a Password, how many passkeys and whether a Linked Identity, so the page can say what a choice replaces. |
-| `POST /auth/password` | `{"link", "password"}`, `{"current", "password"}` with the cookie, or `{"password"}` alone with the cookie | Sets the Password through a link, signing this browser in; changes it, keeping this Sign-in; or sets a first one for a User who has none, ending nothing; answers `{"user"}`. A wrong `current`, or none for a User with a Password, is `wrong_password`. |
+| `POST /auth/password` | `{"link", "password"}`, `{"current", "password"}` with the cookie, or `{"password"}` alone with the cookie | Sets the Password through a link, signing this browser in; changes it, keeping this Sign-in; or sets a first one for a User who has none, ending no Sign-in; answers `{"user"}`. A wrong `current`, or none for a User with a Password, is `wrong_password`. |
 | `POST /auth/signout` | `{}` with the cookie | Ends this Sign-in (`signed_out`) and clears the cookie; without a live one it only clears it. |
 
 ## Rate limits
@@ -402,7 +403,8 @@ or an `/auth/` body.
   `/password`, `/auth/link`'s fields, and the method of the Sign-ins it
   makes; `password.remove` ending only the Password's Sign-ins beside one
   recorded with a passkey, a first Password set from that Sign-in, ending
-  nothing, and a User with a Password still asked for the current one.
+  no Sign-in and voiding the unused link, and a User with a Password still
+  asked for the current one.
 - [`internal/server/signin/hash_test.go`](../../internal/server/signin/hash_test.go):
   the hash sealed, absent in plain from the data directory, of the stated
   parameters, and an older one rehashed at sign-in;
