@@ -1,0 +1,12 @@
+[
+  {
+    "id": "identity_<1>",
+    "user": "bob",
+    "issuer": "https://idp.example.com:12345/application/o/koko/",
+    "subject": "subject-bob",
+    "label": "bob@idp.example.com",
+    "linked_by": "alice",
+    "linked_at": "<time>",
+    "last_used_at": "<time>"
+  }
+]

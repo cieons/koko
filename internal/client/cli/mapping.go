@@ -28,6 +28,7 @@ var mappings = [][]mapping{
 	userMappings,
 	signinMappings,
 	passkeyMappings,
+	identityMappings,
 	webMappings,
 	serverMappings,
 	serverOIDCMappings,

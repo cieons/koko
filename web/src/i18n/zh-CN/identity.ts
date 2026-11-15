@@ -58,5 +58,6 @@ export default {
   "error.identity_not_linked": "没有用户关联此身份。请先以其他方式登录，再在账户页面关联。",
   "error.identity_linked": "已存在关联身份。如需关联其他身份，请先在账户页面解除关联。",
   "error.identity_taken": "此身份已由其他用户关联。",
+  "error.no_identity": "尚未关联身份。",
   "error.signin_expired": "通过身份提供方的登录已过期，或发起于其他浏览器。请重新开始。",
 } satisfies Record<keyof typeof en, string>;

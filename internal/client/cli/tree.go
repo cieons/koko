@@ -266,6 +266,7 @@ var commands = [][]Command{
 	userCommands,
 	signinCommands,
 	passkeyCommands,
+	identityCommands,
 	webCommands,
 	joinCommands,
 	hostCommands,

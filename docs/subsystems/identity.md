@@ -91,6 +91,29 @@ their notice. A change of the client ID, the secret or the name keeps them.
 **`server.oidc.remove`** does the same, and deletes the row. With no
 provider set it is refused with `provider_unset`.
 
+## Linked Identities
+
+| Operation | CLI | Tier | Who | Answers |
+| --- | --- | --- | --- | --- |
+| `identity.list` | `koko identity ls [--user <u>]` | read | one's own; anyone's for the Owner and the Administrators; a Member naming another User gets none | `{"identities"}`, at most one each: `{"id", "user", "issuer", "subject", "label", "linked_by", "linked_at", "last_used_at"}` |
+| `identity.unlink` | `koko identity unlink <user>` | irreversible | one's own; another's for the Owner and the Administrators, as [`Identity.MayActOn`](../../internal/server/access/access.go) lets them | `{"identity", "signins_ended"}` |
+
+- **`linked_by`** is the User who issued the Sign-in Link the identity was
+  linked through, the Owner for one the Unix socket issued, or `null` for
+  one its User linked from their own Sign-in: what promotion's
+  confirmation shows (ADR 0056).
+- **`identity.unlink`** deletes the row and ends the Sign-ins made through
+  it (`identity_unlinked`, `signin.EndMadeWith`), and no others. Without
+  `user`, or naming the caller, it unlinks the caller's own. A Member
+  naming another User is refused `owner_only` before the name is read; an
+  Administrator naming the Owner or another Administrator, `owner_only`; a
+  name no User holds, `unknown_user`; a User without one, `no_identity`
+  (409). It logs `identity unlinked` (`user`, `identity`, `unlinked_by`,
+  `signins_ended`) once it commits. Unlinking at koko changes nothing at
+  the provider.
+- `koko identity ls` prints a column for each field, `-` for none, and
+  `koko user ls`'s `SIGN-IN` says `identity` for a User who has one.
+
 ## Signing in and linking through it
 
 The Authorization Code flow with PKCE (S256), `state` and `nonce`, as a
@@ -294,6 +317,7 @@ alone holds the authorization URL, with its `state`, `nonce` and
 | `identity_not_linked` | 403 | No User has this identity linked. |
 | `identity_linked` | 409 | The User has a Linked Identity already. |
 | `identity_taken` | 409 | Another User has this identity linked. |
+| `no_identity` | 409 | `identity.unlink` named a User without a Linked Identity. |
 | `signin_expired` | 400 | A callback came with no flow this browser began, after 10 minutes, or after the provider's issuer or client changed. |
 
 The callback's refusals reach the page as `?refused=<code>`; begin's are
@@ -334,4 +358,10 @@ the API's error object.
   `https://` only, the redirects, the 1 MiB answer, the unreachable line
   once per run, a call its caller gave up on, and the rules of what is
   kept, on a clock the test moves.
-- The access matrix's rows ([`matrix_identity_test.go`](../../internal/server/access/matrix_identity_test.go)).
+- The access matrix's rows for every operation of the area, for every
+  caller ([`matrix_identity_test.go`](../../internal/server/access/matrix_identity_test.go)),
+  on a fixture whose Owner, other Administrator and a Member each linked
+  an identity through `harness.Issuer`.
+- [`identity_test.go`](../../internal/client/cli/identity_test.go) in the
+  CLI: `koko identity ls` and `unlink` and `user ls` with their goldens,
+  text and `--json`, and `server_too_old` from a koko server before them.

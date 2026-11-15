@@ -1,0 +1,1 @@
+No Linked Identity. An identity is linked in a browser at the Web URL, on Account or through a Sign-in Link.

@@ -821,3 +821,36 @@ func TestAKeySetThatDoesNotAnswerIsUnreachable(t *testing.T) {
 	iss.Release()
 	wantSeeOther(t, h.Browser().ThroughProvider(iss, signInThrough), "/")
 }
+
+// Unlinking one's identity from a browser ends the Sign-ins made through
+// it, and no others, and the identity signs nobody in after; a Member
+// lists no other User's identity.
+func TestUnlinkingEndsOnlyTheSignInsThroughIt(t *testing.T) {
+	t.Parallel()
+	h, iss := startIssuer(t)
+	b := link(t, h, iss, "bob")
+	kept := currentSignIn(t, b)
+	other := h.Browser()
+	wantSeeOther(t, other.ThroughProvider(iss, signInThrough), "/")
+	through := currentSignIn(t, other)
+	status, body := h.SignIn("carol").Send(api.IdentityList, []byte(`{"user":"bob"}`))
+	if status != http.StatusOK || string(body) != `{"identities":[]}` {
+		t.Errorf("a Member listed bob's identity: %d %s", status, body)
+	}
+	status, body = b.Send(api.IdentityUnlink, []byte(`{}`))
+	var resp api.IdentityUnlinkResponse
+	if err := json.Unmarshal(body, &resp); status != http.StatusOK || err != nil || resp.SignInsEnded != 1 || resp.Identity.ID != through.Credential {
+		t.Fatalf("identity.unlink answered %d %s", status, body)
+	}
+	found := signInsOf(t, h, "bob")
+	if got := found[through.ID]; got.EndReason != api.EndIdentityUnlinked {
+		t.Errorf("the Sign-in through the identity ended as %q, want identity_unlinked", got.EndReason)
+	}
+	if got := found[kept.ID]; got.EndedAt != "" {
+		t.Errorf("the Sign-in with a Password ended as %q", got.EndReason)
+	}
+	wantSeeOther(t, h.Browser().ThroughProvider(iss, signInThrough), "/signin?refused=identity_not_linked")
+	if !strings.Contains(h.Log(), `msg="identity unlinked" user=bob identity=`+through.Credential+` unlinked_by=`+kept.ID+` signins_ended=1`) {
+		t.Errorf("the log does not say the identity was unlinked:\n%s", h.Log())
+	}
+}

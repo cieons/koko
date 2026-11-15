@@ -153,6 +153,99 @@ export const ServerOIDCRemove: Op<ServerOIDCRemoveRequest, ServerOIDCRemoveRespo
 };
 
 /**
+ * Identity is a Linked Identity as the API returns it: a User's account at
+ * the Identity Provider, known by its issuer and subject, which signs them
+ * in to the web UI (ADR 0060). Every time is RFC 3339 in UTC to the
+ * second.
+ */
+export interface Identity {
+  id: string;
+  /** User is the name of the User whose identity it is. */
+  user: string;
+  issuer: string;
+  /**
+   * Subject is the provider's id of the account, which with the issuer
+   * is the identity.
+   */
+  subject: string;
+  /**
+   * Label is what the provider called the account when it was linked:
+   * shown, never matched.
+   */
+  label: string;
+  /**
+   * LinkedBy is the name of the User who issued the Sign-in Link it was
+   * linked through, the Owner for a link the koko server's machine
+   * issued; null when its User linked it from a Sign-in of their own.
+   */
+  linked_by: string | null;
+  linked_at: string;
+  /** LastUsedAt is when it last signed a browser in; null until then. */
+  last_used_at: string | null;
+}
+
+/** IdentityListRequest lists Linked Identities. */
+export interface IdentityListRequest {
+  /**
+   * User lists only the Linked Identity of the User it names; left out,
+   * the caller's own.
+   */
+  user?: string;
+}
+
+/**
+ * IdentityListResponse is the Linked Identities identity.list selected: at
+ * most one.
+ */
+export interface IdentityListResponse {
+  identities: Identity[];
+}
+
+/**
+ * IdentityUnlinkRequest names the User whose Linked Identity to unlink;
+ * left out, the caller's own.
+ */
+export interface IdentityUnlinkRequest {
+  user?: string;
+}
+
+/**
+ * IdentityUnlinkResponse is the Linked Identity unlinked, and how many
+ * Sign-ins made through it ended.
+ */
+export interface IdentityUnlinkResponse {
+  identity: Identity;
+  signins_ended: number;
+}
+
+/**
+ * IdentityList lists the caller's own Linked Identity, or with User
+ * another User's, which only the Owner and the Administrators see: a
+ * Member naming another User gets none, whether or not the name is a
+ * User's.
+ */
+export const IdentityList: Op<IdentityListRequest, IdentityListResponse> = {
+  name: "identity.list",
+  path: "/v1/identity.list",
+  write: false,
+};
+
+/**
+ * IdentityUnlink unlinks a User's Linked Identity and ends the Sign-ins
+ * made through it, and no others: anyone's own; another User's for the
+ * Owner and the Administrators, as access lets them act on that User,
+ * the Owner's or another Administrator's, for an Administrator, being
+ * refused with CodeOwnerOnly. A Member naming another User is refused
+ * with CodeOwnerOnly before the name is read, and a User without one
+ * with CodeNoIdentity.
+ */
+export const IdentityUnlink: Op<IdentityUnlinkRequest, IdentityUnlinkResponse> = {
+  name: "identity.unlink",
+  path: "/v1/identity.unlink",
+  write: true,
+};
+
+/**
  * CodeInvalidProvider: a setting of the Identity Provider is not one
  * koko takes, or the issuer's discovery document is not valid; the
  * message says which.
@@ -191,6 +284,9 @@ export const CodeIdentityLinked = "identity_linked";
 
 /** CodeIdentityTaken: another User has this identity linked. */
 export const CodeIdentityTaken = "identity_taken";
+
+/** CodeNoIdentity: the User has no Linked Identity to unlink. */
+export const CodeNoIdentity = "no_identity";
 
 /**
  * CodeSignInExpired: the provider sent back a browser with no flow it

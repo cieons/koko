@@ -1,10 +1,12 @@
 // Package identity is the identity area of the koko server: the Identity
 // Provider, the one OpenID Connect provider the Owner configures, through
 // which a User with a Linked Identity signs in to the web UI (ADR 0060,
-// ADR 0061). It serves server.oidc.show, server.oidc.set and
-// server.oidc.remove, keeps the provider's client secret sealed under the
-// Root Key, and makes every call to the provider through one bounded
-// client (client.go), keeping its discovery and keys (discovery.go).
+// ADR 0061). It serves server.oidc.show, server.oidc.set,
+// server.oidc.remove, identity.list and identity.unlink, keeps the
+// provider's client secret sealed under the Root Key, and makes every call
+// to the provider through one bounded client (client.go), keeping its
+// discovery and keys (discovery.go). The Linked Identities' operations are
+// in linked.go.
 //
 // It also does the work of the web front's two endpoints that sign a
 // browser in, or link a User's identity, through the provider (flow.go):
@@ -85,6 +87,8 @@ func (s *Service) Register(a *op.API) {
 	a.Handle(api.ServerOIDCShow, s.show)
 	a.HandlePrepared(api.ServerOIDCSet, s.prepareSet, s.set)
 	a.Handle(api.ServerOIDCRemove, s.remove)
+	a.Handle(api.IdentityList, s.list)
+	a.Handle(api.IdentityUnlink, s.unlink)
 }
 
 // show is server.oidc.show, for the Owner and the Administrators.

@@ -241,6 +241,8 @@ func TestAccessMatrix(t *testing.T) {
 // fixture is a koko server with the matrix's records: the Owner alice; the
 // Members bob, carol and dave, who has not joined; the Administrators eve
 // and frank, who have not joined either; a Sign-in each of alice and frank;
+// a Passkey and a Linked Identity each of alice, frank and dave, at an
+// Identity Provider the fixture's koko server does not reach;
 // and, unless the twin of a call answered as unknown, the shared Space ops
 // with the Member bob. For a caller through a Sign-in, its web listener is
 // on and its User is signed in; for any other the Web URL is not set.
@@ -318,7 +320,8 @@ func newTemplates(t *testing.T, rows []row) map[templateKey]template {
 func newTemplate(t *testing.T, k templateKey) template {
 	t.Helper()
 	tmpl := template{dataDir: t.TempDir(), rootKey: harness.NewRootKeyFile(t), withTarget: k.withTarget, signIns: map[string]string{}, passkeys: map[string]string{}}
-	h := harness.Start(t, harness.DataDir(tmpl.dataDir), harness.RootKeyFile(tmpl.rootKey), harness.WebListen("127.0.0.1:0"))
+	iss := harness.NewIssuer(t)
+	h := harness.Start(t, harness.DataDir(tmpl.dataDir), harness.RootKeyFile(tmpl.rootKey), harness.WebListen("127.0.0.1:0"), harness.IdentityProvider(iss))
 	for _, u := range []string{"bob", "carol", "dave", administrator, otherAdministrator} {
 		h.Koko("user", "invite", u).WantSuccess(t)
 	}
@@ -343,14 +346,16 @@ func newTemplate(t *testing.T, k templateKey) template {
 		}
 		if u == harness.Owner || u == otherAdministrator {
 			tmpl.passkeys[u] = addPasskey(t, b, "")
+			if u == harness.Owner {
+				h.SetIssuer(iss)
+			}
+			linkIdentity(t, iss, b, u, api.AuthOIDCBeginRequest{Purpose: api.OIDCPurposeLink})
 		}
 	}
-	// dave makes his through a Sign-in Link, which signs in no caller.
-	link, err := h.Call(api.PasswordLinkIssue, api.PasswordLinkRequest{User: "dave"})
-	if err != nil {
-		t.Fatalf("issue a Sign-in Link for dave: %v", err)
-	}
-	tmpl.passkeys["dave"] = addPasskey(t, h.Browser(), link.PasswordLink.Link)
+	// dave makes his passkey, and links his identity, each through a
+	// Sign-in Link, which signs in no caller.
+	tmpl.passkeys["dave"] = addPasskey(t, h.Browser(), issueLink(t, h, "dave"))
+	linkIdentity(t, iss, h.Browser(), "dave", api.AuthOIDCBeginRequest{Purpose: api.OIDCPurposeLink, Link: harness.LinkSecret(issueLink(t, h, "dave"))})
 	if k.signedIn == "" {
 		// password.link's rows need the Web URL unset for every caller
 		// but those through a Sign-in, whose browser sets it.
@@ -360,6 +365,25 @@ func newTemplate(t *testing.T, k templateKey) template {
 	}
 	h.Stop()
 	return tmpl
+}
+
+// issueLink issues a Sign-in Link for user over the Unix socket.
+func issueLink(t *testing.T, h *harness.Harness, user string) string {
+	t.Helper()
+	link, err := h.Call(api.PasswordLinkIssue, api.PasswordLinkRequest{User: user})
+	if err != nil {
+		t.Fatalf("issue a Sign-in Link for %s: %v", user, err)
+	}
+	return link.PasswordLink.Link
+}
+
+// linkIdentity links user's identity at iss from b, for req.
+func linkIdentity(t *testing.T, iss *harness.Issuer, b *harness.Browser, user string, req api.AuthOIDCBeginRequest) {
+	t.Helper()
+	iss.SignInAs("subject-"+user, user)
+	if a := b.ThroughProvider(iss, req); a.Header.Get("Location") != "/account?linked=1" {
+		t.Fatalf("link %s's identity: %d to %q", user, a.StatusCode, a.Header.Get("Location"))
+	}
 }
 
 // addPasskey makes a passkey from b, through link or from b's Sign-in when

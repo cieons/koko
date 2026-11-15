@@ -64,6 +64,7 @@ export default {
   "error.identity_not_linked": "No User has this identity linked. Sign in another way, then link it on Account.",
   "error.identity_linked": "A Linked Identity is already linked. Unlink it on Account before linking another.",
   "error.identity_taken": "Another User has already linked this identity.",
+  "error.no_identity": "No identity is linked.",
   "error.signin_expired":
     "The sign-in through the Identity Provider expired or was started in another browser. Start it again.",
 };

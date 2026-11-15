@@ -277,6 +277,12 @@ name 1 string
 
 == server.oidc.remove 1
 
+== identity.list 1
+user 1 string
+
+== identity.unlink 1
+user 1 string
+
 == passkey.list 1
 user 1 string
 

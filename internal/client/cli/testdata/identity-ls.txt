@@ -1,0 +1,2 @@
+USER  LABEL                ID                 ISSUER                                       SUBJECT      LINKED BY  LINKED                LAST USED
+bob   bob@idp.example.com  identity_<i>  https://idp.example.com:12345/application/o/koko/  subject-bob  alice      <time>  <time>

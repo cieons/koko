@@ -1,0 +1,32 @@
+[
+  {
+    "id": "user_<1>",
+    "name": "alice",
+    "role": "owner",
+    "created_at": "<time>",
+    "removed_at": null,
+    "password_set_at": null,
+    "passkeys": 0,
+    "identity_linked_at": null
+  },
+  {
+    "id": "user_<2>",
+    "name": "bob",
+    "role": "member",
+    "created_at": "<time>",
+    "removed_at": null,
+    "password_set_at": null,
+    "passkeys": 0,
+    "identity_linked_at": "<time>"
+  },
+  {
+    "id": "user_<3>",
+    "name": "carol",
+    "role": "member",
+    "created_at": "<time>",
+    "removed_at": null,
+    "password_set_at": "<time>",
+    "passkeys": 0,
+    "identity_linked_at": "<time>"
+  }
+]

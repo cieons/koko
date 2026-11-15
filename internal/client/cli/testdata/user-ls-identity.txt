@@ -1,0 +1,4 @@
+NAME   ROLE    ID             CREATED               SIGN-IN
+alice  owner   user_<i>  <time>  -
+bob    member  user_<ii>  <time>  identity
+carol  member  user_<iii>  <time>  password, identity

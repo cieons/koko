@@ -35,7 +35,7 @@ func addPasskey(t *testing.T, b *harness.Browser, link, name string) api.Passkey
 func bareIDs(text string) string {
 	seen := map[string]string{}
 	counts := map[string]int{}
-	return regexp.MustCompile(`\b(passkey|user|signin)_[0-9a-hjkmnp-tv-z]{8}\b`).ReplaceAllStringFunc(text, func(id string) string {
+	return regexp.MustCompile(`\b(passkey|identity|user|signin)_[0-9a-hjkmnp-tv-z]{8}\b`).ReplaceAllStringFunc(text, func(id string) string {
 		if p, ok := seen[id]; ok {
 			return p
 		}
