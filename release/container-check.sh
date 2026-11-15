@@ -24,7 +24,7 @@
 # KOKO_ADDRESS logs the warning and changes no record; docker compose down,
 # then up, keeps the record on the same state/, and the device still works;
 # the web listener, off until the Compose file's two commented lines for it
-# are on, serves behind a real Caddy at https://koko.test, where a Password
+# are on, serves behind a real Caddy at https://koko.test, where a Sign-in
 # Link is spent, bob signs in, calls user.current and signs out, another
 # Origin is refused, and the log names the address Caddy passed in
 # X-Forwarded-For; a copy of data/ without root.key is refused, writing no Root Key;
@@ -433,7 +433,7 @@ if [ "$got" != 503 ] || ! grep -qF 'koko server set web_url=' "$work/body"; then
 	fail "the web listener without a Web URL answered $got: $(cat "$work/body")"
 fi
 
-step "behind Caddy, a Password Link is spent, bob signs in and out, a wrong Origin is refused, and the log names the client's address"
+step "behind Caddy, a Sign-in Link is spent, bob signs in and out, a wrong Origin is refused, and the log names the client's address"
 net=$(docker inspect koko --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}')
 printf '%s\n' 'koko.test {' '	tls internal' '	encode zstd gzip' '	reverse_proxy koko:7823' '}' >"$work/Caddyfile"
 docker run -d --name "$caddy" --network "$net" -p "127.0.0.1:$web_port:443" \
@@ -450,16 +450,16 @@ done
 docker exec koko koko user invite bob --web --valid 1d --json >"$work/invite"
 link=$(jq -r .password_link "$work/invite")
 case $link in
-https://koko.test/password#?*) secret=${link#*#} ;;
-*) fail "koko user invite bob --web printed no Password Link at https://koko.test: $(cat "$work/invite")" ;;
+https://koko.test/link#?*) secret=${link#*#} ;;
+*) fail "koko user invite bob --web printed no Sign-in Link at https://koko.test: $(cat "$work/invite")" ;;
 esac
 password='a long phrase bob keeps to himself'
 jar=$work/jar
 : >"$jar"
-web_is POST /auth/link /dev/null "{\"link\": \"$secret\"}" 200 '.user == "bob"' "the Password Link is not bob's"
-web_is POST /auth/password "$jar" "{\"link\": \"$secret\", \"password\": \"$password\"}" 200 '.user.name == "bob"' "spending the Password Link failed"
-grep -qF __Host-koko "$jar" || fail "spending the Password Link set no __Host-koko cookie"
-web_is POST /auth/password /dev/null "{\"link\": \"$secret\", \"password\": \"$password\"}" 410 '.error.code == "link_used"' "the spent Password Link was not refused as used"
+web_is POST /auth/link /dev/null "{\"link\": \"$secret\"}" 200 '.user == "bob"' "the Sign-in Link is not bob's"
+web_is POST /auth/password "$jar" "{\"link\": \"$secret\", \"password\": \"$password\"}" 200 '.user.name == "bob"' "spending the Sign-in Link failed"
+grep -qF __Host-koko "$jar" || fail "spending the Sign-in Link set no __Host-koko cookie"
+web_is POST /auth/password /dev/null "{\"link\": \"$secret\", \"password\": \"$password\"}" 410 '.error.code == "link_used"' "the spent Sign-in Link was not refused as used"
 : >"$jar"
 web_is POST /auth/signin "$jar" "{\"name\": \"bob\", \"password\": \"$password\"}" 200 '.user.name == "bob"' "bob's sign-in failed"
 web_is POST /v1/user.current "$jar" '{}' 200 '.user.name == "bob" and .signin.id != null' "user.current did not answer bob's Sign-in"
@@ -477,7 +477,7 @@ client=$(grep 'msg="signed in"' "$work/log" | sed -n 's/.* address=\([^ ]*\).*/\
 	fail "the signed in line names the address '$client', not the one Caddy ($caddy_ip) passed in X-Forwarded-For"
 echo "the client's address is $client; Caddy's is $caddy_ip"
 ! grep -qF -- "$password" "$work/log" || fail "docker logs koko holds bob's Password"
-! grep -qF -- "$secret" "$work/log" || fail "docker logs koko holds the Password Link's secret"
+! grep -qF -- "$secret" "$work/log" || fail "docker logs koko holds the Sign-in Link's secret"
 docker rm -f "$caddy" >/dev/null
 
 step "a copy of data/ without root.key is refused, naming the id it needs, and writes no Root Key"
