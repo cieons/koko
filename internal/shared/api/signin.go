@@ -76,6 +76,10 @@ type SignIn struct {
 	// "identity". Every Sign-in recorded before koko kept it was made with a
 	// Password. A koko server before then answers none.
 	Method string `json:"method"`
+	// Credential is the id of the Passkey or Linked Identity the browser
+	// signed in with; left out for a Password, and from a koko server
+	// before passkeys.
+	Credential string `json:"credential,omitempty"`
 	// Address is the client's address when the Sign-in was last used, as
 	// the reverse proxy passed it on.
 	Address string `json:"address"`
@@ -103,10 +107,12 @@ type CurrentSignIn struct {
 	Client  string `json:"client"`
 	Browser string `json:"browser,omitempty"`
 	System  string `json:"system,omitempty"`
-	// Method is how the browser signed in, as SignIn's is.
-	Method    string `json:"method"`
-	StartedAt string `json:"started_at"`
-	ExpiresAt string `json:"expires_at"`
+	// Method is how the browser signed in, and Credential the Passkey or
+	// Linked Identity it signed in with, as SignIn's are.
+	Method     string `json:"method"`
+	Credential string `json:"credential,omitempty"`
+	StartedAt  string `json:"started_at"`
+	ExpiresAt  string `json:"expires_at"`
 }
 
 // ClientLabel is a Sign-in's English label of its browser and system:

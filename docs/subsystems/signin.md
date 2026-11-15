@@ -387,8 +387,13 @@ opened ([the Gateway](gateway.md#what-only-detaches)). The terminal is the web f
 `/auth/` is, so no operation is added and the access matrix gains no row.
 
 `user.current` answers the Sign-in as `signin`, `{"id", "client",
-"browser", "system", "method", "started_at", "expires_at"}`, `browser` and `system`
-left out for none, in place of `device_session`. Log lines that
+"browser", "system", "method", "credential", "started_at", "expires_at"}`, `browser` and `system`
+left out for none and `credential`, the passkey's or Linked Identity's id
+it was made with, for a Password, in place of `device_session`; a Sign-in in
+`signin.list` carries `credential` too. For every caller, `user.current`
+answers the User's own ways to sign in as `user.list` does
+(`password_set_at`, `passkeys`, `identity_linked_at`), so Account says
+what removing one leaves. Log lines that
 name who acted (`issued_by`, `revoked_by`, `removed_by`, `ended_by`,
 `enrolled_by`) give a Sign-in's id ([`Identity.By`](../../internal/server/access/access.go)).
 
@@ -396,14 +401,38 @@ name who acted (`issued_by`, `revoked_by`, `removed_by`, `ended_by`,
 
 How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-links-page-signin-link).
 
+- **The WebAuthn helper** ([`webauthn.ts`](../../web/src/pages/signin/webauthn.ts)),
+  koko's own, with no npm package, so that every browser with WebAuthn
+  works: base64url both ways; koko's options as
+  `navigator.credentials.create()` and `.get()` take them, every member as
+  given and the binary ones (`challenge`, `user.id`, each
+  `excludeCredentials` and `allowCredentials` id) as bytes; and the
+  browser's answer back as koko takes it, a `userHandle` left out sent as
+  `""`. A browser without `window.PublicKeyCredential` and
+  `navigator.credentials` (`passkeysAvailable`) gets neither Sign in with
+  a passkey, nor Create a passkey, nor Add a passkey; it still lists and
+  removes passkeys. A ceremony the person cancels or lets time out
+  (`NotAllowedError`), or that the page aborts as it closes (`AbortError`),
+  shows nothing; `InvalidStateError`, the device holding one of the User's
+  passkeys already, says so, and any other failure says the browser could
+  not complete it ([`refusalText`](../../web/src/pages/signin/refusal.ts)).
+  Each press begins a ceremony of its own, since a flow is taken by its
+  first answer. A ceremony runs only while its page is open
+  (`useCeremony`): it checks after each wait, the begin and the browser's
+  prompt, and sends nothing more once the page or panel has closed, and
+  the page's closing aborts the prompt.
 - **Sign in** ([`SignInPage`](../../web/src/pages/signin/SignInPage.tsx),
-  `/signin`), outside the frame: the User name and Password (`autocomplete`
-  `username` and `current-password`), posted to `/auth/signin`, then the
-  page `next` names, followed only when it is a path of this origin, else
-  `/`, replacing the history entry. A refusal shows above the fields:
-  `wrong_password`, or `too_many_attempts` with the minutes its
-  `Retry-After` leaves. One line says the Owner or an Administrator can
-  send a Sign-in Link.
+  `/signin`), outside the frame: **Sign in with a passkey**, the primary
+  action, where the browser has WebAuthn: `/auth/passkey/signin/begin`,
+  `navigator.credentials.get()`, then `/auth/passkey/signin`; then a
+  divider and the User name and Password (`autocomplete` `username` and
+  `current-password`), posted to `/auth/signin`, **Sign in** secondary
+  beside a passkey and primary without one. Either goes on to the page
+  `next` names, followed only when it is a path of this origin, else
+  `/`, replacing the history entry. A refusal shows above them:
+  `passkey_refused`, `wrong_password`, or `too_many_attempts` with the
+  minutes its `Retry-After` leaves. One line says the Owner or an
+  Administrator can send a Sign-in Link.
   The shell sends a browser here, with `next`, when any call is answered
   `signin_required` ([the web UI shell](web-shell.md#the-states-every-screen-has));
   `koko web` never answers so, so it never sends a browser there. A `next`
@@ -415,8 +444,18 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
   the first load, takes the secret from the fragment and replaces the URL
   without it at once, before the page's chunk loads, and again when
   another link is opened on the page; the page then, afresh for each link,
-  asks `/auth/link` whom the link is for, and shows Set a Password: "For
-  <name>.", a line saying a Password set there replaces theirs when
+  asks `/auth/link` whom the link is for, and shows Set up sign-in: "For
+  <name>.", **Create a passkey** (primary) and **Set a Password instead**
+  (secondary). Create a passkey posts the link to
+  `/auth/passkey/add/begin`, makes the passkey with
+  `navigator.credentials.create()` and posts its answer to
+  `/auth/passkey/add`, which spends the link, names the passkey with the
+  browser's label and signs this browser in; then `/`. The secret is sent
+  only while the page is open: another link opened as the browser makes
+  the passkey closes the first one's page, and its answer is not sent. Set
+  a Password instead, or the page at once in a browser without WebAuthn,
+  shows Set a Password, with Back to the choices beside a passkey: a line
+  saying a Password set there replaces theirs when
   `password_set` says they have one, which describes the submit button
   (`aria-describedby`), and the new Password twice
   (`new-password`), a count toward 15 characters under
@@ -424,31 +463,60 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
   counted as the koko server counts them, in code points after NFC. The
   form checks the rule and that the two agree when submitted, then posts
   the link and the Password to `/auth/password`, which signs this browser
-  in, and goes to `/`. `link_used` and `link_invalid`, from either call,
-  and a URL with no fragment, replace the form with what happened and Go
-  to Sign in. A Password is the one way the page offers until the passkey
-  and Identity Provider tickets of spec #228.
+  in, and goes to `/`. `link_used` and `link_invalid`, from any call,
+  and a URL with no fragment, replace the page with what happened and Go
+  to Sign in.
 - Both show koko's wordmark, one panel and the two languages as buttons
   ([`Door`](../../web/src/pages/signin/Door.tsx)).
-- **Account's Password** ([`ChangePassword`](../../web/src/pages/signin/ChangePassword.tsx)),
-  for a browser signed in with a Password: the current Password, then the
-  new one twice as Set a Password asks it, checked on submit, posted as
-  `{"current", "password"}` to `/auth/password`, which keeps this Sign-in
-  and ends the User's others; the Browser Sign-ins are read again. A wrong
-  current Password shows in place, the form kept. Through `koko web` or for
-  the Local caller, one sentence says a Password is changed in a browser
-  signed in with it.
+- **Account's Sign-in**, one panel, its lead line naming how this browser
+  signed in (`user.current`'s `signin.method`): with a passkey, a Password
+  or through the identity provider.
+  - **Passkeys** ([`Passkeys`](../../web/src/pages/signin/Passkeys.tsx),
+    `passkey.list` naming the User): each one's name, "Made for <host>"
+    where its host is not the Web URL's host (`server.show`'s `web_url`,
+    without its port, [`useWebURL`](../../web/src/pages/signin/webURL.ts)),
+    Synced, when it was added and last used ("Never used"), and Remove.
+    **Add a passkey**, for a browser signed in with WebAuthn: a name,
+    prefilled with this browser's label, checked on submit (1 to 64
+    characters), then `/auth/passkey/add/begin` with no link,
+    `navigator.credentials.create()` and `/auth/passkey/add` with the name,
+    which keeps the Sign-in; every read on the page is read again. Through
+    `koko web` or for the Local caller they are listed with Remove, and one
+    sentence says passkeys are added in a browser signed in at the Web URL.
+    Remove (`passkey.remove`) asks first and says who is signed out: this
+    browser, when its Sign-in was made with that passkey (`user.current`'s
+    `signin.credential`), else the browsers signed in with it; that the
+    device or password manager keeps it, to remove in its own settings;
+    and, when it is the User's last way to sign in (no Password, no Linked
+    Identity and no other passkey), that their next sign-in needs a Sign-in
+    Link. Removing this browser's own goes
+    to Sign in; otherwise the focus moves to the heading.
+  - **Password** ([`ChangePassword`](../../web/src/pages/signin/ChangePassword.tsx)),
+    for a browser signed in: for a User who has one (`user.current`'s
+    `password_set_at`), the current Password, then the new one twice as Set
+    a Password asks it, checked on submit, posted as `{"current",
+    "password"}` to `/auth/password`, which keeps this Sign-in and ends the
+    User's others; the Browser Sign-ins are read again. A wrong current
+    Password shows in place, the form kept. For a User without one, the new
+    one twice alone, posted as `{"password"}`, which ends nothing; the page
+    then offers to change it. Through `koko web` or for the Local caller,
+    one sentence says a Password is changed in a browser signed in with it.
 - **Browser Sign-ins** ([`SignIns`](../../web/src/pages/signin/SignIns.tsx)),
   on Account for one's own (`signin.list` naming the User): each browser's
-  label, this browser's marked, its address in the code face, when it was
+  label and how it signed in (its `method`: "with a passkey", "with a
+  Password" or "through the identity provider", a Password for a koko
+  server that names none), this browser's marked, its address in the code face, when it was
   last used and when it ends; "Show ended Sign-ins" adds the ended ones,
   struck through, with when and why. Revoke asks first and says what
-  follows; revoking this browser's own goes to Sign in. A refused revoke
-  reads the list again.
-- **A person's panel**, the Owner's alone
-  ([`PersonPassword`](../../web/src/pages/signin/PersonPassword.tsx)):
+  follows, without assuming a Password; revoking this browser's own goes
+  to Sign in. A refused revoke reads the list again.
+- **A person's panel**, the Owner's and the Administrators' alone,
+  under **Sign-in** ([`PersonSignIn`](../../web/src/pages/signin/PersonSignIn.tsx)):
   when the User's Password was set (`user.list`'s `password_set_at`), or
-  that they have none; **Issue Sign-in Link** (`password.link`), valid
+  that they have none; their passkeys (`passkey.list` naming them), as on
+  Account, each with Remove, the last way to sign in counted from
+  `user.list`'s `password_set_at`, `passkeys` and `identity_linked_at`;
+  **Issue Sign-in Link** (`password.link`), valid
   for the time chosen and shown once, disabled, saying why, while
   `server.show` answers no Web URL ([`useWebURL`](../../web/src/pages/signin/webURL.ts)),
   its lead saying that an earlier unused link, an Invite's included, stops
@@ -456,12 +524,13 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
   saying that the Sign-ins made with the Password end and, for one's own
   from a browser signed in with it (`user.current`'s `signin.method`), that
   this browser is signed out too; after it the panel and Access show none, the
-  Sign-ins are read again, and the section's heading takes the focus. Their
-  Browser Sign-ins follow, as on Account, Revoke saying that User is
-  signed out of that browser. Invite's In a browser issues a Sign-in
+  Sign-ins are read again, and the section's heading takes the focus.
+  Viewing the Owner or another Administrator, an Administrator sees them
+  without any action. Their Browser Sign-ins follow, as on Account, Revoke
+  saying that User is signed out of that browser. Invite's In a browser issues a Sign-in
   Link the same way ([the Access and Account pages](access-pages.md#a-join-code-or-sign-in-link-on-screen)).
 - **Sign out**, by Account's title and in the account panel for a browser
-  signed in with a Password, posts to `/auth/signout` and goes to Sign in,
+  signed in, whatever the way, posts to `/auth/signout` and goes to Sign in,
   replacing the history entry ([`useSignOut`](../../web/src/shell/signOut.ts)).
 
 ## Users
@@ -596,6 +665,31 @@ attestation, assertion or signature.
   `server set web_url=` counting the passkeys of another host, and against
   a koko server before passkeys, `server_too_old` and `user ls` saying the
   Password alone.
+- [`webauthn.test.ts`](../../web/src/pages/signin/webauthn.test.ts): base64url
+  both ways, padded or not; koko's options as `create()` and `get()` take
+  them; the answers as koko takes them, a `userHandle` left out as `""`;
+  which failures are a cancel; `passkeysAvailable`.
+- [`passkeys.test.tsx`](../../web/src/pages/signin/passkeys.test.tsx), with
+  [`passkeys.fixture.ts`](../../web/src/pages/signin/passkeys.fixture.ts)'s
+  fake authenticator in place of `navigator.credentials`, axe on each
+  state: Sign in with a passkey first and Sign in secondary, none without
+  WebAuthn; `get()` given the challenge's bytes and `rpId`, the answer
+  posted in base64url, `next` followed; a cancel showing nothing and the
+  next press beginning anew; `passkey_refused`, `too_many_attempts` and a
+  browser's failure; in Chinese. A Sign-in Link's choices; Create a passkey
+  posting the link, then the answer, and going to `/`; the answer, or the
+  ceremony, not sent once another link closed the page; a cancel, a
+  refusal and a passkey the device holds already; `link_used` from the
+  answer and `link_invalid` from the begin; Set a Password instead, with
+  and without a Password, Back, and setting it; `/password`; in Chinese.
+  Account's Sign-in: the passkeys, one of another host, Synced and never
+  used; the method in its lead; Add a passkey with the name typed, checked
+  on submit, and cancelled; removing this browser's own, another and the
+  last way; through `koko web`, for the Local caller and without WebAuthn;
+  a first Password; each Browser Sign-in's method in both languages; in
+  Chinese. A person's passkeys, their last way, an Administrator viewing
+  the Owner's, Make an Administrator listing them with who made their
+  links, and Access's summary.
 - [`signin.test.tsx`](../../web/src/pages/signin/signin.test.tsx), Vitest
   against the [fake API](web-ui.md#testing-pages)'s `/auth/` endpoints, axe
   on each state: Sign in outside the frame with its `autocomplete`, its
@@ -611,7 +705,8 @@ attestation, assertion or signature.
   again.
 - [`account.test.tsx`](../../web/src/pages/signin/account.test.tsx), with
   [`signins.fixture.ts`](../../web/src/pages/signin/signins.fixture.ts):
-  Account for a Sign-in with its Password form, Sign-ins and Sign out;
+  Account for a Sign-in with its Sign-in panel's Password form, Sign-ins,
+  each with its method, and Sign out;
   changing the Password, the other Sign-ins ended; its fields checked on
   submit; a wrong current Password in place; through `koko web` and for
   the Local caller no form and no Sign out; Revoke asking first, its
@@ -623,8 +718,8 @@ attestation, assertion or signature.
   Browser Sign-ins, Revoke and its notice and the account panel; Sign out
   on Account and in the account panel, its failure in the panel.
 - [`person.test.tsx`](../../web/src/pages/signin/person.test.tsx): a
-  person's panel with its Password, Issue Sign-in Link and Remove
-  Password, and their Sign-ins; a User without a Password; Issue Sign-in
+  person's panel with its Sign-in: the Password, Issue Sign-in Link and
+  Remove Password, and their Sign-ins; a User without a Password; Issue Sign-in
   Link for 7 days, shown once with Copy and its time left, gone once
   closed, and for 15 minutes with `valid_for` left out; no Web URL;
   Remove Password asking first, then none in the panel and on Access with

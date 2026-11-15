@@ -22,19 +22,20 @@ export interface User {
   removed_at?: string;
   /**
    * PasswordSetAt is when the User last set their Password, RFC 3339 in
-   * UTC to the second, as user.list answers it; empty while they have
-   * none, and in every other answer.
+   * UTC to the second, as user.list answers it, and user.current for the
+   * caller; empty while they have none, and in every other answer.
    */
   password_set_at?: string;
   /**
-   * Passkeys is how many Passkeys the User has, as user.list answers it;
-   * left out at none, and in every other answer.
+   * Passkeys is how many Passkeys the User has, as user.list and
+   * user.current answer it; left out at none, and in every other answer.
    */
   passkeys?: number;
   /**
    * IdentityLinkedAt is when the User linked their identity at the
-   * Identity Provider, RFC 3339 in UTC to the second, as user.list
-   * answers it; empty while they have none, and in every other answer.
+   * Identity Provider, RFC 3339 in UTC to the second, as user.list and
+   * user.current answer it; empty while they have none, and in every other
+   * answer.
    */
   identity_linked_at?: string;
 }

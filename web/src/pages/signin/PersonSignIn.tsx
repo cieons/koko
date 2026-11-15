@@ -20,18 +20,21 @@ import {
   ValidForChoice,
   validForRequest,
 } from "../device/IssueDialog";
+import { Passkeys } from "./Passkeys";
 import { useWebURL } from "./webURL";
 
 /**
- * PersonPassword is the Password in a person's panel, the Owner's and the
- * Administrators' alone (docs/web-design.md, "Access"): set on which date,
- * or none; and, where the caller may act on the person (acts), Issue
- * Sign-in Link, which needs the Web URL (server.show) and is disabled with
- * the reason while it is unset, and Remove Password, asking first, while
- * there is one. onChanged hears a Password removed, so the panel and Access
- * show it; the section's heading then takes the focus Remove Password had.
+ * PersonSignIn is a person's ways to sign in, in their panel, the Owner's
+ * and the Administrators' alone (docs/web-design.md, "Access"): their
+ * Password, set on which date, or none, with Remove Password, asking
+ * first, while there is one; their passkeys (Passkeys), each with Remove;
+ * and Issue Sign-in Link, which needs the Web URL (server.show) and is
+ * disabled with the reason while it is unset. The actions show only where
+ * the caller may act on the person (acts). onChanged hears a Password
+ * removed, so the panel and Access show it; the section's heading then
+ * takes the focus Remove Password had.
  */
-export function PersonPassword({ user, acts, onChanged }: { user: User; acts: boolean; onChanged: () => void }) {
+export function PersonSignIn({ user, acts, onChanged }: { user: User; acts: boolean; onChanged: () => void }) {
   const t = useT();
   const webURL = useWebURL();
   const [dialog, setDialog] = useState<"issue" | "remove">();
@@ -41,27 +44,35 @@ export function PersonPassword({ user, acts, onChanged }: { user: User; acts: bo
     <section className="flex flex-col gap-3">
       <h3 ref={heading} tabIndex={-1} className="t-heading flex min-h-10 items-center gap-2 outline-none">
         <KeyRound aria-hidden className="size-5 text-muted" />
-        {t("signin.password")}
+        {t("signin.methods")}
       </h3>
-      <p className="text-muted">
-        {set === undefined
-          ? t("signin.person.none")
-          : t("signin.person.setOn", { date: formatDate(set) })}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-muted">
+          {set === undefined
+            ? t("signin.person.none")
+            : t("signin.person.setOn", { date: formatDate(set) })}
+        </p>
+        {acts && set !== undefined && (
+          <Button variant="danger-soft" onPress={() => setDialog("remove")}>
+            {t("signin.remove")}
+          </Button>
+        )}
+      </div>
+      <Passkeys
+        user={user.name}
+        webHost={webURL.host}
+        level={4}
+        acts={acts}
+        otherWays={set !== undefined || user.identity_linked_at !== undefined}
+        add="none"
+      />
       {acts && (
-        <>
+        <div className="flex flex-col items-start gap-2">
           {webURL.reason !== undefined && <p className="t-label">{webURL.reason(t)}</p>}
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" isDisabled={!webURL.set} onPress={() => setDialog("issue")}>
-              {t("signin.link.issue")}
-            </Button>
-            {set !== undefined && (
-              <Button variant="danger-soft" onPress={() => setDialog("remove")}>
-                {t("signin.remove")}
-              </Button>
-            )}
-          </div>
-        </>
+          <Button variant="secondary" isDisabled={!webURL.set} onPress={() => setDialog("issue")}>
+            {t("signin.link.issue")}
+          </Button>
+        </div>
       )}
       {dialog === "issue" && <IssueLink user={user} onClose={() => setDialog(undefined)} />}
       {dialog === "remove" && (

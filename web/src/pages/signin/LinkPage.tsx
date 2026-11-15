@@ -1,7 +1,9 @@
 import { Button, buttonVariants } from "@heroui/react";
+import { FingerprintPattern } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { Link } from "react-aria-components";
 
+import { AuthPasskeyAdd, AuthPasskeyAddBegin } from "../../api/passkey";
 import { AuthLink, AuthPassword, CodeLinkInvalid, CodeLinkUsed } from "../../api/signin";
 import { ApiError, post } from "../../client";
 import { useCount, useT } from "../../shell/i18n";
@@ -12,11 +14,12 @@ import { Door } from "./Door";
 import { useLinkSecret } from "./linkSecret";
 import { PasswordFields } from "./PasswordFields";
 import { refusalText } from "./refusal";
+import { cancelled, makePasskey, passkeysAvailable, useCeremony } from "./webauthn";
 
-/** Step is where a Sign-in Link's page is: reading the link, its form, a link that no longer works, or a read that failed. */
+/** Step is where a Sign-in Link's page is: reading the link, its choices, a link that no longer works, or a read that failed. */
 type Step =
   | { kind: "reading" }
-  | { kind: "form"; user: string; passwordSet: boolean }
+  | { kind: "ready"; user: string; passwordSet: boolean }
   | { kind: "gone"; code: typeof CodeLinkUsed | typeof CodeLinkInvalid }
   | { kind: "failed"; error: unknown };
 
@@ -33,12 +36,16 @@ function gone(error: unknown): Step | undefined {
  * /password for a link issued before the Sign-in Link (docs/web-design.md,
  * "Sign in and a Sign-in Link's page"). Its route took the link's secret out
  * of the URL's fragment (takingLinkSecret); it asks /auth/link whom the
- * link is for, spending nothing, and shows "For <name>." with the new
- * Password twice, saying it replaces their Password when they have one;
- * /auth/password then sets it, spending the link, and signs this browser
- * in. A Password is the one way to sign in the page offers yet (spec
- * #228). A link used already or no longer valid replaces the form with what
- * happened and Go to Sign in.
+ * link is for, spending nothing, and shows "For <name>." with two choices:
+ * Create a passkey, which makes one through the link
+ * (/auth/passkey/add/begin, the browser's ceremony, /auth/passkey/add),
+ * and Set a Password instead, which opens the new Password twice, saying it
+ * replaces their Password when they have one, for /auth/password. Either
+ * spends the link and signs this browser in. A browser without WebAuthn
+ * gets the Password's fields at once. A link used already or no longer
+ * valid replaces the page with what happened and Go to Sign in. The secret
+ * is sent only while the page is open: a ceremony whose page closed, as for
+ * another link, sends nothing more.
  */
 export function LinkPage() {
   // Each link gets a page of its own, so nothing typed for one stays for the next.
@@ -55,7 +62,12 @@ function ForLink({ secret }: { secret: string | undefined }) {
   const [value, setValue] = useState("");
   const [again, setAgain] = useState("");
   const [pending, setPending] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState<unknown>();
+  const begin = useCeremony();
+  const passkeys = passkeysAvailable();
+  // password says the Password's fields show: at once without WebAuthn, else once chosen.
+  const [password, setPassword] = useState(!passkeys);
   // The line saying a Password set here replaces theirs describes the submit, so a screen reader tabbing to it hears it.
   const replaces = useId();
 
@@ -70,13 +82,46 @@ function ForLink({ secret }: { secret: string | undefined }) {
     let latest = true;
     setStep({ kind: "reading" });
     post(AuthLink, { link: secret }).then(
-      ({ user, password_set }) => latest && setStep({ kind: "form", user, passwordSet: password_set }),
+      ({ user, password_set }) => latest && setStep({ kind: "ready", user, passwordSet: password_set }),
       (failure: unknown) => latest && setStep(gone(failure) ?? { kind: "failed", error: failure }),
     );
     return () => {
       latest = false;
     };
   }, [secret, reads]);
+
+  // Each press begins a ceremony of its own, since the koko server's flow is taken by its first answer.
+  const create = async () => {
+    const ceremony = begin();
+    if (secret === undefined || ceremony === undefined) {
+      return;
+    }
+    setCreating(true);
+    setError(undefined);
+    try {
+      const { flow, options } = await post(AuthPasskeyAddBegin, { link: secret });
+      if (!ceremony.open()) {
+        return;
+      }
+      const credential = await makePasskey(options, ceremony.signal);
+      if (!ceremony.open()) {
+        return;
+      }
+      await post(AuthPasskeyAdd, { flow, credential });
+      navigate("/", { replace: true });
+    } catch (failure) {
+      if (!ceremony.open()) {
+        return;
+      }
+      const next = gone(failure);
+      if (next) {
+        setStep(next);
+      } else if (!cancelled(failure)) {
+        setError(failure);
+      }
+      setCreating(false);
+    }
+  };
 
   const submit = async () => {
     if (secret === undefined) {
@@ -111,7 +156,7 @@ function ForLink({ secret }: { secret: string | undefined }) {
       </Door>
     );
   }
-  if (step.kind !== "form") {
+  if (step.kind !== "ready") {
     return (
       <Door title={t("signin.set.title")}>
         {step.kind === "reading" ? (
@@ -128,6 +173,30 @@ function ForLink({ secret }: { secret: string | undefined }) {
     );
   }
   const { user, passwordSet } = step;
+  if (!password) {
+    return (
+      <Door title={t("passkey.link.title")} lead={t("signin.set.lead", { name: user })}>
+        <div className="flex flex-col gap-3">
+          {error !== undefined && <AlertLine>{refusalText(t, count, error)}</AlertLine>}
+          <Button size="lg" fullWidth isPending={creating} onPress={() => void create()}>
+            <FingerprintPattern aria-hidden className="size-5" />
+            {t("passkey.link.create")}
+          </Button>
+          <Button
+            variant="secondary"
+            size="lg"
+            fullWidth
+            onPress={() => {
+              setError(undefined);
+              setPassword(true);
+            }}
+          >
+            {t("passkey.link.password")}
+          </Button>
+        </div>
+      </Door>
+    );
+  }
   return (
     <Door title={t("signin.set.title")} lead={t("signin.set.lead", { name: user })}>
       <Form label={t("signin.set.title")} onSubmit={() => void submit()} className="flex flex-col gap-4">
@@ -150,6 +219,18 @@ function ForLink({ secret }: { secret: string | undefined }) {
         >
           {t("signin.set.submit")}
         </Button>
+        {passkeys && (
+          <Button
+            variant="tertiary"
+            fullWidth
+            onPress={() => {
+              setError(undefined);
+              setPassword(false);
+            }}
+          >
+            {t("passkey.link.back")}
+          </Button>
+        )}
       </Form>
     </Door>
   );

@@ -3,6 +3,7 @@ import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 
 import { DeviceList } from "../../api/device";
+import { PasskeyList } from "../../api/passkey";
 import { SignInList } from "../../api/signin";
 import { CodeSpaceNotEmpty, type Space, SpaceShow } from "../../api/space";
 import { type User, UserDemote, UserList, UserPromote, UserRemove } from "../../api/user";
@@ -21,7 +22,7 @@ import { notify } from "../../ui/notify";
 import { SidePanel } from "../../ui/SidePanel";
 import { AlertLine, Loaded, Loading, Refusal } from "../../ui/states";
 import { Devices } from "../device/Devices";
-import { PersonPassword } from "../signin/PersonPassword";
+import { PersonSignIn } from "../signin/PersonSignIn";
 import { SignIns } from "../signin/SignIns";
 import type { Membership } from "../space/membership";
 import { spaceHostsPath, spacePath } from "../space/path";
@@ -44,8 +45,9 @@ export interface PersonPanelProps {
  * date they were added; the shared Spaces they are a Member of, each with
  * Take out, under Add to a Space, or, for the Owner and an Administrator,
  * that they see every Space; and their Personal Space's counts; their
- * devices (Devices), with Add device for them and Revoke; their Password,
- * with Issue Sign-in Link and Remove Password, and their Browser Sign-ins
+ * devices (Devices), with Add device for them and Revoke; their ways to
+ * sign in (PersonSignIn): their Password with Remove Password, their
+ * passkeys with Remove, and Issue Sign-in Link; and their Browser Sign-ins
  * with Revoke; for the Owner, Make an Administrator, which asks first, or
  * Make a Member; and Remove User, which asks first and then says whether
  * the User was deleted or Removed. Where the caller may not act on the
@@ -147,7 +149,7 @@ function Person({
         <PersonalSpace name={user.name} />
       </section>
       <Devices user={user.name} owner={owner} all={all} onAll={setAll} level={3} acts={acts} />
-      <PersonPassword
+      <PersonSignIn
         user={user}
         acts={acts}
         onChanged={() => {
@@ -352,16 +354,22 @@ function Role({ user, onChanged }: { user: User; onChanged: () => void }) {
 
 /**
  * Promote makes a Member an Administrator, asking first: what it gives, and
- * the User's live devices, each with who added it, and their live Sign-ins,
- * which promotion keeps, for the Owner to read before acting (ADR 0056).
- * The action waits until both are read.
+ * the User's live devices, each with who added it, their passkeys, each
+ * with who issued the Sign-in Link it was made through, and their live
+ * Sign-ins, which promotion keeps, for the Owner to read before acting
+ * (ADR 0056). The action waits until all three are read.
  */
 function Promote({ name, onPromoted, onCancel }: { name: string; onPromoted: () => void; onCancel: () => void }) {
   const t = useT();
   const promote = useWrite(UserPromote);
   const devices = useRead(DeviceList, { user: name });
+  const passkeys = useRead(PasskeyList, { user: name });
   const signins = useRead(SignInList, { user: name });
-  const kept = devices.data && signins.data && { devices: devices.data.device_sessions, signins: signins.data.signins };
+  const kept =
+    devices.data && passkeys.data && signins.data
+      ? { devices: devices.data.device_sessions, passkeys: passkeys.data.passkeys, signins: signins.data.signins }
+      : undefined;
+  const failed = devices.error ?? passkeys.error ?? signins.error;
   return (
     <ConfirmDialog
       title={t("user.promote.title", { name })}
@@ -381,6 +389,17 @@ function Promote({ name, onPromoted, onCancel }: { name: string; onPromoted: () 
               }))}
             />
             <Kept
+              title={t("passkey.promote.title")}
+              none={t("passkey.promote.none")}
+              items={kept.passkeys.map((p) => ({
+                id: p.id,
+                text:
+                  p.added_by === null
+                    ? t("passkey.promote.own", { passkey: p.name, name })
+                    : t("passkey.promote.byLink", { passkey: p.name, by: p.added_by }),
+              }))}
+            />
+            <Kept
               title={t("user.promote.signins")}
               none={t("user.promote.noSignin")}
               items={kept.signins.map((s) => ({
@@ -390,12 +409,12 @@ function Promote({ name, onPromoted, onCancel }: { name: string; onPromoted: () 
             />
           </>
         ) : (
-          devices.error === undefined && signins.error === undefined && <Loading />
+          failed === undefined && <Loading />
         )
       }
       waiting={!kept}
       pending={promote.pending}
-      error={promote.error ?? devices.error ?? signins.error}
+      error={promote.error ?? failed}
       onCancel={onCancel}
       onConfirm={() => void promote.submit({ name }).then((promoted) => promoted && onPromoted())}
     />

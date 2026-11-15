@@ -1,6 +1,43 @@
 // The passkey area's messages: signing in with a passkey, making one, the
 // passkeys on Account and on a person's panel, and its API error codes.
 export default {
+  "passkey.signIn": "Sign in with a passkey",
+  "passkey.link.title": "Set up sign-in",
+  "passkey.link.create": "Create a passkey",
+  "passkey.link.password": "Set a Password instead",
+  "passkey.link.back": "Back",
+  "passkey.title": "Passkeys",
+  "passkey.none": "No passkey has been added.",
+  "passkey.madeFor": "Made for {host}",
+  "passkey.neverUsed": "Never used",
+  "passkey.synced": "Synced",
+  "passkey.count.one": "{count} passkey",
+  "passkey.count.other": "{count} passkeys",
+  "passkey.add": "Add a passkey",
+  "passkey.add.name": "Name",
+  "passkey.add.nameRequired": "Enter a name.",
+  "passkey.add.nameTooLong": "The name must be at most 64 characters long.",
+  "passkey.add.nameInvalid": "The name must be 1 to 64 characters long, with no control characters.",
+  "passkey.add.done": "The passkey {name} is added.",
+  "passkey.viaBrowser": "Passkeys are added in a browser signed in at the Web URL.",
+  "passkey.exists": "This device or password manager already holds a passkey of this User.",
+  "passkey.failed": "The browser could not complete the passkey. Try again, or use another way.",
+  "passkey.remove": "Remove",
+  "passkey.remove.label": "Remove the passkey {name}",
+  "passkey.remove.title": "Remove the passkey {name}",
+  "passkey.remove.consequence":
+    "The browsers signed in with it are signed out. The device or password manager that holds it keeps it, so remove it in its own settings too.",
+  "passkey.remove.consequenceHere":
+    "This browser signed in with it, so this browser is signed out, as is any other browser signed in with it. The device or password manager that holds it keeps it, so remove it in its own settings too.",
+  "passkey.remove.consequenceLast":
+    "The browsers signed in with it are signed out. It is the last way {name} has to sign in, so their next sign-in needs a Sign-in Link. The device or password manager that holds it keeps it, so remove it in its own settings too.",
+  "passkey.remove.consequenceHereLast":
+    "This browser signed in with it, so this browser is signed out, as is any other browser signed in with it. It is the last way {name} has to sign in, so their next sign-in needs a Sign-in Link. The device or password manager that holds it keeps it, so remove it in its own settings too.",
+  "passkey.remove.done": "The passkey {name} is removed.",
+  "passkey.promote.title": "Passkeys",
+  "passkey.promote.byLink": "{passkey}, made through a Sign-in Link from {by}",
+  "passkey.promote.own": "{passkey}, added by {name} in a signed-in browser",
+  "passkey.promote.none": "No passkey.",
   "error.passkey_refused": "The passkey was not accepted. Try again, or sign in another way.",
   "error.unknown_passkey": "No such passkey.",
 };

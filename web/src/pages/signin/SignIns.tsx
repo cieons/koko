@@ -32,8 +32,9 @@ export interface SignInsProps {
 }
 
 /**
- * SignIns lists one User's Browser Sign-ins (signin.list naming them), the
- * ended ones when asked for, this browser's marked "This browser"; and
+ * SignIns lists one User's Browser Sign-ins (signin.list naming them), each
+ * with the way it signed in, the ended ones when asked for, this browser's
+ * marked "This browser"; and
  * revokes a live one once the caller confirms (signin.revoke). Revoking
  * this browser's own signs it out, to Sign in. Account shows the caller's
  * own; a person's panel, the Owner's and the Administrators' alone, shows
@@ -71,11 +72,13 @@ export function SignIns({ user, level, changes = 0, acts = true, className = "" 
             <ul className="flex flex-col">
               {signins.map((s) => {
                 const live = s.ended_at === undefined;
+                const method = methodKeys[s.method ?? "password"];
                 return (
                   <li key={s.id} className="flex items-center justify-between gap-4 border-t border-line py-3">
                     <div className="min-w-0">
                       <p className="flex flex-wrap items-center gap-2">
                         <span className={`t-name ${live ? "" : "text-muted line-through"}`}>{browserName(t, s)}</span>
+                        {method !== undefined && <span className="text-muted">{t(method)}</span>}
                         {s.id === caller.signin?.id && (
                           <Chip color="accent" variant="soft">
                             {t("signin.signins.here")}
@@ -133,6 +136,17 @@ export function SignIns({ user, level, changes = 0, acts = true, className = "" 
     </section>
   );
 }
+
+/**
+ * methodKeys are the message of each way a browser signs in; a koko server
+ * before passkeys names none, and had only Passwords. A way this web UI
+ * does not know shows nothing.
+ */
+const methodKeys: Readonly<Record<string, MessageKey>> = {
+  password: "signin.method.password",
+  passkey: "signin.method.passkey",
+  identity: "signin.method.identity",
+};
 
 /** endReasons are the message of each reason a Sign-in ended (api.EndSignedOut and the rest). */
 const endReasons: Readonly<Record<string, MessageKey>> = {

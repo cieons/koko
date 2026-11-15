@@ -77,16 +77,23 @@ func Register(a *op.API, issue IssueFunc, browsers Browsers, workspaces Workspac
 	a.Handle(api.UserDemote, r.demote)
 }
 
-// current is user.current: who the call acts as.
+// current is user.current: who the call acts as, with their own ways to
+// sign in in a browser.
 func current(ctx context.Context, tx store.Tx, caller op.Caller, _ api.UserCurrentRequest) (api.UserCurrentResponse, error) {
 	who, err := access.Who(ctx, tx, caller)
 	if err != nil {
 		return api.UserCurrentResponse{}, err
 	}
-	resp := api.UserCurrentResponse{User: who.User, DeviceSession: who.DeviceSession}
+	// The caller's own ways to sign in, as user.list answers them, so that
+	// Account says what removing one leaves.
+	self, err := listedOne(ctx, tx, who.User)
+	if err != nil {
+		return api.UserCurrentResponse{}, err
+	}
+	resp := api.UserCurrentResponse{User: self, DeviceSession: who.DeviceSession}
 	if si := who.SignIn; si != nil {
 		resp.SignIn = &api.CurrentSignIn{
-			ID: si.ID, Client: si.Client, Browser: si.Browser, System: si.System, Method: si.Method,
+			ID: si.ID, Client: si.Client, Browser: si.Browser, System: si.System, Method: si.Method, Credential: si.Credential,
 			StartedAt: si.StartedAt, ExpiresAt: si.ExpiresAt,
 		}
 	}

@@ -104,8 +104,9 @@ func TestAPasskeyMadeThroughALinkSignsIn(t *testing.T) {
 	wantRefusalHeadersBut(t, a.Header)
 	_, body := current(b)
 	var cur api.UserCurrentResponse
-	if err := json.Unmarshal([]byte(body), &cur); err != nil || cur.SignIn == nil || cur.SignIn.Method != api.MethodPasskey {
-		t.Errorf("user.current answered %s, want a Sign-in made with a passkey", body)
+	if err := json.Unmarshal([]byte(body), &cur); err != nil || cur.SignIn == nil || cur.SignIn.Method != api.MethodPasskey ||
+		cur.SignIn.Credential != p.ID || cur.User.Passkeys != 1 || cur.User.PasswordSetAt == "" {
+		t.Errorf("user.current answered %s, want a Sign-in made with the passkey, and bob's Password and passkey", body)
 	}
 	if got := passkeysOf(t, h, "bob"); len(got) != 1 || got[0].LastUsedAt == nil {
 		t.Errorf("passkey.list answered %+v, want it last used now", got)

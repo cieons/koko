@@ -2,7 +2,8 @@ import type en from "../en/signin";
 
 // The signin area's messages: Sign in, a Sign-in Link's page, the Password
 // and Browser Sign-ins on Account and in a person's panel, Sign-in Links,
-// Sign out, and its API error codes.
+// Sign out, and its API error codes. The passkeys' own are the passkey
+// area's.
 export default {
   "signin.title": "登录",
   "signin.name": "用户名",
@@ -34,12 +35,18 @@ export default {
   "signin.linkInvalid.lead": "链接已过期，或已被新的链接取代。可请所有者或管理员签发新的登录链接。",
   "signin.toSignIn": "前往登录",
   "signin.signOut": "退出登录",
+  "signin.methods": "登录方式",
   "signin.change.current": "当前密码",
   "signin.change.submit": "修改密码",
   "signin.change.wrong": "当前密码不正确。",
-  "signin.change.done": "密码已修改，凭该密码登录的其他浏览器均已退出登录。",
+  "signin.change.done": "密码已修改，其他已登录的浏览器均已退出登录。",
+  "signin.first.submit": "设置密码",
+  "signin.first.done": "密码已设置。",
   "signin.change.viaDevice": "当前浏览器经由 koko web 打开，密码须在凭该密码登录的浏览器中修改。",
   "signin.change.viaLocal": "当前浏览器在 koko 服务器本机上操作，密码须在凭该密码登录的浏览器中修改。",
+  "signin.method.password": "凭密码",
+  "signin.method.passkey": "凭通行密钥",
+  "signin.method.identity": "通过身份提供方",
   "signin.signins.title": "浏览器登录会话",
   "signin.signins.none": "{name} 当前未在任何浏览器中登录。",
   "signin.signins.here": "当前浏览器",
@@ -58,9 +65,9 @@ export default {
   "signin.end.user_removed": "用户已移除",
   "signin.revoke": "吊销",
   "signin.revoke.title": "吊销来自 {client} 的登录会话",
-  "signin.revoke.consequence": "该浏览器将立即退出登录，须凭密码重新登录。",
+  "signin.revoke.consequence": "该浏览器将立即退出登录，须重新登录。",
   "signin.revoke.consequenceHere": "这是当前浏览器的登录会话。吊销后，当前浏览器将退出登录。",
-  "signin.revoke.consequenceOther": "{name} 将立即在该浏览器中退出登录，须凭其密码重新登录。",
+  "signin.revoke.consequenceOther": "{name} 将立即在该浏览器中退出登录，须重新登录。",
   "signin.revokedDone": "来自 {client} 的登录会话已吊销。",
   "signin.person.setOn": "密码设置于 {date}。",
   "signin.person.none": "未设置密码。",

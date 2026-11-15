@@ -26,10 +26,10 @@ async function asOwner(path: string, w: World = world()): Promise<FakeApi> {
   return api;
 }
 
-/** openPanel waits for the panel of name to show its Password. */
+/** openPanel waits for the panel of name to show its ways to sign in. */
 async function openPanel(name: string): Promise<HTMLElement> {
   const panel = await screen.findByRole("dialog", { name });
-  await within(panel).findByRole("heading", { name: "Password" });
+  await within(panel).findByRole("heading", { name: "Sign-in" });
   return panel;
 }
 
@@ -56,7 +56,7 @@ test("a person's panel shows when their Password was set, with Issue Sign-in Lin
   expect(within(panel).getByRole("button", { name: "Issue Sign-in Link" })).toBeDefined();
   expect(within(panel).getByRole("button", { name: "Remove Password" })).toBeDefined();
   await waitFor(() => expect(signinsIn(panel)).toHaveLength(2));
-  expect(signinsIn(panel)[0]).toMatch(/^Firefox on Linux203\.0\.113\.7/);
+  expect(signinsIn(panel)[0]).toMatch(/^Firefox on Linuxwith a Password203\.0\.113\.7/);
   expect(api.requests(SignInList)).toContainEqual({ user: "bob" });
   await expectAccessible();
 });
@@ -143,7 +143,7 @@ test("Remove Password asks first, then the panel shows no Password and Access no
   expect(api.requests(PasswordRemove)).toEqual([{ user: "bob" }]);
   expect(await within(panel).findByText("No Password is set.")).toBeDefined();
   expect(within(panel).queryByRole("button", { name: "Remove Password" })).toBeNull();
-  await waitFor(() => expect(document.activeElement?.textContent).toBe("Password"));
+  await waitFor(() => expect(document.activeElement?.textContent).toBe("Sign-in"));
   await waitFor(() => expect(screen.getByRole("link", { name: /^bob/ }).textContent).not.toContain("Password set"));
 });
 
@@ -195,7 +195,7 @@ test("the Owner revokes another User's Sign-in from their panel, which says that
   fireEvent.click(within(panel).getByRole("button", { name: "Revoke the Sign-in from Safari on iPhone" }));
   const asking = await screen.findByRole("alertdialog", { name: "Revoke the Sign-in from Safari on iPhone" });
   expect(
-    within(asking).getByText("bob is signed out of that browser at once and must sign in again with their Password."),
+    within(asking).getByText("bob is signed out of that browser at once and must sign in again."),
   ).toBeDefined();
   fireEvent.click(within(asking).getByRole("button", { name: "Revoke" }));
 

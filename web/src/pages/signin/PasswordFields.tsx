@@ -22,7 +22,7 @@ export interface PasswordFieldsProps {
 
 /**
  * PasswordFields asks for a new Password twice, as Set a Password and
- * Account's Password panel do: the first with a count toward 15
+ * Account's Sign-in panel do: the first with a count toward 15
  * characters under it, the second to compare. Each field holds the rule's
  * message, shown when its form is submitted: 15 to 128 characters, not the
  * User's name, and the two the same. The koko server checks the rule again.

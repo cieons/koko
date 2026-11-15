@@ -27,15 +27,16 @@ type User struct {
 	// second; empty while they belong to the koko server.
 	RemovedAt string `json:"removed_at,omitempty"`
 	// PasswordSetAt is when the User last set their Password, RFC 3339 in
-	// UTC to the second, as user.list answers it; empty while they have
-	// none, and in every other answer.
+	// UTC to the second, as user.list answers it, and user.current for the
+	// caller; empty while they have none, and in every other answer.
 	PasswordSetAt string `json:"password_set_at,omitempty"`
-	// Passkeys is how many Passkeys the User has, as user.list answers it;
-	// left out at none, and in every other answer.
+	// Passkeys is how many Passkeys the User has, as user.list and
+	// user.current answer it; left out at none, and in every other answer.
 	Passkeys int `json:"passkeys,omitzero"`
 	// IdentityLinkedAt is when the User linked their identity at the
-	// Identity Provider, RFC 3339 in UTC to the second, as user.list
-	// answers it; empty while they have none, and in every other answer.
+	// Identity Provider, RFC 3339 in UTC to the second, as user.list and
+	// user.current answer it; empty while they have none, and in every other
+	// answer.
 	IdentityLinkedAt string `json:"identity_linked_at,omitempty"`
 }
 

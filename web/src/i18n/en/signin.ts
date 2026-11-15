@@ -1,6 +1,7 @@
 // The signin area's messages: Sign in, a Sign-in Link's page, the Password
 // and Browser Sign-ins on Account and in a person's panel, Sign-in Links,
-// Sign out, and its API error codes.
+// Sign out, and its API error codes. The passkeys' own are the passkey
+// area's.
 export default {
   "signin.title": "Sign in",
   "signin.name": "User name",
@@ -32,13 +33,19 @@ export default {
   "signin.linkInvalid.lead": "It has expired, or a newer link replaced it. The Owner or an Administrator can issue a new Sign-in Link.",
   "signin.toSignIn": "Go to Sign in",
   "signin.signOut": "Sign out",
+  "signin.methods": "Sign-in",
   "signin.change.current": "Current Password",
   "signin.change.submit": "Change Password",
   "signin.change.wrong": "The current Password is incorrect.",
-  "signin.change.done": "The Password is changed. The other browsers signed in with it are signed out.",
+  "signin.change.done": "The Password is changed. Every other browser signed in is signed out.",
+  "signin.first.submit": "Set Password",
+  "signin.first.done": "The Password is set.",
   "signin.change.viaDevice": "This browser came through koko web, so a Password is changed in a browser signed in with it.",
   "signin.change.viaLocal":
     "This browser acts on the koko server's own machine, so a Password is changed in a browser signed in with it.",
+  "signin.method.password": "with a Password",
+  "signin.method.passkey": "with a passkey",
+  "signin.method.identity": "through the identity provider",
   "signin.signins.title": "Browser Sign-ins",
   "signin.signins.none": "No browser is signed in as {name}.",
   "signin.signins.here": "This browser",
@@ -57,9 +64,9 @@ export default {
   "signin.end.user_removed": "the User was Removed",
   "signin.revoke": "Revoke",
   "signin.revoke.title": "Revoke the Sign-in from {client}",
-  "signin.revoke.consequence": "That browser is signed out at once and must sign in again with the Password.",
+  "signin.revoke.consequence": "That browser is signed out at once and must sign in again.",
   "signin.revoke.consequenceHere": "This is the Sign-in of this browser. Once it is revoked, this browser is signed out.",
-  "signin.revoke.consequenceOther": "{name} is signed out of that browser at once and must sign in again with their Password.",
+  "signin.revoke.consequenceOther": "{name} is signed out of that browser at once and must sign in again.",
   "signin.revokedDone": "The Sign-in from {client} is revoked.",
   "signin.person.setOn": "A Password was set on {date}.",
   "signin.person.none": "No Password is set.",

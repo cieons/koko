@@ -1,6 +1,8 @@
-import { Button } from "@heroui/react";
+import { Button, Separator } from "@heroui/react";
+import { FingerprintPattern } from "lucide-react";
 import { useState } from "react";
 
+import { AuthPasskeySignIn, AuthPasskeySignInBegin } from "../../api/passkey";
 import { AuthSignIn } from "../../api/signin";
 import { post } from "../../client";
 import { useCount, useT } from "../../shell/i18n";
@@ -10,41 +12,91 @@ import { Form } from "../../ui/Form";
 import { AlertLine } from "../../ui/states";
 import { Door } from "./Door";
 import { refusalText } from "./refusal";
+import { cancelled, getPasskey, passkeysAvailable, useCeremony } from "./webauthn";
 
 /**
  * SignInPage is Sign in, outside the frame (docs/web-design.md, "Sign in
- * and a Sign-in Link's page"): a User name and Password, posted to /auth/signin,
- * which sets the Sign-in cookie; then the page next names, on this origin
- * only, or the first place. A refusal shows above the fields, and
- * too_many_attempts says in how many minutes to try again. One line says
- * the Owner or an Administrator can send a Sign-in Link, for a lost
- * Password.
+ * and a Sign-in Link's page"): Sign in with a passkey first, where the
+ * browser has WebAuthn, then a divider and a User name and Password, posted
+ * to /auth/signin. Either sets the Sign-in cookie; then the page next
+ * names, on this origin only, or the first place. A refusal shows above
+ * both, and too_many_attempts says in how many minutes to try again; a
+ * passkey's ceremony the person cancelled shows nothing. One line says the
+ * Owner or an Administrator can send a Sign-in Link, for a lost Password or
+ * passkey.
  */
 export function SignInPage() {
   const t = useT();
   const count = useCount();
   const [params] = useSearchParams();
+  const begin = useCeremony();
+  const passkeys = passkeysAvailable();
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
-  const [pending, setPending] = useState(false);
+  const [pending, setPending] = useState<"password" | "passkey">();
   const [error, setError] = useState<unknown>();
 
+  // Each press begins a ceremony of its own, since the koko server's flow is taken by its first answer.
+  const withPasskey = async () => {
+    const ceremony = begin();
+    if (ceremony === undefined) {
+      return;
+    }
+    setPending("passkey");
+    setError(undefined);
+    try {
+      const { flow, options } = await post(AuthPasskeySignInBegin, {});
+      if (!ceremony.open()) {
+        return;
+      }
+      const credential = await getPasskey(options, ceremony.signal);
+      if (!ceremony.open()) {
+        return;
+      }
+      await post(AuthPasskeySignIn, { flow, credential });
+      navigate(nextPage(params.get("next")), { replace: true });
+    } catch (failure) {
+      if (ceremony.open()) {
+        setError(cancelled(failure) ? undefined : failure);
+        setPending(undefined);
+      }
+    }
+  };
+
   const submit = async () => {
-    setPending(true);
+    setPending("password");
     setError(undefined);
     try {
       await post(AuthSignIn, { name, password });
       navigate(nextPage(params.get("next")), { replace: true });
     } catch (failure) {
       setError(failure);
-      setPending(false);
+      setPending(undefined);
     }
   };
 
   return (
     <Door title={t("signin.title")}>
+      {error !== undefined && (
+        <div className="mb-4">
+          <AlertLine>{refusalText(t, count, error)}</AlertLine>
+        </div>
+      )}
+      {passkeys && (
+        <>
+          <Button
+            size="lg"
+            fullWidth
+            isPending={pending === "passkey"}
+            onPress={() => void withPasskey()}
+          >
+            <FingerprintPattern aria-hidden className="size-5" />
+            {t("passkey.signIn")}
+          </Button>
+          <Separator className="my-6" />
+        </>
+      )}
       <Form label={t("signin.title")} onSubmit={() => void submit()} className="flex flex-col gap-4">
-        {error !== undefined && <AlertLine>{refusalText(t, count, error)}</AlertLine>}
         <Field
           label={t("signin.name")}
           value={name}
@@ -62,7 +114,14 @@ export function SignInPage() {
           onChange={setPassword}
           validate={(v) => (v === "" ? t("signin.passwordRequired") : undefined)}
         />
-        <Button type="submit" size="lg" fullWidth isPending={pending} className="mt-2">
+        <Button
+          type="submit"
+          size="lg"
+          fullWidth
+          variant={passkeys ? "secondary" : "primary"}
+          isPending={pending === "password"}
+          className="mt-2"
+        >
           {t("signin.submit")}
         </Button>
         <p className="t-label">{t("signin.lost")}</p>

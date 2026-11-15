@@ -57,6 +57,12 @@ export interface SignIn {
    */
   method: string;
   /**
+   * Credential is the id of the Passkey or Linked Identity the browser
+   * signed in with; left out for a Password, and from a koko server
+   * before passkeys.
+   */
+  credential?: string;
+  /**
    * Address is the client's address when the Sign-in was last used, as
    * the reverse proxy passed it on.
    */
@@ -89,8 +95,12 @@ export interface CurrentSignIn {
   client: string;
   browser?: string;
   system?: string;
-  /** Method is how the browser signed in, as SignIn's is. */
+  /**
+   * Method is how the browser signed in, and Credential the Passkey or
+   * Linked Identity it signed in with, as SignIn's are.
+   */
   method: string;
+  credential?: string;
   started_at: string;
   expires_at: string;
 }

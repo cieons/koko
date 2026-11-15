@@ -52,18 +52,20 @@ function type(name: string, value: string): void {
 test("Account for a browser signed in with a Password offers to change it, lists its Sign-ins, and Sign out", async () => {
   const api = await atAccount();
 
-  expect(screen.getByRole("heading", { level: 2, name: "Password" })).toBeDefined();
+  expect(screen.getByText("This browser is signed in with a Password from Firefox on Linux.")).toBeDefined();
+  expect(screen.getByRole("heading", { level: 2, name: "Sign-in" })).toBeDefined();
+  expect(screen.getByRole("heading", { level: 3, name: "Password" })).toBeDefined();
   expect(field("Current Password").getAttribute("autocomplete")).toBe("current-password");
   expect(field("New Password").getAttribute("autocomplete")).toBe("new-password");
   expect(field("New Password, again").getAttribute("autocomplete")).toBe("new-password");
   const [here, phone, ...rest] = signins();
-  expect(here).toMatch(/^Firefox on LinuxThis browser203\.0\.113\.7 · Last used .+ · Expires 2026-11-14Revoke$/);
-  expect(phone).toMatch(/^Safari on iPhone203\.0\.113\.7 · Last used .+ · Expires 2026-11-14Revoke$/);
+  expect(here).toMatch(/^Firefox on Linuxwith a PasswordThis browser203\.0\.113\.7 · Last used .+ · Expires 2026-11-14Revoke$/);
+  expect(phone).toMatch(/^Safari on iPhonewith a Password203\.0\.113\.7 · Last used .+ · Expires 2026-11-14Revoke$/);
   expect(rest).toEqual([]);
   expect(api.requests(SignInList)).toEqual([{ user: "bob" }]);
   expect(screen.getByRole("button", { name: "Sign out" })).toBeDefined();
   // One column as wide as the page until there is room for two, not as wide as the widest panel (jsdom applies no CSS).
-  const panels = screen.getByRole("heading", { level: 2, name: "Password" }).closest(".grid");
+  const panels = screen.getByRole("heading", { level: 2, name: "Sign-in" }).closest(".grid");
   expect(panels?.className).toContain("grid-cols-1 ");
   await expectAccessible();
 });
@@ -79,13 +81,13 @@ test("Change Password sends the current Password and the new one, says so, and t
   fireEvent.click(screen.getByRole("button", { name: "Change Password" }));
 
   expect(
-    await screen.findByText("The Password is changed. The other browsers signed in with it are signed out."),
+    await screen.findByText("The Password is changed. Every other browser signed in is signed out."),
   ).toBeDefined();
   expect(api.requests(AuthPassword)).toEqual([{ current: "the current password", password }]);
   expect(field("Current Password").value).toBe("");
   expect(field("New Password").value).toBe("");
-  await waitFor(() => expect(signins()[1]).toMatch(/^Safari on iPhoneEnded.+: the Password was changed$/));
-  expect(signins()[0]).toMatch(/^Firefox on LinuxThis browser/);
+  await waitFor(() => expect(signins()[1]).toMatch(/^Safari on iPhonewith a PasswordEnded.+: the Password was changed$/));
+  expect(signins()[0]).toMatch(/^Firefox on Linuxwith a PasswordThis browser/);
   expect(screen.getByRole("switch", { name: "Show ended Sign-ins" })).toHaveProperty("checked", true);
 });
 
@@ -164,7 +166,7 @@ test("for the Local caller Account offers no Password form and no Sign out", asy
   ).toBeDefined();
   expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
   await waitFor(() => expect(signins()).toHaveLength(1));
-  expect(signins()[0]).toMatch(/^Safari on macOS203\.0\.113\.7/);
+  expect(signins()[0]).toMatch(/^Safari on macOSwith a Password203\.0\.113\.7/);
 });
 
 // Browser Sign-ins.
@@ -175,7 +177,7 @@ test("Revoke asks first, says what follows, and revokes the Sign-in", async () =
   fireEvent.click(screen.getByRole("button", { name: "Revoke the Sign-in from Safari on iPhone" }));
   const dialog = await screen.findByRole("alertdialog", { name: "Revoke the Sign-in from Safari on iPhone" });
   expect(
-    within(dialog).getByText("That browser is signed out at once and must sign in again with the Password."),
+    within(dialog).getByText("That browser is signed out at once and must sign in again."),
   ).toBeDefined();
   await expectAccessible();
   fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
@@ -222,7 +224,7 @@ test("Show ended Sign-ins adds the ended ones, struck through, with when and why
   fireEvent.click(screen.getByRole("switch", { name: "Show ended Sign-ins" }));
 
   await waitFor(() => expect(signins()).toHaveLength(3));
-  expect(signins()[2]).toBe("Chrome on WindowsEnded203.0.113.7 · Ended 2026-11-05: signed out");
+  expect(signins()[2]).toBe("Chrome on Windowswith a PasswordEnded203.0.113.7 · Ended 2026-11-05: signed out");
   expect(screen.queryByRole("button", { name: "Revoke the Sign-in from Chrome on Windows" })).toBeNull();
   expect(api.requests(SignInList).at(-1)).toEqual({ user: "bob", all: true });
   await expectAccessible();
@@ -274,7 +276,7 @@ test("a browser koko does not recognise is named Browser", async () => {
   s.signins.push(signIn("bob", 4, {}));
   await atAccount(s);
 
-  expect(signins()[2]).toMatch(/^Browser203\.0\.113\.7 · /);
+  expect(signins()[2]).toMatch(/^Browserwith a Password203\.0\.113\.7 · /);
   expect(screen.getByRole("button", { name: "Revoke the Sign-in from Browser" })).toBeDefined();
 });
 
@@ -284,12 +286,12 @@ test("in Chinese each browser is named in Chinese, on Account, in Browser Sign-i
   s.signins.push(signIn("bob", 4, {}), signIn("bob", 5, { browser: "Firefox" }));
   await atAccount(s, bob, "浏览器登录会话");
 
-  expect(screen.getByText("当前浏览器已凭密码通过 Linux 上的 Firefox 登录。")).toBeDefined();
+  expect(screen.getByText("当前浏览器（Linux 上的 Firefox）已凭密码登录。")).toBeDefined();
   expect(signins("浏览器登录会话").map((row) => row.split("203.0.113.7")[0])).toEqual([
-    "Linux 上的 Firefox当前浏览器",
-    "iPhone 上的 Safari",
-    "浏览器",
-    "Firefox",
+    "Linux 上的 Firefox凭密码当前浏览器",
+    "iPhone 上的 Safari凭密码",
+    "浏览器凭密码",
+    "Firefox凭密码",
   ]);
   fireEvent.click(screen.getByRole("button", { name: "吊销来自 iPhone 上的 Safari 的登录会话" }));
   const dialog = await screen.findByRole("alertdialog", { name: "吊销来自 iPhone 上的 Safari 的登录会话" });

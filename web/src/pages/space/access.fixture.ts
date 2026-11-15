@@ -1,4 +1,5 @@
 import { DeviceAdd, DeviceList, DeviceRevoke, type DeviceSession } from "../../api/device";
+import { type Passkey, PasskeyList, PasskeyRemove } from "../../api/passkey";
 import { ServerShow } from "../../api/server";
 import { PasswordLinkIssue, PasswordRemove, SignInList } from "../../api/signin";
 import {
@@ -64,11 +65,28 @@ export function device(user: string, name: string, more: Partial<DeviceSession> 
   return { id: `device_${user}_${name}`, user, device: name, created_at: "2026-11-03T09:00:00Z", ...more };
 }
 
+/** passkey is a Passkey of user named name, made for koko.example.com from its User's own Sign-in and never used. */
+export function passkey(user: string, name: string, more: Partial<Passkey> = {}): Passkey {
+  return {
+    id: `passkey_${user}_${name.toLowerCase().replaceAll(" ", "_")}`,
+    user,
+    name,
+    host: "koko.example.com",
+    synced: false,
+    added_by: null,
+    added_at: "2026-11-04T09:00:00Z",
+    last_used_at: null,
+    ...more,
+  };
+}
+
 /** World is what the fake koko server holds. */
 export interface World {
   users: User[];
   spaces: SpaceDetail[];
   devices: DeviceSession[];
+  /** passkeys are every User's Passkeys, which user.list counts. */
+  passkeys: Passkey[];
   /** webURL is the Web URL, or null while it is not set. */
   webURL: string | null;
 }
@@ -95,6 +113,7 @@ export function world(): World {
       device("bob", "phone"),
       device("bob", "old", { revoked_at: "2026-11-04T09:00:00Z" }),
     ],
+    passkeys: [],
     webURL: "https://koko.example.com",
   };
 }
@@ -127,8 +146,8 @@ export const joinCode = "koko_JOINCODE";
 
 /**
  * serve makes the fake API answer from w as the koko server answers caller:
- * the Owner and an Administrator see every Space and Device Session, a
- * Member their own. Acting on another User's credentials or role follows
+ * the Owner and an Administrator see every Space, Device Session and
+ * Passkey, a Member their own. Acting on another User's credentials or role follows
  * the access check's rule (mayActOn), and only the Owner promotes and
  * demotes. Each write changes w.
  */
@@ -180,7 +199,29 @@ export function serve(api: FakeApi, w: World, caller: User = alice): void {
   };
   // No browser is signed in, unless a test serves Sign-ins (signins.fixture.ts).
   api.on(SignInList, () => ({ signins: [] }));
-  api.on(UserList, ({ all }) => ({ users: w.users.filter((u) => all === true || u.removed_at === undefined) }));
+  // user.list counts each User's Passkeys, as the koko server does, leaving the count out at none.
+  api.on(UserList, ({ all }) => ({
+    users: w.users
+      .filter((u) => all === true || u.removed_at === undefined)
+      .map((u) => {
+        const passkeys = w.passkeys.filter((p) => p.user === u.name).length;
+        return passkeys === 0 ? u : { ...u, passkeys };
+      }),
+  }));
+  api.on(PasskeyList, ({ user }) => ({
+    passkeys: w.passkeys.filter(
+      (p) => p.user === (user ?? caller.name) && (administers || p.user === caller.name),
+    ),
+  }));
+  api.on(PasskeyRemove, ({ id }) => {
+    const found = w.passkeys.find((p) => p.id === id && (administers || p.user === caller.name));
+    if (!found) {
+      throw refusal("unknown_passkey", 404);
+    }
+    actOn(found.user);
+    w.passkeys = w.passkeys.filter((p) => p.id !== id);
+    return { passkey: found, signins_ended: 0 };
+  });
   api.on(SpaceList, () => ({ spaces: w.spaces.filter(sees) }));
   api.on(SpaceShow, ({ name }) => ({ space: find(name) }));
   api.on(SpaceAdd, ({ name }) => {

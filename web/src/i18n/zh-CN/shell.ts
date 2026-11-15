@@ -14,7 +14,8 @@ import type en from "../en/shell";
 //   Administrator 管理员 · Member 成员 ·
 //   Invite 邀请 · Removed 已移除 · Join 加入 · Join Code 加入码 ·
 //   Device Session 设备会话 · Revoked 已吊销 · Last used 上次使用 ·
-//   Password 密码 · Sign-in Link 登录链接 · Sign-in 登录会话 ·
+//   Password 密码 · Passkey 通行密钥 · Sign-in Link 登录链接 ·
+//   Sign-in 登录会话 ·
 //   koko server koko 服务器 · Server Address 服务器地址 ·
 //   Web UI Web 界面 · Web URL Web 地址 · Root Key 根密钥 ·
 //   koko key koko 密钥 · Gateway 网关 · Local caller 本机调用方

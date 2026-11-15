@@ -106,8 +106,9 @@ var signinMappings = []mapping{
 	}},
 	{api: reflect.TypeFor[api.PasswordRemoveResponse](), cli: reflect.TypeFor[passwordRemoval]()},
 	{api: reflect.TypeFor[api.SignIn](), cli: reflect.TypeFor[signInJSON](), omitted: map[string]string{
-		"browser": "the CLI names the browser by client, its English label made of browser and system",
-		"system":  "the CLI names the browser by client, its English label made of browser and system",
+		"browser":    "the CLI names the browser by client, its English label made of browser and system",
+		"system":     "the CLI names the browser by client, its English label made of browser and system",
+		"credential": "the CLI says how the browser signed in by method; koko passkey ls lists the passkeys themselves",
 	}},
 	{api: reflect.TypeFor[api.SignInListResponse]()},
 	{api: reflect.TypeFor[api.SignInRevokeResponse]()},

@@ -994,8 +994,8 @@ For the Owner and an Administrator:
 - Under it, one panel holding the list of the tab chosen, a row per person
   or Space, each a link to its panel. A person's row: initial, name,
   "Owner" or "Administrator" where so, and a one-line summary, "16 Spaces
-  · 2 devices · Password set", "No Space · Invited, not yet in", "Every
-  Space · 1 device" for the Owner and an Administrator. A Space's row: name and "30 Members · 40 Hosts ·
+  · 2 devices · Password set · 2 passkeys", "No Space · Invited, not yet
+  in", "Every Space · 1 device" for the Owner and an Administrator. A Space's row: name and "30 Members · 40 Hosts ·
   0 Secrets". The summary is beside the name once the list itself is
   42rem wide (container query) and under it below that, as on a phone.
   The Owner is first, then the Administrators, then the Members, and the
@@ -1010,10 +1010,12 @@ For the Owner and an Administrator:
   shared Spaces.", under **Add to a Space**, a searchable choice of the
   shared Spaces they are not in, each Space a link to its panel with
   **Take out**; and the Personal Space's counts; Devices with Add device and Revoke, and "Show
-  Revoked devices"; Password ("set on <date>" or none) with Issue Sign-in
-  Link and Remove Password; Browser Sign-ins with Revoke; for the Owner,
+  Revoked devices"; **Sign-in**: the Password ("set on <date>" or none)
+  with Remove Password, the passkeys, each with Remove, and Issue Sign-in
+  Link; Browser Sign-ins with Revoke; for the Owner,
   **Make an Administrator**, which asks first and lists the User's live
-  devices, each with who added it, and live Sign-ins, or **Make a
+  devices, each with who added it, their passkeys, each with who issued
+  the Sign-in Link it was made through, and live Sign-ins, or **Make a
   Member**, which does not; Remove User at the foot, which asks first and
   then says whether the User was deleted or Removed. An Administrator or
   the Owner is "Every Space" in place of the Spaces. Viewing the Owner or
@@ -1023,8 +1025,8 @@ For the Owner and an Administrator:
 - **Revoking a device** asks first and says what follows: the device is
   cut off; for the device the web UI runs through, this page stops and the
   device deletes its key; for the Owner's own last live device, only the
-  koko server's own machine, or a browser signed in with the Owner's
-  Password, can add a device for the Owner again, and the
+  koko server's own machine, or a browser signed in as the Owner, can add
+  a device for the Owner again, and the
   device's name must be typed (the call carries `last`). A refused revoke
   reloads the list.
 - **A Space's panel**: three counts (Hosts, Retired Hosts, Secrets) that
@@ -1074,14 +1076,26 @@ handle that failure; the build does.
 
 ### Account (`/account`)
 
-- Title: the name and role; a line saying how this browser got in; **Sign
-  out** when it has a Sign-in.
-- Panels: **Password** (current, new, again; a count toward 15 characters;
-  through `koko web`, one sentence instead); **This browser** (Language
+- Title: the name and role; a line saying how this browser got in, with a
+  passkey, a Password or through the identity provider; **Sign out** when
+  it has a Sign-in.
+- Panels: **Sign-in**: Passkeys, each with its name, "Made for <host>"
+  where its host is not the Web URL's, Synced, added and last used ("Never
+  used"), and Remove, then **Add a passkey**, a name prefilled with this
+  browser's label, for a browser with WebAuthn; and Password (current,
+  new, again; a count toward 15 characters; for a User without one, new
+  and again alone, **Set Password**). Through `koko web` or for the Local
+  caller the passkeys are listed with Remove, one sentence says they are
+  added in a browser at the Web URL, and one says where a Password is
+  changed. Remove asks first and says who is signed out: this browser, when
+  it signed in with that passkey, else the browsers signed in with it;
+  that the device or password manager keeps it; and, for the User's last
+  way to sign in, that the next sign-in needs a Sign-in Link. **This browser** (Language
   and Appearance as segments, which mirror the rail's); **Devices** (this
   one marked, Add device, Revoke as above, and "Show Revoked devices",
-  `all=1` in the URL); **Browser Sign-ins** (this browser marked; revoking
-  it signs out); **Personal Space** (counts and a link). Two columns once
+  `all=1` in the URL); **Browser Sign-ins** (each with how it signed in,
+  "with a passkey", "with a Password" or "through the identity provider";
+  this browser marked; revoking it signs out); **Personal Space** (counts and a link). Two columns once
   the page's own room is 56rem wide (container query).
 - For the Local caller there is no device to mark and no Sign-in; the
   Owner's own last device asks for its name there too.
@@ -1091,16 +1105,21 @@ handle that failure; the build does.
 Outside the frame: the wordmark, then one panel 26rem wide, then the two
 languages as buttons.
 
-- **Sign in**: name, Password, **Sign in**; a refusal above the fields
-  (`wrong_password`, `too_many_attempts` with the minutes); one line, "The
-  Owner or an Administrator can send you a Sign-in Link."
+- **Sign in**: **Sign in with a passkey** (primary), a divider, then
+  name, Password and **Sign in** (secondary); without WebAuthn, no passkey
+  action and Sign in primary. A refusal above them (`passkey_refused`,
+  `wrong_password`, `too_many_attempts` with the minutes); a ceremony the
+  person cancels shows nothing. One line, "The Owner or an Administrator
+  can send you a Sign-in Link."
 - **A Sign-in Link's page** (`/link`, and `/password` for a link issued
-  before it), titled Set a Password: "For <name>."; when they have a
-  Password, a line that one set here replaces it; New Password with a
-  count toward 15; again; **Set Password and sign in**. A Password is the
-  one way it offers until the passkey and Identity Provider tickets of spec
-  #228. `link_used` and `link_invalid` each
-  replace the form with what happened and "Go to Sign in".
+  before it), titled Set up sign-in: "For <name>."; **Create a passkey**
+  (primary) and **Set a Password instead** (secondary), which opens Set a
+  Password: when they have a Password, a line that one set here replaces
+  it; New Password with a count toward 15; again; **Set Password and sign
+  in**; **Back** to the choices. Without WebAuthn the page is Set a
+  Password at once. A ceremony cancelled shows nothing, a refusal shows
+  above the choices. `link_used` and `link_invalid` each replace the page
+  with what happened and "Go to Sign in".
 
 ### Page not found
 
