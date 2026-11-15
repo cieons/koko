@@ -209,6 +209,7 @@ test("a Sign-in Link's page takes the secret out of the URL at once, and says wh
   expect(api.requests(AuthLink)).toEqual([{ link: secret }]);
   expect(screen.getByText("For bob.")).toBeDefined();
   expect(screen.queryByText(/replaces the current Password/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Set Password and sign in" }).hasAttribute("aria-describedby")).toBe(false);
   expect(field("New Password").getAttribute("autocomplete")).toBe("new-password");
   expect(field("New Password, again").getAttribute("autocomplete")).toBe("new-password");
   expect(screen.queryByRole("button", { name: /^Language:/ })).toBeNull(); // no frame
@@ -228,7 +229,9 @@ test("a link issued before the Sign-in Link, at /password, opens the same page",
 test("for a User who has a Password the page says a Password set here replaces it", async () => {
   await atLink(fakeApi(), "/link", linkFor({ password_set: true }));
 
-  expect(screen.getByText("A Password set here replaces the current Password of bob.")).toBeDefined();
+  const submit = screen.getByRole("button", { name: "Set Password and sign in" });
+  const described = document.getElementById(submit.getAttribute("aria-describedby") ?? "");
+  expect(described?.textContent).toBe("A Password set here replaces the current Password of bob.");
   await expectAccessible();
 });
 

@@ -1,5 +1,5 @@
 import { Button, buttonVariants } from "@heroui/react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Link } from "react-aria-components";
 
 import { AuthLink, AuthPassword, CodeLinkInvalid, CodeLinkUsed } from "../../api/signin";
@@ -56,6 +56,8 @@ function ForLink({ secret }: { secret: string | undefined }) {
   const [again, setAgain] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>();
+  // The line saying a Password set here replaces theirs describes the submit, so a screen reader tabbing to it hears it.
+  const replaces = useId();
 
   useEffect(() => {
     if (secret === undefined) {
@@ -129,12 +131,23 @@ function ForLink({ secret }: { secret: string | undefined }) {
   return (
     <Door title={t("signin.set.title")} lead={t("signin.set.lead", { name: user })}>
       <Form label={t("signin.set.title")} onSubmit={() => void submit()} className="flex flex-col gap-4">
-        {passwordSet && <p className="t-label">{t("signin.set.replaces", { name: user })}</p>}
+        {passwordSet && (
+          <p id={replaces} className="t-label">
+            {t("signin.set.replaces", { name: user })}
+          </p>
+        )}
         {/* The User name, for the browser's password manager to keep with the Password. */}
         <input type="text" name="username" autoComplete="username" value={user} readOnly hidden />
         <PasswordFields user={user} value={value} again={again} onValue={setValue} onAgain={setAgain} />
         {error !== undefined && <AlertLine>{refusalText(t, count, error)}</AlertLine>}
-        <Button type="submit" size="lg" fullWidth isPending={pending} className="mt-2">
+        <Button
+          type="submit"
+          size="lg"
+          fullWidth
+          isPending={pending}
+          aria-describedby={passwordSet ? replaces : undefined}
+          className="mt-2"
+        >
           {t("signin.set.submit")}
         </Button>
       </Form>

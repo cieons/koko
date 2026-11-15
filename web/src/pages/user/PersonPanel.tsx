@@ -131,7 +131,7 @@ function Person({
   const self = user.name === caller.user.name;
   const [all, setAll] = useState(false);
   const [removing, setRemoving] = useState(false);
-  // Removing the Password ends the User's Sign-ins, which are read again then.
+  // Removing the Password ends the Sign-ins made with it, which are read again then.
   const [passwordChanges, setPasswordChanges] = useState(0);
   return (
     <>

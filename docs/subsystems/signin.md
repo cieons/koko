@@ -290,7 +290,8 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-l
   another link is opened on the page; the page then, afresh for each link,
   asks `/auth/link` whom the link is for, and shows Set a Password: "For
   <name>.", a line saying a Password set there replaces theirs when
-  `password_set` says they have one, and the new Password twice
+  `password_set` says they have one, which describes the submit button
+  (`aria-describedby`), and the new Password twice
   (`new-password`), a count toward 15 characters under
   the first ([`PasswordFields`](../../web/src/pages/signin/PasswordFields.tsx)),
   counted as the koko server counts them, in code points after NFC. The
