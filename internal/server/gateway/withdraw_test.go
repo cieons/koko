@@ -230,24 +230,36 @@ func TestARecheckTakesBackOnlyWhatItsOpenerTookBack(t *testing.T) {
 }
 
 // Each way a Sign-in ends has its own log reason, and every way but
-// signing out and expiring takes back the SSH Sessions it opened, a way
-// the Gateway does not know among them: it fails closed.
+// signing out and expiring takes back the SSH Sessions it opened, each
+// with a notice saying why; a way the Gateway does not know is taken back
+// too, as access withdrawn: it fails closed.
 func TestEverySignInEndTakesBackButLeaving(t *testing.T) {
-	for _, reason := range []string{
-		api.EndSignedOut, api.EndExpired, api.EndRevoked, api.EndPasswordChanged, api.EndPasswordRemoved,
-		api.EndPasskeyRemoved, api.EndIdentityUnlinked, api.EndSignInLinkUsed, api.EndUserRemoved, "a way added later",
+	const closed = "; this SSH Session is closed."
+	for _, c := range []struct{ reason, logged, notice string }{
+		{api.EndSignedOut, "signed out", ""},
+		{api.EndExpired, "signin expired", ""},
+		{api.EndRevoked, "signin revoked", "access to web1 was withdrawn: this browser's Sign-in was revoked" + closed},
+		{api.EndPasswordChanged, "password changed", "access to web1 was withdrawn: the Password was changed" + closed},
+		{api.EndPasswordRemoved, "password removed", "access to web1 was withdrawn: the Password was removed" + closed},
+		{api.EndPasskeyRemoved, "passkey removed", "access to web1 was withdrawn: the passkey was removed" + closed},
+		{api.EndIdentityUnlinked, "identity unlinked", "access to web1 was withdrawn: the Linked Identity was unlinked" + closed},
+		{api.EndSignInLinkUsed, "signin link used", "access to web1 was withdrawn: a Sign-in Link was used" + closed},
+		{api.EndUserRemoved, "user removed", "access to web1 was withdrawn: bob was Removed" + closed},
+		{"a way added later", "access withdrawn", "access to web1 was withdrawn" + closed},
 	} {
-		leaves := reason == api.EndSignedOut || reason == api.EndExpired
-		if got := takesBack(reason); got == leaves {
-			t.Errorf("takesBack(%q) = %v, want %v", reason, got, !leaves)
+		leaves := c.notice == ""
+		if got := takesBack(c.reason); got == leaves {
+			t.Errorf("takesBack(%q) = %v, want %v", c.reason, got, !leaves)
 		}
-		_, known := signInEnds[reason]
-		if got := signInReason(reason); known == (got == "access withdrawn") {
-			t.Errorf("signInReason(%q) = %q", reason, got)
+		if got := signInReason(c.reason); got != c.logged {
+			t.Errorf("signInReason(%q) = %q, want %q", c.reason, got, c.logged)
+		}
+		if leaves {
+			continue
 		}
 		tun := &tunnel{user: "bob", hostName: "web1"}
-		if e := signInEnding(tun, reason); !leaves && (e == nil || e.notice == "") {
-			t.Errorf("signInEnding(%q) = %+v, want an ending with its notice", reason, e)
+		if e := signInEnding(tun, c.reason); e == nil || e.reason != c.logged || e.notice != c.notice {
+			t.Errorf("signInEnding(%q) = %+v, want the reason %q and the notice %q", c.reason, e, c.logged, c.notice)
 		}
 	}
 }

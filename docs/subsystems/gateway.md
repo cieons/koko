@@ -578,8 +578,11 @@ registry.
 | Its Device Session was Revoked | `access to web1 was withdrawn: this device's Device Session was Revoked; this SSH Session is closed.` | `revoked` |
 | Its User was Removed, whoever opened it | `access to web1 was withdrawn: bob was Removed; this SSH Session is closed.` | `user removed` |
 | The Sign-in that opened a web terminal was revoked (`signin.revoke`) | `access to web1 was withdrawn: this browser's Sign-in was revoked; this SSH Session is closed.` | `signin revoked` |
-| The Password was set or changed, ending the User's other Sign-ins, one of which opened a web terminal | `access to web1 was withdrawn: the Password was changed; this SSH Session is closed.` | `password changed` |
-| The Password was removed (`password.remove`), ending the Sign-in that opened a web terminal | `access to web1 was withdrawn: the Password was removed; this SSH Session is closed.` | `password removed` |
+| The Password was set through a Sign-in Link or changed, ending the User's other Sign-ins, one of which opened a web terminal; a first Password set from a live Sign-in ends none | `access to web1 was withdrawn: the Password was changed; this SSH Session is closed.` | `password changed` |
+| The Password was removed (`password.remove`), ending the Sign-in made with it that opened a web terminal | `access to web1 was withdrawn: the Password was removed; this SSH Session is closed.` | `password removed` |
+| A passkey was removed, ending the Sign-in made with it that opened a web terminal (spec #228) | `access to web1 was withdrawn: the passkey was removed; this SSH Session is closed.` | `passkey removed` |
+| A Linked Identity was unlinked, ending the Sign-in made through it that opened a web terminal (spec #228) | `access to web1 was withdrawn: the Linked Identity was unlinked; this SSH Session is closed.` | `identity unlinked` |
+| A Sign-in Link was spent with a passkey or a Linked Identity, ending the User's other Sign-ins, one of which opened a web terminal (spec #228) | `access to web1 was withdrawn: a Sign-in Link was used; this SSH Session is closed.` | `signin link used` |
 | The Web URL changed, for a web terminal a Sign-in opened, through the web listener | `the Web URL changed; this SSH Session is closed. Sign in at the new address.` | `web url changed` |
 | The Host was Retired | `access to web1 was withdrawn: web1 was Retired; this SSH Session is closed.` | `host retired` |
 | The Host went back to Registered | `access to web1 was withdrawn; this SSH Session is closed.` | `host registered` |
@@ -623,8 +626,11 @@ so logs `ssh session detached` with its reason.
 | A run of `koko web` ends, the Local caller's | go on | detach | `koko web ended` |
 | A Sign-in is revoked | end | detach | `signin revoked` |
 | A Device Session is Revoked | end, those it opened through `koko web` | detach | `revoked` |
-| The Password is set or changed, ending the User's other Sign-ins | end, those the ended Sign-ins opened | detach | `password changed` |
-| The Password is removed | end, those every live Sign-in opened | detach | `password removed` |
+| The Password is set through a Sign-in Link or changed, ending the User's other Sign-ins (a first Password set from a live Sign-in ends none) | end, those the ended Sign-ins opened | detach | `password changed` |
+| The Password is removed | end, those the Sign-ins made with the Password opened | detach | `password removed` |
+| A passkey is removed | end, those the Sign-ins made with it opened | detach | `passkey removed` |
+| A Linked Identity is unlinked | end, those the Sign-ins made through it opened | detach | `identity unlinked` |
+| A Sign-in Link is spent with a passkey or a Linked Identity, ending the User's other Sign-ins | end, those the ended Sign-ins opened | detach | `signin link used` |
 | The User is Removed | every one of the User's ends; the Workspace goes | detach | `user removed` |
 | The Web URL changes | end, those a Sign-in opened, through the web listener; those through `koko web` go on | every page on the web listener detaches | `web url changed` |
 
@@ -826,7 +832,8 @@ attachment's `attachment`, its id.
   `malformed record`, `displaced`, or its caller's end
   ([what only detaches](#what-only-detaches)): `signed out`, `signin
   expired`, `koko web ended`, `revoked`, `signin revoked`, `password
-  changed`, `password removed`, `user removed` or `web url changed`. A
+  changed`, `password removed`, `passkey removed`, `identity unlinked`,
+  `signin link used`, `user removed` or `web url changed`. A
   Workspace socket cut so is `workspace socket closed` at debug level, with
   the caller and `reason`. A page's WebSocket dropping, which
   starts its attachment's grace, is `web terminal dropped` at debug level,
