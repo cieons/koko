@@ -16,8 +16,11 @@ import (
 // dataDir and the Root Key file keyFile, as systemd and the image run it.
 func kokodRun(t *testing.T, dataDir, keyFile string) harness.Result {
 	t.Helper()
+	// keyFile joined to its flag: a test passes the key itself as one, and
+	// a key's base64url starts with -- about 1 time in 4,096, which the
+	// parser would read as a flag.
 	return harness.RunKokod(t, harness.Kokod(t), nil,
-		"run", "--data-dir", dataDir, "--root-key-file", keyFile)
+		"run", "--data-dir", dataDir, "--root-key-file="+keyFile)
 }
 
 // newKeyFile writes a new Root Key file at path, making its directory, and
