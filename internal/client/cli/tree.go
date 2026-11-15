@@ -258,6 +258,7 @@ func remoteAction(run func(ctx context.Context, in *Input) (status int, err erro
 // commands lists every area's commands; an area's first ticket adds its line.
 var commands = [][]Command{
 	serverCommands,
+	serverOIDCCommands,
 	spaceCommands,
 	versionCommands,
 	updateCommands,

@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "invalid_provider",
+    "message": "the discovery document at https://idp.example.com/application/o/koko/.well-known/openid-configuration gives no https:// jwks_uri"
+  }
+}

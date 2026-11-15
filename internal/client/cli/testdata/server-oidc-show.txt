@@ -1,0 +1,6 @@
+Name:           Keycloak
+Issuer:         https://idp.example.com/application/o/koko/
+Client ID:      koko
+Client secret:  set, never shown
+Redirect URI:   https://koko.example.com/auth/oidc/callback
+Set at:         <time>

@@ -1,0 +1,5 @@
+Set the Identity Provider Keycloak, at https://idp.example.com/application/o/koko/.
+Register this redirect URI at the provider:
+https://koko.example.com/auth/oidc/callback
+The first sign-in through it checks the client ID and the client secret.
+No Linked Identity was unlinked.

@@ -1,0 +1,8 @@
+{
+  "issuer": "https://idp.example.com/application/o/koko/",
+  "client_id": "koko",
+  "name": "Keycloak",
+  "redirect_uri": "https://koko.example.com/auth/oidc/callback",
+  "client_secret_set": true,
+  "set_at": "<time>"
+}

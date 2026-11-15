@@ -1,0 +1,2 @@
+Removed the Identity Provider.
+No Linked Identity was unlinked.

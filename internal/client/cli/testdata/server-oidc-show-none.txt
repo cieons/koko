@@ -1,0 +1,3 @@
+No Identity Provider is set. Register koko at the provider as a confidential client, with authorization code and PKCE, the scopes openid profile email and this redirect URI:
+https://koko.example.com/auth/oidc/callback
+Then set it with koko server oidc set --issuer <url> --client-id <id> --name <name> --client-secret.

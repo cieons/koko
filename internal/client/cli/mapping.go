@@ -29,6 +29,7 @@ var mappings = [][]mapping{
 	signinMappings,
 	webMappings,
 	serverMappings,
+	serverOIDCMappings,
 	joinMappings,
 	hostMappings,
 	secretMappings,

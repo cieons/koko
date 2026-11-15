@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "owner_only",
+    "message": "only the Owner or an Administrator sees the Identity Provider"
+  }
+}

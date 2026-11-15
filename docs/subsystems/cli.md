@@ -183,8 +183,8 @@ faults.
 ## The secret-input reader
 
 [`Input.ReadSecret`](../../internal/client/cli/secretinput.go) is the one way
-a command reads a secret input: a Secret value, an Enroll password or a key's
-passphrase, never an argument. The command declares its forms in a
+a command reads a secret input: a Secret value, an Enroll password, a key's
+passphrase or the Identity Provider's client secret, never an argument. The command declares its forms in a
 `SecretInput` (a file flag, a stdin flag, stdin itself, and the forms it reads
 itself, such as `--secret`, for the refusal to name), and the reader reads the
 first one given, byte for byte. With none given it prompts on stderr
@@ -626,6 +626,9 @@ SSH Session through it ends, and never prompts (ADR 0019).
 | `koko server uninstall [--kokod <file>]` | irreversible | none: it runs `kokod uninstall` | `{"removed", "data_dir", "root_key_file", "system_user", "listen_port", "web_listen"}` ([the installer](installer.md#uninstall)). It gets `kokod` as install does, downloading it when none of its build is installed |
 | `koko server show` | read | `server.show` | `{"address", "listen_port", "host_key_fingerprint", "version", "root_key_file", "root_key_id", "data_dir", "web_url", "web_listen", "update_check": {"enabled", "checked_at", "latest", "error"}, "upgrade_way", "last_upgrade"}`, `web_url` and `web_listen` `null` while unset and off ([the deployment afterwards](initialisation.md#the-deployment-afterwards)), the check for a new release, each of its fields but `enabled` `null` while unknown ([the update check](initialisation.md#the-update-check)), how the koko server upgrades, `systemd`, `image` or `none`, and the outcome of its last upgrade, `null` while there is none ([how it upgrades](initialisation.md#how-it-upgrades)) |
 | `koko server set address=<host[:port]>`, `web_url=<https://host[:port]>`, `update_check=on\|off`, `--unset web_url` (Owner, over the Unix socket only) | reversible | `server.set` | the settings as `server show` prints them, as the change left them |
+| `koko server oidc show` (Owner or Administrator) | read | `server.oidc.show` | `{"issuer", "client_id", "name", "redirect_uri", "client_secret_set", "set_at"}`, never the secret, `redirect_uri` `null` while the Web URL is not set; `null` while no Identity Provider is set, which for people names the redirect URI to register ([the Identity Provider](identity.md)) |
+| `koko server oidc set [--issuer <url>] [--client-id <id>] [--name <name>] [--client-secret] [--client-secret-file <file>]` (Owner) | irreversible | `server.oidc.set` | as `server oidc show`, plus `"identities_unlinked"`. `--client-secret` reads the secret through the secret-input reader: `--client-secret-file`, which implies it, else stdin when it is not a terminal, else a prompt with echo off, taking off one line ending; naming no setting is exit 2 ([setting it](identity.md#setting-it)) |
+| `koko server oidc rm` (Owner) | irreversible | `server.oidc.remove` | `{"identities_unlinked"}` |
 | `koko host add <host> address=<address> account=<account> [port=<port>] [space=<space>] [<key>=<value>...] [--note-file <file\|->]` | reversible | `host.add` | the Host: `{"id", "name", "space", "address", "port", "account", "state", "host_key", "attributes": {...}, "note", "created_at", "updated_at"}` ([the record](record.md)) |
 | `koko host add`, with Hosts as JSON on stdin | reversible | `host.add` | the Host, for one object on stdin, or an array of the Hosts, for an array, in the order given ([Hosts as JSON on stdin](record.md#hosts-as-json-on-stdin)) |
 | `koko host ls [<filter>...] [--sort <key>[.desc]]... [--with-note] [--all]` | read | `host.list` | an array of the Hosts the caller can see that match every filter term, by the sort keys and then by name, without `"note"` unless `--with-note`, and without the Retired Hosts unless `--all` ([filtering and sorting](record.md#filtering-and-sorting)) |
