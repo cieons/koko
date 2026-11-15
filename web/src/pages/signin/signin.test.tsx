@@ -10,11 +10,11 @@ import { alerts, renderAt } from "../../test/pages";
 import { bob, serve, world } from "../space/access.fixture";
 import { nextPage } from "./SignInPage";
 
-// Sign in and Set a Password, outside the frame, against a fake koko
+// Sign in and a Sign-in Link's page, outside the frame, against a fake koko
 // server's /auth/ endpoints; and the shell sending a browser whose Sign-in
 // ended to Sign in.
 
-/** secret is a Password Link's secret, the part of the link after #. */
+/** secret is a Sign-in Link's secret, the part of the link after #. */
 const secret = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 /** password is a Password that keeps the rule. */
@@ -49,7 +49,7 @@ test("Sign in is outside the frame, asks for the User name and Password the brow
   expect(field("User name").getAttribute("autocomplete")).toBe("username");
   expect(field("Password").getAttribute("autocomplete")).toBe("current-password");
   expect(field("Password").type).toBe("password");
-  expect(screen.getByText("A lost Password is reset by the Owner or an Administrator, who issues a new Password Link.")).toBeDefined();
+  expect(screen.getByText("The Owner or an Administrator can send you a Sign-in Link.")).toBeDefined();
   await waitFor(() => expect(document.title).toBe("Sign in · koko"));
   expect(api.calls).toEqual([]);
   await expectAccessible();
@@ -101,6 +101,7 @@ test("Sign in follows next on this origin only, and goes to the first place othe
     "hosts",
     "javascript:alert(1)",
     "/signin?next=%2Fhosts",
+    "/link",
     "/password",
   ]) {
     expect(nextPage(elsewhere)).toBe("/");
@@ -184,34 +185,57 @@ test("a write answered signin_required takes the browser to Sign in, which comes
   expect(window.location.pathname + window.location.search).toBe("/signin?next=%2Faccount%3Fall%3D1");
 });
 
-// Set a Password.
+// A Sign-in Link's page.
 
-/** atLink opens the Password Link of secret for bob, and waits for its form. */
-async function atLink(api: FakeApi): Promise<void> {
-  api.on(AuthLink, () => ({ user: "bob", expires_at: "2026-11-10T12:15:00Z" }));
-  renderAt(`/password#${secret}`);
+/** linkFor is /auth/link's answer for bob, who holds no way to sign in unless more says so. */
+function linkFor(more: { password_set?: boolean } = {}) {
+  return { user: "bob", expires_at: "2026-11-10T12:15:00Z", password_set: false, passkeys: 0, identity_linked: false, ...more };
+}
+
+/** atLink opens the Sign-in Link of secret for bob at path, and waits for its form. */
+async function atLink(api: FakeApi, path = "/link", answer = linkFor()): Promise<void> {
+  api.on(AuthLink, () => answer);
+  renderAt(`${path}#${secret}`);
   await screen.findByRole("heading", { level: 1, name: "Set a Password" });
   await screen.findByLabelText("New Password", { selector: "input" });
 }
 
-test("a Password Link's page takes the secret out of the URL at once, and says whom the link is for", async () => {
+test("a Sign-in Link's page takes the secret out of the URL at once, and says whom the link is for", async () => {
   const api = fakeApi();
   await atLink(api);
 
   expect(window.location.hash).toBe("");
-  expect(window.location.pathname).toBe("/password");
+  expect(window.location.pathname).toBe("/link");
   expect(api.requests(AuthLink)).toEqual([{ link: secret }]);
   expect(screen.getByText("For bob.")).toBeDefined();
+  expect(screen.queryByText(/replaces the current Password/)).toBeNull();
   expect(field("New Password").getAttribute("autocomplete")).toBe("new-password");
   expect(field("New Password, again").getAttribute("autocomplete")).toBe("new-password");
   expect(screen.queryByRole("button", { name: /^Language:/ })).toBeNull(); // no frame
   await expectAccessible();
 });
 
-test("a second Password Link opened on the page is read in turn and taken out of the URL", async () => {
+test("a link issued before the Sign-in Link, at /password, opens the same page", async () => {
+  const api = fakeApi();
+  await atLink(api, "/password");
+
+  expect(window.location.hash).toBe("");
+  expect(window.location.pathname).toBe("/password");
+  expect(api.requests(AuthLink)).toEqual([{ link: secret }]);
+  expect(screen.getByText("For bob.")).toBeDefined();
+});
+
+test("for a User who has a Password the page says a Password set here replaces it", async () => {
+  await atLink(fakeApi(), "/link", linkFor({ password_set: true }));
+
+  expect(screen.getByText("A Password set here replaces the current Password of bob.")).toBeDefined();
+  await expectAccessible();
+});
+
+test("a second Sign-in Link opened on the page is read in turn and taken out of the URL", async () => {
   const api = fakeApi();
   await atLink(api);
-  api.on(AuthLink, ({ link }) => ({ user: link === "SECONDLINKSECONDLINKSECOND" ? "carol" : "bob", expires_at: "" }));
+  api.on(AuthLink, ({ link }) => ({ ...linkFor(), user: link === "SECONDLINKSECONDLINKSECOND" ? "carol" : "bob" }));
 
   type("New Password", "typed for the first link");
   window.location.hash = "SECONDLINKSECONDLINKSECOND";
@@ -287,21 +311,21 @@ test("a Password refused by the koko server shows why in place, the form kept", 
   expect(field("New Password").value).toBe(password);
 });
 
-test("a Password Link used already says so in place of the form, with Go to Sign in", async () => {
+test("a Sign-in Link used already says so in place of the form, with Go to Sign in", async () => {
   const api = fakeApi();
   api.on(AuthLink, () => {
     throw refusal("link_used", 410);
   });
-  renderAt(`/password#${secret}`);
+  renderAt(`/link#${secret}`);
 
-  expect(await screen.findByRole("heading", { level: 1, name: "This Password Link was used already" })).toBeDefined();
+  expect(await screen.findByRole("heading", { level: 1, name: "This Sign-in Link was used already" })).toBeDefined();
   expect(screen.queryByLabelText("New Password")).toBeNull();
   await expectAccessible();
   fireEvent.click(screen.getByRole("link", { name: "Go to Sign in" }));
   expect(await screen.findByRole("heading", { level: 1, name: "Sign in" })).toBeDefined();
 });
 
-test("a Password Link that expired as the form was filled says so in place of the form", async () => {
+test("a Sign-in Link that expired as the form was filled says so in place of the form", async () => {
   const api = fakeApi();
   api.on(AuthPassword, () => {
     throw refusal("link_invalid", 404);
@@ -312,28 +336,28 @@ test("a Password Link that expired as the form was filled says so in place of th
   type("New Password, again", password);
   fireEvent.click(screen.getByRole("button", { name: "Set Password and sign in" }));
 
-  expect(await screen.findByRole("heading", { level: 1, name: "This Password Link no longer works" })).toBeDefined();
+  expect(await screen.findByRole("heading", { level: 1, name: "This Sign-in Link no longer works" })).toBeDefined();
   expect(screen.getByRole("link", { name: "Go to Sign in" })).toBeDefined();
 });
 
-test("the Password page without a link says the link no longer works, and calls nothing", async () => {
+test("the link's page without a link says the link no longer works, and calls nothing", async () => {
   const api = fakeApi();
-  renderAt("/password");
+  renderAt("/link");
 
-  expect(await screen.findByRole("heading", { level: 1, name: "This Password Link no longer works" })).toBeDefined();
+  expect(await screen.findByRole("heading", { level: 1, name: "This Sign-in Link no longer works" })).toBeDefined();
   expect(api.calls).toEqual([]);
 });
 
-test("a Password Link that could not be read says why, with Try again", async () => {
+test("a Sign-in Link that could not be read says why, with Try again", async () => {
   const api = fakeApi();
   let refuse = true;
   api.on(AuthLink, () => {
     if (refuse) {
       throw refusal("too_many_attempts", 429, 60);
     }
-    return { user: "bob", expires_at: "" };
+    return linkFor();
   });
-  renderAt(`/password#${secret}`);
+  renderAt(`/link#${secret}`);
 
   await waitFor(() =>
     expect(alerts()).toEqual(["Too many failed attempts. Try again in 1 minute."]),

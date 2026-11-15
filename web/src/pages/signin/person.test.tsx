@@ -11,7 +11,7 @@ import { actAs, renderAt } from "../../test/pages";
 import { alice, passwordLink, serve, type World, world } from "../space/access.fixture";
 import { serveSignIns, signIns } from "./signins.fixture";
 
-// The Owner's Password Links and Sign-ins of others, against a fake koko
+// The Owner's Sign-in Links and Sign-ins of others, against a fake koko
 // server: a person's panel with its Password and Browser Sign-ins, Invite's
 // way in and Valid for, and Valid for on Add device.
 
@@ -48,12 +48,12 @@ function chooseValidFor(dialog: HTMLElement, option: string): void {
 
 // A person's panel.
 
-test("a person's panel shows when their Password was set, with Issue Password Link, Remove Password and their Sign-ins", async () => {
+test("a person's panel shows when their Password was set, with Issue Sign-in Link, Remove Password and their Sign-ins", async () => {
   const api = await asOwner("/access/people/bob");
 
   const panel = await openPanel("bob");
   expect(within(panel).getByText("A Password was set on 2026-11-04.")).toBeDefined();
-  expect(within(panel).getByRole("button", { name: "Issue Password Link" })).toBeDefined();
+  expect(within(panel).getByRole("button", { name: "Issue Sign-in Link" })).toBeDefined();
   expect(within(panel).getByRole("button", { name: "Remove Password" })).toBeDefined();
   await waitFor(() => expect(signinsIn(panel)).toHaveLength(2));
   expect(signinsIn(panel)[0]).toMatch(/^Firefox on Linux203\.0\.113\.7/);
@@ -70,21 +70,21 @@ test("a User without a Password is told so, and offered no Remove Password", asy
   expect(await within(panel).findByText("No browser is signed in as carol.")).toBeDefined();
 });
 
-test("Issue Password Link, valid for the time chosen, shows the link once with Copy and its time left", async () => {
+test("Issue Sign-in Link, valid for the time chosen, shows the link once with Copy and its time left", async () => {
   const writeText = clipboard();
   const api = await asOwner("/access/people/bob");
   const panel = await openPanel("bob");
 
-  fireEvent.click(within(panel).getByRole("button", { name: "Issue Password Link" }));
-  const dialog = await screen.findByRole("dialog", { name: "Password Link for bob" });
+  fireEvent.click(within(panel).getByRole("button", { name: "Issue Sign-in Link" }));
+  const dialog = await screen.findByRole("dialog", { name: "Sign-in Link for bob" });
   expect(within(dialog).getByText("An earlier link that was not used stops working.")).toBeDefined();
   expect(within(dialog).getByRole("radio", { name: "15 minutes" }).getAttribute("aria-checked")).toBe("true");
   await expectAccessible();
   chooseValidFor(dialog, "7 days");
-  fireEvent.click(within(dialog).getByRole("button", { name: "Issue Password Link" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Issue Sign-in Link" }));
 
-  const done = await screen.findByRole("dialog", { name: "The Password Link is ready" });
-  const line = within(done).getByRole("region", { name: "Password Link" });
+  const done = await screen.findByRole("dialog", { name: "The Sign-in Link is ready" });
+  const line = within(done).getByRole("region", { name: "Sign-in Link" });
   expect(line.textContent).toContain(passwordLink("bob"));
   expect(line.textContent).toContain("7 days left");
   expect(api.requests(PasswordLinkIssue)).toEqual([{ user: "bob", valid_for: 604_800 }]);
@@ -94,24 +94,24 @@ test("Issue Password Link, valid for the time chosen, shows the link once with C
   await waitFor(() => expect(writeText).toHaveBeenCalledWith(passwordLink("bob")));
 
   fireEvent.click(within(done).getByRole("button", { name: "Done" }));
-  await waitFor(() => expect(screen.queryByRole("dialog", { name: "The Password Link is ready" })).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "The Sign-in Link is ready" })).toBeNull());
   expect(document.body.textContent).not.toContain(passwordLink("bob"));
 });
 
-test("Issue Password Link for 15 minutes sends the koko server's own validity, left out", async () => {
+test("Issue Sign-in Link for 15 minutes sends the koko server's own validity, left out", async () => {
   const api = await asOwner("/access/people/carol");
   const panel = await openPanel("carol");
 
-  fireEvent.click(within(panel).getByRole("button", { name: "Issue Password Link" }));
-  const dialog = await screen.findByRole("dialog", { name: "Password Link for carol" });
-  fireEvent.click(within(dialog).getByRole("button", { name: "Issue Password Link" }));
+  fireEvent.click(within(panel).getByRole("button", { name: "Issue Sign-in Link" }));
+  const dialog = await screen.findByRole("dialog", { name: "Sign-in Link for carol" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Issue Sign-in Link" }));
 
-  const done = await screen.findByRole("dialog", { name: "The Password Link is ready" });
-  expect(within(done).getByRole("region", { name: "Password Link" }).textContent).toContain("15:00 left");
+  const done = await screen.findByRole("dialog", { name: "The Sign-in Link is ready" });
+  expect(within(done).getByRole("region", { name: "Sign-in Link" }).textContent).toContain("15:00 left");
   expect(api.requests(PasswordLinkIssue)).toEqual([{ user: "carol" }]);
 });
 
-test("without a Web URL Issue Password Link is disabled, and the panel says why", async () => {
+test("without a Web URL Issue Sign-in Link is disabled, and the panel says why", async () => {
   const w = world();
   w.webURL = null;
   await asOwner("/access/people/bob", w);
@@ -119,10 +119,10 @@ test("without a Web URL Issue Password Link is disabled, and the panel says why"
 
   expect(
     await within(panel).findByText(
-      "A Password Link names the Web URL, which is not set. Set it with koko server set web_url= on the koko server's machine.",
+      "A Sign-in Link names the Web URL, which is not set. Set it with koko server set web_url= on the koko server's machine.",
     ),
   ).toBeDefined();
-  expect(within(panel).getByRole("button", { name: "Issue Password Link" }).hasAttribute("disabled")).toBe(true);
+  expect(within(panel).getByRole("button", { name: "Issue Sign-in Link" }).hasAttribute("disabled")).toBe(true);
 });
 
 test("Remove Password asks first, then the panel shows no Password and Access no longer says Password set", async () => {
@@ -133,7 +133,7 @@ test("Remove Password asks first, then the panel shows no Password and Access no
   const asking = await screen.findByRole("alertdialog", { name: "Remove the Password of bob" });
   expect(
     within(asking).getByText(
-      "The Sign-ins of bob end, and an unused Password Link stops working. bob and their devices stay.",
+      "The Sign-ins of bob made with the Password end, and an unused Sign-in Link stops working. bob, their devices and their other ways to sign in stay.",
     ),
   ).toBeDefined();
   await expectAccessible();
@@ -147,13 +147,19 @@ test("Remove Password asks first, then the panel shows no Password and Access no
   await waitFor(() => expect(screen.getByRole("link", { name: /^bob/ }).textContent).not.toContain("Password set"));
 });
 
-test("Remove Password on the Owner's own panel, from a browser signed in with it, says this browser is signed out", async () => {
+test.each([
+  { method: "password", here: true },
+  { method: "passkey", here: false },
+])("Remove Password on the Owner's own panel, from a browser signed in with a $method, says whether this browser is signed out", async ({
+  method,
+  here,
+}) => {
   const api = fakeApi();
   const w = world();
   w.users = w.users.map((u) => (u.name === "alice" ? { ...u, password_set_at: "2026-11-04T09:00:00Z" } : u));
   api.on(UserCurrent, () => ({
     user: alice,
-    signin: { id: "signin_alice_1", client: "Safari on macOS", browser: "Safari", system: "macOS", method: "password", started_at: "", expires_at: "" },
+    signin: { id: "signin_alice_1", client: "Safari on macOS", browser: "Safari", system: "macOS", method, started_at: "", expires_at: "" },
   }));
   serve(api, w);
   serveSignIns(api, signIns(), alice);
@@ -163,7 +169,8 @@ test("Remove Password on the Owner's own panel, from a browser signed in with it
   fireEvent.click(within(panel).getByRole("button", { name: "Remove Password" }));
 
   const asking = await screen.findByRole("alertdialog", { name: "Remove the Password of alice" });
-  expect(asking.textContent).toContain("this browser's among them, so this browser is signed out");
+  expect(asking.textContent?.includes("this browser's among them, so this browser is signed out")).toBe(here);
+  expect(asking.textContent).toContain("The Sign-ins of alice made with the Password end");
 });
 
 test("Remove Password refused shows why in the confirmation", async () => {
@@ -199,7 +206,7 @@ test("the Owner revokes another User's Sign-in from their panel, which says that
 
 // Invite.
 
-test("Invite in a browser, valid for the time chosen, shows the Password Link once", async () => {
+test("Invite in a browser, valid for the time chosen, shows the Sign-in Link once", async () => {
   const api = await asOwner("/access");
   await screen.findByRole("link", { name: /^bob/ });
 
@@ -208,6 +215,7 @@ test("Invite in a browser, valid for the time chosen, shows the Password Link on
   expect((within(dialog).getByRole("radio", { name: "In a terminal" }) as HTMLInputElement).checked).toBe(true);
   expect(within(dialog).getByRole("radio", { name: "15 minutes" }).getAttribute("aria-checked")).toBe("true");
   await waitFor(() => expect(within(dialog).getByRole("radio", { name: "In a browser" }).hasAttribute("disabled")).toBe(false));
+  expect(within(dialog).getByText("A Sign-in Link to sign in to the web UI.")).toBeDefined();
   await expectAccessible();
   fireEvent.change(within(dialog).getByRole("textbox", { name: "Name" }), { target: { value: "erin" } });
   fireEvent.click(within(dialog).getByRole("radio", { name: "In a browser" }));
@@ -215,7 +223,7 @@ test("Invite in a browser, valid for the time chosen, shows the Password Link on
   fireEvent.click(within(dialog).getByRole("button", { name: "Invite" }));
 
   const done = await screen.findByRole("dialog", { name: "erin is invited" });
-  const line = within(done).getByRole("region", { name: "Password Link" });
+  const line = within(done).getByRole("region", { name: "Sign-in Link" });
   expect(line.textContent).toContain(passwordLink("erin"));
   expect(line.textContent).toContain("7 days left");
   expect(within(done).queryByRole("region", { name: "Join Code" })).toBeNull();
@@ -249,7 +257,7 @@ test("without a Web URL Invite's In a browser is disabled, and says why", async 
 
   const browser = await within(dialog).findByRole("radio", {
     name: "In a browser",
-    description: /^A Password Link names the Web URL, which is not set\./,
+    description: /^A Sign-in Link names the Web URL, which is not set\./,
   });
   expect(browser.hasAttribute("disabled")).toBe(true);
   await expectAccessible();

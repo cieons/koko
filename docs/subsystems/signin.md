@@ -266,7 +266,7 @@ name who acted (`issued_by`, `revoked_by`, `removed_by`, `ended_by`,
 
 ## The web UI's pages
 
-How each looks is [the web UI's design](../web-design.md#sign-in-and-set-a-password-signin-password).
+How each looks is [the web UI's design](../web-design.md#sign-in-and-a-sign-in-links-page-signin-link).
 
 - **Sign in** ([`SignInPage`](../../web/src/pages/signin/SignInPage.tsx),
   `/signin`), outside the frame: the User name and Password (`autocomplete`
@@ -274,26 +274,31 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-set-a-passw
   page `next` names, followed only when it is a path of this origin, else
   `/`, replacing the history entry. A refusal shows above the fields:
   `wrong_password`, or `too_many_attempts` with the minutes its
-  `Retry-After` leaves. One line says the Owner resets a lost Password.
+  `Retry-After` leaves. One line says the Owner or an Administrator can
+  send a Sign-in Link.
   The shell sends a browser here, with `next`, when any call is answered
   `signin_required` ([the web UI shell](web-shell.md#the-states-every-screen-has));
   `koko web` never answers so, so it never sends a browser there. A `next`
-  naming Sign in or Set a Password is not followed either.
-- **Set a Password** ([`PasswordPage`](../../web/src/pages/signin/PasswordPage.tsx),
-  `/password`), outside the frame, which a Password Link opens: its route
+  naming Sign in or a Sign-in Link's page is not followed either.
+- **A Sign-in Link's page** ([`LinkPage`](../../web/src/pages/signin/LinkPage.tsx),
+  `/link`, and `/password` for a link issued before the Sign-in Link),
+  outside the frame, which a Sign-in Link opens: its route
   ([`takingLinkSecret`](../../web/src/pages/signin/linkSecret.tsx)), part of
   the first load, takes the secret from the fragment and replaces the URL
   without it at once, before the page's chunk loads, and again when
   another link is opened on the page; the page then, afresh for each link,
-  asks `/auth/link` whom the link is for, and shows "For <name>." with the
-  new Password twice (`new-password`), a count toward 15 characters under
+  asks `/auth/link` whom the link is for, and shows Set a Password: "For
+  <name>.", a line saying a Password set there replaces theirs when
+  `password_set` says they have one, and the new Password twice
+  (`new-password`), a count toward 15 characters under
   the first ([`PasswordFields`](../../web/src/pages/signin/PasswordFields.tsx)),
   counted as the koko server counts them, in code points after NFC. The
   form checks the rule and that the two agree when submitted, then posts
   the link and the Password to `/auth/password`, which signs this browser
   in, and goes to `/`. `link_used` and `link_invalid`, from either call,
   and a URL with no fragment, replace the form with what happened and Go
-  to Sign in.
+  to Sign in. A Password is the one way the page offers until the passkey
+  and Identity Provider tickets of spec #228.
 - Both show koko's wordmark, one panel and the two languages as buttons
   ([`Door`](../../web/src/pages/signin/Door.tsx)).
 - **Account's Password** ([`ChangePassword`](../../web/src/pages/signin/ChangePassword.tsx)),
@@ -314,17 +319,18 @@ How each looks is [the web UI's design](../web-design.md#sign-in-and-set-a-passw
 - **A person's panel**, the Owner's alone
   ([`PersonPassword`](../../web/src/pages/signin/PersonPassword.tsx)):
   when the User's Password was set (`user.list`'s `password_set_at`), or
-  that they have none; **Issue Password Link** (`password.link`), valid
+  that they have none; **Issue Sign-in Link** (`password.link`), valid
   for the time chosen and shown once, disabled, saying why, while
   `server.show` answers no Web URL ([`useWebURL`](../../web/src/pages/signin/webURL.ts)),
   its lead saying that an earlier unused link, an Invite's included, stops
-  working; and **Remove Password** (`password.remove`), asking first, and
-  saying, for the Owner's own from a browser signed in with it, that this
-  browser is signed out too; after it the panel and Access show none, the
+  working; and **Remove Password** (`password.remove`), asking first,
+  saying that the Sign-ins made with the Password end and, for one's own
+  from a browser signed in with it (`user.current`'s `signin.method`), that
+  this browser is signed out too; after it the panel and Access show none, the
   Sign-ins are read again, and the section's heading takes the focus. Their
   Browser Sign-ins follow, as on Account, Revoke saying that User is
-  signed out of that browser. Invite's In a browser issues a Password
-  Link the same way ([the Access and Account pages](access-pages.md#a-join-code-or-password-link-on-screen)).
+  signed out of that browser. Invite's In a browser issues a Sign-in
+  Link the same way ([the Access and Account pages](access-pages.md#a-join-code-or-sign-in-link-on-screen)).
 - **Sign out**, by Account's title and in the account panel for a browser
   signed in with a Password, posts to `/auth/signout` and goes to Sign in,
   replacing the history entry ([`useSignOut`](../../web/src/shell/signOut.ts)).
@@ -429,9 +435,10 @@ or an `/auth/` body.
   fields checked on submit, signing in and following `next`, `next` of
   another origin or outside the frame never followed, `wrong_password` and
   `too_many_attempts` with its minutes, the language buttons; a read and a
-  write answered `signin_required` going to Sign in with `next`; Set a
-  Password taking the secret out of the URL, a second link read afresh,
-  naming the User, its count in code points after NFC and past 128, the rule and the second field checked on submit, setting the
+  write answered `signin_required` going to Sign in with `next`; a Sign-in
+  Link's page at `/link` and at `/password` taking the secret out of the
+  URL, a second link read afresh, naming the User, saying a Password set
+  there replaces theirs when they have one, its count in code points after NFC and past 128, the rule and the second field checked on submit, setting the
   Password and signing in, `invalid_password` in place, `link_used` and
   `link_invalid` from either call, no fragment, and a failed read with Try
   again.
@@ -443,17 +450,19 @@ or an `/auth/` body.
   the Local caller no form and no Sign out; Revoke asking first, its
   consequence and the focus on the list's heading; revoking this browser's
   own going to Sign in; a refused revoke reading the list again; the ended
-  Sign-ins with why; none; a browser koko does not recognise named
+  Sign-ins with why, those a passkey, a Linked Identity or a Sign-in Link
+  ended among them, in both languages; none; a browser koko does not recognise named
   Browser; in Chinese, each browser named in Chinese on Account, in the
   Browser Sign-ins, Revoke and its notice and the account panel; Sign out
   on Account and in the account panel, its failure in the panel.
 - [`person.test.tsx`](../../web/src/pages/signin/person.test.tsx): a
-  person's panel with its Password, Issue Password Link and Remove
-  Password, and their Sign-ins; a User without a Password; Issue Password
+  person's panel with its Password, Issue Sign-in Link and Remove
+  Password, and their Sign-ins; a User without a Password; Issue Sign-in
   Link for 7 days, shown once with Copy and its time left, gone once
   closed, and for 15 minutes with `valid_for` left out; no Web URL;
   Remove Password asking first, then none in the panel and on Access with
   the focus on the heading, the Owner's own from a browser signed in with
-  it, and refused; another User's Sign-in revoked; Invite in a browser for
-  7 days, and in a terminal for 1 day; no Web URL for Invite; Add device
+  it and from one signed in with a passkey, which stays, and refused;
+  another User's Sign-in revoked; Invite in a browser for 7 days, with its
+  hint, and in a terminal for 1 day; no Web URL for Invite; Add device
   for 1 hour.

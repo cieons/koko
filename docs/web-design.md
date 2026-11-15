@@ -77,7 +77,7 @@ parts of it, which are stand-ins:
 5. An expiry date is an Attribute like any other. Nothing counts down,
    warns or sums costs.
 6. The server's address appears only where a person copies it, such as in
-   a Password Link.
+   a Sign-in Link.
 7. Avoid unnecessary secondary labels and descriptions; let the layout do
    the explaining (#212). A lead, hint, description, empty-state sentence
    or secondary label stays only when the screen cannot say it through its
@@ -333,7 +333,7 @@ HeroUI parts, as the preview composes them:
 | Selection bar | an island at the foot, `Button`s | The count, Select all, the actions and Done of [the Select mode](#the-select-mode); centred in the room beside the rail on a desktop, over the foot bar on a phone |
 | Copy | `Button` | Becomes "Copied" for 1.6 s, announced politely |
 | Command line | a `<code>` in an inset block | A `$`, the command, Copy; a line for a file has no `$` |
-| Shown once | an inset block with a dashed accent edge | A Join Code or Password Link, its time left counting down, Copy, and the line that it is not shown again |
+| Shown once | an inset block with a dashed accent edge | A Join Code or Sign-in Link, its time left counting down, Copy, and the line that it is not shown again |
 | State mark | a `<span>` | Managed: a filled green dot with a halo. Registered: a hollow dot. Retired: a short bar, muted. A terminal's tab: Connecting, a hollow ring in `--muted`; Connected, the Managed mark; Reconnecting, a dot half filled in `--wait`; Ended, a short bar in `--muted`; Refused, or not reached, a ✕ in the danger colour. Always with its word, shown or for a screen reader |
 | Notice | `toast` | The outcome of a call that changed something, bottom end; a danger toast only for a refusal whose form closed before it came |
 | Refusal | a `role="alert"` block | The koko server's message, in the form or dialog that made the call |
@@ -381,10 +381,10 @@ closes it, unless closing would lose something.
 | --- | --- |
 | A popover or menu: Filter, Columns, a select's or searchable choice's list, a row menu, the frame's menus, the account panel | Closes it, always |
 | The rail laid over the page, under 1280px wide | Closes it, always, as Escape and a place chosen do |
-| A short form or a side panel with a form: Add Host, Edit, Enroll, Add Service, a Service's panel, Rename, Move, Add Secret, Set value, Add Space, the first step of Invite, Add device and a Password Link; a Space's panel, for its Add Members field; a person's panel, for its Add to a Space field | Closes it while nothing in it has changed; once something has been typed or chosen, does nothing |
+| A short form or a side panel with a form: Add Host, Edit, Enroll, Add Service, a Service's panel, Rename, Move, Add Secret, Set value, Add Space, the first step of Invite, Add device and a Sign-in Link; a Space's panel, for its Add Members field; a person's panel, for its Add to a Space field | Closes it while nothing in it has changed; once something has been typed or chosen, does nothing |
 | A confirmation | Cancels it, as Cancel does, unless its call runs; a name typed in it to confirm is not kept |
 | A batch's dialog ([the Select mode](#the-select-mode)) | A form (Move, Attribute) as a short form; a confirmation (Retire, Delete) as one, but not once the count has been typed; a refused batch's list of records at fault closes, as Cancel does |
-| A value shown once: a Join Code or a Password Link | Does nothing, since the value cannot be shown again; Done, the close button and Escape close it |
+| A value shown once: a Join Code or a Sign-in Link | Does nothing, since the value cannot be shown again; Done, the close button and Escape close it |
 | A side panel without a form: a Service on a Retired Host | Closes it, always |
 
 A form that has changed is not closed by a click beside it, rather than
@@ -432,7 +432,7 @@ The preview's mock answers at once, so these are specified here:
 | `/access/people/<name>` | none | A side panel over Access: the Owner and the Administrators alone |
 | `/access/spaces/<name>` | `/spaces/<name>` | A side panel over Access |
 | `/account` | `/devices` | One's own devices and Sign-ins live here |
-| `/signin`, `/password` | none | Outside the frame |
+| `/signin`, `/link` | none | Outside the frame; `/password` opens a Sign-in Link issued before the Sign-in Link, as `/link` does |
 | `/terminal` | none | The User's Workspace: `?tab=2` names the tab shown, counted from 1 |
 | `/hosts/<name>/terminal` | none | Adds a tab for the Host to the Workspace, then shows it on `/terminal` |
 | `/` | `/` | Goes to `/hosts`, keeping its query |
@@ -1009,7 +1009,7 @@ For the Owner and an Administrator:
   shared Spaces.", under **Add to a Space**, a searchable choice of the
   shared Spaces they are not in, each Space a link to its panel with
   **Take out**; and the Personal Space's counts; Devices with Add device and Revoke, and "Show
-  Revoked devices"; Password ("set on <date>" or none) with Issue Password
+  Revoked devices"; Password ("set on <date>" or none) with Issue Sign-in
   Link and Remove Password; Browser Sign-ins with Revoke; for the Owner,
   **Make an Administrator**, which asks first and lists the User's live
   devices, each with who added it, and live Sign-ins, or **Make a
@@ -1047,7 +1047,7 @@ no person's panel: `/access/people/<name>` shows "Page not found" to them.
 ### Invite (dialog, two steps)
 
 1. Name; "How they will use koko" as two radio cards, **In a terminal** (a
-   Join Code) and **In a browser** (a Password Link, disabled with the
+   Join Code) and **In a browser** (a Sign-in Link, disabled with the
    reason while the Web URL is unset); **Valid for** as four segments (15
    minutes, 1 hour, 1 day, 7 days); **Spaces**, the shared Spaces to make
    them a Member of, a searchable choice of several, as Add Members is.
@@ -1073,16 +1073,20 @@ handle that failure; the build does.
 - For the Local caller there is no device to mark and no Sign-in; the
   Owner's own last device asks for its name there too.
 
-### Sign in and Set a Password (`/signin`, `/password`)
+### Sign in and a Sign-in Link's page (`/signin`, `/link`)
 
 Outside the frame: the wordmark, then one panel 26rem wide, then the two
 languages as buttons.
 
 - **Sign in**: name, Password, **Sign in**; a refusal above the fields
-  (`wrong_password`, `too_many_attempts` with the minutes); one line that
-  the Owner or an Administrator resets a lost Password.
-- **Set a Password**: "For <name>."; New Password with a count toward 15;
-  again; **Set Password and sign in**. `link_used` and `link_invalid` each
+  (`wrong_password`, `too_many_attempts` with the minutes); one line, "The
+  Owner or an Administrator can send you a Sign-in Link."
+- **A Sign-in Link's page** (`/link`, and `/password` for a link issued
+  before it), titled Set a Password: "For <name>."; when they have a
+  Password, a line that one set here replaces it; New Password with a
+  count toward 15; again; **Set Password and sign in**. A Password is the
+  one way it offers until the passkey and Identity Provider tickets of spec
+  #228. `link_used` and `link_invalid` each
   replace the form with what happened and "Go to Sign in".
 
 ### Page not found

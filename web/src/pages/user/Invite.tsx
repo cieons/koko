@@ -15,20 +15,20 @@ import {
   defaultValidFor,
   IssueDialog,
   JoinCodeLine,
-  PasswordLinkLine,
+  SignInLinkLine,
   type ValidFor,
   ValidForChoice,
   validForRequest,
 } from "../device/IssueDialog";
 import { useWebURL } from "../signin/webURL";
 
-/** Method is how the invited person will use koko: a Join Code for the CLI, or a Password Link for a browser. */
+/** Method is how the invited person will use koko: a Join Code for the CLI, or a Sign-in Link for a browser. */
 type Method = "terminal" | "browser";
 
 /** defaultMethod is the Method an Invite starts at. */
 const defaultMethod: Method = "terminal";
 
-/** Issued is what an Invite issued, shown once: a Join Code or a Password Link. */
+/** Issued is what an Invite issued, shown once: a Join Code or a Sign-in Link. */
 type Issued = { joinCode: JoinCode } | { link: PasswordLink };
 
 /**
@@ -46,7 +46,7 @@ interface Invited {
 /**
  * Invite invites a User in two steps (docs/web-design.md, "Invite"): their
  * name; how they will use koko, in a terminal (a Join Code) or in a
- * browser (a Password Link, which needs the Web URL, from server.show, and
+ * browser (a Sign-in Link, which needs the Web URL, from server.show, and
  * is disabled with the reason while it is unset); Valid for; and the shared
  * Spaces to make them a Member of, a searchable choice of several; then
  * the code or link, shown once. It calls user.invite, then
@@ -140,7 +140,7 @@ export function Invite({
                 expired={t("user.invite.expired", { name: invited.user })}
               />
             ) : (
-              <PasswordLinkLine
+              <SignInLinkLine
                 link={issued.link}
                 validFor={invited.validFor}
                 expired={t("user.invite.linkExpired", { name: invited.user })}

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AuthSignIn } from "../../api/signin";
 import { post } from "../../client";
 import { useCount, useT } from "../../shell/i18n";
-import { navigate, passwordPage, signInPage, useSearchParams } from "../../shell/router";
+import { linkPage, navigate, passwordPage, signInPage, useSearchParams } from "../../shell/router";
 import { Field } from "../../ui/fields";
 import { Form } from "../../ui/Form";
 import { AlertLine } from "../../ui/states";
@@ -13,11 +13,12 @@ import { refusalText } from "./refusal";
 
 /**
  * SignInPage is Sign in, outside the frame (docs/web-design.md, "Sign in
- * and Set a Password"): a User name and Password, posted to /auth/signin,
+ * and a Sign-in Link's page"): a User name and Password, posted to /auth/signin,
  * which sets the Sign-in cookie; then the page next names, on this origin
  * only, or the first place. A refusal shows above the fields, and
- * too_many_attempts says in how many minutes to try again. A lost Password
- * is reset by the Owner, which one line says.
+ * too_many_attempts says in how many minutes to try again. One line says
+ * the Owner or an Administrator can send a Sign-in Link, for a lost
+ * Password.
  */
 export function SignInPage() {
   const t = useT();
@@ -82,7 +83,7 @@ export function nextPage(next: string | null): string {
   }
   try {
     const url = new URL(next, window.location.origin);
-    const outside = url.pathname === signInPage || url.pathname === passwordPage;
+    const outside = [signInPage, linkPage, passwordPage].includes(url.pathname);
     if (url.origin === window.location.origin && next.startsWith("/") && !outside) {
       return url.pathname + url.search + url.hash;
     }

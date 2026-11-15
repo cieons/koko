@@ -81,7 +81,7 @@ in every one, a line saying so), and those they are in, each a link to its
 panel with **Take out**; for the Owner and an Administrator, "Every
 Space" in place of those; their Personal Space's
 counts with a link to its Hosts; their devices; their Password, with Issue
-Password Link and Remove Password; their Browser Sign-ins; for the Owner,
+Sign-in Link and Remove Password; their Browser Sign-ins; for the Owner,
 **Make an Administrator** for a Member or **Make a Member** for an
 Administrator; and Remove User. It finds the User in `user.list` with
 `all`, so a Removed User's panel opens too, its subtitle saying when they
@@ -93,7 +93,7 @@ themselves, the Owner on anyone, and an Administrator on a Member. Where
 the caller may not act on the person, as an Administrator viewing the
 Owner or another Administrator, the panel shows their role, Spaces,
 devices and Sign-ins and none of the actions on them: no Add device,
-Revoke, Issue Password Link, Remove Password, Remove User, Make an
+Revoke, Issue Sign-in Link, Remove Password, Remove User, Make an
 Administrator or Make a Member. One's own panel offers what the caller may
 do on themselves, and neither role action nor Remove User.
 
@@ -141,8 +141,8 @@ and replacing the history entry ([`movedTo`](../../web/src/shell/router.tsx)).
 | Make a User a Member (`space.member.add`): Add to a Space in a person's panel, one Space chosen in a searchable choice of those they are not in; or Add Members in a Space's, several Users chosen in a searchable choice among those who are neither the Owner, a Removed User nor a Member already (`user.list`), in one call | the Owner or an Administrator, on a shared Space | no |
 | Take a Member out (`space.member.remove`): Take out, in a person's panel or a Space's | the Owner or an Administrator, on a shared Space | no |
 | Invite a User (`user.invite`, with `web` for In a browser and `valid_for` unless 15 minutes, then `space.member.add` once per Space chosen) | the Owner or an Administrator | no |
-| Issue a Password Link (`password.link`, with `valid_for` unless 15 minutes), in a person's panel; disabled, saying why, while the Web URL is unset (`server.show`) | anyone for themselves; the Owner for anyone; an Administrator for a Member; each for a User not Removed | no |
-| Remove a Password (`password.remove`), in a person's panel | anyone for their own; the Owner for anyone's; an Administrator for a Member's; each for a User with one | yes |
+| Issue a Sign-in Link (`password.link`, with `valid_for` unless 15 minutes), in a person's panel; disabled, saying why, while the Web URL is unset (`server.show`) | anyone for themselves; the Owner for anyone; an Administrator for a Member; each for a User not Removed | no |
+| Remove a Password (`password.remove`), ending the Sign-ins made with it, in a person's panel | anyone for their own; the Owner for anyone's; an Administrator for a Member's; each for a User with one | yes |
 | Revoke a live Sign-in (`signin.revoke`), on Account and in a person's panel | anyone for their own; the Owner for anyone's; an Administrator for a Member's | yes |
 | Make a Member an Administrator (`user.promote`), in a person's panel, the question listing their live devices with who added each and their live Sign-ins | the Owner | yes |
 | Make an Administrator a Member (`user.demote`), in a person's panel | the Owner | no |
@@ -175,9 +175,9 @@ list instead ([`useRowFocus`](../../web/src/ui/focus.ts)): once its row
 goes, the next row's Take out takes it, the one before for the last row,
 or the add field, Add to a Space or Add Members, once the list is empty.
 
-## A Join Code or Password Link on screen
+## A Join Code or Sign-in Link on screen
 
-Invite, Add device and Issue Password Link issue in two steps
+Invite, Add device and Issue Sign-in Link issue in two steps
 ([`IssueDialog`](../../web/src/pages/device/IssueDialog.tsx)): the first
 takes the new User's name, how they will use koko and the shared Spaces to
 make them a Member of, chosen in a searchable choice of several, or the
@@ -187,7 +187,7 @@ device's optional name, and each takes
 server's own 15 minutes (#108, ADR 0044), which a request leaves out;
 another carries `valid_for` in seconds. Issuing never asks. The second shows the
 Join Code ([`JoinCodeLine`](../../web/src/pages/device/IssueDialog.tsx)) or
-the Password Link ([`PasswordLinkLine`](../../web/src/pages/device/IssueDialog.tsx))
+the Sign-in Link ([`SignInLinkLine`](../../web/src/pages/device/IssueDialog.tsx))
 once, in the shell's [line shown once](web-shell.md#shown-once): the
 `koko join koko_...` line or the link, Copy, and the time left of the
 validity chosen, counted on the browser's clock from when the line
@@ -195,7 +195,7 @@ showed, counting the validity the line was issued for. The focus moves to
 Done, since the button that issued goes with the first step.
 
 Invite's **How they will use koko** is two radio cards: In a terminal, a
-Join Code, and In a browser, a Password Link (`web`), disabled with the
+Join Code, and In a browser, a Sign-in Link (`web`), disabled with the
 reason while `server.show` answers no Web URL
 ([`useWebURL`](../../web/src/pages/signin/webURL.ts)).
 It calls `user.invite`, then `space.member.add` once per Space chosen. A
@@ -209,7 +209,7 @@ URL or the browser's storage. Closing the dialog or leaving the page
 within the web UI loses it; the browser leaving the page (`pagehide`)
 forgets it, and the second step then says it is no longer shown; once its
 time ran out, the second step says it expired. Either way it says how to
-issue a new one: Add device, or Issue Password Link.
+issue a new one: Add device, or Issue Sign-in Link.
 
 ## Verifying
 

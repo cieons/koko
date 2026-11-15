@@ -141,6 +141,9 @@ const endReasons: Readonly<Record<string, MessageKey>> = {
   revoked: "signin.end.revoked",
   password_changed: "signin.end.password_changed",
   password_removed: "signin.end.password_removed",
+  passkey_removed: "signin.end.passkey_removed",
+  identity_unlinked: "signin.end.identity_unlinked",
+  signin_link_used: "signin.end.signin_link_used",
   user_removed: "signin.end.user_removed",
 };
 

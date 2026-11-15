@@ -26,7 +26,7 @@ export const defaultValidFor: ValidFor = 900;
 
 /**
  * validForRequest is the valid_for of a request that issues a Join Code or
- * Password Link: left out for the koko server's own 15 minutes, so such a
+ * Sign-in Link: left out for the koko server's own 15 minutes, so such a
  * request is the one the web UI sent before it offered a choice.
  */
 export function validForRequest(validFor: ValidFor): { valid_for?: number } {
@@ -46,7 +46,7 @@ export function ValidForChoice({ value, onChange }: { value: ValidFor; onChange:
   );
 }
 
-/** IssueDialogProps are what a dialog that issues a Join Code or a Password Link asks and shows. */
+/** IssueDialogProps are what a dialog that issues a Join Code or a Sign-in Link asks and shows. */
 export interface IssueDialogProps {
   /** title names the first step, such as "Invite" or "Add device". */
   title: string;
@@ -76,7 +76,7 @@ export interface IssueDialogProps {
 }
 
 /**
- * IssueDialog issues a Join Code or a Password Link in two steps
+ * IssueDialog issues a Join Code or a Sign-in Link in two steps
  * (docs/web-design.md, "Invite"): the first takes what it is for and issues it, never asking
  * first; the second shows what was issued, once, with Done, which takes the
  * focus, since the button that issued goes with the first step. The page
@@ -174,11 +174,11 @@ export function JoinCodeLine({
 }
 
 /**
- * PasswordLinkLine shows a Password Link just issued, once: the link to send
+ * SignInLinkLine shows a Sign-in Link just issued, once: the link to send
  * to its User, its time left of validFor and Copy (ShownOnceLine); expired
  * says what to do once its time has run out.
  */
-export function PasswordLinkLine({
+export function SignInLinkLine({
   link,
   validFor,
   expired,

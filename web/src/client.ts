@@ -155,7 +155,7 @@ function answered<Resp>({ response, body }: { response: Response; body: string }
  * post calls one of the web front's /auth/ endpoints on the web listener:
  * a JSON POST of request to its path. It returns the response, or throws
  * an ApiError when the koko server refuses, as call does. It is sent once:
- * an /auth/ call is no API write with an Idempotency-Key, and a Password
+ * an /auth/ call is no API write with an Idempotency-Key, and a Sign-in
  * Link sent again after it was spent would be refused as used. A failed
  * connection throws an UnreachableError.
  */

@@ -228,6 +228,37 @@ test("Show ended Sign-ins adds the ended ones, struck through, with when and why
   await expectAccessible();
 });
 
+test.each([
+  {
+    language: "en",
+    region: "Browser Sign-ins",
+    show: "Show ended Sign-ins",
+    reasons: ["the passkey was removed", "the Linked Identity was unlinked", "a Sign-in Link was used"],
+  },
+  {
+    language: "zh-CN",
+    region: "浏览器登录会话",
+    show: "显示已结束的登录会话",
+    reasons: ["通行密钥已移除", "关联身份已解除关联", "登录链接已被使用"],
+  },
+])("in $language an ended Sign-in says why for each way a credential ends it", async ({ language, region, show, reasons }) => {
+  preferLanguages(language);
+  const s = signIns();
+  const ended = { ended_at: "2026-11-06T09:00:00Z" };
+  s.signins.push(
+    signIn("bob", 4, firefox, { ...ended, method: "passkey", end_reason: "passkey_removed" }),
+    signIn("bob", 5, firefox, { ...ended, method: "identity", end_reason: "identity_unlinked" }),
+    signIn("bob", 6, firefox, { ...ended, end_reason: "signin_link_used" }),
+  );
+  await atAccount(s, bob, region);
+
+  fireEvent.click(screen.getByRole("switch", { name: show }));
+
+  await waitFor(() => expect(signins(region)).toHaveLength(6));
+  expect(signins(region).slice(3).map((row) => row.split(/: |：/).at(-1))).toEqual(reasons);
+  await expectAccessible();
+});
+
 test("a User signed in from no browser is told so", async () => {
   const api = fakeApi();
   actAs(api, bob);

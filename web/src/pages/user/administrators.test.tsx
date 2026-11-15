@@ -198,7 +198,7 @@ test("an Administrator acts on a Member as the Owner does, but for the role", as
     "Add device",
     "Revoke bob/laptop",
     "Revoke bob/phone",
-    "Issue Password Link",
+    "Issue Sign-in Link",
     "Remove Password",
     "Revoke the Sign-in from Firefox on Linux",
     "Revoke the Sign-in from Safari on iPhone",
@@ -210,7 +210,7 @@ test("an Administrator's own panel offers what Account does on their devices and
   const { panel } = await panelOf("eve", eve);
 
   expect(subtitle(panel)).toBe("Administrator · Added 2026-11-02");
-  expect(buttons(panel)).toEqual(["Add device", "Revoke laptop", "Issue Password Link"]);
+  expect(buttons(panel)).toEqual(["Add device", "Revoke laptop", "Issue Sign-in Link"]);
 });
 
 test("the Owner acts on an Administrator as on a Member, with Make a Member in place of Add to a Space", async () => {
@@ -222,7 +222,7 @@ test("the Owner acts on an Administrator as on a Member, with Make a Member in p
     "Add device",
     "Revoke frank/laptop",
     "Revoke frank/phone",
-    "Issue Password Link",
+    "Issue Sign-in Link",
     "Remove Password",
     "Make a Member",
     "Remove frank",

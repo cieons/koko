@@ -21,7 +21,7 @@ export interface ShownOnceLineProps {
 
 /**
  * ShownOnceLine shows a line a page was just given and shows only once, such
- * as a Join Code's koko join line or a Password Link (docs/web-design.md,
+ * as a Join Code's koko join line or a Sign-in Link (docs/web-design.md,
  * "Components"): in an inset block with a dashed accent edge, the line in the
  * code face, which one click selects whole, the time left before it expires,
  * counted down as text, Copy, and the line that it is not shown again. The

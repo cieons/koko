@@ -20,7 +20,7 @@ const (
 )
 
 // limiter holds the rate limits in memory, forgotten at restart: for each
-// client address, its failed attempts (a wrong sign-in, a refused Password
+// client address, its failed attempts (a wrong sign-in, a refused Sign-in
 // Link, a wrong current Password) in the last failureWindow; for each name
 // signed in with, whether or not a User holds it, its failed sign-ins in a
 // row and, after maxFailures of them, until when it is locked. A lockout

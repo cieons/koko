@@ -117,9 +117,9 @@ export function administered(w: World): World {
   };
 }
 
-/** passwordLink is the Password Link the fake issues for user. */
+/** passwordLink is the Sign-in Link the fake issues for user. */
 export function passwordLink(user: string): string {
-  return `https://koko.example.com/password#LINKSECRETFOR${user.toUpperCase()}`;
+  return `https://koko.example.com/link#LINKSECRETFOR${user.toUpperCase()}`;
 }
 
 /** joinCode is the Join Code the fake issues. */

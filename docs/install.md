@@ -1112,7 +1112,7 @@ Only the koko server's machine sets it, as it sets the Server Address: a
 device or a browser cannot. Until it is set, the web listener answers every
 request with a page naming this command. The koko server then answers only
 requests whose `Host` header names the Web URL's host and port. Changing
-the Web URL takes effect at once: Password Links issued for the old
+the Web URL takes effect at once: Sign-in Links issued for the old
 address stop working, and every browser signs in again.
 `koko server set --unset web_url` stops browser access and keeps the
 listener.
@@ -1120,7 +1120,7 @@ listener.
 ### Inviting a browser User
 
 The Owner or an Administrator invites a person who will use koko in a
-browser with a Password
+browser with a Sign-in
 Link instead of a Join Code:
 
 ```sh
@@ -1128,7 +1128,7 @@ koko user invite bob --web
 ```
 
 This creates bob as a Member and prints a link,
-`https://koko.example.com/password#…`, which works once, within 15
+`https://koko.example.com/link#…`, which works once, within 15
 minutes. `--valid` sets from 1 minute to 7 days, such as `--valid 1d` for a
 link that will be opened later; `koko device add` takes `--valid` too. In
 the web UI, the same Invite is on the Access page: **Invite**, then **In a
@@ -1145,16 +1145,17 @@ set, the browser is signed in. From then on, bob signs in at
 
 ### Resetting and removing a Password
 
-A User who has lost their Password gets a new Password Link, as does a User
+A User who has lost their Password gets a new Sign-in Link, as does a User
 of the CLI who wants to use a browser too, the Owner included:
 
 ```sh
-koko password link bob
+koko signin link bob
 ```
 
 It takes `--valid` as the Invite does, and voids bob's earlier link if it
 was not used. Setting a Password through it signs out every browser
-signed in as bob. In the web UI, it is **Issue Password Link** in bob's
+signed in as bob. `koko password link bob`, its name before, works too.
+In the web UI, it is **Issue Sign-in Link** in bob's
 panel on the Access page, where each person's row says whether they have
 a Password.
 
@@ -1165,7 +1166,7 @@ devices:
 koko password rm bob
 ```
 
-This deletes the Password and signs out every browser signed in as bob; it
+This deletes the Password and signs out every browser signed in with it; it
 is **Remove Password** in bob's panel. `koko user remove bob` Removes bob
 altogether, ending their browsers' Sign-ins with everything else, or
 deletes bob when they never used koko.
@@ -1190,7 +1191,7 @@ panel on the Access
 page, with **Revoke**.
 
 After 10 wrong Passwords in a row for one name, sign-ins with that name
-are refused for 15 minutes, or until a Password is set through a Password
+are refused for 15 minutes, or until a Password is set through a Sign-in
 Link. After 10 failed attempts from one address within 15 minutes, that
 address is refused until the oldest is 15 minutes old. Browsers already
 signed in keep working.

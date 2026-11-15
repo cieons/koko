@@ -242,7 +242,7 @@ func TestTenFailuresFromOneAddressWaitFifteenMinutes(t *testing.T) {
 // Ten failed sign-ins in a row with one name, from ten addresses, lock it
 // for 15 minutes from any address, a correct Password included, while the
 // Sign-ins already open keep working. A name no User holds is counted the
-// same. A successful sign-in starts the count again, and so does a Password
+// same. A successful sign-in starts the count again, and so does a Sign-in
 // Link.
 func TestTenFailuresForOneNameLockIt(t *testing.T) {
 	t.Parallel()
@@ -524,7 +524,7 @@ func TestWhatASignInMayDo(t *testing.T) {
 }
 
 // An Administrator through a Sign-in reads every User's Sign-ins, and
-// revokes a Member's, removes their Password and issues them a Password
+// revokes a Member's, removes their Password and issues them a Sign-in
 // Link; the same acts on the Owner or another Administrator are refused
 // with owner_only and change nothing.
 func TestAnAdministratorsSignInActsOnMembersOnly(t *testing.T) {

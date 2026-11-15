@@ -38,7 +38,7 @@ export interface Route {
   administers?: boolean;
   /**
    * outside renders the page outside the frame, with no rail and no
-   * user.current, as Sign in and Set a Password are, which a browser opens
+   * user.current, as Sign in and a Sign-in Link's page are, which a browser opens
    * before it is signed in.
    */
   outside?: boolean;
@@ -210,7 +210,10 @@ export const accountPage = "/account";
 /** signInPage is the path of Sign in, outside the frame. */
 export const signInPage = "/signin";
 
-/** passwordPage is the path of Set a Password, outside the frame, which a Password Link opens. */
+/** linkPage is the path of a Sign-in Link's page, outside the frame, which the link opens. */
+export const linkPage = "/link";
+
+/** passwordPage is where a Sign-in Link issued before the Sign-in Link's own path opens the same page. */
 export const passwordPage = "/password";
 
 /** signInPath is Sign in's path, which comes back to next, the page it was sent from, once signed in. */

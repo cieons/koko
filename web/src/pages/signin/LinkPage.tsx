@@ -13,10 +13,10 @@ import { useLinkSecret } from "./linkSecret";
 import { PasswordFields } from "./PasswordFields";
 import { refusalText } from "./refusal";
 
-/** Step is where Set a Password is: reading the link, its form, a link that no longer works, or a read that failed. */
+/** Step is where a Sign-in Link's page is: reading the link, its form, a link that no longer works, or a read that failed. */
 type Step =
   | { kind: "reading" }
-  | { kind: "form"; user: string }
+  | { kind: "form"; user: string; passwordSet: boolean }
   | { kind: "gone"; code: typeof CodeLinkUsed | typeof CodeLinkInvalid }
   | { kind: "failed"; error: unknown };
 
@@ -29,21 +29,24 @@ function gone(error: unknown): Step | undefined {
 }
 
 /**
- * PasswordPage is Set a Password, outside the frame, which a Password Link
- * opens (docs/web-design.md, "Sign in and Set a Password"). Its route took
- * the link's secret out of the URL's fragment (takingLinkSecret); it asks
- * /auth/link whom the link is for, spending nothing, and shows "For
- * <name>." with the new Password twice; /auth/password then sets it,
- * spending the link, and signs this browser in. A link used already or no
- * longer valid replaces the form with what happened and Go to Sign in.
+ * LinkPage is a Sign-in Link's page, outside the frame, at /link, and at
+ * /password for a link issued before the Sign-in Link (docs/web-design.md,
+ * "Sign in and a Sign-in Link's page"). Its route took the link's secret out
+ * of the URL's fragment (takingLinkSecret); it asks /auth/link whom the
+ * link is for, spending nothing, and shows "For <name>." with the new
+ * Password twice, saying it replaces their Password when they have one;
+ * /auth/password then sets it, spending the link, and signs this browser
+ * in. A Password is the one way to sign in the page offers yet (spec
+ * #228). A link used already or no longer valid replaces the form with what
+ * happened and Go to Sign in.
  */
-export function PasswordPage() {
+export function LinkPage() {
   // Each link gets a page of its own, so nothing typed for one stays for the next.
   const secret = useLinkSecret();
   return <ForLink key={secret} secret={secret} />;
 }
 
-/** ForLink is Set a Password for the link of secret, once the route has taken it. */
+/** ForLink is the page of the link of secret, once the route has taken it. */
 function ForLink({ secret }: { secret: string | undefined }) {
   const t = useT();
   const count = useCount();
@@ -65,7 +68,7 @@ function ForLink({ secret }: { secret: string | undefined }) {
     let latest = true;
     setStep({ kind: "reading" });
     post(AuthLink, { link: secret }).then(
-      ({ user }) => latest && setStep({ kind: "form", user }),
+      ({ user, password_set }) => latest && setStep({ kind: "form", user, passwordSet: password_set }),
       (failure: unknown) => latest && setStep(gone(failure) ?? { kind: "failed", error: failure }),
     );
     return () => {
@@ -122,10 +125,11 @@ function ForLink({ secret }: { secret: string | undefined }) {
       </Door>
     );
   }
-  const { user } = step;
+  const { user, passwordSet } = step;
   return (
     <Door title={t("signin.set.title")} lead={t("signin.set.lead", { name: user })}>
       <Form label={t("signin.set.title")} onSubmit={() => void submit()} className="flex flex-col gap-4">
+        {passwordSet && <p className="t-label">{t("signin.set.replaces", { name: user })}</p>}
         {/* The User name, for the browser's password manager to keep with the Password. */}
         <input type="text" name="username" autoComplete="username" value={user} readOnly hidden />
         <PasswordFields user={user} value={value} again={again} onValue={setValue} onAgain={setAgain} />

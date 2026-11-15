@@ -6,7 +6,7 @@ import { expectAccessible } from "../test/axe";
 import { clipboard } from "../test/clipboard";
 import { ShownOnceLine } from "./ShownOnceLine";
 
-// The line a page shows once, a Join Code's or a Password Link's; the pages
+// The line a page shows once, a Join Code's or a Sign-in Link's; the pages
 // test it again as they use it.
 
 let intervals: MockInstance<typeof window.setInterval> | undefined;
@@ -33,15 +33,15 @@ function renderLine(validFor: number) {
   render(
     <Providers>
       <ShownOnceLine
-        label="Password Link"
+        label="Sign-in Link"
         intro="Send this link to bob."
-        line="https://koko.example.com/password#secret"
+        line="https://koko.example.com/link#secret"
         validFor={validFor}
         expired="This link expired."
       />
     </Providers>,
   );
-  return screen.getByRole("region", { name: "Password Link" });
+  return screen.getByRole("region", { name: "Sign-in Link" });
 }
 
 test("a line valid for days counts down in days and hours, then in minutes and seconds in its last hour", async () => {
@@ -49,7 +49,7 @@ test("a line valid for days counts down in days and hours, then in minutes and s
   const shown = renderLine(7 * 86_400);
 
   expect(shown.textContent).toContain("Send this link to bob. It is shown only here, and leaving this page discards it.");
-  expect(within(shown).getByText("https://koko.example.com/password#secret")).toBeDefined();
+  expect(within(shown).getByText("https://koko.example.com/link#secret")).toBeDefined();
   expect(shown.textContent).toContain("7 days left");
   await expectAccessible();
 
@@ -68,5 +68,5 @@ test("the copy button copies the line whole", async () => {
   fireEvent.click(within(shown).getByRole("button", { name: "Copy" }));
 
   expect(await within(shown).findByRole("button", { name: "Copied" })).toBeDefined();
-  expect(writeText).toHaveBeenCalledWith("https://koko.example.com/password#secret");
+  expect(writeText).toHaveBeenCalledWith("https://koko.example.com/link#secret");
 });

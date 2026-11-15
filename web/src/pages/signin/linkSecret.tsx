@@ -4,18 +4,18 @@ import { wrappingPage } from "../../shell/lazyPage";
 import { navigate, type PageProps } from "../../shell/router";
 
 /**
- * LinkSecret is the secret of the Password Link Set a Password was opened
+ * LinkSecret is the secret of the Sign-in Link its page was opened
  * with: undefined until read, and "" when the URL held none.
  */
 const LinkSecret = createContext<string | undefined>(undefined);
 
-/** useLinkSecret is the Password Link's secret the route took from the URL. */
+/** useLinkSecret is the Sign-in Link's secret the route took from the URL. */
 export function useLinkSecret(): string | undefined {
   return useContext(LinkSecret);
 }
 
 /**
- * takingLinkSecret is Set a Password's route: it takes the Password Link's
+ * takingLinkSecret is a Sign-in Link's route: it takes the link's
  * secret out of the URL's fragment at once, replacing the URL without it,
  * before the page's own chunk has loaded, so the secret leaves the address
  * bar and the history; and again when another link is opened on the page,

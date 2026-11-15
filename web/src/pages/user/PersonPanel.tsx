@@ -45,7 +45,7 @@ export interface PersonPanelProps {
  * Take out, under Add to a Space, or, for the Owner and an Administrator,
  * that they see every Space; and their Personal Space's counts; their
  * devices (Devices), with Add device for them and Revoke; their Password,
- * with Issue Password Link and Remove Password, and their Browser Sign-ins
+ * with Issue Sign-in Link and Remove Password, and their Browser Sign-ins
  * with Revoke; for the Owner, Make an Administrator, which asks first, or
  * Make a Member; and Remove User, which asks first and then says whether
  * the User was deleted or Removed. Where the caller may not act on the

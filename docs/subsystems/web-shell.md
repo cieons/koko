@@ -181,7 +181,7 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   error a page throws goes on past it. `loadPage(page)` loads a lazy
   page's chunk ahead of time, once, so its first render does not wait on
   it; the page tests load every page so before they run. A route whose
-  page wraps a lazy page, as Set a Password's does, gives the wrapper
+  page wraps a lazy page, as a Sign-in Link's page does, gives the wrapper
   through `wrappingPage(wrapper, page)`, so that `loadPage` of the wrapper
   loads the page's chunk. `lazyPart(load)`
   does the same for a part that is no page, with props of its own: the
@@ -207,7 +207,7 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   unavailable at the default, shows the default view and forgets the one
   remembered. Only the query is kept: no value of a Secret, nothing from a
   Note; signing out leaves it.
-- **Outside the frame.** Sign in and Set a Password
+- **Outside the frame.** Sign in and a Sign-in Link's page
   ([Sign-ins](signin.md#the-web-uis-pages)), which a browser opens before it
   is signed in on the web listener, are `outside` routes: the shell renders
   them on their own, with no rail and without asking `user.current`.
@@ -296,11 +296,11 @@ The [`Shell`](../../web/src/shell/Shell.tsx) is the design's frame
   or during the answer) is sent once more; a second drop throws a
   `DroppedError`. `koko web`'s browser connections reopen after a Device
   Connection drop, since only Tunnels Resume (ADR 0021).
-- **The `/auth/` endpoints** are not API operations: Sign in, Set a
-  Password, Account's Password and Sign out post to them with
+- **The `/auth/` endpoints** are not API operations: Sign in, a Sign-in
+  Link's page, Account's Password and Sign out post to them with
   [`post`](../../web/src/client.ts), typed by their generated
   `AuthEndpoint` values (`AuthSignIn`, [the web UI build](web-ui.md#generated-types)),
-  once, with no retry and no `Idempotency-Key`, since a Password Link sent
+  once, with no retry and no `Idempotency-Key`, since a Sign-in Link sent
   again after it was spent would be refused as used. A refusal is an
   `ApiError` as a call's is, with the `Retry-After` header in seconds
   (`retryAfter`) when it has one, as `too_many_attempts` does; a
@@ -346,7 +346,7 @@ the browser keeps in its back-forward cache holds it no more when Back brings
 it back, and the page forgets it at once by setting it to `undefined`.
 
 A line a page shows once to be pasted elsewhere, a Join Code's `koko join`
-line or a Password Link, shows in
+line or a Sign-in Link, shows in
 [`ShownOnceLine`](../../web/src/ui/ShownOnceLine.tsx): a region named for
 what it holds, an inset block with a dashed accent edge holding its name,
 the time left and the line in the code face, which breaks anywhere and one
@@ -654,7 +654,7 @@ query) and **a Space's panel** (`/access/spaces/<name>`, which
 | Remove a Space, asking first | `space.remove` | the Owner or an Administrator, on a shared Space |
 | Make Users Members: Add Members, several chosen among the Users who are not one, in one call | `space.member.add` (and `user.list`) | the Owner or an Administrator, on a shared Space |
 | Take a Member out: Take out | `space.member.remove` | the Owner or an Administrator, on a shared Space |
-| Invite a User, to the Spaces chosen, in a terminal or in a browser, valid for the time chosen, their Join Code or Password Link shown once, with Copy and its countdown | `user.invite` (and `server.show` for the Web URL), then `space.member.add` | the Owner or an Administrator |
+| Invite a User, to the Spaces chosen, in a terminal or in a browser, valid for the time chosen, their Join Code or Sign-in Link shown once, with Copy and its countdown | `user.invite` (and `server.show` for the Web URL), then `space.member.add` | the Owner or an Administrator |
 
 **A person's panel** (`/access/people/<name>`, the Owner and the
 Administrators alone). "On them" is anyone on themselves, the Owner on
@@ -667,7 +667,7 @@ anyone, and an Administrator on a Member (`mayActOn`):
 | Add a device for them, with an optional name, valid for the time chosen, its Join Code shown once | `device.add` | on them, for a User not Removed |
 | Revoke a live Device Session of theirs, asking first; the Owner's own last only once its name is typed, with `last` | `device.revoke` | on them |
 | See when their Password was set, or that they have none | `user.list` | the Owner or an Administrator |
-| Issue a Password Link for them, valid for the time chosen, shown once with Copy and its countdown; disabled, saying why, without a Web URL | `password.link` (and `server.show`) | on them, for a User not Removed |
+| Issue a Sign-in Link for them, valid for the time chosen, shown once with Copy and its countdown; disabled, saying why, without a Web URL | `password.link` (and `server.show`) | on them, for a User not Removed |
 | Remove their Password, asking first | `password.remove` | on them, for a User with one |
 | List their Browser Sign-ins, the ended ones when asked for | `signin.list` | the Owner or an Administrator |
 | Revoke a live Browser Sign-in of theirs, asking first | `signin.revoke` | on them |
@@ -693,14 +693,15 @@ anyone, and an Administrator on a Member (`mayActOn`):
 For the Owner, `/devices` listed everyone's Device Sessions; that view is
 now each person's panel under Access.
 
-**Sign in** (`/signin`, outside the frame; `next` in the query) and **Set a
-Password** (`/password#<secret>`, outside the frame), the web listener's
+**Sign in** (`/signin`, outside the frame; `next` in the query) and **a
+Sign-in Link's page** (`/link#<secret>`, and `/password#<secret>` for a link
+issued before the Sign-in Link, outside the frame), the web listener's
 alone ([Sign-ins](signin.md#the-web-uis-pages)):
 
 | Action | Call | Who |
 | --- | --- | --- |
 | Sign in with a User name and Password, then go to `next` on this origin | `/auth/signin` | anyone with a Password |
-| See whom a Password Link is for | `/auth/link` | anyone holding the link |
+| See whom a Sign-in Link is for, and whether they have a Password | `/auth/link` | anyone holding the link |
 | Set the Password through the link, which signs this browser in | `/auth/password` | anyone holding the link |
 
 ## Verifying

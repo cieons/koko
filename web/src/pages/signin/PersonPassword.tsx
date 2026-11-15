@@ -15,7 +15,7 @@ import { notify } from "../../ui/notify";
 import {
   defaultValidFor,
   IssueDialog,
-  PasswordLinkLine,
+  SignInLinkLine,
   type ValidFor,
   ValidForChoice,
   validForRequest,
@@ -26,7 +26,7 @@ import { useWebURL } from "./webURL";
  * PersonPassword is the Password in a person's panel, the Owner's and the
  * Administrators' alone (docs/web-design.md, "Access"): set on which date,
  * or none; and, where the caller may act on the person (acts), Issue
- * Password Link, which needs the Web URL (server.show) and is disabled with
+ * Sign-in Link, which needs the Web URL (server.show) and is disabled with
  * the reason while it is unset, and Remove Password, asking first, while
  * there is one. onChanged hears a Password removed, so the panel and Access
  * show it; the section's heading then takes the focus Remove Password had.
@@ -80,7 +80,7 @@ export function PersonPassword({ user, acts, onChanged }: { user: User; acts: bo
 }
 
 /**
- * IssueLink issues a Password Link for user, valid for the time chosen, and
+ * IssueLink issues a Sign-in Link for user, valid for the time chosen, and
  * shows it once; it never asks first. A newer link voids the User's earlier
  * unused one, an Invite's included, which its lead says.
  */
@@ -103,7 +103,7 @@ function IssueLink({ user, onClose }: { user: User; onClose: () => void }) {
       doneTitle={t("signin.link.ready")}
       issued={
         !done ? undefined : issued ? (
-          <PasswordLinkLine link={issued.link} validFor={issued.validFor} expired={t("signin.link.expired")} />
+          <SignInLinkLine link={issued.link} validFor={issued.validFor} expired={t("signin.link.expired")} />
         ) : (
           <p>{t("signin.link.forgotten")}</p>
         )
@@ -128,16 +128,17 @@ function IssueLink({ user, onClose }: { user: User; onClose: () => void }) {
 
 /**
  * RemovePassword removes a User's Password, asking first and saying what
- * follows: their Sign-ins end and an unused Password Link stops working,
- * the User and their devices staying; for the Owner's own, from a browser
- * signed in with it, that this browser is signed out too, as the shell then
- * takes it to Sign in. no_password shows in place.
+ * follows: the Sign-ins made with the Password end and an unused Sign-in
+ * Link stops working, the User, their devices and their other ways to sign
+ * in staying; for one's own, from a browser signed in with it, that this
+ * browser is signed out too, as the shell then takes it to Sign in. A
+ * browser signed in another way stays. no_password shows in place.
  */
 function RemovePassword({ name, onRemoved, onCancel }: { name: string; onRemoved: () => void; onCancel: () => void }) {
   const t = useT();
   const caller = useCaller();
   const remove = useWrite(PasswordRemove);
-  const here = caller.signin !== undefined && caller.user.name === name;
+  const here = caller.signin?.method === "password" && caller.user.name === name;
   return (
     <ConfirmDialog
       title={t("signin.remove.title", { name })}
