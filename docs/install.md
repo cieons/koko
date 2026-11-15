@@ -1258,10 +1258,12 @@ panel on the Access
 page, with **Revoke**.
 
 After 10 wrong Passwords in a row for one name, sign-ins with that name
-are refused for 15 minutes, or until a Password is set through a Sign-in
-Link. After 10 failed attempts from one address within 15 minutes, a
-refused passkey or provider sign-in among them, that address is refused
-until the oldest is 15 minutes old. Browsers already
+are refused for 15 minutes, or until a Sign-in Link of theirs is spent.
+After 10 failed attempts from one address within 15 minutes, that address
+is refused until the oldest is 15 minutes old. A refused passkey counts as
+a failed attempt, and so does a sign-in through the provider whose answer
+fails koko's checks or names no linked account; one the person cancels at
+the provider, or that the provider does not answer, does not. Browsers already
 signed in keep working.
 
 ### What a browser User can do

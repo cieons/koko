@@ -111,6 +111,14 @@ func refusedAt(path string, code api.Code) Outcome {
 	return Outcome{Location: path + "?" + api.RefusedParam + "=" + code.Name}
 }
 
+// isBinding tells whether b is a binding token as random makes one: 22
+// base64url characters, so that a browser's cookie of any other value is
+// replaced rather than kept.
+func isBinding(b string) bool {
+	raw, err := base64.RawURLEncoding.DecodeString(b)
+	return err == nil && len(raw) == 16 && len(b) == 22
+}
+
 // random is 128 random bits in base64url.
 func random() string {
 	var b [16]byte
@@ -128,11 +136,13 @@ func (s *Service) now() time.Time {
 // live Sign-in whose cookie carries token, or linking through the Sign-in
 // Link whose secret is req.Link. It holds the flow under its state, and
 // returns the provider's authorization URL and the binding token for the
-// flow's cookie. It is refused with provider_unset while no provider is
+// flow's cookie: held, the browser's own, which the request's cookie
+// carries, when it is one koko made, so that every flow a browser has
+// begun in its lifetime finishes; a new one otherwise. It is refused with provider_unset while no provider is
 // configured, and provider_unreachable when its discovery does not
 // answer; a refused link counts as a failure for the client's address, and
 // an address past its limit is refused with a *signin.Limited.
-func (s *Service) Begin(ctx context.Context, req api.AuthOIDCBeginRequest, token string, a signin.Attempt) (location, binding string, err error) {
+func (s *Service) Begin(ctx context.Context, req api.AuthOIDCBeginRequest, token, held string, a signin.Attempt) (location, binding string, err error) {
 	switch {
 	case req.Purpose == api.OIDCPurposeSignIn && req.Link != "":
 		return "", "", api.CodeInvalidRequest.Errorf("a sign-in through the Identity Provider takes no link")
@@ -189,7 +199,10 @@ func (s *Service) Begin(ctx context.Context, req api.AuthOIDCBeginRequest, token
 	if err != nil {
 		return "", "", err
 	}
-	binding = random()
+	binding = held
+	if !isBinding(binding) {
+		binding = random()
+	}
 	f.binding = sha256.Sum256([]byte(binding))
 	state := s.flows.Begin(a.Address, f)
 	location = p.oauth2(k, f.redirectURI).AuthCodeURL(state, oidc.Nonce(f.nonce), oauth2.S256ChallengeOption(f.verifier),
@@ -206,27 +219,27 @@ func (p *provider) oauth2(k *known, redirectURI string) *oauth2.Config {
 	}
 }
 
-// safeNext is next, where a sign-in ends, when it is a path of this origin
-// outside the pages that sign in, or / otherwise.
+// safeNext is where a sign-in whose next is next ends: the path a browser
+// lands on, its dot segments resolved and its fragment dropped, with its
+// query, when it is a path of this origin outside the pages that sign in;
+// / otherwise. The 303 carries exactly what was checked.
 func safeNext(next string) string {
-	if !strings.HasPrefix(next, "/") ||
-		strings.ContainsFunc(next, func(r rune) bool { return r == '\\' || unicode.IsControl(r) || unicode.IsSpace(r) }) {
+	bad := func(r rune) bool { return r == '\\' || unicode.IsControl(r) || unicode.IsSpace(r) }
+	if !strings.HasPrefix(next, "/") || strings.ContainsFunc(next, bad) {
 		return "/"
 	}
 	// //host/… parses with a host, and is refused here.
 	u, err := url.Parse(next)
-	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil {
+	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil || strings.ContainsFunc(u.Path, bad) {
 		return "/"
 	}
-	// A browser, and the 303's own cleaning, resolve /x/../signin to
-	// /signin.
 	clean := path.Clean(u.Path)
 	for _, page := range []string{signInPage, linkPage, "/password", "/auth"} {
 		if clean == page || strings.HasPrefix(clean, page+"/") {
 			return "/"
 		}
 	}
-	return next
+	return (&url.URL{Path: clean, RawQuery: u.RawQuery}).String()
 }
 
 // Callback ends the flow the provider sent a browser back for, from a,
@@ -405,15 +418,27 @@ func (k keySet) VerifySignature(ctx context.Context, jwt string) ([]byte, error)
 	return payload, err
 }
 
+// asymmetric are the algorithms an ID token may be signed with: those of
+// discovery's list that sign with a private key, as go-oidc's own provider
+// keeps them. An HMAC (HS256 and the rest) would be checked with a key the
+// key set publishes, which anyone can read.
+var asymmetric = []string{
+	oidc.RS256, oidc.RS384, oidc.RS512, oidc.ES256, oidc.ES384, oidc.ES512,
+	oidc.PS256, oidc.PS384, oidc.PS512, oidc.EdDSA,
+}
+
 // verify checks raw, the ID token of f's exchange with p, whose discovery
 // and keys k are. go-oidc's verifier checks its signature, by a key of the
-// issuer's key set, with an algorithm its discovery lists (RS256 when it
-// lists none), never none; koko checks each claim itself, so that a
+// issuer's key set, with an asymmetric algorithm its discovery lists
+// (RS256 when it lists none), never an HMAC or none; koko checks each claim itself, so that a
 // refusal names its step: iss byte for byte, aud and azp, exp with
 // expirySkew and nbf with notBeforeLeeway on the koko server's clock, the
-// nonce, and the subject.
+// nonce, and the subject, 1 to maxSubject bytes with no control character.
 func (s *Service) verify(ctx context.Context, p *provider, k *known, f oidcFlow, raw string) (claims, refusal) {
-	algorithms := slices.DeleteFunc(slices.Clone(k.doc.Algorithms), func(alg string) bool { return strings.EqualFold(alg, "none") })
+	algorithms := slices.DeleteFunc(slices.Clone(k.doc.Algorithms), func(alg string) bool { return !slices.Contains(asymmetric, alg) })
+	if len(algorithms) == 0 {
+		algorithms = []string{oidc.RS256}
+	}
 	v := oidc.NewVerifier(p.issuer, keySet{k.keys}, &oidc.Config{
 		SupportedSigningAlgs: algorithms,
 		SkipClientIDCheck:    true, SkipExpiryCheck: true, SkipIssuerCheck: true,
@@ -449,7 +474,7 @@ func (s *Service) verify(ctx context.Context, p *provider, k *known, f oidcFlow,
 		return claims{}, failed(stepExpiry)
 	case subtle.ConstantTimeCompare([]byte(t.Nonce), []byte(f.nonce)) != 1:
 		return claims{}, failed(stepNonce)
-	case t.Subject == "" || len(t.Subject) > maxSubject:
+	case t.Subject == "" || len(t.Subject) > maxSubject || strings.ContainsFunc(t.Subject, unicode.IsControl):
 		return claims{}, failed(stepSubject)
 	}
 	return claims{subject: t.Subject, label: label(t.Subject, extra.PreferredUsername, extra.Email, extra.Name)}, refusal{}

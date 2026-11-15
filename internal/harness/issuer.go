@@ -53,6 +53,10 @@ type Issuer struct {
 	// them; dropKeys makes it close the connection unanswered instead.
 	keysStatus int
 	dropKeys   bool
+	// hmacKey, when set, is a symmetric key the key set also publishes,
+	// without an alg, under the key id "hmac", and an ID token whose header
+	// spoil makes HS256 is signed with it.
+	hmacKey []byte
 	// requests is every request's path, in order.
 	requests []string
 	// key signs the issuer's ID tokens, and kid names it in the key set.
@@ -201,6 +205,16 @@ func (i *Issuer) AnswerKeys(status int) {
 	i.keysStatus = status
 }
 
+// PublishSymmetricKey makes the key set publish key as an oct key without
+// an alg, under the key id "hmac", as a provider that leaks an HMAC key
+// would, and the token endpoint sign an ID token whose header SpoilToken
+// makes HS256 with it.
+func (i *Issuer) PublishSymmetricKey(key []byte) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.hmacKey = key
+}
+
 // DropKeys makes the key set close each request's connection unanswered,
 // as one that does not answer; false serves it again.
 func (i *Issuer) DropKeys(drop bool) {
@@ -289,7 +303,7 @@ func (i *Issuer) discovery(w http.ResponseWriter, r *http.Request) {
 
 func (i *Issuer) jwks(w http.ResponseWriter, _ *http.Request) {
 	i.mu.Lock()
-	key, kid, status, drop := i.key, i.kid, i.keysStatus, i.dropKeys
+	key, kid, status, drop, hmacKey := i.key, i.kid, i.keysStatus, i.dropKeys, i.hmacKey
 	i.mu.Unlock()
 	switch {
 	case drop:
@@ -305,10 +319,14 @@ func (i *Issuer) jwks(w http.ResponseWriter, _ *http.Request) {
 	}
 	// An uncompressed P-256 point: 0x04, then x and y, 32 bytes each.
 	b64 := base64.RawURLEncoding.EncodeToString
-	i.writeJSON(w, map[string]any{"keys": []map[string]any{{
+	keys := []map[string]any{{
 		"kty": "EC", "crv": "P-256", "use": "sig", "alg": "ES256",
 		"kid": "key-" + strconv.Itoa(kid), "x": b64(pub[1:33]), "y": b64(pub[33:]),
-	}}})
+	}}
+	if hmacKey != nil {
+		keys = append(keys, map[string]any{"kty": "oct", "kid": "hmac", "k": b64(hmacKey)})
+	}
+	i.writeJSON(w, map[string]any{"keys": keys})
 }
 
 func (i *Issuer) writeJSON(w http.ResponseWriter, v any) {

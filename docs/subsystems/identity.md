@@ -144,16 +144,20 @@ endpoint: Origin-checked, JSON, covered by the rate limits. It:
    linking to the Sign-in, without a live one, with `signin_required`; for
    a Sign-in Link, one no longer valid with `link_used` or `link_invalid`,
    which counts for the address;
-3. keeps of `next` only a path of this origin outside `/signin`, `/link`,
-   `/password` and `/auth/`, once its dot segments are resolved, else `/`;
+3. keeps of `next` the path a browser would land on, its dot segments
+   resolved and its fragment dropped, with its query, when that path is
+   one of this origin outside `/signin`, `/link`, `/password` and
+   `/auth/`; else `/`. The `303` carries exactly what was checked;
 4. fetches the issuer's discovery as kept (below), outside any transaction;
-5. makes `state` (the flow's id) and `nonce`, 128 random bits each, a PKCE
-   verifier (`oauth2.GenerateVerifier`) and a binding token of 128 bits,
-   and keeps the flow: the binding's SHA-256, the nonce, the verifier, the
+5. makes `state` (the flow's id) and `nonce`, 128 random bits each, and a
+   PKCE verifier (`oauth2.GenerateVerifier`); takes the binding token the
+   browser's `__Host-koko-oidc` carries, when it is one koko made (128
+   bits), or makes one; and keeps the flow: the binding's SHA-256, the nonce, the verifier, the
    purpose, its Sign-in or link and their User, `next`, the provider's
    issuer and client ID, and the redirect URI;
 6. sets the binding token in `__Host-koko-oidc` (`Secure`, `HttpOnly`,
-   `SameSite=Lax`, `Path=/`, no `Domain`, `Max-Age=600`), and answers
+   `SameSite=Lax`, `Path=/`, no `Domain`, `Max-Age=600`, refreshed at
+   each begin), and answers
    `{"location"}`: the authorization URL, with `response_type=code`,
    `response_mode=query`, `client_id`, `redirect_uri`, `scope`, `state`,
    `nonce`, `code_challenge` and `code_challenge_method=S256`.
@@ -168,8 +172,11 @@ Origin check refuses.
 **`GET /auth/oidc/callback`** is the one `/auth/` endpoint that is a `GET`,
 and the one that changes state on a `GET`, so its own checks stand in for
 the Origin check ([the web listener](web-front.md#the-web-listener)). It
-clears `__Host-koko-oidc` whatever follows, and answers a `303` in every
-case. In order:
+leaves `__Host-koko-oidc` as it is, and answers a `303` in every case. One
+browser's flows share its binding token, so two begun at once both finish,
+and a site that sends a visitor to the callback cancels none of their
+flows: a flow is spent by taking its `state`, not by the cookie. In
+order:
 
 1. **The binding.** `state` names a held flow, which it takes at once, so
    a replay finds none, and the cookie's SHA-256 is the flow's binding. A
@@ -199,14 +206,16 @@ case. In order:
    tokens are discarded unread.
 6. **The ID token.** go-oidc's verifier checks its signature, by a key of
    `jwks_uri`, with an algorithm in discovery's
-   `id_token_signing_alg_values_supported` (RS256 when absent), never
-   `none`. koko checks every claim itself, each failure `provider_failed`
+   `id_token_signing_alg_values_supported` that signs with a private key
+   (RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384, ES512 or
+   EdDSA; RS256 when none of them is listed), never an HMAC, which would
+   be checked with a key the key set publishes, and never `none`. koko checks every claim itself, each failure `provider_failed`
    with its step: `iss` is the issuer byte for byte (`issuer`); `aud`
    contains the client ID, `azp`, when present, is the client ID, and is
    present when `aud` holds more than one audience (`audience`); `exp` is
    after the koko server's clock less 60 seconds, and `nbf`, when present,
    within 5 minutes of it (`expiry`); `nonce` is the flow's (`nonce`);
-   `sub` is 1 to 255 bytes (`subject`). A key set that does not answer,
+   `sub` is 1 to 255 bytes with no control character (`subject`). A key set that does not answer,
    or answers a server error, when a token names a key it lacks, is
    `provider_unreachable`, not a bad signature.
 7. **The outcome**, in one write transaction, which checks the provider

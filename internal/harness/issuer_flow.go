@@ -3,6 +3,7 @@ package harness
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -197,7 +198,7 @@ func tokenError(w http.ResponseWriter, i *Issuer, status int, code string) {
 // to: ES256, by its key under its key id.
 func (i *Issuer) idToken(g grant) string {
 	i.mu.Lock()
-	key, kid, spoil, foreign, now := i.key, i.kid, i.spoilToken, i.foreign, i.clock()
+	key, kid, spoil, foreign, now, hmacKey := i.key, i.kid, i.spoilToken, i.foreign, i.clock(), i.hmacKey
 	i.mu.Unlock()
 	header := map[string]any{"alg": "ES256", "typ": "JWT", "kid": "key-" + strconv.Itoa(kid)}
 	claims := map[string]any{
@@ -222,8 +223,13 @@ func (i *Issuer) idToken(g grant) string {
 		return b64(b)
 	}
 	input := encode(header) + "." + encode(claims)
-	if header["alg"] == "none" {
+	switch header["alg"] {
+	case "none":
 		return input + "."
+	case "HS256":
+		mac := hmac.New(sha256.New, hmacKey)
+		mac.Write([]byte(input))
+		return input + "." + b64(mac.Sum(nil))
 	}
 	digest := sha256.Sum256([]byte(input))
 	r, s, err := ecdsa.Sign(rand.Reader, key, digest[:])

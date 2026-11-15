@@ -119,16 +119,16 @@ func TestLinkingFromAccountThenSigningInThroughTheProvider(t *testing.T) {
 	}
 	back := b.Callback(iss.Authorize(begun.Location))
 	wantSeeOther(t, back, "/account?linked=1")
-	if got := back.Header.Get("Set-Cookie"); !strings.HasPrefix(got, "__Host-koko-oidc=; Path=/; Max-Age=0;") {
-		t.Errorf("the callback set %q, want the flow's cookie cleared", got)
+	if got := back.Header.Values("Set-Cookie"); len(got) != 0 {
+		t.Errorf("the callback set %q, want the flow's cookie left as it is", got)
 	}
 	for name, want := range map[string]string{"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"} {
 		if got := back.Header.Get(name); got != want {
 			t.Errorf("the callback's %s is %q, want %q", name, got, want)
 		}
 	}
-	if b.FlowCookie != "" {
-		t.Error("the browser still holds the flow's cookie")
+	if b.FlowCookie == "" {
+		t.Error("the browser no longer holds the flow's cookie")
 	}
 	if si := currentSignIn(t, b); si.ID != kept.ID {
 		t.Errorf("linking moved the browser to the Sign-in %s, want its own %s kept", si.ID, kept.ID)
@@ -140,7 +140,7 @@ func TestLinkingFromAccountThenSigningInThroughTheProvider(t *testing.T) {
 	other := h.Browser()
 	back = other.ThroughProvider(iss, api.AuthOIDCBeginRequest{Purpose: api.OIDCPurposeSignIn, Next: "/hosts?q=web"})
 	wantSeeOther(t, back, "/hosts?q=web")
-	if !signInCookie.MatchString(back.Header.Values("Set-Cookie")[1]) {
+	if !signInCookie.MatchString(back.Header.Get("Set-Cookie")) {
 		t.Errorf("the callback set %q, want the Sign-in cookie", back.Header.Values("Set-Cookie"))
 	}
 	si := currentSignIn(t, other)
@@ -298,6 +298,7 @@ func TestEverySpoiledIDTokenFails(t *testing.T) {
 		{name: "no nonce", spoil: func(_, c map[string]any) { delete(c, "nonce") }, step: "nonce"},
 		{name: "no sub", spoil: func(_, c map[string]any) { delete(c, "sub") }, step: "subject"},
 		{name: "a sub of 256 bytes", spoil: func(_, c map[string]any) { c["sub"] = strings.Repeat("s", 256) }, step: "subject"},
+		{name: "a sub with a control character", spoil: func(_, c map[string]any) { c["sub"] = "subject-alice\x1b[2J" }, step: "subject"},
 		{name: "alg none", spoil: func(h, _ map[string]any) { h["alg"] = "none" }, step: "signature"},
 		{name: "an unknown key id", spoil: func(h, _ map[string]any) { h["kid"] = "key-unknown" }, step: "signature"},
 		{name: "a foreign key", foreign: true, step: "signature"},
@@ -545,18 +546,27 @@ func TestASignInEndsOnlyOnAPathOfThisOrigin(t *testing.T) {
 	h, iss := startIssuer(t)
 	link(t, h, iss, "bob")
 	for next, want := range map[string]string{
-		"/spaces/ops":          "/spaces/ops",
-		"":                     "/",
-		"https://evil.example": "/",
-		"//evil.example/":      "/",
-		"/\\evil.example":      "/",
-		"/signin":              "/",
-		"/link?x=1":            "/",
-		"/password":            "/",
-		"/auth/oidc/callback":  "/",
-		"/x/../signin":         "/",
-		"spaces":               "/",
-		"/a\tb":                "/",
+		"/spaces/ops":             "/spaces/ops",
+		"":                        "/",
+		"https://evil.example":    "/",
+		"//evil.example/":         "/",
+		"/\\evil.example":         "/",
+		"/signin":                 "/",
+		"/link?x=1":               "/",
+		"/password":               "/",
+		"/auth/oidc/callback":     "/",
+		"/x/../signin":            "/",
+		"/x#/../../signin":        "/x",
+		"/a/b#/../../../password": "/a/b",
+		"/./link":                 "/",
+		"/hosts?q=a#top":          "/hosts?q=a",
+		"/%2F%2Fevil.example":     "/evil.example",
+		"/%5Cevil.example":        "/",
+		"/%09/evil.example":       "/",
+		"javascript:alert(1)":     "/",
+		"https:/evil.example":     "/",
+		"spaces":                  "/",
+		"/a\tb":                   "/",
 	} {
 		a := h.Browser().ThroughProvider(iss, api.AuthOIDCBeginRequest{Purpose: api.OIDCPurposeSignIn, Next: next})
 		if got := a.Header.Get("Location"); got != want {
@@ -565,24 +575,38 @@ func TestASignInEndsOnlyOnAPathOfThisOrigin(t *testing.T) {
 	}
 }
 
-// Ten failures after a passed binding lock the address out of the flows:
-// its next callback is refused too_many_attempts, and so is its next
-// begin. A refusal at the provider counts for nothing.
+// Ten failures after a passed binding lock the address out of the flows,
+// provider_failed and identity_not_linked alike: its next callback is
+// refused too_many_attempts, and so is its next begin. A refusal at the
+// provider, and a provider that does not answer, count for nothing.
 func TestFailedCallbacksCountForTheAddress(t *testing.T) {
 	t.Parallel()
 	h, iss := startIssuer(t)
+	link(t, h, iss, "bob")
 	b := h.Browser()
 	b.Address = "192.0.2.60"
 	iss.Deny()
 	for range 10 {
 		wantSeeOther(t, b.ThroughProvider(iss, signInThrough), "/signin?refused=provider_refused")
 	}
-	iss.SignInAs("subject-nobody", "nobody")
-	// Begun while the address may still begin one.
+	iss.SignInAs("subject-alice", "alice@idp.example.com")
+	iss.AnswerToken(http.StatusServiceUnavailable)
+	for range 10 {
+		wantSeeOther(t, b.ThroughProvider(iss, signInThrough), "/signin?refused=provider_unreachable")
+	}
+	iss.AnswerToken(0)
+	// Begun while the address may still begin one, after the 20 that
+	// counted for nothing.
 	late := h.Browser()
 	late.Address = b.Address
 	back := iss.Authorize(late.StartOIDC(signInThrough))
-	for range 10 {
+	iss.SpoilToken(func(_, c map[string]any) { c["nonce"] = "spoiled" })
+	for range 5 {
+		wantSeeOther(t, b.ThroughProvider(iss, signInThrough), "/signin?refused=provider_failed")
+	}
+	iss.SpoilToken(nil)
+	iss.SignInAs("subject-nobody", "nobody")
+	for range 5 {
 		wantSeeOther(t, b.ThroughProvider(iss, signInThrough), "/signin?refused=identity_not_linked")
 	}
 	wantSeeOther(t, late.Callback(back), "/signin?refused=too_many_attempts")
@@ -860,5 +884,117 @@ func TestUnlinkingEndsOnlyTheSignInsThroughIt(t *testing.T) {
 	wantSeeOther(t, h.Browser().ThroughProvider(iss, signInThrough), "/signin?refused=identity_not_linked")
 	if !strings.Contains(h.Log(), `msg="identity unlinked" user=bob identity=`+through.Credential+` unlinked_by=`+kept.ID+` signins_ended=1`) {
 		t.Errorf("the log does not say the identity was unlinked:\n%s", h.Log())
+	}
+}
+
+// An ID token signed with an HMAC is refused, even when discovery lists the
+// algorithm and the key set publishes the key, since anyone can read that
+// key: only asymmetric algorithms sign an ID token.
+func TestAnHMACSignedIDTokenFails(t *testing.T) {
+	t.Parallel()
+	iss := harness.NewIssuer(t)
+	iss.Spoil(func(doc map[string]any) { doc["id_token_signing_alg_values_supported"] = []string{"ES256", "HS256"} })
+	iss.PublishSymmetricKey([]byte("a key the key set publishes, 32b"))
+	h := harness.Start(t, harness.WebListen("127.0.0.1:0"), harness.IdentityProvider(iss))
+	h.Browser()
+	h.Koko("user", "invite", "bob").WantSuccess(t)
+	h.SetIssuer(iss)
+	link(t, h, iss, "bob")
+	iss.SpoilToken(func(header, _ map[string]any) { header["alg"], header["kid"] = "HS256", "hmac" })
+	b := h.Browser()
+	wantSeeOther(t, b.ThroughProvider(iss, signInThrough), "/signin?refused=provider_failed")
+	if b.Cookie != "" || !strings.Contains(h.Log(), "reason=provider_failed purpose=signin step=signature") {
+		t.Errorf("an HS256 ID token was not refused at its signature:\n%s", h.Log())
+	}
+}
+
+// One browser's flows share its binding cookie: two begun at once both
+// finish, in either order, and a callback a site sends the browser to
+// meanwhile cancels neither.
+func TestTwoFlowsInOneBrowserBothFinish(t *testing.T) {
+	t.Parallel()
+	h, iss := startIssuer(t)
+	b := h.SignIn("bob")
+	linking := iss.Authorize(b.StartOIDC(linkToSignIn))
+	cookie := b.FlowCookie
+	signing := iss.Authorize(b.StartOIDC(signInThrough))
+	if b.FlowCookie != cookie {
+		t.Error("a second begin replaced the browser's binding cookie")
+	}
+	forged := url.Values{"state": {"AAAAAAAAAAAAAAAAAAAAAA"}, "code": {"forged"}}
+	wantSeeOther(t, b.Callback(harness.WebURL+api.AuthOIDCCallbackPath+"?"+forged.Encode()), "/signin?refused=signin_expired")
+	wantSeeOther(t, b.Callback(linking), "/account?linked=1")
+	wantSeeOther(t, b.Callback(signing), "/")
+	if si := currentSignIn(t, b); si.User != "bob" || si.Method != api.MethodIdentity {
+		t.Errorf("the second flow signed in %+v, want bob through his identity", si)
+	}
+}
+
+// A link flow links only to the Sign-in that began it: when the browser
+// signed in as someone else meanwhile, the callback is refused, linking
+// nobody.
+func TestALinkFlowLinksOnlyToTheSignInThatBeganIt(t *testing.T) {
+	t.Parallel()
+	h, iss := startIssuer(t)
+	h.SignIn("carol")
+	b := h.SignIn("bob")
+	back := iss.Authorize(b.StartOIDC(linkToSignIn))
+	if status, body := b.Post(api.AuthSignInPath, api.AuthSignInRequest{Name: "carol", Password: harness.Password}); status != http.StatusOK {
+		t.Fatal(status, body)
+	}
+	wantSeeOther(t, b.Callback(back), "/account?refused=signin_required")
+	for _, u := range []string{"bob", "carol"} {
+		if userOf(t, h, u).IdentityLinkedAt != "" {
+			t.Errorf("%s has an identity linked", u)
+		}
+	}
+}
+
+// The outcome checks the provider and the Web URL again in its write's
+// transaction: a change of the client, or of the Web URL, while the
+// exchange was held refuses the flow as signin_expired.
+func TestTheOutcomeChecksTheProviderAgain(t *testing.T) {
+	t.Parallel()
+	h, iss := startIssuer(t)
+	link(t, h, iss, "bob")
+	for name, change := range map[string]struct{ do, undo any }{
+		"the client": {
+			api.ServerOIDCSetRequest{ClientID: new("koko-2")}, api.ServerOIDCSetRequest{ClientID: new(harness.IssuerClientID)},
+		},
+		"the Web URL": {
+			api.ServerSetRequest{WebURL: new("https://other.example.com")}, api.ServerSetRequest{WebURL: new(harness.WebURL)},
+		},
+	} {
+		b := h.Browser()
+		back := iss.Authorize(b.StartOIDC(signInThrough))
+		iss.Hold()
+		ended := make(chan string, 1)
+		go func() { ended <- b.Callback(back).Header.Get("Location") }()
+		deadline := time.Now().Add(10 * time.Second)
+		for iss.Waiting() < 1 {
+			if time.Now().After(deadline) {
+				t.Fatalf("%s: the exchange never reached the provider", name)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		apply := func(req any) {
+			t.Helper()
+			var err error
+			switch r := req.(type) {
+			case api.ServerOIDCSetRequest:
+				_, err = h.Call(api.ServerOIDCSet, r)
+			case api.ServerSetRequest:
+				_, err = h.Call(api.ServerSet, r)
+			}
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+		}
+		apply(change.do)
+		iss.Release()
+		if got := <-ended; got != "/signin?refused=signin_expired" {
+			t.Errorf("a change of %s during the exchange ended the flow on %q, want signin_expired", name, got)
+		}
+		apply(change.undo)
 	}
 }

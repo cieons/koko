@@ -18,10 +18,15 @@ only what koko asks of an authenticator:
 For OpenID Connect, koko uses `github.com/coreos/go-oidc/v3` (Apache-2.0)
 with `golang.org/x/oauth2` (BSD-3-Clause). They bring only
 `github.com/go-jose/go-jose/v4` (Apache-2.0) into the binaries, and each
-licence passes the third-party notices gate. koko itself checks the claims
-go-oidc leaves to the caller: `azp`, which must be present when `aud`
-names more than one audience, the `nonce`, and `exp` with 60 seconds of
-clock skew.
+licence passes the third-party notices gate. go-oidc checks an ID token's
+signature alone, by a key of the issuer's key set; koko gives it the
+algorithms it accepts, those of the provider's discovery that sign with a
+private key (RSA, RSA-PSS, ECDSA or EdDSA), RS256 when none is listed, so
+never an HMAC, whose key a key set would publish, nor `none`. koko then
+checks every claim itself, so that a refusal names its step: `iss` byte for
+byte, `aud`, `azp` (which must be present when `aud` names more than one
+audience), `exp` with 60 seconds of clock skew, `nbf` with go-oidc's 5
+minutes of leeway, the `nonce` and `sub` (#233).
 
 `github.com/go-webauthn/webauthn` stays in the repository as the verifier's
 oracle, imported only by tests. The notices gate reads only what each binary

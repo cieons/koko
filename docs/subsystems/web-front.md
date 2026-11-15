@@ -190,7 +190,8 @@ endpoints set the Sign-in cookie, and only they and `/v1/` read it.
 `/auth/oidc/begin` sets one other cookie, `__Host-koko-oidc`, which binds a
 flow through the Identity Provider to the browser that began it
 (`Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, no `Domain`,
-`Max-Age=600`), and only the callback reads it and clears it.
+`Max-Age=600`, refreshed at each begin, which keeps the browser's own
+token), and only begin and the callback read it; nothing clears it.
 
 1. **Before initialisation**, every request gets a `503` page saying the
    koko server is not initialised yet.
@@ -224,8 +225,9 @@ flow through the Identity Provider to the browser that began it
    binding stands in for the Origin check: a callback whose `state` names
    no flow held, or whose `__Host-koko-oidc` does not match the flow's, is
    refused as `signin_expired`, changing nothing and counting for no
-   limit, since any site can make a browser load it. It answers a `303`
-   whatever follows, which takes the code and the state out of the address
+   limit, since any site can make a browser load it; it leaves the cookie
+   as it is, so such a load cancels none of a visitor's flows. It answers
+   a `303` whatever follows, which takes the code and the state out of the address
    bar, and every answer's `Referrer-Policy: no-referrer` keeps them out of
    the next page's `Referer` ([the Identity
    Provider](identity.md#the-callback)).

@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strconv"
+	"strings"
 	"text/tabwriter"
+	"unicode"
 
 	"github.com/cieons/koko/internal/shared/api"
 )
@@ -89,10 +92,20 @@ func (l identityList) Human(w io.Writer) error {
 	// A tabwriter reports a failed write when it flushes.
 	_, _ = fmt.Fprintln(tw, "USER\tLABEL\tID\tISSUER\tSUBJECT\tLINKED BY\tLINKED\tLAST USED")
 	for _, i := range l {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", i.User, i.Label, i.ID, i.Issuer, i.Subject,
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", i.User, printable(i.Label), i.ID, printable(i.Issuer), printable(i.Subject),
 			cmp.Or(deref(i.LinkedBy), "-"), i.LinkedAt, cmp.Or(deref(i.LastUsedAt), "-"))
 	}
 	return tw.Flush()
+}
+
+// printable is s as a terminal shows it without harm: quoted, its control
+// characters escaped, when it holds one, which the provider's words never
+// should, so none reaches the terminal raw; as it is otherwise.
+func printable(s string) string {
+	if strings.ContainsFunc(s, unicode.IsControl) {
+		return strconv.Quote(s)
+	}
+	return s
 }
 
 func identityLs(ctx context.Context, in *Input) (identityList, error) {
@@ -122,7 +135,7 @@ func (u identityUnlinked) Human(w io.Writer) error {
 	case n > 1:
 		ended = fmt.Sprintf("ended the %d Sign-ins made through it", n)
 	}
-	_, err := fmt.Fprintf(w, "Unlinked the identity %s (%s) of %s; %s.\n", u.Identity.Label, u.Identity.ID, u.Identity.User, ended)
+	_, err := fmt.Fprintf(w, "Unlinked the identity %s (%s) of %s; %s.\n", printable(u.Identity.Label), u.Identity.ID, u.Identity.User, ended)
 	return err
 }
 

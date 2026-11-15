@@ -266,7 +266,7 @@ func (f *Front) authOIDCBegin(w http.ResponseWriter, r *http.Request, body []byt
 	if err != nil {
 		return err
 	}
-	location, binding, err := f.identities.Begin(r.Context(), req, signInToken(r), attempt(r))
+	location, binding, err := f.identities.Begin(r.Context(), req, signInToken(r), flowBinding(r), attempt(r))
 	if err != nil {
 		return err
 	}
@@ -278,25 +278,31 @@ func (f *Front) authOIDCBegin(w http.ResponseWriter, r *http.Request, body []byt
 	return nil
 }
 
+// flowBinding is the binding token the request's flow cookie carries, or
+// "".
+func flowBinding(r *http.Request) string {
+	c, err := r.Cookie(oidcCookie)
+	if err != nil {
+		return ""
+	}
+	return c.Value
+}
+
 // authOIDCCallback is where the Identity Provider sends a browser back to:
 // the one /auth/ endpoint a GET reaches, and the one GET that changes
-// state, so its binding stands in for the Origin check. It clears the
-// flow's cookie whatever follows, and answers a 303, which takes the code
-// and the state out of the address bar and the history; the
-// Referrer-Policy every answer carries keeps them out of the next page's
-// Referer.
+// state, so its binding stands in for the Origin check. It leaves the
+// flow's cookie as it is: one browser's flows share it, so that two begun
+// at once both finish, and a site that sends a visitor here cancels
+// nothing. It answers a 303, which takes the code and the state out of the
+// address bar and the history; the Referrer-Policy every answer carries
+// keeps them out of the next page's Referer.
 func (f *Front) authOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		f.refuseAPI(w, r, api.CodeMethodNotAllowed.Errorf("%s is not allowed: %s takes a GET", r.Method, r.URL.Path))
 		return
 	}
-	var binding string
-	if c, err := r.Cookie(oidcCookie); err == nil {
-		binding = c.Value
-	}
-	http.SetCookie(w, &http.Cookie{Name: oidcCookie, Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
-	out := f.identities.Callback(r.Context(), r.URL.Query(), binding, signInToken(r), attempt(r))
+	out := f.identities.Callback(r.Context(), r.URL.Query(), flowBinding(r), signInToken(r), attempt(r))
 	if out.Started != nil {
 		f.setSignInCookie(w, *out.Started)
 	}
