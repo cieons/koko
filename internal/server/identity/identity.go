@@ -1,0 +1,281 @@
+// Package identity is the identity area of the koko server: the Identity
+// Provider, the one OpenID Connect provider the Owner configures, through
+// which a User with a Linked Identity signs in to the web UI (ADR 0060,
+// ADR 0061). It serves server.oidc.show, server.oidc.set and
+// server.oidc.remove, keeps the provider's client secret sealed under the
+// Root Key, and makes every call to the provider through one bounded
+// client (client.go), keeping its discovery and keys (discovery.go).
+//
+// A set checks a new or changed issuer's discovery before its write's
+// transaction (op.HandlePrepared), so a slow provider holds up no other
+// write. A change of issuer, or a removal, unlinks every Linked Identity
+// and ends the Sign-ins made through them, which the signin area ends.
+package identity
+
+import (
+	"cmp"
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/coreos/go-oidc/v3/oidc"
+
+	"github.com/cieons/koko/internal/server/access"
+	"github.com/cieons/koko/internal/server/deployment"
+	"github.com/cieons/koko/internal/server/op"
+	"github.com/cieons/koko/internal/server/seal"
+	"github.com/cieons/koko/internal/server/store"
+	"github.com/cieons/koko/internal/shared/api"
+	"github.com/cieons/koko/internal/shared/timing"
+)
+
+// SignIns is the signin area's part in unlinking an identity: it ends the
+// Sign-ins made with a credential.
+type SignIns interface {
+	// EndMadeWith ends every live Sign-in of u made with the credential,
+	// for reason, by the caller named by, and counts them.
+	EndMadeWith(ctx context.Context, tx store.Tx, u api.User, credential, reason, by string) (int64, error)
+}
+
+// Service is the identity area.
+type Service struct {
+	rootKey *seal.RootKey
+	signIns SignIns
+	// client makes every call to the Identity Provider.
+	client      *http.Client
+	discoveries *discoveries
+	log         *slog.Logger
+}
+
+// New returns the identity area, which seals the client secret with
+// rootKey, ends Sign-ins through signIns, calls the provider through base's
+// transport (nil for the system's), bounded as timings say (the zero
+// Timings is the product's), keeps discoveries on clock, the koko server's,
+// and logs to log.
+func New(rootKey *seal.RootKey, signIns SignIns, base *http.Client, clock func() time.Time, timings timing.Timings, log *slog.Logger) *Service {
+	t := timings.Resolve()
+	client := newClient(base, t.ProviderCall, t.ProviderTurn, log)
+	return &Service{rootKey: rootKey, signIns: signIns, client: client, discoveries: &discoveries{client: client, clock: clock}, log: log}
+}
+
+// Register adds the Identity Provider's operations to the API.
+func (s *Service) Register(a *op.API) {
+	a.Handle(api.ServerOIDCShow, s.show)
+	a.HandlePrepared(api.ServerOIDCSet, s.prepareSet, s.set)
+	a.Handle(api.ServerOIDCRemove, s.remove)
+}
+
+// Discovered returns go-oidc's provider of issuer's discovery, which keeps
+// the issuer's keys, kept or fetched as discoveries says; a provider that
+// does not answer is refused with provider_unreachable, and a document no
+// longer valid with invalid_provider. A sign-in's flow calls it outside any
+// transaction.
+func (s *Service) Discovered(ctx context.Context, issuer string) (*oidc.Provider, error) {
+	return s.discoveries.get(ctx, issuer)
+}
+
+// show is server.oidc.show, for the Owner and the Administrators.
+func (s *Service) show(ctx context.Context, tx store.Tx, caller op.Caller, _ api.ServerOIDCShowRequest) (api.ServerOIDCShowResponse, error) {
+	if _, err := access.Administers(ctx, tx, caller, "sees the Identity Provider"); err != nil {
+		return api.ServerOIDCShowResponse{}, err
+	}
+	p, err := readProvider(ctx, tx, s.rootKey)
+	if err != nil {
+		return api.ServerOIDCShowResponse{}, err
+	}
+	webURL, _, err := deployment.WebURL(ctx, tx)
+	if err != nil {
+		return api.ServerOIDCShowResponse{}, err
+	}
+	var resp api.ServerOIDCShowResponse
+	if p != nil {
+		resp.Provider = new(p.answer())
+	}
+	if webURL != "" {
+		resp.RedirectURI = new(webURL + api.RedirectPath)
+	}
+	return resp, nil
+}
+
+// checked is what prepareSet checked outside the write's transaction: the
+// issuer whose discovery it fetched, "" for none, and what it found.
+type checked struct {
+	issuer string
+	found  discovery
+}
+
+// prepareSet checks server.oidc.set before its transaction: the Owner
+// alone, refusing anyone else before it reads anything; the Web URL set;
+// the settings; and, for a new or changed issuer, its discovery, fetched
+// outside any transaction.
+func (s *Service) prepareSet(ctx context.Context, read op.Read, caller op.Caller, req api.ServerOIDCSetRequest) (checked, error) {
+	var current, next *provider
+	err := read(func(tx store.Tx) error {
+		var err error
+		current, next, err = s.planSet(ctx, tx, caller, req)
+		return err
+	})
+	if err != nil {
+		return checked{}, err
+	}
+	if current != nil && next.issuer == current.issuer {
+		return checked{}, nil
+	}
+	found, err := discover(ctx, s.client, next.issuer)
+	if err != nil {
+		return checked{}, err
+	}
+	return checked{issuer: next.issuer, found: found}, nil
+}
+
+// planSet checks who calls and the Web URL, and returns the Identity
+// Provider as it is and as req makes it.
+func (s *Service) planSet(ctx context.Context, tx store.Tx, caller op.Caller, req api.ServerOIDCSetRequest) (current, next *provider, err error) {
+	if _, err := access.OwnerOnly(ctx, tx, caller, "configures the Identity Provider"); err != nil {
+		return nil, nil, err
+	}
+	if _, err := redirectURI(ctx, tx); err != nil {
+		return nil, nil, err
+	}
+	if current, err = readProvider(ctx, tx, s.rootKey); err != nil {
+		return nil, nil, err
+	}
+	if next, err = merge(current, req); err != nil {
+		return nil, nil, err
+	}
+	return current, next, nil
+}
+
+// set is server.oidc.set, once prepareSet has checked it: it checks again
+// what it relies on, since the record may have changed meanwhile, then
+// writes the provider under a new id, unlinking every identity when the
+// issuer changes.
+func (s *Service) set(ctx context.Context, tx store.Tx, caller op.Caller, req api.ServerOIDCSetRequest, c checked) (api.ServerOIDCSetResponse, error) {
+	current, next, err := s.planSet(ctx, tx, caller, req)
+	if err != nil {
+		return api.ServerOIDCSetResponse{}, err
+	}
+	who, err := access.Who(ctx, tx, caller)
+	if err != nil {
+		return api.ServerOIDCSetResponse{}, err
+	}
+	issuerChanged := current == nil || next.issuer != current.issuer
+	if issuerChanged && c.issuer != next.issuer {
+		return api.ServerOIDCSetResponse{}, api.CodeInvalidRequest.Errorf("the Identity Provider's issuer changed while this set was checked: set it again")
+	}
+	unlinked := 0
+	if issuerChanged {
+		if unlinked, err = s.unlinkAll(ctx, tx, who.By()); err != nil {
+			return api.ServerOIDCSetResponse{}, err
+		}
+	}
+	if err := writeProvider(ctx, tx, s.rootKey, next, op.Now(ctx), who.Issuer()); err != nil {
+		return api.ServerOIDCSetResponse{}, err
+	}
+	redirect, err := redirectURI(ctx, tx)
+	if err != nil {
+		return api.ServerOIDCSetResponse{}, err
+	}
+	secretChanged := current == nil || next.secret != current.secret
+	op.AfterTx(ctx, func(committed bool) {
+		if !committed {
+			return
+		}
+		if issuerChanged {
+			s.discoveries.keep(next.issuer, c.found)
+		}
+		s.log.Info("identity provider set", "user", who.User.Name, "issuer", next.issuer, "client_id", next.clientID,
+			"name", next.name, "secret_changed", secretChanged, "set_by", who.By(), "identities_unlinked", unlinked)
+	})
+	return api.ServerOIDCSetResponse{Provider: next.answer(), RedirectURI: redirect, IdentitiesUnlinked: unlinked}, nil
+}
+
+// remove is server.oidc.remove, for the Owner alone: it unlinks every
+// identity and removes the provider.
+func (s *Service) remove(ctx context.Context, tx store.Tx, caller op.Caller, _ api.ServerOIDCRemoveRequest) (api.ServerOIDCRemoveResponse, error) {
+	who, err := access.OwnerOnly(ctx, tx, caller, "removes the Identity Provider")
+	if err != nil {
+		return api.ServerOIDCRemoveResponse{}, err
+	}
+	p, err := readProvider(ctx, tx, s.rootKey)
+	if err != nil {
+		return api.ServerOIDCRemoveResponse{}, err
+	}
+	if p == nil {
+		return api.ServerOIDCRemoveResponse{}, api.CodeProviderUnset.Errorf("no Identity Provider is set, so there is none to remove")
+	}
+	unlinked, err := s.unlinkAll(ctx, tx, who.By())
+	if err != nil {
+		return api.ServerOIDCRemoveResponse{}, err
+	}
+	if err := deleteProvider(ctx, tx); err != nil {
+		return api.ServerOIDCRemoveResponse{}, err
+	}
+	op.AfterTx(ctx, func(committed bool) {
+		if !committed {
+			return
+		}
+		s.discoveries.forget()
+		s.log.Info("identity provider removed", "user", who.User.Name, "issuer", p.issuer, "removed_by", who.By(), "identities_unlinked", unlinked)
+	})
+	return api.ServerOIDCRemoveResponse{IdentitiesUnlinked: unlinked}, nil
+}
+
+// redirectURI is where the provider sends a browser back to: the Web URL
+// followed by api.RedirectPath, refused with web_url_unset while the Web
+// URL is not set.
+func redirectURI(ctx context.Context, tx store.Tx) (string, error) {
+	webURL, _, err := deployment.WebURL(ctx, tx)
+	if err != nil {
+		return "", err
+	}
+	if webURL == "" {
+		return "", api.CodeWebURLUnset.Errorf("the Identity Provider sends a browser back to the Web URL, which is not set: set it with koko server set web_url=https://… on the koko server's machine")
+	}
+	return webURL + api.RedirectPath, nil
+}
+
+// linked is one Linked Identity, with its User.
+type linked struct {
+	id   string
+	user api.User
+}
+
+// unlinkAll unlinks every Linked Identity, by being the caller named by:
+// it ends the Sign-ins made through each (identity_unlinked) and deletes
+// them, logging each once the call commits, and says how many it unlinked.
+func (s *Service) unlinkAll(ctx context.Context, tx store.Tx, by string) (int, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT i.id, u.id, u.name FROM identities i JOIN users u ON u.id = i.user_id ORDER BY u.name")
+	if err != nil {
+		return 0, fmt.Errorf("read the Linked Identities: %w", err)
+	}
+	var all []linked
+	for rows.Next() {
+		var l linked
+		if err := rows.Scan(&l.id, &l.user.ID, &l.user.Name); err != nil {
+			_ = rows.Close()
+			return 0, fmt.Errorf("read the Linked Identities: %w", err)
+		}
+		all = append(all, l)
+	}
+	if err := cmp.Or(rows.Err(), rows.Close()); err != nil {
+		return 0, fmt.Errorf("read the Linked Identities: %w", err)
+	}
+	for _, l := range all {
+		ended, err := s.signIns.EndMadeWith(ctx, tx, l.user, l.id, api.EndIdentityUnlinked, by)
+		if err != nil {
+			return 0, err
+		}
+		op.AfterTx(ctx, func(committed bool) {
+			if committed {
+				s.log.Info("identity unlinked", "user", l.user.Name, "identity", l.id, "unlinked_by", by, "signins_ended", ended)
+			}
+		})
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM identities"); err != nil {
+		return 0, fmt.Errorf("unlink the Linked Identities: %w", err)
+	}
+	return len(all), nil
+}

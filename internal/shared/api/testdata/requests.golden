@@ -266,3 +266,13 @@ all 1 boolean
 
 == signin.revoke 1
 id 1 string
+
+== server.oidc.show 1
+
+== server.oidc.set 1
+issuer 1 string
+client_id 1 string
+client_secret 1 string
+name 1 string
+
+== server.oidc.remove 1

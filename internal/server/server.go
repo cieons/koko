@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/cieons/koko/internal/server/gateway"
 	"github.com/cieons/koko/internal/server/host"
 	"github.com/cieons/koko/internal/server/hostlist"
+	"github.com/cieons/koko/internal/server/identity"
 	"github.com/cieons/koko/internal/server/op"
 	"github.com/cieons/koko/internal/server/seal"
 	"github.com/cieons/koko/internal/server/secret"
@@ -162,6 +164,12 @@ type Config struct {
 	// engine runs it, to log at its start. Nil means vt.Engine. No flag or
 	// environment variable sets it.
 	Emulator func(context.Context) (string, error)
+	// IdentityClient is the Identity Provider's hook, for tests only: the
+	// client whose transport every call to the Identity Provider goes
+	// through, bounded by the identity area, which a test replaces to
+	// trust its in-process issuer. Nil means the system's. No flag or
+	// environment variable sets it.
+	IdentityClient *http.Client
 }
 
 // The default bound of the web terminals' emulators together: a quarter of
@@ -423,6 +431,10 @@ func Start(ctx context.Context, cfg Config) (_ *Server, err error) {
 	device.Register(a, issuer, &changes, log)
 	user.Register(a, issuer.Issue, signins, gw.Workspaces(), holdings, &changes, &lists, log)
 	signins.Register(a, &changes)
+	// The identity area seals the Identity Provider's client secret with
+	// the Root Key, and ends the Sign-ins made through a Linked Identity it
+	// unlinks through the signin area.
+	identity.New(key, signins, cfg.IdentityClient, clock, cfg.Timings, log).Register(a)
 	// The Gateway records each Sign-in it finds expired, so the signal
 	// names it to every consumer.
 	gw.RecordExpiriesWith(signins.RecordExpiry)

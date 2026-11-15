@@ -1,0 +1,142 @@
+package api
+
+import "net/http"
+
+// The rules an Identity Provider's settings follow (ADR 0060).
+const (
+	// MaxIssuerLength is the longest issuer URL, in bytes.
+	MaxIssuerLength = 512
+	// MaxClientIDLength is the longest client ID, in bytes.
+	MaxClientIDLength = 255
+	// MaxClientSecretLength is the longest client secret, in bytes.
+	MaxClientSecretLength = 1024
+	// MaxProviderNameLength is the longest name on the sign-in button, in
+	// Unicode code points.
+	MaxProviderNameLength = 40
+)
+
+// RedirectPath is where the Identity Provider sends a browser back to, after
+// the Web URL: the redirect URI the Owner registers at the provider.
+const RedirectPath = "/auth/oidc/callback"
+
+// IdentityProvider is the one OpenID Connect provider the Owner configured,
+// as server.oidc.show and server.oidc.set answer it. Its client secret is
+// never answered.
+type IdentityProvider struct {
+	// Issuer is the provider's issuer URL, which its discovery document and
+	// each ID token name byte for byte.
+	Issuer string `json:"issuer"`
+	// ClientID is the client koko is registered as at the provider.
+	ClientID string `json:"client_id"`
+	// Name is the provider's name on the sign-in button, such as
+	// "Authentik".
+	Name string `json:"name"`
+	// ClientSecretSet is true: a provider is never configured without its
+	// client secret, which is sealed and never answered.
+	ClientSecretSet bool `json:"client_secret_set"`
+	// SetAt is when the provider was last set, RFC 3339 in UTC.
+	SetAt string `json:"set_at"`
+}
+
+// ServerOIDCShowRequest asks for the Identity Provider.
+type ServerOIDCShowRequest struct{}
+
+// ServerOIDCShowResponse is the Identity Provider, and the redirect URI to
+// register at it.
+type ServerOIDCShowResponse struct {
+	// Provider is the Identity Provider; null while none is configured.
+	Provider *IdentityProvider `json:"provider"`
+	// RedirectURI is the Web URL followed by RedirectPath, which the Owner
+	// registers at the provider; null while the Web URL is not set.
+	RedirectURI *string `json:"redirect_uri"`
+}
+
+// ServerOIDCSetRequest configures the Identity Provider: the settings it
+// names, and only those. The first set names all four.
+type ServerOIDCSetRequest struct {
+	// Issuer is the provider's issuer URL: https:// only, a path allowed, no
+	// query or fragment, at most MaxIssuerLength bytes.
+	Issuer *string `json:"issuer,omitzero"`
+	// ClientID is the client koko is registered as, 1 to MaxClientIDLength
+	// bytes.
+	ClientID *string `json:"client_id,omitzero"`
+	// ClientSecret is the client's secret, 1 to MaxClientSecretLength bytes,
+	// which the koko server seals and never answers.
+	ClientSecret *string `json:"client_secret,omitzero"`
+	// Name is the provider's name on the sign-in button, 1 to
+	// MaxProviderNameLength characters.
+	Name *string `json:"name,omitzero"`
+}
+
+// ServerOIDCSetResponse is the Identity Provider as server.oidc.set left
+// it.
+type ServerOIDCSetResponse struct {
+	Provider IdentityProvider `json:"provider"`
+	// RedirectURI is the Web URL followed by RedirectPath, which the Owner
+	// registers at the provider.
+	RedirectURI string `json:"redirect_uri"`
+	// IdentitiesUnlinked is how many Linked Identities the set unlinked: every
+	// one, when it changed the issuer, and none otherwise.
+	IdentitiesUnlinked int `json:"identities_unlinked"`
+}
+
+// ServerOIDCRemoveRequest removes the Identity Provider.
+type ServerOIDCRemoveRequest struct{}
+
+// ServerOIDCRemoveResponse is what removing the Identity Provider did.
+type ServerOIDCRemoveResponse struct {
+	// IdentitiesUnlinked is how many Linked Identities it unlinked: every
+	// one.
+	IdentitiesUnlinked int `json:"identities_unlinked"`
+}
+
+// The Identity Provider's operations (ADR 0060).
+var (
+	// ServerOIDCShow returns the Identity Provider, without its client
+	// secret, and the redirect URI to register at it. It answers the Owner
+	// and the Administrators, the Local caller included.
+	ServerOIDCShow = Op[ServerOIDCShowRequest, ServerOIDCShowResponse]{Name: "server.oidc.show"}
+	// ServerOIDCSet configures the Identity Provider. It is for the Owner
+	// alone, the Local caller included, and refuses anyone else with
+	// CodeOwnerOnly before it reads anything. It is refused with
+	// CodeWebURLUnset while the Web URL is not set, with CodeInvalidRequest
+	// for a first set that does not name all four settings, and with
+	// CodeInvalidProvider for a setting koko does not take. A new or
+	// changed issuer's discovery is checked first, outside any transaction:
+	// one that is not valid is refused with CodeInvalidProvider, and a
+	// provider that does not answer with CodeProviderUnreachable, changing
+	// nothing. A change of issuer unlinks every Linked Identity and ends the
+	// Sign-ins made through them; a change of the client or the name keeps
+	// them.
+	ServerOIDCSet = Op[ServerOIDCSetRequest, ServerOIDCSetResponse]{Name: "server.oidc.set", Write: true}
+	// ServerOIDCRemove removes the Identity Provider, unlinking every Linked
+	// Identity and ending the Sign-ins made through them. It is for the
+	// Owner alone, as ServerOIDCSet is, and is refused with
+	// CodeProviderUnset while none is configured.
+	ServerOIDCRemove = Op[ServerOIDCRemoveRequest, ServerOIDCRemoveResponse]{Name: "server.oidc.remove", Write: true}
+)
+
+var identityOperations = []Operation{
+	ServerOIDCShow,
+	ServerOIDCSet,
+	ServerOIDCRemove,
+}
+
+// The identity area's codes.
+var (
+	// CodeInvalidProvider: a setting of the Identity Provider is not one
+	// koko takes, or the issuer's discovery document is not valid; the
+	// message says which.
+	CodeInvalidProvider = Code{"invalid_provider", http.StatusBadRequest}
+	// CodeProviderUnreachable: the Identity Provider did not answer in
+	// time.
+	CodeProviderUnreachable = Code{"provider_unreachable", http.StatusBadGateway}
+	// CodeProviderUnset: no Identity Provider is configured.
+	CodeProviderUnset = Code{"provider_unset", http.StatusConflict}
+)
+
+var identityCodes = []Code{
+	CodeInvalidProvider,
+	CodeProviderUnreachable,
+	CodeProviderUnset,
+}

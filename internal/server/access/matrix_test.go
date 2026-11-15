@@ -30,6 +30,7 @@ var areaRows = [][]row{
 	enrollRows,
 	serviceRows,
 	signinRows,
+	identityRows,
 }
 
 // A row states, for one operation, the answer each caller gets.

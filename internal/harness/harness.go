@@ -92,6 +92,7 @@ type options struct {
 	version     string
 	upgrade     server.Upgrade
 	emulator    func(context.Context) (string, error)
+	issuer      *Issuer
 }
 
 // Mountinfo makes the koko server read the machine's mounts from path, a
@@ -362,22 +363,23 @@ func Start(t testing.TB, opts ...Option) *Harness {
 		t.Cleanup(h.clock.fired.Wait)
 	}
 	srv, err := server.Start(t.Context(), server.Config{
-		DataDir:     o.dataDir,
-		RootKeyPath: o.rootKeyFile,
-		Listen:      cmp.Or(o.listen, listenAddr),
-		WebListen:   o.webListen,
-		LogLevel:    slog.LevelDebug,
-		Log:         h.log,
-		Filesystems: o.filesystemsOrLocalDisk(),
-		ProcessUIDs: o.processUIDsOrNotRoot(),
-		SocketPath:  h.socket,
-		Clock:       h.clock.Now,
-		Timings:     o.timings,
-		UpdateClock: updateClock,
-		Releases:    releases,
-		Upgrade:     o.upgrade,
-		Version:     o.version,
-		Emulator:    o.emulator,
+		DataDir:        o.dataDir,
+		RootKeyPath:    o.rootKeyFile,
+		Listen:         cmp.Or(o.listen, listenAddr),
+		WebListen:      o.webListen,
+		LogLevel:       slog.LevelDebug,
+		Log:            h.log,
+		Filesystems:    o.filesystemsOrLocalDisk(),
+		ProcessUIDs:    o.processUIDsOrNotRoot(),
+		SocketPath:     h.socket,
+		Clock:          h.clock.Now,
+		Timings:        o.timings,
+		UpdateClock:    updateClock,
+		Releases:       releases,
+		Upgrade:        o.upgrade,
+		Version:        o.version,
+		Emulator:       o.emulator,
+		IdentityClient: o.identityClient(),
 	})
 	if err != nil {
 		t.Fatalf("start the koko server: %v", err)
@@ -503,6 +505,7 @@ func startConfig(t testing.TB, opts []Option) func(server.Config) server.Config 
 		c.ProcessUIDs = uids
 		c.SocketPath = socket
 		c.UpdateClock, c.Releases = StillClock{}, noReleases
+		c.IdentityClient = noProvider
 		// Never the machine's own /etc and /var/lib.
 		c.Upgrade.HelperUnit, c.Upgrade.OutcomeFile, c.Upgrade.RequestFile = upgrade.HelperUnit, upgrade.OutcomeFile, upgrade.RequestFile
 		c.Upgrade.Image = cmp.Or(upgrade.Image, c.Upgrade.Image)

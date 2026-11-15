@@ -171,6 +171,7 @@ var operations = [][]Operation{
 	enrollOperations,
 	serviceOperations,
 	signinOperations,
+	identityOperations,
 }
 
 // Operations returns every API operation.

@@ -28,7 +28,7 @@ Provider tickets fill them):
 | --- | --- |
 | `passwords` | A User's one Password, or no row: its id (`password_…`), the User, its Argon2id hash as a PHC string sealed under the Root Key for the row's id ([the Seal](seal.md)), when it was set and how (`link`, `change`, or `signin` for a first Password from a live Sign-in). Setting a Password writes a new row. |
 | `password_links` | Each Sign-in Link, under the name the Password Link had before it: its id (`passwordlink_…`), the User, the SHA-256 of its secret, what issued it (a Device Session's or a Sign-in's id, or NULL for the Unix socket), when it was issued, expires, was used and was voided. Spent links are kept. |
-| `passkeys`, `identities`, `identity_provider` | Each Passkey, each Linked Identity and the one Identity Provider, as spec #228 gives them; empty until the tickets that make them. |
+| `passkeys`, `identities`, `identity_provider` | Each Passkey, each Linked Identity and the one Identity Provider, as spec #228 gives them; the Identity Provider's is in [the Identity Provider](identity.md#the-record), and the other two are empty until the tickets that make them. |
 | `signins` | Each Sign-in: its id (`signin_…`), the User, the SHA-256 of its cookie's token, how it was made (`method`: `password`, `passkey` or `identity`, `password` for every Sign-in recorded before the step) and the passkey or Linked Identity it was made with (`credential`, NULL for a Password), the browser and the system its User-Agent named (`browser` and `system`, `''` for none), the client's address at sign-in and when last used, its start, its Last used time, its expiry 30 days on, and once it ends, when, why and by whom. Ended Sign-ins are kept, as Revoked Device Sessions are. |
 
 ## Passwords

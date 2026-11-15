@@ -154,6 +154,7 @@ var codes = [][]Code{
 	serviceCodes,
 	signinCodes,
 	filesCodes,
+	identityCodes,
 }
 
 // Codes returns every error code the API answers with.

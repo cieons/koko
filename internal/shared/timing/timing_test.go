@@ -43,6 +43,8 @@ func TestZeroTimingsAreTheProductsConstants(t *testing.T) {
 		PassOn:               5 * time.Second,
 		LocalProbe:           2 * time.Second,
 		LocalAnswer:          5 * time.Second,
+		ProviderCall:         10 * time.Second,
+		ProviderTurn:         10 * time.Second,
 	}
 	if got != want {
 		t.Errorf("Timings{}.Resolve() = %+v, want %+v", got, want)
@@ -83,6 +85,8 @@ func TestASetTimingReplacesOnlyItsConstant(t *testing.T) {
 		PassOn:               5 * time.Second,
 		LocalProbe:           2 * time.Second,
 		LocalAnswer:          5 * time.Second,
+		ProviderCall:         10 * time.Second,
+		ProviderTurn:         10 * time.Second,
 	}
 	if got != want {
 		t.Errorf("Resolve() = %+v, want %+v", got, want)

@@ -148,6 +148,11 @@ const (
 	// (liveness.Conn.WatchAnswers).
 	LocalProbe  = 2 * time.Second
 	LocalAnswer = 5 * time.Second
+	// ProviderCall bounds one call to the Identity Provider, its answer
+	// read included, and ProviderTurn how long a call waits for its turn
+	// while as many as the koko server allows are in flight (ADR 0060).
+	ProviderCall = 10 * time.Second
+	ProviderTurn = 10 * time.Second
 )
 
 // Timings is the timing-constants hook. Each field is named after its
@@ -184,6 +189,8 @@ type Timings struct {
 	PassOn               time.Duration
 	LocalProbe           time.Duration
 	LocalAnswer          time.Duration
+	ProviderCall         time.Duration
+	ProviderTurn         time.Duration
 
 	// Wake and RouteChange stand in for the Device Mux's watches of the
 	// device waking from sleep and of a change of its network routes: each
@@ -226,6 +233,8 @@ func (t Timings) Resolve() Timings {
 	t.PassOn = cmp.Or(t.PassOn, PassOn)
 	t.LocalProbe = cmp.Or(t.LocalProbe, LocalProbe)
 	t.LocalAnswer = cmp.Or(t.LocalAnswer, LocalAnswer)
+	t.ProviderCall = cmp.Or(t.ProviderCall, ProviderCall)
+	t.ProviderTurn = cmp.Or(t.ProviderTurn, ProviderTurn)
 	return t
 }
 

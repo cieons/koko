@@ -310,6 +310,15 @@ func (s *Service) endAll(ctx context.Context, tx store.Tx, u api.User, reason, b
 	return s.endWhere(ctx, tx, u, reason, by, "s.id != ?2", keep)
 }
 
+// EndMadeWith ends, at the call's time, every live Sign-in of u made with
+// the credential, a Passkey's or a Linked Identity's id, for reason, by
+// being the caller named by, logging each once the call commits, and says
+// how many it ended: removing a credential ends the Sign-ins made with it,
+// and no others (ADR 0060).
+func (s *Service) EndMadeWith(ctx context.Context, tx store.Tx, u api.User, credential, reason, by string) (int64, error) {
+	return s.endWhere(ctx, tx, u, reason, by, "s.credential = ?2", credential)
+}
+
 // endWhere ends, at the call's time, every live Sign-in of u that the SQL
 // condition where selects, reading arg as ?2, for reason, by being the
 // caller named by, logging each once the call commits, and says how many it
