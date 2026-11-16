@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -67,6 +68,28 @@ func waitLog(t *testing.T, h *harness.Harness, pattern string) []string {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// liveInOrder says how lives, what a page got live after each of its
+// resets, differ from want, the shell's output in full: each is the next
+// run of it, the first from its start, and the last ends where want does,
+// unless it is empty because a snapshot taken after the end drew it.
+func liveInOrder(lives [][]byte, want []byte) error {
+	if len(lives) == 0 {
+		return errors.New("no reset began the output")
+	}
+	at := 0
+	for i, live := range lives {
+		k := bytes.Index(want[at:], live)
+		if k < 0 || i == 0 && k > 0 {
+			return fmt.Errorf("the %d bytes after reset %d of %d are no run of the output after its first %d bytes", len(live), i+1, len(lives), at)
+		}
+		at += k + len(live)
+	}
+	if last := lives[len(lives)-1]; len(last) > 0 && at != len(want) {
+		return fmt.Errorf("the output after the last of %d resets ends after %d of its %d bytes", len(lives), at, len(want))
+	}
+	return nil
 }
 
 // wantRefused fails the test unless a refuses with code and message.
@@ -228,10 +251,11 @@ func TestATerminalWithoutAFirstMessageIsClosed(t *testing.T) {
 // An open runs a shell on the Host as its Host Account, logged in with the
 // koko key, on a session channel with a pty: TERM xterm-256color, the
 // page's size, pixel sizes 0 and IUTF8 on. 1 MiB passes each way byte for
-// byte, within what the stream's buffer holds so the page never falls
-// behind, a resize of the active page becomes a window-change, and the
-// shell's exit status, or the signal that ended it, comes as its record
-// before the stream's close.
+// byte: a page that falls behind, as a loaded koko server's writer can
+// leave it, gets a reset and a snapshot in place of what it missed, and
+// all it gets live is still the shell's output in order. A resize of the
+// active page becomes a window-change, and the shell's exit status, or the
+// signal that ended it, comes as its record before the stream's close.
 func TestATerminalRunsAShellOnThePty(t *testing.T) {
 	t.Parallel()
 	h := startTerminals(t)
@@ -278,17 +302,25 @@ func TestATerminalRunsAShellOnThePty(t *testing.T) {
 		}
 		data[i] = c
 	}
+	// The end, on a line of its own in the G0 character set and with no
+	// blank a snapshot would draw as a cursor move, so that it reads the
+	// same live and in a snapshot taken after it.
+	end := "koko-end-" + rand.Text()
+	data = append(data, "\x0f\r\n"+end...)
 	typed := make(chan error, 1)
 	go func() {
 		_, err := w.Write(data)
 		typed <- err
 	}()
-	w.WaitOutputLen(len("ready\n") + len(data))
-	if out := w.Live(); !bytes.Equal(out[len("ready\n"):], data) {
-		t.Error("the 1 MiB cat echoed are not those sent")
+	w.WaitOutput(end)
+	if err := liveInOrder(w.Lives(), append([]byte("ready\n"), data...)); err != nil {
+		t.Errorf("the 1 MiB cat echoed: %v", err)
 	}
 	if err := <-typed; err != nil {
 		t.Errorf("send 1 MiB: %v", err)
+	}
+	if strings.Contains(h.Log(), "web terminal emulator failed") {
+		t.Errorf("the emulator failed, which resets the pages too:\n%s", h.Log())
 	}
 
 	w.Resize(100, 40)

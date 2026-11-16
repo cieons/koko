@@ -297,9 +297,11 @@ type WebTerminal struct {
 	c  *websocket.Conn
 	// output is the data the koko server sent since its last reset, the
 	// snapshot included; live is what came after the snapshot, and
-	// snapshot the snapshot itself. resets are the sizes the resets
-	// carried. changed is closed and replaced at each record.
+	// snapshot the snapshot itself; earlier is the live of each reset
+	// before the last. resets are the sizes the resets carried. changed is
+	// closed and replaced at each record.
 	output, live, snapshot []byte
+	earlier                [][]byte
 	inSnapshot             bool
 	resets                 [][2]uint32
 	// active is what the last active record said; displaced, whether a
@@ -347,6 +349,9 @@ func (w *WebTerminal) read() {
 				w.live = append(w.live, rec.Data...)
 			}
 		case wire.TerminalReset:
+			if len(w.resets) > 0 {
+				w.earlier = append(w.earlier, w.live)
+			}
 			w.resets = append(w.resets, [2]uint32{rec.Columns, rec.Rows})
 			w.output, w.snapshot, w.live, w.inSnapshot = nil, nil, nil, true
 		case wire.TerminalActive:
@@ -449,6 +454,18 @@ func (w *WebTerminal) Live() []byte {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.live
+}
+
+// Lives returns the data the koko server sent after each snapshot, one for
+// each reset: what reached the page live, with the gaps a reset leaves
+// where the page fell behind.
+func (w *WebTerminal) Lives() [][]byte {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.resets) == 0 {
+		return nil
+	}
+	return append(slices.Clone(w.earlier), w.live)
 }
 
 // Snapshot returns the last snapshot the koko server sent.
