@@ -1,5 +1,10 @@
 GO ?= go
 NPM ?= npm
+# Go keys its build cache by each package's directory unless paths are
+# trimmed, so every worktree compiled every package again into the shared
+# cache, some 80 GB in five days of parallel work. Trimmed, worktrees at the
+# same commit share their builds, as a release's builds are trimmed already.
+export GOFLAGS += -trimpath
 # A release publishes the CLI, koko, for each of RELEASE_TARGETS, and the
 # koko server, kokod, for each of KOKOD_TARGETS, named <program>-<os>-<arch>,
 # with .exe on Windows, which runs a file by its extension (ADR 0026, ADR
