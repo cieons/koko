@@ -186,6 +186,17 @@ reads the table's modes as an access control list:
   device in use and its Device Mux write the revocation record at once
   (#183). Rename tries again for up to 2 s; every file the CLI writes
   atomically, the skill stub included, goes through it.
+- **A read waits out a rename that holds the file**
+  ([`devicefiles.ReadFile`](../../internal/client/devicefiles/rename.go)).
+  While a rename runs, it holds the file it puts in place open with delete
+  access, and the file it replaces is being deleted, so an open that does
+  not share delete is refused for that moment (#234). koko's reads of the
+  files it writes atomically try again for up to 2 s. OpenSSH for Windows
+  opens the Include without sharing delete too, and an ssh that opens it in
+  that moment exits with "Can't open user config file"; the next ssh reads
+  it. No replacement on Windows avoids the moment, and a rewrite in place
+  would let ssh read a half-written file instead, so koko keeps it short
+  and rare: it rewrites the file only when its bytes change.
 - **"Is mode 0600"** (`isPrivate`), which decides whether koko's ssh_config
   is rewritten, means exactly that: this user's own, protected, and those
   three entries and no other.

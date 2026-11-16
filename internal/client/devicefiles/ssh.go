@@ -202,7 +202,7 @@ func RefreshSSHConfig(home string, names []string) (wrote bool, err error) {
 		return false, err
 	}
 	path := filepath.Join(dir(home), sshConfigFile)
-	old, err := os.ReadFile(path)
+	old, err := ReadFile(path)
 	if err != nil {
 		return WriteSSHConfig(home, names)
 	}
@@ -239,7 +239,7 @@ func PointProxyCommand(home, koko string) (wrote bool, err error) {
 	case !ownedByMe(path, fi):
 		return false, nil
 	}
-	old, err := os.ReadFile(path)
+	old, err := ReadFile(path)
 	if err != nil {
 		return false, fmt.Errorf("read koko's ssh_config: %w", err)
 	}
@@ -267,7 +267,7 @@ func PointProxyCommand(home, koko string) (wrote bool, err error) {
 // whether it wrote. A file it cannot read counts as changed.
 func replaceChanged(path string, b []byte) (bool, error) {
 	if fi, err := os.Lstat(path); err == nil && fi.Mode().IsRegular() && isPrivate(path, fi) {
-		if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, b) {
+		if old, err := ReadFile(path); err == nil && bytes.Equal(old, b) {
 			return false, nil
 		}
 	}
@@ -483,7 +483,7 @@ func readRegular(path, what string) ([]byte, error) {
 	if !fi.Mode().IsRegular() {
 		return nil, fmt.Errorf("%s is not a regular file", what)
 	}
-	b, err := os.ReadFile(path)
+	b, err := ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("koko cannot read %s (%w)", what, err)
 	}

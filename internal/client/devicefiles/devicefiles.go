@@ -96,7 +96,7 @@ func Read(home string) (Config, ssh.Signer, error) {
 		return Config{}, nil, err
 	}
 	keyPath := filepath.Join(dir(home), keyFile)
-	pemBytes, err := os.ReadFile(keyPath)
+	pemBytes, err := ReadFile(keyPath)
 	if err != nil {
 		return Config{}, nil, fmt.Errorf("read this device's key: %w", err)
 	}
@@ -118,7 +118,7 @@ func ReadConfig(home string) (Config, error) {
 		return Config{}, err
 	}
 	path := filepath.Join(dir(home), configFile)
-	b, err := os.ReadFile(path)
+	b, err := ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return Config{}, ErrNotJoined
 	}
@@ -409,7 +409,7 @@ func ReadRevocation(home string) (Revocation, error) {
 		return Revocation{}, err
 	}
 	path := filepath.Join(dir(home), revocationFile)
-	b, err := os.ReadFile(path)
+	b, err := ReadFile(path)
 	if err != nil {
 		return Revocation{}, fmt.Errorf("read this device's revocation record: %w", err)
 	}

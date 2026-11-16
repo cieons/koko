@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/cieons/koko/internal/client/cli"
+	"github.com/cieons/koko/internal/client/devicefiles"
 	"github.com/cieons/koko/internal/harness"
 	"github.com/cieons/koko/internal/harness/skip"
 )
@@ -26,9 +27,12 @@ func userSSHConfig(d *harness.Device) string {
 	return filepath.Join(d.Home(), ".ssh", "config")
 }
 
+// readText reads the file at path as koko reads the files it writes
+// atomically: on Windows it waits out a rewrite under way, such as the
+// Device Mux's of koko's ssh_config (#234).
 func readText(t *testing.T, path string) string {
 	t.Helper()
-	b, err := os.ReadFile(path)
+	b, err := devicefiles.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
