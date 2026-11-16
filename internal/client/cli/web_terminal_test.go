@@ -1,7 +1,7 @@
 package cli_test
 
 import (
-	"bytes"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"net/http"
@@ -68,17 +68,26 @@ func TestAWebTerminalThroughKokoWeb(t *testing.T) {
 		}
 		data[i] = c
 	}
+	// The end, on a line of its own in the G0 character set and with no
+	// blank a snapshot would draw as a cursor move, so that it reads the
+	// same live and in a snapshot taken after it: a page that falls behind
+	// gets a reset and a snapshot in place of what it missed.
+	end := "koko-end-" + rand.Text()
+	data = append(data, "\x0f\r\n"+end...)
 	typed := make(chan error, 1)
 	go func() {
 		_, err := term.Write(data)
 		typed <- err
 	}()
-	term.WaitOutputLen(len("ready\n") + len(data))
-	if out := term.Live(); !bytes.Equal(out[len("ready\n"):], data) {
-		t.Error("the bytes cat echoed through koko web are not those sent")
+	term.WaitOutput(end)
+	if err := term.LiveInOrder(append([]byte("ready\n"), data...)); err != nil {
+		t.Errorf("the bytes cat echoed through koko web: %v", err)
 	}
 	if err := <-typed; err != nil {
 		t.Errorf("send 256 KiB: %v", err)
+	}
+	if strings.Contains(h.Log(), "web terminal emulator failed") {
+		t.Errorf("the emulator failed, which resets the pages too:\n%s", h.Log())
 	}
 	waitServerLog(t, h, `msg="ssh session started" tunnel=`+term.ID+` client=browser user=alice device_session="unix socket" host=web1 host_id=host_\w+ addr=\S+ tab=`+term.Tab+`\n`)
 

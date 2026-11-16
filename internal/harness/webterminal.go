@@ -1,9 +1,11 @@
 package harness
 
 import (
+	"bytes"
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -456,16 +458,30 @@ func (w *WebTerminal) Live() []byte {
 	return w.live
 }
 
-// Lives returns the data the koko server sent after each snapshot, one for
-// each reset: what reached the page live, with the gaps a reset leaves
-// where the page fell behind.
-func (w *WebTerminal) Lives() [][]byte {
+// LiveInOrder says how the data the page got live, after each of its
+// resets, differs from want, all the output since the first reset: each
+// run is the next of want, with the gaps a reset leaves where the page
+// fell behind, the first from its start, and the last ends where want
+// does, unless it is empty because a snapshot taken after the end drew it.
+func (w *WebTerminal) LiveInOrder(want []byte) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if len(w.resets) == 0 {
-		return nil
+		return errors.New("no reset began the output")
 	}
-	return append(slices.Clone(w.earlier), w.live)
+	lives := append(slices.Clone(w.earlier), w.live)
+	at := 0
+	for i, live := range lives {
+		k := bytes.Index(want[at:], live)
+		if k < 0 || i == 0 && k > 0 {
+			return fmt.Errorf("the %d bytes after reset %d of %d are no run of the output after its first %d bytes", len(live), i+1, len(lives), at)
+		}
+		at += k + len(live)
+	}
+	if len(w.live) > 0 && at != len(want) {
+		return fmt.Errorf("the output after the last of %d resets ends after %d of its %d bytes", len(lives), at, len(want))
+	}
+	return nil
 }
 
 // Snapshot returns the last snapshot the koko server sent.

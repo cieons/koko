@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -68,28 +67,6 @@ func waitLog(t *testing.T, h *harness.Harness, pattern string) []string {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-}
-
-// liveInOrder says how lives, what a page got live after each of its
-// resets, differ from want, the shell's output in full: each is the next
-// run of it, the first from its start, and the last ends where want does,
-// unless it is empty because a snapshot taken after the end drew it.
-func liveInOrder(lives [][]byte, want []byte) error {
-	if len(lives) == 0 {
-		return errors.New("no reset began the output")
-	}
-	at := 0
-	for i, live := range lives {
-		k := bytes.Index(want[at:], live)
-		if k < 0 || i == 0 && k > 0 {
-			return fmt.Errorf("the %d bytes after reset %d of %d are no run of the output after its first %d bytes", len(live), i+1, len(lives), at)
-		}
-		at += k + len(live)
-	}
-	if last := lives[len(lives)-1]; len(last) > 0 && at != len(want) {
-		return fmt.Errorf("the output after the last of %d resets ends after %d of its %d bytes", len(lives), at, len(want))
-	}
-	return nil
 }
 
 // wantRefused fails the test unless a refuses with code and message.
@@ -313,7 +290,7 @@ func TestATerminalRunsAShellOnThePty(t *testing.T) {
 		typed <- err
 	}()
 	w.WaitOutput(end)
-	if err := liveInOrder(w.Lives(), append([]byte("ready\n"), data...)); err != nil {
+	if err := w.LiveInOrder(append([]byte("ready\n"), data...)); err != nil {
 		t.Errorf("the 1 MiB cat echoed: %v", err)
 	}
 	if err := <-typed; err != nil {
