@@ -67,6 +67,9 @@ type Host struct {
 	// holdChannels leaves the channels opened from now on unanswered
 	// (HoldChannels).
 	holdChannels atomic.Bool
+	// keepalivesAnswered counts the ClientAlive probes answered, on every
+	// connection (KeepalivesAnswered).
+	keepalivesAnswered atomic.Int64
 }
 
 // Login is one login attempt the Host received.
@@ -382,6 +385,12 @@ func (h *Host) LoginsAsked() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.asked
+}
+
+// KeepalivesAnswered counts the ClientAlive probes the Host's clients have
+// answered, on every connection, each as its answer arrived.
+func (h *Host) KeepalivesAnswered() int64 {
+	return h.keepalivesAnswered.Load()
 }
 
 // Requests returns the channel opens and requests the Host has received, in
@@ -733,6 +742,7 @@ func (h *Host) probeClient(conn *ssh.ServerConn, nc *hostConn, open *openSession
 			}
 			if err == nil {
 				answered.Add(1)
+				h.keepalivesAnswered.Add(1)
 				lastAnswer.Store(time.Now().UnixNano())
 				unanswered.Store(0)
 			}

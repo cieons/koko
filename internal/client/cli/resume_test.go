@@ -467,12 +467,15 @@ func kokoDisconnectEndsAnSSHSessionWithoutAResume(t *testing.T) {
 // A Host whose sshd sets ClientAliveInterval keeps a Detached SSH Session:
 // the Gateway answers its keepalives on the session channel itself, which
 // the Detached client could not, so the Host never ends the SSH Session
-// koko Resumes.
+// koko Resumes. The test waits for the Host's probes to be answered while
+// the Tunnel is Detached, which never happens if the Gateway leaves them to
+// the client; the Host's own give-up is only a backstop, loose enough that
+// a loaded machine's stall in answering does not reach it (#234).
 func aHostWithClientAliveIntervalKeepsADetachedSSHSession(t *testing.T) {
-	// The Host gives up on a client that leaves 3 probes 50 ms apart
-	// unanswered: well within the time the Tunnel stays Detached.
-	const interval = 50 * time.Millisecond
-	s := resumeHost(t, resumeServer, sshhost.ClientAlive(interval, 3))
+	// The Host probes every 50 ms and gives up on a client that answers
+	// none for 20 probes in a row, 1 s.
+	const interval, countMax = 50 * time.Millisecond, 20
+	s := resumeHost(t, resumeServer, sshhost.ClientAlive(interval, countMax))
 	d := harness.NewDevice(t)
 	d.UseTimings(resumeDevice)
 	d.Koko("join", s.joinCode).WantSuccess(t)
@@ -487,9 +490,10 @@ func aHostWithClientAliveIntervalKeepsADetachedSSHSession(t *testing.T) {
 	s.fwd.To(recordTries(t).addr())
 	s.fwd.CutWhen(func() bool { return true })
 	wantDetached(t, s.h)
-	// Long enough for the Host to give up on a client that leaves its
-	// probes unanswered, twice over.
-	time.Sleep(10 * interval)
+	detached := s.host.KeepalivesAnswered()
+	eventually(t, "the Host's probes are answered while the Tunnel is Detached", func() bool {
+		return s.host.KeepalivesAnswered() >= detached+3
+	})
 	s.fwd.To(s.listen)
 	if got := say("echo two"); got != "two\n" {
 		t.Errorf("after the Host's probes the shell printed %q, want two", got)
