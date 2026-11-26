@@ -570,14 +570,18 @@ The **check** job has a limit of 20 minutes on each OS:
 4. On Ubuntu, `make check`: the web UI's build, lint for each OS koko
    builds for, vet, the Go tests with `-race`, Vitest, and the cross
    builds.
-5. On macOS, `make webui test`: the web UI's build, which the Go tests
-   embed, the Go tests with `-race`, and Vitest. It runs neither lint nor
-   the cross builds, nor installs golangci-lint
+5. On macOS, `make webui vet test`: the web UI's build, which the Go tests
+   embed, vet, the Go tests with `-race`, and Vitest. It runs neither lint
+   nor the cross builds, nor installs golangci-lint
    ([#237](https://github.com/cieons/koko/issues/237)): `make lint` sets
-   `GOOS` for each OS and runs `go vet`'s checks with the rest, and
-   `make cross` builds with `CGO_ENABLED=0`, so the Ubuntu job's results
-   stand for macOS's. They took about 2.5 minutes there, and building
-   golangci-lint 41 to 99 s more where the cache missed.
+   `GOOS` for each OS and `make cross` builds with `CGO_ENABLED=0`, so the
+   Ubuntu job's results stand for macOS's. They took about 2.5 minutes
+   there, and building golangci-lint 41 to 99 s more where the cache
+   missed. Vet stays for the build it leaves in Go's cache: every package
+   compiled without the race detector, which the `go test` that
+   `TestWebServesThePlaceholderInABuildWithoutTheWebUI` runs needs. Without
+   it, that test compiled them all itself and took 2 minutes, and
+   `internal/client/cli` passed `go test`'s 5-minute limit.
 
 What each step of the Ubuntu job took on `main` on 2026-11-11, on the
 fastest and the slowest of five runs (#161):

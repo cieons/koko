@@ -118,13 +118,17 @@ jobs:
       # The Ubuntu job runs all of make check. The macOS job runs only what
       # the Ubuntu job cannot stand in for: the web UI's build, which the
       # Go tests embed, and make test, the Go tests under the race detector
-      # and Vitest. make lint, which runs go vet's checks too, sets GOOS for
-      # each OS koko builds for, and make cross builds with CGO_ENABLED=0,
-      # so neither result depends on the runner (#237).
+      # and Vitest. make lint sets GOOS for each OS koko builds for, and
+      # make cross builds with CGO_ENABLED=0, so neither result depends on
+      # the runner (#237). make vet stays: it compiles every package
+      # without the race detector, as the go test that
+      # TestWebServesThePlaceholderInABuildWithoutTheWebUI runs does, and
+      # without it that test compiled them all itself, took 2 minutes and
+      # took internal/client/cli past go test's 5-minute limit.
       - if: runner.os == 'Linux'
         run: make check
       - if: runner.os == 'macOS'
-        run: make webui test
+        run: make webui vet test
 
   # The CLI's tests on Windows (ADR 0051), against the koko server and Hosts
   # in the test process. It calls go itself: the image has no GNU Make. It
