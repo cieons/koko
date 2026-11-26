@@ -528,6 +528,11 @@ What the shell tells the Owner and the Administrators, and no Member, of koko's 
   a 502 from the reverse proxy or a dropped call through a koko web that
   reconnects, is asked again, and the frame does not say koko web stopped
   while the upgrade runs.
+  A page opened while an upgrade runs, after a reload or in another tab,
+  shows the same progress once `server.show` reports `last_upgrade` as
+  `running`, and follows it from that outcome on. A page adopts one such
+  upgrade at most, so that Close after 15 minutes does not bring it back
+  while it still runs ([#238](https://github.com/cieons/koko/issues/238)).
   - `succeeded`: "The koko server runs v0.5.0. This page reloads.", and
     the page reloads after 2 seconds (`reloadPage`), since the web UI's
     own files changed with kokod.

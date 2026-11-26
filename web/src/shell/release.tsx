@@ -44,7 +44,7 @@ export const upgradeWait = 15 * 60 * 1000;
 export const reloadAfter = 2000;
 
 /**
- * Upgrade is where the upgrade asked for in this page stands: none; running,
+ * Upgrade is where the upgrade this page follows stands: none; running,
  * from the outcome before it (before) until the helper records another for
  * the release asked for; succeeded, failed with the outcome's message and
  * the version that runs, or no outcome within upgradeWait.
@@ -66,7 +66,7 @@ export interface Release {
   later?: string;
   /** hide hides the notice for the release version, in this browser. */
   hide: (version: string) => void;
-  /** upgrade is where the upgrade asked for in this page stands. */
+  /** upgrade is where the upgrade this page follows stands. */
   upgrade: Upgrade;
   /** follow follows the upgrade to the release to, asked for when the last outcome was before. */
   follow: (to: string, before: LastUpgrade | null) => void;
@@ -100,12 +100,24 @@ function storedLater(): string | undefined {
 /**
  * useReleaseState reads server.show for the Owner and an Administrator
  * (shown), as a read reloads on each visit and on focus, and asks nothing
- * for a Member, who has no release to act on. It follows an upgrade asked for in this page.
+ * for a Member, who has no release to act on. It follows an upgrade asked
+ * for in this page, and one server.show reports running when the page
+ * follows none yet, as after a reload or in another tab, from that running
+ * outcome on; a page that has followed one adopts no other, so that closing
+ * one that never ended does not bring it straight back.
  */
 export function useReleaseState(shown: boolean): Release {
   const show = useRead(ServerShow, {}, { enabled: shown });
   const [later, setLater] = useState(storedLater);
   const [upgrade, setUpgrade] = useState<Upgrade>({ state: "none" });
+  const [followed, setFollowed] = useState(false);
+  const running = show.data?.server.last_upgrade;
+  useEffect(() => {
+    if (!followed && running?.state === "running") {
+      setFollowed(true);
+      setUpgrade({ state: "running", to: running.to, before: running });
+    }
+  }, [followed, running]);
   useFollowUpgrade(upgrade, setUpgrade);
   const hide = (version: string) => {
     setLater(version);
@@ -121,7 +133,10 @@ export function useReleaseState(shown: boolean): Release {
     later,
     hide,
     upgrade,
-    follow: (to, before) => setUpgrade({ state: "running", to, before }),
+    follow: (to, before) => {
+      setFollowed(true);
+      setUpgrade({ state: "running", to, before });
+    },
     dismiss: () => {
       setUpgrade({ state: "none" });
       show.reload();

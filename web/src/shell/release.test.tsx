@@ -561,6 +561,44 @@ test("a failed upgrade says why, which version runs, and Close brings the notice
   expect(reloadPage).not.toHaveBeenCalled();
 });
 
+test("a page opened while the koko server upgrades follows the upgrade to the new version, then reloads", async () => {
+  const api = fakeApi();
+  const current = upgradeServer(api);
+  current.server = server({ update_check: found("v0.5.0"), last_upgrade: outcome("running") });
+  fakeTimers();
+  renderShell();
+
+  await until(() => screen.getByRole("region", { name: "Upgrading the koko server to v0.5.0…" }));
+  expect(screen.queryByRole("button", { name: "Upgrade" })).toBeNull();
+  expect(api.requests(ServerUpgrade)).toEqual([]);
+
+  current.server = server({ version: "v0.5.0", update_check: found("v0.5.0"), last_upgrade: outcome("succeeded") });
+  await advance(upgradePoll);
+  await shows("The koko server runs v0.5.0. This page reloads.");
+  await advance(reloadAfter);
+  expect(reloadPage).toHaveBeenCalledOnce();
+});
+
+test("an upgrade a page found running and closed after 15 minutes does not come back while it still runs", async () => {
+  const api = fakeApi();
+  const current = upgradeServer(api);
+  current.server = server({ update_check: found("v0.5.0"), last_upgrade: outcome("running") });
+  fakeTimers();
+  renderShell();
+  await until(() => screen.getByRole("region", { name: "Upgrading the koko server to v0.5.0…" }));
+
+  await advance(upgradeWait);
+  await shows("The upgrade to v0.5.0 has not ended after 15 minutes. On the koko server's machine, this command shows why.");
+  vi.useRealTimers();
+  const asked = api.requests(ServerShow).length;
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+  // Close asks server.show again, which still reports the upgrade running.
+  await waitFor(() => expect(api.requests(ServerShow)).toHaveLength(asked + 1));
+  expect(await findNotice()).toBeDefined();
+  expect(screen.queryByText("Upgrading the koko server to v0.5.0…")).toBeNull();
+});
+
 test("an outcome from before the upgrade asked for is not taken for its own", async () => {
   const api = fakeApi();
   upgradeServer(api);
