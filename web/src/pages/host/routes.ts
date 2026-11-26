@@ -2,23 +2,8 @@ import { Server } from "lucide-react";
 import { useEffect } from "react";
 
 import { lazyPage } from "../../shell/lazyPage";
-import { navigate, type PageProps, type Route, useLocation } from "../../shell/router";
+import { movedTo, navigate, type PageProps, type Route, useLocation } from "../../shell/router";
 import { servicePath } from "./record";
-
-/**
- * ServicesMoved sends /services, the Services list a released koko served,
- * to the Services view of the Hosts page, keeping its query and replacing
- * the history entry (docs/web-design.md, "The page map").
- */
-function ServicesMoved() {
-  const { search } = useLocation();
-  useEffect(() => {
-    const query = new URLSearchParams(search);
-    query.set("view", "services");
-    navigate(`/hosts?${query}`, { replace: true });
-  }, [search]);
-  return null;
-}
 
 /**
  * ServiceMoved sends /services/<host>/<service>, a Service's page a
@@ -54,6 +39,6 @@ export const hostRoutes: Route[] = [
   },
   { path: "/hosts/:host", page: hostPage },
   { path: "/hosts/:host/services/:service", page: hostPage },
-  { path: "/services", page: ServicesMoved },
+  { path: "/services", page: movedTo(() => "/hosts", "services") },
   { path: "/services/:host/:service", page: ServiceMoved },
 ];

@@ -665,8 +665,8 @@ test("a Space a Member cannot act in says so in its panel", async () => {
 // Redirects from the pages a released koko served.
 
 test.each([
-  ["/spaces", "/access"],
-  ["/spaces?all=1", "/access?all=1"],
+  ["/spaces", "/access?view=spaces"],
+  ["/spaces?all=1", "/access?all=1&view=spaces"],
   ["/people?all=1", "/access?all=1"],
   ["/spaces/ops?all=1", "/access/spaces/ops?all=1"],
 ])("%s goes to %s in place of its history entry", async (from, to) => {

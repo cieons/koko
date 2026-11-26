@@ -428,7 +428,7 @@ The preview's mock answers at once, so these are specified here:
 | `/hosts/<name or id>` | `/hosts/<name or id>` | |
 | `/hosts/<host>/services/<service>` | `/services/<host>/<service>` | A side panel over the Host's page |
 | `/secrets` | `/secrets` | |
-| `/access` | `/people`, `/spaces` | People and Spaces as two lists, `view=spaces` for the Spaces |
+| `/access` | `/people`, `/spaces` (to `view=spaces`) | People and Spaces as two lists, `view=spaces` for the Spaces |
 | `/access/people/<name>` | none | A side panel over Access: the Owner and the Administrators alone |
 | `/access/spaces/<name>` | `/spaces/<name>` | A side panel over Access |
 | `/account` | `/devices` | One's own devices and Sign-ins live here |

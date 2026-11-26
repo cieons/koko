@@ -18,7 +18,7 @@ export const spaceRoutes: Route[] = [
   { path: `${accessPath}/spaces/:name`, page: access, fill: true },
   { path: `${accessPath}/people/:name`, page: access, administers: true, fill: true },
   { path: providerPath, page: access, administers: true, fill: true },
-  { path: "/spaces", page: movedTo(() => accessPath) },
+  { path: "/spaces", page: movedTo(() => accessPath, "spaces") },
   { path: "/spaces/:name", page: movedTo(({ name = "" }) => spacePath(name)) },
   { path: "/people", page: movedTo(() => accessPath) },
 ];

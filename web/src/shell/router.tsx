@@ -190,15 +190,25 @@ export function matchRoute(
 
 /**
  * movedTo is the page of a path a released koko served that has moved: it
- * goes to the path to gives for its params, keeping its query and
- * replacing the history entry (docs/web-design.md, "The page map").
+ * goes to the path to gives for its params, in the view named when one is,
+ * keeping its query and replacing the history entry (docs/web-design.md,
+ * "The page map").
  */
-export function movedTo(to: (params: Readonly<Record<string, string>>) => string): ComponentType<PageProps> {
+export function movedTo(
+  to: (params: Readonly<Record<string, string>>) => string,
+  view?: string,
+): ComponentType<PageProps> {
   return function Moved({ params }: PageProps) {
     const { search } = useLocation();
     const path = to(params);
     useEffect(() => {
-      navigate(path + search, { replace: true });
+      if (view === undefined) {
+        navigate(path + search, { replace: true });
+        return;
+      }
+      const query = new URLSearchParams(search);
+      query.set("view", view);
+      navigate(`${path}?${query}`, { replace: true });
     }, [path, search]);
     return null;
   };
