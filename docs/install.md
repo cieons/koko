@@ -423,10 +423,10 @@ older `kokod` of that CLI in place of the newer one, and names `sudo koko
 update`, which brings the CLI up first ([Going back](#going-back)).
 
 Run on the koko server's machine without `sudo`, the line installs the
-CLI of the user who runs it, in `~/.local/bin`, and leaves root's
-`/usr/local/bin/koko` as it was: run it with `| sudo sh` there. A user who
-can use `sudo` without a password still upgrades the koko server, through
-`sudo`. For a user who can do neither, the line without arguments leaves
+CLI of the user who runs it, in `~/.local/bin`. A user who can use `sudo`
+without a password still upgrades the koko server through `sudo`, and
+with it root's `/usr/local/bin/koko`, so that the koko server and its CLI
+stay on one release. For a user who can do neither, the line without arguments leaves
 the koko server as it is and says so, naming `koko server upgrade`; with
 arguments, it is refused, and nothing is written.
 

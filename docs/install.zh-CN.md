@@ -237,7 +237,7 @@ curl -fsSL https://github.com/cieons/koko/releases/latest/download/install.sh | 
 
 该命令先升级 koko 服务器，再升级 root 的 CLI。`koko server install` 将 `kokod` 替换为新发布版本中的文件，重新写入 systemd unit 并重启 koko 服务器；服务器的记录、所有者、服务器地址和密钥均保持不变。所有已打开的 SSH 会话都会结束，并显示一行提示，说明 koko 服务器正在重启。此后 install.sh 才替换 `koko`。如果 koko 服务器升级失败，install.sh 会就此停止，CLI 保持不变，因此 CLI 的版本不会领先于同一机器上的 koko 服务器。执行 `koko server upgrade` 之后，koko 服务器的版本可能新于同一机器上 root 的 CLI，两者可以正常配合。此时 `koko server install` 会拒绝以该 CLI 对应的较旧 `kokod` 替换较新的 `kokod`，并给出 `sudo koko update`，用于先将 CLI 升级（见[回退](#回退)）。
 
-在 koko 服务器所在的机器上不使用 `sudo` 运行安装命令时，CLI 会安装到运行者自身的 `~/.local/bin` 中，root 的 `/usr/local/bin/koko` 保持不变：在该机器上请使用 `| sudo sh` 运行。可免密码使用 `sudo` 的用户仍会通过 `sudo` 升级 koko 服务器。对于两者均不满足的用户，不带参数的安装命令会使 koko 服务器保持不变，并给出相应提示，指出 `koko server upgrade`；带参数时则会拒绝，且不写入任何内容。
+在 koko 服务器所在的机器上不使用 `sudo` 运行安装命令时，CLI 会安装到运行者自身的 `~/.local/bin` 中。可免密码使用 `sudo` 的用户仍会通过 `sudo` 升级 koko 服务器，并一同升级 root 的 `/usr/local/bin/koko`，使 koko 服务器与其 CLI 保持同一版本。对于两者均不满足的用户，不带参数的安装命令会使 koko 服务器保持不变，并给出相应提示，指出 `koko server upgrade`；带参数时则会拒绝，且不写入任何内容。
 
 由 v0.1.0 或 v0.2.0 安装的 koko 服务器（当时 `koko` 和 `kokod` 尚未拆分为两个程序）同样按此方式升级：升级后其 unit 运行 `/usr/local/bin/kokod run`，`/usr/local/bin/koko` 则为 CLI。
 

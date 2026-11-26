@@ -932,7 +932,8 @@ func TestSaysHowToPutTheCLIOnPATH(t *testing.T) {
 // install line put there as root, it names with the line that removes it,
 // and leaves where it is: other users of the machine may run it. On a koko
 // server's machine, that file is the koko server's CLI, so install.sh says
-// to keep it, and gives no line that removes it.
+// to keep it, and gives no line that removes it, when it could not upgrade
+// it with the koko server for want of sudo.
 func TestNamesAnotherKokoFirstOnPATH(t *testing.T) {
 	t.Parallel()
 	for name, tc := range map[string]struct {
@@ -948,6 +949,9 @@ func TestNamesAnotherKokoFirstOnPATH(t *testing.T) {
 			t.Parallel()
 			m := newMachine(t)
 			m.Service = tc.service
+			if tc.service {
+				m.Sudo = ""
+			}
 			m.Path = []string{"/usr/local/bin", m.userBin()}
 			m.put("/usr/local/bin/koko", "#!/bin/sh\n# koko v0.3.0\n")
 			m.release("v0.4.0")
@@ -959,9 +963,7 @@ func TestNamesAnotherKokoFirstOnPATH(t *testing.T) {
 				t.Fatalf("status %d, stderr:\n%s", r.Status, r.Stderr)
 			}
 			m.installed("v0.4.0", "koko-linux-amd64")
-			want := "install.sh: installed koko v0.4.0 at " + m.userBin() + "/koko\n" +
-				"install.sh: koko on PATH is /usr/local/bin/koko, not the new " + m.userBin() + "/koko\n" +
-				tc.advice
+			want := "install.sh: koko on PATH is /usr/local/bin/koko, not the new " + m.userBin() + "/koko\n" + tc.advice
 			if !strings.HasSuffix(r.Stderr, want) {
 				t.Errorf("stderr:\n%s\nwant it to end with:\n%s", r.Stderr, want)
 			}
@@ -1021,6 +1023,69 @@ func TestNamesAnotherKokoFirstOnPATH(t *testing.T) {
 				"install.sh: koko on PATH is " + dir + "/koko, not the new " + m.userBin() + "/koko\n"
 			if !strings.HasSuffix(r.Stderr, want) {
 				t.Errorf("stderr:\n%s\nwant it to end with:\n%s", r.Stderr, want)
+			}
+		})
+	}
+}
+
+// A user who upgrades the koko server through sudo -n upgrades root's
+// /usr/local/bin/koko with it, the koko server's own CLI, as root, written
+// beside it and renamed into place, so that the two stay on one release;
+// with it first on PATH, install.sh says nothing more of it. A
+// /usr/local/bin/koko that is not root's, or a run that upgrades no koko
+// server, leaves it as it was.
+func TestUpgradesTheKokoServersCLIThroughSudo(t *testing.T) {
+	t.Parallel()
+	const old = "#!/bin/sh\n# koko v0.3.0\n"
+	for name, tc := range map[string]struct {
+		service, userOwned, upgraded bool
+	}{
+		"root's, on a koko server's machine":     {service: true, upgraded: true},
+		"the user's, on a koko server's machine": {service: true, userOwned: true},
+		"root's, with no koko server":            {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			m := newMachine(t)
+			m.Service = tc.service
+			m.Path = []string{"/usr/local/bin", m.userBin()}
+			m.put("/usr/local/bin/koko", old)
+			if tc.userOwned {
+				m.UserOwned = []string{"/usr/local/bin/koko"}
+			}
+			m.release("v0.4.0")
+			m.latest("v0.4.0")
+
+			r := m.run()
+
+			if r.Status != 0 {
+				t.Fatalf("status %d, stderr:\n%s", r.Status, r.Stderr)
+			}
+			m.installed("v0.4.0", "koko-linux-amd64")
+			got, err := os.ReadFile(m.path("root", "usr", "local", "bin", "koko"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			upgraded := "install -m 0755 <tmp>/koko-linux-amd64 /usr/local/bin/.koko.new (uid 0)\n" +
+				"mv -f /usr/local/bin/.koko.new /usr/local/bin/koko (uid 0)\n"
+			said := "install.sh: upgraded the koko server's CLI at /usr/local/bin/koko to koko v0.4.0\n"
+			if !tc.upgraded {
+				if string(got) != old || strings.Contains(r.Ran, "/usr/local/bin/") || strings.Contains(r.Stderr, said) {
+					t.Errorf("/usr/local/bin/koko was changed to %q; ran:\n%s", got, r.Ran)
+				}
+				return
+			}
+			if !bytes.Equal(got, m.binary("v0.4.0", "koko-linux-amd64")) {
+				t.Errorf("/usr/local/bin/koko is %q, want koko v0.4.0", got)
+			}
+			if !strings.HasSuffix(r.Ran, m.writesTheCLI("koko-linux-amd64")+upgraded) {
+				t.Errorf("ran:\n%s\nwant it to end with the user's CLI, then root's:\n%s", r.Ran, upgraded)
+			}
+			if !strings.HasSuffix(r.Sudo, "-n install -m 0755 <tmp>/koko-linux-amd64 /usr/local/bin/.koko.new\n-n mv -f /usr/local/bin/.koko.new /usr/local/bin/koko\n") {
+				t.Errorf("sudo ran:\n%s\nwant root's CLI written through sudo -n", r.Sudo)
+			}
+			if !strings.HasSuffix(r.Stderr, "install.sh: installed koko v0.4.0 at "+m.userBin()+"/koko\n"+said) {
+				t.Errorf("stderr:\n%s\nwant it to end with:\n%s", r.Stderr, said)
 			}
 		})
 	}

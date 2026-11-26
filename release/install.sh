@@ -12,10 +12,11 @@
 # release's SHA256SUMS. With arguments, or with none on a machine whose
 # systemd knows koko.service, it runs that binary's `koko server install` as
 # root with them, and stops there if that fails. Then it puts the binary in
-# place, and says what the user must do about PATH or an older koko first on
-# it. It checks only that the binary can run here; every decision about a
+# place, and root's /usr/local/bin/koko too when it upgraded the koko server
+# through sudo, and says what the user must do about PATH or an older koko
+# first on it. It checks only that the binary can run here; every decision about a
 # koko server's machine is koko server install's. Nothing here prompts, and
-# install.sh itself writes nothing outside the CLI's directory: the user's
+# install.sh itself writes nothing outside the CLI's directories: the user's
 # shell files stay theirs.
 #
 # Everything sits in main, run on the last line, so that a download cut short
@@ -97,6 +98,11 @@ advise_path() {
 	say "until a new shell starts, run koko as $bin/koko"
 }
 
+# root_owned tells whether the file $1 is there and belongs to root.
+root_owned() {
+	[ "$(ls -ldn "$1" 2>/dev/null | awk '{ print $3 }')" = 0 ]
+}
+
 # advise_other_koko names the koko a new shell would run when it is not the
 # one just installed. A root-owned /usr/local/bin/koko there is what an
 # earlier install line left as root, and install.sh gives the line that
@@ -107,10 +113,11 @@ advise_other_koko() {
 	other=$(command -v koko 2>/dev/null) || return 0
 	# A PATH entry with a trailing / gives dir//koko in dash.
 	case $other in "$bin/koko" | "$bin//koko") return 0 ;; esac
+	# Root's, just upgraded with the koko server, is the same release.
+	[ "$other" = "$root_bin/koko" ] && [ -n "$root_upgraded" ] && return 0
 	say "koko on PATH is $other, not the new $bin/koko"
 	[ "$other" = "$root_bin/koko" ] || return 0
-	owner=$(ls -ldn "$other" 2>/dev/null | awk '{ print $3 }')
-	[ "$owner" = 0 ] || return 0
+	root_owned "$other" || return 0
 	if [ -n "$server_here" ]; then
 		say "$other is the CLI of this machine's koko server: keep it, and upgrade both with $line | sudo sh"
 		return 0
@@ -225,6 +232,20 @@ main() {
 			mv -f "$bin/.koko.new" "$bin/koko"
 	} || fail "could not write $bin/koko"
 	printf 'install.sh: installed koko %s at %s/koko\n' "$tag" "$bin" >&2
+
+	# A koko server upgraded through sudo -n upgrades root's CLI beside it,
+	# the koko server's own, so that the two stay on one release; written
+	# beside it and renamed into place, as the user's is.
+	root_upgraded=
+	if [ -n "$server" ] && [ -n "$as_root" ] && root_owned "$root_bin/koko"; then
+		# shellcheck disable=SC2086
+		{
+			$as_root install -m 0755 "$tmp/$asset" "$root_bin/.koko.new" &&
+				$as_root mv -f "$root_bin/.koko.new" "$root_bin/koko"
+		} || fail "could not write $root_bin/koko, the CLI of this machine's koko server, which stays at its earlier version: upgrade it with $line | sudo sh"
+		root_upgraded=1
+		say "upgraded the koko server's CLI at $root_bin/koko to koko $tag"
+	fi
 	advise_path
 	advise_other_koko
 	# Under curl | sh, sh would read on from stdin, which may stay open.

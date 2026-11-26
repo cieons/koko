@@ -290,6 +290,13 @@ cut short runs nothing. In this order:
    and nobody sees one half written. The name beside it is fixed, so a run
    cut short leaves at most one such file, which the next run replaces.
    install.sh says `install.sh: installed koko <tag> at <dir>/koko`.
+   When step 7 ran through `sudo -n` and root owns `/usr/local/bin/koko`
+   (`ls -ldn`), the koko server's own CLI, install.sh writes it the same
+   way through `sudo -n`, so that it stays on the koko server's release,
+   and says `install.sh: upgraded the koko server's CLI at
+   /usr/local/bin/koko to koko <tag>` ([#238](https://github.com/cieons/koko/issues/238)).
+   When that fails, it exits with an error naming the line piped to
+   `sudo sh`.
 9. **What the user must do next**, each only when it applies:
    - **PATH.** When `<dir>` is not an entry of `PATH`, the line that puts
      it there for the shell `SHELL` names: for zsh,
@@ -307,7 +314,8 @@ cut short runs nothing. In this order:
      machine runs it and a koko command has run with the new koko. On a
      koko server's machine (arguments given, or `koko.service` known), it
      says instead that the file is the koko server's CLI, to keep, and
-     names the line piped to `sudo sh`, which upgrades both.
+     names the line piped to `sudo sh`, which upgrades both; that file
+     upgraded with the koko server in step 8 it does not name at all.
 
    install.sh itself writes nothing outside `<dir>`, edits no shell file
    and removes no `koko`; the koko server's files are
