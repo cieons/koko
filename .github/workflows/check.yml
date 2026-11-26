@@ -42,9 +42,10 @@ jobs:
       cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
     # make test bounds each test binary with go test's -timeout, well inside
     # this, so a hanging test fails the job with a goroutine dump instead of
-    # being cancelled without a log. The Ubuntu job takes 8 to 10 minutes
-    # and the macOS one 7 to 12 (docs/subsystems/release.md, "The check
-    # workflow"), so a slow runner still ends well inside the limit.
+    # being cancelled without a log. The Ubuntu job takes 7 to 10 minutes.
+    # The limit is there for macOS's slow runners, where make check took 5
+    # to 17 minutes before the job dropped lint and the cross builds
+    # (docs/subsystems/release.md, "The check workflow").
     timeout-minutes: 20
     env:
       GOLANGCI_LINT_VERSION: v2.15.0
@@ -62,14 +63,15 @@ jobs:
           cache-dependency-path: web/package-lock.json
       # golangci-lint's binary and the cache of its last run, kept from one
       # run to the next: building the binary took 56 to 72 s of every run
-      # (#161). A new golangci-lint, Go, or go.mod builds it again.
+      # (#161). A new golangci-lint, Go, or go.mod builds it again. Only
+      # the Ubuntu job lints (see the last step).
       - uses: actions/cache@v6
+        if: runner.os == 'Linux'
         id: golangci-lint
         with:
           path: |
             ~/go/bin/golangci-lint
             ~/.cache/golangci-lint
-            ~/Library/Caches/golangci-lint
           key: golangci-lint-${{ env.GOLANGCI_LINT_VERSION }}-${{ runner.os }}-${{ runner.arch }}-go${{ steps.go.outputs.go-version }}-${{ hashFiles('go.mod') }}
       # The action only installs golangci-lint, where the cache above holds
       # none; make lint runs it, once for each OS koko builds for. It builds
@@ -78,7 +80,7 @@ jobs:
       # answered 504 for hours on 2026-11-08 and failed every run before a
       # test ran.
       - uses: golangci/golangci-lint-action@v9
-        if: steps.golangci-lint.outputs.cache-hit != 'true'
+        if: runner.os == 'Linux' && steps.golangci-lint.outputs.cache-hit != 'true'
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           install-mode: goinstall
@@ -113,14 +115,23 @@ jobs:
         run: |
           npm ci
           npm audit signatures
-      - run: make check
+      # The Ubuntu job runs all of make check. The macOS job runs only what
+      # the Ubuntu job cannot stand in for: the web UI's build, which the
+      # Go tests embed, and make test, the Go tests under the race detector
+      # and Vitest. make lint, which runs go vet's checks too, sets GOOS for
+      # each OS koko builds for, and make cross builds with CGO_ENABLED=0,
+      # so neither result depends on the runner (#237).
+      - if: runner.os == 'Linux'
+        run: make check
+      - if: runner.os == 'macOS'
+        run: make webui test
 
   # The CLI's tests on Windows (ADR 0051), against the koko server and Hosts
   # in the test process. It calls go itself: the image has no GNU Make. It
   # runs neither the koko server's own packages, which ship for Linux only,
   # nor the web UI's build and tests, nor lint, which make lint runs for
-  # GOOS=windows in the jobs above, and no race detector, which would need
-  # a C toolchain there (docs/subsystems/release.md).
+  # GOOS=windows in the Ubuntu job above, and no race detector, which would
+  # need a C toolchain there (docs/subsystems/release.md).
   windows:
     if: ${{ inputs.every-os }}
     runs-on: windows-latest

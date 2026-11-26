@@ -538,7 +538,8 @@ Its `EXPOSE` and labels are checked by hand.
 ## The check workflow
 
 The [check workflow](../../.github/workflows/check.yml) runs `make check`
-on every push to `main`, on every pull request, and on a release's tag.
+on Linux on every push to `main`, on every pull request, and on a release's
+tag, and on the tag the tests on macOS and the CLI's tests on Windows too.
 
 **What runs when** (the Owner's choice, 2026-11-13,
 [#219](https://github.com/cieons/koko/issues/219)):
@@ -557,17 +558,26 @@ on a development machine ([Tests](../code-standards.md#tests)).
 
 The **check** job has a limit of 20 minutes on each OS:
 
-1. It sets up Go and Node, and takes golangci-lint's binary and the cache
-   of its last run from the workflow's cache. Where the cache holds none
-   (a new golangci-lint, Go or `go.mod`), it builds the binary with
-   `go install`, which takes about a minute.
+1. It sets up Go and Node. On Ubuntu it takes golangci-lint's binary and
+   the cache of its last run from the workflow's cache. Where the cache
+   holds none (a new golangci-lint, Go or `go.mod`), it builds the binary
+   with `go install`, which takes about a minute.
 2. On Ubuntu it checks that the tools of
    [the real-OpenSSH test](code-layout.md#the-real-openssh-test) are
    installed, and runs apt only for a missing one. The runner's image ships
    them all.
 3. `npm ci` and `npm audit signatures` in `web/`.
-4. `make check`: the web UI's build, lint for each OS koko builds for,
-   vet, the Go tests with `-race`, Vitest, and the cross builds.
+4. On Ubuntu, `make check`: the web UI's build, lint for each OS koko
+   builds for, vet, the Go tests with `-race`, Vitest, and the cross
+   builds.
+5. On macOS, `make webui test`: the web UI's build, which the Go tests
+   embed, the Go tests with `-race`, and Vitest. It runs neither lint nor
+   the cross builds, nor installs golangci-lint
+   ([#237](https://github.com/cieons/koko/issues/237)): `make lint` sets
+   `GOOS` for each OS and runs `go vet`'s checks with the rest, and
+   `make cross` builds with `CGO_ENABLED=0`, so the Ubuntu job's results
+   stand for macOS's. They took about 2.5 minutes there, and building
+   golangci-lint 41 to 99 s more where the cache missed.
 
 What each step of the Ubuntu job took on `main` on 2026-11-11, on the
 fastest and the slowest of five runs (#161):
@@ -587,10 +597,14 @@ fastest and the slowest of five runs (#161):
 The Go tests' time is that of `internal/client/cli` (168 to 218 s) and
 `internal/server/access` (161 to 211 s), which run side by side; every
 other package takes under 45 s. The same commit's steps take up to 1.3
-times as long on a slow runner as on a fast one. The Ubuntu job is expected
-to take 8 to 10 minutes and the macOS job 7 to 12. If the Ubuntu job grows
-past 12 minutes, move `make lint` and `make cross` into a job of their own
-beside the tests.
+times as long on a slow runner as on a fast one.
+
+In the release gates of v0.10.0 to v0.11.0 the Ubuntu job took 7 to 10
+minutes. The macOS job, with lint and the cross builds, took 6 to 20: its
+`make check` took 5 to 17 minutes, as macOS runners differ more in speed
+than Ubuntu's, and v0.11.0-rc.1's first attempt was cancelled at the limit
+in its cross builds. If the Ubuntu job grows past 12 minutes, move
+`make lint` and `make cross` into a job of their own beside the tests.
 
 ### The `windows` job
 
@@ -625,7 +639,7 @@ them.
 **What it does not run.** `./internal/server/...`: the koko server ships
 for Linux, and is tested there and on macOS. The web UI's build and
 Vitest, which do not differ by OS. Lint, which `make lint` runs for
-`GOOS=windows` in the other two jobs. The race detector, which needs a C
+`GOOS=windows` in the Ubuntu job. The race detector, which needs a C
 toolchain everywhere but on macOS; the Linux and macOS jobs run the same Go
 code under it, but for the per-OS files.
 
