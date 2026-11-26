@@ -151,7 +151,7 @@ test("with every Host Retired, the page is not empty: its controls show the Reti
 test("a Member sees the Hosts of their Spaces, and no Space select with one Space", async () => {
   const api = fakeApi();
   actAs(api, bob);
-  records(api, { hosts: [web1], spaces: [{ id: "space_2", name: "ops", personal: false }] });
+  records(api, { hosts: [web1], spaces: [{ id: "space_2", name: "ops", personal: false, members: [], counts: { hosts: 0, retired_hosts: 0, secrets: 0 } }] });
 
   renderAt("/hosts");
 

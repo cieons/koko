@@ -101,9 +101,10 @@ export class FakeApi {
   /**
    * on answers every call of op with what handler returns, or once the
    * promise it returns settles; a handler that throws a refusal refuses the
-   * call.
+   * call. The response type comes from op alone, so a handler that leaves
+   * out a field the response needs does not compile.
    */
-  on<Req, Resp>(op: OpOrEndpoint<Req, Resp>, handler: (request: Req) => Resp | Promise<Resp>): void {
+  on<Req, Resp>(op: OpOrEndpoint<Req, Resp>, handler: (request: Req) => NoInfer<Resp> | Promise<NoInfer<Resp>>): void {
     this.#handlers.set(op.path, (request) => handler(request as Req));
   }
 

@@ -2,7 +2,7 @@ import { configure, fireEvent, screen, waitFor, within } from "@testing-library/
 import { expect, test, vi } from "vitest";
 
 import { type Secret, SecretList, SecretMove, SecretRemove, SecretShow } from "../../api/secret";
-import { type Space, SpaceList } from "../../api/space";
+import { type SpaceDetail, SpaceList } from "../../api/space";
 import type { User } from "../../api/user";
 import { expectAccessible } from "../../test/axe";
 import { searchAndChoose } from "../../test/controls";
@@ -20,10 +20,10 @@ configure({ asyncUtilTimeout: 5_000 });
 
 const bob: User = { id: "user_2", name: "bob", role: "member", created_at: "2026-11-02T09:00:00Z" };
 
-const spaces: Space[] = [
-  { id: "space_1", name: "bob", personal: true },
-  { id: "space_2", name: "ops", personal: false },
-  { id: "space_3", name: "web", personal: false },
+const spaces: SpaceDetail[] = [
+  { id: "space_1", name: "bob", personal: true, members: [], counts: { hosts: 0, retired_hosts: 0, secrets: 0 } },
+  { id: "space_2", name: "ops", personal: false, members: [], counts: { hosts: 0, retired_hosts: 0, secrets: 0 } },
+  { id: "space_3", name: "web", personal: false, members: [], counts: { hosts: 0, retired_hosts: 0, secrets: 0 } },
 ];
 
 function secret(space: string, name: string): Secret {

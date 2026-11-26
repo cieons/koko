@@ -12,7 +12,7 @@ import {
   SecretSet,
   SecretShow,
 } from "../../api/secret";
-import { type Space, SpaceList } from "../../api/space";
+import { type SpaceDetail, SpaceList } from "../../api/space";
 import type { User } from "../../api/user";
 import { expectAccessible } from "../../test/axe";
 import { clipboard } from "../../test/clipboard";
@@ -30,10 +30,10 @@ function secret(space: string, name: string, updated = "2026-11-05T09:00:00Z"): 
   return { id: `secret_${space}_${name}`, space, name, created_at: "2026-11-04T09:00:00Z", updated_at: updated };
 }
 
-const spaces: Space[] = [
-  { id: "space_1", name: "bob", personal: true },
-  { id: "space_2", name: "ops", personal: false },
-  { id: "space_3", name: "web", personal: false },
+const spaces: SpaceDetail[] = [
+  { id: "space_1", name: "bob", personal: true, members: [], counts: { hosts: 0, retired_hosts: 0, secrets: 0 } },
+  { id: "space_2", name: "ops", personal: false, members: [], counts: { hosts: 0, retired_hosts: 0, secrets: 0 } },
+  { id: "space_3", name: "web", personal: false, members: [], counts: { hosts: 0, retired_hosts: 0, secrets: 0 } },
 ];
 
 /** marker is a value's text; its base64, with a newline after it, is markerBase64. */

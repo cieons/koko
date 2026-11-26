@@ -34,7 +34,7 @@ test("/ opens at Hosts, the first place", async () => {
   const api = fakeApi();
   actAs(api, { id: "user_1", name: "alice", role: "owner", created_at: "2026-11-01T09:00:00Z" });
   api.on(AttrList, () => ({ attributes: [] }));
-  api.on(SpaceList, () => ({ spaces: [{ id: "space_1", name: "alice", personal: true }] }));
+  api.on(SpaceList, () => ({ spaces: [{ id: "space_1", name: "alice", personal: true, members: [], counts: { hosts: 0, retired_hosts: 0, secrets: 0 } }] }));
   api.on(HostList, () => ({ hosts: [] }));
   api.on(ServiceList, () => ({ services: [] }));
 

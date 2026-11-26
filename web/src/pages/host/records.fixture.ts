@@ -4,7 +4,7 @@ import { expect } from "vitest";
 import { type AttrKey, AttrList } from "../../api/attr";
 import { type Host, HostList } from "../../api/host";
 import { type Service, ServiceList } from "../../api/service";
-import { type Space, SpaceList } from "../../api/space";
+import { type SpaceDetail, SpaceList } from "../../api/space";
 import type { User } from "../../api/user";
 import type { FakeApi } from "../../test/fakeApi";
 
@@ -95,17 +95,17 @@ export function writes(api: FakeApi): string[] {
 }
 
 /** spaces are what space.list answers alice: her Personal Space, then ops and dev. */
-export const spaces: Space[] = [
-  { id: "space_1", name: "alice", personal: true },
-  { id: "space_2", name: "ops", personal: false },
-  { id: "space_3", name: "dev", personal: false },
+export const spaces: SpaceDetail[] = [
+  { id: "space_1", name: "alice", personal: true, members: [], counts: { hosts: 0, retired_hosts: 0, secrets: 0 } },
+  { id: "space_2", name: "ops", personal: false, members: [], counts: { hosts: 0, retired_hosts: 0, secrets: 0 } },
+  { id: "space_3", name: "dev", personal: false, members: [], counts: { hosts: 0, retired_hosts: 0, secrets: 0 } },
 ];
 
 /** Records are what a list page's fake API answers with. */
 export interface Records {
   hosts: Host[];
   services?: Service[];
-  spaces?: Space[];
+  spaces?: SpaceDetail[];
 }
 
 /**
