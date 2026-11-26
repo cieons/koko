@@ -53,15 +53,22 @@ type joined struct {
 	// line koko could not add, and how to fix it. Null when it does, or
 	// --no-ssh-config left ~/.ssh/config alone on purpose.
 	IncludeWarning *string `json:"include_warning"`
+	// NamesReadAsAddresses is status's names_read_as_addresses after the
+	// join: the bare names ssh reads as an IPv4 address.
+	NamesReadAsAddresses *[]string `json:"names_read_as_addresses"`
 }
 
 func (j joined) Human(w io.Writer) error {
 	if _, err := fmt.Fprintf(w, "Joined the koko server at %s as %s's device %s.\n",
-		j.ServerAddress, j.DeviceSession.User, j.DeviceSession.Device); err != nil || j.IncludeWarning == nil {
+		j.ServerAddress, j.DeviceSession.User, j.DeviceSession.Device); err != nil {
 		return err
 	}
-	_, err := fmt.Fprintf(w, "%s.\n", *j.IncludeWarning)
-	return err
+	if j.IncludeWarning != nil {
+		if _, err := fmt.Fprintf(w, "%s.\n", *j.IncludeWarning); err != nil {
+			return err
+		}
+	}
+	return writeNamesReadAsAddresses(w, j.NamesReadAsAddresses)
 }
 
 var joinMappings = []mapping{
@@ -171,6 +178,7 @@ func join(ctx context.Context, in *Input) (joined, error) {
 	if !in.Bool("no-ssh-config") {
 		out.IncludeWarning = addInclude(home)
 	}
+	out.NamesReadAsAddresses = namesReadAsAddresses(home)
 	return out, nil
 }
 

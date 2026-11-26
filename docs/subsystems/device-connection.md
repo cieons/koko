@@ -237,8 +237,8 @@ ssh integration (P0 spec: reach, "Device files and ssh integration").
   `HostName`, and the C library's resolver reads octal after a `0`
   (`010`) and hex after `0x` (`0xab`) too, within 32 bits, so such a Host
   is reached as `<name>.koko`. koko records the name all the same, and
-  `koko status` names those bare names (`devicefiles.AddressNames`), with
-  `ssh <name>.koko` to use.
+  `koko status`, `koko join` and `koko ssh setup` name those bare names
+  (`devicefiles.AddressNames`), with `ssh <name>.koko` to use.
   The ProxyCommand runs the binary that wrote the file: by the path a PATH
   lookup of `koko` finds when that is the same file, such as a package
   manager's link that outlives an upgrade, and otherwise by the path the OS
@@ -416,7 +416,7 @@ nothing outside it. `koko server install` says so in one line.
    warning says why and which line to add.
 5. It prints the path of koko's ssh_config, then that `ssh <host>.koko`
    now reaches a Host through koko, or the Include warning in its place;
-   with `--json`, `{"ssh_config", "include_warning"}`.
+   with `--json`, `{"ssh_config", "include_warning", "names_read_as_addresses"}`.
 
 Run again, it writes the same files anew. No Device Mux runs there, so
 nothing refreshes the bare names in the background: a Host someone else

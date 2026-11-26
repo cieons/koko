@@ -39,6 +39,9 @@ type sshSetupJSON struct {
 	// does not read koko's ssh_config for every host, such as an Include
 	// line koko could not add, and how to fix it. Null when it does.
 	IncludeWarning *string `json:"include_warning"`
+	// NamesReadAsAddresses is status's names_read_as_addresses after the
+	// setup: the bare names ssh reads as an IPv4 address.
+	NamesReadAsAddresses *[]string `json:"names_read_as_addresses"`
 }
 
 // Human writes where koko's ssh_config is, then that ssh reaches Hosts
@@ -48,11 +51,13 @@ func (s sshSetupJSON) Human(w io.Writer) error {
 		return err
 	}
 	if s.IncludeWarning != nil {
-		_, err := fmt.Fprintf(w, "%s.\n", *s.IncludeWarning)
+		if _, err := fmt.Fprintf(w, "%s.\n", *s.IncludeWarning); err != nil {
+			return err
+		}
+	} else if _, err := io.WriteString(w, "ssh <host>.koko now reaches a Host through koko.\n"); err != nil {
 		return err
 	}
-	_, err := io.WriteString(w, "ssh <host>.koko now reaches a Host through koko.\n")
-	return err
+	return writeNamesReadAsAddresses(w, s.NamesReadAsAddresses)
 }
 
 // sshSetup is koko ssh setup: on the koko server's own machine, where
@@ -98,5 +103,9 @@ func sshSetup(ctx context.Context, in *Input) (sshSetupJSON, error) {
 	if err := devicefiles.SetUpSSH(home, []ssh.PublicKey{hostKey}, bareNames(hosts)); err != nil {
 		return sshSetupJSON{}, fmt.Errorf("write koko's ssh files: %w", err)
 	}
-	return sshSetupJSON{SSHConfig: devicefiles.SSHConfigPath(home), IncludeWarning: addInclude(home)}, nil
+	return sshSetupJSON{
+		SSHConfig:            devicefiles.SSHConfigPath(home),
+		IncludeWarning:       addInclude(home),
+		NamesReadAsAddresses: namesReadAsAddresses(home),
+	}, nil
 }

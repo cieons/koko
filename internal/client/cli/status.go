@@ -197,6 +197,30 @@ func (s statusJSON) Human(w io.Writer) error {
 	return err
 }
 
+// namesReadAsAddresses returns the bare names in koko's ssh_config under
+// home that ssh reads as IPv4 addresses, for status, join and ssh setup.
+// It is advice, so a koko ssh_config it cannot read leaves them unknown,
+// nil, and fails nothing.
+func namesReadAsAddresses(home string) *[]string {
+	names, err := devicefiles.AddressNames(home)
+	if err != nil {
+		return nil
+	}
+	return &names
+}
+
+// writeNamesReadAsAddresses writes status's warning about names, after
+// koko join and koko ssh setup, when there are any; it writes nothing for
+// names unknown, since writing koko's ssh_config already said why it
+// failed.
+func writeNamesReadAsAddresses(w io.Writer, names *[]string) error {
+	if names == nil || len(*names) == 0 {
+		return nil
+	}
+	_, err := fmt.Fprintf(w, "Warning: %s.\n", namesReadAsAddressesWarning(*names))
+	return err
+}
+
 // namesReadAsAddressesWarning says that ssh reads names, bare names in
 // koko's ssh_config, as IP addresses, naming the first
 // shownNamesReadAsAddresses and counting the rest, and what to run instead.
@@ -263,11 +287,7 @@ func status(ctx context.Context, in *Input) (statusJSON, error) {
 	case !errors.Is(err, devicefiles.ErrNotJoined):
 		return statusJSON{}, err
 	}
-	// Advice, so a koko ssh_config it cannot read leaves it unknown and
-	// fails nothing.
-	if names, err := devicefiles.AddressNames(home); err == nil {
-		s.NamesReadAsAddresses = &names
-	}
+	s.NamesReadAsAddresses = namesReadAsAddresses(home)
 	r, err := devicefiles.ReadRevocation(home)
 	switch {
 	case err == nil:

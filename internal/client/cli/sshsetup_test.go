@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"encoding/json/v2"
 	"os"
 	"path/filepath"
 	"slices"
@@ -173,4 +174,40 @@ func TestSSHSetupIsOnlyForTheKokoServersMachine(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(nowhere.Home(), ".ssh")); err == nil {
 		t.Errorf("ssh setup with no koko server made ~/.ssh")
 	}
+}
+
+// koko join and koko ssh setup name the bare names that ssh reads as an
+// IPv4 address, as koko status does: in names_read_as_addresses, and in
+// status's warning.
+func TestJoinAndSSHSetupNameBareNamesSSHReadsAsAddresses(t *testing.T) {
+	t.Parallel()
+	h := harness.Start(t)
+	addHost(t, h.Koko, "web1")
+	addHost(t, h.Koko, "201")
+	const warning = "Warning: ssh reads 201 as an IP address, so ssh 201 does not reach that Host through koko: use ssh 201.koko.\n"
+	wantJSON := func(what string, r harness.Result) {
+		t.Helper()
+		r.WantSuccess(t)
+		var out struct {
+			Names *[]string `json:"names_read_as_addresses"`
+		}
+		if err := json.Unmarshal([]byte(r.Stdout), &out); err != nil {
+			t.Fatal(err)
+		}
+		if out.Names == nil || !slices.Equal(*out.Names, []string{"201"}) {
+			t.Errorf("%s lists names_read_as_addresses %v, want [201]", what, deref(out.Names))
+		}
+	}
+	wantHuman := func(what string, r harness.Result) {
+		t.Helper()
+		r.WantSuccess(t)
+		if !strings.HasSuffix(r.Stdout, warning) {
+			t.Errorf("%s says\n%s\nwant it to end with %q", what, r.Stdout, warning)
+		}
+	}
+
+	wantJSON("ssh setup --json", h.Koko("ssh", "setup", "--json"))
+	wantHuman("ssh setup", h.Koko("ssh", "setup"))
+	wantJSON("join --json", harness.NewDevice(t).Koko("join", deviceAdd(t, h, "laptop").Code, "--json"))
+	wantHuman("join", harness.NewDevice(t).Koko("join", deviceAdd(t, h, "phone").Code))
 }
