@@ -166,9 +166,12 @@ func (d *Device) MuxLog() string {
 	return d.muxes.log.String()
 }
 
-// DialMux connects to the device's Device Mux as its commands do, which
-// counts as a command connected, and holds the connection until the test
-// ends or the Device Mux closes it.
+// DialMux connects to the device's Device Mux as its commands do, and holds
+// the connection until the test ends or the Device Mux closes it. It
+// returns once the Device Mux has sent the command its first report, which
+// it sends once it counts the command as connected: a handshake that has
+// ended at this end may not yet have at the Device Mux's, and koko
+// disconnect counts no command still connecting (#238).
 func (d *Device) DialMux() serverconn.Conn {
 	d.t.Helper()
 	socket, err := devicemux.Socket(func(key string) string { return lookup(d.environ(), key) })
@@ -180,6 +183,9 @@ func (d *Device) DialMux() serverconn.Conn {
 		d.t.Fatalf("connect to the Device Mux: %v", err)
 	}
 	d.t.Cleanup(func() { _ = conn.Close() })
+	if _, err := conn.Report(d.t.Context()); err != nil {
+		d.t.Fatalf("wait for the Device Mux's report: %v", err)
+	}
 	return conn
 }
 

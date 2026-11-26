@@ -116,6 +116,11 @@ func TestKokoDisconnectStopsTheDeviceMuxOfEveryBuild(t *testing.T) {
 		return err == nil
 	})
 	t.Cleanup(func() { _ = conn.Close() })
+	// It counts the command once it has sent its first report, as DialMux
+	// waits for.
+	if _, err := conn.Report(t.Context()); err != nil {
+		t.Fatalf("the other build's Device Mux sent no report: %v", err)
+	}
 
 	// A socket a crashed Device Mux left, where nothing answers.
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: filepath.Join(dir, "v0.0.0-crashed.sock"), Net: "unix"})
