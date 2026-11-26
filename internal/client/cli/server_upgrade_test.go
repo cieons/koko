@@ -89,7 +89,7 @@ func TestServerInstallUpgradesAnInitialisedServer(t *testing.T) {
 		t.Error("the upgrade changed the Root Key file")
 	}
 	whats := callNames(m.Calls()[calls:])
-	if got, want := whats[len(whats)-4:], []string{"systemctl daemon-reload", "systemctl enable --now koko-upgrade.path", "systemctl enable koko.service", "systemctl restart koko.service"}; !slices.Equal(got, want) {
+	if got, want := whats[len(whats)-5:], []string{"systemctl daemon-reload", "systemctl enable --now koko-upgrade.path", "systemctl enable koko.service", "systemctl reset-failed koko.service", "systemctl restart koko.service"}; !slices.Equal(got, want) {
 		t.Errorf("the upgrade ended with %v, want %v", got, want)
 	}
 	if starts := strings.Count(m.WaitLog("koko server started", 2), "koko server started"); starts != 2 || !m.Running() {

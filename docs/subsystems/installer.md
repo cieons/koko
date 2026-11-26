@@ -244,8 +244,10 @@ the real one, rooted at `/`:
    root), and its directory, `/var/lib/koko-upgrade` (0755, root)
    ([the upgrade helper](#the-upgrade-helper)).
 5. **`systemctl daemon-reload`, `enable --now koko-upgrade.path`, `enable
-   koko.service`, `restart koko.service`.** Restart, not start, so that a
-   koko service an earlier run left running takes the new unit and `kokod`.
+   koko.service`, `reset-failed koko.service`, `restart koko.service`.**
+   Restart, not start, so that a koko service an earlier run left running
+   takes the new unit and `kokod`; reset-failed first, so that one that
+   systemd's start limit refused starts again.
 6. **The socket.** Install waits until the koko server accepts a connection
    on `/run/koko/koko.sock`, for up to `timing.InstallSocketWait` (30 s). It
    connects rather than looks for the file, which is there a moment before

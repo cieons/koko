@@ -791,11 +791,12 @@ func syncDir(dir string) error {
 }
 
 // start makes systemd load the units, enables and starts the upgrade
-// helper's path unit, enables the koko service and restarts it, so that a
-// koko service an earlier run left running takes the new unit and kokod,
-// then waits for its Unix socket.
+// helper's path unit, enables the koko service, resets its failed state and
+// restarts it, so that a koko service an earlier run left running takes the
+// new unit and kokod, and one that systemd's start limit stopped starts
+// again, then waits for its Unix socket.
 func (in *Installer) start(ctx context.Context) error {
-	for _, args := range [][]string{{"daemon-reload"}, {"enable", "--now", UpgradePathName}, {"enable", UnitName}, {"restart", UnitName}} {
+	for _, args := range [][]string{{"daemon-reload"}, {"enable", "--now", UpgradePathName}, {"enable", UnitName}, {"reset-failed", UnitName}, {"restart", UnitName}} {
 		if err := in.systemctl(ctx, args...); err != nil {
 			return err
 		}

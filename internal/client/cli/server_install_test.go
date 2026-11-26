@@ -239,10 +239,10 @@ func TestServerInstallChecksFirstAndWaitsForTheSocket(t *testing.T) {
 			t.Errorf("install asked %q after writing: %v", check, calls[i].Files)
 		}
 	}
-	if got, want := whats[len(whats)-4:], []string{"systemctl daemon-reload", "systemctl enable --now koko-upgrade.path", "systemctl enable koko.service", "systemctl restart koko.service"}; !slices.Equal(got, want) {
+	if got, want := whats[len(whats)-5:], []string{"systemctl daemon-reload", "systemctl enable --now koko-upgrade.path", "systemctl enable koko.service", "systemctl reset-failed koko.service", "systemctl restart koko.service"}; !slices.Equal(got, want) {
 		t.Errorf("install ended with %v, want %v", got, want)
 	}
-	if reload := calls[len(calls)-4]; !slices.Contains(reload.Files, installer.UpgradePathUnit) || !slices.Contains(reload.Files, installer.UpgradeServiceUnit) {
+	if reload := calls[len(calls)-5]; !slices.Contains(reload.Files, installer.UpgradePathUnit) || !slices.Contains(reload.Files, installer.UpgradeServiceUnit) {
 		t.Error("install reloaded systemd before writing the upgrade helper's units")
 	}
 	start := calls[len(calls)-1]
