@@ -610,7 +610,10 @@ func TestWebTokenWorksOnlyThroughItsOwnRun(t *testing.T) {
 // A koko built without the web UI's output, as a plain go build is, serves
 // the placeholder page over web@koko. make check builds the web UI before the
 // tests, so this runs TestWebPrintsItsAddressAndTradesItsTokenForACookie
-// again in a build whose overlay hides the build output.
+// again in a build whose overlay hides the build output, with -race exactly
+// when this test runs with it, so that the build takes from Go's cache the
+// packages this test's own build compiled, and compiles only those the
+// overlay changes (#238).
 func TestWebServesThePlaceholderInABuildWithoutTheWebUI(t *testing.T) {
 	t.Parallel()
 	hide := map[string]string{}
@@ -634,7 +637,11 @@ func TestWebServesThePlaceholderInABuildWithoutTheWebUI(t *testing.T) {
 		t.Fatal(err)
 	}
 	const test = "TestWebPrintsItsAddressAndTradesItsTokenForACookie"
-	out, err := exec.CommandContext(t.Context(), "go", "test", "-count=1", "-overlay", overlayFile, "-run", "^"+test+"$", "-v", ".").CombinedOutput()
+	args := []string{"test", "-count=1", "-overlay", overlayFile, "-run", "^" + test + "$", "-v"}
+	if raceEnabled {
+		args = append(args, "-race")
+	}
+	out, err := exec.CommandContext(t.Context(), "go", append(args, ".")...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("%s in a build without the web UI: %v\n%s", test, err, out)
 	}

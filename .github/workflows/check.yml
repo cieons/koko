@@ -120,15 +120,14 @@ jobs:
       # Go tests embed, and make test, the Go tests under the race detector
       # and Vitest. make lint sets GOOS for each OS koko builds for, and
       # make cross builds with CGO_ENABLED=0, so neither result depends on
-      # the runner (#237). make vet stays: it compiles every package
-      # without the race detector, as the go test that
-      # TestWebServesThePlaceholderInABuildWithoutTheWebUI runs does, and
-      # without it that test compiled them all itself, took 2 minutes and
-      # took internal/client/cli past go test's 5-minute limit.
+      # the runner (#237); make lint's govet vets each OS's files. The go
+      # test that TestWebServesThePlaceholderInABuildWithoutTheWebUI runs
+      # takes -race from its own test, and with it the packages make test
+      # compiled, so it needs no build of vet's in Go's cache (#238).
       - if: runner.os == 'Linux'
         run: make check
       - if: runner.os == 'macOS'
-        run: make webui vet test
+        run: make webui test
 
   # The CLI's tests on Windows (ADR 0051), against the koko server and Hosts
   # in the test process. It calls go itself: the image has no GNU Make. It
