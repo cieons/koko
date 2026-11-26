@@ -239,6 +239,39 @@ func TestTenFailuresFromOneAddressWaitFifteenMinutes(t *testing.T) {
 	}
 }
 
+// Every address of one IPv6 /64 counts as one address in the limits, and an
+// IPv4-mapped address as its IPv4 address; another /64 counts apart. The
+// log still writes the full address.
+func TestTheLimitsCountAnIPv6AddressByItsSlash64(t *testing.T) {
+	t.Parallel()
+	h := startSignIns(t)
+	h.SignIn("bob")
+	at := func(address string) *harness.Browser {
+		b := h.Browser()
+		b.Address = address
+		return b
+	}
+	for i := range 10 {
+		status, body := signIn(at(fmt.Sprintf("2001:db8:1:2::%x", i+1)), fmt.Sprintf("name%d", i), harness.Password)
+		wantCode(t, status, body, api.CodeWrongPassword.Name)
+	}
+	status, body := signIn(at("2001:db8:1:2:ffff::1"), "bob", harness.Password)
+	wantCode(t, status, body, api.CodeTooManyAttempts.Name)
+	if status, body := signIn(at("2001:db8:1:3::1"), "bob", harness.Password); status != http.StatusOK {
+		t.Errorf("an address of another /64 was refused: %d %s", status, body)
+	}
+	if !strings.Contains(h.Log(), `msg="sign-in refused" reason=wrong_password address=2001:db8:1:2::a`) {
+		t.Error("the log does not write the full IPv6 address")
+	}
+
+	for i := range 10 {
+		status, body := signIn(at("192.0.2.77"), fmt.Sprintf("other%d", i), harness.Password)
+		wantCode(t, status, body, api.CodeWrongPassword.Name)
+	}
+	status, body = signIn(at("::ffff:192.0.2.77"), "bob", harness.Password)
+	wantCode(t, status, body, api.CodeTooManyAttempts.Name)
+}
+
 // Ten failed sign-ins in a row with one name, from ten addresses, lock it
 // for 15 minutes from any address, a correct Password included, while the
 // Sign-ins already open keep working. A name no User holds is counted the

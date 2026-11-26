@@ -350,7 +350,11 @@ in [the Identity Provider](identity.md#signing-in-and-linking-through-it).
 Held in memory ([`limit.go`](../../internal/server/signin/limit.go)),
 bounded to the 10,000 most recent addresses and as many names, and
 forgotten at restart. The client's address is the web listener's
-([the web front](web-front.md#the-web-listener)).
+([the web front](web-front.md#the-web-listener)). The limits count an
+IPv6 address by its /64, which one host commonly holds whole, an
+IPv4-mapped address as its IPv4 address, and any other address as itself
+([`clientaddr.Key`](../../internal/server/clientaddr/clientaddr.go), which
+the flow store shares); a Sign-in and the log keep the full address.
 
 - **For each address**: 10 failed attempts (a wrong sign-in, a refused
   link, a wrong current Password, `passkey_refused` for an answer whose flow

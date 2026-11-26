@@ -4,6 +4,8 @@ import (
 	"container/list"
 	"sync"
 	"time"
+
+	"github.com/cieons/koko/internal/server/clientaddr"
 )
 
 // The rate limits on signing in (ADR 0043).
@@ -59,13 +61,15 @@ const runningWait = time.Second
 
 // begin starts, at now, an attempt from addr and, unless name is empty, with
 // name, if the limits allow it; else it returns how long the client waits.
-// An address is past its limit once its failures in the last failureWindow
+// addr counts as clientaddr.Key says, so every address of one IPv6 /64
+// shares one count. An address is past its limit once its failures in the last failureWindow
 // and its attempts running reach maxFailures, and waits until the oldest
 // failure is failureWindow old; a name, while it is locked, or once its
 // failures in a row and its attempts running reach maxFailures. The caller
 // calls end once, with whether the attempt failed, which counts it for addr
 // and for name.
 func (l *limiter) begin(addr, name string, now time.Time) (wait time.Duration, end func(failed bool)) {
+	addr = clientaddr.Key(addr)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	failures := live(l.addrs.get(addr), now)

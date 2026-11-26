@@ -12,10 +12,11 @@ import (
 	"container/list"
 	"crypto/rand"
 	"encoding/base64"
-	"net/netip"
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/cieons/koko/internal/server/clientaddr"
 )
 
 // The bounds on the flows held.
@@ -68,7 +69,7 @@ func (s *Store[V]) Begin(address string, v V) string {
 	var b [16]byte
 	_, _ = rand.Read(b[:]) // crypto/rand.Read never fails
 	id := base64.RawURLEncoding.EncodeToString(b[:])
-	key := addressKey(address)
+	key := clientaddr.Key(address)
 	now := s.clock()
 
 	s.mu.Lock()
@@ -146,18 +147,4 @@ func (s *Store[V]) drop(el *list.Element) {
 		return
 	}
 	s.byAddress[e.address] = held
-}
-
-// addressKey is what a client address counts as: an IPv6 address by its
-// /64, any other as itself.
-func addressKey(address string) string {
-	a, err := netip.ParseAddr(address)
-	if err != nil {
-		return address
-	}
-	if a = a.Unmap(); !a.Is6() {
-		return a.String()
-	}
-	p, _ := a.WithZone("").Prefix(64) // an IPv6 address always has a /64
-	return p.String()
 }
