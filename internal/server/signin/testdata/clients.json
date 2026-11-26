@@ -1,0 +1,47 @@
+[
+  {
+    "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Mobile/15E148 Safari/604.1",
+    "browser": "Safari",
+    "system": "iPhone",
+    "client": "Safari on iPhone"
+  },
+  {
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+    "browser": "Chrome",
+    "system": "Windows",
+    "client": "Chrome on Windows"
+  },
+  {
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0",
+    "browser": "Edge",
+    "system": "Windows",
+    "client": "Edge on Windows"
+  },
+  {
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Safari/605.1.15",
+    "browser": "Safari",
+    "system": "macOS",
+    "client": "Safari on macOS"
+  },
+  {
+    "user_agent": "Mozilla/5.0 (Linux; Android 16; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36",
+    "browser": "Chrome",
+    "system": "Android",
+    "client": "Chrome on Android"
+  },
+  {
+    "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
+    "browser": "Firefox",
+    "system": "Linux",
+    "client": "Firefox on Linux"
+  },
+  {
+    "user_agent": "Mozilla/5.0 (iPad; CPU OS 26_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/142.0 Mobile/15E148 Safari/604.1",
+    "browser": "Chrome",
+    "system": "iPad",
+    "client": "Chrome on iPad"
+  },
+  { "user_agent": "Firefox/140.0", "browser": "Firefox", "system": "", "client": "Firefox" },
+  { "user_agent": "curl/8.17.0", "browser": "", "system": "", "client": "Browser" },
+  { "user_agent": "", "browser": "", "system": "", "client": "Browser" }
+]

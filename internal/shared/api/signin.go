@@ -117,8 +117,9 @@ type CurrentSignIn struct {
 
 // ClientLabel is a Sign-in's English label of its browser and system:
 // "Safari on iPhone", the browser alone without a system, or "Browser"
-// without a browser koko recognises. The web UI makes the same label in
-// the reader's language.
+// without a browser koko recognises. The web UI's browserName makes the
+// same label in the reader's language; the table in
+// internal/server/signin/testdata/clients.json holds the two to each other.
 func ClientLabel(browser, system string) string {
 	switch {
 	case browser == "":
